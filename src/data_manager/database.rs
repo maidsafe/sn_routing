@@ -49,28 +49,38 @@ impl ::types::Refreshable for Account {
     }
 
     fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
-        let mut stats = Vec::<(PmidNodes, u64)>::new();
+        let mut candidates = vec![];
+        let mut stats = Vec::<(PmidNode, u64)>::new();
         for response in responses {
+            debug!("DataManager merging one response of chunk {:?} stored on nodes {:?}",
+                   response.name, response.data_holders);
             if response.name == from_group {
-                let push_in_vec = match stats.iter_mut()
-                                             .find(|a| a.0 == response.data_holders) {
-                    Some(find_res) => {
-                        find_res.1 += 1;
-                        false
+                for holder in response.data_holders.iter() {
+                    if candidates.contains(holder) {
+                        match stats.iter_mut().find(|a| a.0 == *holder) {
+                            Some(find_res) => find_res.1 += 1,
+                            None => {}
+                        };
+                    } else {
+                        stats.push((holder.clone(), 1));
+                        candidates.push(holder.clone());
                     }
-                    None => true,
-                };
-                if push_in_vec {
-                    stats.push((response.data_holders.clone(), 1));
                 }
             }
         }
         stats.sort_by(|a, b| b.1.cmp(&a.1));
-        let (pmids, count) = stats[0].clone();
-        if count >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
-            return Some(Account::new(from_group, pmids));
+        let mut pmids = vec![];
+        for i in 0..stats.len() {
+            if stats[i].1 >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
+                pmids.push(stats[i].0.clone());
+            }
         }
-        None
+        debug!("DataManager merged chunk {:?} stored on nodes {:?}", from_group, pmids);
+        if pmids.len() == 0 {
+            None
+        } else {
+            Some(Account::new(from_group, pmids))
+        }
     }
 }
 
@@ -130,20 +140,30 @@ impl Database {
         info!("DataManager updated account {:?} to {:?}", merged_account.name, data_holders);
     }
 
-    pub fn handle_churn(&mut self, our_authority: &::routing::Authority,
-                        routing: &::vault::Routing, churn_node: &::routing::NameType) {
-        for (key, value) in self.storage.iter() {
-            if value.len() < 3 {
-                for pmid_node in value.iter() {
-                    info!("DataManager sends out a Get request in churn, \
-                           fetching data {:?} from pmid_node {:?}", *key, pmid_node);
-                    routing.get_request(our_authority.clone(),
-                            ::pmid_node::Authority(pmid_node.clone()),
-                            ::routing::data::DataRequest::ImmutableData((*key).clone(),
-                                    ::routing::immutable_data::ImmutableDataType::Normal));
+    pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &::routing::NameType,
+                        offline: bool) -> Vec<(::routing::NameType, Vec<::routing::NameType>)> {
+        let mut on_going_gets = vec![];
+        for (key, mut value) in self.storage.iter_mut() {
+            if offline {
+                for i in 0..value.len() {
+                    if value[i] == *churn_node {
+                        let _ = value.remove(i);
+                        for pmid_node in value.iter() {
+                            info!("DataManager sends out a Get request in churn_down, \
+                                   fetching data {:?} from pmid_node {:?}", *key, pmid_node);
+                            routing.get_request(::routing::Authority::NaeManager((*key).clone()),
+                                    ::pmid_node::Authority(pmid_node.clone()),
+                                    ::routing::data::DataRequest::ImmutableData((*key).clone(),
+                                            ::routing::immutable_data::ImmutableDataType::Backup));
+                        }
+                        on_going_gets.push(((*key).clone(), (*value).clone()));
+                        break;
+                    }
                 }
             }
+
             let account = Account::new((*key).clone(), (*value).clone());
+            debug!("DataManager refreshing account {:?} out to the network", account);
             let target_authority = super::Authority(account.name);
             let mut encoder = ::cbor::Encoder::from_memory();
             if encoder.encode(&[account]).is_ok() {
@@ -157,6 +177,7 @@ impl Database {
         // the uncontrollable order of events (churn/refresh/account_transfer)
         // forcing the node have to keep its current records to avoid losing record
         // self.cleanup();
+        on_going_gets
     }
 
     pub fn do_refresh(&mut self,

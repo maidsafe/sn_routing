@@ -19,7 +19,8 @@ pub use routing::Authority::NaeManager as Authority;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
 pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
-pub const PARALLELISM: usize = 4;
+pub const REPLICANTS: usize = 4;
+pub const MIN_REPLICANTS: usize = 3;
 
 mod database;
 
@@ -142,20 +143,27 @@ impl DataManager {
         // Before querying the records, first ensure all records are valid
         let ongoing_gets = self.ongoing_gets.retrieve_all();
         let mut failing_entries = Vec::new();
+        let mut fetching_list = ::std::collections::BTreeSet::new();
+        fetching_list.insert(data_name.clone());
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        self.id, (ongoing_get.0).1, (ongoing_get.0).0);
-                // TODO: https://github.com/maidsafe/safe_vault/issues/263
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
+                // Starts fecthing immediately no matter how many alive pmid_nodes left over
+                // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
+                // of account status not synchronized among the DataManagers
+                //         let _ = self.replicate_to((ongoing_get.0).0).and_then(
+                //                 fetching_list.insert((ongoing_get.0).0.clone()));
+                fetching_list.insert((ongoing_get.0).0.clone());
                 failing_entries.push(ongoing_get.0.clone());
-                if self.failed_pmids.contains_key(&data_name) {
-                    match self.failed_pmids.get_mut(&data_name) {
+                if self.failed_pmids.contains_key(&(ongoing_get.0).0) {
+                    match self.failed_pmids.get_mut(&(ongoing_get.0).0) {
                         Some(ref mut pmids) => pmids.push((ongoing_get.0).1.clone()),
                         None => error!("Failed to insert failed_pmid in the cache."),
                     };
                 } else {
-                    let _ = self.failed_pmids.insert(data_name.clone(),
+                    let _ = self.failed_pmids.insert((ongoing_get.0).0.clone(),
                                                      vec![(ongoing_get.0).1.clone()]);
                 }
             }
@@ -163,14 +171,19 @@ impl DataManager {
         for failed_entry in failing_entries {
             let _ = self.ongoing_gets.remove(&failed_entry);
         }
-        debug!("DataManager {:?} having {:?} records for chunk {:?}",
-               self.id, self.database.exist(&data_name), data_name);
-        for pmid in self.database.get_pmid_nodes(data_name) {
-            let location = ::pmid_node::Authority(pmid.clone());
-            debug!("DataManager {:?} sending get request to {:?}", self.id, location);
-            self.routing.get_request(our_authority.clone(), location, data_request.clone());
-            let _ = self.ongoing_gets
-                        .insert((data_name.clone(), pmid.clone()), ::time::SteadyTime::now());
+        for fetch_name in fetching_list.iter() {
+            debug!("DataManager {:?} having {:?} records for chunk {:?}",
+                   self.id, self.database.exist(&fetch_name), fetch_name);
+            for pmid in self.database.get_pmid_nodes(fetch_name) {
+                let location = ::pmid_node::Authority(pmid.clone());
+                debug!("DataManager {:?} sending get {:?} request to {:?}",
+                       self.id, fetch_name, location);
+                self.routing.get_request(Authority(fetch_name.clone()), location,
+                    ::routing::data::DataRequest::ImmutableData(fetch_name.clone(),
+                        ::routing::immutable_data::ImmutableDataType::Normal));
+                let _ = self.ongoing_gets
+                            .insert((fetch_name.clone(), pmid.clone()), ::time::SteadyTime::now());
+            }
         }
         ::utils::HANDLED
     }
@@ -203,11 +216,13 @@ impl DataManager {
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         Self::sort_from_target(&mut self.nodes_in_table, &data_name);
-        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), PARALLELISM);
+        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), REPLICANTS);
         let mut dest_pmids: Vec<::routing::NameType> = Vec::new();
         for index in 0..pmid_nodes_num {
             dest_pmids.push(self.nodes_in_table[index].clone());
         }
+        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}",
+                self.id, dest_pmids, data_name);
         self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
         match *immutable_data.get_type_tag() {
             ::routing::immutable_data::ImmutableDataType::Sacrificial => {
@@ -371,9 +386,29 @@ impl DataManager {
 
     pub fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
                         churn_node: &::routing::NameType) {
+        // If the churn_node exists in the previous DM's nodes_in_table,
+        // but not in this reported close_group, it indicates such node is leaving the group.
+        // However, it is not to say the node is offline, as it may still connected with other
+        let node_leaving = !close_group.contains(churn_node) &&
+                           self.nodes_in_table.contains(churn_node);
+        let on_going_gets = self.database.handle_churn(&self.routing, churn_node, node_leaving);
+
+        for entry in on_going_gets.iter() {
+            if self.failed_pmids.contains_key(&entry.0) {
+                match self.failed_pmids.get_mut(&entry.0) {
+                    Some(ref mut pmids) => pmids.push(churn_node.clone()),
+                    None => error!("Failed to insert failed_pmid in the cache."),
+                };
+            } else {
+                let _ = self.failed_pmids.insert(entry.0.clone(),
+                                                 vec![churn_node.clone()]);
+            }
+            for pmid in entry.1.iter() {
+                let _ = self.ongoing_gets
+                            .insert((entry.0.clone(), pmid.clone()), ::time::SteadyTime::now());
+            }
+        }
         // close_group[0] is supposed to be the vault id
-        let our_authority = Authority(close_group[0].clone());
-        self.database.handle_churn(&our_authority, &self.routing, churn_node);
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         let mut encoder = ::cbor::Encoder::from_memory();
         if encoder.encode(&[data_manager_stats.clone()]).is_ok() {
@@ -407,10 +442,12 @@ impl DataManager {
 
     fn replicate_to(&mut self, name: &::routing::NameType) -> Option<::routing::NameType> {
         let pmid_nodes = self.database.get_pmid_nodes(name);
-        if pmid_nodes.len() < 3 && pmid_nodes.len() > 0 {
+        if pmid_nodes.len() < MIN_REPLICANTS && pmid_nodes.len() > 0 {
             Self::sort_from_target(&mut self.nodes_in_table, &name);
             for close_grp_it in self.nodes_in_table.iter() {
                 if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+                    debug!("node {:?} replicating chunk {:?} to a new node {:?}",
+                           self.id, name, close_grp_it);
                     return Some(close_grp_it.clone());
                 }
             }
@@ -493,7 +530,7 @@ mod test {
                                            ::routing::NameType::new([6u8; 64]),
                                            ::routing::NameType::new([7u8; 64]),
                                            ::routing::NameType::new([8u8; 64])];
-        (Authority(::utils::random_name()),
+        (Authority(data.name().clone()),
          routing,
          data_manager,
          ::maid_manager::Authority(::utils::random_name()),
@@ -508,7 +545,7 @@ mod test {
                 data_manager.handle_put(&our_authority, &from_authority,
                                         &::routing::data::Data::ImmutableData(data.clone())));
             let put_requests = routing.put_requests_given();
-            assert_eq!(put_requests.len(), PARALLELISM);
+            assert_eq!(put_requests.len(), REPLICANTS);
             for i in 0..put_requests.len() {
                 assert_eq!(put_requests[i].our_authority, our_authority);
                 assert_eq!(put_requests[i].location,
@@ -528,7 +565,7 @@ mod test {
             assert_eq!(::utils::HANDLED,
                        data_manager.handle_get(&our_authority, &client, &request, &None));
             let get_requests = routing.get_requests_given();
-            assert_eq!(get_requests.len(), PARALLELISM);
+            assert_eq!(get_requests.len(), REPLICANTS);
             for i in 0..get_requests.len() {
                 assert_eq!(get_requests[i].our_authority, our_authority);
                 assert_eq!(get_requests[i].location,

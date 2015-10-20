@@ -666,7 +666,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
                                  3,
-                                 ::data_manager::PARALLELISM,
+                                 ::data_manager::REPLICANTS,
                                  ::time::Duration::minutes(3));
         println!("network_put_get_test getting data");
         client_routing.get_request(::data_manager::Authority(im_data.name()),
@@ -722,6 +722,29 @@ mod test {
                             ::routing::data::Data::StructuredData(sd_new),
                             ::time::Duration::minutes(1));
 
+        // ======================= Churn (one node down) ImmutableData test =======================
+        println!("\n======================= Churn (one node down) ImmutableData Test \
+                 =======================");
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+                          ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_churn_down_immutable_data_test putting data");
+        client_routing.put_request(::maid_manager::Authority(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        let pmid_nodes = waiting_for_hits(&vault_notifiers,
+                                          3,
+                                          ::data_manager::REPLICANTS,
+                                          ::time::Duration::minutes(3));
+
+        println!("network_churn_down_immutable_data_test dropping a pmid_node");
+        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
+        // Waiting for the notifications happen
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 30,
+                                 ::routing::types::GROUP_SIZE / 2 + 1,
+                                 ::time::Duration::minutes(3));
+        fading_vaults_events(&vault_notifiers, ::time::Duration::seconds(10));
+
         // ======================= Churn (node up) ImmutableData test =======================
         println!("\n======================= Churn (node up) ImmutableData test \
                  =======================");
@@ -733,7 +756,7 @@ mod test {
                                    ::routing::data::Data::ImmutableData(im_data.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
                                  3,
-                                 ::data_manager::PARALLELISM,
+                                 ::data_manager::REPLICANTS,
                                  ::time::Duration::minutes(3));
 
         println!("network_churn_up_immutable_data_test starting new vault");
@@ -754,6 +777,31 @@ mod test {
         wait_for_client_get(&client_receiver,
                             ::routing::data::Data::ImmutableData(im_data),
                             ::time::Duration::minutes(1));
+        fading_vaults_events(&vault_notifiers, ::time::Duration::seconds(10));
+
+        // ======================= Churn (two nodes down) ImmutableData test =======================
+        println!("\n======================= Churn (two nodes down) ImmutableData Test \
+                 =======================");
+        let value = ::routing::types::generate_random_vec_u8(1024);
+        let im_data = ::routing::immutable_data::ImmutableData::new(
+                          ::routing::immutable_data::ImmutableDataType::Normal, value);
+        println!("network_churn_down_immutable_data_test putting data");
+        client_routing.put_request(::maid_manager::Authority(client_name),
+                                   ::routing::data::Data::ImmutableData(im_data.clone()));
+        let pmid_nodes = waiting_for_hits(&vault_notifiers,
+                                          3,
+                                          ::data_manager::REPLICANTS,
+                                          ::time::Duration::minutes(3));
+
+        println!("network_churn_down_immutable_data_test dropping the first pmid_node");
+        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
+        println!("network_churn_down_immutable_data_test dropping the second pmid_node");
+        let _ = vault_notifiers[pmid_nodes[1]].1.send(0);
+        // Waiting for the replications happen
+        let _ = waiting_for_hits(&vault_notifiers,
+                                 3,
+                                 1,
+                                 ::time::Duration::minutes(3));
 
         // ======================= Churn (node up) StructuredData test =======================
         println!("\n======================= Churn (node up) StructuredData Test \
@@ -774,7 +822,7 @@ mod test {
                                    ::routing::data::Data::StructuredData(sd.clone()));
         let _ = waiting_for_hits(&vault_notifiers,
                                  1,
-                                 ::routing::types::GROUP_SIZE,
+                                 ::routing::types::GROUP_SIZE - 2,
                                  ::time::Duration::minutes(3));
 
         println!("network_churn_up_structured_data_test starting new vault");
@@ -794,99 +842,6 @@ mod test {
         wait_for_client_get(&client_receiver,
                             ::routing::data::Data::StructuredData(sd),
                             ::time::Duration::minutes(1));
-
-        // ======================= Churn (one node down) ImmutableData test =======================
-        println!("\n======================= Churn (one node down) ImmutableData Test \
-                 =======================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(
-                          ::routing::immutable_data::ImmutableDataType::Normal, value);
-        println!("network_churn_down_immutable_data_test putting data");
-        client_routing.put_request(::maid_manager::Authority(client_name),
-                                   ::routing::data::Data::ImmutableData(im_data.clone()));
-        let pmid_nodes = waiting_for_hits(&vault_notifiers,
-                                          3,
-                                          ::data_manager::PARALLELISM,
-                                          ::time::Duration::minutes(3));
-
-        println!("network_churn_down_immutable_data_test dropping a pmid_node");
-        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE / 2 + 1,
-                                 ::time::Duration::minutes(3));
-        // To avoid the situation that the stopped vault being the portal of the client
-        // a new client shall be constructed to carry out the get requests
-        let (mut new_client_routing, new_client_receiver, _) = create_client();
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
-        println!("network_churn_down_immutable_data_test getting data");
-        wait_for_client_get(&new_client_receiver,
-                            ::routing::data::Data::ImmutableData(im_data.clone()),
-                            ::time::Duration::minutes(1));
-        // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(10000);
-        // Another get_request to trigger the check on failing get
-        println!("network_churn_down_immutable_data_test getting data again");
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Sacrificial));
-        // Waiting for the notifications happen
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 30,
-                                 ::routing::types::GROUP_SIZE / 2 + 1,
-                                 ::time::Duration::minutes(3));
-
-        // ======================= Churn (two nodes down) ImmutableData test =======================
-        println!("\n======================= Churn (two nodes down) ImmutableData Test \
-                 =======================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data = ::routing::immutable_data::ImmutableData::new(
-                          ::routing::immutable_data::ImmutableDataType::Normal, value);
-        println!("network_churn_down_immutable_data_test putting data");
-        client_routing.put_request(::maid_manager::Authority(client_name),
-                                   ::routing::data::Data::ImmutableData(im_data.clone()));
-        let pmid_nodes = waiting_for_hits(&vault_notifiers,
-                                          3,
-                                          ::data_manager::PARALLELISM,
-                                          ::time::Duration::minutes(3));
-
-        println!("network_churn_down_immutable_data_test dropping the first pmid_node");
-        let _ = vault_notifiers[pmid_nodes[0]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE - 2,
-                                 ::time::Duration::minutes(3));
-
-        println!("network_churn_down_immutable_data_test dropping the second pmid_node");
-        let _ = vault_notifiers[pmid_nodes[1]].1.send(0);
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 20,
-                                 ::routing::types::GROUP_SIZE - 3,
-                                 ::time::Duration::minutes(3));
-        // To avoid the situation that the stopped vault being the portal of the client
-        // a new client shall be constructed to carry out the get requests
-        let (mut new_client_routing, new_client_receiver, _) = create_client();
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
-        println!("network_churn_down_immutable_data_test getting data");
-        wait_for_client_get(&new_client_receiver,
-                            ::routing::data::Data::ImmutableData(im_data.clone()),
-                            ::time::Duration::minutes(1));
-        // the waiting time to allow DM realize failed fetch
-        ::std::thread::sleep_ms(10000);
-        // Another get_request to trigger the check on failing get
-        println!("network_churn_down_immutable_data_test getting data again");
-        new_client_routing.get_request(::data_manager::Authority(im_data.name()),
-                ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Sacrificial));
-        // Waiting for the replications happen
-        let _ = waiting_for_hits(&vault_notifiers,
-                                 3,
-                                 1,
-                                 ::time::Duration::minutes(3));
 
         remove_bootstrap_file();
     }
