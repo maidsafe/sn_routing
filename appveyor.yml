@@ -1,6 +1,6 @@
 install:
   - ps: |
-        Start-FileDownload "https://raw.githubusercontent.com/carllerche/travis-rust-matrix/master/install.ps1"; . .\install.ps1
+        Start-FileDownload "https://github.com/maidsafe/QA/raw/master/Powershell%20Scripts/InstallRust.ps1"; . .\InstallRust.ps1
         Start-FileDownload "https://github.com/maidsafe/QA/raw/master/Dependencies/Windows/$env:platform/libsodium.a";
         $env:SODIUM_LIB_DIR = Resolve-Path .
 
