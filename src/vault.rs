@@ -813,29 +813,42 @@ mod test {
 mod mock_routing_test {
     use super::*;
 
-    fn mock_env_setup() -> (Routing, ::std::sync::mpsc::Receiver<(::routing::data::Data)>) {
+    struct VaultComms {
+        receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+        killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
+        join_handle: Option<::std::thread::JoinHandle<()>>,
+    }
+
+    impl Drop for VaultComms {
+        fn drop(&mut self) {
+            self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
+            if let Some(join_handle) = self.join_handle.take() {
+                evaluate_result!(join_handle.join());
+            }
+        }
+    }
+
+
+    fn mock_env_setup() -> (Routing, VaultComms) {
         ::utils::initialise_logger();
-        let run_vault = |mut vault: Vault| {
-            let _ = ::std::thread::spawn(move || {
-                vault.do_run();
-            });
-        };
-        let vault = Vault::new(None, None);
+        let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
+        let mut vault = Vault::new(None, Some(killer.clone()));
         let mut routing = vault.pmid_node.routing();
         let receiver = routing.get_client_receiver();
-        let _ = run_vault(vault);
+        let join_handle =
+            Some(evaluate_result!(::std::thread::Builder::new().spawn(move || vault.do_run())));
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
             available_nodes.push(::utils::random_name());
         }
         routing.churn_event(available_nodes, ::utils::random_name());
-        (routing, receiver)
+        (routing, VaultComms{ receiver: receiver, killer: killer, join_handle: join_handle })
     }
 
     #[test]
     fn put_get_flow() {
-        let (mut routing, receiver) = mock_env_setup();
+        let (mut routing, vault_comms) = mock_env_setup();
 
         let client_name = ::utils::random_name();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -850,7 +863,7 @@ mod mock_routing_test {
         let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(),
                                ::routing::immutable_data::ImmutableDataType::Normal);
         routing.client_get(client_name, sign_keys.0, data_request);
-        for it in receiver.iter() {
+        for it in vault_comms.receiver.iter() {
             assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
             break;
         }
@@ -858,7 +871,7 @@ mod mock_routing_test {
 
     #[test]
     fn post_flow() {
-        let (mut routing, receiver) = mock_env_setup();
+        let (mut routing, vault_comms) = mock_env_setup();
 
         let name = ::utils::random_name();
         let value = ::routing::types::generate_random_vec_u8(1024);
@@ -894,7 +907,7 @@ mod mock_routing_test {
 
         let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
         routing.client_get(client_name, sign_keys.0, data_request);
-        for it in receiver.iter() {
+        for it in vault_comms.receiver.iter() {
             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
             break;
         }
