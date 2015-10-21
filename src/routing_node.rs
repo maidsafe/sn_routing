@@ -233,7 +233,7 @@ impl RoutingNode {
             &::routing_core::State::Disconnected => {
                 // This is our first connection, add as bootstrap and send hello.
                 self.core.add_bootstrap_connection(connection.clone());
-                ignore(self.send_hello(connection, None));
+                ignore(self.send_hello(connection, None, None));
                 return;
             },
             &::routing_core::State::Bootstrapped => {
@@ -253,10 +253,11 @@ impl RoutingNode {
             },
         };
 
-        if self.core.match_expected_connection(&connection) {
-            ignore(self.send_hello(connection, None));
-        } else {
-            self.crust_service.drop_node(connection);
+        match self.core.match_expected_connection(&connection) {
+            Some(expected_connection) => {
+                ignore(self.send_hello(connection, None, Some(expected_connection)))
+            },
+            None => {},
         }
     }
 
@@ -296,15 +297,17 @@ impl RoutingNode {
 
     fn send_hello(&mut self,
                   connection: ::crust::Connection,
-                  confirmed_address: Option<Address>)
+                  confirmed_address: Option<Address>,
+                  expected_connection: Option<::routing_core::ExpectedConnection>)
                   -> RoutingResult {
         debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
             connection, confirmed_address);
         let direct_message = match ::direct_messages::DirectMessage::new(
             ::direct_messages::Content::Hello( ::direct_messages::Hello {
-                address: self.core.our_address(),
-                public_id: PublicId::new(self.core.id()),
-                confirmed_you: confirmed_address,
+                    address: self.core.our_address(),
+                    public_id: PublicId::new(self.core.id()),
+                    confirmed_you: confirmed_address,
+                    expected_connection: expected_connection
                 }), self.core.id().signing_private_key()) {
                     Ok(x) => x,
                     Err(e) => return Err(RoutingError::Cbor(e)),
@@ -419,7 +422,7 @@ impl RoutingNode {
                 hello.public_id.clone()) {
                 debug!("Added {:?} to the core on {:?}", hello_address, connection);
                 if alpha {
-                    ignore(self.send_hello(connection.clone(), Some(hello_address)));
+                    ignore(self.send_hello(connection.clone(), Some(hello_address), None));
                 };
                 match new_identity {
                     ConnectionName::Bootstrap(bootstrap_name) => {
@@ -999,7 +1002,7 @@ impl RoutingNode {
                 self.connect(&connect_response.external_endpoints);
                 self.connection_filter.add(connect_response.receiver_fob.name());
                 let _ = self.core.add_expected_connection(
-                    ::routing_core::ExpectedConnection::Response(connect_response));
+                    ::routing_core::ExpectedConnection::Response(connect_response, signed_token));
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
@@ -1028,7 +1031,7 @@ impl RoutingNode {
             expected_connection: Option<(::routing_core::ExpectedConnection,
                                          Option<::crust::Connection>)>,
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
-       self.core.match_connection(expected_connection, unknown_connection);
+       self.core.match_connection(expected_connection, unknown_connection)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

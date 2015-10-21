@@ -84,13 +84,13 @@ pub enum State {
 }
 
 /// ExpectedConnection.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, RustcEncodable, RustcDecodable)]
 #[allow(unused)]
 pub enum ExpectedConnection {
     /// ConnectRequest sent by peer.
     Request(::messages::ConnectRequest),
     /// ConnectResponse in response to a ConnectRequest sent by peer.
-    Response(::messages::ConnectResponse),
+    Response(::messages::ConnectResponse, ::messages::SignedToken),
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -743,19 +743,20 @@ impl RoutingCore {
         }
     }
 
-    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
-    pub fn match_expected_connection(&mut self, connection: &::crust::Connection) -> bool {
+    /// Check whether the connection can be matched against a stored ConnectRequest/ConnectResponse.
+    pub fn match_expected_connection(&mut self, connection: &::crust::Connection)
+            -> Option<ExpectedConnection> {
         let endpoint = connection.peer_endpoint();
         let keys = self.expected_connections.keys().filter(|&k| match k {
             &ExpectedConnection::Request(ref connect_request) => {
                 connect_request.external_endpoints.iter().filter(|&e| *e == endpoint)
                 .collect::<Vec<_>>().len() > 0usize
             },
-            &ExpectedConnection::Response(ref connect_response) => {
+            &ExpectedConnection::Response(ref connect_response, _) => {
                 connect_response.external_endpoints.iter().filter(|&e| *e == endpoint)
                 .collect::<Vec<_>>().len() > 0usize
             },
-        }).cloned().collect::<Vec<_>>();
+        }).cloned().collect::<Vec<ExpectedConnection>>();
 
         debug_assert!(keys.len() <= 1usize);
         let unconnected_key = match keys.first() {
@@ -778,9 +779,9 @@ impl RoutingCore {
                 let _ = self.expected_connections.insert(key.clone(), Some(connection.clone()));
                 let _ = self.action_sender.send(::action::Action::MatchConnection(
                     Some((key.clone(), Some(connection.clone()))), None));
-                true
+                Some(key.clone())
             },
-            None => false,
+            None => None,
         }
     }
 
@@ -802,27 +803,86 @@ impl RoutingCore {
                                          Option<::crust::Connection>)>,
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
         match (expected_connection, unknown_connection) {
+            // at matching from expected connection against unknown connection
             (Some((expected_connection, Some(connection))), None) => {
-                let name = match expected_connection {
-                    ExpectedConnection::Request(request) => {
-                        request.requester_fob.name()
-                    },
-                    ExpectedConnection::Response(response) => {
-                        response.receiver_fob.name()
-                    },
-                };
-                let values = self.unknown_connections.values().filter(|&value|
-                    match value.0 {
-                        Some(ref hello) => {
-                            hello.public_id.name() == name
-                        },
-                        None => false,
-                    }
-                ).cloned().collect::<Vec<_>>();
+                match expected_connection {
+                    // we are the network-side, node B on diagram of RFC-0011, with a ConnectRequest
+                    // so we act.
+                    ExpectedConnection::Request(ref request) => {
+                        let values = self.unknown_connections.values().filter(|&value|
+                            match value.0 {
+                                Some(ref hello) => {
+                                    // this is not applicable for bootstrap as we do have
+                                    // a ConnectRequest/ConnectResponse
+                                    match hello.expected_connection {
+                                        Some(ref hello_expected_connection) => {
+                                            match hello_expected_connection {
+                                                &ExpectedConnection::Request(ref hello_request) => {
+                                                    hello_request == request
+                                                },
+                                                _ => false,
+                                            }
 
+                                        },
+                                        // we are not here during a bootstrap procedure, so this
+                                        // is an invalid hello, and drop it
+                                        None => {
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::DropConnections(
+                                                    vec![connection.clone()]));
+                                            return false;
+                                        },
+                                    }
+                                },
+                                None => false,
+                            }
+                        ).cloned().collect::<Vec<_>>();    
+                    },
+                    ExpectedConnection::Response(ref _response, ref _signed_token) => {
+                        // do nothing
+                    }
+                }
+                
+
+                // debug_assert!(values.len() <= 1usize);
+
+                // if values.len() == 1usize {
+                //     self.remove_expected_connection(expected_connection);
+                //     self.remove_unknown_connection(???);
+                // }
+                // false
             },
+            // at matching from unknown_connection against expected connection
             (None, Some((unknown_connection, Some(hello)))) => {
-                unimplemented!();
+                let name = hello.public_id.name();  
+                
+                match hello.expected_connection {
+                    Some(hello_expected_connection) => {
+                        match hello_expected_connection {
+                            ExpectedConnection::Request(ref hello_connect_request) => {
+                                let keys = self.expected_connections.keys().filter(|&k|
+                                    match k {
+                                        // we are the network-side, node B on diagram RFC-0011,
+                                        // with a ConnectRequest so we act.
+                                        &ExpectedConnection::Request(ref connect_request) => {
+                                            hello_connect_request == connect_request
+                                        },
+                                        &ExpectedConnection::Response(ref _connect_response, ref _signed_token) => {
+                                            // don't match on found ConnectResponse
+                                            false
+                                        },
+                                    }
+                                ).cloned().collect::<Vec<_>>();
+                            },
+                            ExpectedConnection::Response(_, _) => {
+                                // do nothing
+                            },
+                        }
+                    },
+                    None => {},
+                };
+
+                
             },
             _ => panic!("for now"),
         }
@@ -843,6 +903,17 @@ impl RoutingCore {
     pub fn add_unknown_connection(&mut self, unknown_connection: ::crust::Connection)
             -> Option<Option<::direct_messages::Hello>> {
         self.unknown_connections.insert(unknown_connection, None)
+    }
+
+    /// Remove an expected connection.
+    pub fn remove_expected_connection(&mut self, expected_connection: ExpectedConnection) {
+        let _ = self.expected_connections.remove(expected_connection);
+    }
+
+    /// Remove an unknown connection.
+    pub fn remove_unknown_connection(&mut self, unknown_connection: ::crust::Connection)
+            -> Option<Option<::direct_messages::Hello>> {
+        let _ = self.unknown_connections.remove(unknown_connection);
     }
 }
 

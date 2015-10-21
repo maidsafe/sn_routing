@@ -24,6 +24,7 @@ pub struct Hello {
     pub address: ::types::Address,
     pub public_id: ::public_id::PublicId,
     pub confirmed_you: Option<::types::Address>,
+    pub expected_connection: Option<::routing_core::ExpectedConnection>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
