@@ -108,3 +108,6 @@ pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
+
+/// Udp Hole Punching
+pub mod connection_management;
