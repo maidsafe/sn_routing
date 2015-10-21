@@ -250,4 +250,8 @@ impl MockRoutingImpl {
                                                                         refresh_contents));
         });
     }
+
+    pub fn stop(&mut self) {
+        let _ = self.sender.send(::routing::event::Event::Terminated);
+    }
 }

@@ -134,5 +134,6 @@ impl MockRouting {
     }
 
     pub fn stop(&self) {
+        evaluate_result!(self.pimpl.lock()).stop()
     }
 }
