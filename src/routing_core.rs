@@ -787,13 +787,11 @@ impl RoutingCore {
 
     /// Check whether the connection has been made.
     pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
-            hello: &::direct_messages::Hello) -> bool {
+            hello: &::direct_messages::Hello) {
         if self.unknown_connections.contains_key(connection) {
             let _ = self.unknown_connections.insert(connection.clone(), Some(hello.clone()));
-            true
-        }
-        else {
-            false
+            let _ = self.action_sender.send(::action::Action::MatchConnection(
+                None, Some((connection.clone(), Some(hello.clone())))));
         }
     }
 
@@ -806,7 +804,7 @@ impl RoutingCore {
             // at matching from expected connection against unknown connection
             (Some((expected_connection, Some(connection))), None) => {
                 match expected_connection {
-                    // we are the network-side, node B on diagram of RFC-0011, with a ConnectRequest
+                    // We are the network-side, node B on diagram of RFC-0011, with a ConnectRequest
                     // so we act.
                     ExpectedConnection::Request(ref request) => {
                         let values = self.unknown_connections.values().filter(|&value|
@@ -842,7 +840,6 @@ impl RoutingCore {
                         // do nothing
                     }
                 }
-                
 
                 // debug_assert!(values.len() <= 1usize);
 
@@ -862,12 +859,13 @@ impl RoutingCore {
                             ExpectedConnection::Request(ref hello_connect_request) => {
                                 let keys = self.expected_connections.keys().filter(|&k|
                                     match k {
-                                        // we are the network-side, node B on diagram RFC-0011,
+                                        // We are the network-side, node B on diagram RFC-0011,
                                         // with a ConnectRequest so we act.
                                         &ExpectedConnection::Request(ref connect_request) => {
                                             hello_connect_request == connect_request
                                         },
-                                        &ExpectedConnection::Response(ref _connect_response, ref _signed_token) => {
+                                        &ExpectedConnection::Response(
+                                                ref _connect_response, ref _signed_token) => {
                                             // don't match on found ConnectResponse
                                             false
                                         },
@@ -907,13 +905,12 @@ impl RoutingCore {
 
     /// Remove an expected connection.
     pub fn remove_expected_connection(&mut self, expected_connection: ExpectedConnection) {
-        let _ = self.expected_connections.remove(expected_connection);
+        let _ = self.expected_connections.remove(&expected_connection);
     }
 
     /// Remove an unknown connection.
-    pub fn remove_unknown_connection(&mut self, unknown_connection: ::crust::Connection)
-            -> Option<Option<::direct_messages::Hello>> {
-        let _ = self.unknown_connections.remove(unknown_connection);
+    pub fn remove_unknown_connection(&mut self, unknown_connection: ::crust::Connection) {
+        let _ = self.unknown_connections.remove(&unknown_connection);
     }
 }
 

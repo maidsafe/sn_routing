@@ -138,12 +138,6 @@ impl RoutingNode {
                 Ok(Action::DropConnections(connections)) => {
                     self.drop_connections(connections);
                 },
-                Ok(Action::MatchExpectedConnection(connection)) => {
-                    self.match_expected_connection(connection);
-                },
-                Ok(Action::MatchUnknownConnection(hello_message)) => {
-                    self.match_unknown_connection(hello_message);
-                },
                 Ok(Action::MatchConnection(expected_connection, unknown_connection)) => {
                     self.match_connection(expected_connection, unknown_connection);
                 },
@@ -253,7 +247,7 @@ impl RoutingNode {
             },
         };
 
-        match self.core.match_expected_connection(&connection) {
+        match self.match_expected_connection(&connection) {
             Some(expected_connection) => {
                 ignore(self.send_hello(connection, None, Some(expected_connection)))
             },
@@ -319,7 +313,7 @@ impl RoutingNode {
 
     // fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello)
     //         -> RoutingResult {
-    //     // if self.core.match_unknown_connection(connection, hello) {
+    //     // if self.match_unknown_connection(connection, hello) {
 
     //     // }
     //     unimplemented!()        
@@ -983,7 +977,7 @@ impl RoutingNode {
                         from_authority);
                     return Err(RoutingError::FailedSignature);
                 };
-                let connect_request = try!(SignedMessage::new_from_token(signed_token));
+                let connect_request = try!(SignedMessage::new_from_token(signed_token.clone()));
                 match connect_request.get_routing_message().from_authority.get_address() {
                     Some(address) => if !self.core.is_us(&address) {
                         error!("Connect response contains request that was not from us.");
@@ -1002,7 +996,8 @@ impl RoutingNode {
                 self.connect(&connect_response.external_endpoints);
                 self.connection_filter.add(connect_response.receiver_fob.name());
                 let _ = self.core.add_expected_connection(
-                    ::routing_core::ExpectedConnection::Response(connect_response, signed_token));
+                    ::routing_core::ExpectedConnection::Response(
+                        connect_response, signed_token.clone()));
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
@@ -1019,13 +1014,15 @@ impl RoutingNode {
         }
     }
 
-    fn match_expected_connection(&mut self, _connection: ::crust::Connection) {
-        unimplemented!();
+    fn match_expected_connection(&mut self, connection: &::crust::Connection)
+            -> Option<::routing_core::ExpectedConnection> {
+        self.core.match_expected_connection(connection)
     }
 
-    fn match_unknown_connection(&mut self, _hello: ::direct_messages::Hello) {
-        unimplemented!();
-    }
+    // fn match_unknown_connection(&mut self,
+    //         connection: &::crust::Connection, hello: &::direct_messages::Hello) {
+    //     self.core.match_unknown_connection(connection, hello)
+    // }
 
     fn match_connection(&mut self,
             expected_connection: Option<(::routing_core::ExpectedConnection,
