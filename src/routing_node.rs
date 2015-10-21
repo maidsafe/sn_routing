@@ -314,9 +314,12 @@ impl RoutingNode {
         Ok(())
     }
 
-    // fn handle_hello(&mut self, _connection: ::crust::Connection, _hello: &::direct_messages::Hello)
-    //     -> RoutingResult {
-    //         unimplemented!()
+    // fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello)
+    //         -> RoutingResult {
+    //     // if self.core.match_unknown_connection(connection, hello) {
+
+    //     // }
+    //     unimplemented!()        
     // }
 
     fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello)
@@ -1025,17 +1028,7 @@ impl RoutingNode {
             expected_connection: Option<(::routing_core::ExpectedConnection,
                                          Option<::crust::Connection>)>,
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
-        match expected_connection {
-            Some((_expected_connection, _connection)) => {
-                unimplemented!();
-            },
-            None => match unknown_connection {
-                Some((_connection, _hello)) => {
-                    unimplemented!();
-                },
-                None => {}
-            }
-        }
+       self.core.match_connection(expected_connection, unknown_connection);
     }
 
     // ----- Send Functions -----------------------------------------------------------------------

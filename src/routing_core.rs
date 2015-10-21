@@ -776,8 +776,8 @@ impl RoutingCore {
         match unconnected_key {
             Some(key) => {
                 let _ = self.expected_connections.insert(key.clone(), Some(connection.clone()));
-                // self.action_sender.send(::action::Action::MatchConnection(
-                //     Some(key.clone(), Some(connection.clone())), None));
+                let _ = self.action_sender.send(::action::Action::MatchConnection(
+                    Some((key.clone(), Some(connection.clone()))), None));
                 true
             },
             None => false,
@@ -793,6 +793,38 @@ impl RoutingCore {
         }
         else {
             false
+        }
+    }
+
+    /// Match against either an expected connection to unknown connection or vice versa.
+    pub fn match_connection(&mut self,
+            expected_connection: Option<(::routing_core::ExpectedConnection,
+                                         Option<::crust::Connection>)>,
+            unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
+        match (expected_connection, unknown_connection) {
+            (Some((expected_connection, Some(connection))), None) => {
+                let name = match expected_connection {
+                    ExpectedConnection::Request(request) => {
+                        request.requester_fob.name()
+                    },
+                    ExpectedConnection::Response(response) => {
+                        response.receiver_fob.name()
+                    },
+                };
+                let values = self.unknown_connections.values().filter(|&value|
+                    match value.0 {
+                        Some(ref hello) => {
+                            hello.public_id.name() == name
+                        },
+                        None => false,
+                    }
+                ).cloned().collect::<Vec<_>>();
+
+            },
+            (None, Some((unknown_connection, Some(hello)))) => {
+                unimplemented!();
+            },
+            _ => panic!("for now"),
         }
     }
 
