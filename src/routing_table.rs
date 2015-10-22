@@ -31,6 +31,7 @@ pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
+#[allow(unused)]
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
@@ -40,6 +41,7 @@ pub struct NodeInfo {
     pub id: NameType,
 }
 
+#[allow(unused)]
 impl NodeInfo {
     #[cfg(not(test))]
     pub fn new(public_id: PublicId,
@@ -77,12 +79,14 @@ impl NodeInfo {
 }
 
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
+#[allow(unused)]
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
     lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
+#[allow(unused)]
 impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
         RoutingTable {

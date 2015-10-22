@@ -801,17 +801,17 @@ impl RoutingCore {
                                          Option<::crust::Connection>)>,
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
         match (expected_connection, unknown_connection) {
-            // at matching from expected connection against unknown connection
+            // At matching from expected connection against unknown connection.
             (Some((expected_connection, Some(connection))), None) => {
                 match expected_connection {
-                    // We are the network-side, node B on diagram of RFC-0011, with a ConnectRequest
-                    // so we act.
                     ExpectedConnection::Request(ref request) => {
-                        let values = self.unknown_connections.values().filter(|&value|
+                        // We are the network-side with a ConnectRequest so we act. Node B on
+                        // diagram of RFC-0011. 
+                        let hello = self.unknown_connections.values().filter(|&value|
                             match value.0 {
                                 Some(ref hello) => {
-                                    // this is not applicable for bootstrap as we do have
-                                    // a ConnectRequest/ConnectResponse
+                                    // This is not applicable for bootstrap as we do have a
+                                    // ConnectRequest.
                                     match hello.expected_connection {
                                         Some(ref hello_expected_connection) => {
                                             match hello_expected_connection {
@@ -820,10 +820,9 @@ impl RoutingCore {
                                                 },
                                                 _ => false,
                                             }
-
                                         },
-                                        // we are not here during a bootstrap procedure, so this
-                                        // is an invalid hello, and drop it
+                                        // We are not here during a bootstrap procedure, so this
+                                        // is an invalid hello, drop it.
                                         None => {
                                             let _ = self.action_sender.send(
                                                 ::action::Action::DropConnections(
@@ -834,22 +833,42 @@ impl RoutingCore {
                                 },
                                 None => false,
                             }
-                        ).cloned().collect::<Vec<_>>();    
+                        ).cloned().collect::<Vec<_>>();
+
+                        debug_assert!(hello.len() <= 1usize);
+
+                        if hello.len() == 1usize {
+                            // Try adding the peer to routing table.
+                            if self.add_peer(ConnectionName::Routing(hello[0].public_id.name()),
+                                connection, hello[0].public_id) {
+                                self.remove_expected_connection(expected_connection.clone());
+                                // Drop secondary, i.e., unrequired, connection from unknown
+                                // connections map and remove the entry.
+                                for key in self.unknown_connections.keys() {
+                                    match self.unknown_connections.get(&key) {
+                                        Some(ref value) => {
+                                            if *value == hello[0] {
+                                                let _ = self.action_sender.send(
+                                                    ::action::Action::DropConnections(
+                                                        vec![key]));
+                                                self.remove_unknown_connection(&key);
+                                            }
+                                        },
+                                        None => {}
+                                    }
+                                }
+                                // return confirmation hello
+                            } else {
+                                // Clean up state and drop any connections.
+                            }
+                        }
                     },
                     ExpectedConnection::Response(ref _response, ref _signed_token) => {
                         // do nothing
                     }
                 }
-
-                // debug_assert!(values.len() <= 1usize);
-
-                // if values.len() == 1usize {
-                //     self.remove_expected_connection(expected_connection);
-                //     self.remove_unknown_connection(???);
-                // }
-                // false
             },
-            // at matching from unknown_connection against expected connection
+            // At matching from unknown_connection against expected connection
             (None, Some((unknown_connection, Some(hello)))) => {
                 let name = hello.public_id.name();  
                 
@@ -878,9 +897,7 @@ impl RoutingCore {
                         }
                     },
                     None => {},
-                };
-
-                
+                }; 
             },
             _ => panic!("for now"),
         }
@@ -904,13 +921,13 @@ impl RoutingCore {
     }
 
     /// Remove an expected connection.
-    pub fn remove_expected_connection(&mut self, expected_connection: ExpectedConnection) {
-        let _ = self.expected_connections.remove(&expected_connection);
+    pub fn remove_expected_connection(&mut self, expected_connection: &ExpectedConnection) {
+        let _ = self.expected_connections.remove(expected_connection);
     }
 
     /// Remove an unknown connection.
-    pub fn remove_unknown_connection(&mut self, unknown_connection: ::crust::Connection) {
-        let _ = self.unknown_connections.remove(&unknown_connection);
+    pub fn remove_unknown_connection(&mut self, unknown_connection: &::crust::Connection) {
+        let _ = self.unknown_connections.remove(unknown_connection);
     }
 }
 

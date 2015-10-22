@@ -96,7 +96,8 @@ mod test {
         let hello = ::direct_messages::Hello {
             address:       address,
             public_id:     public_id,
-            confirmed_you: none_address
+            confirmed_you: none_address,
+            expected_connection: None,
         };
         let content = ::direct_messages::Content::Hello(hello);
         let key = ::sodiumoxide::crypto::sign::gen_keypair();
