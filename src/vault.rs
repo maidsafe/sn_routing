@@ -98,7 +98,7 @@ impl Vault {
                     self.pmid_node.routing().stop();
                 }
             }
-            ::std::thread::yield_now();
+            ::std::thread::sleep_ms(1);
         }
     }
 
@@ -452,7 +452,7 @@ mod test {
                     Err(_) => {}
                     Ok(_) => break,
                 }
-                ::std::thread::yield_now();
+                ::std::thread::sleep_ms(1);
                 if starting_time + time_limit < ::time::SteadyTime::now() {
                     panic!("new client can't get bootstrapped in expected duration");
                 }
@@ -495,7 +495,7 @@ mod test {
                         Ok(event) => debug!("vault {} received event {:?}", i, event),
                     }
                 }
-                ::std::thread::yield_now();
+                ::std::thread::sleep_ms(1);
                 if starting_time + time_limit < ::time::SteadyTime::now() {
                     break;
                 }
@@ -570,7 +570,7 @@ mod test {
                     Ok(_) => {}
                 }
             }
-            ::std::thread::yield_now();
+            ::std::thread::sleep_ms(1);
             if starting_time + time_limit < ::time::SteadyTime::now() {
                 // As this function is only to be used in testing code, and a partially
                 // established environment / testing result having a high chance indicates a failure
@@ -594,7 +594,7 @@ mod test {
                     break
                 }
             }
-            ::std::thread::yield_now();
+            ::std::thread::sleep_ms(1);
             if starting_time + time_limit < ::time::SteadyTime::now() {
                 panic!("wait_for_client_get can't resolve within the expected duration");
             }
