@@ -16,6 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 /// HolePunchingState.
-pub mod hole_punching_state;
+mod hole_punching_state;
 
-pub use self::hole_punching_state::*;
+pub use ::connection_management::hole_punching_state::HolePunchingState;

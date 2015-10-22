@@ -71,6 +71,7 @@ mod routing_core;
 mod refresh_accumulator;
 mod message_accumulator;
 mod utilities;
+mod connection_management;
 
 /// Routing provides an actionable interface to routing.
 pub mod routing;
@@ -108,6 +109,3 @@ pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
-
-/// Udp Hole Punching
-pub mod connection_management;
