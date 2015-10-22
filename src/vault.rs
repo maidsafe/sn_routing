@@ -469,7 +469,7 @@ mod test {
     impl Environment {
         fn new() -> Environment {
             ::utils::initialise_logger();
-            println!("");
+            Self::show_warning();
 
             remove_bootstrap_file();
             create_empty_bootstrap_file();
@@ -480,6 +480,18 @@ mod test {
             }
 
             Environment{ vaults_comms: vaults_comms, client: Client::new(), }
+        }
+
+        #[cfg(windows)]
+        fn show_warning() {
+            println!("\nIf this test hangs, stopping the process with ctrl+C will not suffice.");
+            println!("You should kill the process via the Task Manager, or by running:");
+            println!("  taskkill /f /fi \"imagename eq safe_vault-*\" /im *\n");
+        }
+
+        #[cfg(not(windows))]
+        fn show_warning() {
+            println!("");
         }
 
         fn network_size() -> usize {
