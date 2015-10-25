@@ -76,14 +76,15 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
-    /// Returns an iterator over the keys.
-    pub fn keys(&self) -> ::std::collections::btree_map::Keys<K, (V, ::time::SteadyTime)> {
-        self.map.keys()
+    /// Returns an iterator over the entries.
+    pub fn iter(&self) -> ::std::collections::btree_map::Iter<K, (V, ::time::SteadyTime)> {
+        self.map.iter()
     }
 
-    /// Returns an iterator over the values.
-    pub fn values(&self) -> ::std::collections::btree_map::Values<K, (V, ::time::SteadyTime)> {
-        self.map.values()
+    /// Returns a mutable iterator over the entries.
+    pub fn iter_mut(&mut self)
+            -> ::std::collections::btree_map::IterMut<K, (V, ::time::SteadyTime)> {
+        self.map.iter_mut()
     }
 
     /// Recover expired key-value pairs removing any such from the map.

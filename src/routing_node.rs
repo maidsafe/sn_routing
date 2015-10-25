@@ -125,6 +125,9 @@ impl RoutingNode {
                 Ok(Action::SendContent(our_authority, to_authority, content)) => {
                     let _ = self.send_content(our_authority, to_authority, content);
                 },
+                Ok(Action::SendConfirmationHello(connection, address)) => {
+                    let _ = self.send_hello(connection, Some(address), None);
+                },
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     debug!("ClientSendContent received for {:?}", content);
                     let _ = self.client_send_content(to_authority, content);
@@ -249,7 +252,7 @@ impl RoutingNode {
 
         match self.match_expected_connection(&connection) {
             Some(expected_connection) => {
-                // We've sent a ConnectRequest to a peerSend an unconfirmed Hello.
+                // We've received a ConnectRequest from a peer, send an unconfirmed Hello.
                 ignore(self.send_hello(connection, None, Some(expected_connection)))
             },
             None => {},
@@ -298,15 +301,15 @@ impl RoutingNode {
         debug!("Saying hello I am {:?} on {:?}, confirming {:?}", self.core.our_address(),
             connection, confirmed_address);
         let direct_message = match ::direct_messages::DirectMessage::new(
-            ::direct_messages::Content::Hello( ::direct_messages::Hello {
+                ::direct_messages::Content::Hello( ::direct_messages::Hello {
                     address: self.core.our_address(),
                     public_id: PublicId::new(self.core.id()),
                     confirmed_you: confirmed_address,
                     expected_connection: expected_connection
                 }), self.core.id().signing_private_key()) {
-                    Ok(x) => x,
-                    Err(e) => return Err(RoutingError::Cbor(e)),
-                };
+            Ok(x) => x,
+            Err(e) => return Err(RoutingError::Cbor(e)),
+        };
         let bytes = try!(::utils::encode(&direct_message));
         self.crust_service.send(connection, bytes);
         Ok(())
@@ -497,8 +500,7 @@ impl RoutingNode {
 
         // Accumulate message
         let (message, opt_token) = match self.accumulate(&signed_message) {
-            Some((message, opt_token)) => {
-                (message, opt_token) },
+            Some((message, opt_token)) => (message, opt_token),
             None => return Err(::error::RoutingError::NotEnoughSignatures),
         };
 
