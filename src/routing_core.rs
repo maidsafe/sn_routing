@@ -805,8 +805,17 @@ impl RoutingCore {
         match hello.address {
             ::types::Address::Client(ref public_key) => {
                 // because we accepting an unknown connection, we are node B in diagram RFC-0011
-                let _added = self.add_peer(ConnectionName::Relay(::types::Address::Client(
-                    public_key.clone())), connection.clone(), hello.public_id.clone());
+                let client_address = ::types::Address::Client(public_key.clone());
+                if self.add_peer(ConnectionName::Relay(client_address.clone()),
+                    connection.clone(), hello.public_id.clone()) {
+                    let _ = self.action_sender.send(::action::Action::SendConfirmationHello(
+                        connection.clone(), client_address));
+                } else {
+                    error!("Failed to add client {:?} as relay connection on {:?}. Dropping.",
+                        client_address, connection);
+                    let _ = self.action_sender.send(::action::Action::DropConnections(
+                        vec![connection.clone()]));
+                };
             },
             ::types::Address::Node(name) => {
                 for (key, value) in self.unknown_connections.iter_mut() {
