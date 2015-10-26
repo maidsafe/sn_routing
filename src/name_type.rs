@@ -46,6 +46,11 @@ impl NameType {
         self.0
     }
 
+    /// Hex-encode the `NameType` as a `String`.
+    pub fn as_hex(&self) -> String {
+        self.0.to_hex()
+    }
+
     // Private function exposed in fmt Debug {:?} and Display {} traits.
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
@@ -55,11 +60,6 @@ impl NameType {
               self.0[NAME_TYPE_LEN-3],
               self.0[NAME_TYPE_LEN-2],
               self.0[NAME_TYPE_LEN-1])
-    }
-
-    // Private function returning hex encoded NameType as String.
-    fn get_full_id(&self) -> String {
-        self.0.to_hex()
     }
 }
 
@@ -274,7 +274,7 @@ mod test {
             let my_id = Id::new();
             let my_name = my_id.name();
             let debug_id = my_name.get_debug_id();
-            let full_id = my_name.get_full_id();
+            let full_id = my_name.as_hex();
             assert_eq!(debug_id.len(), 14);
             assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
             assert_eq!(&debug_id[0..6], &full_id[0..6]);
@@ -289,7 +289,7 @@ mod test {
         for _ in 0..5 {
             let my_name : NameType = Random::generate_random();
             let debug_id = my_name.get_debug_id();
-            let full_id = my_name.get_full_id();
+            let full_id = my_name.as_hex();
             assert_eq!(debug_id.len(), 14);
             assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
             assert_eq!(&debug_id[0..6], &full_id[0..6]);
@@ -304,7 +304,7 @@ mod test {
         let low_char_id = [1u8; NAME_TYPE_LEN];
         let my_low_char_name = NameType::new(low_char_id);
         let debug_id = my_low_char_name.get_debug_id();
-        let full_id = my_low_char_name.get_full_id();
+        let full_id = my_low_char_name.as_hex();
         assert_eq!(debug_id.len(), 14);
         assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
         assert_eq!(&debug_id[0..6], &full_id[0..6]);
