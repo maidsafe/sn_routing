@@ -31,8 +31,8 @@ mod test {
         ::std::fs::read_dir(&parent).ok().and_then(|mut dir_entries| {
             dir_entries.find(|dir_entry| {
                 match dir_entry {
-                    &Ok(ref entry) =>
-                        entry.file_name().to_str() == child.file_name().unwrap().to_str(),
+                    &Ok(ref entry) => entry.file_name().to_str() ==
+                        evaluate_option!(child.file_name(), "Unexpected Child name").to_str(),
                     &Err(_) => false,
                 }
             })
