@@ -238,6 +238,7 @@ impl RoutingCore {
             return false
         };
         self.routing_table = Some(RoutingTable::new(&network_name));
+        self.relay_map = Some(::utilities::ConnectionMap::new());
         self.network_name = Some(network_name.clone());
         self.state = State::Relocated;
         true
@@ -802,7 +803,13 @@ impl RoutingCore {
     /// Check whether the connection has been accepted.
     pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
             hello: &::direct_messages::Hello) {
+        match hello.confirmed_you {
+            Some(ref address) => if !self.is_us(address) { return; },
+            None => {},
+        };
         match hello.address {
+            // it is a client, so we will add it as a relay connection
+            // (fails if we are client ourselves)
             ::types::Address::Client(ref public_key) => {
                 // because we accepting an unknown connection, we are node B in diagram RFC-0011
                 let client_address = ::types::Address::Client(public_key.clone());
@@ -817,19 +824,64 @@ impl RoutingCore {
                         vec![connection.clone()]));
                 };
             },
+            // it is a node, so either we are still a client or a node, and are either
+            // bootstrapping or establishing a routing connection
             ::types::Address::Node(name) => {
-                for (key, value) in self.unknown_connections.iter_mut() {
-                    if key == connection {
-                        match value.0 {
-                            None => {
-                                value.0 = Some(hello.clone());
-                                let _ = self.action_sender.send(::action::Action::MatchConnection(
-                                    None, Some((key.clone(), value.0.clone()))));
-                            },
-                            Some(_) => {}, // Already received a Hello for this connection.
-                        }
-                        break;
-                    }
+                match hello.confirmed_you {
+                    None => {
+                        match self.state {
+                            State::Disconnected => { error!("this is not bootstrapping, \
+                                as bootstrapping only sends confirmations from a node ");
+                                return; },
+                            State::Bootstrapped | State::Relocated | State::Connected
+                                | State::GroupConnected => {},
+                            State::Terminated => { return; },
+                        };
+                        for (key, value) in self.unknown_connections.iter_mut() {
+                            if key == connection {
+                                match value.0 {
+                                    None => {
+                                        value.0 = Some(hello.clone());
+                                        let _ = self.action_sender.send(
+                                            ::action::Action::MatchConnection(
+                                            None, Some((key.clone(), value.0.clone()))));
+                                    },
+                                    Some(_) => { error!("Already received a Hello for this \
+                                        connection."); },
+                                }
+                                break;
+                            }
+                        };
+                    },
+                    // we are a client
+                    Some(::types::Address::Client(ref public_key)) => {
+                        if !self.add_peer(ConnectionName::Bootstrap(name.clone()),
+                            connection.clone(), hello.public_id.clone()) {
+                            error!("Failed to add node {:?} as bootstrap connection on {:?}. \
+                                Dropping.", name, connection);
+                            let _ = self.action_sender.send(::action::Action::DropConnections(
+                                vec![connection.clone()]));
+                        };
+                    },
+                    // we are a node, and this is the confirmation, so we are node A on diagram
+                    // RFC-0011
+                    Some(::types::Address::Node(ref _our_name)) => {
+                        for (key, value) in self.unknown_connections.iter_mut() {
+                            if key == connection {
+                                match value.0 {
+                                    None => {}, // a confirmation without a stored hello is ignored
+                                    Some(ref stored_hello) => {
+                                        if stored_hello.address == hello.address {
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::MatchConnection(
+                                                None, Some((key.clone(), value.0.clone()))));
+                                        };
+                                    },
+                                }
+                                break;
+                            }
+                        };
+                    },
                 }
             },
         };
