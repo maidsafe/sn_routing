@@ -26,7 +26,14 @@ pub struct ChunkStore {
 impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
     pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ::error::ChunkStoreError> {
-        let tempdir = try!(::tempdir::TempDir::new("safe_vault"));
+        let folder_name = format!("safe_vault-{}/", Self::get_own_pid());
+        let mut path = ::std::env::temp_dir();
+        path.push(folder_name);
+        if Self::cleanup() {
+            let _ = try!(::std::fs::create_dir(&path));
+        }
+        let tempdir = try!(::tempdir::TempDir::new_in(path, "safe_vault"));
+
         Ok(ChunkStore {
             tempdir: tempdir,
             max_disk_usage: max_disk_usage,
@@ -138,4 +145,79 @@ impl ChunkStore {
             }).and_then(|entry_result| entry_result.ok())
         })
     }
+
+    fn cleanup() -> bool {
+        let vault_pids = Self::get_all_vault_pids();
+        match vault_pids {
+            Some(safe_vault_pids) => {
+                let own_pid = format!("{}", Self::get_own_pid());
+                ::std::fs::read_dir(::std::env::temp_dir()).ok().and_then(|dir_entries| {
+                    dir_entries.filter(|dir_entry| {
+                        match dir_entry {
+                            &Ok(ref entry) => {
+                                let line = entry.file_name().into_string().ok().unwrap_or(String::from(""));
+                                match (line.contains("safe_vault"), line.contains(&own_pid)) {
+                                    (true, false) => {
+                                        let v: Vec<&str> = line.split("-").collect();
+                                        if v.len() > 1 && !safe_vault_pids.contains(&String::from(v[1])) {
+                                            let _ = evaluate_result!(::std::fs::remove_dir_all(entry.path()));
+                                        }
+                                    }
+                                    (true, true) => return true,
+                                    (false, _) => {},
+                                }
+                            }
+                            &Err(_) => {},
+                        }
+                        false
+                    }).next()
+                }).is_none()
+            }
+            None => true,
+        }
+    }
+
+    #[allow(unsafe_code)]
+    fn get_own_pid() -> u32 {
+        extern { fn getpid() -> u32; }
+        unsafe { getpid() }
+    }
+
+    #[cfg(windows)]
+    fn get_all_vault_pids() -> Option<Vec<String>> {
+        let output = match ::std::process::Command::new("tasklist").output() {
+            Ok(output) => output,
+            Err(e) => {
+                warn!("failed to execute process: {}", e);
+                return None;
+            }
+        };
+        Some(Self::find_safe_vault_processes(
+                String::from_utf8_lossy(&output.stdout).split("\n").collect(), 1))
+    }
+
+    #[cfg(not(windows))]
+    fn get_all_vault_pids() -> Option<Vec<String>> {
+        let output = match ::std::process::Command::new("ps").arg("-h").output() {
+            Ok(output) => output,
+            Err(e) => {
+                warn!("failed to execute process: {}", e);
+                return None;
+            }
+        };
+        Some(Self::find_safe_vault_processes(
+                String::from_utf8_lossy(&output.stdout).split("\n").collect(), 0))
+    }
+
+    fn find_safe_vault_processes(lines: Vec<&str>, column: usize) -> Vec<String> {
+        lines.iter().filter_map(|line| {
+            if line.contains("safe_vault") {
+                let vv: Vec<&str> = line.split_whitespace().collect();
+                Some(String::from(vv[column]))
+            } else {
+                None
+            }
+        }).collect()
+    }
+
 }

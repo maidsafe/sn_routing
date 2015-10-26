@@ -27,6 +27,29 @@ mod test {
         string
     }
 
+    fn has_child_dir(parent: ::std::path::PathBuf, child: &::std::path::PathBuf) -> bool {
+        ::std::fs::read_dir(&parent).ok().and_then(|mut dir_entries| {
+            dir_entries.find(|dir_entry| {
+                match dir_entry {
+                    &Ok(ref entry) => entry.file_name().to_str() ==
+                        evaluate_option!(child.file_name(), "Unexpected Child name").to_str(),
+                    &Err(_) => false,
+                }
+            })
+        }).is_some()
+    }
+
+    #[test]
+    fn tempdir_cleanup() {
+        let k_disk_size: usize = 116;
+        let mut staled_dir = ::std::env::temp_dir();
+        staled_dir.push("safe_vault-00000/");
+        let _ = ::std::fs::create_dir(&staled_dir);
+        assert!(has_child_dir(::std::env::temp_dir(), &staled_dir));
+        let _ = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        assert!(!has_child_dir(::std::env::temp_dir(), &staled_dir));
+    }
+
     #[test]
     fn successful_store() {
         let k_disk_size: usize = 116;
