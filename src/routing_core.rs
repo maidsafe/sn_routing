@@ -853,10 +853,13 @@ impl RoutingCore {
                             }
                         };
                     },
-                    // we are a client
+                    // we are a client, so if successfully added to bootstrap,
+                    // our state will update and we need to request a network name.
                     Some(::types::Address::Client(ref public_key)) => {
-                        if !self.add_peer(ConnectionName::Bootstrap(name.clone()),
+                        if self.add_peer(ConnectionName::Bootstrap(name.clone()),
                             connection.clone(), hello.public_id.clone()) {
+                            self.request_network_name(&name, &connection);
+                        } else {
                             error!("Failed to add node {:?} as bootstrap connection on {:?}. \
                                 Dropping.", name, connection);
                             let _ = self.action_sender.send(::action::Action::DropConnections(
@@ -1147,6 +1150,27 @@ impl RoutingCore {
     /// Remove an unknown connection.
     pub fn remove_unknown_connection(&mut self, unknown_connection: &::crust::Connection) {
         let _ = self.unknown_connections.remove(unknown_connection);
+    }
+
+    fn request_network_name(&mut self,
+                            bootstrap_name: &NameType,
+                            bootstrap_connection: &::crust::Connection) {
+        // If RoutingNode is restricted from becoming a node, it suffices to never request a network
+        // name.
+        match self.state {
+            State::Disconnected | State::Relocated | State::Connected
+                | State::GroupConnected | State::Terminated => {
+                    error!("Requesting network name while disconnected or named or terminated.");
+                    return; },
+            State::Bootstrapped => {},
+        }
+        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
+            bootstrap_connection);
+        let _ = self.action_sender.send(::action::Action::SendContent(
+            ::authority::Authority::Client(bootstrap_name.clone(), self.id.signing_public_key()),
+            ::authority::Authority::NaeManager(self.id.name()),
+            ::messages::Content::InternalRequest(::messages::InternalRequest::RequestNetworkName(
+                ::public_id::PublicId::new(&self.id)))));
     }
 }
 
