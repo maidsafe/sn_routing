@@ -802,19 +802,28 @@ impl RoutingCore {
     /// Check whether the connection has been accepted.
     pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
             hello: &::direct_messages::Hello) {
-        for (key, value) in self.unknown_connections.iter_mut() {
-            if key == connection {
-                match value.0 {
-                    None => {
-                        value.0 = Some(hello.clone());
-                        let _ = self.action_sender.send(::action::Action::MatchConnection(
-                            None, Some((key.clone(), value.0.clone()))));
-                    },
-                    Some(_) => {}, // Already received a Hello for this connection.
+        match hello.address {
+            ::types::Address::Client(ref public_key) => {
+                // because we accepting an unknown connection, we are node B in diagram RFC-0011
+                let _added = self.add_peer(ConnectionName::Relay(::types::Address::Client(
+                    public_key.clone())), connection.clone(), hello.public_id.clone());
+            },
+            ::types::Address::Node(name) => {
+                for (key, value) in self.unknown_connections.iter_mut() {
+                    if key == connection {
+                        match value.0 {
+                            None => {
+                                value.0 = Some(hello.clone());
+                                let _ = self.action_sender.send(::action::Action::MatchConnection(
+                                    None, Some((key.clone(), value.0.clone()))));
+                            },
+                            Some(_) => {}, // Already received a Hello for this connection.
+                        }
+                        break;
+                    }
                 }
-                break;
-            }
-        }
+            },
+        };
     }
 
     /// Match against either an expected connection to unknown connection or vice versa.
