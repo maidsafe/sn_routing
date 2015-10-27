@@ -86,12 +86,13 @@ impl DirectMessage {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn verify_signature() {
-        let address = ::types::Address::Node(::name_type::NameType(
+        let address = ::types::Address::Node(::NameType(
             ::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0));
-        let public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let public_id: ::public_id::PublicId = rand::random();
         let none_address: Option<::types::Address> = None;
         let hello = ::direct_messages::Hello {
             address:       address,

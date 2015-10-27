@@ -468,6 +468,7 @@ impl RoutingTable {
 #[cfg(test)]
 mod test {
     extern crate bit_vec;
+    use rand;
 
     enum ContactType {
         Far,
@@ -526,7 +527,7 @@ mod test {
             ContactType::Far => {}
         };
 
-        ::NameType(::types::vector_as_u8_64_array(binary_id.to_bytes()))
+        ::NameType(::types::slice_as_u8_64_array(&binary_id.to_bytes()[..]))
     }
 
     struct Bucket {
@@ -651,7 +652,7 @@ mod test {
             vector.push(super::RoutingTable {
                 routing_table: Vec::new(),
                 lookup_map: ::std::collections::HashMap::new(),
-                our_id: ::test_utils::Random::generate_random()
+                our_id: rand::random()
             });
         }
         vector
@@ -681,11 +682,11 @@ mod test {
         let mut table = super::RoutingTable {
             routing_table: Vec::new(),
             lookup_map: ::std::collections::HashMap::new(),
-            our_id: ::test_utils::Random::generate_random(),
+            our_id: rand::random(),
         };
 
         for _ in 0..super::RoutingTable::get_group_size() {
-            let id = ::test_utils::Random::generate_random();
+            let id = rand::random();
             assert!(table.check_node(&id));
         }
 
@@ -1228,7 +1229,7 @@ mod test {
 
         // Check on empty table
         let mut target_nodes_ =
-            routing_table_utest.table.target_nodes(&::test_utils::Random::generate_random());
+            routing_table_utest.table.target_nodes(&rand::random());
         assert_eq!(target_nodes_.len(), 0);
 
         // Partially fill the table with < GroupSize contacts
@@ -1236,7 +1237,7 @@ mod test {
 
         // Check we get all contacts returnedta
         target_nodes_ =
-            routing_table_utest.table.target_nodes(&::test_utils::Random::generate_random());
+            routing_table_utest.table.target_nodes(&rand::random());
         assert_eq!(routing_table_utest.initial_count, target_nodes_.len());
 
         for i in 0..routing_table_utest.initial_count {

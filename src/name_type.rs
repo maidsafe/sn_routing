@@ -17,9 +17,10 @@
 
 use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rustc_serialize::hex::ToHex;
+use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
 use std::cmp::*;
 use std::fmt;
+use rand;
 
 /// Constant byte length of NameType.
 pub const NAME_TYPE_LEN : usize = 64;
@@ -27,6 +28,14 @@ pub const NAME_TYPE_LEN : usize = 64;
 /// Returns true if both slices are equal in length and have equal contents.
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
+}
+
+/// Errors that can occur when decoding a `NameType` from a string.
+pub enum NameTypeFromHexError {
+    /// The given invalid hex character occured at the given position.
+    InvalidCharacter(char, usize),
+    /// The hex string did not encode `NAME_TYPE_LEN` bytes.
+    InvalidLength,
 }
 
 /// NameType can be created using the new function by passing ID as it’s parameter.
@@ -49,6 +58,21 @@ impl NameType {
     /// Hex-encode the `NameType` as a `String`.
     pub fn as_hex(&self) -> String {
         self.0.to_hex()
+    }
+
+    /// Hex-decode a `NameType` from a `&str`.
+    pub fn from_hex(s: &str) -> Result<NameType, NameTypeFromHexError> {
+        let data = match s.from_hex() {
+            Ok(v)   => v,
+            Err(FromHexError::InvalidHexCharacter(c, p))
+                => return Err(NameTypeFromHexError::InvalidCharacter(c, p)),
+            Err(FromHexError::InvalidHexLength)
+                => return Err(NameTypeFromHexError::InvalidLength),
+        };
+        if data.len() != NAME_TYPE_LEN {
+            return Err(NameTypeFromHexError::InvalidLength);
+        }
+        Ok(NameType(::types::slice_as_u8_64_array(&data[..])))
     }
 
     // Private function exposed in fmt Debug {:?} and Display {} traits.
@@ -84,6 +108,16 @@ impl fmt::Display for NameType {
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
+    }
+}
+
+impl rand::Rand for NameType {
+    fn rand<R: rand::Rng>(rng: &mut R) -> NameType {
+        let mut ret = [0u8; NAME_TYPE_LEN];
+        for r in ret[..].iter_mut() {
+            *r = <u8 as rand::Rand>::rand(rng);
+        }
+        NameType(ret)
     }
 }
 
@@ -234,11 +268,11 @@ mod test {
     use cbor;
     use super::*;
     use id::Id;
-    use test_utils::Random;
+    use rand;
 
     #[test]
     fn serialisation_name_type() {
-        let obj_before: NameType = Random::generate_random();
+        let obj_before: NameType = rand::random();
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
@@ -249,9 +283,9 @@ mod test {
 
     #[test]
     fn name_type_equal_assertion() {
-        let type1: NameType = Random::generate_random();
+        let type1: NameType = rand::random();
         let type1_clone = type1.clone();
-        let type2: NameType = Random::generate_random();
+        let type2: NameType = rand::random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
@@ -260,9 +294,9 @@ mod test {
 
     #[test]
     fn closeness() {
-        let obj0: NameType = Random::generate_random();
+        let obj0: NameType = rand::random();
         let obj0_clone = obj0.clone();
-        let obj1: NameType = Random::generate_random();
+        let obj1: NameType = rand::random();
         assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
         assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
@@ -287,7 +321,7 @@ mod test {
     fn format_random_nametype() {
         // test for Random NameType
         for _ in 0..5 {
-            let my_name : NameType = Random::generate_random();
+            let my_name : NameType = rand::random();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.as_hex();
             assert_eq!(debug_id.len(), 14);

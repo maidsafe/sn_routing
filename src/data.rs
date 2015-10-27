@@ -78,6 +78,7 @@ impl DataRequest {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn data_name() {
@@ -85,7 +86,7 @@ mod test {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -108,7 +109,7 @@ mod test {
         assert_eq!(immutable_data.name(), ::data::Data::ImmutableData(immutable_data).name());
 
         // name() resolves correctly for PlainData
-        let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.name(), ::data::Data::PlainData(plain_data).name());
     }
@@ -119,7 +120,7 @@ mod test {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -145,14 +146,14 @@ mod test {
         );
 
         // payload_size() resolves correctly for PlainData
-        let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.payload_size(), ::data::Data::PlainData(plain_data).payload_size());
     }
 
     #[test]
     fn data_request_name() {
-        let name = ::name_type::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
         // name() resolves correctly for StructuedData    
         let tag = 0;

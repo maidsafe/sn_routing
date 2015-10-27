@@ -1177,6 +1177,7 @@ impl RoutingCore {
 #[cfg(test)]
 mod test {
     use test_utils::test;
+    use rand;
 
     #[test]
     fn add_peers_as_client() {
@@ -1204,14 +1205,12 @@ mod test {
 
     #[test]
     fn add_peers_as_full_node() {
-        use ::test_utils::random_trait::Random;
-
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
         let id = ::id::Id::new();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        let our_name = ::NameType::generate_random();
+        let our_name = rand::random();
         assert!(routing_core.assign_network_name(&our_name));
 
         // routing core is a full node, so it will accept routing connections and generate churn
@@ -1290,7 +1289,7 @@ mod test {
         let peer_id_signing_private_key = peer_id.signing_private_key().clone();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+        assert!(routing_core.assign_network_name(&rand::random()));
 
         let public_id = ::public_id::PublicId::new(routing_core.id());
         let peer_public_id = ::public_id::PublicId::new(&peer_id);
@@ -1355,7 +1354,7 @@ mod test {
         let peer_id_signing_private_key = peer_id.signing_private_key().clone();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+        assert!(routing_core.assign_network_name(&rand::random()));
 
         let public_id = ::public_id::PublicId::new(routing_core.id());
         let peer_public_id = ::public_id::PublicId::new(&peer_id);

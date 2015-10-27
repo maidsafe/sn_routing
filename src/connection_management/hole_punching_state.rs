@@ -34,10 +34,11 @@ pub enum HolePunchingState {
 
 #[cfg(test)]
 mod test {
+    use rand;
     
     #[test]
     fn hole_punching_state() {
-        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let name: ::NameType = rand::random();
         let secret: Option<[u8; 4]> = None;
         let number_of_failed_attempts: u32 = 1;
 
