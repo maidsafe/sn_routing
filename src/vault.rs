@@ -472,7 +472,9 @@ mod test {
             Self::show_warning();
 
             remove_bootstrap_file();
+            remove_config_file();
             create_empty_bootstrap_file();
+            create_empty_config_file();
 
             let mut vaults_comms = Vec::new();
             for i in 0..Self::network_size() {
@@ -526,6 +528,7 @@ mod test {
             self.client.routing.stop();
             self.stop_all_vaults();
             remove_bootstrap_file();
+            remove_config_file();
         }
     }
 
@@ -613,16 +616,31 @@ mod test {
         }
     }
 
-    fn get_file_name() -> ::std::path::PathBuf {
+    fn get_bootstrap_file_name() -> ::std::path::PathBuf {
         let mut name =
             ::crust::exe_file_stem().unwrap_or(::std::path::Path::new("unknown").to_path_buf());
         name.set_extension("bootstrap.cache");
         name
     }
 
+    fn get_config_file_name() -> ::std::path::PathBuf {
+        let mut name =
+            ::crust::exe_file_stem().unwrap_or(::std::path::Path::new("unknown").to_path_buf());
+        name.set_extension("crust.config");
+        name
+    }
+
     fn remove_bootstrap_file() {
         let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
-            cur_bin_dir.push(get_file_name());
+            cur_bin_dir.push(get_bootstrap_file_name());
+            ::std::fs::remove_file(cur_bin_dir).map_err(
+                |error| ::crust::error::Error::IoError(error))
+        });
+    }
+
+    fn remove_config_file() {
+        let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
+            cur_bin_dir.push(get_config_file_name());
             ::std::fs::remove_file(cur_bin_dir).map_err(
                 |error| ::crust::error::Error::IoError(error))
         });
@@ -631,9 +649,25 @@ mod test {
     fn create_empty_bootstrap_file() {
         use std::io::Write;
         let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
-            cur_bin_dir.push(get_file_name());
+            cur_bin_dir.push(get_bootstrap_file_name());
             let mut file = try!(::std::fs::File::create(cur_bin_dir));
             let _ = try!(write!(&mut file, "[]"));
+            file.sync_all().map_err(|error| ::crust::error::Error::IoError(error))
+        });
+    }
+
+    fn create_empty_config_file() {
+        use std::io::Write;
+        let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
+            cur_bin_dir.push(get_config_file_name());
+            let mut file = try!(::std::fs::File::create(cur_bin_dir));
+            let _ = try!(write!(&mut file, "{{\n
+                    \"tcp_listening_port\": 5483,\n
+                    \"utp_listening_port\": null,\n
+                    \"override_default_bootstrap\": false,\n
+                    \"hard_coded_contacts\": [],\n
+                    \"beacon_port\": 5484\n
+                }}"));
             file.sync_all().map_err(|error| ::crust::error::Error::IoError(error))
         });
     }
