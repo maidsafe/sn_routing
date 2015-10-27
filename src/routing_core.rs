@@ -841,8 +841,10 @@ impl RoutingCore {
             ::types::Address::Node(name) => {
                 match hello.confirmed_you {
                     None => {
+                        debug!("Unconfirmed Hello from node {:?}, our state {:?}.",
+                            name, self.state);
                         match self.state {
-                            State::Disconnected => { error!("this is not bootstrapping, \
+                            State::Disconnected => { debug!("this is not bootstrapping, \
                                 as bootstrapping only sends confirmations from a node ");
                                 return; },
                             State::Bootstrapped | State::Relocated | State::Connected
@@ -1168,10 +1170,16 @@ impl RoutingCore {
         // If RoutingNode is restricted from becoming a node, it suffices to never request a network
         // name.
         match self.state {
-            State::Disconnected | State::Relocated | State::Connected
+            State::Disconnected => {
+                debug!("Rebootstraping");
+                self.action_sender.send(::action::Action::Rebootstrap);
+                return;
+            },
+            State::Relocated | State::Connected
                 | State::GroupConnected | State::Terminated => {
                     error!("Requesting network name while disconnected or named or terminated.");
-                    return; },
+                    return;
+            },
             State::Bootstrapped => {},
         }
         debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,

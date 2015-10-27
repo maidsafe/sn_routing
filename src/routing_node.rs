@@ -237,6 +237,7 @@ impl RoutingNode {
         match self.core.state() {
             &::routing_core::State::Disconnected => {
                 // This is our first connection, add as bootstrap and send hello.
+                debug!("Adding unknown connection {:?} on connect.", connection);
                 let _ = self.core.add_unknown_connection(connection.clone());
                 ignore(self.send_hello(connection, None, None));
                 return;
@@ -287,6 +288,7 @@ impl RoutingNode {
             },
         };
 
+        debug!("Adding unknown connection {:?} on accept.", connection);
         let _ = self.core.add_unknown_connection(connection);
     }
 
