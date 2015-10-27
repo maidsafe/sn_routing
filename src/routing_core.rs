@@ -252,42 +252,45 @@ impl RoutingCore {
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
     pub fn lookup_connection(&self, connection: &crust::Connection) -> Option<ConnectionName> {
-        match self.state {
-            State::Connected | State::GroupConnected => {
-                match self.routing_table {
-                    Some(ref routing_table) => {
-                        match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
-                            Some(name) => return Some(ConnectionName::Routing(name)),
-                            None => {},
-                        };
-                    },
+        if self.state == State::Disconnected || self.state == State::Terminated {
+            return None
+        }
+
+        match self.routing_table {
+            Some(ref routing_table) => {
+                match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
+                    Some(name) => return Some(ConnectionName::Routing(name)),
                     None => {},
                 };
+            },
+            None => {},
+        };
 
-                match self.relay_map {
-                    Some(ref relay_map) => {
-                        match relay_map.lookup_connection(&connection) {
-                            Some(public_id) => Some(ConnectionName::Relay(::types::Address::Client(
-                                public_id.signing_public_key().clone()))),
-                            None => None,
-                        }
-                    },
-                    None => None,
+        match self.relay_map {
+            Some(ref relay_map) => {
+                match relay_map.lookup_connection(&connection) {
+                    Some(public_id) => return Some(ConnectionName::Relay(
+                        ::types::Address::Client(public_id.signing_public_key().clone()))),
+                    None => {},
                 }
             },
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => {
-                        match bootstrap_map.lookup_connection(&connection) {
-                            Some(public_id) => Some(ConnectionName::Bootstrap(public_id.name())),
-                            None => None,
-                        }
-                    },
-                    None => None,
-                }
-            },
-            State::Disconnected | State::Terminated => None,
+            None => {},
+        };
+
+        if self.state != State::Connected && self.state != State::GroupConnected {
+            match self.bootstrap_map {
+                Some(ref bootstrap_map) => {
+                    match bootstrap_map.lookup_connection(&connection) {
+                        Some(public_id) => return Some(ConnectionName::Bootstrap(
+                            public_id.name())),
+                        None => {},
+                    }
+                },
+                None => {},
+            }
         }
+
+        None
     }
 
     /// Drops the associated name from the relevant connection map or from routing table.
@@ -804,7 +807,13 @@ impl RoutingCore {
     pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
             hello: &::direct_messages::Hello) {
         match hello.confirmed_you {
-            Some(ref address) => if !self.is_us(address) { return; },
+            Some(ref address) => {
+                debug!("Confirmation sent with {:?}.", address);
+                if !self.is_us(address) {
+                    error!("Confirmation failed with {:?}.", address);
+                    return;
+                }
+            },
             None => {},
         };
         match hello.address {
@@ -815,6 +824,9 @@ impl RoutingCore {
                 let client_address = ::types::Address::Client(public_key.clone());
                 if self.add_peer(ConnectionName::Relay(client_address.clone()),
                     connection.clone(), hello.public_id.clone()) {
+                    debug!("Added client {:?} as relay connection on {:?}.",
+                        client_address, connection);
+                    debug!("Sending confirmation to {:?} ", client_address);
                     let _ = self.action_sender.send(::action::Action::SendConfirmationHello(
                         connection.clone(), client_address));
                 } else {
@@ -858,6 +870,7 @@ impl RoutingCore {
                     Some(::types::Address::Client(ref public_key)) => {
                         if self.add_peer(ConnectionName::Bootstrap(name.clone()),
                             connection.clone(), hello.public_id.clone()) {
+                            debug!("Requesting network name from {:?} on {:?}.", name, connection);
                             self.request_network_name(&name, &connection);
                         } else {
                             error!("Failed to add node {:?} as bootstrap connection on {:?}. \
@@ -955,8 +968,9 @@ impl RoutingCore {
                                             None => {},
                                         }
                                     }
+                                    debug!("Sending confirmation to {:?} ", hello.address);
                                     self.action_sender.send(::action::Action::SendConfirmationHello(
-                                        connection,::types::Address::Node(hello.public_id.name())));
+                                        connection, hello.address));
                                     self.remove_expected_connection(&expected_connection);
                                 }
                             },
@@ -1096,8 +1110,9 @@ impl RoutingCore {
                         if self.add_peer(ConnectionName::Routing(
                                 hello.public_id.name()), connection, hello.public_id.clone()) {
                             if connection != unknown_connection {
+                                debug!("Sending confirmation to {:?} ", hello.address);
                                 self.action_sender.send(::action::Action::SendConfirmationHello(
-                                    connection, ::types::Address::Node(hello.public_id.name())));
+                                    connection, hello.address));
                                 let _ = self.action_sender.send(::action::Action::DropConnections(
                                     vec![unknown_connection]));
                             } else {
@@ -1161,8 +1176,9 @@ impl RoutingCore {
         }
         debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
             bootstrap_connection);
-        let _ = self.action_sender.send(::action::Action::SendContent(
-            ::authority::Authority::Client(bootstrap_name.clone(), self.id.signing_public_key()),
+        //let _ = self.action_sender.send(::action::Action::SendContent(
+        let _ = self.action_sender.send(::action::Action::ClientSendContent(
+            // ::authority::Authority::Client(bootstrap_name.clone(), self.id.signing_public_key()),
             ::authority::Authority::NaeManager(self.id.name()),
             ::messages::Content::InternalRequest(::messages::InternalRequest::RequestNetworkName(
                 ::public_id::PublicId::new(&self.id)))));
