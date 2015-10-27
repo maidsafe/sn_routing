@@ -17,7 +17,7 @@
 
 use std::hash;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rustc_serialize::hex::ToHex;
+use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
 use std::cmp::*;
 use std::fmt;
 
@@ -27,6 +27,14 @@ pub const NAME_TYPE_LEN : usize = 64;
 /// Returns true if both slices are equal in length and have equal contents.
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
     lhs.len() == rhs.len() && lhs.iter().zip(rhs.iter()).all(|(a, b)| a == b)
+}
+
+/// Errors that can occur when decoding a `NameType` from a string.
+pub enum NameTypeFromHexError {
+    /// The given invalid hex character occured at the given position.
+    InvalidCharacter(char, usize),
+    /// The hex string did not encode `NAME_TYPE_LEN` bytes.
+    InvalidLength,
 }
 
 /// NameType can be created using the new function by passing ID as it’s parameter.
@@ -49,6 +57,21 @@ impl NameType {
     /// Hex-encode the `NameType` as a `String`.
     pub fn as_hex(&self) -> String {
         self.0.to_hex()
+    }
+
+    /// Hex-decode a `NameType` from a `&str`.
+    pub fn from_hex(s: &str) -> Result<NameType, NameTypeFromHexError> {
+        let data = match s.from_hex() {
+            Ok(v)   => v,
+            Err(FromHexError::InvalidHexCharacter(c, p))
+                => return Err(NameTypeFromHexError::InvalidCharacter(c, p)),
+            Err(FromHexError::InvalidHexLength)
+                => return Err(NameTypeFromHexError::InvalidLength),
+        };
+        if data.len() != NAME_TYPE_LEN {
+            return Err(NameTypeFromHexError::InvalidLength);
+        }
+        Ok(NameType(::types::vector_as_u8_64_array(data)))
     }
 
     // Private function exposed in fmt Debug {:?} and Display {} traits.
