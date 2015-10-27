@@ -227,7 +227,7 @@ impl ::std::fmt::Debug for StructuredData {
                      ::utils::get_debug_id(self.data.clone())));
 
         let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
-                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+                ::utils::get_debug_id(&pub_key.0)).collect();
         try!(write!(formatter, " , previous_owner_keys : ("));
         for itr in prev_owner_keys.iter() {
             try!(write!(formatter, "{:?} ", itr));
@@ -235,7 +235,7 @@ impl ::std::fmt::Debug for StructuredData {
         try!(write!(formatter, ")"));
 
         let current_owner_keys : Vec<String> = self.current_owner_keys.iter().map(|pub_key|
-                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+                ::utils::get_debug_id(&pub_key.0)).collect();
         try!(write!(formatter, " , current_owner_keys : ("));
         for itr in current_owner_keys.iter() {
             try!(write!(formatter, "{:?} ", itr));
@@ -244,7 +244,7 @@ impl ::std::fmt::Debug for StructuredData {
 
         let prev_owner_signatures: Vec<String> =
               self.previous_owner_signatures.iter().map(|signature|
-                ::utils::get_debug_id(::types::array_as_vector(&signature.0))).collect();
+                ::utils::get_debug_id(&signature.0[..])).collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
         for itr in prev_owner_signatures.iter() {
             try!(write!(formatter, "{:?} ", itr));

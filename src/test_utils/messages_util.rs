@@ -24,7 +24,7 @@ pub fn generate_random_u8() -> u8 {
 }
 
 fn generate_random_nametype() -> ::NameType {
-    ::NameType(::types::vector_as_u8_64_array(::types::generate_random_vec_u8(64)))
+    ::NameType(::types::slice_as_u8_64_array(&::types::generate_random_vec_u8(64)[..]))
 }
 
 fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)

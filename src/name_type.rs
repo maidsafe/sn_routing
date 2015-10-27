@@ -71,7 +71,7 @@ impl NameType {
         if data.len() != NAME_TYPE_LEN {
             return Err(NameTypeFromHexError::InvalidLength);
         }
-        Ok(NameType(::types::vector_as_u8_64_array(data)))
+        Ok(NameType(::types::slice_as_u8_64_array(&data[..])))
     }
 
     // Private function exposed in fmt Debug {:?} and Display {} traits.

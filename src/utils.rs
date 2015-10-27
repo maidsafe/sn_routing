@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 /// Formatted string from a vector of bytes.
-pub fn get_debug_id(input: Vec<u8>) -> ::std::string::String {
-  format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
+    let input = input.as_ref();
+    format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
           input[0],
           input[1],
           input[2],
