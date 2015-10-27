@@ -337,7 +337,7 @@ mod test{
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -375,7 +375,7 @@ mod test{
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -414,7 +414,7 @@ mod test{
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -459,7 +459,7 @@ mod test{
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());

@@ -15,17 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// Return a random u8.
-pub fn generate_random_u8() -> u8 {
-    use rand::Rng;
-
-    let mut rng = ::rand::thread_rng();
-    rng.gen::<u8>()
-}
-
-fn generate_random_nametype() -> ::NameType {
-    ::NameType(::types::slice_as_u8_64_array(&::types::generate_random_vec_u8(64)[..]))
-}
+use rand;
 
 fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)
         -> ::authority::Authority {
@@ -57,7 +47,7 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
     match index {
         0 => {
             let structured_data =
-                match ::structured_data::StructuredData::new(0, generate_random_nametype(), 0,
+                match ::structured_data::StructuredData::new(0, ::rand::random(), 0,
                         vec![], vec![public_sign_key.clone()], vec![], Some(&secret_sign_key)) {
                     Ok(structured_data) => structured_data,
                     Err(error) => panic!("StructuredData error: {:?}", error),
@@ -72,7 +62,7 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
         },
         2 => {
             let plain_data = ::plain_data::PlainData::new(
-                generate_random_nametype(), ::types::generate_random_vec_u8(1025));
+                rand::random(), ::types::generate_random_vec_u8(1025));
             return ::data::Data::PlainData(plain_data)
         },
         _ => panic!("Unexpected index.")
@@ -84,8 +74,8 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                           secret_key: &::sodiumoxide::crypto::sign::SecretKey)
         -> ::messages::RoutingMessage {
-    let from_authority = generate_random_authority(generate_random_nametype(), public_key);
-    let to_authority = generate_random_authority(generate_random_nametype(), public_key);
+    let from_authority = generate_random_authority(rand::random(), public_key);
+    let to_authority = generate_random_authority(rand::random(), public_key);
     let data = generate_random_data(public_key, secret_key);
     let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
 
