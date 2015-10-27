@@ -84,13 +84,13 @@ pub enum State {
 }
 
 /// ExpectedConnection.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, RustcEncodable, RustcDecodable)]
 #[allow(unused)]
 pub enum ExpectedConnection {
     /// ConnectRequest sent by peer.
     Request(::messages::ConnectRequest),
     /// ConnectResponse in response to a ConnectRequest sent by peer.
-    Response(::messages::ConnectResponse),
+    Response(::messages::ConnectResponse, ::messages::SignedToken),
 }
 
 /// RoutingCore provides the fundamental routing of messages, exposing both the routing
@@ -238,6 +238,7 @@ impl RoutingCore {
             return false
         };
         self.routing_table = Some(RoutingTable::new(&network_name));
+        self.relay_map = Some(::utilities::ConnectionMap::new());
         self.network_name = Some(network_name.clone());
         self.state = State::Relocated;
         true
@@ -743,9 +744,385 @@ impl RoutingCore {
         }
     }
 
-    /// Check whether the connection has been sent in a ConnectRequest/ConnectResponse.
-    pub fn match_expected_connection(&self, _connection: ::crust::Connection) -> bool {
-        unimplemented!();
+    /// Check whether the connection can be matched against a stored ConnectRequest/ConnectResponse.
+    pub fn match_expected_connection(&mut self, connection: &::crust::Connection)
+            -> Option<ExpectedConnection> {
+        let peer_endpoint = connection.peer_endpoint();
+        for (key, value) in self.expected_connections.iter_mut() {
+            match key {
+                &ExpectedConnection::Request(ref connect_request) => {
+                    for endpoint in connect_request.local_endpoints.iter() {
+                        if *endpoint == peer_endpoint {
+                            match value.0 {
+                                Some(_) => {
+                                    // If we've already matched a connection drop the new one.
+                                    let _ = self.action_sender.send(
+                                        ::action::Action::DropConnections(
+                                            vec![connection.clone()]));
+                                    return None
+                                },
+                                None => {
+                                    value.0 = Some(connection.clone());
+                                    let _ = self.action_sender.send(
+                                        ::action::Action::MatchConnection(
+                                            Some((key.clone(), value.0.clone())), None));
+                                    return Some(key.clone())
+                                }
+                            }
+                        }
+                    }
+                },
+                &ExpectedConnection::Response(ref connect_response, _) => {
+                    for endpoint in connect_response.local_endpoints.iter() {
+                        if *endpoint == peer_endpoint {
+                            match value.0 {
+                                Some(_) => {
+                                    // If we've already matched a connection drop the new one.
+                                    let _ = self.action_sender.send(
+                                        ::action::Action::DropConnections(
+                                            vec![connection.clone()]));
+                                    return None
+                                },
+                                None => {
+                                    value.0 = Some(connection.clone());
+                                    let _ = self.action_sender.send(
+                                        ::action::Action::MatchConnection(
+                                            Some((key.clone(), value.0.clone())), None));
+                                    return Some(key.clone())
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+
+        None
+    }
+
+    /// Check whether the connection has been accepted.
+    pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
+            hello: &::direct_messages::Hello) {
+        match hello.confirmed_you {
+            Some(ref address) => if !self.is_us(address) { return; },
+            None => {},
+        };
+        match hello.address {
+            // it is a client, so we will add it as a relay connection
+            // (fails if we are client ourselves)
+            ::types::Address::Client(ref public_key) => {
+                // because we accepting an unknown connection, we are node B in diagram RFC-0011
+                let client_address = ::types::Address::Client(public_key.clone());
+                if self.add_peer(ConnectionName::Relay(client_address.clone()),
+                    connection.clone(), hello.public_id.clone()) {
+                    let _ = self.action_sender.send(::action::Action::SendConfirmationHello(
+                        connection.clone(), client_address));
+                } else {
+                    error!("Failed to add client {:?} as relay connection on {:?}. Dropping.",
+                        client_address, connection);
+                    let _ = self.action_sender.send(::action::Action::DropConnections(
+                        vec![connection.clone()]));
+                };
+            },
+            // it is a node, so either we are still a client or a node, and are either
+            // bootstrapping or establishing a routing connection
+            ::types::Address::Node(name) => {
+                match hello.confirmed_you {
+                    None => {
+                        match self.state {
+                            State::Disconnected => { error!("this is not bootstrapping, \
+                                as bootstrapping only sends confirmations from a node ");
+                                return; },
+                            State::Bootstrapped | State::Relocated | State::Connected
+                                | State::GroupConnected => {},
+                            State::Terminated => { return; },
+                        };
+                        for (key, value) in self.unknown_connections.iter_mut() {
+                            if key == connection {
+                                match value.0 {
+                                    None => {
+                                        value.0 = Some(hello.clone());
+                                        let _ = self.action_sender.send(
+                                            ::action::Action::MatchConnection(
+                                            None, Some((key.clone(), value.0.clone()))));
+                                    },
+                                    Some(_) => { error!("Already received a Hello for this \
+                                        connection."); },
+                                }
+                                break;
+                            }
+                        };
+                    },
+                    // we are a client, so if successfully added to bootstrap,
+                    // our state will update and we need to request a network name.
+                    Some(::types::Address::Client(ref public_key)) => {
+                        if self.add_peer(ConnectionName::Bootstrap(name.clone()),
+                            connection.clone(), hello.public_id.clone()) {
+                            self.request_network_name(&name, &connection);
+                        } else {
+                            error!("Failed to add node {:?} as bootstrap connection on {:?}. \
+                                Dropping.", name, connection);
+                            let _ = self.action_sender.send(::action::Action::DropConnections(
+                                vec![connection.clone()]));
+                        };
+                    },
+                    // we are a node, and this is the confirmation, so we are node A on diagram
+                    // RFC-0011
+                    Some(::types::Address::Node(ref _our_name)) => {
+                        for (key, value) in self.unknown_connections.iter_mut() {
+                            if key == connection {
+                                match value.0 {
+                                    None => {}, // a confirmation without a stored hello is ignored
+                                    Some(ref stored_hello) => {
+                                        if stored_hello.address == hello.address {
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::MatchConnection(
+                                                None, Some((key.clone(), value.0.clone()))));
+                                        };
+                                    },
+                                }
+                                break;
+                            }
+                        };
+                    },
+                }
+            },
+        };
+    }
+
+    /// Match against either an expected connection to unknown connection or vice versa.
+    pub fn match_connection(&mut self,
+            expected_connection: Option<(::routing_core::ExpectedConnection,
+                                         Option<::crust::Connection>)>,
+            unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
+        match (expected_connection, unknown_connection) {
+            (Some((expected_connection, Some(connection))), None) => {
+                // Match expected_connection against unknown_connection.
+                match expected_connection {
+                    ExpectedConnection::Request(ref request) => {
+                        // We are the network-side with a ConnectRequest, Node B on diagram of
+                        // RFC-0011.
+                        let mut opt_hello = None;
+                        for (key, value) in self.unknown_connections.iter() {
+                            match value.0 {
+                                Some(ref hello) => {
+                                    match hello.expected_connection {
+                                        Some(ref hello_expected_connection) => {
+                                            match hello_expected_connection {
+                                                &ExpectedConnection::Request(_) => {
+                                                    // Expecting a ConnectResponse, do nothing.
+                                                },
+                                                &ExpectedConnection::Response(ref response, _) => {
+                                                    if response.receiver_fob.name() ==
+                                                            self.id().name() &&
+                                                        hello.public_id == request.requester_fob {
+                                                            opt_hello = Some(hello.clone());
+                                                            break;
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                            // We are not here during a bootstrap procedure, so this
+                                            // is an invalid hello, drop the connection.
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::DropConnections(
+                                                    vec![connection.clone()]));
+                                        },
+                                    }
+                                },
+                                None => {},
+                            }
+                        }
+
+                        match opt_hello {
+                            Some(hello) => {
+                                // Try adding the peer to routing table.
+                                if self.add_peer(ConnectionName::Routing(hello.public_id.name()),
+                                        connection, hello.public_id.clone()) {
+                                    // Drop secondary, i.e., unrequired, connection from
+                                    // unknown connections map.
+                                    for (key, value) in self.unknown_connections.iter() {
+                                        match value.0 {
+                                            Some(ref value) => {
+                                                if *value == hello {
+                                                    let _ = self.action_sender.send(
+                                                        ::action::Action::DropConnections(
+                                                            vec![*key]));
+                                                    break;
+                                                }
+                                            },
+                                            None => {},
+                                        }
+                                    }
+                                    self.action_sender.send(::action::Action::SendConfirmationHello(
+                                        connection,::types::Address::Node(hello.public_id.name())));
+                                    self.remove_expected_connection(&expected_connection);
+                                }
+                            },
+                            None => {},
+                        }
+                    },
+                    ExpectedConnection::Response(ref response, ref _signed_token) => {
+                        // We initiated a ConnectRequest, Node A on diagram of RFC-0011.
+                        let mut opt_hello = None;
+                        for (key, value) in self.unknown_connections.iter() {
+                            match value.0 {
+                                Some(ref hello) => {
+                                    match hello.expected_connection {
+                                        Some(ref hello_expected_connection) => {
+                                            match hello_expected_connection {
+                                                &ExpectedConnection::Request(ref request) => {
+                                                    if request.requester_fob.name() ==
+                                                            self.id().name() &&
+                                                        hello.public_id == response.receiver_fob {
+                                                            opt_hello = Some(hello.clone());
+                                                            break;
+                                                    }
+                                                },
+                                                &ExpectedConnection::Response(_, _) => {
+                                                    // Expecting a ConnectRequest, do nothing.
+                                                }
+                                            }
+                                        },
+                                        None => {
+                                            // We are not here during a bootstrap procedure, so this
+                                            // is an invalid hello, drop the connection.
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::DropConnections(
+                                                    vec![connection.clone()]));
+                                        },
+                                    }
+                                },
+                                None => {},
+                            }
+                        }
+
+                        match opt_hello {
+                            Some(hello) => {
+                                let mut primary_connection = None;
+                                for (key, value) in self.unknown_connections.iter() {
+                                    match value.0 {
+                                        Some(ref value) => {
+                                            if *value == hello {
+                                                primary_connection = Some(key.clone());
+                                                break;
+                                            }
+                                        },
+                                        None => {},
+                                    }
+                                }
+                                match primary_connection {
+                                    Some(primary_connection) => {
+                                        // Try adding the peer to routing table.
+                                        if self.add_peer(ConnectionName::Routing(
+                                                hello.public_id.name()),  primary_connection,
+                                                hello.public_id.clone()) {
+                                            // Drop secondary, i.e., unrequired connection.
+                                            let _ = self.action_sender.send(
+                                                ::action::Action::DropConnections(
+                                                    vec![connection.clone()]));
+                                            self.remove_expected_connection(&expected_connection);
+                                        }
+                                    },
+                                    None => {},
+                                }
+                            },
+                            None => {},
+                        }
+                    }
+                }
+            },
+            (None, Some((unknown_connection, Some(hello)))) => {
+                // At matching from unknown_connection against expected connection
+                let mut opt_connection = None;
+                match hello.expected_connection {
+                    Some(ref hello_expected_connection) => {
+                        match *hello_expected_connection {
+                            ExpectedConnection::Request(ref request) => {
+                                for (key, value) in self.expected_connections.iter() {
+                                    match key {
+                                        &ExpectedConnection::Request(_) => {
+                                            // Don't match on ConnectRequest.
+                                        },
+                                        &ExpectedConnection::Response(ref response, _) => {
+                                            // We initiated the ConnectRequest, node A on diagram
+                                            // RFC-0011.
+                                            if request.requester_fob.name() == self.id().name() &&
+                                                    hello.public_id == response.receiver_fob {
+                                                match value.0 {
+                                                    Some(connection) => {
+                                                        opt_connection = Some(connection.clone());
+                                                        break;
+                                                    },
+                                                    None => {},
+                                                }
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                            ExpectedConnection::Response(ref response, _) => {
+                                for (key, value) in self.expected_connections.iter() {
+                                    match key {
+                                        &ExpectedConnection::Request(ref request) => {
+                                            // We are the network-side with a ConnectRequest, Node B
+                                            // on diagram of RFC-0011.
+                                            if response.receiver_fob.name() == self.id().name() &&
+                                                    hello.public_id == request.requester_fob {
+                                                match value.0 {
+                                                    Some(connection) => {
+                                                        opt_connection =
+                                                            Some(unknown_connection.clone());
+                                                        break;
+                                                    },
+                                                    None => {},
+                                                }
+                                            }
+                                        },
+                                        &ExpectedConnection::Response(_, _) => {
+                                            // Don't match on ConnectResponse.
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    },
+                    None => {},
+                };
+
+                match opt_connection {
+                    Some(connection) => {
+                        if self.add_peer(ConnectionName::Routing(
+                                hello.public_id.name()), connection, hello.public_id.clone()) {
+                            if connection != unknown_connection {
+                                self.action_sender.send(::action::Action::SendConfirmationHello(
+                                    connection, ::types::Address::Node(hello.public_id.name())));
+                                let _ = self.action_sender.send(::action::Action::DropConnections(
+                                    vec![unknown_connection]));
+                            } else {
+                                let _ = self.action_sender.send(::action::Action::DropConnections(
+                                    vec![connection]));
+                            }
+                        } else {
+                            let _ = self.action_sender.send(::action::Action::DropConnections(
+                                vec![unknown_connection]));
+                            let _ = self.action_sender.send(::action::Action::DropConnections(
+                                vec![connection]));
+                            match hello.expected_connection {
+                                Some(ref expected_connection) => {
+                                    self.remove_expected_connection(expected_connection);
+                                },
+                                None => {},
+                            }
+                            self.remove_unknown_connection(&unknown_connection);
+                        }
+                    },
+                    None => {},
+                }
+            },
+            _ => {},
+        }
     }
 
     /// Add an expected connection.
@@ -759,11 +1136,43 @@ impl RoutingCore {
             -> Option<Option<::direct_messages::Hello>> {
         self.unknown_connections.insert(unknown_connection, None)
     }
+
+    /// Remove an expected connection.
+    pub fn remove_expected_connection(&mut self, expected_connection: &ExpectedConnection) {
+        let _ = self.expected_connections.remove(expected_connection);
+    }
+
+    /// Remove an unknown connection.
+    pub fn remove_unknown_connection(&mut self, unknown_connection: &::crust::Connection) {
+        let _ = self.unknown_connections.remove(unknown_connection);
+    }
+
+    fn request_network_name(&mut self,
+                            bootstrap_name: &NameType,
+                            bootstrap_connection: &::crust::Connection) {
+        // If RoutingNode is restricted from becoming a node, it suffices to never request a network
+        // name.
+        match self.state {
+            State::Disconnected | State::Relocated | State::Connected
+                | State::GroupConnected | State::Terminated => {
+                    error!("Requesting network name while disconnected or named or terminated.");
+                    return; },
+            State::Bootstrapped => {},
+        }
+        debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
+            bootstrap_connection);
+        let _ = self.action_sender.send(::action::Action::SendContent(
+            ::authority::Authority::Client(bootstrap_name.clone(), self.id.signing_public_key()),
+            ::authority::Authority::NaeManager(self.id.name()),
+            ::messages::Content::InternalRequest(::messages::InternalRequest::RequestNetworkName(
+                ::public_id::PublicId::new(&self.id)))));
+    }
 }
 
 #[cfg(test)]
 mod test {
     use test_utils::test;
+    use rand;
 
     #[test]
     fn add_peers_as_client() {
@@ -791,14 +1200,12 @@ mod test {
 
     #[test]
     fn add_peers_as_full_node() {
-        use ::test_utils::random_trait::Random;
-
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let (action_sender, action_receiver) = ::std::sync::mpsc::channel::<::action::Action>();
         let id = ::id::Id::new();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        let our_name = ::NameType::generate_random();
+        let our_name = rand::random();
         assert!(routing_core.assign_network_name(&our_name));
 
         // routing core is a full node, so it will accept routing connections and generate churn
@@ -877,7 +1284,7 @@ mod test {
         let peer_id_signing_private_key = peer_id.signing_private_key().clone();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+        assert!(routing_core.assign_network_name(&rand::random()));
 
         let public_id = ::public_id::PublicId::new(routing_core.id());
         let peer_public_id = ::public_id::PublicId::new(&peer_id);
@@ -941,7 +1348,7 @@ mod test {
         let peer_id_signing_private_key = peer_id.signing_private_key().clone();
         let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
 
-        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+        assert!(routing_core.assign_network_name(&rand::random()));
 
         let public_id = ::public_id::PublicId::new(routing_core.id());
         let peer_public_id = ::public_id::PublicId::new(&peer_id);

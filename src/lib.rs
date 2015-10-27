@@ -71,6 +71,7 @@ mod routing_core;
 mod refresh_accumulator;
 mod message_accumulator;
 mod utilities;
+mod connection_management;
 
 /// Routing provides an actionable interface to routing.
 pub mod routing;

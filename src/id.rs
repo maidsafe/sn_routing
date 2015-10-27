@@ -90,7 +90,8 @@ impl Id {
 
 
 #[cfg(test)]
- mod test{
+mod test{
+    use rand;
 
     #[test]
     fn with_keys_and_getters() {
@@ -98,7 +99,7 @@ impl Id {
       let asym_keys = ::sodiumoxide::crypto::box_::gen_keypair();
       let id = ::id::Id::with_keys(sign_keys.clone(), asym_keys.clone());
       let name_id = ::sodiumoxide::crypto::hash::sha512::hash(&sign_keys.0[..]).0;
-      let expected_name = ::name_type::NameType::new(name_id);
+      let expected_name = ::NameType::new(name_id);
 
       assert_eq!(expected_name, id.name());
       assert_eq!(&sign_keys.0, &id.signing_public_key());
@@ -115,7 +116,7 @@ impl Id {
         assert!(!id.is_relocated());
 
         // is relocated after changing the name
-        id.assign_relocated_name(::test_utils::Random::generate_random());
+        id.assign_relocated_name(rand::random());
         assert!(id.is_relocated());
     }
 
@@ -132,14 +133,14 @@ impl Id {
       assert!(!id.assign_relocated_name(original_name));
       assert!(!id.assign_relocated_name(cloned_original_name));
 
-      let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+      let relocated_name: ::name_type::NameType = rand::random();
 
       // is relocated with other name
       assert!(id.assign_relocated_name(relocated_name));
 
       // will not be relocated with that relocated name again or yet another name
       assert!(!id.assign_relocated_name(relocated_name));
-      assert!(!id.assign_relocated_name(::test_utils::Random::generate_random()));
+      assert!(!id.assign_relocated_name(rand::random()));
 
       // assign_relocation_name did change name properly
       assert_eq!(relocated_name, id.name());

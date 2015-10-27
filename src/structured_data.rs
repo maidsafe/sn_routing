@@ -227,7 +227,7 @@ impl ::std::fmt::Debug for StructuredData {
                      ::utils::get_debug_id(self.data.clone())));
 
         let prev_owner_keys : Vec<String> = self.previous_owner_keys.iter().map(|pub_key|
-                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+                ::utils::get_debug_id(&pub_key.0)).collect();
         try!(write!(formatter, " , previous_owner_keys : ("));
         for itr in prev_owner_keys.iter() {
             try!(write!(formatter, "{:?} ", itr));
@@ -235,7 +235,7 @@ impl ::std::fmt::Debug for StructuredData {
         try!(write!(formatter, ")"));
 
         let current_owner_keys : Vec<String> = self.current_owner_keys.iter().map(|pub_key|
-                ::utils::get_debug_id(::types::array_as_vector(&pub_key.0))).collect();
+                ::utils::get_debug_id(&pub_key.0)).collect();
         try!(write!(formatter, " , current_owner_keys : ("));
         for itr in current_owner_keys.iter() {
             try!(write!(formatter, "{:?} ", itr));
@@ -244,7 +244,7 @@ impl ::std::fmt::Debug for StructuredData {
 
         let prev_owner_signatures: Vec<String> =
               self.previous_owner_signatures.iter().map(|signature|
-                ::utils::get_debug_id(::types::array_as_vector(&signature.0))).collect();
+                ::utils::get_debug_id(&signature.0[..])).collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
         for itr in prev_owner_signatures.iter() {
             try!(write!(formatter, "{:?} ", itr));
@@ -256,6 +256,7 @@ impl ::std::fmt::Debug for StructuredData {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn single_owner() {
@@ -263,7 +264,7 @@ mod test {
         let owner_keys = vec![keys.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -282,7 +283,7 @@ mod test {
         let owner_keys = vec![keys.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -302,7 +303,7 @@ mod test {
         let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -323,7 +324,7 @@ mod test {
         let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -347,7 +348,7 @@ mod test {
         let owner_keys = vec![keys1.0, keys2.0, keys3.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -371,7 +372,7 @@ mod test {
         let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
         let new_owner = ::sodiumoxide::crypto::sign::gen_keypair();
 
-        let identifier: ::NameType = ::test_utils::Random::generate_random();
+        let identifier: ::NameType = rand::random();
 
         // Owned by keys1 keys2 and keys3
         match super::StructuredData::new(0,

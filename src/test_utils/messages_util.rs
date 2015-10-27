@@ -15,17 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// Return a random u8.
-pub fn generate_random_u8() -> u8 {
-    use rand::Rng;
-
-    let mut rng = ::rand::thread_rng();
-    rng.gen::<u8>()
-}
-
-fn generate_random_nametype() -> ::NameType {
-    ::NameType(::types::vector_as_u8_64_array(::types::generate_random_vec_u8(64)))
-}
+use rand;
 
 fn generate_random_authority(name: ::NameType, key: &::sodiumoxide::crypto::sign::PublicKey)
         -> ::authority::Authority {
@@ -57,7 +47,7 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
     match index {
         0 => {
             let structured_data =
-                match ::structured_data::StructuredData::new(0, generate_random_nametype(), 0,
+                match ::structured_data::StructuredData::new(0, ::rand::random(), 0,
                         vec![], vec![public_sign_key.clone()], vec![], Some(&secret_sign_key)) {
                     Ok(structured_data) => structured_data,
                     Err(error) => panic!("StructuredData error: {:?}", error),
@@ -72,7 +62,7 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
         },
         2 => {
             let plain_data = ::plain_data::PlainData::new(
-                generate_random_nametype(), ::types::generate_random_vec_u8(1025));
+                rand::random(), ::types::generate_random_vec_u8(1025));
             return ::data::Data::PlainData(plain_data)
         },
         _ => panic!("Unexpected index.")
@@ -84,8 +74,8 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                           secret_key: &::sodiumoxide::crypto::sign::SecretKey)
         -> ::messages::RoutingMessage {
-    let from_authority = generate_random_authority(generate_random_nametype(), public_key);
-    let to_authority = generate_random_authority(generate_random_nametype(), public_key);
+    let from_authority = generate_random_authority(rand::random(), public_key);
+    let to_authority = generate_random_authority(rand::random(), public_key);
     let data = generate_random_data(public_key, secret_key);
     let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
 
@@ -98,6 +88,7 @@ pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::Publi
 
 #[cfg(test)]
 pub mod test {
+    use rand;
 
     // TODO: Use IPv6 and non-TCP
     pub fn random_socket_addr() -> ::std::net::SocketAddr {
@@ -121,11 +112,10 @@ pub mod test {
         ::crust::Connection::new(::crust::Protocol::Tcp, local, remote)
     }
 
-    pub fn random_endpoints() -> Vec<::crust::Endpoint> {
+    pub fn random_endpoints<R: rand::Rng>(rng: &mut R) -> Vec<::crust::Endpoint> {
         use rand::distributions::IndependentSample;
         let range = ::rand::distributions::Range::new(1, 10);
-        let mut rng = ::rand::thread_rng();
-        let count = range.ind_sample(&mut rng);
+        let count = range.ind_sample(rng);
         let mut endpoints = vec![];
         for _ in 0..count {
             endpoints.push(random_endpoint());
@@ -133,23 +123,24 @@ pub mod test {
         endpoints
     }
 
-    impl super::super::random_trait::Random for ::messages::ConnectRequest {
-            fn generate_random() -> ::messages::ConnectRequest {
-                ::messages::ConnectRequest {
-                    local_endpoints: random_endpoints(),
-                    external_endpoints: random_endpoints(),
-                    requester_fob: super::super::random_trait::Random::generate_random(),
-                }
+    impl rand::Rand for ::messages::ConnectRequest {
+        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectRequest {
+            ::messages::ConnectRequest {
+                local_endpoints: random_endpoints(rng),
+                external_endpoints: random_endpoints(rng),
+                requester_fob: rand::random(),
             }
+        }
     }
 
-    impl super::super::random_trait::Random for ::messages::ConnectResponse {
-            fn generate_random() -> ::messages::ConnectResponse {
-                ::messages::ConnectResponse {
-                    local_endpoints: random_endpoints(),
-                    external_endpoints: random_endpoints(),
-                    receiver_fob: super::super::random_trait::Random::generate_random(),
-                }
+    impl rand::Rand for ::messages::ConnectResponse {
+        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectResponse {
+            ::messages::ConnectResponse {
+                local_endpoints: random_endpoints(rng),
+                external_endpoints: random_endpoints(rng),
+                receiver_fob: rand::random(),
             }
+        }
     }
 }
+

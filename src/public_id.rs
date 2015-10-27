@@ -24,6 +24,7 @@ use error::RoutingError;
 use id::Id;
 use utils;
 use std::fmt::{Debug, Formatter, Error};
+use rand;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// PublicId.
@@ -89,9 +90,16 @@ impl PublicId {
     }
 }
 
+impl rand::Rand for PublicId {
+    fn rand<R: rand::Rng>(_rng: &mut R) -> PublicId {
+        PublicId::new(&Id::new())
+    }
+}
+
 #[cfg(test)]
 mod test {
     extern crate cbor;
+    use rand;
 
     #[test]
     fn serialisation_public_id() {
@@ -109,7 +117,7 @@ mod test {
     fn set_name() {
         let id = ::id::Id::new();
         let id_name = id.name().clone();
-        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let relocated_name: ::NameType = rand::random();
         let mut public_id = ::public_id::PublicId::new(&id);
         let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
 
@@ -133,7 +141,7 @@ mod test {
             ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
                 &before.signing_public_key()[..]).0));
         assert!(!before.is_relocated());
-        let relocated_name: ::NameType = ::test_utils::Random::generate_random();
+        let relocated_name: ::NameType = rand::random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
         assert!(relocated.is_relocated());
@@ -144,9 +152,9 @@ mod test {
 
     #[test]
     fn is_relocated() {
-        let mut public_id: ::public_id::PublicId = ::test_utils::Random::generate_random();
+        let mut public_id: ::public_id::PublicId = rand::random();
         let name_before = public_id.name();
-        let relocated_name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let relocated_name: ::NameType = rand::random();
         let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
 
         // is not relocated

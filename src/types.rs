@@ -15,31 +15,32 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// Convert a u8 array to u8 vector.
-pub fn array_as_vector(arr: &[u8]) -> Vec<u8> {
-    let mut vector = Vec::new();
-    for i in arr.iter() {
-        vector.push(*i);
-    }
-    vector
-}
-
 /// Convert u8 vector to a fixed 64 byte size array.
-pub fn vector_as_u8_64_array(vector: Vec<u8>) -> [u8; 64] {
-    assert!(vector.len() >= 64);
+/// 
+/// # Panics
+///
+/// Panics if the slice is not 64 bytes in length.
+pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
+    assert!(slice.len() == 64);
     let mut arr = [0u8;64];
+    // TODO (canndrew): This should use copy_memory when it's stable
     for i in 0..64 {
-        arr[i] = vector[i];
+        arr[i] = slice[i];
     }
     arr
 }
 
-/// Convert u8 vector to a fixed 32 byte size array.
-pub fn vector_as_u8_32_array(vector: Vec<u8>) -> [u8; 32] {
-    assert!(vector.len() >= 32);
+/// Convert u8 slice to a fixed 32 byte size array.
+/// 
+/// # Panics
+///
+/// Panics if the slice is not 32 bytes in length
+pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
+    assert!(slice.len() == 32);
     let mut arr = [0u8;32];
+    // TODO (canndrew): This should use copy_memory when it's stable
     for i in 0..32 {
-        arr[i] = vector[i];
+        arr[i] = slice[i];
     }
     arr
 }
@@ -158,18 +159,16 @@ mod test {
     #[test]
     fn check_conversions() {
         let bytes: super::Bytes = super::generate_random_vec_u8(64);
-        let array = super::vector_as_u8_64_array(bytes.clone());
-        let vector = super::array_as_vector(&array);
+        let array = super::slice_as_u8_64_array(&bytes[..]);
 
-        assert_eq!(64, vector.len());
-        assert_eq!(bytes, vector);
+        assert_eq!(64, array.len());
+        assert_eq!(&bytes[..], &array[..]);
 
         let bytes: super::Bytes = super::generate_random_vec_u8(32);
-        let array = super::vector_as_u8_32_array(bytes.clone());
-        let vector = super::array_as_vector(&array);
+        let array = super::slice_as_u8_32_array(&bytes[..]);
 
-        assert_eq!(32, vector.len());
-        assert_eq!(bytes, vector);
+        assert_eq!(32, array.len());
+        assert_eq!(&bytes[..], &array[..]);
     }
 
     #[test]
@@ -225,6 +224,8 @@ mod test {
 
     #[test]
     fn address() {
+        use rand;
+
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let client_address = super::Address::Client(sign_keys.0);
 
@@ -233,7 +234,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::NameType = ::test_utils::Random::generate_random();
+        let name: ::NameType = rand::random();
         let node_address = super::Address::Node(name);
 
         match node_address {
