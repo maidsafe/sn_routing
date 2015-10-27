@@ -748,10 +748,10 @@ impl RoutingCore {
         unimplemented!();
     }
 
-    /// Add a bootstrap connection.
-    pub fn add_bootstrap_connection(&mut self, _connection: ::crust::Connection) {
-        unimplemented!();
-    }
+    // /// Add a bootstrap connection.
+    // pub fn add_bootstrap_connection(&mut self, _connection: ::crust::Connection) {
+    //     unimplemented!();
+    // }
 
     /// Add an expected connection.
     pub fn add_expected_connection(&mut self, expected_connection: ExpectedConnection)
@@ -871,5 +871,130 @@ mod test {
         };
         // assert that was the only action and the queue is now empty.
         assert!(action_receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn match_on_expected_connection() {
+        let (event_sender, _) = ::std::sync::mpsc::channel::<::event::Event>();
+        let (action_sender, _) = ::std::sync::mpsc::channel::<::action::Action>();
+        let id = ::id::Id::new();
+        let peer_id = ::id::Id::new();
+        let peer_id_signing_private_key = peer_id.signing_private_key().clone();
+        let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
+
+        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+
+        let public_id = ::public_id::PublicId::new(routing_core.id());
+        let peer_public_id = ::public_id::PublicId::new(&peer_id);
+        let peer_connection = test::random_connection();
+        let connect_request = ::messages::ConnectRequest {
+            local_endpoints: vec![peer_connection.peer_endpoint()],
+            external_endpoints: vec![peer_connection.peer_endpoint()],
+            requester_fob: peer_public_id.clone(),
+        };
+        let expected_connection = super::ExpectedConnection::Request(connect_request.clone());
+
+        let connection = test::random_connection();
+        let connect_response = ::messages::ConnectResponse {
+            local_endpoints: vec![connection.peer_endpoint()],
+            external_endpoints: vec![connection.peer_endpoint()],
+            receiver_fob: public_id.clone(),
+        };
+
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::ManagedNode(peer_public_id.name()),
+            to_authority: ::authority::Authority::ManagedNode(public_id.name()),
+            content: ::messages::Content::InternalRequest(
+                ::messages::InternalRequest::Connect(connect_request)),
+        };
+        let signed_message = ::messages::SignedMessage::new(::types::Address::Node(
+            peer_public_id.name()), routing_message, &peer_id_signing_private_key);
+
+        assert!(signed_message.is_ok());
+
+        let signed_message = signed_message.unwrap();
+        let signed_token = signed_message.as_token();
+
+        assert!(signed_token.is_ok());
+
+        let signed_token = signed_token.unwrap();
+        let peer_expected_connection = super::ExpectedConnection::Response(
+                connect_response.clone(), signed_token);
+        let hello = ::direct_messages::Hello {
+            address: ::types::Address::Node(peer_public_id.name()),
+            public_id: peer_public_id.clone(),
+            confirmed_you: None,
+            expected_connection: Some(peer_expected_connection.clone()),
+        };
+
+        let _ = routing_core.add_expected_connection(expected_connection.clone());
+        let _ = routing_core.add_unknown_connection(connection);
+        routing_core.match_unknown_connection(&connection, &hello);
+        let stored_expected_connection = routing_core.match_expected_connection(&peer_connection);
+
+        assert_eq!(stored_expected_connection.unwrap(), expected_connection.clone());
+
+        routing_core.match_connection(Some((expected_connection, Some(peer_connection))), None);
+    }
+
+    #[test]
+    fn match_on_unknown_connection() {
+        let (event_sender, _) = ::std::sync::mpsc::channel::<::event::Event>();
+        let (action_sender, _) = ::std::sync::mpsc::channel::<::action::Action>();
+        let id = ::id::Id::new();
+        let peer_id = ::id::Id::new();
+        let peer_id_signing_private_key = peer_id.signing_private_key().clone();
+        let mut routing_core = super::RoutingCore::new(event_sender, action_sender, Some(id));
+
+        assert!(routing_core.assign_network_name(&::test_utils::Random::generate_random()));
+
+        let public_id = ::public_id::PublicId::new(routing_core.id());
+        let peer_public_id = ::public_id::PublicId::new(&peer_id);
+        let peer_connection = test::random_connection();
+        let connect_request = ::messages::ConnectRequest {
+            local_endpoints: vec![peer_connection.peer_endpoint()],
+            external_endpoints: vec![peer_connection.peer_endpoint()],
+            requester_fob: peer_public_id.clone(),
+        };
+        let expected_connection = super::ExpectedConnection::Request(connect_request.clone());
+
+        let connection = test::random_connection();
+        let connect_response = ::messages::ConnectResponse {
+            local_endpoints: vec![connection.peer_endpoint()],
+            external_endpoints: vec![connection.peer_endpoint()],
+            receiver_fob: public_id.clone(),
+        };
+
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::ManagedNode(peer_public_id.name()),
+            to_authority: ::authority::Authority::ManagedNode(public_id.name()),
+            content: ::messages::Content::InternalRequest(
+                ::messages::InternalRequest::Connect(connect_request)),
+        };
+        let signed_message = ::messages::SignedMessage::new(::types::Address::Node(
+            peer_public_id.name()), routing_message, &peer_id_signing_private_key);
+
+        assert!(signed_message.is_ok());
+
+        let signed_message = signed_message.unwrap();
+        let signed_token = signed_message.as_token();
+
+        assert!(signed_token.is_ok());
+
+        let signed_token = signed_token.unwrap();
+        let peer_expected_connection = super::ExpectedConnection::Response(
+                connect_response.clone(), signed_token);
+        let hello = ::direct_messages::Hello {
+            address: ::types::Address::Node(peer_public_id.name()),
+            public_id: peer_public_id.clone(),
+            confirmed_you: None,
+            expected_connection: Some(peer_expected_connection.clone()),
+        };
+
+        let _ = routing_core.add_expected_connection(expected_connection.clone());
+        let _ = routing_core.add_unknown_connection(connection);
+        let _ = routing_core.match_expected_connection(&peer_connection);
+        routing_core.match_unknown_connection(&connection, &hello);
+        routing_core.match_connection(None, Some((connection, Some(hello))));
     }
 }
