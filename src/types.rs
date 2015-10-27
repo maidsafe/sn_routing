@@ -159,13 +159,13 @@ mod test {
     #[test]
     fn check_conversions() {
         let bytes: super::Bytes = super::generate_random_vec_u8(64);
-        let array = super::vector_as_u8_64_array(bytes.clone());
+        let array = super::slice_as_u8_64_array(&bytes[..]);
 
         assert_eq!(64, array.len());
         assert_eq!(&bytes[..], &array[..]);
 
         let bytes: super::Bytes = super::generate_random_vec_u8(32);
-        let array = super::vector_as_u8_32_array(bytes.clone());
+        let array = super::slice_as_u8_32_array(&bytes[..]);
 
         assert_eq!(32, array.len());
         assert_eq!(&bytes[..], &array[..]);

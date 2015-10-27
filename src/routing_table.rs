@@ -526,7 +526,7 @@ mod test {
             ContactType::Far => {}
         };
 
-        ::NameType(::types::vector_as_u8_64_array(binary_id.to_bytes()))
+        ::NameType(::types::slice_as_u8_64_array(&binary_id.to_bytes()[..]))
     }
 
     struct Bucket {

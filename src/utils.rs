@@ -96,12 +96,12 @@ mod test {
             Ok(encoded) => encoded,
             Err(_) => panic!("Unexpected serialisation error.")
         };
-        let decoded = match super::decode(&encoded) {
+        let decoded: Vec<u8> = match super::decode(&encoded) {
             Ok(decoded) => decoded,
             Err(_) => panic!("Unexpected deserialisation error.")
         };
 
-        assert_eq!(name, ::NameType(::types::vector_as_u8_64_array(decoded)));
+        assert_eq!(name, ::NameType(::types::slice_as_u8_64_array(&decoded[..])));
     }
 
     #[test]
