@@ -256,6 +256,7 @@ impl ::std::fmt::Debug for StructuredData {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn single_owner() {
@@ -263,7 +264,7 @@ mod test {
         let owner_keys = vec![keys.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -282,7 +283,7 @@ mod test {
         let owner_keys = vec![keys.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -302,7 +303,7 @@ mod test {
         let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -323,7 +324,7 @@ mod test {
         let other_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -347,7 +348,7 @@ mod test {
         let owner_keys = vec![keys1.0, keys2.0, keys3.0];
 
         match super::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -371,7 +372,7 @@ mod test {
         let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
         let new_owner = ::sodiumoxide::crypto::sign::gen_keypair();
 
-        let identifier: ::NameType = ::test_utils::Random::generate_random();
+        let identifier: ::NameType = rand::random();
 
         // Owned by keys1 keys2 and keys3
         match super::StructuredData::new(0,

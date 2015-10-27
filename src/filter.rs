@@ -215,12 +215,13 @@ impl RunningAverage {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn filter_check_before_duration_end() {
         let duration = ::time::Duration::seconds(3);
         let mut filter = super::Filter::with_expiry_duration(duration);
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
@@ -236,7 +237,7 @@ mod test {
     fn filter_check_after_duration_end() {
         let duration = ::time::Duration::milliseconds(1);
         let mut filter = super::Filter::with_expiry_duration(duration);
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
@@ -253,7 +254,7 @@ mod test {
     fn filter_block() {
         let duration = ::time::Duration::seconds(3);
         let mut filter = super::Filter::with_expiry_duration(duration);
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);

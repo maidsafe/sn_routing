@@ -224,6 +224,8 @@ mod test {
 
     #[test]
     fn address() {
+        use rand;
+
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let client_address = super::Address::Client(sign_keys.0);
 
@@ -232,7 +234,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::NameType = ::test_utils::Random::generate_random();
+        let name: ::NameType = rand::random();
         let node_address = super::Address::Node(name);
 
         match node_address {

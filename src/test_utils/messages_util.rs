@@ -98,6 +98,7 @@ pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::Publi
 
 #[cfg(test)]
 pub mod test {
+    use rand;
 
     // TODO: Use IPv6 and non-TCP
     pub fn random_socket_addr() -> ::std::net::SocketAddr {
@@ -121,11 +122,10 @@ pub mod test {
         ::crust::Connection::new(::crust::Protocol::Tcp, local, remote)
     }
 
-    pub fn random_endpoints() -> Vec<::crust::Endpoint> {
+    pub fn random_endpoints<R: rand::Rng>(rng: &mut R) -> Vec<::crust::Endpoint> {
         use rand::distributions::IndependentSample;
         let range = ::rand::distributions::Range::new(1, 10);
-        let mut rng = ::rand::thread_rng();
-        let count = range.ind_sample(&mut rng);
+        let count = range.ind_sample(rng);
         let mut endpoints = vec![];
         for _ in 0..count {
             endpoints.push(random_endpoint());
@@ -133,23 +133,24 @@ pub mod test {
         endpoints
     }
 
-    impl super::super::random_trait::Random for ::messages::ConnectRequest {
-            fn generate_random() -> ::messages::ConnectRequest {
-                ::messages::ConnectRequest {
-                    local_endpoints: random_endpoints(),
-                    external_endpoints: random_endpoints(),
-                    requester_fob: super::super::random_trait::Random::generate_random(),
-                }
+    impl rand::Rand for ::messages::ConnectRequest {
+        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectRequest {
+            ::messages::ConnectRequest {
+                local_endpoints: random_endpoints(rng),
+                external_endpoints: random_endpoints(rng),
+                requester_fob: rand::random(),
             }
+        }
     }
 
-    impl super::super::random_trait::Random for ::messages::ConnectResponse {
-            fn generate_random() -> ::messages::ConnectResponse {
-                ::messages::ConnectResponse {
-                    local_endpoints: random_endpoints(),
-                    external_endpoints: random_endpoints(),
-                    receiver_fob: super::super::random_trait::Random::generate_random(),
-                }
+    impl rand::Rand for ::messages::ConnectResponse {
+        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectResponse {
+            ::messages::ConnectResponse {
+                local_endpoints: random_endpoints(rng),
+                external_endpoints: random_endpoints(rng),
+                receiver_fob: rand::random(),
             }
+        }
     }
 }
+

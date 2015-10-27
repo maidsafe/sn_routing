@@ -212,13 +212,14 @@ mod test {
     use public_id::PublicId;
     use messages::{RoutingMessage, Content, ExternalRequest};
     use id::Id;
-    use test_utils::{Random, xor, test};
+    use test_utils::{xor, test};
     use utils::public_key_to_client_name;
     use name_type::{closer_to_target, NameType};
     use authority::Authority;
     use sodiumoxide::crypto;
     use data::Data;
     use immutable_data::{ImmutableData, ImmutableDataType};
+    use rand;
 
     #[test]
     fn our_authority_full_routing_table() {
@@ -228,7 +229,7 @@ mod test {
         loop {
             let _ = routing_table.add_node(NodeInfo::new(
                 PublicId::new(&Id::new()),
-                test::random_endpoints(),
+                test::random_endpoints(&mut rand::thread_rng()),
                 Some(test::random_connection())));
             count += 1;
             if count > 100 {
@@ -291,7 +292,7 @@ mod test {
 
         // --- test determine_authority specific ----------------------------------------------------------------
         let client_manager_message = RoutingMessage {
-            from_authority : Authority::Client(Random::generate_random(), client_public_key.clone()),
+            from_authority : Authority::Client(rand::random(), client_public_key.clone()),
             to_authority   : Authority::ClientManager(public_key_to_client_name(&client_public_key)),
             content : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
@@ -312,7 +313,7 @@ mod test {
 
         // assert to get a node_manager Authority
         let node_manager_message = RoutingMessage {
-            from_authority : Authority::NaeManager(Random::generate_random()),
+            from_authority : Authority::NaeManager(rand::random()),
             to_authority   : Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
             content        : Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
@@ -337,7 +338,7 @@ mod test {
             from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), Random::generate_random())),
+                some_bytes.clone(), rand::random())),
         };
         assert_eq!(super::our_authority(&refresh_message, &routing_table),
             Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
@@ -347,7 +348,7 @@ mod test {
             from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), Random::generate_random())),
+                some_bytes.clone(), rand::random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
@@ -355,7 +356,7 @@ mod test {
             from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), Random::generate_random())),
+                some_bytes.clone(), rand::random())),
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
     }

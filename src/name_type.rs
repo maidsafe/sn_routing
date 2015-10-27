@@ -20,6 +20,7 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
 use std::cmp::*;
 use std::fmt;
+use rand;
 
 /// Constant byte length of NameType.
 pub const NAME_TYPE_LEN : usize = 64;
@@ -107,6 +108,16 @@ impl fmt::Display for NameType {
 impl PartialEq for NameType {
     fn eq(&self, other: &NameType) -> bool {
         slice_equal(&self.0, &other.0)
+    }
+}
+
+impl rand::Rand for NameType {
+    fn rand<R: rand::Rng>(rng: &mut R) -> NameType {
+        let mut ret = [0u8; NAME_TYPE_LEN];
+        for r in ret[..].iter_mut() {
+            *r = <u8 as rand::Rand>::rand(rng);
+        }
+        NameType(ret)
     }
 }
 
@@ -257,11 +268,11 @@ mod test {
     use cbor;
     use super::*;
     use id::Id;
-    use test_utils::Random;
+    use rand;
 
     #[test]
     fn serialisation_name_type() {
-        let obj_before: NameType = Random::generate_random();
+        let obj_before: NameType = rand::random();
         let mut e = cbor::Encoder::from_memory();
         e.encode(&[&obj_before]).unwrap();
 
@@ -272,9 +283,9 @@ mod test {
 
     #[test]
     fn name_type_equal_assertion() {
-        let type1: NameType = Random::generate_random();
+        let type1: NameType = rand::random();
         let type1_clone = type1.clone();
-        let type2: NameType = Random::generate_random();
+        let type2: NameType = rand::random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
         assert!(!(type1 != type1_clone));
@@ -283,9 +294,9 @@ mod test {
 
     #[test]
     fn closeness() {
-        let obj0: NameType = Random::generate_random();
+        let obj0: NameType = rand::random();
         let obj0_clone = obj0.clone();
-        let obj1: NameType = Random::generate_random();
+        let obj1: NameType = rand::random();
         assert!(closer_to_target(&obj0_clone, &obj1, &obj0));
         assert!(!closer_to_target(&obj1, &obj0_clone, &obj0));
     }
@@ -310,7 +321,7 @@ mod test {
     fn format_random_nametype() {
         // test for Random NameType
         for _ in 0..5 {
-            let my_name : NameType = Random::generate_random();
+            let my_name : NameType = rand::random();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.as_hex();
             assert_eq!(debug_id.len(), 14);

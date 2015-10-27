@@ -19,17 +19,11 @@
 pub mod node;
 /// Simulate a client.
 pub mod client;
-/// Random trait.
-pub mod random_trait;
-/// Expose Random values for specific types to tests.
-pub mod types_util;
 /// Various random values for types available to tests.
 pub mod messages_util;
 
 pub use self::node::*;
 pub use self::client::*;
-pub use self::random_trait::*;
-pub use self::types_util::*;
 pub use self::messages_util::*;
 
 use NameType;

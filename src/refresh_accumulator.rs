@@ -92,109 +92,105 @@ impl RefreshAccumulator {
 
 #[cfg(test)]
 mod test {
+    use rand;
+
     #[test]
     fn add_with_fixed_threshold_and_unknown_cause() {
-        use ::test_utils::random_trait::Random;
-
         let threshold = 5usize;
         let bytes = ::types::generate_random_vec_u8(120usize);
-        let group = ::authority::Authority::NaeManager(::NameType::generate_random());
-        let cause = ::NameType::generate_random();
+        let group = ::authority::Authority::NaeManager(rand::random());
+        let cause: ::NameType = rand::random();
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let mut accumulator = ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10), event_sender);
         assert!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::DoRefresh(1u64, group.clone(),
             cause.clone())));
         for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
-                ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+                rand::random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
         }
         assert!(event_receiver.try_recv().is_err());
         assert_eq!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .unwrap().len(), threshold);
         assert!(event_receiver.try_recv().is_err());
 
         // assert that the accumulator has been cleared; repeat with the same message
         assert!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert_eq!(event_receiver.try_recv(), Ok(::event::Event::DoRefresh(1u64, group.clone(),
             cause.clone())));
         for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
-                ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+                rand::random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
         }
         assert!(event_receiver.try_recv().is_err());
         assert_eq!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group, bytes, cause)
+            rand::random(), group, bytes, cause)
             .unwrap().len(), threshold);
         assert!(event_receiver.try_recv().is_err());
     }
 
     #[test]
     fn add_with_fixed_threshold_and_known_cause() {
-        use ::test_utils::random_trait::Random;
-
         let threshold = 5usize;
         let bytes = ::types::generate_random_vec_u8(120usize);
-        let group = ::authority::Authority::NaeManager(::NameType::generate_random());
-        let cause = ::NameType::generate_random();
+        let group = ::authority::Authority::NaeManager(rand::random());
+        let cause = rand::random();
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let mut accumulator = ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10), event_sender);
         // register the cause
         accumulator.register_cause(&cause);
         assert!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert!(event_receiver.try_recv().is_err());
         for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
-                ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+                rand::random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
         }
         assert!(event_receiver.try_recv().is_err());
         assert_eq!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .unwrap().len(), threshold);
         assert!(event_receiver.try_recv().is_err());
 
         // assert that the accumulator has been cleared; repeat with the same message
         assert!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+            rand::random(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
         assert!(event_receiver.try_recv().is_err());
         for _ in 1..threshold - 1 {
             assert!(accumulator.add_message(threshold.clone(), 1u64,
-                ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone())
+                rand::random(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
         }
         assert!(event_receiver.try_recv().is_err());
         assert_eq!(accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group, bytes, cause)
+            rand::random(), group, bytes, cause)
             .unwrap().len(), threshold);
         assert!(event_receiver.try_recv().is_err());
     }
 
     #[test]
     fn add_with_updated_bytes() {
-        use ::test_utils::random_trait::Random;
-
         let threshold = 5usize;
         let bytes = ::types::generate_random_vec_u8(120usize);
         let new_bytes = ::types::generate_random_vec_u8(150usize);
-        let group = ::authority::Authority::NaeManager(::NameType::generate_random());
-        let cause = ::NameType::generate_random();
+        let group = ::authority::Authority::NaeManager(rand::random());
+        let cause: ::NameType = rand::random();
         let (event_sender, event_receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let mut accumulator = ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10), event_sender);
-        let sender = ::NameType::generate_random();
+        let sender: ::NameType = rand::random();
         assert!(accumulator.add_message(threshold.clone(), 1u64,
             sender.clone(), group.clone(), bytes.clone(), cause.clone())
             .is_none());
@@ -204,7 +200,7 @@ mod test {
             sender, group.clone(), new_bytes.clone(), cause.clone())
             .is_none());
         for _ in 1..threshold - 1 {
-            let sender = ::NameType::generate_random();
+            let sender: ::NameType = rand::random();
             assert!(accumulator.add_message(threshold.clone(), 1u64,
                 sender.clone(), group.clone(), bytes.clone(), cause.clone())
                 .is_none());
@@ -214,7 +210,7 @@ mod test {
         }
         assert!(event_receiver.try_recv().is_err());
         match accumulator.add_message(threshold.clone(), 1u64,
-            ::NameType::generate_random(), group.clone(), bytes.clone(), cause.clone()) {
+            rand::random(), group.clone(), bytes.clone(), cause.clone()) {
             Some(vector_of_bytes) => {
                 assert_eq!(vector_of_bytes.len(), threshold);
                 let mut number_of_bytes = 0usize;
