@@ -748,11 +748,6 @@ impl RoutingCore {
         unimplemented!();
     }
 
-    // /// Add a bootstrap connection.
-    // pub fn add_bootstrap_connection(&mut self, _connection: ::crust::Connection) {
-    //     unimplemented!();
-    // }
-
     /// Add an expected connection.
     pub fn add_expected_connection(&mut self, expected_connection: ExpectedConnection)
             -> Option<Option<::crust::Connection>> {
