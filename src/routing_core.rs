@@ -765,6 +765,8 @@ impl RoutingCore {
                                     return None
                                 },
                                 None => {
+                                    debug!("Expected connection {:?} matched on {:?}.",
+                                        key, connection);
                                     value.0 = Some(connection.clone());
                                     let _ = self.action_sender.send(
                                         ::action::Action::MatchConnection(
@@ -787,6 +789,8 @@ impl RoutingCore {
                                     return None
                                 },
                                 None => {
+                                    debug!("Expected connection {:?} matched on {:?}.",
+                                        key, connection);
                                     value.0 = Some(connection.clone());
                                     let _ = self.action_sender.send(
                                         ::action::Action::MatchConnection(
@@ -890,6 +894,8 @@ impl RoutingCore {
                                     None => {}, // a confirmation without a stored hello is ignored
                                     Some(ref stored_hello) => {
                                         if stored_hello.address == hello.address {
+                                            debug!("Confirmed Hello received from {:?}.",
+                                                hello.address);
                                             let _ = self.action_sender.send(
                                                 ::action::Action::MatchConnection(
                                                 None, Some((key.clone(), value.0.clone()))));
@@ -912,7 +918,7 @@ impl RoutingCore {
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
         match (expected_connection, unknown_connection) {
             (Some((expected_connection, Some(connection))), None) => {
-                // Match expected_connection against unknown_connection.
+                debug!("At matching from expected connection against unknown connection.");
                 match expected_connection {
                     ExpectedConnection::Request(ref request) => {
                         // We are the network-side with a ConnectRequest, Node B on diagram of
@@ -957,6 +963,8 @@ impl RoutingCore {
                                         connection, hello.public_id.clone()) {
                                     // Drop secondary, i.e., unrequired, connection from
                                     // unknown connections map.
+                                    debug!("Added peer {:?} on matched expected connection request.",
+                                        hello.public_id.name());
                                     for (key, value) in self.unknown_connections.iter() {
                                         match value.0 {
                                             Some(ref value) => {
@@ -1035,6 +1043,8 @@ impl RoutingCore {
                                                 hello.public_id.name()),  primary_connection,
                                                 hello.public_id.clone()) {
                                             // Drop secondary, i.e., unrequired connection.
+                                            debug!("Added peer {:?} on matched expected connection \
+                                                response.", hello.public_id.name());
                                             let _ = self.action_sender.send(
                                                 ::action::Action::DropConnections(
                                                     vec![connection.clone()]));
@@ -1050,7 +1060,7 @@ impl RoutingCore {
                 }
             },
             (None, Some((unknown_connection, Some(hello)))) => {
-                // At matching from unknown_connection against expected connection
+                debug!("At matching from unknown_connection against expected connection.");
                 let mut opt_connection = None;
                 match hello.expected_connection {
                     Some(ref hello_expected_connection) => {
@@ -1111,16 +1121,18 @@ impl RoutingCore {
                     Some(connection) => {
                         if self.add_peer(ConnectionName::Routing(
                                 hello.public_id.name()), connection, hello.public_id.clone()) {
+                            debug!("Added peer {:?}.", hello.public_id.name());
                             if connection != unknown_connection {
                                 debug!("Sending confirmation to {:?} ", hello.address);
                                 self.action_sender.send(::action::Action::SendConfirmationHello(
                                     connection, hello.address));
                                 let _ = self.action_sender.send(::action::Action::DropConnections(
                                     vec![unknown_connection]));
-                            } else {
-                                let _ = self.action_sender.send(::action::Action::DropConnections(
-                                    vec![connection]));
                             }
+                            // } else {
+                            //     let _ = self.action_sender.send(::action::Action::DropConnections(
+                            //         vec![connection]));
+                            // }
                         } else {
                             let _ = self.action_sender.send(::action::Action::DropConnections(
                                 vec![unknown_connection]));

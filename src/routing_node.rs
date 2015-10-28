@@ -724,6 +724,7 @@ impl RoutingNode {
     fn refresh_routing_table(&mut self, from_node: &NameType) {
         if !self.connection_filter.check(from_node) {
             if self.core.check_node(&ConnectionName::Routing(from_node.clone())) {
+                debug!("Refresh routing table for peer {:?}.", from_node);
                 ignore(self.send_connect_request(from_node));
             }
             self.connection_filter.add(from_node.clone());
@@ -733,7 +734,7 @@ impl RoutingNode {
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
         let (from_authority, address) = match self.core.state() {
             &::routing_core::State::Disconnected => return Err(RoutingError::NotBootstrapped),
-            &::routing_core::State::Bootstrapped | &::routing_core::State::Relocated => {
+            &::routing_core::State::Bootstrapped => {
                 let name = match self.get_a_bootstrap_name() {
                     Some(name) => name,
                     // (TODO Brian 19.10.15) Shouldn't happen since we should have at least one
@@ -754,6 +755,7 @@ impl RoutingNode {
             }
         };
 
+        debug!("Sending connect request from {:?} to {:?}.", from_authority, peer_name);
         let routing_message = RoutingMessage {
             from_authority: from_authority,
             to_authority: Authority::ManagedNode(peer_name.clone()),
