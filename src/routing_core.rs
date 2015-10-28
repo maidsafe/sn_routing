@@ -101,6 +101,8 @@ pub struct RoutingCore {
     state: State,
     network_name: Option<NameType>,
     routing_table: Option<RoutingTable>,
+    unknown_bootstrap_connections: Option<::utilities::ExpirationMap<::crust::Connection,
+        Option<::direct_messages::Hello>>>,
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
     relay_map: Option<::utilities::ConnectionMap<Relay>>,
     expected_connections: ::utilities::ExpirationMap<ExpectedConnection,
@@ -1151,6 +1153,8 @@ impl RoutingCore {
             -> Option<Option<::direct_messages::Hello>> {
         self.unknown_connections.insert(unknown_connection, None)
     }
+
+    pub fn add_bootstrap_connection(&mut self, bootstrap_connection: ::crust::Connection)
 
     /// Remove an expected connection.
     pub fn remove_expected_connection(&mut self, expected_connection: &ExpectedConnection) {
