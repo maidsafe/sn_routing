@@ -137,6 +137,8 @@ impl RoutingCore {
             state: State::Disconnected,
             network_name: None,
             routing_table: None,
+            unknown_bootstrap_connections: Some(::utilities::ExpirationMap::with_expiry_duration(
+                ::time::Duration::minutes(5))),
             bootstrap_map: Some(::utilities::ConnectionMap::new()),
             relay_map: None,
             expected_connections: ::utilities::ExpirationMap::with_expiry_duration(
@@ -1154,7 +1156,19 @@ impl RoutingCore {
         self.unknown_connections.insert(unknown_connection, None)
     }
 
-    pub fn add_bootstrap_connection(&mut self, bootstrap_connection: ::crust::Connection)
+    /// Add an unknown bootstrap connection
+    pub fn add_unknown_bootstrap_connection(&mut self, bootstrap_connection: ::crust::Connection) {
+        match self.unknown_bootstrap_connections {
+            Some(ref mut unknown_bootstrap_connections) => {
+                debug!("Added unknown bootstrap connection on {:?}", bootstrap_connection);
+                let _ = unknown_bootstrap_connections.insert(bootstrap_connection, None);
+            },
+            None => {
+                let _ = self.action_sender.send(Action::DropConnections(
+                    vec![bootstrap_connection]));
+            },
+        };
+    }
 
     /// Remove an expected connection.
     pub fn remove_expected_connection(&mut self, expected_connection: &ExpectedConnection) {
