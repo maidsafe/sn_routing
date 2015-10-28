@@ -42,6 +42,31 @@ macro_rules! evaluate_result {
     }
 }
 
+/// A replacement for calling `unwrap()` on a `Result`.
+///
+/// This macro is intended to be used in all cases where we `unwrap` a `Result` to deliberately
+/// ignoring the result and logging in case of error - eg., in test-cases. This macro will
+/// decorate the failure for easy viewing.
+///
+/// # Examples
+///
+/// ```
+/// let some_result: Result<String, u32> = Ok("Hello".to_string());
+/// ignore_result!(some_result);
+/// ```
+#[macro_export]
+macro_rules! ignore_result {
+    ($result:expr) => {
+        let _ = $result.unwrap_or_else(|error| {
+            let message =
+                "Result evaluated to Err: ".to_string() + &format!("{:?}", error)[..];
+            let decorator_length = ::std::cmp::min(message.len() + 2, 100);
+            let decorator = (0..decorator_length).map(|_| "=").collect::<String>();
+            warn!("\n\n {}\n| {} |\n {}\n\n", decorator, message, decorator)
+        });
+    }
+}
+
 /// A replacement for calling `unwrap()` on an `Option`.
 ///
 /// This macro is intended to be used in all cases where we `unwrap` an `Option` to deliberately

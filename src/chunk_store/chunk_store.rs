@@ -26,14 +26,13 @@ pub struct ChunkStore {
 impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
     pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ::error::ChunkStoreError> {
+        Self::cleanup();
         let folder_name = format!("safe_vault-{}/", Self::get_own_pid());
         let mut path = ::std::env::temp_dir();
         path.push(folder_name);
-        if Self::cleanup() {
-            let _ = try!(::std::fs::create_dir(&path));
-        }
-        let tempdir = try!(::tempdir::TempDir::new_in(path, "safe_vault"));
+        ignore_result!(::std::fs::create_dir(&path));
 
+        let tempdir = try!(::tempdir::TempDir::new_in(path, "chunk_store"));
         Ok(ChunkStore {
             tempdir: tempdir,
             max_disk_usage: max_disk_usage,
@@ -146,13 +145,14 @@ impl ChunkStore {
         })
     }
 
-    fn cleanup() -> bool {
+    fn cleanup() {
         let vault_pids = Self::get_all_vault_pids();
         match vault_pids {
             Some(safe_vault_pids) => {
                 let own_pid = format!("{}", Self::get_own_pid());
-                ::std::fs::read_dir(::std::env::temp_dir()).ok().and_then(|dir_entries| {
-                    dir_entries.filter(|dir_entry| {
+                let _ = ::std::fs::read_dir(::std::env::temp_dir()).ok().and_then(|dir_entries| {
+                    let own_dir: Vec<Result<::std::fs::DirEntry, ::std::io::Error>>
+                            = dir_entries.filter(|dir_entry| {
                         match dir_entry {
                             &Ok(ref entry) => {
                                 let line = entry.file_name().into_string().ok().unwrap_or(String::from(""));
@@ -160,7 +160,9 @@ impl ChunkStore {
                                     (true, false) => {
                                         let v: Vec<&str> = line.split("-").collect();
                                         if v.len() > 1 && !safe_vault_pids.contains(&String::from(v[1])) {
-                                            let _ = evaluate_result!(::std::fs::remove_dir_all(entry.path()));
+                                            // As the dir itself is not atomic, there is chance other vault
+                                            // has cleaned up the directory, no need to panic here
+                                            ignore_result!(::std::fs::remove_dir_all(entry.path()));
                                         }
                                     }
                                     (true, true) => return true,
@@ -170,10 +172,11 @@ impl ChunkStore {
                             &Err(_) => {},
                         }
                         false
-                    }).next()
-                }).is_none()
+                    }).collect();
+                    Some(own_dir.len())
+                });
             }
-            None => true,
+            None => {},
         }
     }
 
