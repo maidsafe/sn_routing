@@ -237,10 +237,12 @@ impl RoutingCore {
         if !self.id.assign_relocated_name(network_name.clone()) {
             return false
         };
+        debug!("Creating routing table after relocation");
         self.routing_table = Some(RoutingTable::new(&network_name));
         self.relay_map = Some(::utilities::ConnectionMap::new());
         self.network_name = Some(network_name.clone());
         self.state = State::Relocated;
+        debug!("Our state {:?}.", self.state);
         true
     }
 
@@ -248,6 +250,71 @@ impl RoutingCore {
     pub fn assign_name(&mut self, name: &NameType) -> bool {
         // wrap to assign_network_name
         self.assign_network_name(name)
+    }
+
+    pub fn update_relay_map(&mut self, public_id: &::public_id::PublicId) {
+        match self.relay_map {
+            Some(ref mut relay_map) => {
+                let (stored_public_id, connections) = relay_map.drop_identity(
+                    &Relay { public_key: public_id.signing_public_key().clone() });
+
+                match stored_public_id {
+                    Some(_) => {
+                        debug!("Relay map has {:?} connections for {:?}.", connections.len(),
+                            public_id);
+                        debug!("Moving peer id {:?} from relay to bootstrap map.", public_id);
+                        let _ = relay_map.add_peer(connections[0].clone(),
+                            Relay { public_key: public_id.signing_public_key().clone() },
+                            public_id.clone());
+                        match self.bootstrap_map {
+                            Some(ref mut bootstrap_map) => {
+                                let _ = bootstrap_map.add_peer(connections[0].clone(),
+                                    public_id.name(), public_id.clone());
+                                return;
+                            },
+                            None => {
+                                self.bootstrap_map = Some(::utilities::ConnectionMap::new());
+                                match self.bootstrap_map {
+                                    Some(ref mut bootstrap_map) => {
+                                        let _ = bootstrap_map.add_peer( connections[0].clone(),
+                                            public_id.name(), public_id.clone());
+                                        return;
+                                    },
+                                    None => {},
+                                }
+                            }
+                        }
+                    },
+                    None => {},
+                };
+
+                if connections.len() != 0usize {
+                    debug!("Moving peer id {:?} from relay to bootstrap map.", public_id);
+                    let _ = relay_map.add_peer(connections[0].clone(),
+                            Relay { public_key: public_id.signing_public_key().clone() },
+                            public_id.clone());
+                    match self.bootstrap_map {
+                        Some(ref mut bootstrap_map) => {
+                            let _ = bootstrap_map.add_peer(connections[0].clone(),
+                                public_id.name(), public_id.clone());
+                            return;
+                        },
+                        None => {
+                            self.bootstrap_map = Some(::utilities::ConnectionMap::new());
+                            match self.bootstrap_map {
+                                Some(ref mut bootstrap_map) => {
+                                    let _ = bootstrap_map.add_peer(connections[0].clone(),
+                                        public_id.name(), public_id.clone());
+                                    return;
+                                },
+                                None => {},
+                            }
+                        }
+                    }
+                }
+            },
+            None => {},
+        }
     }
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
@@ -810,16 +877,16 @@ impl RoutingCore {
     /// Check whether the connection has been accepted.
     pub fn match_unknown_connection(&mut self, connection: &::crust::Connection,
             hello: &::direct_messages::Hello) {
-        match hello.confirmed_you {
-            Some(ref address) => {
-                debug!("Confirmation sent with {:?}.", address);
-                if !self.is_us(address) {
-                    error!("Confirmation failed with {:?}.", address);
-                    return;
-                }
-            },
-            None => {},
-        };
+        // match hello.confirmed_you {
+        //     Some(ref address) => {
+        //         debug!("Confirmation sent with {:?}.", address);
+        //         if !self.is_us(address) {
+        //             error!("Confirmation failed with {:?}.", address);
+        //             return;
+        //         }
+        //     },
+        //     None => {},
+        // };
         match hello.address {
             // it is a client, so we will add it as a relay connection
             // (fails if we are client ourselves)
@@ -859,6 +926,8 @@ impl RoutingCore {
                             if key == connection {
                                 match value.0 {
                                     None => {
+                                        debug!("Matched Hello {:?} to unknown connection {:?}.",
+                                            hello, key);
                                         value.0 = Some(hello.clone());
                                         let _ = self.action_sender.send(
                                             ::action::Action::MatchConnection(
@@ -934,9 +1003,11 @@ impl RoutingCore {
                                                     // Expecting a ConnectResponse, do nothing.
                                                 },
                                                 &ExpectedConnection::Response(ref response, _) => {
-                                                    if response.receiver_fob.name() ==
-                                                            self.id().name() &&
+                                                    if //response.receiver_fob.name() ==
+                                                       //     self.id().name() &&
                                                         hello.public_id == request.requester_fob {
+                                                            debug!("Matched expected connection to \
+                                                                unknown connection.");
                                                             opt_hello = Some(hello.clone());
                                                             break;
                                                     }

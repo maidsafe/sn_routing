@@ -80,7 +80,16 @@ impl RoutingNode {
         let accepting_on = crust_service.start_default_acceptors().into_iter()
                            .filter_map(|ep|ep.ok())
                            .flat_map(::crust::ifaddrs_if_unspecified)
-                           .collect();
+                           .collect::<Vec<::crust::Endpoint>>();
+
+        // let mut accepting_on = crust_service.start_default_acceptors().into_iter()
+        //                    .filter_map(|ep|ep.ok())
+        //                    .flat_map(::crust::ifaddrs_if_unspecified)
+        //                    .collect::<Vec<::crust::Endpoint>>();
+
+        // while accepting_on.len() > 1usize {
+        //     let _ = accepting_on.pop();
+        // }
 
         // The above command will give us only internal endpoints on which
         // we're accepting. The next command will try to contact an IGD device
@@ -644,6 +653,7 @@ impl RoutingNode {
                             response_token.clone()));
                         let _ = self.public_id_cache.insert(network_public_id.name(),
                             network_public_id.clone());
+                        // self.core.update_relay_map(&network_public_id);
                         match self.core.our_close_group_with_public_ids() {
                             Some(close_group) => {
                                 debug!("Network request to accept name {:?},
@@ -805,6 +815,7 @@ impl RoutingNode {
                 let _ = self.core.add_expected_connection(
                         ::routing_core::ExpectedConnection::Request(connect_request));
 
+                debug!("Sending ConnectResponse to {:?}", from_authority);
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -832,7 +843,7 @@ impl RoutingNode {
                                from_authority: Authority,
                                _to_authority: Authority)
                                -> RoutingResult {
-        debug!("handle ConnectResponse");
+        debug!("Handle ConnectResponse");
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
@@ -851,6 +862,7 @@ impl RoutingNode {
                 // Are we already connected (returns false), or still interested?
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
+                    debug!("ConnectResponse already connected to {:?}", from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
                 };
 
