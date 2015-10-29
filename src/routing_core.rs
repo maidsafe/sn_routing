@@ -220,20 +220,19 @@ impl RoutingCore {
     /// accepted.
     pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
         match self.state {
-            State::Disconnected => {
-                debug!("Assigning name {:?} while disconnected.", network_name);
+            State::Disconnected | State::Bootstrapped => {},
+            State::Relocated | State::Connected | State::GroupConnected
+                | State::Terminated => {
+                error!("assign_network_name: {:?} refused to assign name {:?} - our name is {:?}.",
+                    self.state, network_name, self.id.name());
+                return false
             },
-            State::Bootstrapped => {},
-            State::Relocated => return false,
-            State::Connected => return false,
-            State::GroupConnected => return false,
-            State::Terminated => return false,
         };
+        debug!("assign_network_name: {:?} assigning name {:?}.", self.state, network_name);
         // if routing_table is constructed, reject name assignment
         match self.routing_table {
             Some(_) => {
-                error!("Attempt to assign name {:?} while status is {:?}",
-                    network_name, self.state);
+                error!("assign_network_name: routing table already intialised.");
                 return false;
             },
             None => {}
@@ -245,6 +244,7 @@ impl RoutingCore {
         self.relay_map = Some(::utilities::ConnectionMap::new());
         self.network_name = Some(network_name.clone());
         self.state = State::Relocated;
+        debug!("assign_network_name: {:?} successfully set name {:?}", self.state, self.id.name());
         true
     }
 

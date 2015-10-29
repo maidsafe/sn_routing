@@ -115,7 +115,7 @@ impl RoutingNode {
 
     pub fn run(&mut self) {
         self.crust_service.bootstrap();
-        debug!("RoutingNode started running and started bootstrap");
+        debug!("run: RoutingNode started running and started crust bootstrapping.");
         loop {
             match self.action_receiver.try_recv() {
                 Err(_) => {}
