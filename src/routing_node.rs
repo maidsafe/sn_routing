@@ -142,7 +142,7 @@ impl RoutingNode {
                     self.drop_connections(connections);
                 },
                 Ok(Action::MatchConnection(expected_connection, unknown_connection)) => {
-                    self.match_connection(expected_connection, unknown_connection);
+                    self.core.match_connection(expected_connection, unknown_connection);
                 },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
@@ -234,6 +234,15 @@ impl RoutingNode {
     }
 
     fn handle_on_connect(&mut self, connection: ::crust::Connection) {
+        // FIXME (ben 29/10/2015) this is a possible crust bug, refer to routing/issue-757
+        // on_connect if the connection states that we connected to ourselves, drop asap.
+        if self.accepting_on.contains(&connection.peer_endpoint()) {
+            error!("handle_on_connect: peer endpoint {:?} is in our accepting endpoints {:?}. \
+                Refer to routing/issue-757. Dropping {:?}", connection.peer_endpoint(),
+                self.accepting_on, connection);
+            self.crust_service.drop_node(connection);
+            return;
+        };
         match self.core.state() {
             &::routing_core::State::Disconnected => {
                 // This is our first connection, add as bootstrap and send hello.
@@ -263,7 +272,7 @@ impl RoutingNode {
 
         debug!("handle_on_accept: {:?} matching {:?} against expected connections",
             self.core.state(), connection);
-        match self.match_expected_connection(&connection) {
+        match self.core.match_expected_connection(&connection) {
             Some(expected_connection) => {
                 // We've received a ConnectRequest from a peer, send an unconfirmed Hello.
                 debug!("handle_on_connect: {:?} matched expected connection {:?} on {:?}, \
@@ -337,8 +346,8 @@ impl RoutingNode {
     }
 
     fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello) {
-        debug!("Hello, it is {:?} on {:?}", hello.address, connection);
-        self.match_unknown_connection(&connection, &hello)
+        debug!("handle_hello: {:?} on {:?}", hello.address, connection);
+        self.core.match_unknown_connection(&connection, &hello)
     }
 
     /// This the fundamental functional function in routing.
@@ -877,6 +886,7 @@ impl RoutingNode {
     }
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
+        debug!("requesting crust connect to {:?}", endpoints);
         self.crust_service.connect(endpoints.clone());
     }
 
@@ -884,23 +894,6 @@ impl RoutingNode {
         for connection in connections {
             self.crust_service.drop_node(connection);
         }
-    }
-
-    fn match_expected_connection(&mut self, connection: &::crust::Connection)
-            -> Option<::routing_core::ExpectedConnection> {
-        self.core.match_expected_connection(connection)
-    }
-
-    fn match_unknown_connection(&mut self,
-            connection: &::crust::Connection, hello: &::direct_messages::Hello) {
-        self.core.match_unknown_connection(connection, hello)
-    }
-
-    fn match_connection(&mut self,
-            expected_connection: Option<(::routing_core::ExpectedConnection,
-                                         Option<::crust::Connection>)>,
-            unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
-       self.core.match_connection(expected_connection, unknown_connection)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
