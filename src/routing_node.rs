@@ -237,7 +237,7 @@ impl RoutingNode {
         match self.core.state() {
             &::routing_core::State::Disconnected => {
                 // This is our first connection, add as bootstrap and send hello.
-                debug!("Connected from Disconnected state on {:?}", connection);
+                debug!("handle_on_connect: Disconnected adding unknown bootstrap {:?}", connection);
                 let _ = self.core.add_unknown_bootstrap_connection(connection.clone());
                 ignore(self.send_hello(connection, None, None));
                 return;
@@ -245,6 +245,7 @@ impl RoutingNode {
             &::routing_core::State::Bootstrapped => {
                 // We're bootstrapped at our side but haven't received hello response and relocated,
                 // so drop this connection.
+                debug!("handle_on_connect: Bootstrapped so dropping {:?}", connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
@@ -254,14 +255,19 @@ impl RoutingNode {
             &::routing_core::State::GroupConnected => {},
             &::routing_core::State::Terminated => {
                 // Terminate has been called don't act on any further events.
+                debug!("handle_on_connect: Terminated so dropping {:?}", connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
         };
 
+        debug!("handle_on_accept: {:?} matching {:?} against expected connections",
+            self.core.state(), connection);
         match self.match_expected_connection(&connection) {
             Some(expected_connection) => {
                 // We've received a ConnectRequest from a peer, send an unconfirmed Hello.
+                debug!("handle_on_connect: {:?} matched expected connection {:?} on {:?}, \
+                    sending hello", self.core.state(), expected_connection, connection);
                 ignore(self.send_hello(connection, None, Some(expected_connection)))
             },
             None => {},
@@ -273,9 +279,13 @@ impl RoutingNode {
             &::routing_core::State::Disconnected => {
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(
                     &self.core.id().name().0).0);
+                debug!("handle_on_accept: Disconnected so self-assigning name {:?}",
+                    assigned_name);
                 self.core.assign_name(&assigned_name);
             },
             &::routing_core::State::Bootstrapped => {
+                debug!("handle_on_accept: Bootstrapped so not accepting {:?}. Dropping",
+                    connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
@@ -288,6 +298,8 @@ impl RoutingNode {
             },
         };
 
+        debug!("handle_on_accept: {:?} adding unknown connection {:?} on accept.",
+            self.core.state(), connection);
         let _ = self.core.add_unknown_connection(connection);
     }
 

@@ -845,8 +845,10 @@ impl RoutingCore {
             ::types::Address::Node(name) => {
                 match hello.confirmed_you {
                     None => {
+                        debug!("Unconfirmed Hello from node {:?}, our state {:?}.",
+                            name, self.state);
                         match self.state {
-                            State::Disconnected => { error!("this is not bootstrapping, \
+                            State::Disconnected => { debug!("this is not bootstrapping, \
                                 as bootstrapping only sends confirmations from a node ");
                                 return; },
                             State::Bootstrapped | State::Relocated | State::Connected
@@ -1156,14 +1158,19 @@ impl RoutingCore {
         self.unknown_connections.insert(unknown_connection, None)
     }
 
-    /// Add an unknown bootstrap connection
+    /// Add an unknown bootstrap connection, this will set the state to Bootstrapped,
+    /// even if the new bootstrap connection is not confirmed yet.
     pub fn add_unknown_bootstrap_connection(&mut self, bootstrap_connection: ::crust::Connection) {
         match self.unknown_bootstrap_connections {
             Some(ref mut unknown_bootstrap_connections) => {
-                debug!("Added unknown bootstrap connection on {:?}", bootstrap_connection);
+                debug!("add_unknown_bootstrap_connection: added {:?}", bootstrap_connection);
                 let _ = unknown_bootstrap_connections.insert(bootstrap_connection, None);
+                self.state = State::Bootstrapped;
+                debug!("add_unknown_bootstrap_connection: set state {:?}", self.state);
             },
             None => {
+                error!("add_unknown_bootstrap_connection: no unknown_bootstrap_connections map \
+                    initialised. Dropping connection {:?}", bootstrap_connection);
                 let _ = self.action_sender.send(Action::DropConnections(
                     vec![bootstrap_connection]));
             },
@@ -1186,10 +1193,16 @@ impl RoutingCore {
         // If RoutingNode is restricted from becoming a node, it suffices to never request a network
         // name.
         match self.state {
-            State::Disconnected | State::Relocated | State::Connected
+            State::Disconnected => {
+                debug!("Rebootstraping");
+                self.action_sender.send(::action::Action::Rebootstrap);
+                return;
+            },
+            State::Relocated | State::Connected
                 | State::GroupConnected | State::Terminated => {
                     error!("Requesting network name while disconnected or named or terminated.");
-                    return; },
+                    return;
+            },
             State::Bootstrapped => {},
         }
         debug!("Will request a network name from bootstrap node {:?} on {:?}", bootstrap_name,
