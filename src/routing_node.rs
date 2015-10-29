@@ -48,6 +48,7 @@ pub struct RoutingNode {
     crust_receiver: ::std::sync::mpsc::Receiver<::crust::Event>,
     crust_service: ::crust::Service,
     accepting_on: Vec<::crust::Endpoint>,
+    connection_counter: u32,
     // for RoutingNode
     client_restriction: bool,
     action_sender: ::std::sync::mpsc::Sender<Action>,
@@ -95,6 +96,8 @@ impl RoutingNode {
             crust_receiver: crust_receiver,
             crust_service: crust_service,
             accepting_on: accepting_on,
+            // connection counter starts at 1, 0 is reserved for bootstrapping
+            connection_counter: 1u32,
             client_restriction: client_restriction,
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
@@ -114,7 +117,7 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.crust_service.bootstrap();
+        self.crust_service.bootstrap(0u32);
         debug!("run: RoutingNode started running and started crust bootstrapping.");
         loop {
             match self.action_receiver.try_recv() {
@@ -146,7 +149,8 @@ impl RoutingNode {
                 },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
-                    self.crust_service.bootstrap();
+                    ::std::thread::sleep_ms(100);
+                    self.crust_service.bootstrap(0u32);
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
@@ -184,11 +188,14 @@ impl RoutingNode {
                         }
                     };
                 }
-                Ok(::crust::Event::OnConnect(connection)) => {
+                Ok(::crust::Event::OnConnect(connection, _response_token)) => {
                     self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
                     self.handle_on_accept(connection);
+                }
+                Ok(::crust::Event::OnRendezvousConnect(_connection, _response_token)) => {
+                    unimplemented!()
                 }
                 Ok(::crust::Event::LostConnection(connection)) => {
                     self.handle_lost_connection(connection);
@@ -198,7 +205,7 @@ impl RoutingNode {
                         &::routing_core::State::Disconnected => {
                             self.reset();
                             ::std::thread::sleep_ms(100);
-                            self.crust_service.bootstrap();
+                            self.crust_service.bootstrap(0u32);
                         },
                         _ => {},
                     };
@@ -208,6 +215,7 @@ impl RoutingNode {
                         self.accepting_on.push(external_endpoint);
                     }
                 }
+                _ => {}
             };
             ::std::thread::sleep_ms(1);
         }
@@ -886,8 +894,11 @@ impl RoutingNode {
     }
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
-        debug!("requesting crust connect to {:?}", endpoints);
-        self.crust_service.connect(endpoints.clone());
+        let new_response_token = self.connection_counter.clone();
+        self.connection_counter = self.connection_counter.wrapping_add(1u32);
+        if self.connection_counter == 0u32 { self.connection_counter == 1u32; };
+        debug!("connect: requesting crust connect to {:?}", endpoints);
+        self.crust_service.connect(new_response_token, endpoints.clone());
     }
 
     fn drop_connections(&mut self, connections: Vec<::crust::Connection>) {
