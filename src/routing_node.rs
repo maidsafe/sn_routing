@@ -828,12 +828,17 @@ impl RoutingNode {
                 self.connect(&connect_request.local_endpoints);
                 self.connect(&connect_request.external_endpoints);
                 self.connection_filter.add(connect_request.requester_fob.name());
+                let to_authority = match self.core.state() {
+                    &::routing_core::State:: Relocated => Authority::Client(self.core.id().name(),
+                        connect_request.requester_fob.signing_public_key()),
+                    _ => from_authority,
+                };
                 let _ = self.core.add_expected_connection(
-                        ::routing_core::ExpectedConnection::Request(connect_request));
+                    ::routing_core::ExpectedConnection::Request(connect_request));
 
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
-                    to_authority: from_authority,
+                    to_authority: to_authority,
                     content: Content::InternalResponse(InternalResponse::Connect(ConnectResponse {
                             local_endpoints: self.accepting_on.clone(),
                             external_endpoints: vec![],
