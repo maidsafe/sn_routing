@@ -677,6 +677,52 @@ impl RoutingCore {
             }
             None => {}
         };
+
+        if target_connections.is_empty() {
+            // It's possible we participated in the relocation of a client present in our relay map.
+            match self.relay_map {
+                Some(ref relay_map) => {
+                    let mut managed_node_name = None;
+                    match *to_authority {
+                        Authority::ManagedNode(ref name) => {
+                            managed_node_name = Some(name);
+                        }
+                        _ => {},
+                    };
+
+                    match managed_node_name {
+                        Some(name) => {
+                            for identity in relay_map.identities().iter() {
+                                let identity_name = ::NameType::new(
+                                    ::sodiumoxide::crypto::hash::sha512::hash(
+                                        &identity.public_key.0[..]).0);
+                                match self.our_close_group() {
+                                    Some(close_group) => {
+                                        match ::utils::calculate_relocated_name(close_group,
+                                                &identity_name) {
+                                            Ok(relocated_name) => {
+                                                if relocated_name == *name {
+                                                    let (public_id, connections) =
+                                                        relay_map.lookup_identity(identity);
+                                                    for connection in connections {
+                                                        target_connections.push(connection);
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => {},
+                                        }
+                                    },
+                                    None => {},
+                                }
+                            }
+                        },
+                        None => {},
+                    }             
+                },
+                None => {},
+            }
+        }
+
         target_connections
     }
 

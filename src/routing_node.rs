@@ -603,6 +603,11 @@ impl RoutingNode {
                                    to_authority: Authority,
                                    response_token: SignedToken)
                                    -> RoutingResult {
+        if self.client_restriction {
+            debug!("Client restricted not requesting network name.");
+            return Ok(()) 
+        } 
+
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
                 match (&from_authority, &to_authority) {
