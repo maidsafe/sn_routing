@@ -77,19 +77,19 @@ impl RoutingNode {
             Err(what) => panic!(format!("Unable to start crust::Service {}", what)),
         };
 
-        let accepting_on = crust_service.start_default_acceptors().into_iter()
-                           .filter_map(|ep|ep.ok())
-                           .flat_map(::crust::ifaddrs_if_unspecified)
-                           .collect::<Vec<::crust::Endpoint>>();
-
-        // let mut accepting_on = crust_service.start_default_acceptors().into_iter()
+        // let accepting_on = crust_service.start_default_acceptors().into_iter()
         //                    .filter_map(|ep|ep.ok())
         //                    .flat_map(::crust::ifaddrs_if_unspecified)
         //                    .collect::<Vec<::crust::Endpoint>>();
 
-        // while accepting_on.len() > 1usize {
-        //     let _ = accepting_on.pop();
-        // }
+        let mut accepting_on = crust_service.start_default_acceptors().into_iter()
+                           .filter_map(|ep|ep.ok())
+                           .flat_map(::crust::ifaddrs_if_unspecified)
+                           .collect::<Vec<::crust::Endpoint>>();
+
+        while accepting_on.len() > 1usize {
+            let _ = accepting_on.pop();
+        }
 
         // The above command will give us only internal endpoints on which
         // we're accepting. The next command will try to contact an IGD device
@@ -136,6 +136,10 @@ impl RoutingNode {
                 },
                 Ok(Action::SendConfirmationHello(connection, address)) => {
                     let _ = self.send_hello(connection, Some(address), None);
+                },
+                Ok(Action::RequestNetworkName(to_authority, content)) => {
+                    debug!("RequestNetworkName received for {:?}", content);
+                    let _ = self.request_network_name(to_authority, content);
                 },
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     debug!("ClientSendContent received for {:?}", content);
@@ -214,6 +218,7 @@ impl RoutingNode {
                 }
                 Ok(::crust::Event::ExternalEndpoints(external_endpoints)) => {
                     for external_endpoint in external_endpoints {
+                        debug!("Adding external endpoint {:?}.", external_endpoint);
                         self.accepting_on.push(external_endpoint);
                     }
                 }
@@ -270,7 +275,9 @@ impl RoutingNode {
 
         match self.match_expected_connection(&connection) {
             Some(expected_connection) => {
-                // We've received a ConnectRequest from a peer, send an unconfirmed Hello.
+                // We've received a ConnectRequest/ConnectResponse from a peer, send an unconfirmed
+                // Hello.
+                debug!("Handling on connect, we've sent {:?}.", expected_connection);
                 ignore(self.send_hello(connection, None, Some(expected_connection)))
             },
             None => {},
@@ -368,7 +375,11 @@ impl RoutingNode {
         // scan for remote names
         if self.core.is_connected_node() {
             match signed_message.claimant() {
-                &::types::Address::Node(ref name) => self.refresh_routing_table(&name),
+                &::types::Address::Node(ref name) => {
+                    debug!("We're connected, got message {:?} from {:?}, refreshing routing table.",
+                        message, name);
+                    self.refresh_routing_table(&name)
+                },
                 _ => {},
             };
         };
@@ -387,6 +398,7 @@ impl RoutingNode {
                 if !self.core.name_in_range(message.destination().get_location()) {
                     return Err(RoutingError::BadAuthority);
                 };
+                debug!("Received an in range group message {:?}.", message);
             } else {
                 match message.destination().get_address() {
                     Some(ref address) => if !self.core.is_us(address) {
@@ -490,7 +502,7 @@ impl RoutingNode {
         let message = signed_message.get_routing_message().clone();
 
         if !message.from_authority.is_group() {
-            debug!("Message from {:?}, returning with SignedToken",
+            debug!("Message from {:?}, returning with SignedToken.",
                 message.from_authority);
             // TODO: If not from a group, then use client's public key to check
             // the signature.
@@ -597,6 +609,52 @@ impl RoutingNode {
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
+
+    fn request_network_name(&self, to_authority: Authority, content: Content) -> RoutingResult {
+        if self.client_restriction {
+            debug!("Not requesting a network name we are a Client.");
+            return Ok(())
+        };
+        if self.core.has_bootstrap_endpoints() {
+            // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
+            let bootstrap_name = match self.get_a_bootstrap_name() {
+                Some(name) => name,
+                None => return Err(RoutingError::NotBootstrapped),
+            };
+            let routing_message = RoutingMessage {
+                from_authority: Authority::Client(bootstrap_name,
+                                                  self.core.id().signing_public_key()),
+                to_authority: to_authority,
+                content: content,
+            };
+            match SignedMessage::new(Address::Client(self.core.id().signing_public_key()),
+                                     routing_message,
+                                     self.core.id().signing_private_key()) {
+                Ok(signed_message) => ignore(self.send(signed_message)),
+                // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
+                Err(e) => return Err(RoutingError::Cbor(e)),
+            };
+        } else {
+            match content {
+                Content::ExternalRequest(external_request) => {
+                    self.send_to_user(Event::FailedRequest {
+                        request: external_request,
+                        our_authority: None,
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                Content::ExternalResponse(external_response) => {
+                    self.send_to_user(Event::FailedResponse {
+                        response: external_response,
+                        our_authority: None,
+                        location: to_authority,
+                        interface_error: InterfaceError::NotConnected });
+                }
+                _ => error!("InternalRequest/Response was sent back to user {:?}", content),
+            }
+        }
+        Ok(())
+    }
 
     fn handle_request_network_name(&self, request: InternalRequest,
                                    from_authority: Authority,
@@ -800,6 +858,7 @@ impl RoutingNode {
         match request {
             InternalRequest::Connect(connect_request) => {
                 if !connect_request.requester_fob.is_relocated() {
+                    debug!("Connect request {:?} requester is not relocated.", connect_request);
                     return Err(RoutingError::RejectedPublicId);
                 };
                 // First verify that the message is correctly self-signed.
