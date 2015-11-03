@@ -1067,6 +1067,7 @@ impl RoutingNode {
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&self, signed_message: SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
+        debug!("Send request to {:?}", destination);
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let connections = self.core.target_connections(&destination);
@@ -1082,6 +1083,7 @@ impl RoutingNode {
 
         match self.core.bootstrap_connections() {
             Some(bootstrap_connections) => {
+                debug!("Bootstrap connections for send {:?}.\n", bootstrap_connections);
                 // TODO (ben 10/08/2015) Strictly speaking we do not have to validate that
                 // the relay_name in from_authority Client(relay_name, client_public_key) is
                 // the name of the bootstrap connection we're sending it on.  Although this might

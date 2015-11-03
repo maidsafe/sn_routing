@@ -180,6 +180,7 @@ impl RoutingCore {
     /// open connections to drop, if any should linger.  Resetting with persistant identity will
     /// preserve the Id, only if it has not been relocated.
     pub fn reset(&mut self, persistant: bool) -> Vec<::crust::Connection> {
+        debug!("Resetting.\n")
         if self.id.is_relocated() || !persistant {
             self.id = ::id::Id::new(); };
         self.state = State::Disconnected;
@@ -517,6 +518,7 @@ impl RoutingCore {
             ConnectionName::Relay(::types::Address::Client(public_key)) => {
                 match self.relay_map {
                     Some(ref mut relay_map) => {
+                        debug!("Adding client id {:?} to relay map.\n", public_id);
                         relay_map.add_peer(connection, Relay{public_key: public_key}, public_id)
                     },
                     None => false,
@@ -604,11 +606,13 @@ impl RoutingCore {
             Some(ref relay_map) => {
                 match *to_authority {
                     Authority::Client(_, ref client_public_key) => {
+                        debug!("Looking for client target {:?}.\n", *to_authority);
                         let (_, connections) = relay_map.lookup_identity(
                             &Relay{public_key: client_public_key.clone()});
+                        debug!("Got client connections {:?}.\n", connections);
                         return connections;
                     }
-                    _ => {}
+                    _ => { debug!("Relay map is none.\n"); }
                 };
             },
             None => {},
@@ -995,7 +999,7 @@ impl RoutingCore {
                     let _ = self.action_sender.send(::action::Action::SendConfirmationHello(
                         connection.clone(), client_address));
                 } else {
-                    error!("Failed to add client {:?} as relay connection on {:?}. Dropping.",
+                    debug!("Failed to add client {:?} as relay connection on {:?}. Dropping.",
                         client_address, connection);
                     let _ = self.action_sender.send(::action::Action::DropConnections(
                         vec![connection.clone()]));
@@ -1321,6 +1325,8 @@ impl RoutingCore {
                                     vec![connection]));
                             }
                         } else {
+                            debug!("Failed to add peer {:?} dropping connections {:?} and {:?}.\n",
+                                hello.public_id.name(), connection, unknown_connection);
                             let _ = self.action_sender.send(::action::Action::DropConnections(
                                 vec![unknown_connection]));
                             let _ = self.action_sender.send(::action::Action::DropConnections(

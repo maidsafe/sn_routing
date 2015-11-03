@@ -44,9 +44,15 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     /// and the connection can be added.  Returns false if the public id is not valid
     /// for the given identifier, or if either the connection is already are registered.
     pub fn add_peer(&mut self, connection: ::crust::Connection, identifier: V,
-        public_id: ::public_id::PublicId) -> bool {
-        if !identifier.valid_public_id(&public_id) { return false; };
-        if self.lookup_map.contains_key(&connection) { return false; };
+            public_id: ::public_id::PublicId) -> bool {
+        if !identifier.valid_public_id(&public_id) {
+            debug!("Invalid public id {:?}.\n", public_id);
+            return false;
+        };
+        if self.lookup_map.contains_key(&connection) {
+            debug!("Connection map already contains connection {:?}.\n", connection);
+            return false;
+        };
         match self.connection_map.get(&identifier) {
             Some(stored_public_id) => { if stored_public_id != &public_id { return false; }},
             None => {},
@@ -54,6 +60,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         if self.lookup_map.len() >= _MAX_ENTRIES { warn!("Exceeded maximum number of connections \
             {:?} when adding {:?} on {:?}", self.lookup_map.len(), identifier, connection); };
         let old_value = self.lookup_map.insert(connection, identifier.clone());
+        debug!("Inserted {:?} {:?} into lookup map.\n", connection, identifier);
         debug_assert!(old_value.is_none(), "Already verified above the lookup_map does \
             not contain the connection; old identifier is {:?}", identifier);
         let _old_value = self.connection_map.insert(identifier, public_id);
@@ -63,12 +70,13 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     /// Removes the provided connection and returns the public id of this connection.
     /// If there are other connections still registered for the identity,  None is returned.
     pub fn drop_connection(&mut self, connection_to_drop: &::crust::Connection)
-        -> Option<::public_id::PublicId> {
+            -> Option<::public_id::PublicId> {
         let affected_identity = match self.lookup_map.remove(connection_to_drop) {
             Some(identity) => identity,
             None => return None,
         };
         if self.lookup_map.iter().find(|&(_, ref i)| **i == affected_identity).is_none() {
+            debug!("Removed {:?} from connection map.\n", affected_identity);
             self.connection_map.remove(&affected_identity)
         } else { None }
     }
