@@ -29,6 +29,7 @@ pub enum Action {
     //            | a fully signed message with a given claimant
     SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
     SendConfirmationHello(::crust::Connection, ::types::Address),
+    RequestNetworkName(::authority::Authority, ::messages::Content),
     ClientSendContent(::authority::Authority, ::messages::Content),
     //          ~~|~~~~~~  ~~|~~~~
     //            |          | the bare content for a message to be formed
