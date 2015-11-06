@@ -15,10 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+/// HolePunchingState.
+mod hole_punching_state;
 
-/// Trait to self construct a type with random values
-pub trait Random {
-
-	/// Generate a random instance of a type that implements the trait.
-    fn generate_random() -> Self;
-}
+pub use ::connection_management::hole_punching_state::HolePunchingState;

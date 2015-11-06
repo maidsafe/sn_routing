@@ -281,6 +281,7 @@ impl ::std::fmt::Display for RoutingError {
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     fn test_object<T>(obj_before: T)
         where T: for<'a> ::rustc_serialize::Encodable + ::rustc_serialize::Decodable + Eq
@@ -296,7 +297,7 @@ mod test {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         ::structured_data::StructuredData::new(0,
-                                  ::test_utils::Random::generate_random(),
+                                  rand::random(),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -332,7 +333,7 @@ mod test {
         }
 
         // test serialization of HadToClearSacrificial(::NameType, u32)
-        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let name: ::NameType = rand::random();
         test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));
     }
 
@@ -368,7 +369,7 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
 
-        let name: ::name_type::NameType = ::test_utils::Random::generate_random();
+        let name: ::name_type::NameType = rand::random();
         assert_eq!("Had to clear sacrificial data to complete request",
                    ::std::error::Error::description(
                        &::error::ResponseError::HadToClearSacrificial(name, 0u32)));

@@ -274,10 +274,11 @@ impl SignedMessage {
 
 #[cfg(test)]
 mod test{
+    use rand;
 
     #[test]
     fn signed_message_new() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
@@ -304,7 +305,7 @@ mod test{
 
     #[test]
     fn invalid_signed_message_new() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
@@ -332,11 +333,11 @@ mod test{
 
     #[test]
     fn signed_message_with_signature() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -370,11 +371,11 @@ mod test{
 
     #[test]
     fn invalid_signed_message_with_signature() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -409,11 +410,11 @@ mod test{
 
     #[test]
     fn signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());
@@ -454,11 +455,11 @@ mod test{
 
     #[test]
     fn invalid_signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(::test_utils::Random::generate_random());
+        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message =
             ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits = ::test_utils::messages_util::generate_random_u8();
+        let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
         assert!(encoded_body.is_ok());

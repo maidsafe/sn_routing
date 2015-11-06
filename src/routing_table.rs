@@ -31,6 +31,7 @@ pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
+#[allow(unused)]
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
@@ -40,6 +41,7 @@ pub struct NodeInfo {
     pub id: NameType,
 }
 
+#[allow(unused)]
 impl NodeInfo {
     #[cfg(not(test))]
     pub fn new(public_id: PublicId,
@@ -77,12 +79,14 @@ impl NodeInfo {
 }
 
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
+#[allow(unused)]
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
     lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
+#[allow(unused)]
 impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
         RoutingTable {
@@ -126,6 +130,7 @@ impl RoutingTable {
         }
 
         if self.has_node(&their_info.id()) {
+            debug!("Routing table {:?} has node {:?}.\n", self.routing_table, their_info);
             return (false, None);
         }
 
@@ -198,7 +203,6 @@ impl RoutingTable {
         if self.has_node(their_id) {
             return false;
         }
-        //  std::lock_guard<std::mutex> lock(mutex_);
         if self.routing_table.len() < RoutingTable::get_optimal_size() {
             return true;
         }
@@ -465,6 +469,7 @@ impl RoutingTable {
 #[cfg(test)]
 mod test {
     extern crate bit_vec;
+    use rand;
 
     enum ContactType {
         Far,
@@ -523,7 +528,7 @@ mod test {
             ContactType::Far => {}
         };
 
-        ::NameType(::types::vector_as_u8_64_array(binary_id.to_bytes()))
+        ::NameType(::types::slice_as_u8_64_array(&binary_id.to_bytes()[..]))
     }
 
     struct Bucket {
@@ -648,7 +653,7 @@ mod test {
             vector.push(super::RoutingTable {
                 routing_table: Vec::new(),
                 lookup_map: ::std::collections::HashMap::new(),
-                our_id: ::test_utils::Random::generate_random()
+                our_id: rand::random()
             });
         }
         vector
@@ -678,11 +683,11 @@ mod test {
         let mut table = super::RoutingTable {
             routing_table: Vec::new(),
             lookup_map: ::std::collections::HashMap::new(),
-            our_id: ::test_utils::Random::generate_random(),
+            our_id: rand::random(),
         };
 
         for _ in 0..super::RoutingTable::get_group_size() {
-            let id = ::test_utils::Random::generate_random();
+            let id = rand::random();
             assert!(table.check_node(&id));
         }
 
@@ -1225,7 +1230,7 @@ mod test {
 
         // Check on empty table
         let mut target_nodes_ =
-            routing_table_utest.table.target_nodes(&::test_utils::Random::generate_random());
+            routing_table_utest.table.target_nodes(&rand::random());
         assert_eq!(target_nodes_.len(), 0);
 
         // Partially fill the table with < GroupSize contacts
@@ -1233,7 +1238,7 @@ mod test {
 
         // Check we get all contacts returnedta
         target_nodes_ =
-            routing_table_utest.table.target_nodes(&::test_utils::Random::generate_random());
+            routing_table_utest.table.target_nodes(&rand::random());
         assert_eq!(routing_table_utest.initial_count, target_nodes_.len());
 
         for i in 0..routing_table_utest.initial_count {

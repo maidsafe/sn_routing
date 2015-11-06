@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 /// Formatted string from a vector of bytes.
-pub fn get_debug_id(input: Vec<u8>) -> ::std::string::String {
-  format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
+    let input = input.as_ref();
+    format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
           input[0],
           input[1],
           input[2],
@@ -78,6 +79,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<::NameType>, original_name:
 
 #[cfg(test)]
 mod test {
+    use rand;
 
     #[test]
     fn public_key_to_client_name() {
@@ -90,29 +92,29 @@ mod test {
 
     #[test]
     fn encode_decode() {
-        let name: ::NameType = ::test_utils::Random::generate_random();
+        let name: ::NameType = rand::random();
         let encoded = match super::encode(&name) {
             Ok(encoded) => encoded,
             Err(_) => panic!("Unexpected serialisation error.")
         };
-        let decoded = match super::decode(&encoded) {
+        let decoded: Vec<u8> = match super::decode(&encoded) {
             Ok(decoded) => decoded,
             Err(_) => panic!("Unexpected deserialisation error.")
         };
 
-        assert_eq!(name, ::NameType(::types::vector_as_u8_64_array(decoded)));
+        assert_eq!(name, ::NameType(::types::slice_as_u8_64_array(&decoded[..])));
     }
 
     #[test]
     fn calculate_relocated_name() {
-        let original_name : ::NameType = ::test_utils::Random::generate_random();
+        let original_name : ::NameType = rand::random();
 
         // empty close nodes
         assert!(super::calculate_relocated_name(Vec::new(), &original_name).is_err());
 
         // one entry
         let mut close_nodes_one_entry : Vec<::NameType> = Vec::new();
-        close_nodes_one_entry.push(::test_utils::Random::generate_random());
+        close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
                 super::calculate_relocated_name(close_nodes_one_entry.clone(),
         &original_name).unwrap();
@@ -137,7 +139,7 @@ mod test {
         // populated closed nodes
         let mut close_nodes : Vec<::NameType> = Vec::new();
         for _ in 0..::types::GROUP_SIZE {
-            close_nodes.push(::test_utils::Random::generate_random());
+            close_nodes.push(rand::random());
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
         &original_name).unwrap();
