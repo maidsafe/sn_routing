@@ -31,7 +31,7 @@ use action::Action;
 use event::Event;
 use messages::RoutingMessage;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Relay {
     pub public_key: ::sodiumoxide::crypto::sign::PublicKey,
 }
@@ -39,6 +39,13 @@ pub struct Relay {
 impl ::utilities::Identifiable for Relay {
     fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
         self.public_key == public_id.signing_public_key()
+    }
+}
+
+impl ::std::fmt::Debug for Relay {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        formatter.write_str(&format!("Public Key {:?}",
+            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(&self.public_key[..]).0)))
     }
 }
 
@@ -180,7 +187,7 @@ impl RoutingCore {
     /// open connections to drop, if any should linger.  Resetting with persistant identity will
     /// preserve the Id, only if it has not been relocated.
     pub fn reset(&mut self, persistant: bool) -> Vec<::crust::Connection> {
-        debug!("Resetting.\n")
+        debug!("Resetting.\n");
         if self.id.is_relocated() || !persistant {
             self.id = ::id::Id::new(); };
         self.state = State::Disconnected;
@@ -303,6 +310,8 @@ impl RoutingCore {
     /// all connections will be dropped asynchronously.  Removing a node from the routing table
     /// does not ensure the connection is dropped.
     pub fn drop_peer(&mut self, connection_name: &ConnectionName) {
+        debug!("Drop peer {:?} current state {:?}.\n", connection_name, self.state.clone());
+        let current_state = self.state.clone();
         match *connection_name {
             ConnectionName::Routing(name) => {
                 match self.routing_table {
@@ -403,6 +412,9 @@ impl RoutingCore {
 
         match self.state {
             State::Disconnected => {
+                if current_state == State::Disconnected {
+                    return
+                }
                 self.routing_table = None;
                 match self.action_sender.send(::action::Action::Rebootstrap) {
                     Ok(()) => {},
@@ -612,7 +624,7 @@ impl RoutingCore {
                         debug!("Got client connections {:?}.\n", connections);
                         return connections;
                     }
-                    _ => { debug!("Relay map is none.\n"); }
+                    _ => { debug!("Looking in relay map for {:?}.\n", *to_authority); }
                 };
             },
             None => {},
@@ -634,48 +646,49 @@ impl RoutingCore {
         };
 
         if target_connections.is_empty() {
-            // It's possible we participated in the relocation of a client present in our relay map.
-            match self.relay_map {
-                Some(ref relay_map) => {
-                    let mut managed_node_name = None;
-                    match *to_authority {
-                        Authority::ManagedNode(ref name) => {
-                            managed_node_name = Some(name);
-                        }
-                        _ => {},
-                    };
+            target_connections = self.check_relocations(to_authority);
+            // // It's possible we participated in the relocation of a client present in our relay map.
+            // match self.relay_map {
+            //     Some(ref relay_map) => {
+            //         let mut managed_node_name = None;
+            //         match *to_authority {
+            //             Authority::ManagedNode(ref name) => {
+            //                 managed_node_name = Some(name);
+            //             }
+            //             _ => {},
+            //         };
 
-                    match managed_node_name {
-                        Some(name) => {
-                            for identity in relay_map.identities().iter() {
-                                match self.our_close_group() {
-                                    Some(close_group) => {
-                                        let identity_name = ::NameType::new(
-                                            ::sodiumoxide::crypto::hash::sha512::hash(
-                                                &identity.public_key.0[..]).0);
-                                        match ::utils::calculate_relocated_name(close_group,
-                                                &identity_name) {
-                                            Ok(relocated_name) => {
-                                                if relocated_name == *name {
-                                                    let (_, connections) =
-                                                        relay_map.lookup_identity(identity);
-                                                    for connection in connections {
-                                                        target_connections.push(connection);
-                                                    }
-                                                }
-                                            }
-                                            Err(_) => {},
-                                        }
-                                    },
-                                    None => {},
-                                }
-                            }
-                        },
-                        None => {},
-                    }             
-                },
-                None => {},
-            }
+            //         match managed_node_name {
+            //             Some(name) => {
+            //                 for identity in relay_map.identities().iter() {
+            //                     match self.our_close_group() {
+            //                         Some(close_group) => {
+            //                             let identity_name = ::NameType::new(
+            //                                 ::sodiumoxide::crypto::hash::sha512::hash(
+            //                                     &identity.public_key.0[..]).0);
+            //                             match ::utils::calculate_relocated_name(close_group,
+            //                                     &identity_name) {
+            //                                 Ok(relocated_name) => {
+            //                                     if relocated_name == *name {
+            //                                         let (_, connections) =
+            //                                             relay_map.lookup_identity(identity);
+            //                                         for connection in connections {
+            //                                             target_connections.push(connection);
+            //                                         }
+            //                                     }
+            //                                 }
+            //                                 Err(_) => {},
+            //                             }
+            //                         },
+            //                         None => {},
+            //                     }
+            //                 }
+            //             },
+            //             None => {},
+            //         }             
+            //     },
+            //     None => {},
+            // }
         }
 
         target_connections
@@ -1108,7 +1121,7 @@ impl RoutingCore {
             unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
         match (expected_connection, unknown_connection) {
             (Some((expected_connection, Some(connection))), None) => {
-                debug!("At matching from expected connection against unknown connection.");
+                debug!("At matching from expected connection against unknown connection.\n");
                 match expected_connection {
                     ExpectedConnection::Request(ref request) => {
                         // We are the network-side with a ConnectRequest, Node B on diagram of
@@ -1128,7 +1141,7 @@ impl RoutingCore {
                                                        //     self.id().name() &&
                                                         hello.public_id == request.requester_fob {
                                                             debug!("Matched expected connection to \
-                                                                unknown connection.");
+                                                                unknown connection.\n");
                                                             opt_hello = Some(hello.clone());
                                                             break;
                                                     }
@@ -1155,8 +1168,9 @@ impl RoutingCore {
                                         connection, hello.public_id.clone()) {
                                     // Drop secondary, i.e., unrequired, connection from
                                     // unknown connections map.
-                                    debug!("Added peer {:?} on matched expected connection request.",
-                                        hello.public_id.name());
+                                    debug!("Added peer {:?} on matched expected connection request.\
+                                        \n", hello.public_id.name());
+                                    let mut opt_connection = None;
                                     for (key, value) in self.unknown_connections.iter() {
                                         match value.0 {
                                             Some(ref value) => {
@@ -1164,16 +1178,23 @@ impl RoutingCore {
                                                     let _ = self.action_sender.send(
                                                         ::action::Action::DropConnections(
                                                             vec![*key]));
+                                                    opt_connection = Some(key.clone());
                                                     break;
                                                 }
                                             },
                                             None => {},
                                         }
                                     }
-                                    debug!("Sending confirmation to {:?} ", hello.address);
+                                    debug!("Sending confirmation to {:?}.\n", hello.address);
                                     self.action_sender.send(::action::Action::SendConfirmationHello(
                                         connection, hello.address));
                                     self.remove_expected_connection(&expected_connection);
+                                    match opt_connection {
+                                        Some(connection) => {
+                                            self.remove_unknown_connection(&connection);
+                                        },
+                                        None => {},
+                                    }
                                 }
                             },
                             None => {},
@@ -1236,11 +1257,12 @@ impl RoutingCore {
                                                 hello.public_id.clone()) {
                                             // Drop secondary, i.e., unrequired connection.
                                             debug!("Added peer {:?} on matched expected connection \
-                                                response.", hello.public_id.name());
+                                                response.\n", hello.public_id.name());
                                             let _ = self.action_sender.send(
                                                 ::action::Action::DropConnections(
                                                     vec![connection.clone()]));
                                             self.remove_expected_connection(&expected_connection);
+                                            self.remove_unknown_connection(&primary_connection);
                                         }
                                     },
                                     None => {},
@@ -1252,7 +1274,7 @@ impl RoutingCore {
                 }
             },
             (None, Some((unknown_connection, Some(hello)))) => {
-                debug!("At matching from unknown_connection against expected connection.");
+                debug!("At matching from unknown_connection against expected connection.\n");
                 let mut opt_connection = None;
                 match hello.expected_connection {
                     Some(ref hello_expected_connection) => {
@@ -1313,9 +1335,9 @@ impl RoutingCore {
                     Some(connection) => {
                         if self.add_peer(ConnectionName::Routing(
                                 hello.public_id.name()), connection, hello.public_id.clone()) {
-                            debug!("Added peer {:?}.", hello.public_id.name());
+                            debug!("Added peer {:?}.\n", hello.public_id.name());
                             if connection != unknown_connection {
-                                debug!("Sending confirmation to {:?} ", hello.address);
+                                debug!("Sending confirmation to {:?}.\n", hello.address);
                                 self.action_sender.send(::action::Action::SendConfirmationHello(
                                     connection, hello.address));
                                 let _ = self.action_sender.send(::action::Action::DropConnections(
@@ -1331,14 +1353,15 @@ impl RoutingCore {
                                 vec![unknown_connection]));
                             let _ = self.action_sender.send(::action::Action::DropConnections(
                                 vec![connection]));
-                            match hello.expected_connection {
-                                Some(ref expected_connection) => {
-                                    self.remove_expected_connection(expected_connection);
-                                },
-                                None => {},
-                            }
-                            self.remove_unknown_connection(&unknown_connection);
                         }
+
+                        match hello.expected_connection {
+                            Some(ref expected_connection) => {
+                                self.remove_expected_connection(expected_connection);
+                            },
+                            None => {},
+                        }
+                        self.remove_unknown_connection(&unknown_connection);
                     },
                     None => {},
                 }
@@ -1375,14 +1398,9 @@ impl RoutingCore {
         // If RoutingNode is restricted from becoming a node, it suffices to never request a network
         // name.
         match self.state {
-            State::Disconnected => {
-                debug!("Rebootstraping");
-                self.action_sender.send(::action::Action::Rebootstrap);
-                return;
-            },
-            State::Relocated | State::Connected
-                | State::GroupConnected | State::Terminated => {
-                    error!("Requesting network name while disconnected or named or terminated.");
+            State::Disconnected | State::Relocated | State::Connected | State::GroupConnected |
+                State::Terminated => {
+                    error!("Requesting network name while disconnected or named or terminated.\n");
                     return;
             },
             State::Bootstrapped => {},
@@ -1402,6 +1420,55 @@ impl RoutingCore {
             ::authority::Authority::NaeManager(self.id.name()),
             ::messages::Content::InternalRequest(::messages::InternalRequest::RequestNetworkName(
                 ::public_id::PublicId::new(&self.id)))));
+    }
+
+    /// Check if were involved in the relocation of a ManagedNode.
+    pub fn check_relocations(&self, to_authority: &Authority) -> Vec<crust::Connection> {
+        // It's possible we participated in the relocation of a client present in our relay map.
+        let mut target_connections : Vec<crust::Connection> = Vec::new();
+        match self.relay_map {
+            Some(ref relay_map) => {
+                let mut managed_node_name = None;
+                match *to_authority {
+                    Authority::ManagedNode(ref name) => {
+                        managed_node_name = Some(name);
+                    }
+                    _ => {},
+                };
+
+                match managed_node_name {
+                    Some(name) => {
+                        for identity in relay_map.identities().iter() {
+                            match self.our_close_group() {
+                                Some(close_group) => {
+                                    let identity_name = ::NameType::new(
+                                        ::sodiumoxide::crypto::hash::sha512::hash(
+                                            &identity.public_key.0[..]).0);
+                                    match ::utils::calculate_relocated_name(close_group,
+                                            &identity_name) {
+                                        Ok(relocated_name) => {
+                                            if relocated_name == *name {
+                                                let (_, connections) =
+                                                    relay_map.lookup_identity(identity);
+                                                for connection in connections {
+                                                    target_connections.push(connection);
+                                                }
+                                            }
+                                        }
+                                        Err(_) => {},
+                                    }
+                                },
+                                None => {},
+                            }
+                        }
+                    },
+                    None => {},
+                }             
+            },
+            None => {},
+        }
+
+        target_connections
     }
 }
 

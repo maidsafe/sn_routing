@@ -207,14 +207,14 @@ impl RoutingNode {
                     self.handle_lost_connection(connection);
                 }
                 Ok(::crust::Event::BootstrapFinished) => {
-                    match self.core.state() {
-                        &::routing_core::State::Disconnected => {
-                            self.reset();
-                            ::std::thread::sleep_ms(100);
-                            self.crust_service.bootstrap();
-                        },
-                        _ => {},
-                    };
+                    // match self.core.state() {
+                    //     &::routing_core::State::Disconnected => {
+                    //         self.reset();
+                    //         ::std::thread::sleep_ms(100);
+                    //         self.crust_service.bootstrap();
+                    //     },
+                    //     _ => {},
+                    // };
                 }
                 Ok(::crust::Event::ExternalEndpoints(external_endpoints)) => {
                     for external_endpoint in external_endpoints {
@@ -372,22 +372,23 @@ impl RoutingNode {
             None => {}
         }
 
-        // scan for remote names
+        // Scan for remote names.
         if self.core.is_connected_node() {
             match signed_message.claimant() {
                 &::types::Address::Node(ref name) => {
-                    debug!("We're connected, got message {:?} from {:?}, refreshing routing table.",
-                        message, name);
-                    self.refresh_routing_table(&name)
+                    let authority = ::authority::Authority::ManagedNode(name.clone());
+                    if self.core.check_relocations(&authority).is_empty() {
+                        debug!("We're connected, got message {:?} from {:?}, refreshing routing \
+                            table.\n", message, name);
+                        self.refresh_routing_table(&name)
+                    }
                 },
                 _ => {},
             };
-        };
 
-        // Forward
-        if self.core.is_connected_node() {
+            // Forward the message.
             ignore(self.send(signed_message.clone()));
-        }
+        };
 
         // check if our calculated authority matches the destination authority of the message
         let our_authority = self.core.our_authority(&message);
@@ -772,7 +773,7 @@ impl RoutingNode {
                             return Err(RoutingError::BadAuthority);
                         };
                         let _ = self.core.assign_network_name(&network_public_id.name());
-                        debug!("Assigned network name {:?} and our address now is {:?}",
+                        debug!("Assigned network name {:?} and our address now is {:?}.\n",
                             network_public_id.name(), self.core.our_address());
                         for peer in group {
                             // TODO (ben 12/08/2015) self.public_id_cache.insert()
@@ -797,7 +798,7 @@ impl RoutingNode {
     fn refresh_routing_table(&mut self, from_node: &NameType) {
         if !self.connection_filter.check(from_node) {
             if self.core.check_node(&ConnectionName::Routing(from_node.clone())) {
-                debug!("Refresh routing table for peer {:?}.", from_node);
+                debug!("Refresh routing table for peer {:?}.\n", from_node);
                 ignore(self.send_connect_request(from_node));
             }
             self.connection_filter.add(from_node.clone());
@@ -828,7 +829,7 @@ impl RoutingNode {
             }
         };
 
-        debug!("Sending connect request from {:?} to {:?}.", from_authority, peer_name);
+        debug!("Sending connect request from {:?} to {:?}.\n", from_authority, peer_name);
         let routing_message = RoutingMessage {
             from_authority: from_authority,
             to_authority: Authority::ManagedNode(peer_name.clone()),
@@ -854,11 +855,11 @@ impl RoutingNode {
                               _to_authority: Authority,
                               response_token: SignedToken)
                               -> RoutingResult {
-        debug!("Handle ConnectRequest");
+        debug!("Handle ConnectRequest.\n");
         match request {
             InternalRequest::Connect(connect_request) => {
                 if !connect_request.requester_fob.is_relocated() {
-                    debug!("Connect request {:?} requester is not relocated.", connect_request);
+                    debug!("Connect request {:?} requester is not relocated.\n", connect_request);
                     return Err(RoutingError::RejectedPublicId);
                 };
                 // First verify that the message is correctly self-signed.
@@ -879,7 +880,7 @@ impl RoutingNode {
                 let _ = self.core.add_expected_connection(
                         ::routing_core::ExpectedConnection::Request(connect_request));
 
-                debug!("Sending ConnectResponse to {:?}", from_authority);
+                debug!("Sending ConnectResponse to {:?}.\n", from_authority);
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
                     to_authority: from_authority,
@@ -907,18 +908,18 @@ impl RoutingNode {
                                from_authority: Authority,
                                _to_authority: Authority)
                                -> RoutingResult {
-        debug!("Handle ConnectResponse");
+        debug!("Handle ConnectResponse.\n");
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
                 if !signed_token.verify_signature(&self.core.id().signing_public_key()) {
-                    error!("ConnectResponse from {:?} failed our signature for the signed token.",
+                    error!("ConnectResponse from {:?} failed our signature for the signed token.\n",
                         from_authority);
                     return Err(RoutingError::FailedSignature);
                 };
                 let connect_request = try!(SignedMessage::new_from_token(signed_token.clone()));
                 match connect_request.get_routing_message().from_authority.get_address() {
                     Some(address) => if !self.core.is_us(&address) {
-                        error!("Connect response contains request that was not from us.");
+                        error!("Connect response contains request that was not from us.\n");
                         return Err(RoutingError::BadAuthority);
                     },
                     None => return Err(RoutingError::BadAuthority),
@@ -926,11 +927,11 @@ impl RoutingNode {
                 // Are we already connected (returns false), or still interested?
                 if !self.core.check_node(&ConnectionName::Routing(
                     connect_response.receiver_fob.name())) {
-                    debug!("ConnectResponse already connected to {:?}", from_authority);
+                    debug!("ConnectResponse already connected to {:?}.\n", from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
                 };
 
-                debug!("Connecting on validated ConnectResponse to {:?}", from_authority);
+                debug!("Connecting on validated ConnectResponse to {:?}.\n", from_authority);
                 self.connect(&connect_response.local_endpoints);
                 self.connect(&connect_response.external_endpoints);
                 self.connection_filter.add(connect_response.receiver_fob.name());
@@ -973,9 +974,9 @@ impl RoutingNode {
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_to_user(&self, event: Event) {
-        debug!("Send to user event {:?}", event);
+        debug!("Send to user event {:?}.\n", event);
         if self.event_sender.send(event).is_err() {
-            error!("Channel to user is broken. Terminating.");
+            error!("Channel to user is broken. Terminating.\n");
             let _ = self.action_sender.send(Action::Terminate);
         }
     }
@@ -1011,7 +1012,7 @@ impl RoutingNode {
                         interface_error: InterfaceError::NotConnected });
                 }
                 // FIXME (ben 24/08/2015) InternalRequest::Refresh can pass here on failure
-                _ => error!("InternalRequest/Response was sent back to user {:?}", content),
+                _ => error!("InternalRequest/Response was sent back to user {:?}.\n", content),
             }
         }
         Ok(())
