@@ -1122,6 +1122,7 @@ impl RoutingCore {
         match (expected_connection, unknown_connection) {
             (Some((expected_connection, Some(connection))), None) => {
                 debug!("At matching from expected connection against unknown connection.\n");
+                debug!("Expected connections: {:?} ::::::::: {:?}", expected_connection, connection);
                 match expected_connection {
                     ExpectedConnection::Request(ref request) => {
                         // We are the network-side with a ConnectRequest, Node B on diagram of
@@ -1133,9 +1134,7 @@ impl RoutingCore {
                                     match hello.expected_connection {
                                         Some(ref hello_expected_connection) => {
                                             match hello_expected_connection {
-                                                &ExpectedConnection::Request(_) => {
-                                                    // Expecting a ConnectResponse, do nothing.
-                                                },
+                                                &ExpectedConnection::Request(_) => debug!("==========================>  Expecting a ConnectResponse, do nothing"),
                                                 &ExpectedConnection::Response(ref response, _) => {
                                                     if //response.receiver_fob.name() ==
                                                        //     self.id().name() &&
@@ -1151,13 +1150,14 @@ impl RoutingCore {
                                         None => {
                                             // We are not here during a bootstrap procedure, so this
                                             // is an invalid hello, drop the connection.
+                                            debug!("==============================> Not bootstrapping, dropping connection {:?}", connection);
                                             let _ = self.action_sender.send(
                                                 ::action::Action::DropConnections(
                                                     vec![connection.clone()]));
                                         },
                                     }
                                 },
-                                None => {},
+                                None => debug!("Not yet received hello"),
                             }
                         }
 
@@ -1278,9 +1278,12 @@ impl RoutingCore {
                 let mut opt_connection = None;
                 match hello.expected_connection {
                     Some(ref hello_expected_connection) => {
+                        debug!("============> hello_expected_connection {:?}", hello_expected_connection);
                         match *hello_expected_connection {
                             ExpectedConnection::Request(ref request) => {
+                                debug!("==========> Request {:?}", request);
                                 for (key, value) in self.expected_connections.iter() {
+                                    debug!("==========> Key: {:?} ::::: Value {:?}", key, value.0);
                                     match key {
                                         &ExpectedConnection::Request(_) => {
                                             // Don't match on ConnectRequest.
@@ -1292,6 +1295,7 @@ impl RoutingCore {
                                                     hello.public_id == response.receiver_fob {
                                                 match value.0 {
                                                     Some(_) => {
+                                                        debug!("=========> Consolidating unknown_connection {:?}", unknown_connection);
                                                         opt_connection =
                                                             Some(unknown_connection.clone());
                                                         break;
@@ -1304,7 +1308,9 @@ impl RoutingCore {
                                 }
                             },
                             ExpectedConnection::Response(ref response, _) => {
+                                debug!("==========> Response {:?}", response);
                                 for (key, value) in self.expected_connections.iter() {
+                                    debug!("==========> Key: {:?} ::::: Value {:?}", key, value.0);
                                     match key {
                                         &ExpectedConnection::Request(ref request) => {
                                             // We are the network-side with a ConnectRequest, Node B
@@ -1313,6 +1319,7 @@ impl RoutingCore {
                                                     hello.public_id == request.requester_fob {
                                                 match value.0 {
                                                     Some(connection) => {
+                                                        debug!("=========> Consolidating expected_connection {:?}", connection);
                                                         opt_connection = Some(connection.clone());
                                                         break;
                                                     },
@@ -1320,9 +1327,7 @@ impl RoutingCore {
                                                 }
                                             }
                                         },
-                                        &ExpectedConnection::Response(_, _) => {
-                                            // Don't match on ConnectResponse.
-                                        },
+                                        &ExpectedConnection::Response(_, _) => debug!("Don't match on ConnectResponse."),
                                     }
                                 }
                             },
