@@ -252,12 +252,13 @@ impl Node {
 
     fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>,
         cause: ::routing::NameType) {
-        let mut exit = false;
+        // let mut exit = false;
+        let exit = false;
         if our_close_group.len() < ::routing::types::GROUP_SIZE {
             if self.connected {
                 println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
                     our_close_group.len(), ::routing::types::GROUP_SIZE);
-                exit = true;
+                // exit = true;
             } else {
                 println!("Ignoring churn as we are not yet connected.");
                 return;

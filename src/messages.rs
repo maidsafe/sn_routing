@@ -17,16 +17,14 @@
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
-    pub local_endpoints: Vec<::crust::Endpoint>,
-    pub external_endpoints: Vec<::crust::Endpoint>,
-    pub requester_fob: ::public_id::PublicId,
+    pub endpoints: Vec<::crust::Endpoint>,
+    pub public_id: ::public_id::PublicId,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectResponse {
-    pub local_endpoints: Vec<::crust::Endpoint>,
-    pub external_endpoints: Vec<::crust::Endpoint>,
-    pub receiver_fob: ::public_id::PublicId,
+    pub endpoints: Vec<::crust::Endpoint>,
+    pub public_id: ::public_id::PublicId,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]

@@ -126,9 +126,8 @@ pub mod test {
     impl rand::Rand for ::messages::ConnectRequest {
         fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectRequest {
             ::messages::ConnectRequest {
-                local_endpoints: random_endpoints(rng),
-                external_endpoints: random_endpoints(rng),
-                requester_fob: rand::random(),
+                endpoints: random_endpoints(rng),
+                public_id: rand::random(),
             }
         }
     }
@@ -136,9 +135,8 @@ pub mod test {
     impl rand::Rand for ::messages::ConnectResponse {
         fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectResponse {
             ::messages::ConnectResponse {
-                local_endpoints: random_endpoints(rng),
-                external_endpoints: random_endpoints(rng),
-                receiver_fob: rand::random(),
+                endpoints: random_endpoints(rng),
+                public_id: rand::random(),
             }
         }
     }

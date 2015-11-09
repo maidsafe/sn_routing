@@ -24,7 +24,6 @@ pub struct Hello {
     pub address: ::types::Address,
     pub public_id: ::public_id::PublicId,
     pub confirmed_you: Option<::types::Address>,
-    pub expected_connection: Option<::routing_core::ExpectedConnection>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -98,7 +97,6 @@ mod test {
             address:       address,
             public_id:     public_id,
             confirmed_you: none_address,
-            expected_connection: None,
         };
         let content = ::direct_messages::Content::Hello(hello);
         let key = ::sodiumoxide::crypto::sign::gen_keypair();
