@@ -48,6 +48,7 @@ pub struct RoutingNode {
     crust_receiver: ::std::sync::mpsc::Receiver<::crust::Event>,
     crust_service: ::crust::Service,
     accepting_on: Vec<::crust::Endpoint>,
+    connection_counter: u32,
     // for RoutingNode
     client_restriction: bool,
     action_sender: ::std::sync::mpsc::Sender<Action>,
@@ -95,6 +96,8 @@ impl RoutingNode {
             crust_receiver: crust_receiver,
             crust_service: crust_service,
             accepting_on: accepting_on,
+            // connection counter starts at 1, 0 is reserved for bootstrapping
+            connection_counter: 1u32,
             client_restriction: client_restriction,
             action_sender: action_sender.clone(),
             action_receiver: action_receiver,
@@ -114,8 +117,8 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.crust_service.bootstrap();
-        debug!("RoutingNode started running and started bootstrap");
+        self.crust_service.bootstrap(0u32);
+        debug!("run: RoutingNode started running and started crust bootstrapping.");
         loop {
             match self.action_receiver.try_recv() {
                 Err(_) => {}
@@ -142,11 +145,12 @@ impl RoutingNode {
                     self.drop_connections(connections);
                 },
                 Ok(Action::MatchConnection(expected_connection, unknown_connection)) => {
-                    self.match_connection(expected_connection, unknown_connection);
+                    self.core.match_connection(expected_connection, unknown_connection);
                 },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
-                    self.crust_service.bootstrap();
+                    ::std::thread::sleep_ms(100);
+                    self.crust_service.bootstrap(0u32);
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
@@ -184,11 +188,14 @@ impl RoutingNode {
                         }
                     };
                 }
-                Ok(::crust::Event::OnConnect(connection)) => {
+                Ok(::crust::Event::OnConnect(connection, _response_token)) => {
                     self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
                     self.handle_on_accept(connection);
+                }
+                Ok(::crust::Event::OnRendezvousConnect(_connection, _response_token)) => {
+                    unimplemented!()
                 }
                 Ok(::crust::Event::LostConnection(connection)) => {
                     self.handle_lost_connection(connection);
@@ -198,7 +205,7 @@ impl RoutingNode {
                         &::routing_core::State::Disconnected => {
                             self.reset();
                             ::std::thread::sleep_ms(100);
-                            self.crust_service.bootstrap();
+                            self.crust_service.bootstrap(0u32);
                         },
                         _ => {},
                     };
@@ -208,6 +215,7 @@ impl RoutingNode {
                         self.accepting_on.push(external_endpoint);
                     }
                 }
+                _ => {}
             };
             ::std::thread::sleep_ms(1);
         }
@@ -234,16 +242,27 @@ impl RoutingNode {
     }
 
     fn handle_on_connect(&mut self, connection: ::crust::Connection) {
+        // FIXME (ben 29/10/2015) this is a possible crust bug, refer to routing/issue-757
+        // on_connect if the connection states that we connected to ourselves, drop asap.
+        if self.accepting_on.contains(&connection.peer_endpoint()) {
+            error!("handle_on_connect: peer endpoint {:?} is in our accepting endpoints {:?}. \
+                Refer to routing/issue-757. Dropping {:?}", connection.peer_endpoint(),
+                self.accepting_on, connection);
+            self.crust_service.drop_node(connection);
+            return;
+        };
         match self.core.state() {
             &::routing_core::State::Disconnected => {
                 // This is our first connection, add as bootstrap and send hello.
-                self.core.add_bootstrap_connection(connection.clone());
+                debug!("handle_on_connect: Disconnected adding unknown bootstrap {:?}", connection);
+                let _ = self.core.add_unknown_bootstrap_connection(connection.clone());
                 ignore(self.send_hello(connection, None, None));
                 return;
             },
             &::routing_core::State::Bootstrapped => {
                 // We're bootstrapped at our side but haven't received hello response and relocated,
                 // so drop this connection.
+                debug!("handle_on_connect: Bootstrapped so dropping {:?}", connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
@@ -253,14 +272,19 @@ impl RoutingNode {
             &::routing_core::State::GroupConnected => {},
             &::routing_core::State::Terminated => {
                 // Terminate has been called don't act on any further events.
+                debug!("handle_on_connect: Terminated so dropping {:?}", connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
         };
 
-        match self.match_expected_connection(&connection) {
+        debug!("handle_on_accept: {:?} matching {:?} against expected connections",
+            self.core.state(), connection);
+        match self.core.match_expected_connection(&connection) {
             Some(expected_connection) => {
                 // We've received a ConnectRequest from a peer, send an unconfirmed Hello.
+                debug!("handle_on_connect: {:?} matched expected connection {:?} on {:?}, \
+                    sending hello", self.core.state(), expected_connection, connection);
                 ignore(self.send_hello(connection, None, Some(expected_connection)))
             },
             None => {},
@@ -272,9 +296,13 @@ impl RoutingNode {
             &::routing_core::State::Disconnected => {
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(
                     &self.core.id().name().0).0);
+                debug!("handle_on_accept: Disconnected so self-assigning name {:?}",
+                    assigned_name);
                 self.core.assign_name(&assigned_name);
             },
             &::routing_core::State::Bootstrapped => {
+                debug!("handle_on_accept: Bootstrapped so not accepting {:?}. Dropping",
+                    connection);
                 self.crust_service.drop_node(connection);
                 return;
             },
@@ -287,6 +315,8 @@ impl RoutingNode {
             },
         };
 
+        debug!("handle_on_accept: {:?} adding unknown connection {:?} on accept.",
+            self.core.state(), connection);
         let _ = self.core.add_unknown_connection(connection);
     }
 
@@ -324,8 +354,8 @@ impl RoutingNode {
     }
 
     fn handle_hello(&mut self, connection: ::crust::Connection, hello: &::direct_messages::Hello) {
-        debug!("Hello, it is {:?} on {:?}", hello.address, connection);
-        self.match_unknown_connection(&connection, &hello)
+        debug!("handle_hello: {:?} on {:?}", hello.address, connection);
+        self.core.match_unknown_connection(&connection, &hello)
     }
 
     /// This the fundamental functional function in routing.
@@ -645,8 +675,8 @@ impl RoutingNode {
                         match self.core.our_close_group_with_public_ids() {
                             Some(close_group) => {
                                 debug!("Network request to accept name {:?},
-                                       responding with our close group to {:?}",
-                                       network_public_id.name(),
+                                       responding with our close group {:?} to {:?}",
+                                       network_public_id.name(), close_group,
                                        request_network_name.get_routing_message().source());
                                 let routing_message = RoutingMessage {
                                     from_authority: to_authority,
@@ -798,12 +828,17 @@ impl RoutingNode {
                 self.connect(&connect_request.local_endpoints);
                 self.connect(&connect_request.external_endpoints);
                 self.connection_filter.add(connect_request.requester_fob.name());
+                let to_authority = match self.core.state() {
+                    &::routing_core::State:: Relocated => Authority::Client(self.core.id().name(),
+                        connect_request.requester_fob.signing_public_key()),
+                    _ => from_authority,
+                };
                 let _ = self.core.add_expected_connection(
-                        ::routing_core::ExpectedConnection::Request(connect_request));
+                    ::routing_core::ExpectedConnection::Request(connect_request));
 
                 let routing_message = RoutingMessage {
                     from_authority: Authority::ManagedNode(self.core.id().name()),
-                    to_authority: from_authority,
+                    to_authority: to_authority,
                     content: Content::InternalResponse(InternalResponse::Connect(ConnectResponse {
                             local_endpoints: self.accepting_on.clone(),
                             external_endpoints: vec![],
@@ -864,30 +899,17 @@ impl RoutingNode {
     }
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
-        self.crust_service.connect(endpoints.clone());
+        let new_response_token = self.connection_counter.clone();
+        self.connection_counter = self.connection_counter.wrapping_add(1u32);
+        if self.connection_counter == 0u32 { self.connection_counter == 1u32; };
+        debug!("connect: requesting crust connect to {:?}", endpoints);
+        self.crust_service.connect(new_response_token, endpoints.clone());
     }
 
     fn drop_connections(&mut self, connections: Vec<::crust::Connection>) {
         for connection in connections {
             self.crust_service.drop_node(connection);
         }
-    }
-
-    fn match_expected_connection(&mut self, connection: &::crust::Connection)
-            -> Option<::routing_core::ExpectedConnection> {
-        self.core.match_expected_connection(connection)
-    }
-
-    fn match_unknown_connection(&mut self,
-            connection: &::crust::Connection, hello: &::direct_messages::Hello) {
-        self.core.match_unknown_connection(connection, hello)
-    }
-
-    fn match_connection(&mut self,
-            expected_connection: Option<(::routing_core::ExpectedConnection,
-                                         Option<::crust::Connection>)>,
-            unknown_connection: Option<(::crust::Connection, Option<::direct_messages::Hello>)>) {
-       self.core.match_connection(expected_connection, unknown_connection)
     }
 
     // ----- Send Functions -----------------------------------------------------------------------
@@ -938,8 +960,7 @@ impl RoutingNode {
     }
 
     fn client_send_content(&self, to_authority: Authority, content: Content) -> RoutingResult {
-        if self.core.is_connected_node() ||
-            self.core.has_bootstrap_endpoints() {
+        if self.core.is_connected_node() || self.core.has_bootstrap_endpoints() {
             // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
             let bootstrap_name = match self.get_a_bootstrap_name() {
                 Some(name) => name,
@@ -991,6 +1012,7 @@ impl RoutingNode {
         let bytes = try!(encode(&signed_message));
         // query the routing table for parallel or swarm
         let connections = self.core.target_connections(&destination);
+        debug!("Target connections for send: {:?}", connections);
         if !connections.is_empty() {
             debug!("Sending {:?} to {:?} target connection(s)",
                 signed_message.get_routing_message().content, connections.len());
