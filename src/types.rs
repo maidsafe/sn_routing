@@ -94,6 +94,7 @@ impl ::std::fmt::Debug for Address {
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
+#[allow(unused_results)]
 /// CacheOptions.
 pub struct CacheOptions {
     cache_plain_data: bool,

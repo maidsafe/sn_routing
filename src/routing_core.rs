@@ -32,6 +32,7 @@ use event::Event;
 use messages::RoutingMessage;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+#[allow(unused_results)]
 pub struct Relay {
     pub public_key: ::sodiumoxide::crypto::sign::PublicKey,
 }
@@ -44,7 +45,7 @@ impl ::utilities::Identifiable for Relay {
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-#[allow(unused)]
+#[allow(unused, unused_results)]
 pub enum ConnectionName {
     Relay(Address),
     Routing(NameType),
@@ -66,7 +67,7 @@ pub enum ConnectionName {
 /// while itself disconnected it can jump from Disconnected to Relocated (assigning itself a name).
 /// For a client the cycle is reduced to Disconnected and Bootstrapped.
 /// When the user calls ::stop(), the state is set to Terminated.
-#[allow(unused)]
+#[allow(unused, unused_results)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub enum State {
     /// There are no connections.
@@ -85,7 +86,7 @@ pub enum State {
 
 /// ExpectedConnection.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, RustcEncodable, RustcDecodable)]
-#[allow(unused)]
+#[allow(unused, unused_results)]
 pub enum ExpectedConnection {
     /// ConnectRequest sent by peer.
     Request(::messages::ConnectRequest),

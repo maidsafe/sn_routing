@@ -246,7 +246,7 @@ mod test {
         let signed_message = signed_message.unwrap();
 
         assert!(filter.check(&signed_message));
-        ::std::thread::sleep_ms(2);
+        ::std::thread::sleep(::std::time::Duration::from_millis(2));
         assert!(filter.check(&signed_message));
     }
 

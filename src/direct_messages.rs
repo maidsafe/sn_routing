@@ -20,6 +20,7 @@
 //! as SignedMessages (wrapping RoutingMessages) over the routing network.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct Hello {
     pub address: ::types::Address,
     pub public_id: ::public_id::PublicId,
@@ -28,12 +29,13 @@ pub struct Hello {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct Churn {
     pub close_group: Vec<::NameType>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-#[allow(variant_size_differences)]
+#[allow(variant_size_differences, unused_results)]
 pub enum Content {
     Hello(Hello),
     Churn(Churn),
@@ -42,6 +44,7 @@ pub enum Content {
 
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct DirectMessage {
     content: Content,
     signature: ::sodiumoxide::crypto::sign::Signature,

@@ -86,6 +86,7 @@ Options:
 ";
 
 #[derive(RustcDecodable, Debug)]
+#[allow(unused_results)]
 struct Args {
     flag_node: bool,
     flag_help: bool,
@@ -342,6 +343,7 @@ pub fn median(mut values: Vec<u64>) -> u64 {
 
 ////////////////////////////////////////////////////////////////////////////////
 #[derive(PartialEq, Eq, Debug, Clone)]
+#[allow(unused_results)]
 enum UserCommand {
     Exit,
     Get(String),
@@ -416,7 +418,7 @@ impl Client {
 
             if self.exit { break; }
 
-            thread::sleep_ms(10);
+            thread::sleep(::std::time::Duration::from_millis(10));
         }
 
         println!("Bye");

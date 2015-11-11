@@ -146,6 +146,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
 mod test {
 
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+	#[allow(unused_results)]
     struct TestPeer {
         pub name: ::NameType,
     }
