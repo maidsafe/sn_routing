@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct ConnectRequest {
     pub local_endpoints: Vec<::crust::Endpoint>,
     pub external_endpoints: Vec<::crust::Endpoint>,
@@ -23,6 +24,7 @@ pub struct ConnectRequest {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct ConnectResponse {
     pub local_endpoints: Vec<::crust::Endpoint>,
     pub external_endpoints: Vec<::crust::Endpoint>,
@@ -30,6 +32,7 @@ pub struct ConnectResponse {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 /// SignedToken.
 pub struct SignedToken {
     /// Encoded request to be signed.
@@ -56,6 +59,7 @@ impl ::std::fmt::Debug for SignedToken {
 
 /// These are the message types routing provides.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 /// ExternalRequest.
 pub enum ExternalRequest {
     /// Request to get data from the network.
@@ -69,6 +73,7 @@ pub enum ExternalRequest {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 /// ExternalResponse.
 pub enum ExternalResponse {
     // TODO: Applies to Get: Technical depth: if the third param here is Some(...) then
@@ -99,6 +104,7 @@ impl ExternalResponse {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
     RequestNetworkName(::public_id::PublicId),
@@ -117,6 +123,7 @@ pub enum InternalRequest {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
     // FindGroup(Vec<::public_id::PublicId>, SignedToken),
@@ -130,6 +137,7 @@ pub enum InternalResponse {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub enum Content {
     ExternalRequest(ExternalRequest),
     InternalRequest(InternalRequest),
@@ -139,6 +147,7 @@ pub enum Content {
 
 /// the bare (unsigned) routing message
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct RoutingMessage {
     // version_number     : u8
     pub from_authority: ::authority::Authority,
@@ -184,6 +193,7 @@ impl RoutingMessage {
 
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 pub struct SignedMessage {
     body: RoutingMessage,
     claimant: ::types::Address,

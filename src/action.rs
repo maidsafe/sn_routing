@@ -22,7 +22,7 @@
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(unused)]
+#[allow(unused, unused_qualifications, unused_results)]
 pub enum Action {
     SendMessage(::messages::SignedMessage),
     //          ~~|~~~~~~~~~~

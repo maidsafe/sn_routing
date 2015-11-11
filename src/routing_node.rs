@@ -114,7 +114,7 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self) {
-        self.crust_service.bootstrap();
+        self.crust_service.bootstrap(0);
         debug!("RoutingNode started running and started bootstrap");
         loop {
             match self.action_receiver.try_recv() {
@@ -146,7 +146,7 @@ impl RoutingNode {
                 },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
-                    self.crust_service.bootstrap();
+                    self.crust_service.bootstrap(0);
                 },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
@@ -184,7 +184,9 @@ impl RoutingNode {
                         }
                     };
                 }
-                Ok(::crust::Event::OnConnect(connection)) => {
+                Ok(::crust::Event::OnConnect(connection, _)) |
+                Ok(::crust::Event::OnRendezvousConnect(connection, _)) => {
+					// idea from https://github.com/maidsafe/crust/blob/96c534aec6ab24d32d9f0dc50942e5b7cafdc147/examples/crust_peer.rs#L476
                     self.handle_on_connect(connection);
                 }
                 Ok(::crust::Event::OnAccept(connection)) => {
@@ -197,8 +199,8 @@ impl RoutingNode {
                     match self.core.state() {
                         &::routing_core::State::Disconnected => {
                             self.reset();
-                            ::std::thread::sleep_ms(100);
-                            self.crust_service.bootstrap();
+                            ::std::thread::sleep(::std::time::Duration::from_millis(100));
+                            self.crust_service.bootstrap(0);
                         },
                         _ => {},
                     };
@@ -208,8 +210,14 @@ impl RoutingNode {
                         self.accepting_on.push(external_endpoint);
                     }
                 }
+                Ok(::crust::Event::OnUdpSocketMapped(_)) => {
+					// todo: what goes here? another callback? 
+				}
+                Ok(::crust::Event::OnHolePunched(_)) => {
+					// todo: what goes here? another callback? 
+				}
             };
-            ::std::thread::sleep_ms(1);
+            ::std::thread::sleep(::std::time::Duration::from_millis(1));
         }
     }
 
@@ -864,7 +872,7 @@ impl RoutingNode {
     }
 
     fn connect(&mut self, endpoints: &Vec<::crust::Endpoint>) {
-        self.crust_service.connect(endpoints.clone());
+        self.crust_service.connect(0, endpoints.clone());
     }
 
     fn drop_connections(&mut self, connections: Vec<::crust::Connection>) {

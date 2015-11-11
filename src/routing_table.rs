@@ -31,7 +31,7 @@ pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
-#[allow(unused)]
+#[allow(unused, unused_results)]
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,

@@ -20,6 +20,7 @@ use NameType;
 
 /// PlainData
 #[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[allow(unused_results)]
 pub struct PlainData {
     name: NameType,
     value: Vec<u8>,

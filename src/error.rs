@@ -18,6 +18,7 @@
 //------------------------------------------------------------------------------
 #[deny(missing_docs)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(unused_results)]
 /// Represents response errors.
 pub enum ResponseError {
     /// Abort is for user to indicate that the state can be dropped;
@@ -127,7 +128,7 @@ impl From<::std::io::Error> for ClientError {
 }
 
 //------------------------------------------------------------------------------
-#[allow(variant_size_differences)]
+#[allow(variant_size_differences, unused_results)]
 #[derive(Debug)]
 /// RoutingError.
 pub enum RoutingError {
