@@ -21,7 +21,7 @@ docopt = "*"
 itertools = "*"
 log = "*"
 env_logger = "*"
-sodiumoxide = "*"
+sodiumoxide = "0.0.8"
 crust = "0.5.*"
 
 [dev-dependencies]
