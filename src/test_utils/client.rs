@@ -79,7 +79,8 @@ impl Client {
                 debug!("Timed out waiting for data");
                 return None;
             }
-            ::std::thread::sleep_ms(10);
+            let interval = ::std::time::Duration::from_millis(10);
+            ::std::thread::sleep(interval);
         }
     }
 

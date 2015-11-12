@@ -42,7 +42,6 @@ extern crate routing;
 use std::io;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -252,12 +251,13 @@ impl Node {
 
     fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>,
         cause: ::routing::NameType) {
-        let mut exit = false;
+        // let mut exit = false;
+        let exit = false;
         if our_close_group.len() < ::routing::types::GROUP_SIZE {
             if self.connected {
                 println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
                     our_close_group.len(), ::routing::types::GROUP_SIZE);
-                exit = true;
+                // exit = true;
             } else {
                 println!("Ignoring churn as we are not yet connected.");
                 return;
@@ -416,7 +416,8 @@ impl Client {
 
             if self.exit { break; }
 
-            thread::sleep_ms(10);
+            let interval = ::std::time::Duration::from_millis(10);
+            ::std::thread::sleep(interval);
         }
 
         println!("Bye");

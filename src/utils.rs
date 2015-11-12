@@ -18,6 +18,9 @@
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
     let input = input.as_ref();
+    if input.len() < 6 {
+        return ::std::string::String::new();
+    }
     format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
           input[0],
           input[1],

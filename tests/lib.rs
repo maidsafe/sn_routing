@@ -61,9 +61,12 @@ fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
                     	process
                     }
             });
-        ::std::thread::sleep_ms(1000 + i * 1000);
+        let interval = ::std::time::Duration::from_millis(1000 + i as u64 * 1000);
+        ::std::thread::sleep(interval);
     }
-    ::std::thread::sleep_ms(number_of_nodes * 1000);
+
+    let interval = ::std::time::Duration::from_millis(number_of_nodes as u64 * 1000);
+    ::std::thread::sleep(interval);
     processes
 }
 
@@ -92,7 +95,8 @@ mod test {
     fn client_put_get() {
         debug!("Starting client");
         let mut client = ::routing::test_utils::client::Client::new();
-        ::std::thread::sleep_ms(2000);
+        let interval = ::std::time::Duration::from_millis(2000);
+        ::std::thread::sleep(interval);
 
         let key = ::std::string::String::from("key");
         let value = ::std::string::String::from("value");
@@ -104,7 +108,8 @@ mod test {
         debug!("Putting data {:?}", data);
         client.put(data.clone());
 
-        ::std::thread::sleep_ms(5000);
+        let interval = ::std::time::Duration::from_millis(5000);
+        ::std::thread::sleep(interval);
 
         let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
             Some(data) => data,
