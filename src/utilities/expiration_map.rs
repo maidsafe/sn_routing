@@ -140,7 +140,8 @@ mod test {
         assert!(expiration_map.contains_key(&key));
         assert_eq!(expiration_map.get(&key).unwrap(), &value);
 
-        ::std::thread::sleep_ms(10);
+        let interval = ::std::time::Duration::from_millis(10);
+        ::std::thread::sleep(interval);
 
         assert!(!expiration_map.contains_key(&key));
         assert!(expiration_map.get(&key).is_none());
@@ -156,7 +157,8 @@ mod test {
             let _ = expiration_map.insert(i, i);
         }
 
-        ::std::thread::sleep_ms(50);
+        let interval = ::std::time::Duration::from_millis(50);
+        ::std::thread::sleep(interval);
 
         let old_value = expiration_map.insert(11, 11);
 
@@ -198,7 +200,8 @@ mod test {
         assert!(expiration_map.contains_key(&key));
         assert_eq!(expiration_map.get(&key).unwrap(), &value2);
 
-        ::std::thread::sleep_ms(50);
+        let interval = ::std::time::Duration::from_millis(50);
+        ::std::thread::sleep(interval);
 
         let expired_values = expiration_map.remove_expired();
 

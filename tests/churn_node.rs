@@ -68,6 +68,7 @@ pub fn main () {
             }
         }
 
-        ::std::thread::sleep_ms(10000);
+        let interval = ::std::time::Duration::from_millis(10000);
+        ::std::thread::sleep(interval);
     }
 }

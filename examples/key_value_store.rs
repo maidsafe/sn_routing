@@ -42,7 +42,6 @@ extern crate routing;
 use std::io;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread;
 use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -417,7 +416,8 @@ impl Client {
 
             if self.exit { break; }
 
-            thread::sleep_ms(10);
+            let interval = ::std::time::Duration::from_millis(10);
+            ::std::thread::sleep(interval);
         }
 
         println!("Bye");

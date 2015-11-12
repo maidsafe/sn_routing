@@ -227,7 +227,9 @@ impl RoutingNode {
                     unimplemented!()
                 }
             };
-            ::std::thread::sleep_ms(1);
+
+            let interval = ::std::time::Duration::from_millis(1);
+            ::std::thread::sleep(interval);
         }
     }
 
