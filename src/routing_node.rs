@@ -81,7 +81,7 @@ impl RoutingNode {
         let accepting_on = crust_service.start_default_acceptors().into_iter()
                            .filter_map(|ep|ep.ok())
                            .flat_map(::crust::ifaddrs_if_unspecified)
-                           .take(1)
+                           //.take(1)
                            .collect::<Vec<::crust::Endpoint>>();
 
         // The above command will give us only internal endpoints on which
