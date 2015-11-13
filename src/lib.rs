@@ -67,7 +67,6 @@ mod direct_messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
-mod routing_core;
 mod refresh_accumulator;
 mod message_accumulator;
 mod utilities;

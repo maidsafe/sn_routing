@@ -42,7 +42,7 @@ impl MessageAccumulator {
                        -> Option<RoutingMessage> {
         {
             if threshold <= 1 {
-                return Some(message);
+                return Some(message)
             }
 
             let claimants = self.requests.entry(message.clone())
@@ -51,7 +51,7 @@ impl MessageAccumulator {
             claimants.insert(claimant);
 
             if claimants.len() < threshold {
-                return None;
+                return None
             }
 
             debug!("Returning message, {:?}, from accumulator", message);
