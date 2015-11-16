@@ -1770,7 +1770,7 @@ impl RoutingNode {
                                                line!()),
                             }
                         },
-                        None => ()
+                        None => info!("No node removed from RT as a result of node addition"),
                     }
 
                     if add_node_result.0 {
