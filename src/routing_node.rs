@@ -1785,7 +1785,9 @@ impl RoutingNode {
                             info!("Routing Node has connected to {:?} nodes.", size);
 
                             self.state = State::GroupConnected;
-                            let _ = self.event_sender.send(Event::Connected);
+                            if let Err(err) = self.event_sender.send(Event::Connected) {
+                                error!("Error sending {:?} to event_sender", err.0);
+                            }
                         }
 
                         info!("RT({:?}) added {:?}", size, routing_name);
