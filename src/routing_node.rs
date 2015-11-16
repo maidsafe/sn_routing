@@ -447,7 +447,9 @@ impl RoutingNode {
         debug!("Lost connection on {:?}.\n", connection);
         let connection_name = self.lookup_connection(&connection);
         if connection_name.is_some() {
-            self.drop_peer(&connection_name.unwrap());
+            if let Err(err) = self.drop_peer(&connection_name.unwrap()) {
+                error!("{:?}, {:?} -> Error dropping peer {:?}", file!(), line!(), err);
+            }
         }
     }
 
@@ -1604,123 +1606,125 @@ impl RoutingNode {
     /// If dropped from a connection map and multiple connections are active on the same identity
     /// all connections will be dropped asynchronously.  Removing a node from the routing table
     /// does not ensure the connection is dropped.
-    pub fn drop_peer(&mut self, connection_name: &ConnectionName) {
+    pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> RoutingResult {
         debug!("Drop peer {:?} current state {:?}.\n", connection_name, self.state.clone());
         let current_state = self.state.clone();
         match *connection_name {
             ConnectionName::Routing(name) => {
-                match self.routing_table {
-                    Some(ref mut routing_table) => {
-                        let trigger_churn = routing_table
-                            .address_in_our_close_group_range(&name);
-                        let routing_table_count_prior = routing_table.size();
-                        routing_table.drop_node(&name);
-                        match routing_table_count_prior {
-                            1usize => {
-                                error!("Routing Node has disconnected.");
-                                self.state = State::Disconnected;
-                                let _ = self.event_sender.send(Event::Disconnected);
-                            },
-                            ::types::GROUP_SIZE => {
-                                self.state = State::Connected;
-                            },
-                            _ => {},
+                if self.routing_table.is_some() {
+                    let trigger_churn;
+                    let routing_table_count_prior;
+                    {
+                        let routing_table_ref = unwrap_option!(self.routing_table.as_ref(),
+                                                               "Logic Error - Report bug");
+                        trigger_churn = routing_table_ref.address_in_our_close_group_range(&name);
+                        routing_table_count_prior = routing_table_ref.size();
+                    }
+
+                    unwrap_option!(self.routing_table.as_mut(), "Logic Error - Report bug").drop_node(&name);
+
+                    match routing_table_count_prior {
+                        1usize => {
+                            error!("Routing Node has disconnected.");
+                            self.state = State::Disconnected;
+                            let _ = self.event_sender.send(Event::Disconnected);
+                        },
+                        ::types::GROUP_SIZE => {
+                            self.state = State::Connected;
+                        },
+                        _ => {},
+                    }
+
+                    info!("RT({:?}) dropped node {:?}",
+                          unwrap_option!(self.routing_table.as_ref(),
+                                         "Logic Error - Report bug").size(),
+                          name);
+
+                    if trigger_churn {
+                        let our_close_group = unwrap_option!(self.routing_table.as_ref(),
+                                                             "Logic Error - Report bug")
+                                              .our_close_group();
+
+                        let mut close_group = our_close_group.iter()
+                                .map(|node_info| node_info.public_id.name())
+                                .collect::<Vec<::NameType>>();
+
+                        close_group.insert(0, self.id.name());
+
+                        let target_connections = our_close_group.iter()
+                            .filter_map(|node_info| node_info.connection)
+                            .collect::<Vec<::crust::Connection>>();
+
+                        let churn_msg = ::direct_messages::Churn {
+                            close_group: close_group,
                         };
-                        info!("RT({:?}) dropped node {:?}", routing_table.size(), name);
-                        if trigger_churn {
-                            let our_close_group = routing_table.our_close_group();
-
-                            let mut close_group = our_close_group.iter()
-                                    .map(|node_info| node_info.public_id.name())
-                                    .collect::<Vec<::NameType>>();
-
-                            close_group.insert(0, self.id.name());
-
-                            let target_connections = our_close_group.iter()
-                                .filter_map(|node_info| node_info.connection)
-                                .collect::<Vec<::crust::Connection>>();
-
-                            let _ = self.action_sender.send(Action::Churn(
-                                ::direct_messages::Churn{ close_group: close_group },
-                                target_connections, name ));
-                        };
-                    },
-                    None => {},
-                };
+                        if let Err(err) = self.generate_churn(churn_msg,
+                                                              target_connections,
+                                                              name) {
+                            return Err(err)
+                        }
+                    }
+                }
             },
             ConnectionName::Bootstrap(name) => {
-                match self.bootstrap_map {
-                    Some(ref mut bootstrap_map) => {
-                        let bootstrapped_prior = bootstrap_map.identities_len() > 0usize;
-                        let connections_to_drop = bootstrap_map.drop_identity(&name).1;
-                        if !connections_to_drop.is_empty() {
-                            match self.action_sender.send(
-                                Action::DropConnections(connections_to_drop)) {
-                                Ok(()) => {},
-                                Err(_) => {
-                                    error!("Action receiver in RoutingNode disconnected. \
-                                        Terminating from core.");
-                                    self.state = State::Terminated;
-                                },
+                if self.bootstrap_map.is_some() {
+                    let bootstrapped_prior;
+                    let connections_to_drop;
+                    let bootstrap_map_len_after;
+                    {
+                        let bootstrap_map_ref = unwrap_option!(self.bootstrap_map.as_mut(),
+                                                               "Logic Error - Report bug");
+                        bootstrapped_prior = bootstrap_map_ref.identities_len() > 0;
+                        connections_to_drop = bootstrap_map_ref.drop_identity(&name).1;
+                        bootstrap_map_len_after = bootstrap_map_ref.identities_len();
+                    }
+
+                    if !connections_to_drop.is_empty() {
+                        self.drop_connections(connections_to_drop);
+                    }
+
+                    match self.state {
+                        State::Bootstrapped | State::Relocated => {
+                            if bootstrap_map_len_after == 0usize
+                                && bootstrapped_prior {
+                                error!("Routing Client has disconnected.");
+                                self.state = State::Disconnected;
+                                let _ = self.event_sender.send(Event::Disconnected);
                             };
-                        };
-                        match self.state {
-                            State::Bootstrapped | State::Relocated => {
-                                if bootstrap_map.identities_len() == 0usize
-                                    && bootstrapped_prior {
-                                    error!("Routing Client has disconnected.");
-                                    self.state = State::Disconnected;
-                                    let _ = self.event_sender.send(Event::Disconnected);
-                                };
-                            },
-                            _ => {},
-                        };
-                    },
-                    None => {},
-                };
+                        },
+                        _ => debug!("Unhandled state {:?} in drop_peer -> ConnectionName::Bootstrap", self.state),
+                    };
+                }
             },
             ConnectionName::Relay(::types::Address::Client(public_key)) => {
-                match self.relay_map {
-                    Some(ref mut relay_map) => {
-                        let (_dropped_public_id, connections_to_drop)
-                            = relay_map.drop_identity(&Relay{public_key: public_key});
-                        if !connections_to_drop.is_empty() {
-                            match self.action_sender.send(
-                                Action::DropConnections(connections_to_drop)) {
-                                Ok(()) => {},
-                                Err(_) => {
-                                    error!("Action receiver in RoutingNode disconnected. \
-                                        Terminating from core.");
-                                    self.state = State::Terminated;
-                                },
-                            };
-                        };
-                    },
-                    None => {},
-                };
+                if self.relay_map.is_some() {
+                    let (_dropped_public_id, connections_to_drop)
+                        = unwrap_option!(self.relay_map.as_mut(),
+                                         "Logic Error - Report bug")
+                          .drop_identity(&Relay{public_key: public_key});
+                    if !connections_to_drop.is_empty() {
+                        self.drop_connections(connections_to_drop);
+                    }
+                }
             },
-            _ => {
-
-            }
-        };
+            _ => debug!("Unhandled ConnectionName {:?} in drop_peer", connection_name),
+        }
 
         match self.state {
             State::Disconnected => {
                 if current_state == State::Disconnected {
-                    return
+                    // TODO (Spandan) - This was an empty return - analyse to see if this need an
+                    //                  error return or an Ok return
+                    return Ok(())
                 }
                 self.routing_table = None;
-                match self.action_sender.send(::action::Action::Rebootstrap) {
-                    Ok(()) => {},
-                    Err(_) => {
-                        error!("Action receiver in RoutingNode disconnected. \
-                            Terminating from core.");
-                        self.state = State::Terminated;
-                    }
-                };
+                self.reset();
+                self.crust_service.bootstrap(0u32);
             },
             _ => {},
-        };
+        }
+
+        Ok(())
     }
 
     /// To be documented

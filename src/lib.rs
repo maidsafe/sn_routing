@@ -55,6 +55,9 @@ extern crate sodiumoxide;
 extern crate time;
 
 extern crate crust;
+#[allow(unused_extern_crates)] // TODO(Spandan) This will be removed as functionalities get exposed from this crate
+#[macro_use] extern crate maidsafe_utilities;
+
 // extern crate accumulator;
 extern crate lru_time_cache;
 extern crate message_filter;
