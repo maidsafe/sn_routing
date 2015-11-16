@@ -56,6 +56,10 @@ extern crate time;
 
 extern crate crust;
 extern crate lru_time_cache;
+// TODO(Spandan) This will be removed as functionalities get exposed from this crate
+#[allow(unused_extern_crates)]
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate message_filter;
 
 mod common_bits;
