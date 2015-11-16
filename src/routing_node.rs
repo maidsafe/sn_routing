@@ -1737,61 +1737,90 @@ impl RoutingNode {
 
         match identity {
             ConnectionName::Routing(routing_name) => {
-                match self.routing_table {
-                    Some(ref mut routing_table) => {
-                        if public_id.name() != routing_name { return false; };
-                        let trigger_churn = routing_table
-                            .address_in_our_close_group_range(&routing_name);
-                        let node_info = NodeInfo::new(public_id,
-                                                      vec![endpoint.clone()],
-                                                      Some(connection));
-                        let routing_table_count_prior = routing_table.size();
-                        let (added, removal_node) = routing_table.add_node(node_info);
+                if public_id.name() != routing_name {
+                    return false
+                }
 
-                        match removal_node {
-                            Some(node) => {
-                                match node.connection {
-                                    Some(connection) => {
-                                        let _ = self.action_sender.send(
-                                            Action::DropConnections(vec![connection]));
-                                    },
-                                    None => ()
-                                }
-                            },
-                            None => ()
+                // TODO(Spandan) - Suspicious code - is there a possiblility of getting add_peer()
+                // even if there is no routing table ? When and why would this happen ?
+                if self.routing_table.is_some() {
+                    let trigger_churn;
+                    let routing_table_count_prior;
+                    let add_node_result;
+
+                    let node_info = NodeInfo::new(public_id,
+                                                  vec![endpoint.clone()],
+                                                  Some(connection));
+
+                    {
+                        let routing_table_ref = unwrap_option!(self.routing_table.as_mut(),
+                                                               "Logic Error - Report bug");
+                        trigger_churn = routing_table_ref
+                                        .address_in_our_close_group_range(&routing_name);
+                        routing_table_count_prior = routing_table_ref.size();
+                        add_node_result = routing_table_ref.add_node(node_info);
+                    }
+
+                    match add_node_result.1 {
+                        Some(node) => {
+                            match node.connection {
+                                Some(connection) => self.drop_connections(vec![connection]),
+                                None => debug!("{:?} {:?} - No Connection existed for a node in RT",
+                                               file!(),
+                                               line!()),
+                            }
+                        },
+                        None => ()
+                    }
+
+                    if add_node_result.0 {
+                        let size = unwrap_option!(self.routing_table.as_ref(),
+                                                  "Logic Error - Report bug").size();
+
+                        if routing_table_count_prior == 0usize {
+                            // if we transition from zero to one routing connection
+                            info!("Routing Node has connected.");
+                            self.state = State::Connected;
+                        } else if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
+                            info!("Routing Node has connected to {:?} nodes.", size);
+
+                            self.state = State::GroupConnected;
+                            let _ = self.event_sender.send(Event::Connected);
                         }
 
-                        if added {
-                            if routing_table_count_prior == 0usize {
-                                // if we transition from zero to one routing connection
-                                info!("Routing Node has connected.");
-                                self.state = State::Connected;
-                            } else if routing_table_count_prior
-                                == ::types::GROUP_SIZE - 1usize {
-                                info!("Routing Node has connected to {:?} nodes.",
-                                    routing_table.size());
-                                self.state = State::GroupConnected;
-                                let _ = self.event_sender.send(Event::Connected);
-                            };
-                            info!("RT({:?}) added {:?}", routing_table.size(),
-                                routing_name); };
-                        if added && trigger_churn {
-                            let our_close_group = routing_table.our_close_group();
+                        info!("RT({:?}) added {:?}", size, routing_name);
+
+                        if trigger_churn {
+                            let our_close_group = unwrap_option!(self.routing_table.as_ref(),
+                                                                 "Logic Error - Report bug")
+                                                  .our_close_group();
+
                             let mut close_group : Vec<NameType> = our_close_group.iter()
                                     .map(|node_info| node_info.public_id.name())
                                     .collect::<Vec<::NameType>>();
+
                             close_group.insert(0, self.id.name());
                             let targets = our_close_group
                                 .iter()
                                 .filter_map(|node_info| node_info.connection)
                                 .collect::<Vec<::crust::Connection>>();
-                            let _ = self.action_sender.send(Action::Churn(
-                                ::direct_messages::Churn{ close_group: close_group },
-                                targets, routing_name ));
-                        };
-                        added
+
+                            let churn_msg = ::direct_messages::Churn {
+                                close_group: close_group,
+                            };
+
+                            if let Err(err) = self.generate_churn(churn_msg,
+                                                                  targets,
+                                                                  routing_name) {
+                                error!("{:?} {:?} - Unsuccessful Churn {:?}",
+                                       file!(), line!(), err);
+                            }
+                        }
                     }
-                    None => false,
+
+                    add_node_result.0
+                } else {
+                    false
                 }
             },
             ConnectionName::Bootstrap(bootstrap_name) => {
