@@ -132,8 +132,8 @@ pub fn random_name() -> ::routing::NameType {
     // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
     // `NameType::generate_random()` this should be used here.  Issue reported at
     // https://github.com/maidsafe/routing/issues/674
-    ::routing::NameType(::routing::types::vector_as_u8_64_array(
-        ::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
+    ::routing::NameType(::routing::types::slice_as_u8_64_array(
+        &*::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
 }
 
 #[cfg(test)]

@@ -118,7 +118,7 @@ impl ChunkStore {
                          .and_then(|entry| entry.file_name().into_string().ok())
                          .and_then(|hex_name| hex_name.from_hex().ok())
                          .and_then(|bytes| Some(::routing::NameType::new(
-                             ::routing::types::vector_as_u8_64_array(bytes))))
+                             ::routing::types::slice_as_u8_64_array(&*bytes))))
             };
             Ok(dir_entries.filter_map(dir_entry_to_routing_name).collect())
         }).unwrap_or(vec![])

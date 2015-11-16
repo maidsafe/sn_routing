@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.2.1]
+- Remove wildcard dependencies
+
 ## [0.1.6]
 - Default to use real Routing rather than the mock
 - Updated config file to match Crust changes
