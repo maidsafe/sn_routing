@@ -34,7 +34,7 @@ impl Id {
     /// Contruct new Id.
     pub fn new() -> Id {
 
-        let sign_keys =  sodiumoxide::crypto::sign::gen_keypair();
+        let sign_keys = sodiumoxide::crypto::sign::gen_keypair();
         let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
         Id {
             sign_keys: sign_keys,
@@ -64,7 +64,11 @@ impl Id {
                      encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))
                      -> Id {
         let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
-        Id { sign_keys: sign_keys, encrypt_keys: encrypt_keys, name: name }
+        Id {
+            sign_keys: sign_keys,
+            encrypt_keys: encrypt_keys,
+            name: name,
+        }
     }
 
     /// Original/relocated name.
@@ -95,17 +99,17 @@ mod test{
 
     #[test]
     fn with_keys_and_getters() {
-      let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-      let asym_keys = ::sodiumoxide::crypto::box_::gen_keypair();
-      let id = ::id::Id::with_keys(sign_keys.clone(), asym_keys.clone());
-      let name_id = ::sodiumoxide::crypto::hash::sha512::hash(&sign_keys.0[..]).0;
-      let expected_name = ::NameType::new(name_id);
+        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let asym_keys = ::sodiumoxide::crypto::box_::gen_keypair();
+        let id = ::id::Id::with_keys(sign_keys.clone(), asym_keys.clone());
+        let name_id = ::sodiumoxide::crypto::hash::sha512::hash(&sign_keys.0[..]).0;
+        let expected_name = ::NameType::new(name_id);
 
-      assert_eq!(expected_name, id.name());
-      assert_eq!(&sign_keys.0, &id.signing_public_key());
-      // FIXME(ben) 20/07/2015 once PartialEq is implemented for the private key, avoid slice
-      assert_eq!(&sign_keys.1[..], &id.signing_private_key()[..]);
-      assert_eq!(&asym_keys.0, &id.encrypting_public_key());
+        assert_eq!(expected_name, id.name());
+        assert_eq!(&sign_keys.0, &id.signing_public_key());
+        // FIXME(ben) 20/07/2015 once PartialEq is implemented for the private key, avoid slice
+        assert_eq!(&sign_keys.1[..], &id.signing_private_key()[..]);
+        assert_eq!(&asym_keys.0, &id.encrypting_public_key());
     }
 
     #[test]
@@ -122,33 +126,36 @@ mod test{
 
     #[test]
     fn assign_relocated_name() {
-      let mut id = ::id::Id::new();
-      let original_name = id.name();
-      let cloned_original_name = original_name.clone();
-      let cloned_signing_public_key = id.signing_public_key().clone().0.to_vec();
-      let cloned_encrypting_public_key = id.encrypting_public_key().clone().0.to_vec();
-      let cloned_signing_private_key = id.signing_private_key().clone().0.to_vec();
+        let mut id = ::id::Id::new();
+        let original_name = id.name();
+        let cloned_original_name = original_name.clone();
+        let cloned_signing_public_key = id.signing_public_key().clone().0.to_vec();
+        let cloned_encrypting_public_key = id.encrypting_public_key().clone().0.to_vec();
+        let cloned_signing_private_key = id.signing_private_key().clone().0.to_vec();
 
-      // will not be relocated with same or equal name
-      assert!(!id.assign_relocated_name(original_name));
-      assert!(!id.assign_relocated_name(cloned_original_name));
+        // will not be relocated with same or equal name
+        assert!(!id.assign_relocated_name(original_name));
+        assert!(!id.assign_relocated_name(cloned_original_name));
 
-      let relocated_name: ::name_type::NameType = rand::random();
+        let relocated_name: ::name_type::NameType = rand::random();
 
-      // is relocated with other name
-      assert!(id.assign_relocated_name(relocated_name));
+        // is relocated with other name
+        assert!(id.assign_relocated_name(relocated_name));
 
-      // will not be relocated with that relocated name again or yet another name
-      assert!(!id.assign_relocated_name(relocated_name));
-      assert!(!id.assign_relocated_name(rand::random()));
+        // will not be relocated with that relocated name again or yet another name
+        assert!(!id.assign_relocated_name(relocated_name));
+        assert!(!id.assign_relocated_name(rand::random()));
 
-      // assign_relocation_name did change name properly
-      assert_eq!(relocated_name, id.name());
-      assert!(original_name != relocated_name);
+        // assign_relocation_name did change name properly
+        assert_eq!(relocated_name, id.name());
+        assert!(original_name != relocated_name);
 
-      // assign_relocation_name dit not change any key properties
-      assert_eq!(cloned_signing_public_key, id.signing_public_key().0.to_vec());
-      assert_eq!(cloned_encrypting_public_key, id.encrypting_public_key().0.to_vec());
-      assert_eq!(cloned_signing_private_key, id.signing_private_key().0.to_vec());
+        // assign_relocation_name dit not change any key properties
+        assert_eq!(cloned_signing_public_key,
+                   id.signing_public_key().0.to_vec());
+        assert_eq!(cloned_encrypting_public_key,
+                   id.encrypting_public_key().0.to_vec());
+        assert_eq!(cloned_signing_private_key,
+                   id.signing_private_key().0.to_vec());
     }
 }

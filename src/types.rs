@@ -22,7 +22,7 @@
 /// Panics if the slice is not 64 bytes in length.
 pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
     assert!(slice.len() == 64);
-    let mut arr = [0u8;64];
+    let mut arr = [0u8; 64];
     // TODO (canndrew): This should use copy_memory when it's stable
     for i in 0..64 {
         arr[i] = slice[i];
@@ -37,7 +37,7 @@ pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
 /// Panics if the slice is not 32 bytes in length
 pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
     assert!(slice.len() == 32);
-    let mut arr = [0u8;32];
+    let mut arr = [0u8; 32];
     // TODO (canndrew): This should use copy_memory when it's stable
     for i in 0..32 {
         arr[i] = slice[i];
@@ -113,8 +113,10 @@ impl CacheOptions {
     }
 
     /// Construct with caching optionally set.
-    pub fn with_caching(cache_plain_data: bool, cache_structured_data: bool,
-            cache_immutable_data: bool) -> CacheOptions {
+    pub fn with_caching(cache_plain_data: bool,
+                        cache_structured_data: bool,
+                        cache_immutable_data: bool)
+                        -> CacheOptions {
         CacheOptions {
             cache_plain_data: cache_plain_data,
             cache_structured_data: cache_structured_data,
@@ -130,7 +132,7 @@ impl CacheOptions {
     }
 
     /// Return true if any caching option is set otherwise false.
-    pub fn caching_enabled(& self) -> bool {
+    pub fn caching_enabled(&self) -> bool {
         if self.cache_plain_data || self.cache_structured_data || self.cache_immutable_data {
             return true;
         }
@@ -138,17 +140,17 @@ impl CacheOptions {
     }
 
     /// Return PlainData caching option.
-    pub fn plain_data_caching_enabled(& self) -> bool {
+    pub fn plain_data_caching_enabled(&self) -> bool {
         self.cache_plain_data
     }
 
     /// Return StructuredData caching option.
-    pub fn structured_data_caching_enabled(& self) -> bool {
+    pub fn structured_data_caching_enabled(&self) -> bool {
         self.cache_structured_data
     }
 
     /// Return ImmutableData caching option.
-    pub fn immutable_data_caching_enabled(& self) -> bool {
+    pub fn immutable_data_caching_enabled(&self) -> bool {
         self.cache_immutable_data
     }
 }

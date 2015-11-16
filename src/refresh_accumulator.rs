@@ -20,7 +20,8 @@ pub type Request = (::authority::Authority, u64, ::NameType);
 
 pub struct RefreshAccumulator {
     // Map of refresh request and <map of sender and payload>
-    requests: ::lru_time_cache::LruCache<Request, ::std::collections::HashMap<::NameType, Vec<u8>>>,
+    requests: ::lru_time_cache::LruCache<Request,
+                                           ::std::collections::HashMap<::NameType, Vec<u8>>>,
 }
 
 impl RefreshAccumulator {
@@ -41,18 +42,21 @@ impl RefreshAccumulator {
                        payload: Vec<u8>,
                        cause: ::NameType)
                        -> (bool, Option<Vec<Vec<u8>>>) {
-        debug!("RefreshAccumulator for {:?} caused by {:?}", sender_group, cause);
+        debug!("RefreshAccumulator for {:?} caused by {:?}",
+               sender_group,
+               cause);
         let request = (sender_group, type_tag, cause);
         // if this is the first instance of a new refresh request
         let first_request = !self.requests.contains_key(&request);
         if threshold <= 1 {
-            return (first_request, Some(vec![payload]))
+            return (first_request, Some(vec![payload]));
         }
 
         let mut payloads = None;
         {
-            let map = self.requests.entry(request.clone()).or_insert_with(
-                || ::std::collections::HashMap::new());
+            let map = self.requests
+                          .entry(request.clone())
+                          .or_insert_with(|| ::std::collections::HashMap::new());
             let _ = map.insert(sender_node, payload);
             if map.len() >= threshold {
                 payloads = Some(map.iter().map(|(_, msg)| msg.clone()).collect());
@@ -77,16 +81,28 @@ mod test {
             ::time::Duration::minutes(10));
 
         for _ in 0..2 {
-            assert_eq!(accumulator.add_message(threshold.clone(), 1u64, ::rand::random(),
-                                               group.clone(), bytes.clone(), cause.clone()),
+            assert_eq!(accumulator.add_message(threshold.clone(),
+                                               1u64,
+                                               ::rand::random(),
+                                               group.clone(),
+                                               bytes.clone(),
+                                               cause.clone()),
                        (true, None));
             for _ in 1..threshold - 1 {
-                assert_eq!(accumulator.add_message(threshold.clone(), 1u64, ::rand::random(),
-                                                   group.clone(), bytes.clone(), cause.clone()),
+                assert_eq!(accumulator.add_message(threshold.clone(),
+                                                   1u64,
+                                                   ::rand::random(),
+                                                   group.clone(),
+                                                   bytes.clone(),
+                                                   cause.clone()),
                            (false, None));
             }
-            let result = accumulator.add_message(threshold.clone(), 1u64, ::rand::random(),
-                                                 group.clone(), bytes.clone(), cause.clone());
+            let result = accumulator.add_message(threshold.clone(),
+                                                 1u64,
+                                                 ::rand::random(),
+                                                 group.clone(),
+                                                 bytes.clone(),
+                                                 cause.clone());
             assert!(!result.0);
             assert_eq!(result.1.unwrap().len(), threshold);
             // since the message is now accumulated, it should be removed and we're good to do

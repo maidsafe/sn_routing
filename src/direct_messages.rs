@@ -53,21 +53,26 @@ impl DirectMessage {
                -> Result<DirectMessage, ::cbor::CborError> {
 
         let encoded_content = try!(::utils::encode(&content));
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(
-                &encoded_content, private_sign_key);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_content,
+                                                                   private_sign_key);
 
-        Ok(DirectMessage { content: content, signature: signature })
+        Ok(DirectMessage {
+            content: content,
+            signature: signature,
+        })
     }
 
-    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-        -> bool {
+    pub fn verify_signature(&self,
+                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
+                            -> bool {
         let encoded_content = match self.encoded_content() {
             Ok(x) => x,
             Err(_) => return false,
         };
 
-        ::sodiumoxide::crypto::sign::verify_detached(&self.signature, &encoded_content,
-            public_sign_key)
+        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
+                                                     &encoded_content,
+                                                     public_sign_key)
     }
 
     pub fn content(&self) -> &Content {
@@ -89,13 +94,14 @@ mod test {
 
     #[test]
     fn verify_signature() {
-        let address = ::types::Address::Node(::NameType(
-            ::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0));
+        let address =
+            ::types::Address::Node(::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![])
+                                                  .0));
         let public_id: ::public_id::PublicId = rand::random();
         let none_address: Option<::types::Address> = None;
         let hello = ::direct_messages::Hello {
-            address:       address,
-            public_id:     public_id,
+            address: address,
+            public_id: public_id,
             confirmed_you: none_address,
         };
         let content = ::direct_messages::Content::Hello(hello);
@@ -109,8 +115,8 @@ mod test {
 
                 // verify_signature returns false for other public key
                 assert!(!message.verify_signature(&other_key.0));
-            },
-            Err(error) => panic!("Error: {:?}", error)
+            }
+            Err(error) => panic!("Error: {:?}", error),
         }
     }
 

@@ -18,7 +18,7 @@
 pub struct MessageAccumulator {
     // Map of message and sender
     requests: ::lru_time_cache::LruCache<::messages::RoutingMessage,
-                                         ::std::collections::HashSet<::NameType>>,
+                                           ::std::collections::HashSet<::NameType>>,
 }
 
 impl MessageAccumulator {
@@ -32,13 +32,14 @@ impl MessageAccumulator {
                        message: ::messages::RoutingMessage)
                        -> Option<::messages::RoutingMessage> {
         if threshold <= 1 {
-            return Some(message)
+            return Some(message);
         }
 
         let mut result = None;
         {
-            let claimants = self.requests.entry(message.clone()).or_insert_with(
-                || ::std::collections::HashSet::new());
+            let claimants = self.requests
+                                .entry(message.clone())
+                                .or_insert_with(|| ::std::collections::HashSet::new());
             claimants.insert(claimant);
             if claimants.len() >= threshold {
                 debug!("Returning message, {:?}, from accumulator", message);
@@ -60,72 +61,102 @@ mod test {
     fn add_with_fixed_threshold() {
         let threshold = 3usize;
         let id = ::id::Id::new();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
-            &id.signing_public_key(), &id.signing_private_key());
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&id.signing_public_key(),
+                                                                   &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
         for _ in 0..threshold - 1 {
-            assert!(accumulator.add_message(threshold.clone(), rand::random(),
-                routing_message.clone()).is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            rand::random(),
+                                            routing_message.clone())
+                               .is_none());
         }
-        assert_eq!(accumulator.add_message(threshold.clone(), rand::random(),
-            routing_message.clone()), Some(routing_message.clone()));
+        assert_eq!(accumulator.add_message(threshold.clone(),
+                                           rand::random(),
+                                           routing_message.clone()),
+                   Some(routing_message.clone()));
 
         // assert that the accumulator has been cleared; repeat with the same message
         for _ in 0..threshold - 1 {
-            assert!(accumulator.add_message(threshold.clone(), rand::random(),
-                routing_message.clone()).is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            rand::random(),
+                                            routing_message.clone())
+                               .is_none());
         }
-        assert_eq!(accumulator.add_message(threshold.clone(), rand::random(),
-            routing_message.clone()), Some(routing_message));
+        assert_eq!(accumulator.add_message(threshold.clone(),
+                                           rand::random(),
+                                           routing_message.clone()),
+                   Some(routing_message));
     }
 
     #[test]
     fn add_repeat_claimants() {
         let threshold = 3usize;
         let id = ::id::Id::new();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
-            &id.signing_public_key(), &id.signing_private_key());
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(&id.signing_public_key(),
+                                                                   &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
         for _ in 0..threshold - 1 {
             let claimant: ::NameType = rand::random();
-            assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
-                routing_message.clone()).is_none());
-            assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
-                routing_message.clone()).is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            claimant.clone(),
+                                            routing_message.clone())
+                               .is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            claimant.clone(),
+                                            routing_message.clone())
+                               .is_none());
         }
         let claimant: ::NameType = rand::random();
-        assert_eq!(accumulator.add_message(threshold.clone(), claimant.clone(),
-            routing_message.clone()), Some(routing_message.clone()));
-        assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
-            routing_message.clone()).is_none());
+        assert_eq!(accumulator.add_message(threshold.clone(),
+                                           claimant.clone(),
+                                           routing_message.clone()),
+                   Some(routing_message.clone()));
+        assert!(accumulator.add_message(threshold.clone(),
+                                        claimant.clone(),
+                                        routing_message.clone())
+                           .is_none());
     }
 
     #[test]
     fn add_multiple_messages() {
         let threshold = 3usize;
         let id = ::id::Id::new();
-        let routing_message1 = ::test_utils::messages_util::arbitrary_routing_message(
-            &id.signing_public_key(), &id.signing_private_key());
-        let routing_message2 = ::test_utils::messages_util::arbitrary_routing_message(
-            &id.signing_public_key(), &id.signing_private_key());
+        let routing_message1 =
+            ::test_utils::messages_util::arbitrary_routing_message(&id.signing_public_key(),
+                                                                   &id.signing_private_key());
+        let routing_message2 =
+            ::test_utils::messages_util::arbitrary_routing_message(&id.signing_public_key(),
+                                                                   &id.signing_private_key());
         let mut accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
         for _ in 0..threshold - 1 {
             let claimant: ::NameType = rand::random();
-            assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
-                routing_message1.clone()).is_none());
-            assert!(accumulator.add_message(threshold.clone(), claimant.clone(),
-                routing_message2.clone()).is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            claimant.clone(),
+                                            routing_message1.clone())
+                               .is_none());
+            assert!(accumulator.add_message(threshold.clone(),
+                                            claimant.clone(),
+                                            routing_message2.clone())
+                               .is_none());
         }
         let claimant: ::NameType = rand::random();
-        assert_eq!(accumulator.add_message(threshold.clone(), claimant.clone(),
-            routing_message1.clone()), Some(routing_message1.clone()));
-        assert!(accumulator.add_message(threshold.clone() + 1, claimant.clone(),
-            routing_message2.clone()).is_none());
+        assert_eq!(accumulator.add_message(threshold.clone(),
+                                           claimant.clone(),
+                                           routing_message1.clone()),
+                   Some(routing_message1.clone()));
+        assert!(accumulator.add_message(threshold.clone() + 1,
+                                        claimant.clone(),
+                                        routing_message2.clone())
+                           .is_none());
         // lower threshold again
-        assert_eq!(accumulator.add_message(threshold.clone(), rand::random(),
-            routing_message2.clone()), Some(routing_message2.clone()));
+        assert_eq!(accumulator.add_message(threshold.clone(),
+                                           rand::random(),
+                                           routing_message2.clone()),
+                   Some(routing_message2.clone()));
     }
 }

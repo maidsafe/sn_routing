@@ -29,7 +29,10 @@ impl PlainData {
 
     /// Creates a new instance of PlainData
     pub fn new(name: NameType, value: Vec<u8>) -> PlainData {
-        PlainData { name: name, value: value }
+        PlainData {
+            name: name,
+            value: value,
+        }
     }
 
     /// Returns the value

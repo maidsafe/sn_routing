@@ -130,7 +130,8 @@ mod test {
         assert_eq!(id_name, id.name());
 
         // set_name dit not change signing public key
-        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+        assert_eq!(cloned_signing_public_key,
+                   public_id.signing_public_key().0.to_vec());
     }
 
     #[test]
@@ -166,7 +167,8 @@ mod test {
         assert!(public_id.is_relocated());
 
         // set_name dit not change signing public key
-        assert_eq!(cloned_signing_public_key, public_id.signing_public_key().0.to_vec());
+        assert_eq!(cloned_signing_public_key,
+                   public_id.signing_public_key().0.to_vec());
 
         public_id.assign_relocated_name(name_before);
 
