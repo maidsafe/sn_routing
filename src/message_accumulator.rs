@@ -15,52 +15,40 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use lru_time_cache::LruCache;
-use std::collections::BTreeSet;
-use messages::RoutingMessage;
-use NameType;
-
-type Set<K> = BTreeSet<K>;
-pub type Bytes = Vec<u8>;
-
 pub struct MessageAccumulator {
-    //                                       +-> Who sent it
-    //                                       |
-    requests: LruCache<RoutingMessage, Set<NameType>>,
+    // Map of message and sender
+    requests: ::lru_time_cache::LruCache<::messages::RoutingMessage,
+                                         ::std::collections::HashSet<::NameType>>,
 }
 
 impl MessageAccumulator {
-
     pub fn with_expiry_duration(duration: ::time::Duration) -> MessageAccumulator {
-        MessageAccumulator { requests: LruCache::with_expiry_duration(duration) }
+        MessageAccumulator { requests: ::lru_time_cache::LruCache::with_expiry_duration(duration) }
     }
 
     pub fn add_message(&mut self,
                        threshold: usize,
-                       claimant: NameType,
-                       message: RoutingMessage)
-                       -> Option<RoutingMessage> {
+                       claimant: ::NameType,
+                       message: ::messages::RoutingMessage)
+                       -> Option<::messages::RoutingMessage> {
+        if threshold <= 1 {
+            return Some(message)
+        }
+
+        let mut result = None;
         {
-            if threshold <= 1 {
-                return Some(message)
-            }
-
-            let claimants = self.requests.entry(message.clone())
-                                         .or_insert_with(||Set::new());
-
+            let claimants = self.requests.entry(message.clone()).or_insert_with(
+                || ::std::collections::HashSet::new());
             claimants.insert(claimant);
-
-            if claimants.len() < threshold {
-                return None
+            if claimants.len() >= threshold {
+                debug!("Returning message, {:?}, from accumulator", message);
+                result = Some(message);
             }
-
-            debug!("Returning message, {:?}, from accumulator", message);
-            Some(message)
-
-        }.map(|message| {
-            let _ = self.requests.remove(&message);
-            message
-        })
+        }
+        if result.is_some() {
+            let _ = self.requests.remove(result.as_ref().unwrap());
+        }
+        result
     }
 }
 

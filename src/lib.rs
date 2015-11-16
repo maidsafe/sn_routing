@@ -55,7 +55,6 @@ extern crate sodiumoxide;
 extern crate time;
 
 extern crate crust;
-// extern crate accumulator;
 extern crate lru_time_cache;
 extern crate message_filter;
 

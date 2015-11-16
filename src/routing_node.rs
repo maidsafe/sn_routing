@@ -133,8 +133,9 @@ pub struct RoutingNode {
     filter: ::filter::Filter,
     connection_filter: ::message_filter::MessageFilter<::NameType>,
     public_id_cache: LruCache<NameType, PublicId>,
-    accumulator: ::message_accumulator::MessageAccumulator,
+    message_accumulator: ::message_accumulator::MessageAccumulator,
     refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
+    refresh_causes: ::message_filter::MessageFilter<::NameType>,
     cache_options: CacheOptions,
     data_cache: Option<LruCache<NameType, Data>>,
 
@@ -208,10 +209,12 @@ impl RoutingNode {
             connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::seconds(20)),
             public_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
-            accumulator: ::message_accumulator::MessageAccumulator::with_expiry_duration(
+            message_accumulator: ::message_accumulator::MessageAccumulator::with_expiry_duration(
                 ::time::Duration::minutes(5)),
             refresh_accumulator: ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
-                ::time::Duration::minutes(5), event_sender),
+                ::time::Duration::minutes(5)),
+            refresh_causes: ::message_filter::MessageFilter::with_expiry_duration(
+                ::time::Duration::minutes(5)),
             cache_options: CacheOptions::no_caching(),
             data_cache: None,
 //START
@@ -357,10 +360,12 @@ impl RoutingNode {
           self.connection_filter = ::message_filter::MessageFilter::with_expiry_duration(
               ::time::Duration::seconds(20));
           self.public_id_cache = LruCache::with_expiry_duration(::time::Duration::minutes(10));
-          self.accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
+          self.message_accumulator = ::message_accumulator::MessageAccumulator::with_expiry_duration(
               ::time::Duration::minutes(5));
           self.refresh_accumulator = ::refresh_accumulator::RefreshAccumulator
-              ::with_expiry_duration(::time::Duration::minutes(5), self.event_sender.clone());
+              ::with_expiry_duration(::time::Duration::minutes(5));
+          self.refresh_causes = ::message_filter::MessageFilter::with_expiry_duration(
+                ::time::Duration::minutes(5));
           self.data_cache = None;
           let preserve_cache_options = self.cache_options.clone();
           self.set_cache_options(preserve_cache_options);
@@ -672,7 +677,7 @@ impl RoutingNode {
         };
 
         if skip_accumulator {
-            debug!("Skipping accumulator for message {:?}", message);
+            debug!("Skipping message_accumulator for message {:?}", message);
             return Some((message, None));
         }
 
@@ -682,14 +687,14 @@ impl RoutingNode {
         let claimant: NameType = match *signed_message.claimant() {
             Address::Node(ref claimant) => claimant.clone(),
             Address::Client(_) => {
-                error!("Claimant is a Client, but passed into accumulator for a group, dropping.");
+                error!("Claimant is a Client, but passed into message_accumulator for a group, dropping.");
                 // debug_assert!(false);
                 return None;
             }
         };
 
-        debug!("Adding message from {:?} to accumulator", claimant);
-        self.accumulator.add_message(threshold, claimant, message).map(|msg| (msg, None))
+        debug!("Adding message from {:?} to message_accumulator", claimant);
+        self.message_accumulator.add_message(threshold, claimant, message).map(|msg| (msg, None))
     }
 
     // ---- Direct Messages -----------------------------------------------------------------------
@@ -717,10 +722,10 @@ impl RoutingNode {
     // ---- Churn ---------------------------------------------------------------------------------
 
     fn generate_churn(&mut self, churn: ::direct_messages::Churn, target: Vec<::crust::Connection>,
-        cause: ::NameType) -> RoutingResult {
+            cause: ::NameType) -> RoutingResult {
         debug!("CHURN: sending {:?} names to {:?} close nodes",
             churn.close_group.len(), target.len());
-        self.refresh_accumulator.register_cause(&cause);
+        self.refresh_causes.add(cause.clone());
         // send Churn to all our close group nodes
         let direct_message = match ::direct_messages::DirectMessage::new(
             ::direct_messages::Content::Churn(churn.clone()),
@@ -1269,9 +1274,9 @@ impl RoutingNode {
         };
 
         self.send_to_user(Event::Response {
-            response       : response,
-            our_authority  : to_authority,
-            from_authority : from_authority,
+            response: response,
+            our_authority: to_authority,
+            from_authority: from_authority,
         });
 
         Ok(())
@@ -1284,11 +1289,17 @@ impl RoutingNode {
                                  cause: ::NameType) -> RoutingResult {
         debug_assert!(our_authority.is_group());
         let threshold = self.group_threshold();
-        match self.refresh_accumulator.add_message(threshold,
-            type_tag.clone(), sender, our_authority.clone(), payload, cause) {
-            Some(vec_of_bytes) => {
-                let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority,
-                    vec_of_bytes));
+        let unknown_cause = !self.refresh_causes.check(&cause);
+        let (is_new_request, payloads) = self.refresh_accumulator.add_message(threshold,
+                type_tag.clone(), sender, our_authority.clone(), payload, cause);
+        // If this is a new refresh instance, notify user to perform refresh.
+        if unknown_cause && is_new_request {
+            let _ = self.event_sender.send(::event::Event::DoRefresh(type_tag,
+                our_authority.clone(), cause.clone()));
+        }
+        match payloads {
+            Some(payloads) => {
+                let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority, payloads));
                 Ok(())
             },
             None => Err(::error::RoutingError::NotEnoughSignatures),
