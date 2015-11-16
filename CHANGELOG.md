@@ -1,4 +1,8 @@
 # Routing - Change Log
+
+## [0.4.2]
+- Remove wildcard dependencies
+
 ## [0.4.1] Updated to CRUST 0.4
 
 ## [0.4.0] Updated to CRUST 0.3
