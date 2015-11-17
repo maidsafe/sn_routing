@@ -199,7 +199,7 @@ impl RoutingNode {
             // Counter starts at 1, 0 is reserved for bootstrapping.
             connection_counter: 1u32,
             client_restriction: client_restriction,
-            action_sender: action_sender.clone(),
+            action_sender: action_sender,
             action_receiver: action_receiver,
             event_sender: event_sender.clone(),
             filter: ::filter::Filter::with_expiry_duration(::time::Duration::minutes(20)),
@@ -234,46 +234,31 @@ impl RoutingNode {
         debug!("RoutingNode started running and started bootstrap");
         loop {
             match self.action_receiver.try_recv() {
-                Err(_) => {}
-                Ok(Action::SendMessage(signed_message)) => {
-                    ignore(self.message_received(signed_message));
-                }
+                Err(_) => {
+                    error!("{:?} {:?} - Action Sender hung-up. Exiting event loop",
+                           file!(), line!());
+                    break
+                },
                 Ok(Action::SendContent(our_authority, to_authority, content)) => {
                     let _ = self.send_content(our_authority, to_authority, content);
-                }
-                Ok(Action::SendConfirmationHello(connection, address)) => {
-                    let _ = self.send_hello(connection, Some(address));
-                }
-                Ok(Action::RequestNetworkName(to_authority, content)) => {
-                    debug!("RequestNetworkName received for {:?}", content);
-                    let _ = self.request_network_name(to_authority, content);
-                }
+                },
                 Ok(Action::ClientSendContent(to_authority, content)) => {
                     debug!("ClientSendContent received for {:?}", content);
                     let _ = self.client_send_content(to_authority, content);
-                }
-                Ok(Action::Churn(our_close_group, targets, cause)) => {
-                    let _ = self.generate_churn(our_close_group, targets, cause);
-                }
+                },
                 Ok(Action::SetCacheOptions(cache_options)) => {
                     self.set_cache_options(cache_options);
-                }
-                Ok(Action::DropConnections(connections)) => {
-                    self.drop_connections(connections);
-                }
-                Ok(Action::MatchConnection(expected_connection, unknown_connection)) => {
-                    self.match_connection(expected_connection, unknown_connection);
-                }
+                },
                 Ok(Action::Rebootstrap) => {
                     self.reset();
                     self.crust_service.bootstrap(0u32);
-                }
+                },
                 Ok(Action::Terminate) => {
                     debug!("routing node terminated");
                     let _ = self.event_sender.send(Event::Terminated);
                     self.crust_service.stop();
                     break;
-                }
+                },
             };
             match self.crust_receiver.try_recv() {
                 Err(_) => {
@@ -509,13 +494,9 @@ impl RoutingNode {
         // Cache a response if from a GetRequest and caching is enabled for the Data type.
         self.handle_cache_put(&message);
         // Get from cache if it's there.
-        match self.handle_cache_get(&message) {
-            Some(content) => {
-                return self.send_content(Authority::ManagedNode(self.id().name()),
-                                         message.source(),
-                                         content);
-            }
-            None => {}
+        if let Some(content) = self.handle_cache_get(&message) {
+            let to_authority = ::authority::Authority::ManagedNode(self.id().name());
+            return self.send_content(to_authority, message.source(), content)
         }
 
         // Scan for remote names.
@@ -788,7 +769,7 @@ impl RoutingNode {
 
     // ---- Request Network Name ------------------------------------------------------------------
 
-    fn request_network_name(&self, to_authority: Authority, content: Content) -> RoutingResult {
+    fn request_network_name(&mut self, to_authority: Authority, content: Content) -> RoutingResult {
         if self.client_restriction {
             debug!("Not requesting a network name we are a Client.");
             return Ok(());
@@ -836,7 +817,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn handle_request_network_name(&self,
+    fn handle_request_network_name(&mut self,
                                    request: InternalRequest,
                                    from_authority: Authority,
                                    to_authority: Authority,
@@ -1185,7 +1166,7 @@ impl RoutingNode {
         }
     }
 
-    fn send_content(&self,
+    fn send_content(&mut self,
                     our_authority: Authority,
                     to_authority: Authority,
                     content: Content)
@@ -1228,7 +1209,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn client_send_content(&self, to_authority: Authority, content: Content) -> RoutingResult {
+    fn client_send_content(&mut self, to_authority: Authority, content: Content) -> RoutingResult {
         if self.is_connected_node() || self.has_bootstrap_endpoints() {
             // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
             let bootstrap_name = match self.get_a_bootstrap_name() {
@@ -1278,7 +1259,7 @@ impl RoutingNode {
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
-    fn send(&self, signed_message: SignedMessage) -> RoutingResult {
+    fn send(&mut self, signed_message: SignedMessage) -> RoutingResult {
         let destination = signed_message.get_routing_message().destination();
         debug!("Send request to {:?}", destination);
         let bytes = try!(encode(&signed_message));
@@ -1320,7 +1301,7 @@ impl RoutingNode {
                 return Ok(());
             };
             debug!("Queuing message for processing ourselves");
-            ignore(self.action_sender.send(Action::SendMessage(signed_message)));
+            try!(self.message_received(signed_message));
         }
         Ok(())
     }
@@ -2270,15 +2251,13 @@ impl RoutingNode {
                            client_address,
                            connection);
                     debug!("Sending confirmation to {:?}.\n", client_address);
-                    let _ = self.action_sender
-                                .send(::action::Action::SendConfirmationHello(connection.clone(),
-                                                                              client_address));
+                    // TODO(Spandan) Handle this result
+                    let _result = self.send_hello(connection.clone(), Some(client_address));
                 } else {
                     debug!("Failed to add client {:?} as relay, dropping connection {:?}.\n",
                            client_address,
                            connection);
-                    let _ = self.action_sender
-                                .send(::action::Action::DropConnections(vec![connection.clone()]));
+                    self.drop_connections(vec![connection.clone()]);
                 };
             }
             ::types::Address::Node(name) => {
@@ -2296,6 +2275,8 @@ impl RoutingNode {
                             _ => {}
                         };
 
+                        let mut found = None;
+
                         for (key, value) in self.unknown_connections.iter_mut() {
                             if key == connection {
                                 match value.0 {
@@ -2305,17 +2286,18 @@ impl RoutingNode {
                                                key);
                                         value.0 = Some(hello.clone());
                                         if self.state != State::Disconnected {
-                                            let _ = self.action_sender.send(
-                                                ::action::Action::MatchConnection(
-                                                None, Some((key.clone(), value.0.clone()))));
+                                            found = Some((key.clone(), value.0.clone()));
                                         }
-                                    }
-                                    Some(_) => {
-                                        debug!("Already received a Hello for this connection.\n");
-                                    }
+                                    },
+                                    Some(_) => debug!("Already received a Hello for this connection.\n"),
                                 }
-                                return;
+
+                                break
                             }
+                        }
+
+                        if found.is_some() {
+                            self.match_connection(None, found);
                         }
                     }
                     Some(::types::Address::Client(ref _public_key)) => {
@@ -2327,36 +2309,36 @@ impl RoutingNode {
                             debug!("Requesting network name from {:?} on {:?}.",
                                    name,
                                    connection);
-                            // TODO(Spandan) Handle this resutl
+                            // TODO(Spandan) Handle this result
                             let _result = self.request_network_name_core(&name, &connection);
                         } else {
                             error!("Failed to add node {:?} as bootstrap connection on {:?}. \
                                     Dropping.",
                                    name,
                                    connection);
-                            let _ = self.action_sender.send(::action::Action::DropConnections(
-                                vec![connection.clone()]));
-                        };
+                            self.drop_connections(vec![connection.clone()]);
+                        }
                     }
                     Some(::types::Address::Node(ref _our_name)) => {
                         // We are a node, and this is the confirmation, so we are node A on diagram
                         // RFC-0011
+                        let mut found = None;
+
                         for (key, value) in self.unknown_connections.iter_mut() {
                             if key == connection {
-                                match value.0 {
-                                    None => {} // A confirmation without a stored hello is ignored.
-                                    Some(ref stored_hello) => {
-                                        if stored_hello.address == hello.address {
-                                            debug!("Confirmed Hello received from {:?}.\n",
-                                                   hello.address);
-                                            let _ = self.action_sender.send(
-                                                ::action::Action::MatchConnection(
-                                                    None, Some((key.clone(), value.0.clone()))));
-                                        };
+                                if let Some(ref stored_hello) = value.0 {
+                                    if stored_hello.address == hello.address {
+                                        debug!("Confirmed Hello received from {:?}.\n", hello.address);
+
+                                        found = Some((key.clone(), value.0.clone()));
                                     }
                                 }
-                                break;
+                                break
                             }
+                        }
+
+                        if found.is_some() {
+                            self.match_connection(None, found);
                         }
                     }
                 }
