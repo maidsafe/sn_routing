@@ -1005,7 +1005,7 @@ impl RoutingNode {
             }
             &State::Terminated => {
                 // (TODO Brian 19.10.15) A new error code may be more appropriate here.
-                return Err(RoutingError::Interface(InterfaceError::NotConnected));
+                return Err(RoutingError::Terminated);
             }
             _ => {
                 let name = self.id().name();
