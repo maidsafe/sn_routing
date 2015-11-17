@@ -52,8 +52,11 @@ impl RoutingClient {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing with a restriction to become a full node
-        let mut routing_node =
-            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, true, keys);
+        let mut routing_node = RoutingNode::new(action_sender.clone(),
+                                                action_receiver,
+                                                event_sender,
+                                                true,
+                                                keys);
 
         let _ = spawn(move || {
             debug!("Started routing client run().");
@@ -61,7 +64,10 @@ impl RoutingClient {
             debug!("Routing client node terminated running.");
         });
 
-        RoutingClient { action_sender: action_sender, get_counter: 0u8 }
+        RoutingClient {
+            action_sender: action_sender,
+            get_counter: 0u8,
+        }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.

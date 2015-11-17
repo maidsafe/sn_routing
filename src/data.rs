@@ -86,32 +86,32 @@ mod test {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
+                                                     rand::random(),
+                                                     0,
+                                                     vec![],
+                                                     owner_keys.clone(),
+                                                     vec![],
+                                                     Some(&keys.1)) {
             Ok(structured_data) => {
-                assert_eq!(
-                    structured_data.name(),
-                    ::data::Data::StructuredData(structured_data).name()
-                );
-            },
+                assert_eq!(structured_data.name(),
+                           ::data::Data::StructuredData(structured_data).name());
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_string().into_bytes();
-        let immutable_data = ::immutable_data::ImmutableData::new(
-            ::immutable_data::ImmutableDataType::Normal,
-            value);
-        assert_eq!(immutable_data.name(), ::data::Data::ImmutableData(immutable_data).name());
+        let immutable_data =
+            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
+                                                 value);
+        assert_eq!(immutable_data.name(),
+                   ::data::Data::ImmutableData(immutable_data).name());
 
         // name() resolves correctly for PlainData
         let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(), ::data::Data::PlainData(plain_data).name());
+        assert_eq!(plain_data.name(),
+                   ::data::Data::PlainData(plain_data).name());
     }
 
     #[test]
@@ -120,51 +120,47 @@ mod test {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
+                                                     rand::random(),
+                                                     0,
+                                                     vec![],
+                                                     owner_keys.clone(),
+                                                     vec![],
+                                                     Some(&keys.1)) {
             Ok(structured_data) => {
-                assert_eq!(
-                    structured_data.payload_size(),
-                    ::data::Data::StructuredData(structured_data).payload_size()
-                );
-            },
+                assert_eq!(structured_data.payload_size(),
+                           ::data::Data::StructuredData(structured_data).payload_size());
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         // payload_size() resolves correctly for ImmutableData
         let value = "immutable data value".to_string().into_bytes();
-        let immutable_data = ::immutable_data::ImmutableData::new(
-            ::immutable_data::ImmutableDataType::Normal,
-            value);
-        assert_eq!(
-            immutable_data.payload_size(),
-            ::data::Data::ImmutableData(immutable_data).payload_size()
-        );
+        let immutable_data =
+            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
+                                                 value);
+        assert_eq!(immutable_data.payload_size(),
+                   ::data::Data::ImmutableData(immutable_data).payload_size());
 
         // payload_size() resolves correctly for PlainData
         let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
-        assert_eq!(plain_data.payload_size(), ::data::Data::PlainData(plain_data).payload_size());
+        assert_eq!(plain_data.payload_size(),
+                   ::data::Data::PlainData(plain_data).payload_size());
     }
 
     #[test]
     fn data_request_name() {
         let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
-        // name() resolves correctly for StructuedData    
+        // name() resolves correctly for StructuedData
         let tag = 0;
-        assert_eq!(
-            ::structured_data::StructuredData::compute_name(tag, &name),
-            ::data::DataRequest::StructuredData(name, tag).name()
-        );
+        assert_eq!(::structured_data::StructuredData::compute_name(tag, &name),
+                   ::data::DataRequest::StructuredData(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = ::data::DataRequest::ImmutableData(
-            name, ::immutable_data::ImmutableDataType::Normal).name();
+        let actual_name =
+            ::data::DataRequest::ImmutableData(name, ::immutable_data::ImmutableDataType::Normal)
+                .name();
         assert_eq!(name.clone(), actual_name);
 
         // name() resolves correctly for PlainData

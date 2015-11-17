@@ -39,10 +39,12 @@ pub struct SignedToken {
 impl SignedToken {
 
     /// Verify the request was signed by the secret key corresponding to the passed in public key. 
-    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-            -> bool {
-        ::sodiumoxide::crypto::sign::verify_detached(
-            &self.signature, &self.serialised_request, &public_sign_key)
+    pub fn verify_signature(&self,
+                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
+                            -> bool {
+        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
+                                                     &self.serialised_request,
+                                                     &public_sign_key)
     }
 }
 
@@ -72,7 +74,6 @@ pub enum ExternalResponse {
     // TODO: Applies to Get: Technical depth: if the third param here is Some(...) then
     // the it shares most of the data with the second argument, which
     // needlessly increases bandwidth.
-
     /// Response to get data request.
     Get(::data::Data, ::data::DataRequest, Option<SignedToken>),
     /// Response to put data request on error.
@@ -120,11 +121,10 @@ pub enum InternalResponse {
     // FindGroup(Vec<::public_id::PublicId>, SignedToken),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
-    CacheNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken),
-    //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
-    //                 |         |              | the original Request::RequestNetworkName
-    //                 |         | the group public keys to combine FindGroup in this response
-    //                 | the cached PublicId in the group
+    CacheNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
+                                                                                       *                 |         |              | the original Request::RequestNetworkName
+                                                                                       *                 |         | the group public keys to combine FindGroup in this response
+                                                                                       *                 | the cached PublicId in the group */
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -197,15 +197,19 @@ impl SignedMessage {
                message: RoutingMessage,
                private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
                -> Result<SignedMessage, ::cbor::CborError> {
-        use ::rand::Rng;
+        use rand::Rng;
 
         let mut rng = ::rand::thread_rng();
         let random_bits = rng.gen::<u8>();
         let encoded_body = try!(::utils::encode(&(&message, &claimant, &random_bits)));
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, private_sign_key);
 
-        Ok(SignedMessage { body: message, claimant: claimant,
-            random_bits: random_bits, signature: signature })
+        Ok(SignedMessage {
+            body: message,
+            claimant: claimant,
+            random_bits: random_bits,
+            signature: signature,
+        })
     }
 
     /// Construct a signed message passing in the signature.
@@ -215,8 +219,12 @@ impl SignedMessage {
                           signature: ::sodiumoxide::crypto::sign::Signature)
                           -> Result<SignedMessage, ::cbor::CborError> {
 
-        Ok(SignedMessage { body: message, claimant: claimant,
-              random_bits: random_bits, signature: signature })
+        Ok(SignedMessage {
+            body: message,
+            claimant: claimant,
+            random_bits: random_bits,
+            signature: signature,
+        })
     }
 
     /// Construct a signed message from a signed token.
@@ -224,20 +232,28 @@ impl SignedMessage {
         let (message, claimant, random_bits) =
             try!(::utils::decode(&signed_token.serialised_request));
 
-        Ok(SignedMessage { body: message, claimant: claimant,
-            random_bits: random_bits, signature: signed_token.signature })
+        Ok(SignedMessage {
+            body: message,
+            claimant: claimant,
+            random_bits: random_bits,
+            signature: signed_token.signature,
+        })
     }
 
     /// Verify the signature using the given public key.
-    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-            -> bool {
-        let encoded_body = match ::utils::encode(&(&self.body, &self.claimant, &self.random_bits)) {
+    pub fn verify_signature(&self,
+                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
+                            -> bool {
+        let encoded_body = match ::utils::encode(&(&self.body,
+                                                   &self.claimant,
+                                                   &self.random_bits)) {
             Ok(x) => x,
             Err(_) => return false,
         };
 
-        ::sodiumoxide::crypto::sign::verify_detached(
-            &self.signature, &encoded_body, public_sign_key)
+        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
+                                                     &encoded_body,
+                                                     public_sign_key)
     }
 
     /// Return the internal routing message.
@@ -258,9 +274,9 @@ impl SignedMessage {
     /// Return the associated signed token.
     pub fn as_token(&self) -> Result<SignedToken, ::cbor::CborError> {
         Ok(SignedToken {
-                serialised_request: try!(self.encoded_body()),
-                signature: self.signature().clone(),
-            })
+            serialised_request: try!(self.encoded_body()),
+            signature: self.signature().clone(),
+        })
     }
 
     /// Return the message claimant.
@@ -278,10 +294,11 @@ mod test{
     fn signed_message_new() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            super::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
+        let signed_message = super::SignedMessage::new(claimant.clone(),
+                                                       routing_message.clone(),
+                                                       &keys.1);
 
         assert!(signed_message.is_ok());
 
@@ -305,11 +322,12 @@ mod test{
     fn invalid_signed_message_new() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
         let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signed_message =
-            super::SignedMessage::new(claimant.clone(), routing_message.clone(), &invalid_keys.1);
+        let signed_message = super::SignedMessage::new(claimant.clone(),
+                                                       routing_message.clone(),
+                                                       &invalid_keys.1);
 
         assert!(signed_message.is_ok());
 
@@ -333,8 +351,8 @@ mod test{
     fn signed_message_with_signature() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
@@ -342,8 +360,10 @@ mod test{
 
         let encoded_body = encoded_body.unwrap();
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-        let signed_message = super::SignedMessage::with_signature(
-                claimant.clone(), routing_message.clone(), random_bits, signature);
+        let signed_message = super::SignedMessage::with_signature(claimant.clone(),
+                                                                  routing_message.clone(),
+                                                                  random_bits,
+                                                                  signature);
 
         assert!(signed_message.is_ok());
 
@@ -360,8 +380,8 @@ mod test{
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
+                                                                   &keys.1);
 
         assert_eq!(signed_message.signature(), &signature);
         assert!(signed_message.verify_signature(&keys.0));
@@ -371,8 +391,8 @@ mod test{
     fn invalid_signed_message_with_signature() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
@@ -381,8 +401,10 @@ mod test{
         let encoded_body = encoded_body.unwrap();
         let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &invalid_keys.1);
-        let signed_message = super::SignedMessage::with_signature(
-                claimant.clone(), routing_message.clone(), random_bits, signature);
+        let signed_message = super::SignedMessage::with_signature(claimant.clone(),
+                                                                  routing_message.clone(),
+                                                                  random_bits,
+                                                                  signature);
 
         assert!(signed_message.is_ok());
 
@@ -399,8 +421,8 @@ mod test{
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
+                                                                   &keys.1);
 
         assert!(signed_message.signature() != &signature);
         assert!(!signed_message.verify_signature(&keys.0));
@@ -410,8 +432,8 @@ mod test{
     fn signed_message_new_from_token() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
@@ -420,7 +442,8 @@ mod test{
         let encoded_body = encoded_body.unwrap();
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
         let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(), signature:  signature
+            serialised_request: encoded_body.clone(),
+            signature: signature,
         };
         let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
@@ -439,8 +462,8 @@ mod test{
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
+                                                                   &keys.1);
 
         assert_eq!(signed_message.signature(), &signature);
         assert!(signed_message.verify_signature(&keys.0));
@@ -455,8 +478,8 @@ mod test{
     fn invalid_signed_message_new_from_token() {
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
@@ -464,10 +487,11 @@ mod test{
 
         let encoded_body = encoded_body.unwrap();
         let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&encoded_body.clone(), &invalid_keys.1);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body.clone(),
+                                                                   &invalid_keys.1);
         let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(), signature:  signature
+            serialised_request: encoded_body.clone(),
+            signature: signature,
         };
         let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
@@ -486,8 +510,8 @@ mod test{
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
+                                                                   &keys.1);
 
         assert!(signed_message.signature() != &signature);
         assert!(!signed_message.verify_signature(&keys.0));

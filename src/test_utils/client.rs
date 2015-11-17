@@ -48,8 +48,8 @@ impl Client {
     /// Get data from the network.
     pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
         debug!("Get request from Client for {:?}", request);
-        self.routing_client.get_request(
-            ::authority::Authority::NaeManager(request.name()), request.clone());
+        self.routing_client.get_request(::authority::Authority::NaeManager(request.name()),
+                                        request.clone());
 
         // Block until the data arrives.
         let timeout = ::time::Duration::milliseconds(10000);
@@ -63,13 +63,13 @@ impl Client {
                             ::messages::ExternalResponse::Get(data, _, _) => {
                                 debug!("Client received data {:?} for get request.", data);
                                 debug!("Get took {:?} to arrive.",
-                                        ::time::SteadyTime::now() - time);
+                                       ::time::SteadyTime::now() - time);
                                 return Some(data);
-                            },
+                            }
                             _ => debug!("Received unexpected external response {:?},", response),
                         };
-                    },
-                    _ => {},
+                    }
+                    _ => {}
                 };
 
                 break;

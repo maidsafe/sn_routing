@@ -31,7 +31,7 @@ pub enum Event {
         /// From authority.
         from_authority: Authority,
         /// Not set when the request came from a group.
-        response_token: Option<SignedToken>, 
+        response_token: Option<SignedToken>,
     },
     /// Response.
     Response {
@@ -97,9 +97,11 @@ impl ::std::fmt::Debug for Event {
                     request, our_authority, from_authority, response_token))
             }
             &Event::Response{ ref response, ref our_authority, ref from_authority } => {
-                formatter.write_str(&format!("Response(response: {:?} , \
-                    our_authority: {:?} , from_authority: {:?})",
-                    response, our_authority, from_authority))
+                formatter.write_str(&format!("Response(response: {:?} , our_authority: {:?} , \
+                                              from_authority: {:?})",
+                                             response,
+                                             our_authority,
+                                             from_authority))
             }
             &Event::FailedRequest{ ref request, ref our_authority, ref location, ref interface_error } => {
                 formatter.write_str(&format!("FailedRequest(request: {:?} , \
@@ -113,20 +115,26 @@ impl ::std::fmt::Debug for Event {
             }
             &Event::Refresh(ref type_tag, ref target, ref payloads) => {
                 let _ = formatter.write_str(&format!("Refresh(type_tag: {:?} , target: {:?} , \
-                    payloads: (", type_tag, target));
+                                                      payloads: (",
+                                                     type_tag,
+                                                     target));
                 for payload in payloads.iter() {
                     let _ = formatter.write_str(&format!("{:?} ",
-                                                ::utils::get_debug_id(payload.clone())));
+                                                         ::utils::get_debug_id(payload.clone())));
                 }
                 formatter.write_str(&format!("))"))
             }
             &Event::Churn(ref close_group, ref churn_node) => {
                 formatter.write_str(&format!("Churn (close_group: {:?} , churn_node: {:?})",
-                                             close_group, churn_node))
+                                             close_group,
+                                             churn_node))
             }
             &Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
                 formatter.write_str(&format!("DoRefresh(type_tag: {:?} , target: {:?} , \
-                    churn_node: {:?})", type_tag, target, churn_node))
+                                              churn_node: {:?})",
+                                             type_tag,
+                                             target,
+                                             churn_node))
             }
             &Event::Bootstrapped => {
                 formatter.write_str(&format!("Bootstrapped"))

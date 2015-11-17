@@ -35,7 +35,7 @@ impl Filter {
         Filter {
             claimant_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
             message_filter: ::message_filter::MessageFilter::with_expiry_duration(duration),
-            threshold: SimpleThresholdCalculator::new(10000u16, ::types::QUORUM_SIZE / 2 + 1 ),
+            threshold: SimpleThresholdCalculator::new(10000u16, ::types::QUORUM_SIZE / 2 + 1),
         }
     }
 
@@ -46,7 +46,9 @@ impl Filter {
     pub fn check(&mut self, signed_message: &::messages::SignedMessage) -> bool {
 
         // if the signature has been stored, we have processed this message before
-        if self.claimant_filter.check(signed_message.signature()) { return false; };
+        if self.claimant_filter.check(signed_message.signature()) {
+            return false;
+        };
         // add signature to filter
         self.claimant_filter.add(signed_message.signature().clone());
 
@@ -110,7 +112,9 @@ impl SimpleThresholdCalculator {
 
     /// Register a new blocked message.
     pub fn hit_message(&mut self, blocked: bool) {
-        if blocked { self.total_blockedmessages += 1u32; };
+        if blocked {
+            self.total_blockedmessages += 1u32;
+        };
         self.total_messages += 1u32;
         // let debug_average = self.total_blockedmessages as f64 / self.total_messages as f64;
         // println!("BLOCKED {:?}% of group messages ({:?}/{:?})", (debug_average * 100f64).round(),
@@ -137,13 +141,12 @@ impl SimpleThresholdCalculator {
     }
 
     fn calculate_average(&mut self) {
-        let average_blocked: f64 = self.total_blockedmessages as f64
-            / self.total_messages as f64;
+        let average_blocked: f64 = self.total_blockedmessages as f64 / self.total_messages as f64;
         let running_average = self.blocked_percentage.add_value(average_blocked);
 
         if self.total_uniquemessages > 0u32 {
-            let message_multiplicity = self.total_messages as f64
-                / self.total_uniquemessages as f64;
+            let message_multiplicity = self.total_messages as f64 /
+                                       self.total_uniquemessages as f64;
             let running_multiplicity = self.multiplicity.add_value(message_multiplicity);
         };
         self.total_messages = 0u32;
@@ -180,8 +183,8 @@ impl RunningAverage {
         if self.counter == self.block_size {
             let next_block: f64 = self.block_counter as f64 + 1f64;
             let block_weight: f64 = (self.block_counter as f64) / next_block;
-            let new_block_average: f64 = self.average / next_block
-                + block_weight * self.block_average;
+            let new_block_average: f64 = self.average / next_block +
+                                         block_weight * self.block_average;
             self.block_average = new_block_average.clone();
             self.block_counter += 1u32;
             self.counter = 0u32;
@@ -223,10 +226,11 @@ mod test {
         let mut filter = super::Filter::with_expiry_duration(duration);
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
+        let signed_message = ::messages::SignedMessage::new(claimant.clone(),
+                                                            routing_message.clone(),
+                                                            &keys.1);
         let signed_message = signed_message.unwrap();
 
         assert!(filter.check(&signed_message));
@@ -239,10 +243,11 @@ mod test {
         let mut filter = super::Filter::with_expiry_duration(duration);
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
+        let signed_message = ::messages::SignedMessage::new(claimant.clone(),
+                                                            routing_message.clone(),
+                                                            &keys.1);
         let signed_message = signed_message.unwrap();
 
         assert!(filter.check(&signed_message));
@@ -257,10 +262,11 @@ mod test {
         let mut filter = super::Filter::with_expiry_duration(duration);
         let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            ::messages::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
+                                                                                     &keys.1);
+        let signed_message = ::messages::SignedMessage::new(claimant.clone(),
+                                                            routing_message.clone(),
+                                                            &keys.1);
         let signed_message = signed_message.unwrap();
 
         filter.block(signed_message.get_routing_message());
@@ -271,13 +277,14 @@ mod test {
     #[test]
     fn running_average_exact() {
         // import the trait
-        use ::rand::Rng;
+        use rand::Rng;
 
         let mut rng = ::rand::thread_rng();
         let mut running_average = super::RunningAverage::new(1000u32);
         let average = |set: &Vec<f64>| {
             let sum = set.iter().fold(0f64, |acc, &item| acc + &item);
-            sum / (set.len() as f64) };
+            sum / (set.len() as f64)
+        };
         let mut set: Vec<f64> = Vec::new();
         for _ in 0..5000u32 {
             let new_value = rng.gen::<u8>() as f64;
@@ -294,7 +301,7 @@ mod test {
     #[test]
     fn running_average_long() {
         // import the trait
-        use ::rand::Rng;
+        use rand::Rng;
         let mut rng = ::rand::thread_rng();
         let mut running_average = super::RunningAverage::new(1000u32);
         for _ in 0..100000u32 {

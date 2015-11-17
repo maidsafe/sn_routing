@@ -51,8 +51,11 @@ impl Routing {
         let (action_sender, action_receiver) = mpsc::channel::<Action>();
 
         // start the handler for routing without a restriction to become a full node
-        let mut routing_node =
-            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, false, None);
+        let mut routing_node = RoutingNode::new(action_sender.clone(),
+                                                action_receiver,
+                                                event_sender,
+                                                false,
+                                                None);
 
         let _ = spawn(move || {
             debug!("Started routing run().");
@@ -64,8 +67,10 @@ impl Routing {
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&self, our_authority: Authority, location: Authority,
-        data_request: DataRequest) {
+    pub fn get_request(&self,
+                       our_authority: Authority,
+                       location: Authority,
+                       data_request: DataRequest) {
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalRequest(ExternalRequest::Get(data_request, 0u8))));
@@ -73,23 +78,29 @@ impl Routing {
 
     /// Add something to the network
     pub fn put_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Put(data))));
+        let _ =
+            self.action_sender
+                .send(Action::SendContent(our_authority,
+                                          location,
+                                          Content::ExternalRequest(ExternalRequest::Put(data))));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Post(data))));
+        let _ =
+            self.action_sender
+                .send(Action::SendContent(our_authority,
+                                          location,
+                                          Content::ExternalRequest(ExternalRequest::Post(data))));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Delete(data))));
+        let _ =
+            self.action_sender
+                .send(Action::SendContent(our_authority,
+                                          location,
+                                          Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_token.
@@ -110,7 +121,9 @@ impl Routing {
                         location: Authority,
                         response_error: ResponseError,
                         signed_token: Option<SignedToken>) {
-        if response_error == ::error::ResponseError::Abort { return; };
+        if response_error == ::error::ResponseError::Abort {
+            return;
+        };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
@@ -118,11 +131,13 @@ impl Routing {
     }
     /// Response error to a post request
     pub fn post_response(&self,
-                        our_authority: Authority,
+                         our_authority: Authority,
                          location: Authority,
                          response_error: ResponseError,
                          signed_token: Option<SignedToken>) {
-        if response_error == ::error::ResponseError::Abort { return; };
+        if response_error == ::error::ResponseError::Abort {
+            return;
+        };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
@@ -134,7 +149,9 @@ impl Routing {
                            location: Authority,
                            response_error: ResponseError,
                            signed_token: Option<SignedToken>) {
-        if response_error == ::error::ResponseError::Abort { return; };
+        if response_error == ::error::ResponseError::Abort {
+            return;
+        };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(ExternalResponse::Delete(response_error,
@@ -145,12 +162,17 @@ impl Routing {
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
-    pub fn refresh_request(&self, type_tag: u64, our_authority: Authority, content: Bytes,
-        cause: ::NameType) {
+    pub fn refresh_request(&self,
+                           type_tag: u64,
+                           our_authority: Authority,
+                           content: Bytes,
+                           cause: ::NameType) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-                type_tag, our_authority);
-            return; };
+                   type_tag,
+                   our_authority);
+            return;
+        };
         let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
             Content::InternalRequest(InternalRequest::Refresh(type_tag, content, cause))));
     }
@@ -172,11 +194,11 @@ impl Routing {
 // #[cfg(test)]
 // mod test {
 
-//     extern crate env_logger;
+// extern crate env_logger;
 
-//     pub struct RoutingNetwork;
+// pub struct RoutingNetwork;
 
-//     impl RoutingNetwork {
+// impl RoutingNetwork {
 
 //         fn new(size: u32) -> RoutingNetwork {
 //             env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));

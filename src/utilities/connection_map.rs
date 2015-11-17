@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-const _MAX_ENTRIES : usize = 100;
+const _MAX_ENTRIES: usize = 100;
 
 /// validates that the type can be validated with a public id
 pub trait Identifiable {
@@ -43,34 +43,51 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     /// Returns true if the identifier is unique in the map
     /// and the connection can be added.  Returns false if the public id is not valid
     /// for the given identifier, or if either the connection is already are registered.
-    pub fn add_peer(&mut self, connection: ::crust::Connection, identifier: V,
-            public_id: ::public_id::PublicId) -> bool {
+    pub fn add_peer(&mut self,
+                    connection: ::crust::Connection,
+                    identifier: V,
+                    public_id: ::public_id::PublicId)
+                    -> bool {
         if !identifier.valid_public_id(&public_id) {
             debug!("Invalid public id {:?}.\n", public_id);
             return false;
         };
         if self.lookup_map.contains_key(&connection) {
-            debug!("Connection map already contains connection {:?}.\n", connection);
+            debug!("Connection map already contains connection {:?}.\n",
+                   connection);
             return false;
         };
         match self.connection_map.get(&identifier) {
-            Some(stored_public_id) => { if stored_public_id != &public_id { return false; }},
-            None => {},
+            Some(stored_public_id) => {
+                if stored_public_id != &public_id {
+                    return false;
+                }
+            }
+            None => {}
         };
-        if self.lookup_map.len() >= _MAX_ENTRIES { warn!("Exceeded maximum number of connections \
-            {:?} when adding {:?} on {:?}", self.lookup_map.len(), identifier, connection); };
+        if self.lookup_map.len() >= _MAX_ENTRIES {
+            warn!("Exceeded maximum number of connections {:?} when adding {:?} on {:?}",
+                  self.lookup_map.len(),
+                  identifier,
+                  connection);
+        };
         let old_value = self.lookup_map.insert(connection, identifier.clone());
-        debug!("Inserted {:?} {:?} into lookup map.\n", connection, identifier);
-        debug_assert!(old_value.is_none(), "Already verified above the lookup_map does \
-            not contain the connection; old identifier is {:?}", identifier);
+        debug!("Inserted {:?} {:?} into lookup map.\n",
+               connection,
+               identifier);
+        debug_assert!(old_value.is_none(),
+                      "Already verified above the lookup_map does not contain the connection; \
+                       old identifier is {:?}",
+                      identifier);
         let _old_value = self.connection_map.insert(identifier, public_id);
         true
     }
 
     /// Removes the provided connection and returns the public id of this connection.
     /// If there are other connections still registered for the identity,  None is returned.
-    pub fn drop_connection(&mut self, connection_to_drop: &::crust::Connection)
-            -> Option<::public_id::PublicId> {
+    pub fn drop_connection(&mut self,
+                           connection_to_drop: &::crust::Connection)
+                           -> Option<::public_id::PublicId> {
         let affected_identity = match self.lookup_map.remove(connection_to_drop) {
             Some(identity) => identity,
             None => return None,
@@ -78,30 +95,41 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
         if self.lookup_map.iter().find(|&(_, ref i)| **i == affected_identity).is_none() {
             debug!("Removed {:?} from connection map.\n", affected_identity);
             self.connection_map.remove(&affected_identity)
-        } else { None }
+        } else {
+            None
+        }
     }
 
     /// Removes the given identity from the connection map if it exists, returning the public id
     /// and the connection.
-    pub fn drop_identity(&mut self, identity: &V)
-        -> (Option<::public_id::PublicId>, Vec<::crust::Connection>) {
+    pub fn drop_identity(&mut self,
+                         identity: &V)
+                         -> (Option<::public_id::PublicId>, Vec<::crust::Connection>) {
         let public_id = self.connection_map.remove(identity);
-        let connections = self.lookup_map.iter()
-            .filter_map(|(c, i)| if i == identity { Some(c.clone()) } else { None })
-            .collect::<Vec<::crust::Connection>>();
+        let connections = self.lookup_map
+                              .iter()
+                              .filter_map(|(c, i)| {
+                                  if i == identity {
+                                      Some(c.clone())
+                                  } else {
+                                      None
+                                  }
+                              })
+                              .collect::<Vec<::crust::Connection>>();
         for connection in &connections {
             let old_identity = self.lookup_map.remove(connection);
-            debug_assert!( match old_identity {
+            debug_assert!(match old_identity {
                 Some(ref iden) => iden == identity,
                 None => false,
             });
-        };
+        }
         (public_id, connections)
     }
 
     /// Returns Option<PublicId> if the connection is registered
-    pub fn lookup_connection(&self, connection: &::crust::Connection)
-        -> Option<&::public_id::PublicId> {
+    pub fn lookup_connection(&self,
+                             connection: &::crust::Connection)
+                             -> Option<&::public_id::PublicId> {
         match self.lookup_map.get(connection) {
             Some(identity) => self.connection_map.get(&identity),
             None => None,
@@ -109,12 +137,20 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
     }
 
     /// Returns the registered public id for a given identifier
-    pub fn lookup_identity(&self, identity: &V)
-        -> (Option<&::public_id::PublicId>, Vec<::crust::Connection>) {
+    pub fn lookup_identity(&self,
+                           identity: &V)
+                           -> (Option<&::public_id::PublicId>, Vec<::crust::Connection>) {
         let public_id = self.connection_map.get(identity);
-        let connections = self.lookup_map.iter()
-            .filter_map(|(c, i)| if i == identity { Some(c.clone()) } else { None })
-            .collect::<Vec<::crust::Connection>>();
+        let connections = self.lookup_map
+                              .iter()
+                              .filter_map(|(c, i)| {
+                                  if i == identity {
+                                      Some(c.clone())
+                                  } else {
+                                      None
+                                  }
+                              })
+                              .collect::<Vec<::crust::Connection>>();
         (public_id, connections)
     }
 
@@ -166,17 +202,17 @@ mod test {
 
     #[test]
     fn add_max_peers() {
-        let mut connection_map : super::ConnectionMap<TestPeer>
-            = super::ConnectionMap::new();
+        let mut connection_map: super::ConnectionMap<TestPeer> = super::ConnectionMap::new();
 
         for i in 0..super::_MAX_ENTRIES + 1 {
             let id = ::id::Id::new();
             let public_id = ::public_id::PublicId::new(&id);
-            let identity = TestPeer{ name: public_id.name() };
+            let identity = TestPeer { name: public_id.name() };
             let connection = ::test_utils::test::random_connection();
 
-            assert!(connection_map.add_peer(connection.clone(), identity.clone(),
-                public_id.clone()));
+            assert!(connection_map.add_peer(connection.clone(),
+                                            identity.clone(),
+                                            public_id.clone()));
             let (retrieved_from_identity, _) = connection_map.lookup_identity(&identity);
             assert!(retrieved_from_identity.is_some());
             assert_eq!(retrieved_from_identity.unwrap(), &public_id);
@@ -194,17 +230,17 @@ mod test {
 
     #[test]
     fn drop_connection() {
-        let mut connection_map : super::ConnectionMap<TestPeer>
-            = super::ConnectionMap::new();
+        let mut connection_map: super::ConnectionMap<TestPeer> = super::ConnectionMap::new();
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
-        let identity = TestPeer{ name: public_id.name() };
+        let identity = TestPeer { name: public_id.name() };
         let connection = ::test_utils::test::random_connection();
 
         assert!(connection_map.add_peer(connection.clone(), identity.clone(), public_id.clone()));
         assert!(connection_map.lookup_identity(&identity).0.is_some());
         assert!(connection_map.lookup_connection(&connection).is_some());
 
-        assert_eq!(connection_map.drop_connection(&connection).unwrap(), public_id);
+        assert_eq!(connection_map.drop_connection(&connection).unwrap(),
+                   public_id);
 
         assert!(connection_map.lookup_identity(&identity).0.is_none());
         assert!(connection_map.lookup_connection(&connection).is_none());
@@ -212,10 +248,9 @@ mod test {
 
     #[test]
     fn multiple_connections() {
-        let mut connection_map : super::ConnectionMap<TestPeer>
-            = super::ConnectionMap::new();
+        let mut connection_map: super::ConnectionMap<TestPeer> = super::ConnectionMap::new();
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
-        let identity = TestPeer{ name: public_id.name() };
+        let identity = TestPeer { name: public_id.name() };
         let connection1 = ::test_utils::test::random_connection();
         let connection2 = ::test_utils::test::random_connection();
         assert!(connection2 != connection1);
@@ -241,10 +276,9 @@ mod test {
 
     #[test]
     fn multiple_connections_drop_connection() {
-        let mut connection_map : super::ConnectionMap<TestPeer>
-            = super::ConnectionMap::new();
+        let mut connection_map: super::ConnectionMap<TestPeer> = super::ConnectionMap::new();
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
-        let identity = TestPeer{ name: public_id.name() };
+        let identity = TestPeer { name: public_id.name() };
         let connection1 = ::test_utils::test::random_connection();
         let connection2 = ::test_utils::test::random_connection();
         assert!(connection2 != connection1);
@@ -263,7 +297,8 @@ mod test {
         assert!(connection_map.lookup_connection(&connection1).is_none());
         assert!(connection_map.lookup_connection(&connection2).is_some());
 
-        assert_eq!(connection_map.drop_connection(&connection2).unwrap(), public_id);
+        assert_eq!(connection_map.drop_connection(&connection2).unwrap(),
+                   public_id);
 
         assert!(connection_map.lookup_identity(&identity).0.is_none());
         assert!(connection_map.lookup_connection(&connection1).is_none());

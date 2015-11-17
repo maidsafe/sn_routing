@@ -22,12 +22,12 @@ pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
         return ::std::string::String::new();
     }
     format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-          input[0],
-          input[1],
-          input[2],
-          input[input.len()-3],
-          input[input.len()-2],
-          input[input.len()-1])
+            input[0],
+            input[1],
+            input[2],
+            input[input.len() - 3],
+            input[input.len() - 2],
+            input[input.len() - 1])
 }
 
 /// Encode a value of type T to a vector of bytes.
@@ -58,16 +58,19 @@ pub fn public_key_to_client_name(key: &::sodiumoxide::crypto::sign::PublicKey) -
 /// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 /// In case of only one close node provided (in initial network setup scenario),
 /// relocated_name = Hash(original_name + 1st closest node id)
-pub fn calculate_relocated_name(mut close_nodes: Vec<::NameType>, original_name: &::NameType)
-        -> Result<::NameType, ::error::RoutingError> {
+pub fn calculate_relocated_name(mut close_nodes: Vec<::NameType>,
+                                original_name: &::NameType)
+                                -> Result<::NameType, ::error::RoutingError> {
     if close_nodes.is_empty() {
         return Err(::error::RoutingError::RoutingTableEmpty);
     }
-    close_nodes.sort_by(|a, b| if ::name_type::closer_to_target(&a, &b, original_name) {
-                                    ::std::cmp::Ordering::Less
-                                } else {
-                                    ::std::cmp::Ordering::Greater
-                                });
+    close_nodes.sort_by(|a, b| {
+        if ::name_type::closer_to_target(&a, &b, original_name) {
+            ::std::cmp::Ordering::Less
+        } else {
+            ::std::cmp::Ordering::Greater
+        }
+    });
     close_nodes.truncate(2usize);
     close_nodes.insert(0, original_name.clone());
 
@@ -98,32 +101,32 @@ mod test {
         let name: ::NameType = rand::random();
         let encoded = match super::encode(&name) {
             Ok(encoded) => encoded,
-            Err(_) => panic!("Unexpected serialisation error.")
+            Err(_) => panic!("Unexpected serialisation error."),
         };
         let decoded: Vec<u8> = match super::decode(&encoded) {
             Ok(decoded) => decoded,
-            Err(_) => panic!("Unexpected deserialisation error.")
+            Err(_) => panic!("Unexpected deserialisation error."),
         };
 
-        assert_eq!(name, ::NameType(::types::slice_as_u8_64_array(&decoded[..])));
+        assert_eq!(name,
+                   ::NameType(::types::slice_as_u8_64_array(&decoded[..])));
     }
 
     #[test]
     fn calculate_relocated_name() {
-        let original_name : ::NameType = rand::random();
+        let original_name: ::NameType = rand::random();
 
         // empty close nodes
         assert!(super::calculate_relocated_name(Vec::new(), &original_name).is_err());
 
         // one entry
-        let mut close_nodes_one_entry : Vec<::NameType> = Vec::new();
+        let mut close_nodes_one_entry: Vec<::NameType> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
-                super::calculate_relocated_name(close_nodes_one_entry.clone(),
-        &original_name).unwrap();
+            super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name).unwrap();
         assert!(original_name != actual_relocated_name_one_entry);
 
-        let mut combined_one_node_vec : Vec<::NameType> = Vec::new();
+        let mut combined_one_node_vec: Vec<::NameType> = Vec::new();
         combined_one_node_vec.push(original_name.clone());
         combined_one_node_vec.push(close_nodes_one_entry[0].clone());
 
@@ -137,20 +140,24 @@ mod test {
         let expected_relocated_name_one_node =
             ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&combined_one_node).0);
 
-        assert_eq!(actual_relocated_name_one_entry, expected_relocated_name_one_node);
+        assert_eq!(actual_relocated_name_one_entry,
+                   expected_relocated_name_one_node);
 
         // populated closed nodes
-        let mut close_nodes : Vec<::NameType> = Vec::new();
+        let mut close_nodes: Vec<::NameType> = Vec::new();
         for _ in 0..::types::GROUP_SIZE {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
-        &original_name).unwrap();
+                                                                    &original_name)
+                                        .unwrap();
         assert!(original_name != actual_relocated_name);
-        close_nodes.sort_by(|a, b| if ::name_type::closer_to_target(&a, &b, &original_name) {
-            ::std::cmp::Ordering::Less
-        } else {
-            ::std::cmp::Ordering::Greater
+        close_nodes.sort_by(|a, b| {
+            if ::name_type::closer_to_target(&a, &b, &original_name) {
+                ::std::cmp::Ordering::Less
+            } else {
+                ::std::cmp::Ordering::Greater
+            }
         });
         let first_closest = close_nodes[0].clone();
         let second_closest = close_nodes[1].clone();

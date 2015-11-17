@@ -57,8 +57,8 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
                 } else {
                     Some(value)
                 }
-            },
-            None => None
+            }
+            None => None,
         }
     }
 
@@ -71,8 +71,8 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
                 } else {
                     true
                 }
-            },
-            None => false
+            }
+            None => false,
         }
     }
 
@@ -82,13 +82,12 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
     }
 
     /// Returns a mutable iterator over the entries.
-    pub fn iter_mut(&mut self)
-            -> ::std::collections::btree_map::IterMut<K, (V, ::time::SteadyTime)> {
+    pub fn iter_mut(&mut self) -> ::std::collections::btree_map::IterMut<K, (V, ::time::SteadyTime)> {
         self.map.iter_mut()
     }
 
     /// Recover expired key-value pairs removing any such from the map.
-    pub fn remove_expired(&mut self) -> Vec<(K,V)> {
+    pub fn remove_expired(&mut self) -> Vec<(K, V)> {
         let mut expired = Vec::new();
         let now = ::time::SteadyTime::now();
 
@@ -116,7 +115,8 @@ mod test {
         let duration = ::time::Duration::milliseconds(10);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
-        let key = 1; let value = 1;
+        let key = 1;
+        let value = 1;
         let old_value = expiration_map.insert(key, value);
 
         assert!(old_value.is_none());
@@ -133,7 +133,8 @@ mod test {
         let duration = ::time::Duration::milliseconds(10);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
-        let key = 1; let value = 1;
+        let key = 1;
+        let value = 1;
         let old_value = expiration_map.insert(key, value);
 
         assert!(old_value.is_none());
@@ -188,7 +189,9 @@ mod test {
         let duration = ::time::Duration::milliseconds(50);
         let mut expiration_map =
             super::ExpirationMap::<usize, usize>::with_expiry_duration(duration);
-        let key = 1; let value1 = 1; let value2 = 2;
+        let key = 1;
+        let value1 = 1;
+        let value2 = 2;
         let old_value = expiration_map.insert(key, value1);
 
         assert!(old_value.is_none());
