@@ -120,7 +120,7 @@ impl ::std::fmt::Debug for Event {
                                                      target));
                 for payload in payloads.iter() {
                     let _ = formatter.write_str(&format!("{:?} ",
-                                                         ::utils::get_debug_id(payload.clone())));
+                                                         ::utils::get_debug_id(&payload[..])));
                 }
                 formatter.write_str(&format!("))"))
             }

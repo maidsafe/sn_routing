@@ -17,9 +17,14 @@
 
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
+    use std::fmt::Write;
     let input = input.as_ref();
-    if input.len() < 6 {
-        return ::std::string::String::new();
+    if input.len() <= 6 {
+        let mut ret = String::from("BYTES:");
+        for byte in input.iter() {
+            write!(ret, "{:02x}", byte).unwrap();
+        }
+        return ret;
     }
     format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
             input[0],
