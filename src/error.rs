@@ -167,6 +167,8 @@ pub enum RoutingError {
     Cbor(::cbor::CborError),
     /// invalid response
     Response(ResponseError),
+    /// Current state is invalid for the operation
+    InvalidStateForOperation,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {
@@ -221,6 +223,7 @@ impl ::std::error::Error for RoutingError {
             RoutingError::Io(_) => "I/O error",
             RoutingError::Cbor(_) => "Serialisation error",
             RoutingError::Response(_) => "Response error",
+            RoutingError::InvalidStateForOperation => "Invalid State of Operation",
         }
     }
 
@@ -268,6 +271,8 @@ impl ::std::fmt::Display for RoutingError {
             RoutingError::Io(ref error) => ::std::fmt::Display::fmt(error, formatter),
             RoutingError::Cbor(ref error) => ::std::fmt::Display::fmt(error, formatter),
             RoutingError::Response(ref error) => ::std::fmt::Display::fmt(error, formatter),
+            RoutingError::InvalidStateForOperation =>
+                ::std::fmt::Display::fmt("Invalid state for operation", formatter),
         }
     }
 }

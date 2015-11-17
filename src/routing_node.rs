@@ -1841,6 +1841,17 @@ impl RoutingNode {
 
                 // TODO(Spandan) - Suspicious code - is there a possiblility of getting add_peer()
                 // even if there is no routing table ? When and why would this happen ?
+                //
+                // - https://github.com/maidsafe/routing/pull/771
+                // Ans(David in GitHub) - The routing table should always exist IMHO, I suspect the
+                // creation of a routing table was used to promote to a node instead of being a
+                // client. So to be clear we should not do this, we should have a routing table if
+                // we are a node & only a node can get an add_peer(). To add a peer we make sure the
+                // call comes only from a connect_request (if we are receiving this) or a
+                // connect_response (if we are receiving this) and we add it if it passes the
+                // routing_table.add(). IF we think a peer is worth connecting to we do a
+                // routing_table.check() & if successful then we initiate the connect_request (or
+                // connect_response).
                 if self.routing_table.is_some() {
                     let trigger_churn;
                     let routing_table_count_prior;
@@ -2199,41 +2210,48 @@ impl RoutingNode {
                                      connection: &::crust::Connection,
                                      connection_token: u32)
                                      -> Option<ExpectedConnection> {
-        let mut token;
-        for (key, value) in self.expected_connections.iter_mut() {
-            match key {
+        let mut found = None;
+        for (key, value) in self.expected_connections.iter() {
+            let token = match key {
                 &ExpectedConnection::Request(request_token, _, _) => {
-                    token = request_token;
+                    request_token
                 }
                 &ExpectedConnection::Response(response_token, _, _) => {
-                    token = response_token;
+                    response_token
                 }
-            }
+            };
 
             if token == connection_token {
-                match value.0 {
-                    Some(_) => {
-                        // If we've already matched a connection drop the new one.
-                        let _ =
-                            self.action_sender
-                                .send(::action::Action::DropConnections(vec![connection.clone()]));
-                        return None;
-                    }
-                    None => {
-                        debug!("Expected connection {:?} matched on {:?}.", key, connection);
-                        value.0 = Some(connection.clone());
-                        let _ =
-                            self.action_sender
-                                .send(::action::Action::MatchConnection(Some((key.clone(),
-                                                                              value.0.clone())),
-                                                                        None));
-                        return Some(key.clone());
-                    }
-                }
+                found = Some((key.clone(), value.clone()));
+                break
             }
         }
 
-        None
+        if let Some((key, mut value)) = found {
+            match value.0 {
+                Some(crust_connection) => {
+                    // If we've already matched a connection drop the new one.
+                    info!("{:?} {:?} - Dropping an already matched connection {:?}", file!(),
+                          line!(), crust_connection);
+
+                    self.drop_connections(vec![connection.clone()]);
+                    None
+                }
+                None => {
+                    debug!("Expected connection {:?} matched on {:?}.", key, connection);
+
+                    value.0 = Some(connection.clone());
+                    *unwrap_option!(self.expected_connections.get_mut(&key),
+                                    "Logic Error - Report bug") = value.0.clone();
+                    self.match_connection(Some((key.clone(), value.0)), None);
+                    Some(key)
+                }
+            }
+        } else {
+            info!("{:?} {:?} - Could not find given connection {:?} in expected_connections map",
+                  file!(), line!(), connection);
+            None
+        }
     }
 
     /// Check whether the connection has been accepted.
@@ -2309,7 +2327,8 @@ impl RoutingNode {
                             debug!("Requesting network name from {:?} on {:?}.",
                                    name,
                                    connection);
-                            self.request_network_name_core(&name, &connection);
+                            // TODO(Spandan) Handle this resutl
+                            let _result = self.request_network_name_core(&name, &connection);
                         } else {
                             error!("Failed to add node {:?} as bootstrap connection on {:?}. \
                                     Dropping.",
@@ -2382,33 +2401,31 @@ impl RoutingNode {
                                     debug!("Added peer {:?} on matched expected connection \
                                             request.\n",
                                            hello.public_id.name());
+
                                     let mut opt_connection = None;
+
                                     for (key, value) in self.unknown_connections.iter() {
-                                        match value.0 {
-                                            Some(ref value) => {
-                                                if *value == hello {
-                                                    // Drop non-primary connection.
-                                                    let _ = self.action_sender.send(
-                                                        ::action::Action::DropConnections(
-                                                            vec![*key]));
-                                                    opt_connection = Some(key.clone());
-                                                    break;
-                                                }
+                                        if let Some(ref val) = value.0 {
+                                            if *val == hello {
+                                                opt_connection = Some(key.clone());
+                                                break
                                             }
-                                            None => {}
                                         }
                                     }
 
+                                    if let Some(ref key) = opt_connection {
+                                        self.drop_connections(vec![key.clone()]);
+                                    }
+
                                     debug!("Sending confirmation to {:?}.\n", hello.address);
-                                    let _ = self.action_sender.send(::action::Action::SendConfirmationHello(
-                                        connection, hello.address));
+                                    // TODO(Spandan) Handle this result
+                                    let _result = self.send_hello(connection, Some(hello.address));
+
                                     // Remove entries from expiration maps.
                                     self.remove_expected_connection(&expected_connection);
-                                    match opt_connection {
-                                        Some(connection) => {
-                                            self.remove_unknown_connection(&connection);
-                                        }
-                                        None => {}
+
+                                    if let Some(connection) = opt_connection {
+                                        self.remove_unknown_connection(&connection);
                                     }
                                 }
                             }
@@ -2456,9 +2473,7 @@ impl RoutingNode {
                                                     connection response.\n",
                                                    hello.public_id.name());
                                             // Drop secondary, i.e., unrequired connection.
-                                            let _ = self.action_sender.send(
-                                                ::action::Action::DropConnections(
-                                                    vec![connection.clone()]));
+                                            self.drop_connections(vec![connection.clone()]);
                                             self.remove_expected_connection(&expected_connection);
                                             self.remove_unknown_connection(&primary_connection);
                                         }
@@ -2519,26 +2534,18 @@ impl RoutingNode {
                             debug!("Added peer {:?}.\n", hello.public_id.name());
                             if connection != unknown_connection {
                                 debug!("Sending confirmation to {:?}.\n", hello.address);
-                                let _ =
-                                    self.action_sender
-                                        .send(::action::Action::SendConfirmationHello(connection,
-                                                                                      hello.address));
-                                let _ = self.action_sender.send(::action::Action::DropConnections(
-                                    vec![unknown_connection]));
+                                // TODO(Spandan) Handle this result
+                                let _result = self.send_hello(connection, Some(hello.address));
+                                self.drop_connections(vec![unknown_connection]);
                             } else {
-                                let _ =
-                                    self.action_sender
-                                        .send(::action::Action::DropConnections(vec![connection]));
+                                self.drop_connections(vec![connection]);
                             }
                         } else {
                             debug!("Failed to add peer {:?} dropping connections {:?} and {:?}.\n",
                                    hello.public_id.name(),
                                    connection,
                                    unknown_connection);
-                            let _ = self.action_sender.send(::action::Action::DropConnections(
-                                vec![unknown_connection]));
-                            let _ = self.action_sender
-                                        .send(::action::Action::DropConnections(vec![connection]));
+                            self.drop_connections(vec![unknown_connection, connection]);
                         }
 
                         match opt_expected_connection {
@@ -2592,27 +2599,32 @@ impl RoutingNode {
 
     fn request_network_name_core(&mut self,
                                  bootstrap_name: &NameType,
-                                 bootstrap_connection: &::crust::Connection) {
+                                 bootstrap_connection: &::crust::Connection) -> RoutingResult {
         // If RoutingNode is restricted from becoming a node, it suffices to never request a network
         // name.
         match self.state {
-            State::Disconnected |
-            State::Relocated |
-            State::Connected |
-            State::GroupConnected |
-            State::Terminated => {
+            State::Relocated      |
+            State::Connected      |
+            State::Terminated     |
+            State::Disconnected   |
+            State::GroupConnected => {
                 error!("Requesting network name while disconnected or named or terminated.\n");
-                return;
+                Err(::error::RoutingError::InvalidStateForOperation)
             }
-            State::Bootstrapped => {}
+            State::Bootstrapped => {
+                debug!("Will request a network name from bootstrap node {:?} on {:?}",
+                       bootstrap_name,
+                       bootstrap_connection);
+
+                let to_authority = ::authority::Authority::NaeManager(self.id.name());
+
+                let public_id = ::public_id::PublicId::new(&self.id);
+                let internal_request = ::messages::InternalRequest::RequestNetworkName(public_id);
+                let content = ::messages::Content::InternalRequest(internal_request);
+
+                self.request_network_name(to_authority, content)
+            },
         }
-        debug!("Will request a network name from bootstrap node {:?} on {:?}",
-               bootstrap_name,
-               bootstrap_connection);
-        let _ = self.action_sender.send(::action::Action::RequestNetworkName(
-            ::authority::Authority::NaeManager(self.id.name()),
-            ::messages::Content::InternalRequest(::messages::InternalRequest::RequestNetworkName(
-                ::public_id::PublicId::new(&self.id)))));
     }
 
     /// Check if were involved in the relocation of a Client.
