@@ -232,13 +232,24 @@ impl RoutingNode {
     pub fn run(&mut self) {
         self.crust_service.bootstrap(0u32);
         debug!("RoutingNode started running and started bootstrap");
+        let mut counter = 0;
         loop {
             match self.action_receiver.try_recv() {
-                Err(_) => {
+                Err(::std::sync::mpsc::TryRecvError::Disconnected) => {
                     error!("{:?} {:?} - Action Sender hung-up. Exiting event loop",
                            file!(), line!());
                     break
                 },
+                Err(_) => {
+                    counter += 1;
+                    if counter % 3000 == 0 {
+                        counter = 0;
+                        if let Some(ref rt) = self.routing_table {
+                            debug!("Routing Table Size: {:?}", rt.size());
+                        }
+                    }
+                }, // TODO(Spandan) Nothing is in event loop - This will be eliminated
+                   // when we use EventSender
                 Ok(Action::SendContent(our_authority, to_authority, content)) => {
                     let _ = self.send_content(our_authority, to_authority, content);
                 },
