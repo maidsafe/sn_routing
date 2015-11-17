@@ -62,6 +62,20 @@ impl<K, V> ExpirationMap<K, V> where K: PartialOrd + Ord + Clone, V: Clone {
         }
     }
 
+    /// Retrieves a mutable value for the given key if present in the map.
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        match self.map.get_mut(key) {
+            Some(&mut (ref mut value, time)) => {
+                if time + self.time_to_live < ::time::SteadyTime::now() {
+                    None
+                } else {
+                    Some(value)
+                }
+            }
+            None => None,
+        }
+    }
+
     /// Returns true if a value exists for the specified key.
     pub fn contains_key(&mut self, key: &K) -> bool {
         match self.map.get(key) {
