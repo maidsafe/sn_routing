@@ -17,9 +17,14 @@
 
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
+    use std::fmt::Write;
     let input = input.as_ref();
-    if input.len() < 6 {
-        return ::std::string::String::new();
+    if input.len() <= 6 {
+        let mut ret = String::from("BYTES:");
+        for byte in input.iter() {
+            unwrap_result!(write!(ret, "{:02x}", byte));
+        }
+        return ret;
     }
     format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
             input[0],
@@ -40,10 +45,10 @@ pub fn encode<T>(value: &T) -> Result<Vec<u8>, ::cbor::CborError>
 }
 
 /// Decode a vcetor of bytes to a value of type T, otherwise error on failure.
-pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, ::cbor::CborError>
+pub fn decode<T>(bytes: &[u8]) -> Result<T, ::cbor::CborError>
     where T: ::rustc_serialize::Decodable
 {
-    let mut dec = ::cbor::Decoder::from_bytes(&bytes[..]);
+    let mut dec = ::cbor::Decoder::from_bytes(bytes);
     match dec.decode().next() {
         Some(result) => result,
         None => Err(::cbor::CborError::UnexpectedEOF),

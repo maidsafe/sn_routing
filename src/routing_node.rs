@@ -31,7 +31,7 @@ use NameType;
 use id::Id;
 use public_id::PublicId;
 use types;
-use types::{Bytes, Address, CacheOptions};
+use types::{Address, CacheOptions};
 use utils::{encode, decode};
 use utils;
 use data::{Data, DataRequest};
@@ -1349,7 +1349,7 @@ impl RoutingNode {
     fn handle_refresh(&mut self,
                       type_tag: u64,
                       sender: NameType,
-                      payload: Bytes,
+                      payload: Vec<u8>,
                       our_authority: Authority,
                       cause: ::NameType)
                       -> RoutingResult {
