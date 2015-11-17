@@ -22,8 +22,7 @@ pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
     if input.len() <= 6 {
         let mut ret = String::from("BYTES:");
         for byte in input.iter() {
-            // Writing a u8 to a string cannot fail. Safe to unwrap().
-            write!(ret, "{:02x}", byte).unwrap();
+            unwrap_result!(write!(ret, "{:02x}", byte));
         }
         return ret;
     }
