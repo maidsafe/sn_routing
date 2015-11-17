@@ -45,10 +45,10 @@ pub fn encode<T>(value: &T) -> Result<Vec<u8>, ::cbor::CborError>
 }
 
 /// Decode a vcetor of bytes to a value of type T, otherwise error on failure.
-pub fn decode<T>(bytes: &Vec<u8>) -> Result<T, ::cbor::CborError>
+pub fn decode<T>(bytes: &[u8]) -> Result<T, ::cbor::CborError>
     where T: ::rustc_serialize::Decodable
 {
-    let mut dec = ::cbor::Decoder::from_bytes(&bytes[..]);
+    let mut dec = ::cbor::Decoder::from_bytes(bytes);
     match dec.decode().next() {
         Some(result) => result,
         None => Err(::cbor::CborError::UnexpectedEOF),
