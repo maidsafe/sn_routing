@@ -25,7 +25,7 @@ use event::Event;
 use messages::SignedToken;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use types::{Bytes, CacheOptions};
+use types::CacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
@@ -165,7 +165,7 @@ impl Routing {
     pub fn refresh_request(&self,
                            type_tag: u64,
                            our_authority: Authority,
-                           content: Bytes,
+                           content: Vec<u8>,
                            cause: ::NameType) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",

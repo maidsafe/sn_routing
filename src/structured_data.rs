@@ -235,7 +235,7 @@ impl ::std::fmt::Debug for StructuredData {
                     self.type_tag,
                     self.name(),
                     self.version,
-                    ::utils::get_debug_id(self.data.clone())));
+                    ::utils::get_debug_id(&self.data[..])));
 
         let prev_owner_keys: Vec<String> = self.previous_owner_keys
                                                .iter()
