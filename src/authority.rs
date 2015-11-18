@@ -139,7 +139,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
             match *request {
                 InternalRequest::Connect(_) => None,
                 InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
-                InternalRequest::CacheNetworkName(ref public_id, _) => Some(public_id.name()),
+                InternalRequest::RelocatedNetworkName(ref public_id, _) => Some(public_id.name()),
                 InternalRequest::Refresh(_, _, _) => {
                     let destination = message.destination();
                     if destination != message.source() {

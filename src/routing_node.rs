@@ -406,8 +406,11 @@ impl RoutingNode {
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
         match self.state() {
             &State::Disconnected => {
+                // I am the first node in the network, and i got an incomming connection so i'll
+                // promote myself as a node.
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0)
                                                       .0);
+                // This will give me a new RT also
                 self.assign_name(&assigned_name);
             }
             &State::Bootstrapped => {
@@ -556,8 +559,8 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::CacheNetworkName(_, _) => {
-                        self.handle_cache_network_name(request,
+                    InternalRequest::RelocatedNetworkName(_, _) => {
+                        self.handle_relocated_network_name(request,
                                                        message.from_authority,
                                                        message.to_authority)
                     }
@@ -593,7 +596,7 @@ impl RoutingNode {
             }
             Content::InternalResponse(response) => {
                 match response {
-                    InternalResponse::CacheNetworkName(_, _, _) => {
+                    InternalResponse::RelocatedNetworkName(_, _, _) => {
                         debug!("{:?} - Handling cache network name response {:?} ourselves",
                                self.our_address(), response);
                         self.handle_cache_network_name_response(response,
@@ -671,7 +674,7 @@ impl RoutingNode {
             }
             Content::InternalResponse(ref response) => {
                 match *response {
-                    InternalResponse::CacheNetworkName(_, _, _) => true,
+                    InternalResponse::RelocatedNetworkName(_, _, _) => true,
                     _ => false,
                 }
             }
@@ -823,7 +826,18 @@ impl RoutingNode {
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
                 match (&from_authority, &to_authority) {
-                    (&Authority::Client(_, _), &Authority::NaeManager(_)) => {
+                    (&Authority::Client(_bootstrap_node, key), &Authority::NaeManager(name)) => {
+                        let hashed_key = ::sodiumoxide::crypto::hash::sha512::hash(&key.0);
+                        let close_group_to_client = NameType::new(hashed_key.0);
+
+                        if !(unwrap_option!(self.routing_table.as_ref(), "Routing Table must be \
+                                          present if we are meant to relocate a client.")
+                            .address_in_our_close_group_range(&close_group_to_client) &&
+                                close_group_to_client == name) {
+                            // TODO(Spandan) Create a better error
+                            return Err(RoutingError::BadAuthority)
+                        }
+
                         let mut network_public_id = public_id.clone();
                         match self.our_close_group() {
                             Some(close_group) => {
@@ -833,11 +847,14 @@ impl RoutingNode {
                                        assigning {:?}", self.our_address(), from_authority,
                                        relocated_name);
                                 network_public_id.assign_relocated_name(relocated_name.clone());
+
+                                // TODO(Spandan) How do we tell Y how to reach A through B
+
                                 let routing_message = RoutingMessage {
                                     from_authority: to_authority,
                                     to_authority: Authority::NaeManager(relocated_name.clone()),
                                     content: Content::InternalRequest(
-                                        InternalRequest::CacheNetworkName(network_public_id,
+                                        InternalRequest::RelocatedNetworkName(network_public_id,
                                         response_token)),
                                 };
                                 match SignedMessage::new(Address::Node(self.id().name()),
@@ -858,13 +875,13 @@ impl RoutingNode {
         }
     }
 
-    fn handle_cache_network_name(&mut self,
+    fn handle_relocated_network_name(&mut self,
                                  request: InternalRequest,
                                  from_authority: Authority,
                                  to_authority: Authority)
                                  -> RoutingResult {
         match request {
-            InternalRequest::CacheNetworkName(network_public_id, response_token) => {
+            InternalRequest::RelocatedNetworkName(network_public_id, response_token) => {
                 match (from_authority, &to_authority) {
                     (Authority::NaeManager(_), &Authority::NaeManager(_)) => {
                         let request_network_name = try!(SignedMessage::new_from_token(
@@ -882,7 +899,7 @@ impl RoutingNode {
                                     from_authority: to_authority,
                                     to_authority: request_network_name.get_routing_message().source(),
                                     content: Content::InternalResponse(
-                                        InternalResponse::CacheNetworkName(network_public_id,
+                                        InternalResponse::RelocatedNetworkName(network_public_id,
                                         close_group, response_token)),
                                 };
                                 match SignedMessage::new(Address::Node(self.id().name()),
@@ -913,7 +930,7 @@ impl RoutingNode {
             return Ok(());
         };
         match response {
-            InternalResponse::CacheNetworkName(network_public_id, group, signed_token) => {
+            InternalResponse::RelocatedNetworkName(network_public_id, group, signed_token) => {
                 if !signed_token.verify_signature(&self.id().signing_public_key()) {
                     return Err(RoutingError::FailedSignature);
                 };
@@ -1794,6 +1811,24 @@ impl RoutingNode {
         Ok(())
     }
 
+    /// Add a client to our relay map
+    pub fn add_client(&mut self,
+                      public_key: ::sodiumoxide::crypto::sign::PublicKey,
+                      connection: crust::Connection,
+                      public_id: PublicId) -> bool {
+        let relay = Relay {
+            public_key: public_key,
+        };
+
+        let relay_map = unwrap_option!(self.relay_map.as_mut(),
+                                       "Logic Error - Report Bug. If this was triggered it would \
+                                        mean that Client is being asked to bootstrap some other \
+                                        Client.");
+        relay_map.add_peer(connection,
+                           relay,
+                           public_id)
+    }
+
     /// To be documented
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
@@ -1917,15 +1952,6 @@ impl RoutingNode {
                             let _ = self.event_sender.send(Event::Bootstrapped);
                         };
                         added
-                    }
-                    None => false,
-                }
-            }
-            ConnectionName::Relay(::types::Address::Client(public_key)) => {
-                match self.relay_map {
-                    Some(ref mut relay_map) => {
-                        debug!("{:?} - Adding client id {:?} to relay map", our_address, public_id);
-                        relay_map.add_peer(connection, Relay { public_key: public_key }, public_id)
                     }
                     None => false,
                 }
@@ -2224,9 +2250,9 @@ impl RoutingNode {
                 // It is a client, add it as a relay connection. Fails if we are also a client.
                 // Because we're accepting an unknown connection, we are node A in diagram RFC-0011.
                 let client_address = ::types::Address::Client(public_key.clone());
-                if self.add_peer(ConnectionName::Relay(client_address.clone()),
-                                 connection.clone(),
-                                 hello.public_id.clone()) {
+                if self.add_client(public_key.clone(),
+                                   connection.clone(),
+                                   hello.public_id.clone()) {
                     debug!("{:?} - Added client {:?} as relay connection on {:?}",
                            self.our_address(), client_address, connection);
                     debug!("{:?} - Sending confirmation to {:?}", self.our_address(),
@@ -2237,7 +2263,7 @@ impl RoutingNode {
                     debug!("{:?} - Failed to add client {:?} as relay, dropping connection {:?}",
                            self.our_address(), client_address, connection);
                     self.drop_connections(vec![connection.clone()]);
-                };
+                }
             }
             ::types::Address::Node(name) => {
                 // It is a node, so either we are still a client or a node, and are either
