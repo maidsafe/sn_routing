@@ -31,8 +31,6 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
-
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
@@ -394,10 +392,7 @@ impl Client {
 
 ////////////////////////////////////////////////////////////////////////////////
 fn main() {
-    match env_logger::init() {
-        Ok(()) => {},
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
-    }
+    routing::utils::initialise_logger(true);
 
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())

@@ -18,7 +18,6 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 extern crate rand;
 extern crate time;
 extern crate routing;
@@ -27,7 +26,7 @@ extern crate routing;
 pub fn main () {
     use rand::distributions::IndependentSample;
 
-    ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    routing::utils::initialise_logger(true);
 
     let mut time = ::time::SteadyTime::now();
     let runtime = ::time::Duration::minutes(5);
