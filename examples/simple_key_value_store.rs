@@ -31,8 +31,9 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
-
+#[macro_use]
+#[allow(unused_extern_crates)]
+extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
@@ -42,7 +43,6 @@ extern crate routing;
 use std::io;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -267,7 +267,7 @@ impl Client {
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        let _ = spawn(move || { Client::read_user_commands(command_sender); });
+        let _ = thread!("Command reader", move || { Client::read_user_commands(command_sender); });
 
         Client {
             routing_client   : routing_client,
@@ -394,10 +394,7 @@ impl Client {
 
 ////////////////////////////////////////////////////////////////////////////////
 fn main() {
-    match env_logger::init() {
-        Ok(()) => {},
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
-    }
+    ::maidsafe_utilities::log::init(true);
 
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())

@@ -18,7 +18,6 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
-use std::thread::spawn;
 
 use action::Action;
 use event::Event;
@@ -57,7 +56,7 @@ impl Routing {
                                                 false,
                                                 None);
 
-        let _ = spawn(move || {
+        let _ = thread!("Node runner", move || {
             debug!("Started routing run().");
             routing_node.run();
             debug!("Routing node terminated running.");
@@ -194,14 +193,13 @@ impl Routing {
 // #[cfg(test)]
 // mod test {
 
-// extern crate env_logger;
-
 // pub struct RoutingNetwork;
 
 // impl RoutingNetwork {
 
 //         fn new(size: u32) -> RoutingNetwork {
-//             env_logger::init().unwrap_or_else(|e| info!("Error initialising logger: {:?}", e));
+//             ::utils::initialise_logger(true);
+
 
 //             let node = || { let _ =
 //                 ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
