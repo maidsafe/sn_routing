@@ -18,7 +18,6 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
-use std::thread::spawn;
 
 use id::Id;
 use action::Action;
@@ -58,7 +57,7 @@ impl RoutingClient {
                                                 true,
                                                 keys);
 
-        let _ = spawn(move || {
+        let _ = thread!("Client runner", move || {
             debug!("Started routing client run().");
             routing_node.run();
             debug!("Routing client node terminated running.");

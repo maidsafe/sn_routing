@@ -232,13 +232,12 @@ impl RoutingNode {
 
     pub fn run(&mut self) {
         self.crust_service.bootstrap(0u32);
-        debug!("RoutingNode started running and started bootstrap");
+        debug!("{:?} - RoutingNode started running and started bootstrap.", self.our_address());
         let mut counter = 0;
         loop {
             match self.action_receiver.try_recv() {
                 Err(::std::sync::mpsc::TryRecvError::Disconnected) => {
-                    error!("{:?} {:?} - Action Sender hung-up. Exiting event loop",
-                           file!(), line!());
+                    error!("Action Sender hung-up. Exiting event loop");
                     break
                 },
                 Err(_) => {
@@ -435,10 +434,7 @@ impl RoutingNode {
         let connection_name = self.lookup_connection(&connection);
         if connection_name.is_some() {
             if let Err(err) = self.drop_peer(&connection_name.unwrap()) {
-                error!("{:?}, {:?} -> Error dropping peer {:?}",
-                       file!(),
-                       line!(),
-                       err);
+                error!("Error dropping peer {:?}", err);
             }
         }
     }
@@ -1840,9 +1836,7 @@ impl RoutingNode {
                             match node.connection {
                                 Some(connection) => self.drop_connections(vec![connection]),
                                 None =>
-                                    debug!("{:?} {:?} - No Connection existed for a node in RT",
-                                           file!(),
-                                           line!()),
+                                    debug!("No Connection existed for a node in RT"),
                             }
                         }
                         None => info!("No node removed from RT as a result of node addition"),
@@ -1889,10 +1883,7 @@ impl RoutingNode {
                             if let Err(err) = self.generate_churn(churn_msg,
                                                                   targets,
                                                                   routing_name) {
-                                error!("{:?} {:?} - Unsuccessful Churn {:?}",
-                                       file!(),
-                                       line!(),
-                                       err);
+                                error!("Unsuccessful Churn {:?}", err);
                             }
                         }
                     }
@@ -2186,15 +2177,12 @@ impl RoutingNode {
             match value {
                 Some(crust_connection) => {
                     // If we've already matched a connection drop the new one.
-                    info!("{:?} {:?} - Dropping an already matched connection {:?}", file!(),
-                          line!(), crust_connection);
-
+                    info!("Dropping an already matched connection {:?}", crust_connection);
                     self.drop_connections(vec![connection.clone()]);
                     None
                 }
                 None => {
                     debug!("Expected connection {:?} matched on {:?}.", key, connection);
-
                     value = Some(connection.clone());
                     *unwrap_option!(self.expected_connections.get_mut(&key),
                                     "Logic Error - Report bug") = value.clone();
@@ -2203,8 +2191,7 @@ impl RoutingNode {
                 }
             }
         } else {
-            info!("{:?} {:?} - Could not find given connection {:?} in expected_connections map",
-                  file!(), line!(), connection);
+            info!("Could not find given connection {:?} in expected_connections map", connection);
             None
         }
     }

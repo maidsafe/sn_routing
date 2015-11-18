@@ -40,7 +40,6 @@ extern crate routing;
 use std::io;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -387,7 +386,7 @@ impl Client {
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        let _ = spawn(move || { Client::read_user_commands(command_sender); });
+        let _ = thread!("Command reader", move || { Client::read_user_commands(command_sender); });
 
         Client {
             routing_client: routing_client,

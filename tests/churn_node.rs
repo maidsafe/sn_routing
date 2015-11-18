@@ -37,7 +37,7 @@ pub fn main () {
     let mut sender = node.get_sender();
 
     debug!("Running node.");
-    let _ = ::std::thread::spawn(move || node.run());
+    let _ = thread!("Initial churn node", move || node.run());
     let mut running = true;
 
     debug!("Entering loop.");
@@ -61,7 +61,7 @@ pub fn main () {
                 node = ::routing::test_utils::node::Node::new();
                 sender = node.get_sender();
                 debug!("Running node.");
-                let _ = ::std::thread::spawn(move || node.run());
+                let _ = thread!("Later churn node", move || node.run());
                 running = true;
                 time = ::time::SteadyTime::now();
             }

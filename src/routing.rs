@@ -18,7 +18,6 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
-use std::thread::spawn;
 
 use action::Action;
 use event::Event;
@@ -57,7 +56,7 @@ impl Routing {
                                                 false,
                                                 None);
 
-        let _ = spawn(move || {
+        let _ = thread!("Node runner", move || {
             debug!("Started routing run().");
             routing_node.run();
             debug!("Routing node terminated running.");
