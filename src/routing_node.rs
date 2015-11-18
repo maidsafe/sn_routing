@@ -987,7 +987,13 @@ impl RoutingNode {
             self.connection_filter.add(from_node.clone());
         }
     }
-
+    
+    /// 1. ManagedNode(us) -> NodeManager(us) (connecting to our close group) they
+    ///    will have us already in their group or relocation cache (5 min cache) when we 
+    ///    are initially connecting to our close group 
+    /// 2. ManagedNode(us) -> ManagedNode(them) direct message to a node who will
+    ///    require to get our real Id from our close group and accumulate this
+    ///    before accpeting us as a valid connection / id
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
         let (from_authority, address) = match self.state() {
             &State::Disconnected => return Err(RoutingError::NotBootstrapped),
@@ -1033,6 +1039,11 @@ impl RoutingNode {
         Ok(())
     }
 
+    /// 1. ManagedNode(them) -> NodeManager(them) (we are their close group) they
+    ///    must be in our relocation cache or known to our group memebers
+    ///    ao we may have to send a get_id to our group 
+    /// 2. ManagedNode(them) -> ManagedNode(us) direct message to us 
+    ///    we must ask their NodeManagers for their id 
     fn handle_connect_request(&mut self,
                               request: InternalRequest,
                               from_authority: Authority,
@@ -1097,7 +1108,12 @@ impl RoutingNode {
             _ => return Err(RoutingError::BadAuthority),
         }
     }
-
+    
+    /// 1. NodeManager(us) -> ManagedNode(us), this is a close group connect, goes in routing_table
+    ///    regardless if we can connect or not.
+    /// 2. ManagedNode(them)-> ManagedNode(us), this is a node we wanted to connect to 
+    ///    and we check we still want to and make the crust connection and only if successful
+    ///    put this node in our routing_table
     fn handle_connect_response(&mut self,
                                response: InternalResponse,
                                from_authority: Authority,
