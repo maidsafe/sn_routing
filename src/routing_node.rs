@@ -110,11 +110,11 @@ pub enum ExpectedConnection {
     /// A ConnectRequest was sent by peer. Store a signed message as token to return to the peer
     /// when a connection from crust event OnConnect arrives with connection token equal to the
     /// first parameter.
-    Request(u32, ::messages::ConnectRequest, ::messages::SignedToken),
+    Request(u32, ::messages::ConnectRequest),
     /// A ConnectResponse sent by peer with a signed token that is our original validatable
     /// ConnectRequest. Matches to the connection returned by crust event OnConnect that arrives
     /// with connection token equal to the first parameter.
-    Response(u32, ::messages::ConnectResponse, ::messages::SignedToken),
+    Response(u32, ::messages::ConnectResponse),
 }
 
 /// Routing Node
@@ -397,23 +397,7 @@ impl RoutingNode {
                connection,
                self.state());
         match self.match_expected_connection(&connection, connection_token) {
-            Some(expected_connection) => {
-                match expected_connection {
-                    ExpectedConnection::Request(_, _, signed_token) => {
-                        match SignedMessage::new_from_token(signed_token) {
-                            Ok(signed_message) => {
-                                debug!("Sending {:?} on {:?}.", signed_message, connection);
-                                ignore(self.send_hello(connection, None));
-                                ignore(self.send(signed_message));
-                            }
-                            Err(_) => {}
-                        }
-                    }
-                    ExpectedConnection::Response(_, _, _) => {
-                        ignore(self.send_hello(connection, None));
-                    }
-                }
-            }
+            Some(_) => ignore(self.send_hello(connection, None)),
             None => {}
         }
     }
@@ -1070,20 +1054,14 @@ impl RoutingNode {
                                          routing_message,
                                          self.id().signing_private_key()) {
                     Ok(signed_message) => {
-                        match signed_message.as_token() {
-                            Ok(signed_token) => {
-                                let connection_token = self.get_connection_token();
-                                self.add_expected_connection(ExpectedConnection::Request(
-                                    connection_token.clone(), connect_request.clone(),
-                                    signed_token));
-                                debug!("Connecting on validated ConnectRequest with connection \
-                                        token {:?}.",
-                                       connection_token);
-                                self.connect(connection_token, &connect_request.endpoints);
-                                self.connection_filter.add(connect_request.public_id.name());
-                            }
-                            Err(error) => return Err(RoutingError::Cbor(error)),
-                        }
+                        ignore(self.send(signed_message));
+                        let connection_token = self.get_connection_token();
+                        self.add_expected_connection(ExpectedConnection::Request(
+                            connection_token.clone(), connect_request.clone()));
+                        debug!("Connecting on validated ConnectRequest with connection token {:?}.",
+                               connection_token);
+                        self.connect(connection_token, &connect_request.endpoints);
+                        self.connection_filter.add(connect_request.public_id.name());
                     }
                     Err(error) => return Err(RoutingError::Cbor(error)),
                 };
@@ -1125,7 +1103,7 @@ impl RoutingNode {
 
                 let connection_token = self.get_connection_token();
                 self.add_expected_connection(ExpectedConnection::Response(
-                    connection_token.clone(), connect_response.clone(), signed_token.clone()));
+                    connection_token.clone(), connect_response.clone()));
                 debug!("Connecting on validated ConnectResponse from {:?} with connection token \
                         {:?}.",
                        from_authority,
@@ -2200,8 +2178,8 @@ impl RoutingNode {
         let expected_connections = self.expected_connections.retrieve_all();
         let by_token = |element: &&(ExpectedConnection, Option<::crust::Connection>)| {
             match element.0 {
-                ExpectedConnection::Request(token, _, _) => connection_token == token,
-                ExpectedConnection::Response(token, _, _) => connection_token == token,
+                ExpectedConnection::Request(token, _) => connection_token == token,
+                ExpectedConnection::Response(token, _) => connection_token == token,
             }
         };
         if let Some(&(ref key, mut value)) = expected_connections.iter().find(by_token) {
@@ -2338,7 +2316,7 @@ impl RoutingNode {
                        expected_connection,
                        connection);
                 match expected_connection {
-                    ExpectedConnection::Request(_, ref request, _) => {
+                    ExpectedConnection::Request(_, ref request) => {
                         // We are the network-side with a ConnectRequest, Node B on diagram of
                         // RFC-0011.
                         let mut opt_hello_and_unknown_connection = None;
@@ -2387,7 +2365,7 @@ impl RoutingNode {
                             None => {}
                         }
                     }
-                    ExpectedConnection::Response(_, ref response, _) => {
+                    ExpectedConnection::Response(_, ref response) => {
                         // We initiated a ConnectRequest, Node A on diagram of RFC-0011.
                         let mut opt_hello_and_unknown_connection = None;
                         let by_public_id = |element: &&(::crust::Connection,
@@ -2438,9 +2416,9 @@ impl RoutingNode {
                 let expected_connections = self.expected_connections.retrieve_all();
                 let by_public_id = |element: &&(ExpectedConnection, Option<::crust::Connection>)| {
                     match element.0 {
-                        ExpectedConnection::Request(_, ref request, _) =>
+                        ExpectedConnection::Request(_, ref request) =>
                             hello.public_id == request.public_id,
-                        ExpectedConnection::Response(_, ref response, _) =>
+                        ExpectedConnection::Response(_, ref response) =>
                             hello.public_id == response.public_id,
                     }
                 };
@@ -2448,12 +2426,12 @@ impl RoutingNode {
                     match found.1 {
                         Some(connection) => {
                             match found.0 {
-                                ExpectedConnection::Request(_, _, _) => {
+                                ExpectedConnection::Request(_, _) => {
                                     debug!("Consolidating expected connection {:?}.",
                                            connection);
                                     opt_connection = Some(connection.clone());
                                 },
-                                ExpectedConnection::Response(_, _, _) => {
+                                ExpectedConnection::Response(_, _) => {
                                     debug!("Consolidating unknown connection {:?}.",
                                            unknown_connection);
                                     opt_connection = Some(unknown_connection.clone());
