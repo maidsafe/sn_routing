@@ -48,7 +48,6 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 extern crate cbor;
 extern crate rand;
 extern crate rustc_serialize;

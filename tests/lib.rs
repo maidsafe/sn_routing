@@ -32,13 +32,14 @@
 
 #[macro_use]
 extern crate log;
+extern crate maidsafe_utilities;
 extern crate routing;
 extern crate sodiumoxide;
 
 use std::error::Error;
 
 fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
-    ::routing::utils::initialise_logger(false);
+    ::maidsafe_utilities::log::init(false);
     let mut processes = Vec::new();
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {

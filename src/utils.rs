@@ -15,45 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-static INITIALISE_LOGGER: ::std::sync::Once = ::std::sync::ONCE_INIT;
-
-/// This function initialises the env_logger.  It can safely be called multiple times concurrently.
-pub fn initialise_logger(show_thread_name: bool) {
-    INITIALISE_LOGGER.call_once(|| {
-        let format = move |record: &::log::LogRecord| {
-            let now = ::time::now();
-            let mut thread_name = "".to_string();
-            if show_thread_name {
-                thread_name = ::std::thread::current().name().unwrap_or("???").to_owned() + " ";
-            }
-            format!("{} {}.{:06} {}[{}:{}:{}] {}",
-                match record.level() {
-                    ::log::LogLevel::Error => 'E',
-                    ::log::LogLevel::Warn => 'W',
-                    ::log::LogLevel::Info => 'I',
-                    ::log::LogLevel::Debug => 'D',
-                    ::log::LogLevel::Trace => 'T',
-                },
-                ::time::strftime("%T", &now).unwrap(),
-                now.tm_nsec / 1000,
-                thread_name,
-                record.location().module_path().splitn(2, "::").next().unwrap_or(""),
-                record.location().file(),
-                record.location().line(),
-                record.args())
-        };
-
-        let mut builder = ::env_logger::LogBuilder::new();
-        let _ = builder.format(format);
-
-        if ::std::env::var("RUST_LOG").is_ok() {
-           let _ = builder.parse(&unwrap_result!(::std::env::var("RUST_LOG")));
-        }
-
-        builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
-    });
-}
-
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
     use std::fmt::Write;

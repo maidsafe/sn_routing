@@ -28,7 +28,7 @@ extern crate routing;
 pub fn main () {
     use rand::distributions::IndependentSample;
 
-    routing::utils::initialise_logger(true);
+    ::maidsafe_utilities::log::init(true);
 
     let mut time = ::time::SteadyTime::now();
     let runtime = ::time::Duration::minutes(5);

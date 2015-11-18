@@ -517,7 +517,7 @@ impl Client {
 
 ////////////////////////////////////////////////////////////////////////////////
 fn main() {
-    routing::utils::initialise_logger(true);
+    ::maidsafe_utilities::log::init(true);
 
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())
