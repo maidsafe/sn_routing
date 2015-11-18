@@ -18,7 +18,8 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate rand;
 extern crate time;
 extern crate routing;
@@ -27,7 +28,7 @@ extern crate routing;
 pub fn main () {
     use rand::distributions::IndependentSample;
 
-    ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    ::maidsafe_utilities::log::init(true);
 
     let mut time = ::time::SteadyTime::now();
     let runtime = ::time::Duration::minutes(5);
@@ -38,7 +39,7 @@ pub fn main () {
     let mut sender = node.get_sender();
 
     debug!("Running node.");
-    let _ = ::std::thread::spawn(move || node.run());
+    let _ = thread!("Initial churn node", move || node.run());
     let mut running = true;
 
     debug!("Entering loop.");
@@ -62,7 +63,7 @@ pub fn main () {
                 node = ::routing::test_utils::node::Node::new();
                 sender = node.get_sender();
                 debug!("Running node.");
-                let _ = ::std::thread::spawn(move || node.run());
+                let _ = thread!("Later churn node", move || node.run());
                 running = true;
                 time = ::time::SteadyTime::now();
             }
