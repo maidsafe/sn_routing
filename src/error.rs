@@ -109,7 +109,7 @@ impl ::std::fmt::Display for InterfaceError {
 pub enum ClientError {
     /// Report Input/Output error.
     Io(::std::io::Error),
-    /// Report erialisation error.
+    /// Report serialisation error.
     Cbor(::cbor::CborError),
 }
 
@@ -246,9 +246,8 @@ impl ::std::fmt::Display for RoutingError {
         match *self {
             RoutingError::NotBootstrapped =>
                 ::std::fmt::Display::fmt("Not bootstrapped", formatter),
-             RoutingError::Terminated =>
-                ::std::fmt::Display::fmt("Terminated", formatter),
-RoutingError::BadAuthority => ::std::fmt::Display::fmt("Bad authority", formatter),
+            RoutingError::Terminated => ::std::fmt::Display::fmt("Terminated", formatter),
+            RoutingError::BadAuthority => ::std::fmt::Display::fmt("Bad authority", formatter),
             RoutingError::AlreadyConnected =>
                 ::std::fmt::Display::fmt("Already connected", formatter),
             RoutingError::UnknownMessageType =>

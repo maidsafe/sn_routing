@@ -20,8 +20,5 @@
 /// connection map provides a templated map for connection management,
 /// specific for ::crust::Connections
 mod connection_map;
-/// expiration map is a kay-value map with an expiration of the key after a given time duration
-mod expiration_map;
 
 pub use utilities::connection_map::{ConnectionMap, Identifiable};
-pub use utilities::expiration_map::ExpirationMap;

@@ -49,11 +49,11 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
                     public_id: ::public_id::PublicId)
                     -> bool {
         if !identifier.valid_public_id(&public_id) {
-            debug!("Invalid public id {:?}.\n", public_id);
+            debug!("Invalid public id {:?}.", public_id);
             return false;
         };
         if self.lookup_map.contains_key(&connection) {
-            debug!("Connection map already contains connection {:?}.\n",
+            debug!("Connection map already contains connection {:?}.",
                    connection);
             return false;
         };
@@ -72,9 +72,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
                   connection);
         };
         let old_value = self.lookup_map.insert(connection, identifier.clone());
-        debug!("Inserted {:?} {:?} into lookup map.\n",
-               connection,
-               identifier);
+        debug!("Inserted {:?} {:?} into lookup map.", connection, identifier);
         debug_assert!(old_value.is_none(),
                       "Already verified above the lookup_map does not contain the connection; \
                        old identifier is {:?}",
@@ -93,7 +91,7 @@ impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug
             None => return None,
         };
         if self.lookup_map.iter().find(|&(_, ref i)| **i == affected_identity).is_none() {
-            debug!("Removed {:?} from connection map.\n", affected_identity);
+            debug!("Removed {:?} from connection map.", affected_identity);
             self.connection_map.remove(&affected_identity)
         } else {
             None

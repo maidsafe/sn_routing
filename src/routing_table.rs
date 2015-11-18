@@ -130,9 +130,7 @@ impl RoutingTable {
         }
 
         if self.has_node(&their_info.id()) {
-            debug!("Routing table {:?} has node {:?}.\n",
-                   self.routing_table,
-                   their_info);
+            debug!("Routing table {:?} has node {:?}.", self.routing_table, their_info);
             return (false, None);
         }
 
