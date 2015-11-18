@@ -132,6 +132,8 @@ impl From<::std::io::Error> for ClientError {
 pub enum RoutingError {
     /// The node/client has not bootstrapped yet
     NotBootstrapped,
+    /// Invalid State
+    Terminated,
     /// invalid requester or handler authorities
     BadAuthority,
     /// failure to connect to an already connected node
@@ -206,6 +208,7 @@ impl ::std::error::Error for RoutingError {
     fn description(&self) -> &str {
         match *self {
             RoutingError::NotBootstrapped => "Not bootstrapped",
+            RoutingError::Terminated => "Terminated",
             RoutingError::BadAuthority => "Invalid authority",
             RoutingError::AlreadyConnected => "Already connected",
             RoutingError::UnknownMessageType => "Invalid message type",
@@ -243,7 +246,9 @@ impl ::std::fmt::Display for RoutingError {
         match *self {
             RoutingError::NotBootstrapped =>
                 ::std::fmt::Display::fmt("Not bootstrapped", formatter),
-            RoutingError::BadAuthority => ::std::fmt::Display::fmt("Bad authority", formatter),
+             RoutingError::Terminated =>
+                ::std::fmt::Display::fmt("Terminated", formatter),
+RoutingError::BadAuthority => ::std::fmt::Display::fmt("Bad authority", formatter),
             RoutingError::AlreadyConnected =>
                 ::std::fmt::Display::fmt("Already connected", formatter),
             RoutingError::UnknownMessageType =>

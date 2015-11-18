@@ -262,7 +262,7 @@ impl RoutingNode {
                     self.set_cache_options(cache_options);
                 },
                 Ok(Action::Rebootstrap) => {
-                    self.reset();
+                    self.restart();
                     self.crust_service.bootstrap(0u32);
                 },
                 Ok(Action::Terminate) => {
@@ -318,7 +318,7 @@ impl RoutingNode {
                 Ok(::crust::Event::BootstrapFinished) => {
                     // match self.state() {
                     //     &State::Disconnected => {
-                    //         self.reset();
+                    //         self.restart();
                     //         ::std::thread::sleep_ms(100);
                     //         self.crust_service.bootstrap(0u32);
                     //     },
@@ -344,11 +344,11 @@ impl RoutingNode {
         }
     }
 
-    /// reset keeps the persistant state, but drops all connections
+    /// restart keeps the persistant state, but drops all connections
     /// and restarts the cycle from disconnected.
-    fn reset(&mut self) {
+    fn restart(&mut self) {
         let client_restriction = self.client_restriction;
-        let open_connections = self.reset_core(client_restriction);
+        let open_connections = self.restart_core(client_restriction);
         for connection in open_connections {
             self.crust_service.drop_node(connection);
         }
@@ -979,7 +979,11 @@ impl RoutingNode {
         if !self.connection_filter.check(from_node) {
             if self.check_node(&ConnectionName::Routing(from_node.clone())) {
                 debug!("Refresh routing table for peer {:?}.\n", from_node);
-                ignore(self.send_connect_request(from_node));
+                match self.send_connect_request(from_node) {
+                Ok(()) => debug!("sent connect request to {:?}", from_node),
+                Err(error) => debug!("failed to send connect request to {:?} because {:?}",
+                                     from_node, error)
+                }
             }
             self.connection_filter.add(from_node.clone());
         }
@@ -1002,7 +1006,7 @@ impl RoutingNode {
             }
             &State::Terminated => {
                 // (TODO Brian 19.10.15) A new error code may be more appropriate here.
-                return Err(RoutingError::Interface(InterfaceError::NotConnected));
+                return Err(RoutingError::Terminated);
             }
             _ => {
                 let name = self.id().name();
@@ -1560,11 +1564,11 @@ impl RoutingNode {
         &self.state
     }
 
-    /// Resets the full routing core to a disconnected state and will return a full list of all
-    /// open connections to drop, if any should linger.  Resetting with persistant identity will
+    /// restarts the full routing core to a disconnected state and will return a full list of all
+    /// open connections to drop, if any should linger.  restartting with persistant identity will
     /// preserve the Id, only if it has not been relocated.
-    pub fn reset_core(&mut self, persistant: bool) -> Vec<::crust::Connection> {
-        debug!("Resetting.\n");
+    pub fn restart_core(&mut self, persistant: bool) -> Vec<::crust::Connection> {
+        debug!("restartting.\n");
         if self.id.is_relocated() || !persistant {
             self.id = ::id::Id::new();
         };
@@ -1584,7 +1588,7 @@ impl RoutingNode {
         for connection in relay_connections {
             open_connections.push(connection.clone());
         }
-        // routing table should be empty in all sensible use-cases of reset() already.
+        // routing table should be empty in all sensible use-cases of restart() already.
         // this is merely a redundancy measure.
         let routing_connections = match self.routing_table {
             Some(ref rt) => rt.all_connections(),
@@ -1809,7 +1813,7 @@ impl RoutingNode {
                     return Ok(());
                 }
                 self.routing_table = None;
-                self.reset();
+                self.restart();
                 self.crust_service.bootstrap(0u32);
             }
             _ => {}
