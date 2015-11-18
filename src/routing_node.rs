@@ -559,8 +559,8 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::CacheNetworkName(_, _) => {
-                        self.handle_cache_network_name(request,
+                    InternalRequest::RelocatedNetworkName(_, _) => {
+                        self.handle_relocated_network_name(request,
                                                        message.from_authority,
                                                        message.to_authority)
                     }
@@ -596,7 +596,7 @@ impl RoutingNode {
             }
             Content::InternalResponse(response) => {
                 match response {
-                    InternalResponse::CacheNetworkName(_, _, _) => {
+                    InternalResponse::RelocatedNetworkName(_, _, _) => {
                         debug!("{:?} - Handling cache network name response {:?} ourselves",
                                self.our_address(), response);
                         self.handle_cache_network_name_response(response,
@@ -674,7 +674,7 @@ impl RoutingNode {
             }
             Content::InternalResponse(ref response) => {
                 match *response {
-                    InternalResponse::CacheNetworkName(_, _, _) => true,
+                    InternalResponse::RelocatedNetworkName(_, _, _) => true,
                     _ => false,
                 }
             }
@@ -826,7 +826,18 @@ impl RoutingNode {
         match request {
             InternalRequest::RequestNetworkName(public_id) => {
                 match (&from_authority, &to_authority) {
-                    (&Authority::Client(_, _), &Authority::NaeManager(_)) => {
+                    (&Authority::Client(_bootstrap_node, key), &Authority::NaeManager(name)) => {
+                        let hashed_key = ::sodiumoxide::crypto::hash::sha512::hash(&key.0);
+                        let close_group_to_client = NameType::new(hashed_key.0);
+
+                        if !(unwrap_option!(self.routing_table.as_ref(), "Routing Table must be \
+                                          present if we are meant to relocate a client.")
+                            .address_in_our_close_group_range(&close_group_to_client) &&
+                                close_group_to_client == name) {
+                            // TODO(Spandan) Create a better error
+                            return Err(RoutingError::BadAuthority)
+                        }
+
                         let mut network_public_id = public_id.clone();
                         match self.our_close_group() {
                             Some(close_group) => {
@@ -836,11 +847,14 @@ impl RoutingNode {
                                        assigning {:?}", self.our_address(), from_authority,
                                        relocated_name);
                                 network_public_id.assign_relocated_name(relocated_name.clone());
+
+                                // TODO(Spandan) How do we tell Y how to reach A through B
+
                                 let routing_message = RoutingMessage {
                                     from_authority: to_authority,
                                     to_authority: Authority::NaeManager(relocated_name.clone()),
                                     content: Content::InternalRequest(
-                                        InternalRequest::CacheNetworkName(network_public_id,
+                                        InternalRequest::RelocatedNetworkName(network_public_id,
                                         response_token)),
                                 };
                                 match SignedMessage::new(Address::Node(self.id().name()),
@@ -861,13 +875,13 @@ impl RoutingNode {
         }
     }
 
-    fn handle_cache_network_name(&mut self,
+    fn handle_relocated_network_name(&mut self,
                                  request: InternalRequest,
                                  from_authority: Authority,
                                  to_authority: Authority)
                                  -> RoutingResult {
         match request {
-            InternalRequest::CacheNetworkName(network_public_id, response_token) => {
+            InternalRequest::RelocatedNetworkName(network_public_id, response_token) => {
                 match (from_authority, &to_authority) {
                     (Authority::NaeManager(_), &Authority::NaeManager(_)) => {
                         let request_network_name = try!(SignedMessage::new_from_token(
@@ -885,7 +899,7 @@ impl RoutingNode {
                                     from_authority: to_authority,
                                     to_authority: request_network_name.get_routing_message().source(),
                                     content: Content::InternalResponse(
-                                        InternalResponse::CacheNetworkName(network_public_id,
+                                        InternalResponse::RelocatedNetworkName(network_public_id,
                                         close_group, response_token)),
                                 };
                                 match SignedMessage::new(Address::Node(self.id().name()),
@@ -916,7 +930,7 @@ impl RoutingNode {
             return Ok(());
         };
         match response {
-            InternalResponse::CacheNetworkName(network_public_id, group, signed_token) => {
+            InternalResponse::RelocatedNetworkName(network_public_id, group, signed_token) => {
                 if !signed_token.verify_signature(&self.id().signing_public_key()) {
                     return Err(RoutingError::FailedSignature);
                 };
