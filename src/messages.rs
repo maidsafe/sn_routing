@@ -102,10 +102,10 @@ pub enum InternalRequest {
     Connect(ConnectRequest),
     RequestNetworkName(::public_id::PublicId),
     // a client can send RequestNetworkName
-    CacheNetworkName(::public_id::PublicId, SignedToken),
+    RelocatedNetworkName(::public_id::PublicId, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~
     //                 |         | SignedToken contains Request::RequestNetworkName and needs to
-    //                 |         | be forwarded in the Request::CacheNetworkName;
+    //                 |         | be forwarded in the Request::RelocatedNetworkName;
     //                 |         | from it the original reply to authority can be read.
     //                 | contains the PublicId from RequestNetworkName, but mutated with
     //                 | the network assigned name
@@ -121,7 +121,7 @@ pub enum InternalResponse {
     // FindGroup(Vec<::public_id::PublicId>, SignedToken),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
-    CacheNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
+    RelocatedNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
                                                                                        *                 |         |              | the original Request::RequestNetworkName
                                                                                        *                 |         | the group public keys to combine FindGroup in this response
                                                                                        *                 | the cached PublicId in the group */
