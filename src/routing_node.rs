@@ -405,8 +405,11 @@ impl RoutingNode {
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
         match self.state() {
             &State::Disconnected => {
+                // I am the first node in the network, and i got an incomming connection so i'll
+                // promote myself as a node.
                 let assigned_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0)
                                                       .0);
+                // This will give me a new RT also
                 self.assign_name(&assigned_name);
             }
             &State::Bootstrapped => {
@@ -1790,6 +1793,24 @@ impl RoutingNode {
         Ok(())
     }
 
+    /// Add a client to our relay map
+    pub fn add_client(&mut self,
+                      public_key: ::sodiumoxide::crypto::sign::PublicKey,
+                      connection: crust::Connection,
+                      public_id: PublicId) -> bool {
+        let relay = Relay {
+            public_key: public_key,
+        };
+
+        let relay_map = unwrap_option!(self.relay_map.as_mut(),
+                                       "Logic Error - Report Bug. If this was triggered it would \
+                                        mean that Client is being asked to bootstrap some other \
+                                        Client.");
+        relay_map.add_peer(connection,
+                           relay,
+                           public_id)
+    }
+
     /// To be documented
     pub fn add_peer(&mut self,
                     identity: ConnectionName,
@@ -1913,15 +1934,6 @@ impl RoutingNode {
                             let _ = self.event_sender.send(Event::Bootstrapped);
                         };
                         added
-                    }
-                    None => false,
-                }
-            }
-            ConnectionName::Relay(::types::Address::Client(public_key)) => {
-                match self.relay_map {
-                    Some(ref mut relay_map) => {
-                        debug!("Adding client id {:?} to relay map.", public_id);
-                        relay_map.add_peer(connection, Relay { public_key: public_key }, public_id)
                     }
                     None => false,
                 }
@@ -2218,9 +2230,9 @@ impl RoutingNode {
                 // It is a client, add it as a relay connection. Fails if we are also a client.
                 // Because we're accepting an unknown connection, we are node A in diagram RFC-0011.
                 let client_address = ::types::Address::Client(public_key.clone());
-                if self.add_peer(ConnectionName::Relay(client_address.clone()),
-                                 connection.clone(),
-                                 hello.public_id.clone()) {
+                if self.add_client(public_key.clone(),
+                                   connection.clone(),
+                                   hello.public_id.clone()) {
                     debug!("Added client {:?} as relay connection on {:?}.",
                            client_address,
                            connection);
@@ -2232,7 +2244,7 @@ impl RoutingNode {
                            client_address,
                            connection);
                     self.drop_connections(vec![connection.clone()]);
-                };
+                }
             }
             ::types::Address::Node(name) => {
                 // It is a node, so either we are still a client or a node, and are either
