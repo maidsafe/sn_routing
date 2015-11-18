@@ -31,6 +31,9 @@
 
 #[macro_use]
 extern crate log;
+#[macro_use]
+#[allow(unused_extern_crates)]
+extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;

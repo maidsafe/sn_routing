@@ -27,7 +27,6 @@ pub struct Node {
 }
 
 impl Node {
-
     /// Construct a new node.
     pub fn new() -> Node {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
