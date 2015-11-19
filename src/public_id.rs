@@ -26,7 +26,7 @@ use utils;
 use std::fmt::{Debug, Formatter, Error};
 use rand;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// PublicId.
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
