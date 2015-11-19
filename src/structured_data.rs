@@ -22,7 +22,7 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 /// StructuredData
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates though require a signature to validate
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
     identifier: ::NameType,

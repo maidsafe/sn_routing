@@ -15,19 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectRequest {
     pub endpoints: Vec<::crust::Endpoint>,
     pub public_id: ::public_id::PublicId,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct ConnectResponse {
     pub endpoints: Vec<::crust::Endpoint>,
     pub public_id: ::public_id::PublicId,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// SignedToken.
 pub struct SignedToken {
     /// Encoded request to be signed.
@@ -55,7 +55,7 @@ impl ::std::fmt::Debug for SignedToken {
 }
 
 /// These are the message types routing provides.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 /// ExternalRequest.
 pub enum ExternalRequest {
     /// Request to get data from the network.
@@ -68,7 +68,7 @@ pub enum ExternalRequest {
     Delete(::data::Data),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 /// ExternalResponse.
 pub enum ExternalResponse {
     // TODO: Applies to Get: Technical depth: if the third param here is Some(...) then
@@ -97,7 +97,7 @@ impl ExternalResponse {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
     Connect(ConnectRequest),
     RequestNetworkName(::public_id::PublicId),
@@ -115,7 +115,7 @@ pub enum InternalRequest {
     Refresh(u64, Vec<u8>, ::NameType),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     Connect(ConnectResponse, SignedToken),
     // FindGroup(Vec<::public_id::PublicId>, SignedToken),
@@ -127,7 +127,7 @@ pub enum InternalResponse {
                                                                                        *                 | the cached PublicId in the group */
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum Content {
     ExternalRequest(ExternalRequest),
     InternalRequest(InternalRequest),
@@ -136,7 +136,7 @@ pub enum Content {
 }
 
 /// the bare (unsigned) routing message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
     // version_number     : u8
     pub from_authority: ::authority::Authority,
