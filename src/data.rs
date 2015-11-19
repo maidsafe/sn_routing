@@ -22,7 +22,7 @@ pub use plain_data::PlainData;
 use NameType;
 
 /// This is the data types routing handles in the public interface
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
     /// StructuredData Data type.
     StructuredData(StructuredData),
@@ -53,7 +53,7 @@ impl Data {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// DataRequest.
 pub enum DataRequest {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
