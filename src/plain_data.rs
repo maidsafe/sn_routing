@@ -19,7 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use NameType;
 
 /// PlainData
-#[derive(Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PlainData {
     name: NameType,
     value: Vec<u8>,

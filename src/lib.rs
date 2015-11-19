@@ -61,17 +61,16 @@ extern crate lru_time_cache;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate message_filter;
+extern crate accumulator;
 
 mod common_bits;
 mod action;
-mod filter;
 mod messages;
 mod direct_messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
 mod refresh_accumulator;
-mod message_accumulator;
 mod utilities;
 mod connection_management;
 

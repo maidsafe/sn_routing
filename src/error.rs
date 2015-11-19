@@ -17,7 +17,7 @@
 
 // ------------------------------------------------------------------------------
 #[deny(missing_docs)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 /// Represents response errors.
 pub enum ResponseError {
     /// Abort is for user to indicate that the state can be dropped;
