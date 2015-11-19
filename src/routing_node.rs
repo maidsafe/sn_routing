@@ -493,7 +493,7 @@ impl RoutingNode {
         let message = signed_message.get_routing_message().clone();
         let claimant = signed_message.claimant().clone();
 
-        if !self.claimant_message_filter.check(&(message.clone(), claimant.clone())) {
+        if self.claimant_message_filter.check(&(message.clone(), claimant.clone())) {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -897,11 +897,14 @@ impl RoutingNode {
         let target_client_authority = signed_message.get_routing_message().source();
         let from_authority = Authority::NaeManager(self.id.name());
 
-        let public_ids = self.routing_table
-                             .our_close_group()
-                             .iter()
-                             .map(|node_info| node_info.public_id.clone())
-                             .collect();
+        let mut public_ids : Vec<PublicId> = self.routing_table
+                                                 .our_close_group()
+                                                 .iter()
+                                                 .map(|node_info| node_info.public_id.clone())
+                                                 .collect();
+
+        // Also add our own id to the close_group list getting sent
+        public_ids.push(PublicId::new(&self.id));
 
         debug!("{:?} - Network request to accept name {:?}, responding \
                with our close group {:?} to {:?}", self.our_address(),
