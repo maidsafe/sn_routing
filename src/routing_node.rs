@@ -142,7 +142,7 @@ pub struct RoutingNode {
     id: Id,
     state: State,
     network_name: Option<NameType>,
-    routing_table: Option<RoutingTable>,
+    routing_table: RoutingTable,
     bootstrap_map: Option<::utilities::ConnectionMap<::NameType>>,
     relay_map: Option<::utilities::ConnectionMap<Relay>>,
     expected_connections: ::lru_time_cache::LruCache<ExpectedConnection,
@@ -193,6 +193,9 @@ impl RoutingNode {
         };
         // END
 
+        let own_name = ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+            &id.signing_public_key()[..]).0);
+
         RoutingNode {
             crust_receiver: crust_receiver,
             crust_service: crust_service,
@@ -223,7 +226,7 @@ impl RoutingNode {
             id: id,
             state: State::Disconnected,
             network_name: None,
-            routing_table: None,
+            routing_table: RoutingTable::new(&own_name),
             bootstrap_map: Some(::utilities::ConnectionMap::new()),
             relay_map: None,
             expected_connections: ::lru_time_cache::LruCache::with_expiry_duration(
@@ -247,9 +250,8 @@ impl RoutingNode {
                 Err(_) => {
                     if ::time::SteadyTime::now() - start > ::time::Duration::seconds(3) {
                         start = ::time::SteadyTime::now();
-                        if let Some(ref rt) = self.routing_table {
-                            debug!("{:?} - Routing Table size: {}", self.our_address(), rt.size());
-                        }
+                        debug!("{:?} - Routing Table size: {}", self.our_address(),
+                               self.routing_table.size());
                     }
                 }, // TODO(Spandan) Nothing is in event loop - This will be eliminated
                    // when we use EventSender
@@ -577,11 +579,27 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::RelocatedNetworkName(_, _) => {
-                        self.handle_relocated_network_name(request,
-                                                       accumulated_message.from_authority,
-                                                       accumulated_message.to_authority)
-                    }
+                    InternalRequest::RelocatedNetworkName(relocated_id, response_token) => {
+                        // Validate authorities
+                        match (accumulated_message.from_authority,
+                               accumulated_message.to_authority) {
+                            (Authority::NaeManager(_), Authority::NaeManager(target_name)) => {
+                                if self.name_in_range(&target_name) {
+                                    self.handle_relocated_network_name(relocated_id, response_token)
+                                } else {
+                                    debug!("{:?} - Ignoring RelocatedNetworkName Request as we are \
+                                           not close to the relocated name", self.our_address());
+                                    Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            _ => {
+                                debug!("{:?} - Ignoring Invalid RelocatedNetworkName Request",
+                                       self.our_address());
+                                Err(RoutingError::BadAuthority)
+                            },
+                        }
+
+                    },
                     InternalRequest::Connect(_) => {
                         match opt_token {
                             Some(response_token) =>
@@ -829,10 +847,8 @@ impl RoutingNode {
                         let hashed_key = ::sodiumoxide::crypto::hash::sha512::hash(&key.0);
                         let close_group_to_client = NameType::new(hashed_key.0);
 
-                        if !(unwrap_option!(self.routing_table.as_ref(), "Routing Table must be \
-                                          present if we are meant to relocate a client.")
-                            .address_in_our_close_group_range(&close_group_to_client) &&
-                                close_group_to_client == name) {
+                        if !(self.name_in_range(&close_group_to_client) &&
+                             close_group_to_client == name) {
                             // TODO(Spandan) Create a better error
                             return Err(RoutingError::BadAuthority)
                         }
@@ -875,47 +891,38 @@ impl RoutingNode {
     }
 
     fn handle_relocated_network_name(&mut self,
-                                 request: InternalRequest,
-                                 from_authority: Authority,
-                                 to_authority: Authority)
-                                 -> RoutingResult {
-        match request {
-            InternalRequest::RelocatedNetworkName(network_public_id, response_token) => {
-                match (from_authority, &to_authority) {
-                    (Authority::NaeManager(_), &Authority::NaeManager(_)) => {
-                        let request_network_name = try!(SignedMessage::new_from_token(
-                            response_token.clone()));
-                        let _ = self.public_id_cache
-                                    .insert(network_public_id.name(), network_public_id.clone());
-                        // self.update_relay_map(&network_public_id);
-                        match self.our_close_group_with_public_ids() {
-                            Some(close_group) => {
-                                debug!("{:?} - Network request to accept name {:?}, responding \
-                                       with our close group {:?} to {:?}", self.our_address(),
-                                       network_public_id.name(), close_group,
-                                       request_network_name.get_routing_message().source());
-                                let routing_message = RoutingMessage {
-                                    from_authority: to_authority,
-                                    to_authority: request_network_name.get_routing_message().source(),
-                                    content: Content::InternalResponse(
-                                        InternalResponse::RelocatedNetworkName(network_public_id,
-                                        close_group, response_token)),
-                                };
-                                match SignedMessage::new(Address::Node(self.id().name()),
-                                                         routing_message,
-                                                         self.id().signing_private_key()) {
-                                    Ok(signed_message) => ignore(self.send(signed_message)),
-                                    Err(e) => return Err(RoutingError::Cbor(e)),
-                                };
-                                Ok(())
-                            }
-                            None => return Err(RoutingError::BadAuthority),
-                        }
-                    }
-                    _ => return Err(RoutingError::BadAuthority),
-                }
-            }
-            _ => return Err(RoutingError::BadAuthority),
+                                     relocated_id: PublicId,
+                                     response_token: SignedToken) -> RoutingResult {
+        let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
+        let target_client_authority = signed_message.get_routing_message().source();
+        let from_authority = Authority::NaeManager(self.id.name());
+
+        let public_ids = self.routing_table
+                             .our_close_group()
+                             .iter()
+                             .map(|node_info| node_info.public_id.clone())
+                             .collect();
+
+        debug!("{:?} - Network request to accept name {:?}, responding \
+               with our close group {:?} to {:?}", self.our_address(),
+               relocated_id.name(), public_ids, target_client_authority);
+
+        let _ = self.public_id_cache.insert(relocated_id.name().clone(), relocated_id.clone());
+
+        let internal_response = InternalResponse::RelocatedNetworkName(relocated_id,
+                                                                       public_ids,
+                                                                       response_token);
+        let routing_message = RoutingMessage {
+            from_authority: from_authority,
+            to_authority: target_client_authority,
+            content: Content::InternalResponse(internal_response),
+        };
+
+        match SignedMessage::new(Address::Node(self.id().name()),
+                                 routing_message,
+                                 self.id().signing_private_key()) {
+            Ok(signed_message) => Ok(ignore(self.send(signed_message))),
+            Err(e) => return Err(RoutingError::Cbor(e)),
         }
     }
 
@@ -1537,10 +1544,7 @@ impl RoutingNode {
     }
 
     fn routing_table_quorum_size(&self) -> usize {
-        return ::std::cmp::min(unwrap_option!(self.routing_table.as_ref(), "Logic Error - Report bug\
-                                              . Routing Table must be present if we are working \
-                                              with quorum sizes.").size(),
-                               ::types::QUORUM_SIZE)
+        return ::std::cmp::min(self.routing_table.size(), ::types::QUORUM_SIZE)
     }
 
     // START ==================================================================================================
@@ -1600,14 +1604,12 @@ impl RoutingNode {
         }
         // routing table should be empty in all sensible use-cases of restart() already.
         // this is merely a redundancy measure.
-        let routing_connections = match self.routing_table {
-            Some(ref rt) => rt.all_connections(),
-            None => vec![],
-        };
-        for connection in routing_connections {
+        for connection in self.routing_table.all_connections() {
             open_connections.push(connection.clone());
         }
-        self.routing_table = None;
+        let new_name = ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+            &self.id.signing_public_key()[..]).0);
+        self.routing_table = RoutingTable::new(&new_name);
         self.network_name = None;
         self.relay_map = None;
         self.bootstrap_map = Some(::utilities::ConnectionMap::new());
@@ -1629,8 +1631,8 @@ impl RoutingNode {
             State::GroupConnected => return false,
             State::Terminated => return false,
         };
-        // if routing_table is constructed, reject name assignment
-        match self.routing_table {
+        // if network_name is constructed, reject name assignment
+        match self.network_name {
             Some(_) => {
                 error!("{:?} - Attempt to assign name {:?} while status is {:?}",
                        self.our_address(), network_name, self.state);
@@ -1641,8 +1643,8 @@ impl RoutingNode {
         if !self.id.assign_relocated_name(network_name.clone()) {
             return false;
         };
-        debug!("{:?} - Creating routing table after relocation", self.our_address());
-        self.routing_table = Some(RoutingTable::new(&network_name));
+        debug!("{:?} - Re-creating routing table after relocation", self.our_address());
+        self.routing_table = RoutingTable::new(&network_name);
         self.relay_map = Some(::utilities::ConnectionMap::new());
         self.network_name = Some(network_name.clone());
         self.state = State::Relocated;
@@ -1662,13 +1664,8 @@ impl RoutingNode {
             return None;
         }
 
-        match self.routing_table {
-            Some(ref routing_table) => {
-                match routing_table.lookup_endpoint(&connection.peer_endpoint()) {
-                    Some(name) => return Some(ConnectionName::Routing(name)),
-                    None => {}
-                };
-            }
+        match self.routing_table.lookup_endpoint(&connection.peer_endpoint()) {
+            Some(name) => return Some(ConnectionName::Routing(name)),
             None => {}
         };
 
@@ -1710,56 +1707,43 @@ impl RoutingNode {
         let current_state = self.state.clone();
         match *connection_name {
             ConnectionName::Routing(name) => {
-                if self.routing_table.is_some() {
-                    let trigger_churn;
-                    let routing_table_count_prior;
-                    {
-                        let routing_table_ref = unwrap_option!(self.routing_table.as_ref(),
-                                                               "Logic Error - Report bug");
-                        trigger_churn = routing_table_ref.address_in_our_close_group_range(&name);
-                        routing_table_count_prior = routing_table_ref.size();
+                let trigger_churn = self.name_in_range(&name);
+                let routing_table_count_prior = self.routing_table.size();
+                self.routing_table.drop_node(&name);
+
+                match routing_table_count_prior {
+                    1usize => {
+                        error!("{:?} - Routing Node has disconnected", self.our_address());
+                        self.state = State::Disconnected;
+                        let _ = self.event_sender.send(Event::Disconnected);
                     }
-
-                    unwrap_option!(self.routing_table.as_mut(), "Logic Error - Report bug")
-                        .drop_node(&name);
-
-                    match routing_table_count_prior {
-                        1usize => {
-                            error!("{:?} - Routing Node has disconnected", self.our_address());
-                            self.state = State::Disconnected;
-                            let _ = self.event_sender.send(Event::Disconnected);
-                        }
-                        ::types::GROUP_SIZE => {
-                            self.state = State::Connected;
-                        }
-                        _ => {}
+                    ::types::GROUP_SIZE => {
+                        self.state = State::Connected;
                     }
+                    _ => {}
+                }
 
-                    info!("{:?} - RT({}) dropped node {:?}", self.our_address(),
-                          unwrap_option!(self.routing_table.as_ref(), "").size(), name);
+                info!("{:?} - RT({}) dropped node {:?}", self.our_address(),
+                      self.routing_table.size(), name);
 
-                    if trigger_churn {
-                        let our_close_group = unwrap_option!(self.routing_table.as_ref(),
-                                                             "Logic Error - Report bug")
-                                                  .our_close_group();
+                if trigger_churn {
+                    let our_close_group = self.routing_table.our_close_group();
+                    let mut close_group = our_close_group.iter()
+                                                         .map(|node_info| {
+                                                             node_info.public_id.name()
+                                                         })
+                                                         .collect::<Vec<::NameType>>();
 
-                        let mut close_group = our_close_group.iter()
-                                                             .map(|node_info| {
-                                                                 node_info.public_id.name()
-                                                             })
-                                                             .collect::<Vec<::NameType>>();
+                    close_group.insert(0, self.id.name());
 
-                        close_group.insert(0, self.id.name());
+                    let target_connections =
+                        our_close_group.iter()
+                                       .filter_map(|node_info| node_info.connection)
+                                       .collect::<Vec<::crust::Connection>>();
 
-                        let target_connections =
-                            our_close_group.iter()
-                                           .filter_map(|node_info| node_info.connection)
-                                           .collect::<Vec<::crust::Connection>>();
-
-                        let churn_msg = ::direct_messages::Churn { close_group: close_group };
-                        if let Err(err) = self.generate_churn(churn_msg, target_connections, name) {
-                            return Err(err);
-                        }
+                    let churn_msg = ::direct_messages::Churn { close_group: close_group };
+                    if let Err(err) = self.generate_churn(churn_msg, target_connections, name) {
+                        return Err(err);
                     }
                 }
             }
@@ -1816,7 +1800,6 @@ impl RoutingNode {
                     //                  error return or an Ok return
                     return Ok(());
                 }
-                self.routing_table = None;
                 self.restart();
                 self.crust_service.bootstrap(0u32);
             }
@@ -1859,109 +1842,78 @@ impl RoutingNode {
                     return false;
                 }
 
-                // TODO(Spandan) - Suspicious code - is there a possiblility of getting add_peer()
-                // even if there is no routing table ? When and why would this happen ?
-                //
-                // - https://github.com/maidsafe/routing/pull/771
-                // Ans(David in GitHub) - The routing table should always exist IMHO, I suspect the
-                // creation of a routing table was used to promote to a node instead of being a
-                // client. So to be clear we should not do this, we should have a routing table if
-                // we are a node & only a node can get an add_peer(). To add a peer we make sure the
-                // call comes only from a connect_request (if we are receiving this) or a
-                // connect_response (if we are receiving this) and we add it if it passes the
-                // routing_table.add(). IF we think a peer is worth connecting to we do a
-                // routing_table.check() & if successful then we initiate the connect_request (or
-                // connect_response).
-                if self.routing_table.is_some() {
-                    let trigger_churn;
-                    let routing_table_count_prior;
-                    let add_node_result;
+                // This previously returned false here if RT was None, but there were comments about
+                // that not being possible or desired.  Hence this assert.
+                assert!(self.network_name.is_some());
 
-                    let node_info = NodeInfo::new(public_id,
-                                                  vec![endpoint.clone()],
-                                                  Some(connection));
+                let trigger_churn = self.name_in_range(&routing_name);
+                let routing_table_count_prior = self.routing_table.size();;
+                let node_info = NodeInfo::new(public_id,
+                                              vec![endpoint.clone()],
+                                              Some(connection));
+                let add_node_result = self.routing_table.add_node(node_info);
 
-                    {
-                        let routing_table_ref = unwrap_option!(self.routing_table.as_mut(),
-                                                               "Logic Error - Report bug");
-                        trigger_churn =
-                            routing_table_ref.address_in_our_close_group_range(&routing_name);
-                        routing_table_count_prior = routing_table_ref.size();
-                        add_node_result = routing_table_ref.add_node(node_info);
-                    }
-
-                    match add_node_result.1 {
-                        Some(node) => {
-                            match node.connection {
-                                Some(connection) => self.drop_connections(vec![connection]),
-                                None =>
-                                    debug!("{:?} - No Connection existed for a node in RT",
-                                           our_address),
-                            }
-                        }
-                        None => info!("{:?} - No node removed from RT as a result of node \
-                                      addition", our_address),
-                    }
-
-                    if add_node_result.0 {
-                        let size = unwrap_option!(self.routing_table.as_ref(),
-                                                  "Logic Error - Report bug")
-                                       .size();
-
-                        if routing_table_count_prior == 0usize {
-                            // if we transition from zero to one routing connection
-                            info!("{:?} - Routing Node has connected", our_address);
-                            self.state = State::Connected;
-                        } else if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
-                            info!("{:?} - Routing Node has connected to {} nodes", our_address,
-                                  size);
-
-                            self.state = State::GroupConnected;
-                            if let Err(err) = self.event_sender.send(Event::Connected) {
-                                error!("{:?} - Error sending {:?} to event_sender", our_address,
-                                       err.0);
-                            }
-                        }
-
-                        info!("{:?} - RT({}) added {:?}", our_address, size, routing_name);
-
-                        if trigger_churn {
-                            let our_close_group = unwrap_option!(self.routing_table.as_ref(),
-                                                                 "Logic Error - Report bug")
-                                                      .our_close_group();
-
-                            let mut close_group: Vec<NameType> =
-                                our_close_group.iter()
-                                               .map(|node_info| node_info.public_id.name())
-                                               .collect::<Vec<::NameType>>();
-
-                            close_group.insert(0, self.id.name());
-                            let targets =
-                                our_close_group.iter()
-                                               .filter_map(|node_info| node_info.connection)
-                                               .collect::<Vec<::crust::Connection>>();
-
-                            let churn_msg = ::direct_messages::Churn { close_group: close_group };
-
-                            if let Err(err) = self.generate_churn(churn_msg,
-                                                                  targets,
-                                                                  routing_name) {
-                                error!("{:?} - Unsuccessful Churn {:?}", our_address, err);
-                            }
+                match add_node_result.1 {
+                    Some(node) => {
+                        match node.connection {
+                            Some(connection) => self.drop_connections(vec![connection]),
+                            None =>
+                                debug!("{:?} - No Connection existed for a node in RT",
+                                       our_address),
                         }
                     }
-
-                    add_node_result.0
-                } else {
-                    false
+                    None => info!("{:?} - No node removed from RT as a result of node \
+                                  addition", our_address),
                 }
+
+                if add_node_result.0 {
+                    if routing_table_count_prior == 0usize {
+                        // if we transition from zero to one routing connection
+                        info!("{:?} - Routing Node has connected", our_address);
+                        self.state = State::Connected;
+                    } else if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
+                        info!("{:?} - Routing Node has connected to {} nodes", our_address,
+                              self.routing_table.size());
+                        self.state = State::GroupConnected;
+                        if let Err(err) = self.event_sender.send(Event::Connected) {
+                            error!("{:?} - Error sending {:?} to event_sender", our_address, err.0);
+                        }
+                    }
+
+                    info!("{:?} - RT({}) added {:?}", our_address, self.routing_table.size(),
+                          routing_name);
+
+                    if trigger_churn {
+                        let our_close_group = self.routing_table.our_close_group();
+                        let mut close_group: Vec<NameType> =
+                            our_close_group.iter()
+                                           .map(|node_info| node_info.public_id.name())
+                                           .collect::<Vec<::NameType>>();
+
+                        close_group.insert(0, self.id.name());
+                        let targets =
+                            our_close_group.iter()
+                                           .filter_map(|node_info| node_info.connection)
+                                           .collect::<Vec<::crust::Connection>>();
+
+                        let churn_msg = ::direct_messages::Churn { close_group: close_group };
+
+                        if let Err(err) = self.generate_churn(churn_msg,
+                                                              targets,
+                                                              routing_name) {
+                            error!("{:?} - Unsuccessful Churn {:?}", our_address, err);
+                        }
+                    }
+                }
+
+                add_node_result.0
             }
             ConnectionName::Bootstrap(bootstrap_name) => {
                 match self.bootstrap_map {
                     Some(ref mut bootstrap_map) => {
                         let bootstrapped_prior = bootstrap_map.identities_len() > 0usize;
                         let added = bootstrap_map.add_peer(connection, bootstrap_name, public_id);
-                        if !bootstrapped_prior && added && self.routing_table.is_none() {
+                        if !bootstrapped_prior && added && self.network_name.is_none() {
                             info!("{:?} - Routing Client bootstrapped", our_address);
                             self.state = State::Bootstrapped;
                             let _ = self.event_sender.send(Event::Bootstrapped);
@@ -2008,10 +1960,7 @@ impl RoutingNode {
                     State::Disconnected => return false,
                     _ => {}
                 };
-                match self.routing_table {
-                    Some(ref routing_table) => routing_table.check_node(&name),
-                    None => return false,
-                }
+                self.routing_table.check_node(&name)
             }
             ConnectionName::Relay(_) => {
                 match self.state {
@@ -2078,17 +2027,12 @@ impl RoutingNode {
 
         let destination = to_authority.get_location();
         // Query routing table to send it out parallel or to our close group (ourselves excluded).
-        match self.routing_table {
-            Some(ref routing_table) => {
-                for node_info in routing_table.target_nodes(destination) {
-                    match node_info.connection {
-                        Some(c) => target_connections.push(c.clone()),
-                        None => {}
-                    }
-                }
+        for node_info in self.routing_table.target_nodes(destination) {
+            match node_info.connection {
+                Some(c) => target_connections.push(c.clone()),
+                None => {}
             }
-            None => {}
-        };
+        }
 
         target_connections
     }
@@ -2141,28 +2085,22 @@ impl RoutingNode {
 
     /// Returns true if the core is a full routing node and has connections
     pub fn is_connected_node(&self) -> bool {
-        match self.routing_table {
-            Some(ref routing_table) => routing_table.size() > 0,
-            None => false,
-        }
+        self.routing_table.size() > 0
     }
 
     /// Returns true if a name is in range for our close group.
     /// If the core is not a full node, this always returns false.
     pub fn name_in_range(&self, name: &NameType) -> bool {
-        match self.routing_table {
-            Some(ref routing_table) => routing_table.address_in_our_close_group_range(name),
-            None => false,
-        }
+        self.routing_table.address_in_our_close_group_range(name)
     }
 
     /// Our authority is defined by the routing message, if we are a full node;  if we are a client,
     /// this always returns Client authority (where the relay name is taken from the routing message
     /// destination)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
-        match self.routing_table {
-            Some(ref routing_table) => {
-                our_authority(message, routing_table)
+        match self.network_name {
+            Some(_) => {
+                our_authority(message, &self.routing_table)
             }
             // if the message reached us as a client, then destination.get_location()
             // was our relay name
@@ -2175,34 +2113,14 @@ impl RoutingNode {
     /// always included, and the first member of the result.  If we are not a full node None is
     /// returned.
     pub fn our_close_group(&self) -> Option<Vec<NameType>> {
-        match self.routing_table {
-            Some(ref routing_table) => {
-                let mut close_group: Vec<NameType> = routing_table.our_close_group()
-                                                                  .iter()
-                                                                  .map(|node_info| {
-                                                                      node_info.public_id.name()
-                                                                  })
-                                                                  .collect::<Vec<NameType>>();
+        match self.network_name {
+            Some(_) => {
+                let mut close_group = self.routing_table
+                                          .our_close_group()
+                                          .iter()
+                                          .map(|node_info| node_info.public_id.name())
+                                          .collect::<Vec<NameType>>();
                 close_group.insert(0, self.id.name());
-                Some(close_group)
-            }
-            None => None,
-        }
-    }
-
-    /// Returns our close group as a vector of PublicIds, sorted from our own name; Our own PublicId
-    /// is always included, and the first member of the result.  If we are not a full node None is
-    /// returned.
-    pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
-        match self.routing_table {
-            Some(ref routing_table) => {
-                let mut close_group: Vec<PublicId> = routing_table.our_close_group()
-                                                                  .iter()
-                                                                  .map(|node_info| {
-                                                                      node_info.public_id.clone()
-                                                                  })
-                                                                  .collect::<Vec<PublicId>>();
-                close_group.insert(0, PublicId::new(&self.id));
                 Some(close_group)
             }
             None => None,
