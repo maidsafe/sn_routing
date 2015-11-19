@@ -577,11 +577,31 @@ impl RoutingNode {
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::RelocatedNetworkName(_, _) => {
-                        self.handle_relocated_network_name(request,
-                                                       accumulated_message.from_authority,
-                                                       accumulated_message.to_authority)
-                    }
+                    InternalRequest::RelocatedNetworkName(relocated_id, response_token) => {
+                        // Validate authorities
+                        match (accumulated_message.from_authority,
+                               accumulated_message.to_authority) {
+                            (Authority::NaeManager(_), Authority::NaeManager(target_name)) => {
+                                if unwrap_option!(self.routing_table.as_ref(),
+                                                  "Logic Error - Report Bug - We cannot be \
+                                                  relocating if we are not a node")
+                                    .address_in_our_close_group_range(&target_name) {
+                                    self.handle_relocated_network_name(relocated_id,
+                                                                       response_token)
+                                } else {
+                                    debug!("{:?} - Ignoring RelocatedNetworkName Request as we are \
+                                           not close to the relocated name", self.our_address());
+                                    Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            _ => {
+                                debug!("{:?} - Ignoring Invalid RelocatedNetworkName Request",
+                                       self.our_address());
+                                Err(RoutingError::BadAuthority)
+                            },
+                        }
+
+                    },
                     InternalRequest::Connect(_) => {
                         match opt_token {
                             Some(response_token) =>
@@ -875,47 +895,40 @@ impl RoutingNode {
     }
 
     fn handle_relocated_network_name(&mut self,
-                                 request: InternalRequest,
-                                 from_authority: Authority,
-                                 to_authority: Authority)
-                                 -> RoutingResult {
-        match request {
-            InternalRequest::RelocatedNetworkName(network_public_id, response_token) => {
-                match (from_authority, &to_authority) {
-                    (Authority::NaeManager(_), &Authority::NaeManager(_)) => {
-                        let request_network_name = try!(SignedMessage::new_from_token(
-                            response_token.clone()));
-                        let _ = self.public_id_cache
-                                    .insert(network_public_id.name(), network_public_id.clone());
-                        // self.update_relay_map(&network_public_id);
-                        match self.our_close_group_with_public_ids() {
-                            Some(close_group) => {
-                                debug!("{:?} - Network request to accept name {:?}, responding \
-                                       with our close group {:?} to {:?}", self.our_address(),
-                                       network_public_id.name(), close_group,
-                                       request_network_name.get_routing_message().source());
-                                let routing_message = RoutingMessage {
-                                    from_authority: to_authority,
-                                    to_authority: request_network_name.get_routing_message().source(),
-                                    content: Content::InternalResponse(
-                                        InternalResponse::RelocatedNetworkName(network_public_id,
-                                        close_group, response_token)),
-                                };
-                                match SignedMessage::new(Address::Node(self.id().name()),
-                                                         routing_message,
-                                                         self.id().signing_private_key()) {
-                                    Ok(signed_message) => ignore(self.send(signed_message)),
-                                    Err(e) => return Err(RoutingError::Cbor(e)),
-                                };
-                                Ok(())
-                            }
-                            None => return Err(RoutingError::BadAuthority),
-                        }
-                    }
-                    _ => return Err(RoutingError::BadAuthority),
-                }
-            }
-            _ => return Err(RoutingError::BadAuthority),
+                                     relocated_id: PublicId,
+                                     response_token: SignedToken) -> RoutingResult {
+        let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
+        let target_client_authority = signed_message.get_routing_message().source();
+        let from_authority = Authority::NaeManager(self.id.name());
+
+        let public_ids = unwrap_option!(self.routing_table.as_ref(), "Logic Error - Report bug. \
+                                                                      Cannot be handling relocation \
+                                                                      if not a node.")
+                         .our_close_group()
+                         .iter()
+                         .map(|node_info| node_info.public_id.clone())
+                         .collect();
+
+        debug!("{:?} - Network request to accept name {:?}, responding \
+               with our close group {:?} to {:?}", self.our_address(),
+               relocated_id.name(), public_ids, target_client_authority);
+
+        let _ = self.public_id_cache.insert(relocated_id.name().clone(), relocated_id.clone());
+
+        let internal_response = InternalResponse::RelocatedNetworkName(relocated_id,
+                                                                       public_ids,
+                                                                       response_token);
+        let routing_message = RoutingMessage {
+            from_authority: from_authority,
+            to_authority: target_client_authority,
+            content: Content::InternalResponse(internal_response),
+        };
+
+        match SignedMessage::new(Address::Node(self.id().name()),
+                                 routing_message,
+                                 self.id().signing_private_key()) {
+            Ok(signed_message) => Ok(ignore(self.send(signed_message))),
+            Err(e) => return Err(RoutingError::Cbor(e)),
         }
     }
 
@@ -2168,25 +2181,6 @@ impl RoutingNode {
                                                                   })
                                                                   .collect::<Vec<NameType>>();
                 close_group.insert(0, self.id.name());
-                Some(close_group)
-            }
-            None => None,
-        }
-    }
-
-    /// Returns our close group as a vector of PublicIds, sorted from our own name; Our own PublicId
-    /// is always included, and the first member of the result.  If we are not a full node None is
-    /// returned.
-    pub fn our_close_group_with_public_ids(&self) -> Option<Vec<PublicId>> {
-        match self.routing_table {
-            Some(ref routing_table) => {
-                let mut close_group: Vec<PublicId> = routing_table.our_close_group()
-                                                                  .iter()
-                                                                  .map(|node_info| {
-                                                                      node_info.public_id.clone()
-                                                                  })
-                                                                  .collect::<Vec<PublicId>>();
-                close_group.insert(0, PublicId::new(&self.id));
                 Some(close_group)
             }
             None => None,
