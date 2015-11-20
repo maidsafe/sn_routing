@@ -487,6 +487,8 @@ impl RoutingNode {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, signed_message: SignedMessage) -> RoutingResult {
+        debug!("{:?} Signed Message Received - {:?}", self.our_address(), signed_message);
+
         // filter check, should just return quietly
         let message = signed_message.get_routing_message().clone();
         let claimant = signed_message.claimant().clone();
@@ -897,6 +899,8 @@ impl RoutingNode {
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
                                      response_token: SignedToken) -> RoutingResult {
+        debug!("{:?} Handling Relocated Network Name", self.our_address());
+
         let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
         let target_client_authority = signed_message.get_routing_message().source();
         let from_authority = Authority::NaeManager(self.id.name());
