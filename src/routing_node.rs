@@ -489,6 +489,8 @@ impl RoutingNode {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn message_received(&mut self, signed_message: SignedMessage) -> RoutingResult {
+        debug!("{:?} Signed Message Received - {:?}", self.our_address(), signed_message);
+
         // filter check, should just return quietly
         let message = signed_message.get_routing_message().clone();
         let claimant = signed_message.claimant().clone();
@@ -511,7 +513,7 @@ impl RoutingNode {
         }
 
         // Scan for remote names.
-        if self.is_connected_node() {
+        if self.network_name.is_some() {
             match claimant {
                 ::types::Address::Node(ref name) => {
                     let authority = ::authority::Authority::ManagedNode(name.clone());
@@ -526,6 +528,7 @@ impl RoutingNode {
 
             // Forward the message.
             debug!("{:?} - Forwarding signed message", self.our_address());
+            self.claimant_message_filter.add((message.clone(), claimant.clone()));
             ignore(self.send(signed_message.clone()));
         };
 
@@ -663,7 +666,6 @@ impl RoutingNode {
                                               accumulated_message.from_authority)
             }
         };
-
 
         match result {
             Ok(()) => {
@@ -893,6 +895,8 @@ impl RoutingNode {
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
                                      response_token: SignedToken) -> RoutingResult {
+        debug!("{:?} Handling Relocated Network Name", self.our_address());
+
         let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
         let target_client_authority = signed_message.get_routing_message().source();
         let from_authority = Authority::NaeManager(self.id.name());
@@ -1326,7 +1330,8 @@ impl RoutingNode {
         }
 
         // If we need handle this message, move this copy into the channel for later processing.
-        if self.name_in_range(&destination.get_location()) {
+        // Only send it to ourselves if we are a node
+        if self.network_name.is_some() && self.name_in_range(&destination.get_location()) {
             if let Authority::Client(_, _) = destination {
                 return Ok(());
             };
