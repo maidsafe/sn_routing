@@ -513,7 +513,7 @@ impl RoutingNode {
         }
 
         // Scan for remote names.
-        if self.is_connected_node() {
+        if self.network_name.is_some() {
             match claimant {
                 ::types::Address::Node(ref name) => {
                     let authority = ::authority::Authority::ManagedNode(name.clone());
@@ -528,6 +528,7 @@ impl RoutingNode {
 
             // Forward the message.
             debug!("{:?} - Forwarding signed message", self.our_address());
+            self.claimant_message_filter.add((message.clone(), claimant.clone()));
             ignore(self.send(signed_message.clone()));
         };
 
@@ -665,7 +666,6 @@ impl RoutingNode {
                                               accumulated_message.from_authority)
             }
         };
-
 
         match result {
             Ok(()) => {
@@ -1314,7 +1314,8 @@ impl RoutingNode {
         }
 
         // If we need handle this message, move this copy into the channel for later processing.
-        if self.name_in_range(&destination.get_location()) {
+        // Only send it to ourselves if we are a node
+        if self.network_name.is_some() && self.name_in_range(&destination.get_location()) {
             if let Authority::Client(_, _) = destination {
                 return Ok(());
             };
