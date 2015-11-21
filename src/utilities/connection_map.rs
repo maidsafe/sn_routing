@@ -24,13 +24,11 @@ pub trait Identifiable {
 }
 
 /// ConnectionMap maintains a double directory to look up a connection or a name V
-#[allow(unused)]
 pub struct ConnectionMap<V> {
     connection_map: ::std::collections::BTreeMap<V, ::public_id::PublicId>,
     lookup_map: ::std::collections::HashMap<::crust::Connection, V>,
 }
 
-#[allow(unused)]
 impl<V> ConnectionMap<V> where V: Ord + Clone + Identifiable + ::std::fmt::Debug {
     /// Create a new connection map
     pub fn new() -> ConnectionMap<V> {

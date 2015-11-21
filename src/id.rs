@@ -30,7 +30,6 @@ pub struct Id {
 }
 
 impl Id {
-
     /// Contruct new Id.
     pub fn new() -> Id {
 

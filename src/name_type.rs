@@ -88,7 +88,7 @@ impl NameType {
 
 impl ::utilities::Identifiable for NameType {
     fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
-        *self == public_id.name()
+        self == public_id.name()
     }
 }
 
