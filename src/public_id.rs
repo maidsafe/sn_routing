@@ -35,13 +35,12 @@ pub struct PublicId {
 }
 
 impl Debug for PublicId {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        formatter.write_str(&format!("PublicId(name:{:?})", self.name))
+    fn fmt(&self, formatter: &mut Formatter) -> ::std::fmt::Result {
+        write!(formatter, "PublicId(name: {:?})", self.name)
     }
 }
 
 impl PublicId {
-
     /// Construct new PublicId.
     pub fn new(id: &Id) -> PublicId {
         PublicId {
@@ -52,8 +51,8 @@ impl PublicId {
     }
 
     /// Return initial/relocated name.
-    pub fn name(&self) -> NameType {
-        self.name
+    pub fn name(&self) -> &NameType {
+        &self.name
     }
 
     /// Set the name to new value.
@@ -80,8 +79,8 @@ impl PublicId {
     }
 
     /// Return public signing key.
-    pub fn signing_public_key(&self) -> sign::PublicKey {
-        self.public_sign_key
+    pub fn signing_public_key(&self) -> &sign::PublicKey {
+        &self.public_sign_key
     }
 
     /// Checks if the name is updated to a relocated name.

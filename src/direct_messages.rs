@@ -20,21 +20,13 @@
 //! as SignedMessages (wrapping RoutingMessages) over the routing network.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct Hello {
-    pub address: ::types::Address,
-    pub public_id: ::public_id::PublicId,
-    pub confirmed_you: Option<::types::Address>,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct Churn {
     pub close_group: Vec<::NameType>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-#[allow(variant_size_differences)]
 pub enum Content {
-    Hello(Hello),
+    Identify{ public_id: ::public_id::PublicId, },
     Churn(Churn),
 }
 
@@ -46,20 +38,24 @@ pub struct DirectMessage {
     signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
-#[allow(unused)]
 impl DirectMessage {
     pub fn new(content: Content,
                private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
                -> Result<DirectMessage, ::cbor::CborError> {
-
         let encoded_content = try!(::utils::encode(&content));
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_content,
                                                                    private_sign_key);
-
         Ok(DirectMessage {
             content: content,
             signature: signature,
         })
+    }
+
+    pub fn new_identify(public_id: ::public_id::PublicId,
+                        private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
+                        -> Result<DirectMessage, ::cbor::CborError> {
+        let content = Content::Identify{ public_id: public_id, };
+        Self::new(content, private_sign_key)
     }
 
     pub fn verify_signature(&self,

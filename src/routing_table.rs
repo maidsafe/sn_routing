@@ -31,7 +31,6 @@ pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
-#[allow(unused)]
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
@@ -41,7 +40,6 @@ pub struct NodeInfo {
     pub id: NameType,
 }
 
-#[allow(unused)]
 impl NodeInfo {
     #[cfg(not(test))]
     pub fn new(public_id: PublicId,
@@ -55,7 +53,7 @@ impl NodeInfo {
         }
     }
     #[cfg(not(test))]
-    pub fn id(&self) -> NameType {
+    pub fn id(&self) -> &NameType {
         self.public_id.name()
     }
 
@@ -73,20 +71,18 @@ impl NodeInfo {
         }
     }
     #[cfg(test)]
-    pub fn id(&self) -> NameType {
-        self.id.clone()
+    pub fn id(&self) -> &NameType {
+        &self.id
     }
 }
 
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
-#[allow(unused)]
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
     lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
-#[allow(unused)]
 impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
         RoutingTable {
@@ -125,7 +121,7 @@ impl RoutingTable {
     ///     contacts, which is also not within our close group), and if the new contact will fit in
     ///     a bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo) -> (bool, Option<NodeInfo>) {
-        if self.our_id == their_info.id() {
+        if self.our_id == *their_info.id() {
             return (false, None);
         }
 
@@ -166,34 +162,6 @@ impl RoutingTable {
         (false, None)
     }
 
-    /// This changes the connected status of the peer from false to true.  Only one connection is
-    /// allowed per node, so this returns None if the endpoint doesn't exist anywhere in the table
-    /// or if the peer already has a connected endpoint.  Otherwise it returns the peer's ID.
-    #[allow(dead_code)]
-    pub fn mark_as_connected(&mut self, connection: &Connection) -> Option<NameType> {
-        let endpoint = connection.peer_endpoint();
-        let has_endpoint = |ref node_info: &NodeInfo| {
-            for ref candidate_endpoint in &node_info.endpoints {
-                if **candidate_endpoint == endpoint {
-                    return true;
-                }
-            }
-            false
-        };
-        match self.routing_table.iter().position(has_endpoint) {
-            None => None,
-            Some(index) => {
-                self.routing_table[index].connection = Some(connection.clone());
-                // always force update lookup_map
-                let _ = self.lookup_map.remove(&endpoint);
-                let _ = self.lookup_map
-                            .entry(endpoint.clone())
-                            .or_insert(self.routing_table[index].id());
-                Some(self.routing_table[index].id())
-            }
-        }
-    }
-
     /// This is used to check whether it is worth while retrieving a contact's public key from the
     /// PKI with a view to adding the contact to our routing table.  The checking procedure is the
     /// same as for 'AddNode' above, except for the lack of a public key to check in step 1.
@@ -221,15 +189,15 @@ impl RoutingTable {
         let mut index_of_removal = usize::MAX;
 
         for i in 0..self.routing_table.len() {
-            if self.routing_table[i].id() == *node_to_drop {
+            if self.routing_table[i].id() == node_to_drop {
                 index_of_removal = i;
                 break;
             }
         }
 
         if index_of_removal < self.routing_table.len() {
-            let removal_name: NameType = self.routing_table[index_of_removal].id();
-            self.remove_dangling_endpoints(&removal_name);
+            let removal_name = self.routing_table[index_of_removal].id();
+            self.remove_dangling_endpoints(removal_name);
             let _ = self.routing_table.remove(index_of_removal);
         }
     }
@@ -402,7 +370,7 @@ impl RoutingTable {
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
         for node_info in &self.routing_table {
-            if node_info.id() == *node_id {
+            if node_info.id() == node_id {
                 return true;
             }
         }
@@ -415,7 +383,7 @@ impl RoutingTable {
                 let _ = self.lookup_map.remove(&endpoint);
                 let _ = self.lookup_map
                             .entry(endpoint.clone())
-                            .or_insert(node_info.id());
+                            .or_insert(node_info.id().clone());
             }
             None => (),
         };
