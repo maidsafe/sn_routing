@@ -24,7 +24,7 @@ use event::Event;
 use messages::SignedToken;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use types::CacheOptions;
+use data_cache_options::DataCacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
@@ -177,8 +177,8 @@ impl Routing {
     }
 
     /// Dynamically enable/disable caching for Data types.
-    pub fn set_cache_options(&self, cache_options: CacheOptions) {
-        let _ = self.action_sender.send(Action::SetCacheOptions(cache_options));
+    pub fn set_cache_options(&self, cache_options: DataCacheOptions) {
+        let _ = self.action_sender.send(Action::SetDataCacheOptions(cache_options));
 
     }
 
