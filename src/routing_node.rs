@@ -42,32 +42,13 @@ use error::{RoutingError, InterfaceError};
 
 type RoutingResult = Result<(), RoutingError>;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Relay {
-    pub public_key: ::sodiumoxide::crypto::sign::PublicKey,
-}
-
-impl ::utilities::Identifiable for Relay {
-    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
-        self.public_key == *public_id.signing_public_key()
-    }
-}
-
-impl ::std::fmt::Debug for Relay {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        formatter.write_str(&format!("Public Key {:?}",
-            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(&self.public_key[..]).0)))
-    }
-}
 
 /// ConnectionName labels the counterparty on a connection in relation to us
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum ConnectionName {
-    Relay(Address),
-    Routing(NameType),
-    Unidentified(crust::Connection, bool), /*                               ~|~~
-                                            *                                | set true when connected as a bootstrap connection */
-}
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+// pub enum ConnectionName {
+//     Relay(Address),
+//     Routing(NameType),
+// }
 
 
 /// State determines the current state of RoutingCore based on the established connections.
@@ -125,8 +106,10 @@ pub struct RoutingNode {
     state: State,
     network_name: Option<NameType>,
     routing_table: RoutingTable,
-    bootstrap_map: ::utilities::ConnectionMap<::NameType>,
-    relay_map: ::utilities::ConnectionMap<Relay>,
+    // our bootstrap connections
+    bootstrap_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
+    // any clients we have relaying thrugh us 
+    relay_map: ::std::collections::HashMap<::crust::Connection, crypto::sign::PublicKey>,
     // END
 }
 
@@ -202,8 +185,8 @@ impl RoutingNode {
             state: State::Disconnected,
             network_name: None,
             routing_table: RoutingTable::new(&own_name),
-            bootstrap_map: ::utilities::ConnectionMap::new(),
-            relay_map: ::utilities::ConnectionMap::new(),
+            bootstrap_map: ::std::collections::HashMap::new(),
+            relay_map: ::std::collections::HashMap::new(),
 //END
         }
     }
@@ -328,23 +311,12 @@ impl RoutingNode {
 
     fn handle_new_message(&mut self, connection: ::crust::Connection, bytes: Vec<u8>) {
         match decode::<SignedMessage>(&bytes) {
-            Ok(message) => {
-                // Handle SignedMessage for any identified connection
-                match self.lookup_connection(&connection) {
-                    Some(ConnectionName::Unidentified(_, _)) =>
-                        warn!("{:?} - Message from unidentified connection {:?} - ignoring it",
-                              self.our_address(), connection),
-                    None =>
-                        warn!("{:?} - Message from unknown connection {:?} - ignoring it",
-                              self.our_address(), connection),
-                    _ => ignore(self.handle_routing_message(message)),
-                };
-            }
+            Ok(message) => ignore(self.handle_routing_message(message)),
             // The message is not a SignedMessage, expect it to be a DirectMessage
             Err(_) => {
                 match decode::<::direct_messages::DirectMessage>(&bytes) {
                     Ok(direct_message) => self.handle_direct_message(direct_message, connection),
-                    // TODO(Fraser): Drop the connection if we can't parse a message?
+                    // TODO(Fraser): Drop the connection if we can't parse a message? (dirvine not sure)
                     _ => error!("{:?} - Unparsable message received on {:?}",
                                 self.our_address(), connection),
                 };
@@ -949,7 +921,7 @@ impl RoutingNode {
     /// all re-occurrences of this name for one second if we make the attempt to connect.
     fn refresh_routing_table(&mut self, from_node: &NameType) {
         if !self.connection_filter.check(from_node) {
-            if self.check_node(&ConnectionName::Routing(from_node.clone())) {
+            if self.check_node(&from_node.clone()) {
                 debug!("{:?} - Refresh routing table for peer {:?}", self.our_address(), from_node);
                 match self.send_connect_request(from_node) {
                     Ok(()) => debug!("{:?} - Sent connect request to {:?}", self.our_address(),
@@ -1038,7 +1010,7 @@ impl RoutingNode {
                           self.our_address(), connect_request);
                     return Err(RoutingError::FailedSignature);
                 };
-                if !self.check_node(&ConnectionName::Routing(connect_request.public_id.name().clone())) {
+                if !self.check_node(&connect_request.public_id.name().clone()) {
                     debug!("{:?} - Connect request {:?} check node failed", self.our_address(),
                            connect_request);
                     return Err(RoutingError::RefusedFromRoutingTable);
@@ -1104,7 +1076,7 @@ impl RoutingNode {
                     None => return Err(RoutingError::BadAuthority),
                 }
                 // Are we already connected, or still interested?
-                if !self.check_node(&ConnectionName::Routing(connect_response.public_id.name().clone())) {
+                if !self.check_node(&connect_response.public_id.name().clone()) {
                     error!("{:?} - ConnectResponse already connected to {:?}", self.our_address(),
                            from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
@@ -1197,7 +1169,7 @@ impl RoutingNode {
     }
 
     fn client_send_content(&mut self, to_authority: Authority, content: Content) -> RoutingResult {
-        if self.is_connected_node() || self.has_bootstrap_endpoints() {
+        if self.is_connected_node() || !self.bootstrap_name.empty() {
             // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
             let bootstrap_name = match self.get_a_bootstrap_name() {
                 Some(name) => name,
@@ -1477,31 +1449,35 @@ impl RoutingNode {
         self.assign_network_name(name)
     }
 
+    fn lookup_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
+           self.relay_map.get(&connection)
+    }
+    
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
-    fn lookup_connection(&self, connection: &crust::Connection) -> Option<ConnectionName> {
-        if self.state == State::Disconnected || self.state == State::Terminated {
-            return None;
-        }
+    fn lookup_connection(&self, connection: &crust::Connection) -> Option<::NameType> {
+        self.routing_table.lookup_endpoint(&connection.peer_endpoint()).or(self.bootstrap_map.get(&connection))
+    }
 
-        match self.routing_table.lookup_endpoint(&connection.peer_endpoint()) {
-            Some(name) => return Some(ConnectionName::Routing(name)),
-            None => {}
-        };
+    /// check relay_map for a client and remove form manp
+    pub fn dropped_client_connection(&mut self, connection: &::crust::Connection) ->Option(crypto::sign::PublicKey) {
+          self.relay_map.remove(&connection)
+    }
 
-        match self.relay_map.lookup_connection(&connection) {
-            Some(public_id) => return Some(ConnectionName::Relay(
-                ::types::Address::Client(public_id.signing_public_key().clone()))),
-            None => {}
-        }
+    pub fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) ->Option(::NameType) {
+          self.boostrap_connections.remove(&connection)
+    }
 
-        // if self.state != State::Connected && self.state != State::GroupConnected {
-            match self.bootstrap_map.lookup_connection(&connection) {
-                Some(public_id) => return Some(ConnectionName::Bootstrap(public_id.name())),
-                None => {}
-            }
-        // }
-
-        None
+    pub fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) ->Option<::NameType> {
+          match self.routing_table.lookup_endpoint(&connection) {
+          Some(node) => {
+               for node in self.routing_table.our_close_group().iter() { // trigger churn 
+                                                                         // if close node
+                                                                      };
+               self.routing_table.drop_node(node);
+               
+              } 
+          None => None    
+          }    
     }
 
     /// Drops the associated name from the relevant connection map or from routing table.
@@ -1510,7 +1486,7 @@ impl RoutingNode {
     /// If dropped from a connection map and multiple connections are active on the same identity
     /// all connections will be dropped asynchronously.  Removing a node from the routing table
     /// does not ensure the connection is dropped.
-    pub fn drop_peer(&mut self, connection_name: &ConnectionName) -> RoutingResult {
+    pub fn drop_peer(&mut self, connection_name: &::NameType) -> RoutingResult {
         debug!("{:?} - Drop peer {:?} current state {:?}", self.our_address(), connection_name,
                self.state.clone());
         let current_state = self.state.clone();
@@ -1674,7 +1650,7 @@ impl RoutingNode {
                           connection);
                     self.crust_service.drop_node(connection);
                 }
-                self.bootstrap_connections = ::utilities::ConnectionMap::new();
+                self.bootstrap_connections = ::std::collections::HasHSet::new();
             }
 
             info!("{:?} - RT({}) added {:?}", self.our_address(), self.routing_table.size(),
@@ -1854,7 +1830,7 @@ impl RoutingNode {
         match self.state {
             State::Bootstrapped | State::Relocated => {
                 match self.bootstrap_map {
-                    Some(ref bootstrap_map) => bootstrap_map.identities_len() > 0usize,
+                    Some(ref bootstrap_map) => bootstrap_map.len() > 0usize,
                     None => false,
                 }
             }
