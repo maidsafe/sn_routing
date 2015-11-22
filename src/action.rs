@@ -30,7 +30,7 @@ pub enum Action {
     //            |          | the bare content for a message to be formed
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
-    SetCacheOptions(::types::CacheOptions),
+    SetDataCacheOptions(::data_cache_options::DataCacheOptions),
     Rebootstrap,
     Terminate,
 }
