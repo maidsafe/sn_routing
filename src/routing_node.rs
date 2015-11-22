@@ -151,12 +151,9 @@ impl RoutingNode {
                                         .collect::<Vec<::crust::Endpoint>>();
 
         // The above command will give us only internal endpoints on which
-        // we're accepting. The next command will try to contact an IGD device
-        // and create external mapping to those endpoints. The result
+        // we're accepting. The next command will try to find external endpoints. The result
         // shall be returned async through the ExternalEndpoints event.
         crust_service.get_external_endpoints();
-
-
 
         // START
         let id = match keys {
@@ -164,7 +161,7 @@ impl RoutingNode {
             None => Id::new(),
         };
         // nodes are not persistent, and a client has no network allocated name
-        if id.is_relocated() {
+        if id.is_node() {
             error!("Core terminates routing as initialised with relocated id {:?}",
                    PublicId::new(&id));
             let _ = action_sender.send(Action::Terminate);
@@ -398,7 +395,7 @@ impl RoutingNode {
     fn handle_identify(&mut self, connection: ::crust::Connection, peer_public_id: PublicId) {
         debug!("{:?} - Peer {:?} has identified itself on {:?}", self.our_address(), peer_public_id,
                connection);
-        let peer_is_client = !peer_public_id.is_relocated();
+        let peer_is_client = !peer_public_id.is_node();
         match self.state {
             State::Disconnected => {
                 assert_eq!(self.bootstrap_map.identities_len(), 0usize);
@@ -1029,7 +1026,7 @@ impl RoutingNode {
         debug!("{:?} - Handle ConnectRequest", self.our_address());
         match request {
             InternalRequest::Connect(connect_request) => {
-                if !connect_request.public_id.is_relocated() {
+                if !connect_request.public_id.is_node() {
                     warn!("{:?} - Connect request {:?} requester is not relocated",
                           self.our_address(), connect_request);
                     return Err(RoutingError::RejectedPublicId);
@@ -1412,7 +1409,7 @@ impl RoutingNode {
     /// preserve the ID only if it has not been relocated.
     pub fn restart_core(&mut self, persistant: bool) -> Vec<::crust::Connection> {
         debug!("{:?} - Restarting", self.our_address());
-        if self.id.is_relocated() || !persistant {
+        if self.id.is_node() || !persistant {
             self.id = ::id::Id::new();
         };
         self.state = State::Disconnected;
