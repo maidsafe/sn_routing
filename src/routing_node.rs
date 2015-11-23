@@ -1626,7 +1626,7 @@ impl RoutingNode {
     /// then access to the bootstrap names will be blocked, and None is returned.
     pub fn bootstrap_names(&self) -> Vec<::NameType> {
        let vec = Vec::new();
-        for i in self.bootstrap_map.Values() {
+        for i in self.bootstrap_map.values() {
             vec.push(i.clone());     
         }
         vec  // block explicitly if we are a connected node
