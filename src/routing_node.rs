@@ -1403,8 +1403,8 @@ impl RoutingNode {
             &self.id.signing_public_key()[..]).0);
         self.routing_table = RoutingTable::new(&new_name);
         self.network_name = None;
-        self.relay_map = ::utilities::ConnectionMap::new();
-        self.bootstrap_map = ::utilities::ConnectionMap::new();
+        self.relay_map = ::std::collections::HashMap::new();
+        self.bootstrap_map = ::std::collections::HashMap::new();
         open_connections
     }
 
