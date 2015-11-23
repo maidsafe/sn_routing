@@ -1402,7 +1402,7 @@ impl RoutingNode {
             for node in self.routing_table.our_close_group().iter() { // trigger churn
                                                                       // if close node
                                                                     };
-            self.routing_table.drop_node(node_name);
+            self.routing_table.drop_node(&node_name);
         }
     }
 
@@ -1528,7 +1528,7 @@ impl RoutingNode {
             self.crust_service.drop_node(connection);
         }
 
-        match self.relay_map.insert(connection, public_id) {
+        match self.relay_map.insert(public_id.signing_public_key().clone(), connection) {
             Some(node) => debug!("{:?} - Added client to relay map {:?} {:?}", self.our_address(),
                                  node, connection),
             None => {
