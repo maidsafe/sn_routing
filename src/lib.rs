@@ -71,7 +71,6 @@ mod name_type;
 mod routing_table;
 mod routing_node;
 mod refresh_accumulator;
-mod utilities;
 mod connection_management;
 
 /// Routing provides an actionable interface to routing.
