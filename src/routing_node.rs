@@ -1614,32 +1614,22 @@ impl RoutingNode {
 
     /// Returns the available Bootstrap connections as connections. If we are a connected node,
     /// then access to the bootstrap connections will be blocked, and None is returned.
-    pub fn bootstrap_connections(&self) -> Option<Vec<::crust::Connection>> {
-        // block explicitly if we are a connected node
-        match self.state {
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => Some(bootstrap_map.connections()),
-                    None => None,
-                }
-            }
-            _ => None,
+    pub fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
+        let vec = Vec::new();
+        for i in self.bootstrap_map.keys() {
+            vec.push(i.clone());     
         }
+        vec
     }
 
     /// Returns the available Bootstrap connections as names. If we are a connected node,
     /// then access to the bootstrap names will be blocked, and None is returned.
-    pub fn bootstrap_names(&self) -> Option<Vec<::NameType>> {
-        // block explicitly if we are a connected node
-        match self.state {
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => Some(bootstrap_map.identities()),
-                    None => None,
-                }
-            }
-            _ => None,
+    pub fn bootstrap_names(&self) -> Vec<::NameType> {
+       let vec = Vec::new();
+        for i in self.bootstrap_map.Values() {
+            vec.push(i.clone());     
         }
+        vec  // block explicitly if we are a connected node
     }
 
     /// Returns true if bootstrap connections are available. If we are a connected node, then access
