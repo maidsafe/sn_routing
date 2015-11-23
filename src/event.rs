@@ -71,7 +71,10 @@ pub enum Event {
     /// as a Vec<NameType> and the name of the node that joined or left our close group
     /// as NameType.  Our close group is sorted from our name and always includes our own name
     /// as the first element.
-    Churn(Vec<::NameType>, ::NameType),
+    Churn(Vec<::NameType>),
+    /// When we lose a close group node we must let the upper layers know, they have no 
+    /// need to know anything other than current close group and any lost nodes.
+    LostNode(::NameType),
     /// DoRefresh reports that a Refresh message is circulating the effective close group
     /// of the given Authority, but that the user is outside of the close group of the churn
     /// that initiated the call for refresh.  To ensure that the account of the current user is

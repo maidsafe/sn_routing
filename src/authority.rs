@@ -126,19 +126,19 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
     let element = match message.content {
-        Content::ExternalRequest(ref request) => {
-            match *request {
-                ExternalRequest::Get(ref data_request, _) => Some(data_request.name().clone()),
-                ExternalRequest::Put(ref data) => Some(data.name()),
-                ExternalRequest::Post(ref data) => Some(data.name()),
-                ExternalRequest::Delete(ref data) => Some(data.name()),
+        Content::ExternalRequest(request) => {
+            match request {
+                ExternalRequest::Get(data_request, _) => Some(data_request.name().clone()),
+                ExternalRequest::Put(data) => Some(data.name().clone()),
+                ExternalRequest::Post(data) => Some(data.name().clone()),
+                ExternalRequest::Delete(data) => Some(data.name().clone()),
             }
         }
-        Content::InternalRequest(ref request) => {
-            match *request {
+        Content::InternalRequest(request) => {
+            match request {
                 InternalRequest::Connect(_) => None,
-                InternalRequest::RequestNetworkName(ref public_id) => Some(public_id.name()),
-                InternalRequest::RelocatedNetworkName(ref public_id, _) => Some(public_id.name()),
+                InternalRequest::RequestNetworkName(public_id) => Some(public_id.name().clone()),
+                InternalRequest::RelocatedNetworkName(public_id, _) => Some(public_id.name().clone()),
                 InternalRequest::Refresh(_, _, _) => {
                     let destination = message.destination();
                     if destination != message.source() {
