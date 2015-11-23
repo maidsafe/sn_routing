@@ -33,8 +33,6 @@ static OPTIMAL_SIZE: usize = 64;
 #[derive(Clone, Debug)]
 pub struct NodeInfo {
     pub public_id: PublicId,
-    pub endpoints: Vec<Endpoint>,
-    // pub connected_endpoint: Option<Endpoint>,
     pub connections: Vec<Connection>,
     #[cfg(test)]
     pub id: NameType,
@@ -42,13 +40,9 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     #[cfg(not(test))]
-    pub fn new(public_id: PublicId,
-               endpoints: Vec<Endpoint>,
-               connections: Vec<Connection>)
-               -> NodeInfo {
+    pub fn new(public_id: PublicId, connections: Vec<Connection>) -> NodeInfo {
         NodeInfo {
             public_id: public_id,
-            endpoints: endpoints,
             connections: connections,
         }
     }
@@ -58,14 +52,10 @@ impl NodeInfo {
     }
 
     #[cfg(test)]
-    pub fn new(public_id: PublicId,
-               endpoints: Vec<Endpoint>,
-               connections: Vec<Connection>)
-               -> NodeInfo {
+    pub fn new(public_id: PublicId, connections: Vec<Connection>) -> NodeInfo {
         let id = public_id.name();
         NodeInfo {
             public_id: public_id,
-            endpoints: endpoints,
             connections: connections,
             id: id,
         }
@@ -79,7 +69,6 @@ impl NodeInfo {
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
-    lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
@@ -87,7 +76,6 @@ impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
         RoutingTable {
             routing_table: Vec::<NodeInfo>::new(),
-            lookup_map: HashMap::new(),
             our_id: our_id.clone(),
         }
     }
@@ -144,7 +132,6 @@ impl RoutingTable {
                 return (true, None);
             } else {
                 let removal_node = self.routing_table[removal_node_index].clone();
-                self.remove_dangling_endpoints(&removal_node.id());
                 let _ = self.routing_table.remove(removal_node_index);
                 return (true, Some(removal_node));
             }
@@ -154,7 +141,6 @@ impl RoutingTable {
         if removal_node_index != usize::MAX &&
            self.new_node_is_better_than_existing(&their_info.id(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
-            self.remove_dangling_endpoints(&removal_node.id());
             let _ = self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node));
@@ -197,7 +183,6 @@ impl RoutingTable {
 
         if index_of_removal < self.routing_table.len() {
             let removal_name = self.routing_table[index_of_removal].id();
-            self.remove_dangling_endpoints(removal_name);
             let _ = self.routing_table.remove(index_of_removal);
         }
     }
@@ -272,12 +257,22 @@ impl RoutingTable {
     //     }
     // }
 
-    pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
-        debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
-        match self.lookup_map.get(their_endpoint) {
-            Some(name) => Some(name.clone()),
-            None => None,
+    pub fn drop_connection(&self, lost_connection: Connection) -> Option<NameType> {
+        if let Some(node_index) = self.routing_table.iter_mut().position(|mut node_info| {
+            if let Some(index) = node_info.connections
+                                          .iter()
+                                          .position(|connection| *connection == lost_connection) {
+                let _ = node_info.connections.remove(index);
+                true
+            } else {
+                false
+            }
+        }) {
+            if self.routing_table[node_index].connections.is_empty() {
+               return Some(self.routing_table.remove(node_index).id().clone())
+            }
         }
+        None
     }
 
     /// This returns the length of the routing table.
@@ -288,15 +283,6 @@ impl RoutingTable {
 
     pub fn our_name(&self) -> NameType {
         self.our_id.clone()
-    }
-
-    /// Returns all connections listed in the routing table
-    pub fn all_connections(&self) -> Vec<::crust::Connection> {
-        let mut all_connections = vec![];
-        for peer in self.routing_table {
-            all_connections.append(peer.connections.clone());
-        }
-        all_connections
     }
 
     /// This returns true if the provided id is closer than or equal to the furthest node in our
@@ -379,24 +365,19 @@ impl RoutingTable {
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
-        match node_info.connection.clone().map(|c| c.peer_endpoint()) {
-            Some(endpoint) => {
-                let _ = self.lookup_map.remove(&endpoint);
-                let _ = self.lookup_map
-                            .entry(endpoint.clone())
-                            .or_insert(node_info.id().clone());
-            }
-            None => (),
-        };
-        self.routing_table.push(node_info);
-        let our_id = &self.our_id;
-        self.routing_table.sort_by(|a, b| {
-            if closer_to_target(&a.id(), &b.id(), our_id) {
-                cmp::Ordering::Less
-            } else {
-                cmp::Ordering::Greater
-            }
-        });
+        if let Some(mut entry) = self.routing_table.iter().find(|elt| elt.id() == node_info.id()) {
+            entry.connections.extend(node_info.connections);
+        } else {
+            self.routing_table.push(node_info);
+            let our_id = &self.our_id;
+            self.routing_table.sort_by(|a, b| {
+                if closer_to_target(&a.id(), &b.id(), our_id) {
+                    cmp::Ordering::Less
+                } else {
+                    cmp::Ordering::Greater
+                }
+            });
+        }
     }
 
     fn is_nodes_sorted(&self) -> bool {
@@ -428,22 +409,6 @@ impl RoutingTable {
             }
         }
         false
-    }
-
-    fn remove_dangling_endpoints(&mut self, name_removed: &NameType) {
-        let dangling_endpoints = self.lookup_map
-                                     .iter()
-                                     .filter_map(|(endpoint, name)| {
-                                         if name == name_removed {
-                                             Some(endpoint.clone())
-                                         } else {
-                                             None
-                                         }
-                                     })
-                                     .collect::<Vec<_>>();
-        for endpoint in dangling_endpoints {
-            let _ = self.lookup_map.remove(&endpoint);
-        }
     }
 }
 

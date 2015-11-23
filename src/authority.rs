@@ -40,7 +40,6 @@ pub enum Authority {
 }
 
 impl Authority {
-
     /// Return true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
         match self {
