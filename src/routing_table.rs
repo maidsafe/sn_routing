@@ -35,7 +35,7 @@ pub struct NodeInfo {
     pub public_id: PublicId,
     pub endpoints: Vec<Endpoint>,
     // pub connected_endpoint: Option<Endpoint>,
-    pub connection: Option<Connection>,
+    pub connections: Vec<Connection>,
     #[cfg(test)]
     pub id: NameType,
 }
@@ -44,12 +44,12 @@ impl NodeInfo {
     #[cfg(not(test))]
     pub fn new(public_id: PublicId,
                endpoints: Vec<Endpoint>,
-               connection: Option<Connection>)
+               connections: Vec<Connection>)
                -> NodeInfo {
         NodeInfo {
             public_id: public_id,
             endpoints: endpoints,
-            connection: connection,
+            connections: connections,
         }
     }
     #[cfg(not(test))]
@@ -60,13 +60,13 @@ impl NodeInfo {
     #[cfg(test)]
     pub fn new(public_id: PublicId,
                endpoints: Vec<Endpoint>,
-               connection: Option<Connection>)
+               connections: Vec<Connection>)
                -> NodeInfo {
         let id = public_id.name();
         NodeInfo {
             public_id: public_id,
             endpoints: endpoints,
-            connection: connection,
+            connections: connections,
             id: id,
         }
     }
@@ -292,10 +292,11 @@ impl RoutingTable {
 
     /// Returns all connections listed in the routing table
     pub fn all_connections(&self) -> Vec<::crust::Connection> {
-        self.routing_table
-            .iter()
-            .filter_map(|n| n.connection.clone())
-            .collect::<Vec<::crust::Connection>>()
+        let mut all_connections = vec![];
+        for peer in self.routing_table {
+            all_connections.append(peer.connections.clone());
+        }
+        all_connections
     }
 
     /// This returns true if the provided id is closer than or equal to the furthest node in our

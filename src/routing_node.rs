@@ -42,6 +42,7 @@ use error::{RoutingError, InterfaceError};
 
 type RoutingResult = Result<(), RoutingError>;
 
+const MAX_RELAYS: usize = 100;
 
 /// ConnectionName labels the counterparty on a connection in relation to us
 // #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -108,8 +109,8 @@ pub struct RoutingNode {
     routing_table: RoutingTable,
     // our bootstrap connections
     bootstrap_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
-    // any clients we have relaying thrugh us 
-    relay_map: ::std::collections::HashMap<::crust::Connection, crypto::sign::PublicKey>,
+    // any clients we have relaying through us
+    relay_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
     // END
 }
 
@@ -921,7 +922,7 @@ impl RoutingNode {
     /// all re-occurrences of this name for one second if we make the attempt to connect.
     fn refresh_routing_table(&mut self, from_node: &NameType) {
         if !self.connection_filter.check(from_node) {
-            if self.check_node(&from_node.clone()) {
+            if self.routing_table.check_node(from_node) {
                 debug!("{:?} - Refresh routing table for peer {:?}", self.our_address(), from_node);
                 match self.send_connect_request(from_node) {
                     Ok(()) => debug!("{:?} - Sent connect request to {:?}", self.our_address(),
@@ -933,10 +934,10 @@ impl RoutingNode {
             self.connection_filter.add(from_node.clone());
         }
     }
-    
+
     /// 1. ManagedNode(us) -> NodeManager(us) (connecting to our close group) they
-    ///    will have us already in their group or relocation cache (5 min cache) when we 
-    ///    are initially connecting to our close group 
+    ///    will have us already in their group or relocation cache (5 min cache) when we
+    ///    are initially connecting to our close group
     /// 2. ManagedNode(us) -> ManagedNode(them) direct message to a node who will
     ///    require to get our real Id from our close group and accumulate this
     ///    before accpeting us as a valid connection / id
@@ -986,9 +987,9 @@ impl RoutingNode {
 
     /// 1. ManagedNode(them) -> NodeManager(them) (we are their close group) they
     ///    must be in our relocation cache or known to our group memebers
-    ///    ao we may have to send a get_id to our group 
-    /// 2. ManagedNode(them) -> ManagedNode(us) direct message to us 
-    ///    we must ask their NodeManagers for their id 
+    ///    ao we may have to send a get_id to our group
+    /// 2. ManagedNode(them) -> ManagedNode(us) direct message to us
+    ///    we must ask their NodeManagers for their id
     fn handle_connect_request(&mut self,
                               request: InternalRequest,
                               from_authority: Authority,
@@ -1010,7 +1011,7 @@ impl RoutingNode {
                           self.our_address(), connect_request);
                     return Err(RoutingError::FailedSignature);
                 };
-                if !self.check_node(&connect_request.public_id.name().clone()) {
+                if !self.routing_table.check_node(connect_request.public_id.name()) {
                     debug!("{:?} - Connect request {:?} check node failed", self.our_address(),
                            connect_request);
                     return Err(RoutingError::RefusedFromRoutingTable);
@@ -1046,10 +1047,10 @@ impl RoutingNode {
             _ => return Err(RoutingError::BadAuthority),
         }
     }
-    
+
     /// 1. NodeManager(us) -> ManagedNode(us), this is a close group connect, goes in routing_table
     ///    regardless if we can connect or not.
-    /// 2. ManagedNode(them)-> ManagedNode(us), this is a node we wanted to connect to 
+    /// 2. ManagedNode(them)-> ManagedNode(us), this is a node we wanted to connect to
     ///    and we check we still want to and make the crust connection and only if successful
     ///    put this node in our routing_table
     fn handle_connect_response(&mut self,
@@ -1076,7 +1077,7 @@ impl RoutingNode {
                     None => return Err(RoutingError::BadAuthority),
                 }
                 // Are we already connected, or still interested?
-                if !self.check_node(&connect_response.public_id.name().clone()) {
+                if !self.routing_table.check_node(connect_response.public_id.name()) {
                     error!("{:?} - ConnectResponse already connected to {:?}", self.our_address(),
                            from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
@@ -1385,20 +1386,13 @@ impl RoutingNode {
             self.id = ::id::Id::new();
         };
         self.state = State::Disconnected;
-        let mut open_connections = Vec::new();
-        let bootstrap_connections = self.bootstrap_map.connections();
-        for connection in bootstrap_connections {
-            open_connections.push(connection.clone());
-        }
-        let relay_connections = self.relay_map.connections();
-        for connection in relay_connections {
-            open_connections.push(connection.clone());
-        }
+        let mut open_connections: Vec<Connection> =
+            self.bootstrap_map.keys().map(|connection| connection.clone()).collect();
+        open_connections.append(
+            self.relay_map.values().map(|connection| connection.clone()).collect());
         // routing table should be empty in all sensible use-cases of restart() already.
         // this is merely a redundancy measure.
-        for connection in self.routing_table.all_connections() {
-            open_connections.push(connection.clone());
-        }
+        open_connections.append(self.routing_table.all_connections());
         let new_name = ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
             &self.id.signing_public_key()[..]).0);
         self.routing_table = RoutingTable::new(&new_name);
@@ -1449,35 +1443,43 @@ impl RoutingNode {
         self.assign_network_name(name)
     }
 
-    fn lookup_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
+    fn look_up_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
            self.relay_map.get(&connection)
     }
-    
+
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
-    fn lookup_connection(&self, connection: &crust::Connection) -> Option<::NameType> {
-        self.routing_table.lookup_endpoint(&connection.peer_endpoint()).or(self.bootstrap_map.get(&connection))
+    fn look_up_connection(&self, connection: &crust::Connection) -> Option<::NameType> {
+        self.routing_table.look_up_endpoint(&connection.peer_endpoint())
+                          .or(self.bootstrap_map.get(&connection))
     }
 
-    /// check relay_map for a client and remove form manp
-    pub fn dropped_client_connection(&mut self, connection: &::crust::Connection) ->Option(crypto::sign::PublicKey) {
-          self.relay_map.remove(&connection)
+    /// check relay_map for a client and remove from map
+    fn dropped_client_connection(&mut self,
+                                 connection: &::crust::Connection) {
+        self.relay_map = self.relay_map
+                             .into_iter()
+                             .filter(|&(_, relay_connection)| relay_connection != connection)
+                             .collect();
     }
 
-    pub fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) ->Option(::NameType) {
-          self.boostrap_connections.remove(&connection)
+    fn dropped_bootstrap_connection(&mut self,
+                                    connection: &::crust::Connection)
+                                    ->Option<::NameType> {
+        self.boostrap_connections.remove(&connection)
     }
 
-    pub fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) ->Option<::NameType> {
-          match self.routing_table.lookup_endpoint(&connection) {
-          Some(node) => {
-               for node in self.routing_table.our_close_group().iter() { // trigger churn 
-                                                                         // if close node
-                                                                      };
-               self.routing_table.drop_node(node);
-               
-              } 
-          None => None    
-          }    
+    fn dropped_routing_node_connection(&mut self,
+                                       connection: &::crust::Connection)
+                                       ->Option<::NameType> {
+        match self.routing_table.lookup_endpoint(&connection) {
+            Some(node) => {
+                for node in self.routing_table.our_close_group().iter() { // trigger churn
+                                                                          // if close node
+                                                                        };
+                self.routing_table.drop_node(node);
+            },
+            None => None
+        }
     }
 
     /// Drops the associated name from the relevant connection map or from routing table.
@@ -1596,11 +1598,18 @@ impl RoutingNode {
 
     // Add a client to our relay map
     fn add_client(&mut self, connection: crust::Connection, public_id: PublicId) {
-        match self.relay_map.insert(connection,  public_id) {
-            Some(node) => debug!("added client to relay map {:?} {:?}", node, connection),
+        if self.relay_map.len() == MAX_RELAYS {
+            warn!("{:?} - Relay map full ({} connections) so won't add {:?} to the relay map - \
+                  dropping {:?}", self.our_address(), MAX_RELAYS, public_id, connection);
+            self.crust_service.drop_node(connection);
+        }
+
+        match self.relay_map.insert(connection, public_id) {
+            Some(node) => debug!("{:?} - Added client to relay map {:?} {:?}", self.our_address(),
+                                 node, connection),
             None => {
-                debug!("{:?} - Failed to add {:?} to the relay map - dropping {:?}",
-                        self.our_address(), public_id, connection);
+                warn!("{:?} - Failed to add {:?} to the relay map - dropping {:?}",
+                      self.our_address(), public_id, connection);
                 self.crust_service.drop_node(connection);
             }
         }
@@ -1682,67 +1691,6 @@ impl RoutingNode {
         }
     }
 
-    /// Check whether a certain identity is of interest to the core.
-    /// For a Routing(NameType), the routing table will be consulted;
-    /// for completeness we quote the documentation of RoutingTable::check_node below.
-    /// Connections currently don't support multiple endpoints per peer,
-    /// so if relay map (or routing table) already has the peer, then check_node returns false.
-    /// For Relay connections it suffices that the relay map is not full to return true.
-    /// For Bootstrap connections the relay map cannot be full and no routing table should exist;
-    /// this logic is still under consideration [Ben 6/08/2015]
-    /// For unidentified connections check_node always return true.
-    /// Routing: "This is used to check whether it is worth while retrieving
-    ///           a contact's public key from the PKI with a view to adding
-    ///           the contact to our routing table.  The checking procedure is the
-    ///           same as for 'AddNode' above, except for the lack of a public key
-    ///           to check in step 1.
-    /// Adds a contact to the routing table.  If the contact is added, the first return arg is true,
-    /// otherwise false.  If adding the contact caused another contact to be dropped, the dropped
-    /// one is returned in the second field, otherwise the optional field is empty.  The following
-    /// steps are used to determine whether to add the new contact or not:
-    ///
-    /// 1 - if the contact is ourself, or doesn't have a valid public key, or is already in the
-    ///     table, it will not be added
-    /// 2 - if the routing table is not full (size < OptimalSize()), the contact will be added
-    /// 3 - if the contact is within our close group, it will be added
-    /// 4 - if we can find a candidate for removal (a contact in a bucket with more than BUCKET_SIZE
-    ///     contacts, which is also not within our close group), and if the new contact will fit in
-    ///     a bucket closer to our own bucket, then we add the new contact."
-    pub fn check_node(&self, identity: &ConnectionName) -> bool {
-        match *identity {
-            ConnectionName::Routing(name) => {
-                match self.state {
-                    State::Disconnected => return false,
-                    _ => {}
-                };
-                self.routing_table.check_node(&name)
-            }
-            ConnectionName::Relay(_) => {
-                match self.state {
-                    State::Disconnected => return false,
-                    _ => {}
-                };
-                match self.relay_map {
-                    Some(ref relay_map) => !relay_map.is_full(),
-                    None => return false,
-                }
-            }
-            // TODO (ben 6/08/2015) up for debate, don't show interest for bootstrap connections,
-            // after we have established a single bootstrap connection.
-            ConnectionName::Bootstrap(_) => {
-                match self.state {
-                    State::Disconnected => {}
-                    _ => return false,
-                };
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => !bootstrap_map.is_full(),
-                    None => return false,
-                }
-            }
-            ConnectionName::Unidentified(_, _) => true,
-        }
-    }
-
     /// Get the endpoints to send on as a node.  This will exclude the bootstrap connections
     /// we might have.  Endpoints returned here will expect us to send the message,
     /// as anything but a Client.  If to_authority is Client(_, public_key) and this client is
@@ -1758,27 +1706,19 @@ impl RoutingNode {
         }
 
         // If we can relay to the client, return that client connection.
-        match self.relay_map {
-            Some(ref relay_map) => {
-                match *to_authority {
-                    Authority::Client(_, ref client_public_key) => {
-                        debug!("{:?} - Looking for client target {:?}", self.our_address(),
-                               *to_authority);
-                        let (_, connections) = relay_map.lookup_identity(&Relay {
-                            public_key: client_public_key.clone(),
-                        });
-                        debug!("{:?} - Got client connections {:?}", self.our_address(),
-                               connections);
-                        return connections;
-                    }
-                    _ => {
-                        debug!("{:?} - Looking in relay map for {:?}", self.our_address(),
-                               *to_authority);
-                    }
-                };
+        match *to_authority {
+            Authority::Client(_, ref client_public_key) => {
+                debug!("{:?} - Looking for client target {:?}", self.our_address(), *to_authority);
+                let (_, connections) = self.relay_map.lookup_identity(&Relay {
+                    public_key: client_public_key.clone(),
+                });
+                debug!("{:?} - Got client connections {:?}", self.our_address(), connections);
+                return connections;
             }
-            None => {}
-        }
+            _ => {
+                debug!("{:?} - Looking in relay map for {:?}", self.our_address(), *to_authority);
+            }
+        };
 
         let destination = to_authority.get_location();
         // Query routing table to send it out parallel or to our close group (ourselves excluded).
@@ -1912,48 +1852,46 @@ impl RoutingNode {
         }
     }
 
-    /// Check if were involved in the relocation of a Client.
+    /// Check if we're involved in the relocation of a Client.
     pub fn check_relocations(&self, to_authority: &Authority) -> Vec<crust::Connection> {
         // It's possible we participated in the relocation of a client present in our relay map.
         let mut target_connections: Vec<crust::Connection> = Vec::new();
-        match self.relay_map {
-            Some(ref relay_map) => {
-                let mut managed_node_name = None;
-                match *to_authority {
-                    Authority::ManagedNode(ref name) => {
-                        managed_node_name = Some(name);
-                    }
-                    _ => {}
-                };
-
-                match managed_node_name {
-                    Some(name) => {
-                        for identity in relay_map.identities().iter() {
-                            match self.our_close_group() {
-                                Some(close_group) => {
-                                    let identity_name = ::NameType::new(
-                                        ::sodiumoxide::crypto::hash::sha512::hash(
-                                            &identity.public_key.0[..]).0);
-                                    match ::utils::calculate_relocated_name(close_group,
-                                                                            &identity_name) {
-                                        Ok(relocated_name) => {
-                                            if relocated_name == *name {
-                                                let (_, connections) =
-                                                    relay_map.lookup_identity(identity);
-                                                for connection in connections {
-                                                    target_connections.push(connection);
-                                                }
-                                            }
-                                        }
-                                        Err(_) => {}
+        if let Authority::ManagedNode(ref name) = to_authority {
+            for identity in relay_map.identities().iter() {
+                match self.our_close_group() {
+                    Some(close_group) => {
+                        let identity_name = ::NameType::new(
+                            ::sodiumoxide::crypto::hash::sha512::hash(
+                                &identity.public_key.0[..]).0);
+                        match ::utils::calculate_relocated_name(close_group, &identity_name) {
+                            Ok(relocated_name) => {
+                                if relocated_name == *name {
+                                    let (_, connections) =
+                                        relay_map.lookup_identity(identity);
+                                    for connection in connections {
+                                        target_connections.push(connection);
                                     }
                                 }
-                                None => {}
                             }
+                            Err(_) => {}
                         }
                     }
                     None => {}
                 }
+            }
+        }
+
+
+        let mut managed_node_name = None;
+        match *to_authority {
+            Authority::ManagedNode(ref name) => {
+                managed_node_name = Some(name);
+            }
+            _ => {}
+        };
+
+        match managed_node_name {
+            Some(name) => {
             }
             None => {}
         }

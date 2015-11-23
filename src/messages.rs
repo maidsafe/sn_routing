@@ -37,8 +37,7 @@ pub struct SignedToken {
 }
 
 impl SignedToken {
-
-    /// Verify the request was signed by the secret key corresponding to the passed in public key. 
+    /// Verify the request was signed by the secret key corresponding to the passed in public key.
     pub fn verify_signature(&self,
                             public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
                             -> bool {
@@ -85,7 +84,6 @@ pub enum ExternalResponse {
 }
 
 impl ExternalResponse {
-
     /// If the *request* was from a group entity, then there is no signed token.
     pub fn get_signed_token(&self) -> &Option<SignedToken> {
         match *self {
@@ -138,15 +136,12 @@ pub enum Content {
 /// the bare (unsigned) routing message
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
-    // version_number     : u8
     pub from_authority: ::authority::Authority,
     pub to_authority: ::authority::Authority,
     pub content: Content,
 }
 
 impl RoutingMessage {
-
-    #[allow(dead_code)]
     pub fn source(&self) -> ::authority::Authority {
         self.from_authority.clone()
     }
@@ -181,7 +176,7 @@ impl RoutingMessage {
 }
 
 /// All messages sent / received are constructed as signed message.
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
     body: RoutingMessage,
     claimant: ::types::Address,
@@ -191,7 +186,6 @@ pub struct SignedMessage {
     signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
-#[allow(unused)]
 impl SignedMessage {
     pub fn new(claimant: ::types::Address,
                message: RoutingMessage,
@@ -218,7 +212,6 @@ impl SignedMessage {
                           random_bits: u8,
                           signature: ::sodiumoxide::crypto::sign::Signature)
                           -> Result<SignedMessage, ::cbor::CborError> {
-
         Ok(SignedMessage {
             body: message,
             claimant: claimant,
@@ -231,7 +224,6 @@ impl SignedMessage {
     pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, ::cbor::CborError> {
         let (message, claimant, random_bits) =
             try!(::utils::decode(&signed_token.serialised_request));
-
         Ok(SignedMessage {
             body: message,
             claimant: claimant,
@@ -250,7 +242,6 @@ impl SignedMessage {
             Ok(x) => x,
             Err(_) => return false,
         };
-
         ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
                                                      &encoded_body,
                                                      public_sign_key)
@@ -285,6 +276,12 @@ impl SignedMessage {
     }
 }
 
+impl ::std::fmt::Debug for SignedMessage {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(formatter, "SignedMessage {{ body: {:?}, claimant: {:?}, random_bits: {}, \
+                          signature: <binary data> }}", self.body, self.claimant, self.random_bits)
+    }
+}
 
 #[cfg(test)]
 mod test{
