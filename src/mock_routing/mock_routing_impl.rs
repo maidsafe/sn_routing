@@ -78,8 +78,7 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             let _ = cloned_sender.send(::routing::event::Event::Request {
                 request: ::routing::ExternalRequest::Put(data),
                 our_authority: ::maid_manager::Authority(client_address),
