@@ -1370,8 +1370,12 @@ impl RoutingNode {
         self.assign_network_name(name)
     }
 
-    fn look_up_client(&self, connection: &crust::Connection) -> Option<&crypto::sign::PublicKey> {
-           self.relay_map.get(connection)
+    fn look_up_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
+           if let Some(key) = self.relay_map.into_iter().filter(|&(_, v)| v == *connection).next() {
+                Some(key.0)
+           } else {
+                None    
+            }
     }
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
@@ -1385,20 +1389,20 @@ impl RoutingNode {
                                  connection: &::crust::Connection) {
         self.relay_map = self.relay_map
                              .into_iter()
-                             .filter(|&(_, relay_connection)| relay_connection != connection)
+                             .filter(|&(_, relay_connection)| &relay_connection != connection)
                              .collect();
     }
 
-    fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) {
-        let _ = self.boostrap_connections.remove(&connection);
+    fn dropped_bootstrap_connection(&self, connection: &::crust::Connection) {
+        self.bootstrap_connections.remove(&connection);
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
-        if let Some(node_name) = self.routing_table.drop_connection(connection) {
+        if let Some(node_name) = self.routing_table.drop_connection(connection.clone()) {
             for node in self.routing_table.our_close_group().iter() { // trigger churn
                                                                       // if close node
                                                                     };
-            self.routing_table.drop_node(node_name);
+            self.routing_table.drop_node(&node_name);
         }
     }
 
@@ -1524,7 +1528,7 @@ impl RoutingNode {
             self.crust_service.drop_node(connection);
         }
 
-        match self.relay_map.insert(connection, public_id) {
+        match self.relay_map.insert(public_id.signing_public_key().clone(), connection) {
             Some(node) => debug!("{:?} - Added client to relay map {:?} {:?}", self.our_address(),
                                  node, connection),
             None => {
@@ -1610,32 +1614,22 @@ impl RoutingNode {
 
     /// Returns the available Bootstrap connections as connections. If we are a connected node,
     /// then access to the bootstrap connections will be blocked, and None is returned.
-    pub fn bootstrap_connections(&self) -> Option<Vec<::crust::Connection>> {
-        // block explicitly if we are a connected node
-        match self.state {
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => Some(bootstrap_map.connections()),
-                    None => None,
-                }
-            }
-            _ => None,
+    pub fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
+        let vec = Vec::new();
+        for i in self.bootstrap_map.keys() {
+            vec.push(i.clone());     
         }
+        vec
     }
 
     /// Returns the available Bootstrap connections as names. If we are a connected node,
     /// then access to the bootstrap names will be blocked, and None is returned.
-    pub fn bootstrap_names(&self) -> Option<Vec<::NameType>> {
-        // block explicitly if we are a connected node
-        match self.state {
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => Some(bootstrap_map.identities()),
-                    None => None,
-                }
-            }
-            _ => None,
+    pub fn bootstrap_names(&self) -> Vec<::NameType> {
+       let vec = Vec::new();
+        for i in self.bootstrap_map.Values() {
+            vec.push(i.clone());     
         }
+        vec  // block explicitly if we are a connected node
     }
 
     /// Returns true if bootstrap connections are available. If we are a connected node, then access
