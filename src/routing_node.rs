@@ -1636,16 +1636,7 @@ impl RoutingNode {
     /// to the bootstrap connections will be blocked, and false is returned.  We might still receive
     /// messages from our bootstrap connections, but active usage is blocked once we are a node.
     pub fn has_bootstrap_endpoints(&self) -> bool {
-        // block explicitly if routing table is available
-        match self.state {
-            State::Bootstrapped | State::Relocated => {
-                match self.bootstrap_map {
-                    Some(ref bootstrap_map) => bootstrap_map.len() > 0usize,
-                    None => false,
-                }
-            }
-            _ => false,
-        }
+        !self.bootstrap_map.is_empty()
     }
 
     /// Returns true if the core is a full routing node and has connections
