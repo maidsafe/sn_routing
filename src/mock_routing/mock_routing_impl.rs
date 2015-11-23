@@ -144,8 +144,7 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             let _ = cloned_sender.send(::routing::event::Event::Request {
                 request: ::routing::ExternalRequest::Get(request_for, 0),
                 our_authority: location,
@@ -170,8 +169,7 @@ impl MockRoutingImpl {
         let cloned_sender = self.sender.clone();
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            l::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             match location.clone() {
                 ::routing::Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(::routing::event::Event::Response {
@@ -199,8 +197,7 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             let _ = cloned_sender.send(::routing::event::Event::Request {
                 request: ::routing::ExternalRequest::Put(data.clone()),
                 our_authority: location,
@@ -222,8 +219,7 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             let _ = cloned_sender.send(::routing::event::Event::Response {
                 response: ::routing::ExternalResponse::Put(response_error, signed_token),
                 our_authority: location,
@@ -244,8 +240,7 @@ impl MockRoutingImpl {
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
-            let duration = ::std::time::Duration::from_millis(delay_ms as u64);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             let mut refresh_contents = vec![content.clone()];
             for _ in 2..::data_manager::REPLICANTS {
                 refresh_contents.push(content.clone());
