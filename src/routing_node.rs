@@ -76,6 +76,7 @@ pub enum State {
     /// There are n >= GROUP_SIZE routing connections, and we have a name.
     GroupConnected,
     /// ::stop() has been called.
+                                                                                            #[allow(dead_code)]
     Terminated,
 }
 
@@ -99,7 +100,7 @@ pub struct RoutingNode {
     refresh_causes: ::message_filter::MessageFilter<::NameType>,
     // Messages which have been accumulated and then actioned
     handled_messages: ::message_filter::MessageFilter<RoutingMessage>,
-    cache_options: ::data_cache_options::DataCacheOptions,
+    // cache_options: ::data_cache_options::DataCacheOptions,
     data_cache: ::data_cache::DataCache,
 
     // START
@@ -179,7 +180,7 @@ impl RoutingNode {
                 ::time::Duration::minutes(5)),
             handled_messages: ::message_filter::MessageFilter::with_expiry_duration(
                 ::time::Duration::minutes(20)),
-            cache_options: ::data_cache_options::DataCacheOptions::new(),
+//            cache_options: ::data_cache_options::DataCacheOptions::new(),
             data_cache: ::data_cache::DataCache::new(),
 //START
             id: id,
@@ -294,7 +295,7 @@ impl RoutingNode {
         };
     }
 
-    fn handle_on_connect(&mut self, connection: ::crust::Connection, connection_token: u32) {
+    fn handle_on_connect(&mut self, connection: ::crust::Connection, _connection_token: u32) {
         debug!("{:?} - New connection via OnConnect {:?}", self.our_address(), connection);
         ignore(self.identify(connection));
     }
@@ -331,7 +332,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn handle_identify(&mut self, connection: ::crust::Connection, peer_public_id: PublicId) {
+    fn handle_identify(&mut self, connection: ::crust::Connection, peer_public_id: &PublicId) {
         debug!("{:?} - Peer {:?} has identified itself on {:?}", self.our_address(), peer_public_id,
                connection);
         let peer_is_client = !peer_public_id.is_node();
@@ -380,9 +381,9 @@ impl RoutingNode {
         };
 
         if peer_is_client {
-            self.add_client(connection, peer_public_id);
+            self.add_client(connection, peer_public_id.clone());
         } else {
-            self.add_node(connection, peer_public_id);
+            self.add_node(connection, peer_public_id.clone());
         }
     }
 
@@ -527,8 +528,8 @@ impl RoutingNode {
                         match claimant.clone() {
                             // TODO (ben 23/08/2015) later consider whether we need to restrict it
                             // to only from nodes within our close group
-                            Address::Node(name) =>
-                                self.handle_refresh(type_tag, name, bytes, refresh_authority, cause),
+                            Address::Node(name) => self.handle_refresh(type_tag, name, bytes,
+                                                                       refresh_authority, cause),
                             Address::Client(_) => Err(RoutingError::BadAuthority),
                         }
                     }
@@ -631,9 +632,9 @@ impl RoutingNode {
                              direct_message: ::direct_messages::DirectMessage,
                              connection: ::crust::Connection) {
         match direct_message.content() {
-            &::direct_messages::Content::Identify{ public_id, } => {
+            &::direct_messages::Content::Identify{ ref public_id, } => {
                 // verify signature
-                if !direct_message.verify_signature(&public_id.signing_public_key()) {
+                if !direct_message.verify_signature(public_id.signing_public_key()) {
                     warn!("{:?} - Failed signature verification on {:?} - dropping connection",
                           self.our_address(), connection);
                     self.crust_service.drop_node(connection);
@@ -681,7 +682,7 @@ impl RoutingNode {
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
-
+                                                                                            #[allow(unused)]
     fn request_network_name(&mut self, to_authority: Authority, content: Content) -> RoutingResult {
         if self.client_restriction {
             debug!("{:?} - Not requesting a network name we are a Client", self.our_address());
@@ -1117,8 +1118,8 @@ impl RoutingNode {
             Ok(client_authority) => {
                 let routing_message = RoutingMessage {
                     from_authority: client_authority,
-                    to_authority: to_authority,
-                    content: content,
+                    to_authority: to_authority.clone(),
+                    content: content.clone(),
                 };
                 match SignedMessage::new(Address::Client(self.id().signing_public_key()),
                                          routing_message,
@@ -1174,7 +1175,8 @@ impl RoutingNode {
         let bytes = match encode(&signed_message) {
             Ok(bytes) => bytes,
             Err(error) => {
-                error!("{:?} - Failed to serialise {:?}", self.our_address(), signed_message);
+                error!("{:?} - Failed to serialise {:?} - {:?}", self.our_address(),
+                       signed_message, error);
                 return
             },
         };
@@ -1207,12 +1209,15 @@ impl RoutingNode {
         }
 
         // Query routing table to send it out parallel or to our close group (ourselves excluded)
-        self.routing_table.target_nodes(destination.get_location()).iter().all(
-            |node_info| node_info.connections.iter().all(
+        let targets = self.routing_table.target_nodes(destination.get_location());
+        targets.iter().all(
+            |node_info| {
+                node_info.connections.iter().all(
                 |connection| {
-                    self.crust_service.send(connection.clone(), bytes);
+                    self.crust_service.send(connection.clone(), bytes.clone());
                     true
-                }));
+                })
+            });
 
         // If we need to handle this message, handle it.
         if self.name_in_range(destination.get_location()) {
@@ -1368,15 +1373,17 @@ impl RoutingNode {
         self.assign_network_name(name)
     }
 
+                                                                                            #[allow(unused)]
     fn look_up_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
-        if let Some(key) = self.relay_map.into_iter().filter(|&(_, v)| v == *connection).next() {
-            Some(key.0)
-        } else {
-            None
-        }
+        self.relay_map
+            .iter()
+            .filter(|&(_, relay_connection)| relay_connection == connection)
+            .next()
+            .map(|found_entry| found_entry.0.clone())
     }
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
+                                                                                            #[allow(unused)]
     fn look_up_connection(&self, connection: &crust::Connection) -> Option<&::NameType> {
         self.routing_table.look_up_connection(connection)
                           .or(self.bootstrap_map.get(connection))
@@ -1385,10 +1392,13 @@ impl RoutingNode {
     /// check relay_map for a client and remove from map
     fn dropped_client_connection(&mut self,
                                  connection: &::crust::Connection) {
-        self.relay_map = self.relay_map
-                             .into_iter()
-                             .filter(|&(_, relay_connection)| &relay_connection != connection)
-                             .collect();
+        let public_key = self.relay_map
+                             .iter()
+                             .find(|&(_, relay)| relay == connection)
+                             .map(|entry| entry.0.clone());
+        if let Some(public_key) = public_key {
+            let _ = self.relay_map.remove(&public_key);
+        }
     }
 
     fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) {
@@ -1397,7 +1407,7 @@ impl RoutingNode {
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
-            for node in self.routing_table.our_close_group().iter() { // trigger churn
+            for _node in self.routing_table.our_close_group().iter() { // trigger churn
                                                                       // if close node
                                                                     };
             self.routing_table.drop_node(&node_name);
@@ -1410,6 +1420,7 @@ impl RoutingNode {
     /// If dropped from a connection map and multiple connections are active on the same identity
     /// all connections will be dropped asynchronously.  Removing a node from the routing table
     /// does not ensure the connection is dropped.
+                                                                                            #[allow(unused)]
     pub fn drop_peer(&mut self, connection_name: &::NameType) -> RoutingResult {
         debug!("{:?} - Drop peer {:?} current state {:?}", self.our_address(), connection_name,
                self.state.clone());
@@ -1590,7 +1601,7 @@ impl RoutingNode {
         }
     }
 
-    fn trigger_churn(&self) {
+    fn trigger_churn(&mut self) {
         let our_close_group = self.routing_table.our_close_group();
         let mut close_group: Vec<::NameType> =
             our_close_group.iter()
@@ -1610,11 +1621,13 @@ impl RoutingNode {
     }
 
     // Returns the available Bootstrap connections as connections.
+                                                                                            #[allow(unused)]
     fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
         self.bootstrap_map.keys().cloned().collect()
     }
 
     // Returns the available Bootstrap connections as names.
+                                                                                            #[allow(unused)]
     fn bootstrap_names(&self) -> Vec<::NameType> {
         self.bootstrap_map.values().cloned().collect()
     }
@@ -1622,6 +1635,7 @@ impl RoutingNode {
     /// Returns true if bootstrap connections are available. If we are a connected node, then access
     /// to the bootstrap connections will be blocked, and false is returned.  We might still receive
     /// messages from our bootstrap connections, but active usage is blocked once we are a node.
+                                                                                            #[allow(unused)]
     pub fn has_bootstrap_endpoints(&self) -> bool {
         !self.bootstrap_map.is_empty()
     }
@@ -1670,6 +1684,7 @@ impl RoutingNode {
         }
     }
 
+                                                                                            #[allow(unused)]
     fn request_network_name_core(&mut self,
                                  bootstrap_name: &NameType,
                                  bootstrap_connection: &::crust::Connection) -> RoutingResult {

@@ -17,9 +17,8 @@
 
 use std::cmp;
 use std::usize;
-use std::collections::HashMap;
 
-use crust::{Endpoint, Connection};
+use crust::Connection;
 
 use common_bits::*;
 use public_id::PublicId;
@@ -182,7 +181,6 @@ impl RoutingTable {
         }
 
         if index_of_removal < self.routing_table.len() {
-            let removal_name = self.routing_table[index_of_removal].id();
             let _ = self.routing_table.remove(index_of_removal);
         }
     }
@@ -248,7 +246,7 @@ impl RoutingTable {
         result
     }
 
-    pub fn drop_connection(&self, lost_connection: &Connection) -> Option<NameType> {
+    pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
         let remove_connection = |node_info: &mut NodeInfo| {
             if let Some(index) = node_info.connections
                                           .iter()
@@ -356,6 +354,7 @@ impl RoutingTable {
         false
     }
 
+                                                                                            #[allow(unused)]
     pub fn look_up_connection(&self,
                               connection_to_find: &::crust::Connection)
                               -> Option<&::NameType> {
@@ -368,30 +367,24 @@ impl RoutingTable {
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
-        if let Some(mut entry) = self.routing_table.iter().find(|elt| elt.id() == node_info.id()) {
-            entry.connections.extend(node_info.connections);
-        } else {
-            self.routing_table.push(node_info);
-            let our_id = &self.our_id;
-            self.routing_table.sort_by(|a, b| {
-                if closer_to_target(&a.id(), &b.id(), our_id) {
-                    cmp::Ordering::Less
-                } else {
-                    cmp::Ordering::Greater
-                }
-            });
-        }
-    }
-
-    fn is_nodes_sorted(&self) -> bool {
-        for i in 1..self.routing_table.len() {
-            if closer_to_target(&self.routing_table[i].id(),
-                                &self.routing_table[i - 1].id(),
-                                &self.our_id) {
-                return false;
+        {  // Try to find and update an existing entry
+            if let Some(mut entry) = self.routing_table
+                                         .iter_mut()
+                                         .find(|element| element.id() == node_info.id()) {
+                entry.connections.extend(node_info.connections);
+                return
             }
         }
-        true
+        // We didn't find an existing entry, so insert a new one
+        self.routing_table.push(node_info);
+        let our_id = &self.our_id;
+        self.routing_table.sort_by(|a, b| {
+            if closer_to_target(&a.id(), &b.id(), our_id) {
+                cmp::Ordering::Less
+            } else {
+                cmp::Ordering::Greater
+            }
+        });
     }
 
     fn new_node_is_better_than_existing(&self,

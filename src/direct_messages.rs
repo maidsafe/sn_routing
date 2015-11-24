@@ -25,6 +25,7 @@ pub struct Churn {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[allow(variant_size_differences)]
 pub enum Content {
     Identify{ public_id: ::public_id::PublicId, },
     Churn(Churn),
@@ -75,6 +76,7 @@ impl DirectMessage {
         &self.content
     }
 
+                                                                                            #[allow(unused)]
     pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
         &self.signature
     }

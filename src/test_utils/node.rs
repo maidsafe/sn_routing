@@ -214,7 +214,7 @@ impl Node {
         }
     }
 
-    fn handle_lost_node(&mut self, node: ::NameType) {
+    fn handle_lost_node(&mut self, _node: ::NameType) {
         // FIXME (Fraser) - don't know how to handle this event yet.
         unimplemented!();
     }
