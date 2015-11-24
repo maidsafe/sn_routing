@@ -150,7 +150,7 @@ impl RoutingTable {
     /// This is used to check whether it is worth while retrieving a contact's public key from the
     /// PKI with a view to adding the contact to our routing table.  The checking procedure is the
     /// same as for 'AddNode' above, except for the lack of a public key to check in step 1.
-    pub fn check_node(&self, their_id: &NameType) -> bool {
+    pub fn want_to_add(&self, their_id: &NameType) -> bool {
         if self.our_id == *their_id {
             return false;
         }
@@ -593,7 +593,7 @@ mod test {
     }
 
     #[test]
-    fn add_check_nodes_test() {
+    fn want_to_add() {
         let num_of_tables = 50usize;
         let mut tables = create_random_routing_tables(num_of_tables);
 
@@ -602,7 +602,7 @@ mod test {
                 let mut node_info = create_random_node_info();
                 node_info.id = tables[j].our_id.clone();
 
-                if tables[i].check_node(&node_info.id()) {
+                if tables[i].want_to_add(&node_info.id()) {
                     let removed_node = tables[i].add_node(node_info);
                     assert!(removed_node.0);
                 }
@@ -620,7 +620,7 @@ mod test {
 
         for _ in 0..super::RoutingTable::get_group_size() {
             let id = rand::random();
-            assert!(table.check_node(&id));
+            assert!(table.want_to_add(&id));
         }
 
         assert_eq!(table.size(), 0);
@@ -922,17 +922,17 @@ mod test {
         let mut routing_table_utest = RoutingTableUnitTest::new();
 
         // Try with our ID
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.table.our_id),
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.table.our_id),
                    false);
 
         // Should return true for empty routing table
-        assert!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0].far_contact));
+        assert!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0].far_contact));
 
         // Add the first contact, and check it doesn't allow duplicates
         let mut new_node_0 = create_random_node_info();
         new_node_0.id = routing_table_utest.buckets[0].far_contact.clone();
         assert!(routing_table_utest.table.add_node(new_node_0).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0]
                                                              .far_contact
                                                              .clone()),
                    false);
@@ -943,45 +943,45 @@ mod test {
 
         let mut new_node_1 = create_random_node_info();
         new_node_1.id = routing_table_utest.buckets[0].mid_contact.clone();
-        assert!(routing_table_utest.table.check_node(&new_node_1.id()));
+        assert!(routing_table_utest.table.want_to_add(&new_node_1.id()));
         assert!(routing_table_utest.table.add_node(new_node_1).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0]
                                                              .mid_contact
                                                              .clone()),
                    false);
 
         let mut new_node_2 = create_random_node_info();
         new_node_2.id = routing_table_utest.buckets[0].close_contact.clone();
-        assert!(routing_table_utest.table.check_node(&new_node_2.id()));
+        assert!(routing_table_utest.table.want_to_add(&new_node_2.id()));
         assert!(routing_table_utest.table.add_node(new_node_2).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0]
                                                              .close_contact
                                                              .clone()),
                    false);
 
         let mut new_node_3 = create_random_node_info();
         new_node_3.id = routing_table_utest.buckets[1].far_contact.clone();
-        assert!(routing_table_utest.table.check_node(&new_node_3.id()));
+        assert!(routing_table_utest.table.want_to_add(&new_node_3.id()));
         assert!(routing_table_utest.table.add_node(new_node_3).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[1]
                                                              .far_contact
                                                              .clone()),
                    false);
 
         let mut new_node_4 = create_random_node_info();
         new_node_4.id = routing_table_utest.buckets[1].mid_contact.clone();
-        assert!(routing_table_utest.table.check_node(&new_node_4.id()));
+        assert!(routing_table_utest.table.want_to_add(&new_node_4.id()));
         assert!(routing_table_utest.table.add_node(new_node_4).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[1]
                                                              .mid_contact
                                                              .clone()),
                    false);
 
         let mut new_node_5 = create_random_node_info();
         new_node_5.id = routing_table_utest.buckets[1].close_contact.clone();
-        assert!(routing_table_utest.table.check_node(&new_node_5.id()));
+        assert!(routing_table_utest.table.want_to_add(&new_node_5.id()));
         assert!(routing_table_utest.table.add_node(new_node_5).0);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[1]
                                                              .close_contact
                                                              .clone()),
                    false);
@@ -989,9 +989,9 @@ mod test {
         for i in 2..(super::RoutingTable::get_optimal_size() - 4) {
             let mut new_node = create_random_node_info();
             new_node.id = routing_table_utest.buckets[i].mid_contact.clone();
-            assert!(routing_table_utest.table.check_node(&new_node.id()));
+            assert!(routing_table_utest.table.want_to_add(&new_node.id()));
             assert!(routing_table_utest.table.add_node(new_node).0);
-            assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[i]
+            assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[i]
                                                                  .mid_contact
                                                                  .clone()),
                        false);
@@ -1004,9 +1004,9 @@ mod test {
         for i in (optimal_size - 4)..optimal_size {
             let mut new_node = create_random_node_info();
             new_node.id = routing_table_utest.buckets[i].mid_contact.clone();
-            assert!(routing_table_utest.table.check_node(&new_node.id()));
+            assert!(routing_table_utest.table.want_to_add(&new_node.id()));
             assert!(routing_table_utest.table.add_node(new_node).0);
-            assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[i]
+            assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[i]
                                                                  .mid_contact
                                                                  .clone()),
                        false);
@@ -1015,25 +1015,25 @@ mod test {
         }
 
         // Check for contacts again which are now not in the table
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0]
                                                              .far_contact
                                                              .clone()),
                    false);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[0]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[0]
                                                              .mid_contact
                                                              .clone()),
                    false);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[1]
                                                              .far_contact
                                                              .clone()),
                    false);
-        assert_eq!(routing_table_utest.table.check_node(&routing_table_utest.buckets[1]
+        assert_eq!(routing_table_utest.table.want_to_add(&routing_table_utest.buckets[1]
                                                              .mid_contact
                                                              .clone()),
                    false);
 
         // Check final close contact which would push size of table_ above OptimalSize()
-        assert!(routing_table_utest.table.check_node(
+        assert!(routing_table_utest.table.want_to_add(
           &routing_table_utest.buckets[super::RoutingTable::get_optimal_size()]
                               .mid_contact.clone()));
     }
