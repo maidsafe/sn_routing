@@ -1186,8 +1186,8 @@ impl RoutingNode {
             if bootstrap_connections.is_empty() {
                 panic!("{:?} - Target connections for send is empty", self.our_address());
             }
-            for connection in bootstrap_connections.iter() {
-                self.crust_service.send(*connection.clone(), bytes.clone());
+            for connection in bootstrap_connections {
+                self.crust_service.send(connection.clone(), bytes.clone());
                 debug!("{:?} - Sent {:?} to bootstrap connection {:?}", self.our_address(),
                        signed_message, connection);
             }
@@ -1369,17 +1369,17 @@ impl RoutingNode {
     }
 
     fn look_up_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
-           if let Some(key) = self.relay_map.into_iter().filter(|&(_, v)| v == *connection).next() {
-                Some(key.0)
-           } else {
-                None    
-            }
+        if let Some(key) = self.relay_map.into_iter().filter(|&(_, v)| v == *connection).next() {
+            Some(key.0)
+        } else {
+            None
+        }
     }
 
     /// Look up a connection in the routing table and the relay map and return the ConnectionName
-    fn look_up_connection(&self, connection: &crust::Connection) -> Option<::NameType> {
-        self.routing_table.look_up_endpoint(&connection.peer_endpoint())
-                          .or(self.bootstrap_map.get(&connection))
+    fn look_up_connection(&self, connection: &crust::Connection) -> Option<&::NameType> {
+        self.routing_table.look_up_connection(connection)
+                          .or(self.bootstrap_map.get(connection))
     }
 
     /// check relay_map for a client and remove from map
@@ -1392,11 +1392,11 @@ impl RoutingNode {
     }
 
     fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) {
-        let _ = self.bootstrap_map.remove(connection.clone());
+        let _ = self.bootstrap_map.remove(connection);
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
-        if let Some(node_name) = self.routing_table.drop_connection(connection.clone()) {
+        if let Some(node_name) = self.routing_table.drop_connection(connection) {
             for node in self.routing_table.our_close_group().iter() { // trigger churn
                                                                       // if close node
                                                                     };
@@ -1546,7 +1546,7 @@ impl RoutingNode {
         let routing_table_count_prior = self.routing_table.size();
         let node_info = NodeInfo::new(public_id,
                                       vec![connection]);
-        let trigger_churn = self.name_in_range(&node_info.id());
+        let should_trigger_churn = self.name_in_range(&node_info.id());
         let add_node_result = self.routing_table.add_node(node_info);
 
         match add_node_result.1 {
@@ -1572,63 +1572,51 @@ impl RoutingNode {
                     error!("{:?} - Error sending {:?} to event_sender", self.our_address(), err.0);
                 }
                 // Drop the bootstrap connections
-                for connection in self.bootstrap_map.values() {
+                for connection in self.bootstrap_map.keys() {
                     info!("{:?} - Dropping bootstrap connection {:?}", self.our_address(),
                           connection);
-                    self.crust_service.drop_node(connection);
+                    self.crust_service.drop_node(connection.clone());
                 }
                 self.bootstrap_map = ::std::collections::HashMap::new();
             }
 
-            if trigger_churn {
-                trigger_churn();
+            if should_trigger_churn {
+                self.trigger_churn();
             }
         } else {
             debug!("{:?} - Failed to add {:?} to the routing table - dropping {:?}",
-                   self.our_address(),peer_name, connection_clone);
+                   self.our_address(), peer_name, connection_clone);
             self.crust_service.drop_node(connection_clone);
         }
     }
-   
+
     fn trigger_churn(&self) {
         let our_close_group = self.routing_table.our_close_group();
         let mut close_group: Vec<::NameType> =
-            our_close_group.into_iter()
-            .map(|node_info| node_info.id())
+            our_close_group.iter()
+            .map(|node_info| node_info.id().clone())
             .collect();
 
         close_group.insert(0, self.id.name());
-        let targets =
-            our_close_group.iter()
-            .filter_map(|node_info| node_info.connection)
-            .collect::<Vec<::crust::Connection>>();
+        let close_group_connections =
+            our_close_group.iter().flat_map(
+                |node_info| node_info.connections.iter().cloned()).collect::<Vec<_>>();
 
-        let churn_msg = ::direct_messages::Churn { close_group: close_group };
+        let churn_message = ::direct_messages::Churn { close_group: close_group };
 
-        if let Err(err) = self.generate_churn(churn_msg, targets) {
+        if let Err(err) = self.generate_churn(churn_message, close_group_connections) {
             error!("{:?} - Unsuccessful Churn {:?}", self.our_address(), err);
         }
-
     }
 
-    /// Returns the available Bootstrap connections as connections. If we are a connected node,
-    /// then access to the bootstrap connections will be blocked, and None is returned.
-    pub fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
-        let vec = Vec::new();
-        for i in self.bootstrap_map.keys() {
-            vec.push(i.clone());     
-        }
-        vec
+    // Returns the available Bootstrap connections as connections.
+    fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
+        self.bootstrap_map.keys().cloned().collect()
     }
 
-    /// Returns the available Bootstrap connections as names. If we are a connected node,
-    /// then access to the bootstrap names will be blocked, and None is returned.
-    pub fn bootstrap_names(&self) -> Vec<::NameType> {
-       let vec = Vec::new();
-        for i in self.bootstrap_map.values() {
-            vec.push(i.clone());     
-        }
-        vec  // block explicitly if we are a connected node
+    // Returns the available Bootstrap connections as names.
+    fn bootstrap_names(&self) -> Vec<::NameType> {
+        self.bootstrap_map.values().cloned().collect()
     }
 
     /// Returns true if bootstrap connections are available. If we are a connected node, then access
@@ -1673,7 +1661,7 @@ impl RoutingNode {
                 let mut close_group = self.routing_table
                                           .our_close_group()
                                           .iter()
-                                          .map(|node_info| node_info.public_id.name())
+                                          .map(|node_info| node_info.public_id.name().clone())
                                           .collect::<Vec<NameType>>();
                 close_group.insert(0, self.id.name());
                 Some(close_group)
@@ -1748,12 +1736,12 @@ mod test {
         thread_rng().fill_bytes(&mut data);
 
         let immutable = ImmutableData::new(ImmutableDataType::Normal,
-                                           data.iter().map(|&x| x).collect::<Vec<_>>());
+                                           data.iter().cloned().collect());
         let immutable_data = Data::ImmutableData(immutable.clone());
         let key_pair = crypto::sign::gen_keypair();
         let signature = crypto::sign::sign_detached(&data, &key_pair.1);
         let sign_token = SignedToken {
-            serialised_request: data.iter().map(|&x| x).collect::<Vec<_>>(),
+            serialised_request: data.iter().cloned().collect(),
             signature: signature,
         };
 

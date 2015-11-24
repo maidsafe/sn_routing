@@ -73,9 +73,13 @@ impl Node {
                     };
                     self.handle_do_refresh(our_authority, cause);
                 }
-                ::event::Event::Churn(close_group, cause) => {
+                ::event::Event::Churn(close_group) => {
                     debug!("Received churn event");
-                    self.handle_churn(close_group, cause)
+                    self.handle_churn(close_group)
+                }
+                ::event::Event::LostNode(node) => {
+                    debug!("Received LostNode event");
+                    self.handle_lost_node(node)
                 }
                 ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
@@ -178,7 +182,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::NameType>, cause: ::NameType) {
+    fn handle_churn(&mut self, our_close_group: Vec<::NameType>) {
         let mut exit = false;
         if our_close_group.len() < ::types::GROUP_SIZE {
             if self.connected {
@@ -192,8 +196,10 @@ impl Node {
             }
         }
 
-        debug!("Handle churn for close group size {:?}",
-               our_close_group.len());
+        debug!("Handle churn for close group size {:?}", our_close_group.len());
+
+        // FIXME (Fraser) - don't know how to handle the removal of `cause` from churn event yet.
+        let cause: ::NameType = ::rand::random();
 
         for (client_name, stored) in self.client_accounts.iter() {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
@@ -201,11 +207,16 @@ impl Node {
                 .refresh_request(1u64,
                                  ::authority::Authority::ClientManager(client_name.clone()),
                                  ::utils::encode(&stored).unwrap(),
-                                 cause.clone());
+                                 cause);
         }
         if exit {
             self.routing.stop();
-        };
+        }
+    }
+
+    fn handle_lost_node(&mut self, node: ::NameType) {
+        // FIXME (Fraser) - don't know how to handle this event yet.
+        unimplemented!();
     }
 
     fn handle_refresh(&mut self,

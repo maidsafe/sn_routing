@@ -121,32 +121,33 @@ impl Debug for Authority {
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
 pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> Option<Authority> {
-
     // Purposely listing all the cases and not using wild cards so
     // that if a new message is added to the MessageType enum, compiler
     // will warn us that we need to add it here.
     let element = match message.content {
-        Content::ExternalRequest(request) => {
-            match request {
-                ExternalRequest::Get(data_request, _) => Some(data_request.name().clone()),
-                ExternalRequest::Put(data) => Some(data.name().clone()),
-                ExternalRequest::Post(data) => Some(data.name().clone()),
-                ExternalRequest::Delete(data) => Some(data.name().clone()),
+        Content::ExternalRequest(ref request) => {
+            match *request {
+                ExternalRequest::Get(ref data_request, _) => Some(data_request.name()),
+                ExternalRequest::Put(ref data) => Some(data.name()),
+                ExternalRequest::Post(ref data) => Some(data.name()),
+                ExternalRequest::Delete(ref data) => Some(data.name()),
             }
         }
-        Content::InternalRequest(request) => {
-            match request {
+        Content::InternalRequest(ref request) => {
+            match *request {
                 InternalRequest::Connect(_) => None,
-                InternalRequest::RequestNetworkName(public_id) => Some(public_id.name().clone()),
-                InternalRequest::RelocatedNetworkName(public_id, _) => Some(public_id.name().clone()),
+                InternalRequest::RequestNetworkName(ref public_id) =>
+                    Some(public_id.name().clone()),
+                InternalRequest::RelocatedNetworkName(ref public_id, _) =>
+                    Some(public_id.name().clone()),
                 InternalRequest::Refresh(_, _, _) => {
                     let destination = message.destination();
                     if destination != message.source() {
                         return None;
                     };
                     if destination.is_group() &&
-                       routing_table.address_in_our_close_group_range(destination.get_location()) {
-                        return Some(destination);
+                        routing_table.address_in_our_close_group_range(destination.get_location()) {
+                            return Some(destination);
                     };
                     None
                 }

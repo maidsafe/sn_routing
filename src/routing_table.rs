@@ -248,26 +248,18 @@ impl RoutingTable {
         result
     }
 
-    // /// This returns the public key for the given node if the node is in our table.
-    // pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
-    //     debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
-    //     match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
-    //         Some(node) => Some(node.public_id.clone()),
-    //         None => None,
-    //     }
-    // }
-
-    pub fn drop_connection(&self, lost_connection: Connection) -> Option<NameType> {
-        if let Some(node_index) = self.routing_table.iter_mut().position(|mut node_info| {
+    pub fn drop_connection(&self, lost_connection: &Connection) -> Option<NameType> {
+        let remove_connection = |node_info: &mut NodeInfo| {
             if let Some(index) = node_info.connections
                                           .iter()
-                                          .position(|connection| *connection == lost_connection) {
+                                          .position(|connection| connection == lost_connection) {
                 let _ = node_info.connections.remove(index);
                 true
             } else {
                 false
             }
-        }) {
+        };
+        if let Some(node_index) = self.routing_table.iter_mut().position(remove_connection) {
             if self.routing_table[node_index].connections.is_empty() {
                return Some(self.routing_table.remove(node_index).id().clone())
             }
@@ -362,6 +354,17 @@ impl RoutingTable {
             }
         }
         false
+    }
+
+    pub fn look_up_connection(&self,
+                              connection_to_find: &::crust::Connection)
+                              -> Option<&::NameType> {
+        self.routing_table.iter()
+                          .find(|node_info|
+                              node_info.connections
+                                       .iter()
+                                       .any(|connection| connection == connection_to_find))
+                          .map(|node_info| node_info.id())
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {

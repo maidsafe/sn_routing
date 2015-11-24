@@ -33,7 +33,6 @@ pub enum Data {
 }
 
 impl Data {
-
     /// Return data name.
     pub fn name(&self) -> NameType {
         match *self {
@@ -65,7 +64,6 @@ pub enum DataRequest {
 }
 
 impl DataRequest {
-
     /// DataRequest name.
     pub fn name(&self) -> NameType {
         match *self {
