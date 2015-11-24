@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 /// Convert u8 vector to a fixed 64 byte size array.
-/// 
+///
 /// # Panics
 ///
 /// Panics if the slice is not 64 bytes in length.
@@ -31,7 +31,7 @@ pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
 }
 
 /// Convert u8 slice to a fixed 32 byte size array.
-/// 
+///
 /// # Panics
 ///
 /// Panics if the slice is not 32 bytes in length
@@ -68,7 +68,6 @@ pub enum Address {
     Node(::NameType),
 }
 
-
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match self {
@@ -85,7 +84,6 @@ impl ::std::fmt::Debug for Address {
 
 #[cfg(test)]
 mod test {
-
     #[test]
     fn check_conversions() {
         let bytes = super::generate_random_vec_u8(64);
