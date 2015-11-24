@@ -169,7 +169,7 @@ impl MockRoutingImpl {
         let cloned_sender = self.sender.clone();
         let cloned_client_sender = self.client_sender.clone();
         let _ = ::std::thread::spawn(move || {
-            l::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
+            ::std::thread::sleep(::std::time::Duration::from_millis(delay_ms as u64));
             match location.clone() {
                 ::routing::Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(::routing::event::Event::Response {
