@@ -102,7 +102,6 @@ pub struct RoutingNode {
     handled_messages: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
     data_cache: ::data_cache::DataCache,
-    proposed_relocated_name: Option<NameType>,
 
     // START
     id: Id,
@@ -183,7 +182,6 @@ impl RoutingNode {
                 ::time::Duration::minutes(20)),
 //            cache_options: ::data_cache_options::DataCacheOptions::new(),
             data_cache: ::data_cache::DataCache::new(),
-            proposed_relocated_name: None,
 //START
             id: id,
             state: State::Disconnected,
@@ -309,8 +307,8 @@ impl RoutingNode {
                 // I am the first node in the network, and I got an incoming connection so I'll
                 // promote myself as a node.
                 let new_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0).0);
-                // This will give me a new RT and change my state to Relocated
-                self.assign_name(&new_name);
+                // This will give me a new RT and set state to Relocated
+                self.assign_network_name(new_name);
             },
             _ => ()
         };
@@ -420,7 +418,7 @@ impl RoutingNode {
         }
 
         // Scan for remote names.
-        if self.network_name.is_some() {
+        if self.is_node() {
             match claimant {
                 ::types::Address::Node(ref name) => {
                     debug!("{:?} - We're connected and got message from {:?}",
@@ -870,8 +868,7 @@ impl RoutingNode {
                 debug!("{:?} - Assigned network name {:?} and our address now is {:?}",
                        self.our_address(), relocated_id.name(), self.our_address());
 
-                self.proposed_relocated_name = Some(relocated_id.name().clone());
-                self.state = State::Relocated;
+                self.assign_network_name(relocated_id.name().clone());
 
                 // Send connect request as a client
                 for peer in close_group_ids {
@@ -1324,9 +1321,10 @@ impl RoutingNode {
     /// Returns Address::Node(network_given_name) or Address::Client(PublicKey) when no network name
     /// is given.
     pub fn our_address(&self) -> Address {
-        match self.network_name {
-            Some(name) => Address::Node(name.clone()),
-            None => Address::Client(self.id.signing_public_key()),
+        if self.is_node() {
+            Address::Node(self.id.name().clone())
+        } else {
+            Address::Client(self.id.signing_public_key())
         }
     }
 
@@ -1349,42 +1347,31 @@ impl RoutingNode {
     /// Assigning a network received name to the core.  If a name is already assigned, the function
     /// returns false and no action is taken.  After a name is assigned, Routing connections can be
     /// accepted.
-    pub fn assign_network_name(&mut self, network_name: &NameType) -> bool {
+    fn assign_network_name(&mut self, new_name: ::NameType) {
         match self.state {
             State::Disconnected => {
                 debug!("{:?} - Assigning name {:?} while disconnected", self.our_address(),
-                       network_name);
+                       new_name);
             }
             State::Bootstrapped => {}
-            State::Relocated => return false,
-            State::Connected => return false,
-            State::GroupConnected => return false,
-            State::Terminated => return false,
-        };
-        // if network_name is constructed, reject name assignment
-        match self.network_name {
-            Some(_) => {
-                error!("{:?} - Attempt to assign name {:?} while status is {:?}",
-                       self.our_address(), network_name, self.state);
-                return false;
+            _ => {
+                debug!("{:?} - We have already assigned a network name (current state: {:?})",
+                       self.our_address(), self.state);
+                return
             }
-            None => {}
         };
-        if !self.id.assign_relocated_name(network_name.clone()) {
-            return false;
-        };
-        debug!("{:?} - Re-creating routing table after relocation", self.our_address());
-        self.routing_table = RoutingTable::new(&network_name);
-        self.network_name = Some(network_name.clone());
-        self.state = State::Relocated;
-        debug!("{:?} - Our state {:?}", self.our_address(), self.state);
-        true
-    }
 
-    /// Currently wraps around RoutingCore::assign_network_name
-    pub fn assign_name(&mut self, name: &NameType) -> bool {
-        // wrap to assign_network_name
-        self.assign_network_name(name)
+        debug_assert!(self.network_name.is_none());
+
+        if !self.id.assign_relocated_name(new_name.clone()) {
+            warn!("{:?} - Failed to assign a new name to our ID", self.our_address());
+            return
+        }
+
+        debug!("{:?} - Re-creating routing table after relocation", self.our_address());
+        self.routing_table = RoutingTable::new(&new_name);
+        self.network_name = Some(new_name);
+        self.state = State::Relocated;
     }
 
                                                                                             #[allow(unused)]
@@ -1564,8 +1551,6 @@ impl RoutingNode {
 
     // Add a node to our routing table.
     fn add_node(&mut self, connection: crust::Connection, public_id: PublicId) {
-        assert!(self.network_name.is_some());
-
         let peer_name = public_id.name().clone();
         let connection_clone = connection.clone();
         let routing_table_count_prior = self.routing_table.size();
@@ -1669,14 +1654,13 @@ impl RoutingNode {
     /// this always returns Client authority (where the relay name is taken from the routing message
     /// destination)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
-        match self.network_name {
-            Some(_) => {
-                our_authority(message, &self.routing_table)
-            }
+        if self.is_node() {
+            our_authority(message, &self.routing_table)
+        } else {
             // if the message reached us as a client, then destination.get_location()
             // was our relay name
-            None => Some(Authority::Client(message.destination().get_location().clone(),
-                                           self.id.signing_public_key())),
+            Some(Authority::Client(message.destination().get_location().clone(),
+                                   self.id.signing_public_key()))
         }
     }
 
@@ -1684,17 +1668,16 @@ impl RoutingNode {
     /// always included, and the first member of the result.  If we are not a full node None is
     /// returned.
     pub fn our_close_group(&self) -> Option<Vec<NameType>> {
-        match self.network_name {
-            Some(_) => {
-                let mut close_group = self.routing_table
-                                          .our_close_group()
-                                          .iter()
-                                          .map(|node_info| node_info.public_id.name().clone())
-                                          .collect::<Vec<NameType>>();
-                close_group.insert(0, self.id.name());
-                Some(close_group)
-            }
-            None => None,
+        if self.is_node() {
+            let mut close_group = self.routing_table
+                                      .our_close_group()
+                                      .iter()
+                                      .map(|node_info| node_info.public_id.name().clone())
+                                      .collect::<Vec<NameType>>();
+            close_group.insert(0, self.id.name());
+            Some(close_group)
+        } else {
+            None
         }
     }
 
