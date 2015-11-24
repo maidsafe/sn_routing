@@ -507,12 +507,12 @@ impl RoutingNode {
                         }
 
                     },
-                    InternalRequest::Connect(_) => {
+                    InternalRequest::Connect(ConnectRequest { endpoints, public_id }) => {
                         match opt_token {
                             Some(response_token) =>
-                                self.handle_connect_request(request,
+                                self.handle_connect_request(endpoints,
+                                                            public_id,
                                                             accumulated_message.from_authority,
-                                                            accumulated_message.to_authority,
                                                             response_token),
                             None => return Err(RoutingError::UnknownMessageType),
                         }
@@ -893,7 +893,7 @@ impl RoutingNode {
     /// all re-occurrences of this name for one second if we make the attempt to connect.
     fn refresh_routing_table(&mut self, from_node: &NameType) {
         if !self.connection_filter.check(from_node) {
-            if self.routing_table.check_node(from_node) {
+            if self.routing_table.want_to_add(from_node) {
                 debug!("{:?} - Refresh routing table for peer {:?}", self.our_address(), from_node);
                 match self.send_connect_request(from_node) {
                     Ok(()) => debug!("{:?} - Sent connect request to {:?}", self.our_address(),
@@ -951,61 +951,64 @@ impl RoutingNode {
     /// 2. ManagedNode(them) -> ManagedNode(us) direct message to us
     ///    we must ask their NodeManagers for their id
     fn handle_connect_request(&mut self,
-                              request: InternalRequest,
+                              endpoints: Vec<::crust::Endpoint>,
+                              public_id: PublicId,
                               from_authority: Authority,
-                              _to_authority: Authority,
-                              response_token: SignedToken)
-                              -> RoutingResult {
+                              response_token: SignedToken) -> RoutingResult {
         debug!("{:?} - Handle ConnectRequest", self.our_address());
-        match request {
-            InternalRequest::Connect(connect_request) => {
-                if !connect_request.public_id.is_node() {
-                    warn!("{:?} - Connect request {:?} requester is not relocated",
-                          self.our_address(), connect_request);
-                    return Err(RoutingError::RejectedPublicId);
-                };
-                // First verify that the message is correctly self-signed.
-                if !response_token.verify_signature(&connect_request.public_id
-                                                                    .signing_public_key()) {
-                    warn!("{:?} - Connect request {:?} response token invalid",
-                          self.our_address(), connect_request);
-                    return Err(RoutingError::FailedSignature);
-                };
-                if !self.routing_table.check_node(connect_request.public_id.name()) {
-                    debug!("{:?} - Connect request {:?} check node failed", self.our_address(),
-                           connect_request);
-                    return Err(RoutingError::RefusedFromRoutingTable);
-                };
 
-                // TODO (ben 13/08/2015) use public_id_cache or result of future RFC
-                // to validate the public_id from the network
+        // TODO(Fraser:David) How do you validate/fetch/get public key for a node ?
 
-                let routing_message = RoutingMessage {
-                    from_authority: Authority::ManagedNode(self.id().name()),
-                    to_authority: from_authority,
-                    content: Content::InternalResponse(InternalResponse::Connect(ConnectResponse {
-                            endpoints: self.accepting_on.clone(),
-                            public_id: PublicId::new(self.id()),
-                        }, response_token)),
-                };
-                match SignedMessage::new(Address::Node(self.id().name()),
-                                         routing_message,
-                                         self.id().signing_private_key()) {
-                    Ok(signed_message) => {
-                        self.send(signed_message);
-                        let connection_token = self.get_connection_token();
-                        debug!("{:?} - Connecting on validated ConnectRequest with connection \
-                               token {:?}", self.our_address(), connection_token);
-                        self.connect(connection_token, &connect_request.endpoints);
-                        self.connection_filter.add(connect_request.public_id.name().clone());
-                    }
-                    Err(error) => return Err(RoutingError::Cbor(error)),
-                };
-
-                Ok(())
+        if let Authority::Client(_, ref public_key) = from_authority {
+            let our_address = self.our_address();
+            match self.public_id_cache.get(public_id.name()) {
+                Some(cached_public_id) => if cached_public_id.signing_public_key() != public_key {
+                    warn!("{:?} - Cached Public key does not match in ConnectRequest", our_address);
+                    return Err(RoutingError::BadAuthority)
+                },
+                None => {
+                    debug!("{:?} - Public Id not cached", our_address);
+                    return Err(RoutingError::BadAuthority)
+                },
             }
-            _ => return Err(RoutingError::BadAuthority),
         }
+
+        // First verify that the message is correctly self-signed.
+        if !response_token.verify_signature(&public_id.signing_public_key()) {
+            warn!("{:?} - ConnectRequest response token invalid", self.our_address());
+            return Err(RoutingError::FailedSignature)
+        }
+
+        if !self.routing_table.want_to_add(public_id.name()) {
+            debug!("{:?} - Connect request {:?} failed - Dont want to add",
+                   self.our_address(), public_id);
+            return Err(RoutingError::RefusedFromRoutingTable)
+        }
+
+        let routing_message = RoutingMessage {
+            from_authority: Authority::ManagedNode(self.id().name()),
+            to_authority: from_authority,
+            content: Content::InternalResponse(InternalResponse::Connect(ConnectResponse {
+                    endpoints: self.accepting_on.clone(),
+                    public_id: PublicId::new(self.id()),
+                }, response_token)),
+        };
+
+        match SignedMessage::new(Address::Node(self.id().name()),
+                                 routing_message,
+                                 self.id().signing_private_key()) {
+            Ok(signed_message) => {
+                self.send(signed_message);
+                let connection_token = self.get_connection_token();
+                debug!("{:?} - Connecting on validated ConnectRequest with connection \
+                       token {:?}", self.our_address(), connection_token);
+                self.connect(connection_token, &endpoints);
+                self.connection_filter.add(public_id.name().clone());
+            },
+            Err(error) => return Err(RoutingError::Cbor(error)),
+        }
+
+        Ok(())
     }
 
     /// 1. NodeManager(us) -> ManagedNode(us), this is a close group connect, goes in routing_table
@@ -1016,9 +1019,7 @@ impl RoutingNode {
     fn handle_connect_response(&mut self,
                                response: InternalResponse,
                                from_authority: Authority,
-                               _to_authority: Authority)
-                               -> RoutingResult {
-
+                               _to_authority: Authority) -> RoutingResult {
         debug!("{:?} - Handle ConnectResponse", self.our_address());
         match response {
             InternalResponse::Connect(connect_response, signed_token) => {
@@ -1026,7 +1027,8 @@ impl RoutingNode {
                     error!("{:?} - ConnectResponse from {:?} failed our signature for the signed \
                            token", self.our_address(), from_authority);
                     return Err(RoutingError::FailedSignature);
-                };
+                }
+
                 let connect_request = try!(SignedMessage::new_from_token(signed_token.clone()));
                 match connect_request.get_routing_message().from_authority.get_address() {
                     Some(address) => if !self.is_us(&address) {
@@ -1036,12 +1038,13 @@ impl RoutingNode {
                     },
                     None => return Err(RoutingError::BadAuthority),
                 }
+
                 // Are we already connected, or still interested?
-                if !self.routing_table.check_node(connect_response.public_id.name()) {
+                if !self.routing_table.want_to_add(connect_response.public_id.name()) {
                     error!("{:?} - ConnectResponse already connected to {:?}", self.our_address(),
                            from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
-                };
+                }
 
                 let connection_token = self.get_connection_token();
                 debug!("{:?} - Connecting on validated ConnectResponse from {:?} with connection \
