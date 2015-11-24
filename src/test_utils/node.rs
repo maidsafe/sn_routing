@@ -77,10 +77,6 @@ impl Node {
                     debug!("Received churn event");
                     self.handle_churn(close_group)
                 }
-                ::event::Event::LostNode(node) => {
-                    debug!("Received LostNode event");
-                    self.handle_lost_node(node)
-                }
                 ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
                     debug!("Received connected event");
@@ -100,7 +96,7 @@ impl Node {
                     self.stop();
                     break;
                 }
-            };
+            }
         }
     }
 
@@ -196,10 +192,12 @@ impl Node {
             }
         }
 
-        debug!("Handle churn for close group size {:?}", our_close_group.len());
+        // FIXME Cause needs to get removed from refresh as well
+        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // just so that interface requirements are met
+        let cause = ::rand::random::<::NameType>();
 
-        // FIXME (Fraser) - don't know how to handle the removal of `cause` from churn event yet.
-        let cause: ::NameType = ::rand::random();
+        debug!("Handle churn for close group size {:?}", our_close_group.len());
 
         for (client_name, stored) in self.client_accounts.iter() {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
@@ -214,11 +212,6 @@ impl Node {
         }
     }
 
-    fn handle_lost_node(&mut self, _node: ::NameType) {
-        // FIXME (Fraser) - don't know how to handle this event yet.
-        unimplemented!();
-    }
-
     fn handle_refresh(&mut self,
                       our_authority: ::authority::Authority,
                       vec_of_bytes: Vec<Vec<u8>>) {
@@ -228,7 +221,7 @@ impl Node {
             match ::utils::decode(&bytes) {
                 Ok(record) => records.push(record),
                 Err(_) => fail_parsing_count += 1usize,
-            };
+            }
         }
         let median = median(records.clone());
         debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
@@ -241,7 +234,7 @@ impl Node {
                 let _ = self.client_accounts.insert(client_name, median);
             }
             _ => {}
-        };
+        }
     }
 
     fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::NameType) {
@@ -261,7 +254,7 @@ impl Node {
                 };
             }
             _ => {}
-        };
+        }
     }
 
     fn handle_response(&mut self,

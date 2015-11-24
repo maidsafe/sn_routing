@@ -123,7 +123,7 @@ mod test {
         public_id.set_name(relocated_name);
 
         // set_name sets name properly
-        assert_eq!(relocated_name, public_id.name());
+        assert_eq!(&relocated_name, public_id.name());
 
         // id name is not changed
         assert_eq!(id_name, id.name());
@@ -138,7 +138,7 @@ mod test {
         let before = ::public_id::PublicId::new(&::id::Id::new());
         let original_name = before.name();
         assert_eq!(original_name,
-            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+            &::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
                 &before.signing_public_key()[..]).0));
         assert!(!before.is_node());
         let relocated_name: ::NameType = rand::random();
@@ -146,14 +146,14 @@ mod test {
         relocated.assign_relocated_name(relocated_name.clone());
         assert!(relocated.is_node());
         assert_eq!(before.signing_public_key(), relocated.signing_public_key());
-        assert_eq!(relocated.client_name(), original_name);
-        assert_eq!(relocated.name(), relocated_name);
+        assert_eq!(&relocated.client_name(), original_name);
+        assert_eq!(relocated.name(), &relocated_name);
     }
 
     #[test]
     fn is_node() {
         let mut public_id: ::public_id::PublicId = rand::random();
-        let name_before = public_id.name();
+        let name_before = public_id.name().clone();
         let relocated_name: ::NameType = rand::random();
         let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
 

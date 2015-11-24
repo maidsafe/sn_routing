@@ -72,9 +72,6 @@ pub enum Event {
     /// as NameType.  Our close group is sorted from our name and always includes our own name
     /// as the first element.
     Churn(Vec<::NameType>),
-    /// When we lose a close group node we must let the upper layers know, they have no
-    /// need to know anything other than current close group and any lost nodes.
-    LostNode(::NameType),
     /// DoRefresh reports that a Refresh message is circulating the effective close group
     /// of the given Authority, but that the user is outside of the close group of the churn
     /// that initiated the call for refresh.  To ensure that the account of the current user is
@@ -125,9 +122,6 @@ impl ::std::fmt::Debug for Event {
             }
             &Event::Churn(ref close_group) => {
                 write!(formatter, "Churn(close_group: {:?})", close_group)
-            }
-            &Event::LostNode(ref node) => {
-                write!(formatter, "LostNode(node: {:?})", node)
             }
             &Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
                 write!(formatter, "DoRefresh(type_tag: {:?}, target: {:?}, churn_node: {:?})",

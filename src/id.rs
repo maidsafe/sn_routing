@@ -116,11 +116,11 @@ mod test{
         let mut id = ::id::Id::new();
 
         // is not relocated
-        assert!(!id.is_relocated());
+        assert!(!id.is_node());
 
         // is relocated after changing the name
         id.assign_relocated_name(rand::random());
-        assert!(id.is_relocated());
+        assert!(id.is_node());
     }
 
     #[test]

@@ -36,6 +36,7 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
+extern crate rand;
 
 extern crate routing;
 
@@ -138,8 +139,8 @@ impl Node {
                     self.connected = true;
                     println!("Node is connected.")
                 },
-                Event::Churn(our_close_group, cause) => {
-                    self.handle_churn(our_close_group, cause);
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
                 },
                 Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
                     if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
@@ -248,8 +249,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>,
-        cause: ::routing::NameType) {
+    fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>) {
         // let mut exit = false;
         let exit = false;
         if our_close_group.len() < ::routing::types::GROUP_SIZE {
@@ -269,6 +269,11 @@ impl Node {
         //         ::routing::authority::Authority::NaeManager(value.name()),
         //         ::routing::data::Data::PlainData(value.clone()));
         // }
+
+        // FIXME Cause needs to get removed from refresh as well
+        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // just so that interface requirements are met
+        let cause = rand::random::<NameType>();
 
         for (client_name, stored) in self.client_accounts.iter() {
             println!("REFRESH {:?} - {:?}", client_name, stored);
@@ -505,7 +510,7 @@ impl Client {
         let name = Client::calculate_key_name(&put_where);
         let data = encode(&(put_where, put_what)).unwrap();
 
-        self.routing_client.put_request(Authority::ClientManager(self.public_id.name()),
+        self.routing_client.put_request(Authority::ClientManager(self.public_id.name().clone()),
             Data::PlainData(PlainData::new(name, data)));
     }
 

@@ -27,7 +27,7 @@ pub struct Churn {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 #[allow(variant_size_differences)]
 pub enum Content {
-    Identify{ public_id: ::public_id::PublicId, },
+    Identify { public_id: ::public_id::PublicId, },
     Churn(Churn),
 }
 
@@ -76,7 +76,7 @@ impl DirectMessage {
         &self.content
     }
 
-                                                                                            #[allow(unused)]
+    #[allow(unused)]
     pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
         &self.signature
     }
@@ -92,17 +92,10 @@ mod test {
 
     #[test]
     fn verify_signature() {
-        let address =
-            ::types::Address::Node(::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![])
-                                                  .0));
         let public_id: ::public_id::PublicId = rand::random();
-        let none_address: Option<::types::Address> = None;
-        let hello = ::direct_messages::Hello {
-            address: address,
+        let content = ::direct_messages::Content::Identify {
             public_id: public_id,
-            confirmed_you: none_address,
         };
-        let content = ::direct_messages::Content::Hello(hello);
         let key = ::sodiumoxide::crypto::sign::gen_keypair();
         let other_key = ::sodiumoxide::crypto::sign::gen_keypair();
 
@@ -117,5 +110,4 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
     }
-
 }

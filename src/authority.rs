@@ -227,10 +227,9 @@ mod test {
         let mut routing_table = RoutingTable::new(&id.name());
         let mut count: usize = 0;
         loop {
-            let _ = routing_table.add_node(NodeInfo::new(
-                PublicId::new(&Id::new()),
-                test::random_endpoints(&mut rand::thread_rng()),
-                Some(test::random_connection())));
+            let node_info = NodeInfo::new(PublicId::new(&Id::new()),
+                                          vec![test::random_connection()]);
+            let _ = routing_table.add_node(node_info);
             count += 1;
             if count > 100 {
                 break;
