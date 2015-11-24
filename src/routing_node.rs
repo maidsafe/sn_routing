@@ -76,7 +76,7 @@ pub enum State {
     /// There are n >= GROUP_SIZE routing connections, and we have a name.
     GroupConnected,
     /// ::stop() has been called.
-                                                                                            #[allow(dead_code)]
+    #[allow(dead_code)]
     Terminated,
 }
 
@@ -102,6 +102,7 @@ pub struct RoutingNode {
     handled_messages: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
     data_cache: ::data_cache::DataCache,
+    proposed_relocated_name: Option<NameType>,
 
     // START
     id: Id,
@@ -182,6 +183,7 @@ impl RoutingNode {
                 ::time::Duration::minutes(20)),
 //            cache_options: ::data_cache_options::DataCacheOptions::new(),
             data_cache: ::data_cache::DataCache::new(),
+            proposed_relocated_name: None,
 //START
             id: id,
             state: State::Disconnected,
@@ -537,12 +539,17 @@ impl RoutingNode {
             }
             Content::InternalResponse(response) => {
                 match response {
-                    InternalResponse::RelocatedNetworkName(_, _, _) => {
-                        debug!("{:?} - Handling cache network name response {:?} ourselves",
-                               self.our_address(), response);
-                        self.handle_cache_network_name_response(response,
-                                                                accumulated_message.from_authority,
-                                                                accumulated_message.to_authority)
+                    InternalResponse::RelocatedNetworkName(relocated_id,
+                                                           close_group_ids,
+                                                           original_signed_token) => {
+                        debug!("{:?} - Handling relocation response Relocated Name: {:?}, \
+                               Close Group: {:?}",
+                               self.our_address(), relocated_id, close_group_ids);
+                        self.handle_relocation_response(relocated_id,
+                                                        close_group_ids,
+                                                        original_signed_token,
+                                                        accumulated_message.from_authority,
+                                                        accumulated_message.to_authority)
                     }
                     InternalResponse::Connect(_, _) => {
                         debug!("{:?} - Handling connect response {:?} ourselves",
@@ -587,8 +594,14 @@ impl RoutingNode {
                   -> Option<(RoutingMessage, Option<SignedToken>)> {
         let message = signed_message.get_routing_message().clone();
 
+        let mut is_relocation_response_msg = false;
+        if let Content::InternalResponse(InternalResponse::RelocatedNetworkName(..)) =
+                                         message.content {
+            is_relocation_response_msg = true;
+        }
+
         // If the message is not from a group then don't accumulate
-        if !message.from_authority.is_group() {
+        if !message.from_authority.is_group() || is_relocation_response_msg {
             debug!("{:?} - Message from {:?}, returning with SignedToken", self.our_address(),
                    message.from_authority);
             // TODO: If not from a group, then use client's public key to check
@@ -829,46 +842,47 @@ impl RoutingNode {
         }
     }
 
-    fn handle_cache_network_name_response(&mut self,
-                                          response: InternalResponse,
-                                          _from_authority: Authority,
-                                          _to_authority: Authority)
-                                          -> RoutingResult {
-        // An additional blockage on acting to restrict RoutingNode from becoming a full node
-        if self.client_restriction {
-            return Ok(());
-        };
-        match response {
-            InternalResponse::RelocatedNetworkName(network_public_id, group, signed_token) => {
-                if !signed_token.verify_signature(&self.id().signing_public_key()) {
-                    return Err(RoutingError::FailedSignature);
-                };
-                let request = try!(SignedMessage::new_from_token(signed_token));
-                match request.get_routing_message().content {
-                    Content::InternalRequest(InternalRequest::RequestNetworkName(
-                            ref original_public_id)) => {
-                        let mut our_public_id = PublicId::new(self.id());
-                        if &our_public_id != original_public_id {
-                            return Err(RoutingError::BadAuthority);
-                        };
-                        our_public_id.set_name(network_public_id.name().clone());
-                        if our_public_id != network_public_id {
-                            return Err(RoutingError::BadAuthority);
-                        };
-                        let _ = self.assign_network_name(&network_public_id.name());
-                        debug!("{:?} - Assigned network name {:?} and our address now is {:?}",
-                               self.our_address(), network_public_id.name(), self.our_address());
-                        for peer in group {
-                            // TODO (ben 12/08/2015) self.public_id_cache.insert()
-                            // or hold off till RFC on removing public_id_cache
-                            self.refresh_routing_table(&peer.name());
-                        }
-                        Ok(())
-                    }
-                    _ => return Err(RoutingError::UnknownMessageType),
+    fn handle_relocation_response(&mut self,
+                                  relocated_id: ::public_id::PublicId,
+                                  close_group_ids: Vec<::public_id::PublicId>,
+                                  original_signed_token: SignedToken,
+                                  _from_authority: Authority,
+                                  _to_authority: Authority) -> RoutingResult {
+        if !original_signed_token.verify_signature(&self.id().signing_public_key()) {
+            return Err(RoutingError::FailedSignature);
+        }
+
+        let original_request = try!(SignedMessage::new_from_token(original_signed_token));
+        match original_request.get_routing_message().content {
+            Content::InternalRequest(InternalRequest::RequestNetworkName(ref original_public_id)) => {
+                let mut our_public_id = PublicId::new(self.id());
+
+                if our_public_id != *original_public_id {
+                    return Err(RoutingError::BadAuthority)
                 }
+
+                our_public_id.set_name(relocated_id.name().clone());
+
+                if our_public_id != relocated_id {
+                    return Err(RoutingError::BadAuthority)
+                }
+
+                debug!("{:?} - Assigned network name {:?} and our address now is {:?}",
+                       self.our_address(), relocated_id.name(), self.our_address());
+
+                self.proposed_relocated_name = Some(relocated_id.name().clone());
+                self.state = State::Relocated;
+
+                // Send connect request as a client
+                for peer in close_group_ids {
+                    // TODO (ben 12/08/2015) self.public_id_cache.insert()
+                    // or hold off till RFC on removing public_id_cache
+                    let _ = self.send_connect_request(&peer.name());
+                }
+
+                Ok(())
             }
-            _ => return Err(RoutingError::BadAuthority),
+            _ => return Err(RoutingError::UnknownMessageType),
         }
     }
 
@@ -901,14 +915,11 @@ impl RoutingNode {
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
         let (from_authority, address) = match self.state() {
             &State::Disconnected => return Err(RoutingError::NotBootstrapped),
-            &State::Bootstrapped => {
+            &State::Bootstrapped | &State::Relocated => {
                 let signing_key = self.id().signing_public_key();
                 (try!(self.get_client_authority()), Address::Client(signing_key))
             }
-            &State::Terminated => {
-                // (TODO Brian 19.10.15) A new error code may be more appropriate here.
-                return Err(RoutingError::Terminated);
-            }
+            &State::Terminated => return Err(RoutingError::Terminated),
             _ => {
                 let name = self.id().name();
                 (Authority::ManagedNode(name), Address::Node(name))
