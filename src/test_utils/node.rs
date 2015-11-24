@@ -73,9 +73,9 @@ impl Node {
                     };
                     self.handle_do_refresh(our_authority, cause);
                 }
-                ::event::Event::Churn(close_group, cause) => {
+                ::event::Event::Churn(close_group) => {
                     debug!("Received churn event");
-                    self.handle_churn(close_group, cause)
+                    self.handle_churn(close_group)
                 }
                 ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
@@ -96,7 +96,7 @@ impl Node {
                     self.stop();
                     break;
                 }
-            };
+            }
         }
     }
 
@@ -178,7 +178,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::NameType>, cause: ::NameType) {
+    fn handle_churn(&mut self, our_close_group: Vec<::NameType>) {
         let mut exit = false;
         if our_close_group.len() < ::types::GROUP_SIZE {
             if self.connected {
@@ -192,8 +192,12 @@ impl Node {
             }
         }
 
-        debug!("Handle churn for close group size {:?}",
-               our_close_group.len());
+        // FIXME Cause needs to get removed from refresh as well
+        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // just so that interface requirements are met
+        let cause = ::rand::random::<::NameType>();
+
+        debug!("Handle churn for close group size {:?}", our_close_group.len());
 
         for (client_name, stored) in self.client_accounts.iter() {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
@@ -201,11 +205,11 @@ impl Node {
                 .refresh_request(1u64,
                                  ::authority::Authority::ClientManager(client_name.clone()),
                                  ::utils::encode(&stored).unwrap(),
-                                 cause.clone());
+                                 cause);
         }
         if exit {
             self.routing.stop();
-        };
+        }
     }
 
     fn handle_refresh(&mut self,
@@ -217,7 +221,7 @@ impl Node {
             match ::utils::decode(&bytes) {
                 Ok(record) => records.push(record),
                 Err(_) => fail_parsing_count += 1usize,
-            };
+            }
         }
         let median = median(records.clone());
         debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
@@ -230,7 +234,7 @@ impl Node {
                 let _ = self.client_accounts.insert(client_name, median);
             }
             _ => {}
-        };
+        }
     }
 
     fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::NameType) {
@@ -250,7 +254,7 @@ impl Node {
                 };
             }
             _ => {}
-        };
+        }
     }
 
     fn handle_response(&mut self,

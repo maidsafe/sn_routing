@@ -68,14 +68,6 @@ pub enum Address {
     Node(::NameType),
 }
 
-impl ::utilities::Identifiable for Address {
-    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
-        match *self {
-            Address::Client(ref public_key) => public_key == &public_id.signing_public_key(),
-            Address::Node(ref name) => name == &public_id.name(),
-        }
-    }
-}
 
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
@@ -88,68 +80,6 @@ impl ::std::fmt::Debug for Address {
                 formatter.write_str(&format!("Node({:?})", name))
             }
         }
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug)]
-/// CacheOptions.
-pub struct CacheOptions {
-    cache_plain_data: bool,
-    cache_structured_data: bool,
-    cache_immutable_data: bool,
-}
-
-impl CacheOptions {
-
-    /// Construct with caching off.
-    pub fn no_caching() -> CacheOptions {
-        CacheOptions {
-            cache_plain_data: false,
-            cache_structured_data: false,
-            cache_immutable_data: false,
-        }
-    }
-
-    /// Construct with caching optionally set.
-    pub fn with_caching(cache_plain_data: bool,
-                        cache_structured_data: bool,
-                        cache_immutable_data: bool)
-                        -> CacheOptions {
-        CacheOptions {
-            cache_plain_data: cache_plain_data,
-            cache_structured_data: cache_structured_data,
-            cache_immutable_data: cache_immutable_data,
-        }
-    }
-
-    /// Enable or disable Data caching.
-    pub fn set_cache_options(&mut self, cache_options: CacheOptions) {
-        self.cache_plain_data = cache_options.cache_plain_data;
-        self.cache_structured_data = cache_options.cache_structured_data;
-        self.cache_immutable_data = cache_options.cache_immutable_data;
-    }
-
-    /// Return true if any caching option is set otherwise false.
-    pub fn caching_enabled(&self) -> bool {
-        if self.cache_plain_data || self.cache_structured_data || self.cache_immutable_data {
-            return true;
-        }
-        false
-    }
-
-    /// Return PlainData caching option.
-    pub fn plain_data_caching_enabled(&self) -> bool {
-        self.cache_plain_data
-    }
-
-    /// Return StructuredData caching option.
-    pub fn structured_data_caching_enabled(&self) -> bool {
-        self.cache_structured_data
-    }
-
-    /// Return ImmutableData caching option.
-    pub fn immutable_data_caching_enabled(&self) -> bool {
-        self.cache_immutable_data
     }
 }
 
@@ -171,56 +101,6 @@ mod test {
         assert_eq!(&bytes[..], &array[..]);
     }
 
-    #[test]
-    fn cache_options_no_caching() {
-        let cache_options = super::CacheOptions::no_caching();
-
-        assert!(!cache_options.plain_data_caching_enabled());
-        assert!(!cache_options.structured_data_caching_enabled());
-        assert!(!cache_options.immutable_data_caching_enabled());
-        assert!(!cache_options.caching_enabled());
-    }
-
-    #[test]
-    fn cache_options_with_caching() {
-        let cache_options = super::CacheOptions::with_caching(true, true, true);
-
-        assert!(cache_options.plain_data_caching_enabled());
-        assert!(cache_options.structured_data_caching_enabled());
-        assert!(cache_options.immutable_data_caching_enabled());
-        assert!(cache_options.caching_enabled());
-    }
-
-    #[test]
-    fn cache_options_set_options() {
-        let mut cache_options = super::CacheOptions::with_caching(false, false, false);
-
-        assert!(!cache_options.plain_data_caching_enabled());
-        assert!(!cache_options.structured_data_caching_enabled());
-        assert!(!cache_options.immutable_data_caching_enabled());
-        assert!(!cache_options.caching_enabled());
-
-        cache_options.set_cache_options(super::CacheOptions::with_caching(true, false, false));
-
-        assert!(cache_options.plain_data_caching_enabled());
-        assert!(!cache_options.structured_data_caching_enabled());
-        assert!(!cache_options.immutable_data_caching_enabled());
-        assert!(cache_options.caching_enabled());
-
-        cache_options.set_cache_options(super::CacheOptions::with_caching(false, true, false));
-
-        assert!(!cache_options.plain_data_caching_enabled());
-        assert!(cache_options.structured_data_caching_enabled());
-        assert!(!cache_options.immutable_data_caching_enabled());
-        assert!(cache_options.caching_enabled());
-
-        cache_options.set_cache_options(super::CacheOptions::with_caching(false, false, true));
-
-        assert!(!cache_options.plain_data_caching_enabled());
-        assert!(!cache_options.structured_data_caching_enabled());
-        assert!(cache_options.immutable_data_caching_enabled());
-        assert!(cache_options.caching_enabled());
-    }
 
     #[test]
     fn address() {

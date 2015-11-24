@@ -38,9 +38,9 @@
           unknown_crate_types, warnings)]
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-        unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
-        unused_attributes, unused_comparisons, unused_features, unused_parens, while_true)]
+        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
+        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+        unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
@@ -71,7 +71,6 @@ mod name_type;
 mod routing_table;
 mod routing_node;
 mod refresh_accumulator;
-mod utilities;
 mod connection_management;
 
 /// Routing provides an actionable interface to routing.
@@ -104,9 +103,14 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
+/// Data cache for all Data types 
+pub mod data_cache;
+/// Data cache options, may be set at runtime 
+pub mod data_cache_options;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 /// Message types defined by the library.
 pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
+

@@ -17,9 +17,8 @@
 
 use std::cmp;
 use std::usize;
-use std::collections::HashMap;
 
-use crust::{Endpoint, Connection};
+use crust::Connection;
 
 use common_bits::*;
 use public_id::PublicId;
@@ -31,67 +30,51 @@ pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
 #[derive(Clone, Debug)]
-#[allow(unused)]
 pub struct NodeInfo {
     pub public_id: PublicId,
-    pub endpoints: Vec<Endpoint>,
-    // pub connected_endpoint: Option<Endpoint>,
-    pub connection: Option<Connection>,
+    pub connections: Vec<Connection>,
     #[cfg(test)]
     pub id: NameType,
 }
 
-#[allow(unused)]
 impl NodeInfo {
     #[cfg(not(test))]
-    pub fn new(public_id: PublicId,
-               endpoints: Vec<Endpoint>,
-               connection: Option<Connection>)
-               -> NodeInfo {
+    pub fn new(public_id: PublicId, connections: Vec<Connection>) -> NodeInfo {
         NodeInfo {
             public_id: public_id,
-            endpoints: endpoints,
-            connection: connection,
+            connections: connections,
         }
     }
     #[cfg(not(test))]
-    pub fn id(&self) -> NameType {
+    pub fn id(&self) -> &NameType {
         self.public_id.name()
     }
 
     #[cfg(test)]
-    pub fn new(public_id: PublicId,
-               endpoints: Vec<Endpoint>,
-               connection: Option<Connection>)
-               -> NodeInfo {
-        let id = public_id.name();
+    pub fn new(public_id: PublicId, connections: Vec<Connection>) -> NodeInfo {
+        let id = public_id.name().clone();
         NodeInfo {
             public_id: public_id,
-            endpoints: endpoints,
-            connection: connection,
+            connections: connections,
             id: id,
         }
     }
     #[cfg(test)]
-    pub fn id(&self) -> NameType {
-        self.id.clone()
+    pub fn id(&self) -> &NameType {
+        &self.id
     }
 }
 
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
-#[allow(unused)]
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
-    lookup_map: HashMap<Endpoint, NameType>,
     our_id: NameType,
 }
 
-#[allow(unused)]
 impl RoutingTable {
     pub fn new(our_id: &NameType) -> RoutingTable {
         RoutingTable {
             routing_table: Vec::<NodeInfo>::new(),
-            lookup_map: HashMap::new(),
             our_id: our_id.clone(),
         }
     }
@@ -125,7 +108,7 @@ impl RoutingTable {
     ///     contacts, which is also not within our close group), and if the new contact will fit in
     ///     a bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo) -> (bool, Option<NodeInfo>) {
-        if self.our_id == their_info.id() {
+        if self.our_id == *their_info.id() {
             return (false, None);
         }
 
@@ -148,7 +131,6 @@ impl RoutingTable {
                 return (true, None);
             } else {
                 let removal_node = self.routing_table[removal_node_index].clone();
-                self.remove_dangling_endpoints(&removal_node.id());
                 let _ = self.routing_table.remove(removal_node_index);
                 return (true, Some(removal_node));
             }
@@ -158,40 +140,11 @@ impl RoutingTable {
         if removal_node_index != usize::MAX &&
            self.new_node_is_better_than_existing(&their_info.id(), removal_node_index) {
             let removal_node = self.routing_table[removal_node_index].clone();
-            self.remove_dangling_endpoints(&removal_node.id());
             let _ = self.routing_table.remove(removal_node_index);
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node));
         }
         (false, None)
-    }
-
-    /// This changes the connected status of the peer from false to true.  Only one connection is
-    /// allowed per node, so this returns None if the endpoint doesn't exist anywhere in the table
-    /// or if the peer already has a connected endpoint.  Otherwise it returns the peer's ID.
-    #[allow(dead_code)]
-    pub fn mark_as_connected(&mut self, connection: &Connection) -> Option<NameType> {
-        let endpoint = connection.peer_endpoint();
-        let has_endpoint = |ref node_info: &NodeInfo| {
-            for ref candidate_endpoint in &node_info.endpoints {
-                if **candidate_endpoint == endpoint {
-                    return true;
-                }
-            }
-            false
-        };
-        match self.routing_table.iter().position(has_endpoint) {
-            None => None,
-            Some(index) => {
-                self.routing_table[index].connection = Some(connection.clone());
-                // always force update lookup_map
-                let _ = self.lookup_map.remove(&endpoint);
-                let _ = self.lookup_map
-                            .entry(endpoint.clone())
-                            .or_insert(self.routing_table[index].id());
-                Some(self.routing_table[index].id())
-            }
-        }
     }
 
     /// This is used to check whether it is worth while retrieving a contact's public key from the
@@ -221,15 +174,13 @@ impl RoutingTable {
         let mut index_of_removal = usize::MAX;
 
         for i in 0..self.routing_table.len() {
-            if self.routing_table[i].id() == *node_to_drop {
+            if self.routing_table[i].id() == node_to_drop {
                 index_of_removal = i;
                 break;
             }
         }
 
         if index_of_removal < self.routing_table.len() {
-            let removal_name: NameType = self.routing_table[index_of_removal].id();
-            self.remove_dangling_endpoints(&removal_name);
             let _ = self.routing_table.remove(index_of_removal);
         }
     }
@@ -295,21 +246,23 @@ impl RoutingTable {
         result
     }
 
-    // /// This returns the public key for the given node if the node is in our table.
-    // pub fn public_id(&self, their_id: &NameType)->Option<PublicId> {
-    //     debug_assert!(self.is_nodes_sorted(), "RT::public_id: Nodes are not sorted");
-    //     match self.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
-    //         Some(node) => Some(node.public_id.clone()),
-    //         None => None,
-    //     }
-    // }
-
-    pub fn lookup_endpoint(&self, their_endpoint: &Endpoint) -> Option<NameType> {
-        debug_assert!(self.is_nodes_sorted(), "RT::Lookup: Nodes are not sorted");
-        match self.lookup_map.get(their_endpoint) {
-            Some(name) => Some(name.clone()),
-            None => None,
+    pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
+        let remove_connection = |node_info: &mut NodeInfo| {
+            if let Some(index) = node_info.connections
+                                          .iter()
+                                          .position(|connection| connection == lost_connection) {
+                let _ = node_info.connections.remove(index);
+                true
+            } else {
+                false
+            }
+        };
+        if let Some(node_index) = self.routing_table.iter_mut().position(remove_connection) {
+            if self.routing_table[node_index].connections.is_empty() {
+               return Some(self.routing_table.remove(node_index).id().clone())
+            }
         }
+        None
     }
 
     /// This returns the length of the routing table.
@@ -320,14 +273,6 @@ impl RoutingTable {
 
     pub fn our_name(&self) -> NameType {
         self.our_id.clone()
-    }
-
-    /// Returns all connections listed in the routing table
-    pub fn all_connections(&self) -> Vec<::crust::Connection> {
-        self.routing_table
-            .iter()
-            .filter_map(|n| n.connection.clone())
-            .collect::<Vec<::crust::Connection>>()
     }
 
     /// This returns true if the provided id is closer than or equal to the furthest node in our
@@ -402,23 +347,35 @@ impl RoutingTable {
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
         for node_info in &self.routing_table {
-            if node_info.id() == *node_id {
+            if node_info.id() == node_id {
                 return true;
             }
         }
         false
     }
 
+                                                                                            #[allow(unused)]
+    pub fn look_up_connection(&self,
+                              connection_to_find: &::crust::Connection)
+                              -> Option<&::NameType> {
+        self.routing_table.iter()
+                          .find(|node_info|
+                              node_info.connections
+                                       .iter()
+                                       .any(|connection| connection == connection_to_find))
+                          .map(|node_info| node_info.id())
+    }
+
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
-        match node_info.connection.clone().map(|c| c.peer_endpoint()) {
-            Some(endpoint) => {
-                let _ = self.lookup_map.remove(&endpoint);
-                let _ = self.lookup_map
-                            .entry(endpoint.clone())
-                            .or_insert(node_info.id());
+        {  // Try to find and update an existing entry
+            if let Some(mut entry) = self.routing_table
+                                         .iter_mut()
+                                         .find(|element| element.id() == node_info.id()) {
+                entry.connections.extend(node_info.connections);
+                return
             }
-            None => (),
-        };
+        }
+        // We didn't find an existing entry, so insert a new one
         self.routing_table.push(node_info);
         let our_id = &self.our_id;
         self.routing_table.sort_by(|a, b| {
@@ -428,17 +385,6 @@ impl RoutingTable {
                 cmp::Ordering::Greater
             }
         });
-    }
-
-    fn is_nodes_sorted(&self) -> bool {
-        for i in 1..self.routing_table.len() {
-            if closer_to_target(&self.routing_table[i].id(),
-                                &self.routing_table[i - 1].id(),
-                                &self.our_id) {
-                return false;
-            }
-        }
-        true
     }
 
     fn new_node_is_better_than_existing(&self,
@@ -460,22 +406,6 @@ impl RoutingTable {
         }
         false
     }
-
-    fn remove_dangling_endpoints(&mut self, name_removed: &NameType) {
-        let dangling_endpoints = self.lookup_map
-                                     .iter()
-                                     .filter_map(|(endpoint, name)| {
-                                         if name == name_removed {
-                                             Some(endpoint.clone())
-                                         } else {
-                                             None
-                                         }
-                                     })
-                                     .collect::<Vec<_>>();
-        for endpoint in dangling_endpoints {
-            let _ = self.lookup_map.remove(&endpoint);
-        }
-    }
 }
 
 
@@ -491,29 +421,15 @@ mod test {
         Close,
     }
 
-    // TODO: This duplicate must use the available code
-    pub fn random_endpoint() -> ::crust::Endpoint {
-        ::crust::Endpoint::Tcp(::std::net::SocketAddr::V4(
-            ::std::net::SocketAddrV4::new(::std::net::Ipv4Addr::new(
-                ::rand::random::<u8>(),
-                ::rand::random::<u8>(),
-                ::rand::random::<u8>(),
-                ::rand::random::<u8>()),
-            ::rand::random::<u16>())))
-    }
-
-    // TODO: This duplicate must use the available code
-    pub fn random_endpoints() -> Vec<::crust::Endpoint> {
-        use rand::distributions::IndependentSample;
-
-        let range = ::rand::distributions::Range::new(1, 10);
-        let mut rng = ::rand::thread_rng();
-        let count = range.ind_sample(&mut rng);
-        let mut endpoints = vec![];
-        for _ in 0..count {
-            endpoints.push(random_endpoint());
+    fn are_nodes_sorted(routing_table: &super::RoutingTable) -> bool {
+        for i in 1..routing_table.routing_table.len() {
+            if ::name_type::closer_to_target(&routing_table.routing_table[i].id(),
+                                             &routing_table.routing_table[i - 1].id(),
+                                             &routing_table.our_id) {
+                return false
+            }
         }
-        endpoints
+        true
     }
 
     fn get_contact(farthest_from_tables_own_id: &::NameType,
@@ -577,7 +493,6 @@ mod test {
                 our_id: node_info.id().clone(),
                 table: super::RoutingTable {
                     routing_table: Vec::new(),
-                    lookup_map: ::std::collections::HashMap::new(),
                     our_id: node_info.id().clone(),
                 },
                 buckets: initialise_buckets(&node_info.id()),
@@ -631,9 +546,8 @@ mod test {
         }
 
         fn public_id(&self, their_id: &::NameType) -> Option<::public_id::PublicId> {
-            debug_assert!(self.table.is_nodes_sorted(),
-                          "RT::public_id: Nodes are not sorted");
-            match self.table.routing_table.iter().find(|&node_info| node_info.id() == *their_id) {
+            debug_assert!(are_nodes_sorted(&self.table), "RT::public_id: Nodes are not sorted");
+            match self.table.routing_table.iter().find(|&node_info| node_info.id() == their_id) {
                 Some(node) => Some(node.public_id.clone()),
                 None => None,
             }
@@ -661,10 +575,9 @@ mod test {
     fn create_random_node_info() -> super::NodeInfo {
         let public_id = ::public_id::PublicId::new(&::id::Id::new());
         super::NodeInfo {
-            id: public_id.name(),
+            id: public_id.name().clone(),
             public_id: public_id,
-            endpoints: random_endpoints(),
-            connection: None,
+            connections: Vec::new(),
         }
     }
 
@@ -673,7 +586,6 @@ mod test {
         for _ in 0..num_of_tables {
             vector.push(super::RoutingTable {
                 routing_table: Vec::new(),
-                lookup_map: ::std::collections::HashMap::new(),
                 our_id: rand::random(),
             });
         }
@@ -703,7 +615,6 @@ mod test {
 
         let mut table = super::RoutingTable {
             routing_table: Vec::new(),
-            lookup_map: ::std::collections::HashMap::new(),
             our_id: rand::random(),
         };
 
@@ -765,7 +676,7 @@ mod test {
             assert_eq!(groups.len(), super::RoutingTable::get_group_size());
 
             for i in 0..super::RoutingTable::get_group_size() {
-                assert!(groups[i].id() == addresses[i + 1]);
+                assert!(groups[i].id() == &addresses[i + 1]);
             }
         }
     }
@@ -920,7 +831,7 @@ mod test {
             assert!(result_of_add.0);
             match result_of_add.1 {
                 Some(dropped_info) => {
-                    dropped.push(dropped_info.id())
+                    dropped.push(dropped_info.id().clone())
                 }
                 None => panic!("Unexpected"),
             };
@@ -1210,7 +1121,7 @@ mod test {
                            target_close_group.len());
                 // should contain our close group
                 for k in 0..target_close_group.len() {
-                    assert!(target_close_group[k].id() == addresses[k + 1]);
+                    assert!(target_close_group[k].id() == &addresses[k + 1]);
                 }
             }
         }
@@ -1226,7 +1137,7 @@ mod test {
         let mut count: usize = 0;
         loop {
             let _ = routing_table.add_node(super::NodeInfo::new(
-                ::public_id::PublicId::new(&::id::Id::new()), random_endpoints(), None));
+                ::public_id::PublicId::new(&::id::Id::new()), vec![]));
             count += 1;
             if routing_table.size() >= super::RoutingTable::get_optimal_size() {
                 break;
@@ -1269,7 +1180,7 @@ mod test {
                                    .our_close_group()
                                    .iter()
                                    .filter(|&node| {
-                                       node.id() == table_unit_test.buckets[i].mid_contact
+                                       node.id() == &table_unit_test.buckets[i].mid_contact
                                    })
                                    .count() > 0);
         }
@@ -1281,7 +1192,7 @@ mod test {
         for close_node in table_unit_test.table.our_close_group().iter() {
             assert!(table_unit_test.added_ids
                                    .iter()
-                                   .filter(|&node| node == &close_node.id())
+                                   .filter(|&node| node == close_node.id())
                                    .count() == 1);
         }
     }
@@ -1304,7 +1215,7 @@ mod test {
         for i in 0..routing_table_utest.initial_count {
             let mut assert_checker = 0;
             for j in 0..target_nodes_.len() {
-                if target_nodes_[j].id() == routing_table_utest.buckets[i].mid_contact {
+                if target_nodes_[j].id() == &routing_table_utest.buckets[i].mid_contact {
                     assert_checker = 1;
                     break;
                 }
@@ -1324,7 +1235,7 @@ mod test {
                    super::RoutingTable::get_optimal_size() - 1).rev() {
             let mut assert_checker = 0;
             for j in 0..target_nodes_.len() {
-                if target_nodes_[j].id() == routing_table_utest.buckets[i].mid_contact {
+                if target_nodes_[j].id() == &routing_table_utest.buckets[i].mid_contact {
                     assert_checker = 1;
                     break;
                 }
@@ -1356,7 +1267,7 @@ mod test {
                 for i in 0..target_nodes_.len() {
                     let mut assert_checker = 0;
                     for j in 0..routing_table_utest.added_ids.len() {
-                        if target_nodes_[i].id() == routing_table_utest.added_ids[j] {
+                        if target_nodes_[i].id() == &routing_table_utest.added_ids[j] {
                             assert_checker = 1;
                             continue;
                         }
@@ -1390,7 +1301,7 @@ mod test {
                 for i in 0..target_nodes_.len() {
                     let mut assert_checker = 0;
                     for j in 0..routing_table_utest.added_ids.len() {
-                        if target_nodes_[i].id() == routing_table_utest.added_ids[j] {
+                        if target_nodes_[i].id() == &routing_table_utest.added_ids[j] {
                             assert_checker = 1;
                             continue;
                         }

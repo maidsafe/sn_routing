@@ -30,7 +30,6 @@ pub struct Id {
 }
 
 impl Id {
-
     /// Contruct new Id.
     pub fn new() -> Id {
 
@@ -79,7 +78,7 @@ impl Id {
     /// Name field is initially same as original_name, this should be later overwritten by relocated
     /// name provided by the network using this method
     pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-        if self.is_relocated() || self.name == relocated_name {
+        if self.is_node() || self.name == relocated_name {
             return false;
         }
         self.name = relocated_name;
@@ -87,7 +86,7 @@ impl Id {
     }
 
     /// Checks if the name is updated to a relocated name.
-    pub fn is_relocated(&self) -> bool {
+    pub fn is_node(&self) -> bool {
         self.name != NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
     }
 }
@@ -117,11 +116,11 @@ mod test{
         let mut id = ::id::Id::new();
 
         // is not relocated
-        assert!(!id.is_relocated());
+        assert!(!id.is_node());
 
         // is relocated after changing the name
         id.assign_relocated_name(rand::random());
-        assert!(id.is_relocated());
+        assert!(id.is_node());
     }
 
     #[test]

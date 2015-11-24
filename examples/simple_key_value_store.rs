@@ -21,11 +21,10 @@
 
 #![forbid(bad_style, warnings)]
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-       non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-       private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-       unconditional_recursion, unknown_lints, unsafe_code, unused,
-       unused_allocation, unused_attributes, unused_comparisons, unused_features, unused_parens,
-       while_true)]
+        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
+        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+        unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
        unused_qualifications, unused_results, variant_size_differences)]
 
@@ -131,8 +130,8 @@ impl Node {
                                         from_authority,
                                         response_token);
                 },
-                Event::Churn(our_close_group, cause) => {
-                    self.handle_churn(our_close_group, cause);
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
                 }
                 _ => {}
             }
@@ -207,8 +206,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>,
-        _cause: ::routing::NameType) {
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
         info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());

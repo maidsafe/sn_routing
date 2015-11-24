@@ -20,13 +20,6 @@
 //! as SignedMessages (wrapping RoutingMessages) over the routing network.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct Hello {
-    pub address: ::types::Address,
-    pub public_id: ::public_id::PublicId,
-    pub confirmed_you: Option<::types::Address>,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct Churn {
     pub close_group: Vec<::NameType>,
 }
@@ -34,7 +27,7 @@ pub struct Churn {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 #[allow(variant_size_differences)]
 pub enum Content {
-    Hello(Hello),
+    Identify { public_id: ::public_id::PublicId, },
     Churn(Churn),
 }
 
@@ -46,20 +39,24 @@ pub struct DirectMessage {
     signature: ::sodiumoxide::crypto::sign::Signature,
 }
 
-#[allow(unused)]
 impl DirectMessage {
     pub fn new(content: Content,
                private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
                -> Result<DirectMessage, ::cbor::CborError> {
-
         let encoded_content = try!(::utils::encode(&content));
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_content,
                                                                    private_sign_key);
-
         Ok(DirectMessage {
             content: content,
             signature: signature,
         })
+    }
+
+    pub fn new_identify(public_id: ::public_id::PublicId,
+                        private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
+                        -> Result<DirectMessage, ::cbor::CborError> {
+        let content = Content::Identify{ public_id: public_id, };
+        Self::new(content, private_sign_key)
     }
 
     pub fn verify_signature(&self,
@@ -79,6 +76,7 @@ impl DirectMessage {
         &self.content
     }
 
+    #[allow(unused)]
     pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
         &self.signature
     }
@@ -94,17 +92,10 @@ mod test {
 
     #[test]
     fn verify_signature() {
-        let address =
-            ::types::Address::Node(::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![])
-                                                  .0));
         let public_id: ::public_id::PublicId = rand::random();
-        let none_address: Option<::types::Address> = None;
-        let hello = ::direct_messages::Hello {
-            address: address,
+        let content = ::direct_messages::Content::Identify {
             public_id: public_id,
-            confirmed_you: none_address,
         };
-        let content = ::direct_messages::Content::Hello(hello);
         let key = ::sodiumoxide::crypto::sign::gen_keypair();
         let other_key = ::sodiumoxide::crypto::sign::gen_keypair();
 
@@ -119,5 +110,4 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
     }
-
 }

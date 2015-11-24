@@ -35,13 +35,12 @@ pub struct PublicId {
 }
 
 impl Debug for PublicId {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        formatter.write_str(&format!("PublicId(name:{:?})", self.name))
+    fn fmt(&self, formatter: &mut Formatter) -> ::std::fmt::Result {
+        write!(formatter, "PublicId(name: {:?})", self.name)
     }
 }
 
 impl PublicId {
-
     /// Construct new PublicId.
     pub fn new(id: &Id) -> PublicId {
         PublicId {
@@ -52,8 +51,8 @@ impl PublicId {
     }
 
     /// Return initial/relocated name.
-    pub fn name(&self) -> NameType {
-        self.name
+    pub fn name(&self) -> &NameType {
+        &self.name
     }
 
     /// Set the name to new value.
@@ -80,12 +79,12 @@ impl PublicId {
     }
 
     /// Return public signing key.
-    pub fn signing_public_key(&self) -> sign::PublicKey {
-        self.public_sign_key
+    pub fn signing_public_key(&self) -> &sign::PublicKey {
+        &self.public_sign_key
     }
 
     /// Checks if the name is updated to a relocated name.
-    pub fn is_relocated(&self) -> bool {
+    pub fn is_node(&self) -> bool {
         self.name != utils::public_key_to_client_name(&self.public_sign_key)
     }
 }
@@ -124,7 +123,7 @@ mod test {
         public_id.set_name(relocated_name);
 
         // set_name sets name properly
-        assert_eq!(relocated_name, public_id.name());
+        assert_eq!(&relocated_name, public_id.name());
 
         // id name is not changed
         assert_eq!(id_name, id.name());
@@ -139,32 +138,32 @@ mod test {
         let before = ::public_id::PublicId::new(&::id::Id::new());
         let original_name = before.name();
         assert_eq!(original_name,
-            ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
+            &::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
                 &before.signing_public_key()[..]).0));
-        assert!(!before.is_relocated());
+        assert!(!before.is_node());
         let relocated_name: ::NameType = rand::random();
         let mut relocated = before.clone();
         relocated.assign_relocated_name(relocated_name.clone());
-        assert!(relocated.is_relocated());
+        assert!(relocated.is_node());
         assert_eq!(before.signing_public_key(), relocated.signing_public_key());
-        assert_eq!(relocated.client_name(), original_name);
-        assert_eq!(relocated.name(), relocated_name);
+        assert_eq!(&relocated.client_name(), original_name);
+        assert_eq!(relocated.name(), &relocated_name);
     }
 
     #[test]
-    fn is_relocated() {
+    fn is_node() {
         let mut public_id: ::public_id::PublicId = rand::random();
-        let name_before = public_id.name();
+        let name_before = public_id.name().clone();
         let relocated_name: ::NameType = rand::random();
         let cloned_signing_public_key = public_id.signing_public_key().clone().0.to_vec();
 
         // is not relocated
-        assert!(!public_id.is_relocated());
+        assert!(!public_id.is_node());
 
         public_id.assign_relocated_name(relocated_name);
 
         // is relocated
-        assert!(public_id.is_relocated());
+        assert!(public_id.is_node());
 
         // set_name dit not change signing public key
         assert_eq!(cloned_signing_public_key,
@@ -173,6 +172,6 @@ mod test {
         public_id.assign_relocated_name(name_before);
 
         // is no longer relocated
-        assert!(!public_id.is_relocated());
+        assert!(!public_id.is_node());
     }
 }

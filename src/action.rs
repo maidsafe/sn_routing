@@ -22,7 +22,6 @@
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(unused)]
 pub enum Action {
     SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
     ClientSendContent(::authority::Authority, ::messages::Content),
@@ -30,7 +29,6 @@ pub enum Action {
     //            |          | the bare content for a message to be formed
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
-    SetCacheOptions(::types::CacheOptions),
-    Rebootstrap,
+    SetDataCacheOptions(::data_cache_options::DataCacheOptions),
     Terminate,
 }
