@@ -353,7 +353,7 @@ impl RoutingNode {
                 error!("{}We're bootstrapped already, but have received another identifier from \
                        {:?} on {:?} - closing this connection now.", self.us(), peer_public_id,
                        connection);
-                self.crust_service.drop_node(connection);
+                self.drop_crust_connection(connection);
                 return
             },
             State::Relocated => {
@@ -374,7 +374,7 @@ impl RoutingNode {
                 // sockets.
 
                 // if peer_is_client {
-                //     self.crust_service.drop_node(connection);
+                //     self.drop_crust_connection(connection);
                 //     return
                 // }
             },
@@ -648,7 +648,7 @@ impl RoutingNode {
                 if !direct_message.verify_signature(public_id.signing_public_key()) {
                     warn!("{}Failed signature verification on {:?} - dropping connection",
                           self.us(), connection);
-                    self.crust_service.drop_node(connection);
+                    self.drop_crust_connection(connection);
                     return
                 };
                 let _ = self.handle_identify(connection, public_id);
@@ -1172,7 +1172,7 @@ impl RoutingNode {
             let bootstrap_connections: Vec<&::crust::Connection> =
                 self.bootstrap_map.keys().collect();
             if bootstrap_connections.is_empty() {
-                panic!("{}Target connections for send is empty", self.us());
+                unreachable!("{}Target connections for send is empty", self.us());
             }
             for connection in bootstrap_connections {
                 self.crust_service.send(connection.clone(), bytes.clone());
@@ -1334,7 +1334,7 @@ impl RoutingNode {
                 debug!("{}We have already assigned a network name", self.us());
                 return
             }
-        };
+        }
 
         debug_assert!(self.network_name.is_none());
 
@@ -1509,16 +1509,17 @@ impl RoutingNode {
         if self.relay_map.len() == MAX_RELAYS {
             warn!("{}Relay map full ({} connections) so won't add {:?} to the relay map - dropping \
                   {:?}", self.us(), MAX_RELAYS, public_id, connection);
-            self.crust_service.drop_node(connection);
+            self.drop_crust_connection(connection);
         }
 
         match self.relay_map.insert(public_id.signing_public_key().clone(), connection) {
             Some(old_connection) => {
                 warn!("{}Found existing entry {:?} for {:?} found while adding to relay map",
                       self.us(), old_connection, public_id);
-                self.crust_service.drop_node(old_connection);
+                self.drop_crust_connection(old_connection);
             },
-            None => debug!("{}Added client to relay map {:?} {:?}", self.us(), node, connection),
+            None => debug!("{}Added client {:?} to relay map; {:?}", self.us(),
+                            public_id, connection),
         }
     }
 
@@ -1535,7 +1536,7 @@ impl RoutingNode {
         match add_node_result.1 {
             Some(node) => {
                 for connection in node.connections {
-                    self.crust_service.drop_node(connection);
+                    self.drop_crust_connection(connection);
                 }
             },
             None => info!("{}No node removed from RT as a result of node addition", self.us()),
@@ -1554,9 +1555,9 @@ impl RoutingNode {
                     error!("{}Error sending {:?} to event_sender", self.us(), err.0);
                 }
                 // Drop the bootstrap connections
-                for connection in self.bootstrap_map.keys() {
+                for (connection, _) in self.bootstrap_map.clone().into_iter() {
                     info!("{}Dropping bootstrap connection {:?}", self.us(), connection);
-                    self.crust_service.drop_node(connection.clone());
+                    self.drop_crust_connection(connection);
                 }
                 self.bootstrap_map = ::std::collections::HashMap::new();
             }
@@ -1567,7 +1568,7 @@ impl RoutingNode {
         } else {
             debug!("{}Failed to add {:?} to the routing table - dropping {:?}", self.us(),
                    peer_name, connection_clone);
-            self.crust_service.drop_node(connection_clone);
+            self.drop_crust_connection(connection_clone);
         }
     }
 
@@ -1644,9 +1645,9 @@ impl RoutingNode {
         }
     }
 
-    fn drop_crust_connection(&self, connection: ::crust::ConnectionName) {
+    fn drop_crust_connection(&mut self, connection: ::crust::Connection) {
         debug!("{}Dropping Crust Connection - {:?}", self.us(), connection);
-        self.crust_service.drop_connection(connection);
+        self.crust_service.drop_node(connection);
         self.handle_lost_connection(connection);
     }
 }
