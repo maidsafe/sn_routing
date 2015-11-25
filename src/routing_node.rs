@@ -288,7 +288,7 @@ impl RoutingNode {
                     _ => error!("{}Unparsable message received on {:?}", self.us(), connection),
                 };
             }
-        };
+        }
     }
 
     fn handle_on_connect(&mut self, connection: ::crust::Connection, _connection_token: u32) {
@@ -359,14 +359,24 @@ impl RoutingNode {
             State::Relocated => {
                 // If we happen to have received a bootstrap attempt to us from another node which
                 // is just starting too, we can't yet handle this since we're not properly connected
-                // ourself.  So just drop this connection if it's from a client.  Otherwise, this
-                // is our first connection from our close group after relocating, so transition to
-                // Connected state.
-                if peer_is_client {
-                    self.crust_service.drop_node(connection);
-                    return
-                }
-                // The self.add_node call below transitions our state to Connected
+                // ourself.  So we should just drop this connection if it's from a client.
+                // Otherwise, this is our first connection from our close group after relocating, so
+                // transition to Connected state.  The self.add_node call below does this.
+                //
+                // An exception to this is where we're the first node of a new network.  In this
+                // case, we will be Relocated, but we'll need to handle the request from the second
+                // node which will be a client at that stage.  Since we can't tell whether we're the
+                // first node of a new network or not, we'll just have to handle all client requests
+                // here.
+                //
+                // This problem should be resolved (or at least moved to another area of the code!)
+                // once Crust provides the ability to start without automatically opening listening
+                // sockets.
+
+                // if peer_is_client {
+                //     self.crust_service.drop_node(connection);
+                //     return
+                // }
             },
             State::Connected => {
                 // The self.add_node call below transitions our state to GroupConnected if
@@ -390,7 +400,7 @@ impl RoutingNode {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no relay-messages enter the SAFE network here.
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
-        debug!("{:?} Signed Message Received - {:?}", self.us(), signed_message);
+        debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
 
         // filter check, should just return quietly
         let message = signed_message.get_routing_message().clone();
@@ -631,6 +641,7 @@ impl RoutingNode {
     fn handle_direct_message(&mut self,
                              direct_message: ::direct_messages::DirectMessage,
                              connection: ::crust::Connection) {
+        debug!("{}Direct Message Received - {:?}", self.us(), direct_message);
         match direct_message.content() {
             &::direct_messages::Content::Identify{ ref public_id, } => {
                 // verify signature
@@ -775,7 +786,7 @@ impl RoutingNode {
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
                                      response_token: SignedToken) -> RoutingResult {
-        debug!("{:?} Handling Relocated Network Name", self.us());
+        debug!("{}Handling Relocated Network Name", self.us());
 
         let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
         let target_client_authority = signed_message.get_routing_message().source();
