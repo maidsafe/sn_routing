@@ -15,18 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ConnectRequest {
-    pub endpoints: Vec<::crust::Endpoint>,
-    pub public_id: ::public_id::PublicId,
-}
-
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ConnectResponse {
-    pub endpoints: Vec<::crust::Endpoint>,
-    pub public_id: ::public_id::PublicId,
-}
-
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// SignedToken.
 pub struct SignedToken {
@@ -97,7 +85,10 @@ impl ExternalResponse {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
-    Connect(ConnectRequest),
+    Connect {
+        endpoints: Vec<::crust::Endpoint>,
+        public_id: ::public_id::PublicId,
+    },
     RequestNetworkName(::public_id::PublicId),
     // a client can send RequestNetworkName
     RelocatedNetworkName(::public_id::PublicId, SignedToken),
@@ -115,7 +106,11 @@ pub enum InternalRequest {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
-    Connect(ConnectResponse, SignedToken),
+    Connect {
+        endpoints: Vec<::crust::Endpoint>,
+        public_id: ::public_id::PublicId,
+        signed_token: SignedToken,
+    },
     // FindGroup(Vec<::public_id::PublicId>, SignedToken),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
@@ -219,7 +214,7 @@ impl SignedMessage {
     }
 
     /// Verify the signature using the given public key.
-                                                                                            #[allow(unused)]
+    #[allow(unused)]
     pub fn verify_signature(&self,
                             public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
                             -> bool {

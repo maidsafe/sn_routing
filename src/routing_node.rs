@@ -34,7 +34,7 @@ use utils::{encode, decode};
 use utils;
 use authority::{Authority, our_authority};
 
-use messages::{RoutingMessage, SignedMessage, SignedToken, ConnectRequest, ConnectResponse,
+use messages::{RoutingMessage, SignedMessage, SignedToken,
                Content, ExternalResponse, InternalRequest, InternalResponse};
 
 use error::{RoutingError, InterfaceError};
@@ -453,7 +453,7 @@ impl RoutingNode {
                         }
 
                     },
-                    InternalRequest::Connect(ConnectRequest { endpoints, public_id }) => {
+                    InternalRequest::Connect { endpoints, public_id } => {
                         match opt_token {
                             Some(response_token) =>
                                 self.handle_connect_request(endpoints,
@@ -496,7 +496,7 @@ impl RoutingNode {
                                                         accumulated_message.from_authority,
                                                         accumulated_message.to_authority)
                     }
-                    InternalResponse::Connect(_, _) => {
+                    InternalResponse::Connect {..} => {
                         debug!("{}Handling connect response {:?} ourselves", self.us(), response);
                         self.handle_connect_response(response,
                                                      accumulated_message.from_authority,
@@ -858,10 +858,10 @@ impl RoutingNode {
         let routing_message = RoutingMessage {
             from_authority: from_authority,
             to_authority: Authority::ManagedNode(peer_name.clone()),
-            content: Content::InternalRequest(InternalRequest::Connect(ConnectRequest {
+            content: Content::InternalRequest(InternalRequest::Connect {
                 endpoints: self.accepting_on.clone(),
                 public_id: PublicId::new(self.id()),
-            })),
+            }),
         };
 
         match SignedMessage::new(address, routing_message, self.id().signing_private_key()) {
@@ -914,10 +914,11 @@ impl RoutingNode {
         let routing_message = RoutingMessage {
             from_authority: Authority::ManagedNode(self.id().name()),
             to_authority: from_authority,
-            content: Content::InternalResponse(InternalResponse::Connect(ConnectResponse {
-                    endpoints: self.accepting_on.clone(),
-                    public_id: PublicId::new(self.id()),
-                }, response_token)),
+            content: Content::InternalResponse(InternalResponse::Connect {
+                endpoints: self.accepting_on.clone(),
+                public_id: PublicId::new(self.id()),
+                signed_token: response_token,
+            }),
         };
 
         match SignedMessage::new(Address::Node(self.id().name()),
@@ -948,7 +949,7 @@ impl RoutingNode {
                                _to_authority: Authority) -> RoutingResult {
         debug!("{}Handle ConnectResponse", self.us());
         match response {
-            InternalResponse::Connect(connect_response, signed_token) => {
+            InternalResponse::Connect { public_id, endpoints, signed_token } => {
                 if !signed_token.verify_signature(&self.id().signing_public_key()) {
                     error!("{}ConnectResponse from {:?} failed our signature for the signed token",
                            self.us(), from_authority);
@@ -966,7 +967,7 @@ impl RoutingNode {
                 }
 
                 // Are we already connected, or still interested?
-                if !self.routing_table.want_to_add(connect_response.public_id.name()) {
+                if !self.routing_table.want_to_add(public_id.name()) {
                     error!("{}ConnectResponse already connected to {:?}", self.us(),
                            from_authority);
                     return Err(RoutingError::RefusedFromRoutingTable);
@@ -975,8 +976,8 @@ impl RoutingNode {
                 let connection_token = self.get_connection_token();
                 debug!("{}Connecting on validated ConnectResponse from {:?} with connection token \
                        {:?}", self.us(), from_authority, connection_token);
-                self.connect(connection_token, &connect_response.endpoints);
-                self.connection_filter.add(connect_response.public_id.name().clone());
+                self.connect(connection_token, &endpoints);
+                self.connection_filter.add(public_id.name().clone());
                 Ok(())
             }
             _ => return Err(RoutingError::BadAuthority),
@@ -1419,18 +1420,6 @@ impl RoutingNode {
         if let Err(err) = self.generate_churn(churn_message, close_group_connections) {
             error!("{}Unsuccessful Churn {:?}", self.us(), err);
         }
-    }
-
-    // Returns the available Bootstrap connections as connections.
-                                                                                            #[allow(unused)]
-    fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
-        self.proxy_map.keys().cloned().collect()
-    }
-
-    // Returns the available Bootstrap connections as names.
-                                                                                            #[allow(unused)]
-    fn bootstrap_names(&self) -> Vec<::NameType> {
-        self.proxy_map.values().cloned().collect()
     }
 
     /// Returns true if the core is a full routing node and has connections

@@ -135,7 +135,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         }
         Content::InternalRequest(ref request) => {
             match *request {
-                InternalRequest::Connect(_) => None,
+                InternalRequest::Connect { .. } => None,
                 InternalRequest::RequestNetworkName(ref public_id) =>
                     Some(public_id.name().clone()),
                 InternalRequest::RelocatedNetworkName(ref public_id, _) =>
