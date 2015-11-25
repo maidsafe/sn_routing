@@ -129,22 +129,4 @@ pub mod test {
         }
         endpoints
     }
-
-    impl rand::Rand for ::messages::ConnectRequest {
-        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectRequest {
-            ::messages::ConnectRequest {
-                endpoints: random_endpoints(rng),
-                public_id: rand::random(),
-            }
-        }
-    }
-
-    impl rand::Rand for ::messages::ConnectResponse {
-        fn rand<R: rand::Rng>(rng: &mut R) -> ::messages::ConnectResponse {
-            ::messages::ConnectResponse {
-                endpoints: random_endpoints(rng),
-                public_id: rand::random(),
-            }
-        }
-    }
 }

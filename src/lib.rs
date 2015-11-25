@@ -25,7 +25,6 @@
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
-//!
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
