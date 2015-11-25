@@ -21,9 +21,9 @@
           unknown_crate_types, warnings)]
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, raw_pointer_derive, stable_features,
-        unconditional_recursion, unknown_lints, unsafe_code, unused, unused_allocation,
-        unused_attributes, unused_comparisons, unused_features, unused_parens, while_true)]
+        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
+        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+        unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results, variant_size_differences)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
@@ -58,9 +58,11 @@ fn start_vaults(num_of_nodes: u32) -> Vec<::std::process::Child> {
             Err(why) => panic!("couldn't spawn safe_vault: {}", why.description()),
             Ok(process) => process,
         });
-        ::std::thread::sleep_ms(1000 + i * 1500);
+        let duration = ::std::time::Duration::from_millis(1000 + i as u64 * 1500);
+        ::std::thread::sleep(duration);
     }
-    ::std::thread::sleep_ms(num_of_nodes * 1000);
+    let duration = ::std::time::Duration::from_millis(num_of_nodes as u64 * 1000);
+    ::std::thread::sleep(duration);
     processes
 }
 
@@ -121,7 +123,8 @@ fn start_client() -> (::routing::routing_client::RoutingClient,
     let id = ::routing::id::Id::new();
     let client_name = id.name();
     let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
-    ::std::thread::sleep_ms(1000);
+    let duration = ::std::time::Duration::from_millis(1000);
+    ::std::thread::sleep(duration);
     (client_routing, client_receiver, client_name)
 }
 
@@ -163,7 +166,8 @@ fn executable_immutable_data_churn_test() {
         ::routing::immutable_data::ImmutableDataType::Normal, value);
     client_routing.put_request(::routing::Authority::ClientManager(client_name),
                                ::routing::data::Data::ImmutableData(im_data.clone()));
-    ::std::thread::sleep_ms(5000);
+    let duration = ::std::time::Duration::from_millis(5000);
+    ::std::thread::sleep(duration);
 
     let mut new_vault_process = start_vaults(1);
 
@@ -202,8 +206,8 @@ fn executable_structured_data_churn_test() {
     let mut processes = start_vaults(4);
     let (mut client_routing, client_receiver, client_name) = start_client();
 
-    let name = ::routing::NameType(::routing::types::vector_as_u8_64_array(
-        ::routing::types::generate_random_vec_u8(64)));
+    let name = ::routing::NameType(::routing::types::slice_as_u8_64_array(
+        &*::routing::types::generate_random_vec_u8(64)));
     let value = ::routing::types::generate_random_vec_u8(1024);
     let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
     let sd = ::routing::structured_data::StructuredData::new(0,
@@ -217,7 +221,8 @@ fn executable_structured_data_churn_test() {
                  .unwrap();
     client_routing.put_request(::routing::Authority::ClientManager(client_name),
                                ::routing::data::Data::StructuredData(sd.clone()));
-    ::std::thread::sleep_ms(5000);
+    let duration = ::std::time::Duration::from_millis(5000);
+    ::std::thread::sleep(duration);
 
     let mut new_vault_process = start_vaults(1);
 

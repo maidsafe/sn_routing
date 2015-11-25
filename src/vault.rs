@@ -98,7 +98,8 @@ impl Vault {
                     self.pmid_node.routing().stop();
                 }
             }
-            ::std::thread::sleep_ms(1);
+            let duration = ::std::time::Duration::from_millis(1);
+            ::std::thread::sleep(duration);
         }
     }
 
@@ -452,7 +453,8 @@ mod test {
                     Err(_) => {}
                     Ok(_) => break,
                 }
-                ::std::thread::sleep_ms(1);
+                let duration = ::std::time::Duration::from_millis(1);
+                ::std::thread::sleep(duration);
                 if starting_time + time_limit < ::time::SteadyTime::now() {
                     panic!("new client can't get bootstrapped in expected duration");
                 }
@@ -507,7 +509,8 @@ mod test {
                         Ok(event) => debug!("vault {} received event {:?}", i, event),
                     }
                 }
-                ::std::thread::sleep_ms(1);
+                let duration = ::std::time::Duration::from_millis(1);
+                ::std::thread::sleep(duration);
                 if starting_time + time_limit < ::time::SteadyTime::now() {
                     break;
                 }
@@ -582,7 +585,8 @@ mod test {
                     Ok(_) => {}
                 }
             }
-            ::std::thread::sleep_ms(1);
+            let duration = ::std::time::Duration::from_millis(1);
+            ::std::thread::sleep(duration);
             if starting_time + time_limit < ::time::SteadyTime::now() {
                 // As this function is only to be used in testing code, and a partially
                 // established environment / testing result having a high chance indicates a failure
@@ -606,7 +610,8 @@ mod test {
                     break
                 }
             }
-            ::std::thread::sleep_ms(1);
+            let duration = ::std::time::Duration::from_millis(1);
+            ::std::thread::sleep(duration);
             if starting_time + time_limit < ::time::SteadyTime::now() {
                 panic!("wait_for_client_get can't resolve within the expected duration");
             }
@@ -886,7 +891,8 @@ mod mock_routing_test {
         routing.client_put(client_name,
                            sign_keys.0,
                            ::routing::data::Data::ImmutableData(im_data.clone()));
-        ::std::thread::sleep_ms(2000);
+        let duration = ::std::time::Duration::from_millis(2000);
+        ::std::thread::sleep(duration);
 
         let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(),
                                ::routing::immutable_data::ImmutableDataType::Normal);
@@ -917,7 +923,8 @@ mod mock_routing_test {
         routing.client_put(client_name,
                            sign_keys.0,
                            ::routing::data::Data::StructuredData(sd.clone()));
-        ::std::thread::sleep_ms(2000);
+        let duration = ::std::time::Duration::from_millis(2000);
+        ::std::thread::sleep(duration);
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd_new = evaluate_result!(
@@ -931,7 +938,8 @@ mod mock_routing_test {
         routing.client_post(client_name,
                             sign_keys.0,
                             ::routing::data::Data::StructuredData(sd_new.clone()));
-        ::std::thread::sleep_ms(2000);
+        let duration = ::std::time::Duration::from_millis(2000);
+        ::std::thread::sleep(duration);
 
         let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
         routing.client_get(client_name, sign_keys.0, data_request);
