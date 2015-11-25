@@ -305,6 +305,7 @@ impl RoutingNode {
                 let new_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0).0);
                 // This will give me a new RT and set state to Relocated
                 self.assign_network_name(new_name);
+                self.state = State::Connected;
             },
             _ => ()
         };
@@ -748,33 +749,36 @@ impl RoutingNode {
                         }
 
                         let mut network_public_id = public_id.clone();
-                        match self.our_close_group() {
-                            Some(close_group) => {
-                                let relocated_name = try!(utils::calculate_relocated_name(
-                                    close_group, &public_id.name()));
-                                debug!("{}Got a request for network name from {:?}, assigning {:?}",
-                                       self.us(), from_authority, relocated_name);
-                                network_public_id.assign_relocated_name(relocated_name.clone());
 
-                                // TODO(Spandan) How do we tell Y how to reach A through B
+                        let mut close_group = self.routing_table
+                                                  .our_close_group()
+                                                  .iter()
+                                                  .map(|node_info| node_info.public_id.name().clone())
+                                                  .collect::<Vec<NameType>>();
+                        close_group.insert(0, self.id.name());
 
-                                let routing_message = RoutingMessage {
-                                    from_authority: to_authority,
-                                    to_authority: Authority::NaeManager(relocated_name.clone()),
-                                    content: Content::InternalRequest(
-                                        InternalRequest::RelocatedNetworkName(network_public_id,
-                                        response_token)),
-                                };
-                                match SignedMessage::new(Address::Node(self.id().name()),
-                                                         routing_message,
-                                                         self.id().signing_private_key()) {
-                                    Ok(signed_message) => self.send(signed_message),
-                                    Err(e) => return Err(RoutingError::Cbor(e)),
-                                };
-                                Ok(())
-                            }
-                            None => return Err(RoutingError::BadAuthority),
+                        let relocated_name = try!(utils::calculate_relocated_name(
+                            close_group, &public_id.name()));
+
+                        debug!("{}Got a request for network name from {:?}, assigning {:?}",
+                               self.us(), from_authority, relocated_name);
+                        network_public_id.assign_relocated_name(relocated_name.clone());
+
+                        let routing_message = RoutingMessage {
+                            from_authority: to_authority,
+                            to_authority: Authority::NaeManager(relocated_name.clone()),
+                            content: Content::InternalRequest(
+                                InternalRequest::RelocatedNetworkName(network_public_id,
+                                response_token)),
+                        };
+                        match SignedMessage::new(Address::Node(self.id().name()),
+                                                 routing_message,
+                                                 self.id().signing_private_key()) {
+                            Ok(signed_message) => self.send(signed_message),
+                            Err(e) => return Err(RoutingError::Cbor(e)),
                         }
+
+                        Ok(())
                     }
                     _ => return Err(RoutingError::BadAuthority),
                 }
@@ -1167,8 +1171,8 @@ impl RoutingNode {
             },
         };
 
-        // If we're a client, send via our bootstrap connection
-        if !self.is_node() {
+        // If we're a client going to be a node, send via our bootstrap connection
+        if self.state == State::Bootstrapped || self.state == State::Relocated {
             let bootstrap_connections: Vec<&::crust::Connection> =
                 self.bootstrap_map.keys().collect();
             if bootstrap_connections.is_empty() {
@@ -1628,23 +1632,6 @@ impl RoutingNode {
         }
     }
 
-    /// Returns our close group as a vector of NameTypes, sorted from our own name;  Our own name is
-    /// always included, and the first member of the result.  If we are not a full node None is
-    /// returned.
-    pub fn our_close_group(&self) -> Option<Vec<NameType>> {
-        if self.is_node() {
-            let mut close_group = self.routing_table
-                                      .our_close_group()
-                                      .iter()
-                                      .map(|node_info| node_info.public_id.name().clone())
-                                      .collect::<Vec<NameType>>();
-            close_group.insert(0, self.id.name());
-            Some(close_group)
-        } else {
-            None
-        }
-    }
-
     fn drop_crust_connection(&mut self, connection: ::crust::Connection) {
         debug!("{}Dropping Crust Connection - {:?}", self.us(), connection);
         self.crust_service.drop_node(connection);
@@ -1653,7 +1640,10 @@ impl RoutingNode {
 }
 // END ====================================================================================================
 
-fn ignore<R, E>(_result: Result<R, E>) {
+fn ignore<R, E: ::std::fmt::Debug>(result: Result<R, E>) {
+    if let Err(err) = result {
+        warn!("------------------------------->>>>>>>>>>>>>>> THIS WAS IGNORED - {:?}", err);
+    }
 }
 
 #[cfg(test)]
