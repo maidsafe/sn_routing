@@ -1513,13 +1513,12 @@ impl RoutingNode {
         }
 
         match self.relay_map.insert(public_id.signing_public_key().clone(), connection) {
-            Some(node) => debug!("{}Added client to relay map {:?} {:?}", self.us(), node,
-                                 connection),
-            None => {
-                warn!("{}Failed to add {:?} to the relay map - dropping {:?}", self.us(), public_id,
-                      connection);
-                self.crust_service.drop_node(connection);
-            }
+            Some(old_connection) => {
+                warn!("{}Found existing entry {:?} for {:?} found while adding to relay map",
+                      self.us(), old_connection, public_id);
+                self.crust_service.drop_node(old_connection);
+            },
+            None => debug!("{}Added client to relay map {:?} {:?}", self.us(), node, connection),
         }
     }
 
@@ -1643,6 +1642,12 @@ impl RoutingNode {
         } else {
             None
         }
+    }
+
+    fn drop_crust_connection(&self, connection: ::crust::ConnectionName) {
+        debug!("{}Dropping Crust Connection - {:?}", self.us(), connection);
+        self.crust_service.drop_connection(connection);
+        self.handle_lost_connection(connection);
     }
 }
 // END ====================================================================================================
