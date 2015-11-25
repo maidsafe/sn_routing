@@ -344,6 +344,7 @@ impl RoutingNode {
                 info!("{}Routing Client bootstrapped", self.us());
                 self.state = State::Bootstrapped;
                 let _ = self.event_sender.send(Event::Bootstrapped);
+                let _ = self.request_network_name();
                 return
             },
             State::Bootstrapped => {
@@ -681,48 +682,33 @@ impl RoutingNode {
     }
 
     // ---- Request Network Name ------------------------------------------------------------------
-                                                                                            #[allow(unused)]
-    fn request_network_name(&mut self, to_authority: Authority, content: Content) -> RoutingResult {
+    fn request_network_name(&mut self) -> RoutingResult {
+        debug!("{}Requesting a network name", self.us());
+        debug_assert!(self.state == State::Bootstrapped);
         if self.client_restriction {
             debug!("{}Not requesting a network name we are a Client", self.us());
             return Ok(());
         };
-        if self.has_bootstrap_endpoints() {
-            // FIXME (ben 14/08/2015) we need a proper function to retrieve a bootstrap_name
-            let routing_message = RoutingMessage {
-                from_authority: try!(self.get_client_authority()),
-                to_authority: to_authority,
-                content: content,
-            };
-            match SignedMessage::new(Address::Client(self.id().signing_public_key()),
-                                     routing_message,
-                                     self.id().signing_private_key()) {
-                Ok(signed_message) => self.send(signed_message),
-                // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
-                Err(e) => return Err(RoutingError::Cbor(e)),
-            };
-        } else {
-            match content {
-                Content::ExternalRequest(external_request) => {
-                    self.send_to_user(Event::FailedRequest {
-                        request: external_request,
-                        our_authority: None,
-                        location: to_authority,
-                        interface_error: InterfaceError::NotConnected,
-                    });
-                }
-                Content::ExternalResponse(external_response) => {
-                    self.send_to_user(Event::FailedResponse {
-                        response: external_response,
-                        our_authority: None,
-                        location: to_authority,
-                        interface_error: InterfaceError::NotConnected,
-                    });
-                }
-                _ => error!("{}InternalRequest/Response was sent back to user {:?}", self.us(),
-                            content),
-            }
-        }
+
+        let to_authority = ::authority::Authority::NaeManager(self.id.name());
+        let public_id = ::public_id::PublicId::new(&self.id);
+        let internal_request = ::messages::InternalRequest::RequestNetworkName(public_id);
+        let content = ::messages::Content::InternalRequest(internal_request);
+        let routing_message = RoutingMessage {
+            from_authority: try!(self.get_client_authority()),
+            to_authority: to_authority,
+            content: content,
+        };
+        match SignedMessage::new(Address::Client(self.id().signing_public_key()),
+                                 routing_message,
+                                 self.id().signing_private_key()) {
+            Ok(signed_message) => self.send(signed_message),
+            // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
+            Err(error) => {
+                error!("{}Failed to serialise RequestNetworkName: {:?}", self.us(), error);
+                return Err(RoutingError::Cbor(error))
+            },
+        };
         Ok(())
     }
 
@@ -1606,14 +1592,6 @@ impl RoutingNode {
         self.bootstrap_map.values().cloned().collect()
     }
 
-    /// Returns true if bootstrap connections are available. If we are a connected node, then access
-    /// to the bootstrap connections will be blocked, and false is returned.  We might still receive
-    /// messages from our bootstrap connections, but active usage is blocked once we are a node.
-                                                                                            #[allow(unused)]
-    pub fn has_bootstrap_endpoints(&self) -> bool {
-        !self.bootstrap_map.is_empty()
-    }
-
     /// Returns true if the core is a full routing node and has connections
     pub fn is_node(&self) -> bool {
         self.routing_table.size() > 0
@@ -1653,37 +1631,6 @@ impl RoutingNode {
             Some(close_group)
         } else {
             None
-        }
-    }
-
-                                                                                            #[allow(unused)]
-    fn request_network_name_core(&mut self,
-                                 bootstrap_name: &NameType,
-                                 bootstrap_connection: &::crust::Connection) -> RoutingResult {
-        // If RoutingNode is restricted from becoming a node, it suffices to never request a network
-        // name.
-        match self.state {
-            State::Relocated      |
-            State::Connected      |
-            State::Terminated     |
-            State::Disconnected   |
-            State::GroupConnected => {
-                error!("{}Requesting network name while disconnected or named or terminated",
-                       self.us());
-                Err(::error::RoutingError::InvalidStateForOperation)
-            }
-            State::Bootstrapped => {
-                debug!("{}Will request a network name from bootstrap node {:?} on {:?}", self.us(),
-                       bootstrap_name, bootstrap_connection);
-
-                let to_authority = ::authority::Authority::NaeManager(self.id.name());
-
-                let public_id = ::public_id::PublicId::new(&self.id);
-                let internal_request = ::messages::InternalRequest::RequestNetworkName(public_id);
-                let content = ::messages::Content::InternalRequest(internal_request);
-
-                self.request_network_name(to_authority, content)
-            },
         }
     }
 }
