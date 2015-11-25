@@ -44,40 +44,13 @@ type RoutingResult = Result<(), RoutingError>;
 
 const MAX_RELAYS: usize = 100;
 
-/// ConnectionName labels the counterparty on a connection in relation to us
-// #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-// pub enum ConnectionName {
-//     Relay(Address),
-//     Routing(NameType),
-// }
-
-
-/// State determines the current state of RoutingCore based on the established connections.
-/// State will start at Disconnected and for a full node under expected behaviour cycle from
-/// Disconnected to Bootstrapped.  Once Bootstrapped it requires a relocated name provided by
-/// the network.  Once the name has been acquired, the state is Relocated and a routing table
-/// is initialised with this name.  Once routing connections with the network are established,
-/// the state is Connected.  Once more than ::types::GROUP_SIZE connections have been established,
-/// the state is marked as GroupConnected. If the routing connections are lost, the state returns
-/// to Disconnected and the routing table is destroyed.  If the node accepts an incoming connection
-/// while itself disconnected it can jump from Disconnected to Relocated (assigning itself a name).
-/// For a client the cycle is reduced to Disconnected and Bootstrapped.
-/// When the user calls ::stop(), the state is set to Terminated.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
-pub enum State {
-    /// There are no connections.
+enum State {
     Disconnected,
-    /// There are only bootstrap connections, and we do not yet have a name.
-    Bootstrapped,
-    /// There are only bootstrap connections, and we have received a name.
-    Relocated,
-    /// There are 0 < n < GROUP_SIZE routing connections, and we have a name.
-    Connected,
-    /// There are n >= GROUP_SIZE routing connections, and we have a name.
-    GroupConnected,
-    /// ::stop() has been called.
-    #[allow(dead_code)]
-    Terminated,
+    // We are Bootstrapped
+    Client,
+    // We have been Relocated and now a node
+    Node,
 }
 
 /// Routing Node
@@ -109,9 +82,9 @@ pub struct RoutingNode {
     network_name: Option<NameType>,
     routing_table: RoutingTable,
     // our bootstrap connections
-    bootstrap_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
+    proxy_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
     // any clients we have relaying through us
-    relay_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
+    client_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
     // END
 }
 
@@ -187,8 +160,8 @@ impl RoutingNode {
             state: State::Disconnected,
             network_name: None,
             routing_table: RoutingTable::new(&own_name),
-            bootstrap_map: ::std::collections::HashMap::new(),
-            relay_map: ::std::collections::HashMap::new(),
+            proxy_map: ::std::collections::HashMap::new(),
+            client_map: ::std::collections::HashMap::new(),
 //END
         }
     }
@@ -305,7 +278,7 @@ impl RoutingNode {
                 let new_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0).0);
                 // This will give me a new RT and set state to Relocated
                 self.assign_network_name(new_name);
-                self.state = State::Connected;
+                self.state = State::Node;
             },
             _ => ()
         };
@@ -331,66 +304,38 @@ impl RoutingNode {
 
     fn handle_identify(&mut self, connection: ::crust::Connection, peer_public_id: &PublicId) {
         debug!("{}Peer {:?} has identified itself on {:?}", self.us(), peer_public_id, connection);
-        let peer_is_client = !peer_public_id.is_node();
         match self.state {
             State::Disconnected => {
-                assert!(self.bootstrap_map.is_empty());
+                assert!(self.proxy_map.is_empty());
                 // I think this `add_peer` function is doing some validation of the ID, but I
                 // haven't looked fully.  I guess it can't do proper validation until the PublicId
                 // type is fixed to be validatable.  We should at least for now avoid (or assert
                 // that we're not) adding a client ID here as the peer.
 
                 // TODO(Fraser) - if this returns false, we probably need to restart
-                let _ = self.bootstrap_map.insert(connection, peer_public_id.name().clone());
+                let _ = self.proxy_map.insert(connection, peer_public_id.name().clone());
                 info!("{}Routing Client bootstrapped", self.us());
-                self.state = State::Bootstrapped;
+                self.state = State::Client;
                 let _ = self.event_sender.send(Event::Bootstrapped);
                 let _ = self.request_network_name();
                 return
             },
-            State::Bootstrapped => {
+            State::Client => {
                 // Just now we only allow one bootstrap connection, so if we're already in
-                // Bootstrapped state, we shouldn't receive further indentifiers from peers.
+                // Client state, we shouldn't receive further indentifiers from peers.
                 error!("{}We're bootstrapped already, but have received another identifier from \
                        {:?} on {:?} - closing this connection now.", self.us(), peer_public_id,
                        connection);
                 self.drop_crust_connection(connection);
                 return
             },
-            State::Relocated => {
-                // If we happen to have received a bootstrap attempt to us from another node which
-                // is just starting too, we can't yet handle this since we're not properly connected
-                // ourself.  So we should just drop this connection if it's from a client.
-                // Otherwise, this is our first connection from our close group after relocating, so
-                // transition to Connected state.  The self.add_node call below does this.
-                //
-                // An exception to this is where we're the first node of a new network.  In this
-                // case, we will be Relocated, but we'll need to handle the request from the second
-                // node which will be a client at that stage.  Since we can't tell whether we're the
-                // first node of a new network or not, we'll just have to handle all client requests
-                // here.
-                //
-                // This problem should be resolved (or at least moved to another area of the code!)
-                // once Crust provides the ability to start without automatically opening listening
-                // sockets.
-
-                // if peer_is_client {
-                //     self.drop_crust_connection(connection);
-                //     return
-                // }
+            State::Node => {
+                if !peer_public_id.is_node() {
+                    self.add_client(connection, peer_public_id.clone());
+                } else {
+                    self.add_node(connection, peer_public_id.clone());
+                }
             },
-            State::Connected => {
-                // The self.add_node call below transitions our state to GroupConnected if
-                // appropriate
-            },
-            State::GroupConnected => (),
-            State::Terminated => return,
-        };
-
-        if peer_is_client {
-            self.add_client(connection, peer_public_id.clone());
-        } else {
-            self.add_node(connection, peer_public_id.clone());
         }
     }
 
@@ -696,7 +641,7 @@ impl RoutingNode {
     // ---- Request Network Name ------------------------------------------------------------------
     fn request_network_name(&mut self) -> RoutingResult {
         debug!("{}Requesting a network name", self.us());
-        debug_assert!(self.state == State::Bootstrapped);
+        debug_assert!(self.state == State::Client);
         if self.client_restriction {
             debug!("{}Not requesting a network name we are a Client", self.us());
             return Ok(());
@@ -863,6 +808,8 @@ impl RoutingNode {
                     let _ = self.send_connect_request(&peer.name());
                 }
 
+                self.state = State::Node;
+
                 Ok(())
             }
             _ => return Err(RoutingError::UnknownMessageType),
@@ -897,11 +844,10 @@ impl RoutingNode {
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
         let (from_authority, address) = match self.state() {
             &State::Disconnected => return Err(RoutingError::NotBootstrapped),
-            &State::Bootstrapped | &State::Relocated => {
+            &State::Client => {
                 let signing_key = self.id().signing_public_key();
                 (try!(self.get_client_authority()), Address::Client(signing_key))
             }
-            &State::Terminated => return Err(RoutingError::Terminated),
             _ => {
                 let name = self.id().name();
                 (Authority::ManagedNode(name), Address::Node(name))
@@ -1172,9 +1118,9 @@ impl RoutingNode {
         };
 
         // If we're a client going to be a node, send via our bootstrap connection
-        if self.state == State::Bootstrapped || self.state == State::Relocated {
+        if self.state == State::Client {
             let bootstrap_connections: Vec<&::crust::Connection> =
-                self.bootstrap_map.keys().collect();
+                self.proxy_map.keys().collect();
             if bootstrap_connections.is_empty() {
                 unreachable!("{}Target connections for send is empty", self.us());
             }
@@ -1189,7 +1135,7 @@ impl RoutingNode {
         // Handle if we have a relay connection as the destination
         if let Authority::Client(_, ref client_public_key) = destination {
             debug!("{}Looking for client target {:?}", self.us(), client_public_key);
-            if let Some(relay_connection) = self.relay_map.get(client_public_key) {
+            if let Some(relay_connection) = self.client_map.get(client_public_key) {
                 self.crust_service.send(relay_connection.clone(), bytes);
             } else {
                 warn!("{}Failed to find relay contact for {:?}", self.us(), client_public_key);
@@ -1278,7 +1224,7 @@ impl RoutingNode {
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
-        match self.bootstrap_map.iter().next() {
+        match self.proxy_map.iter().next() {
             Some(bootstrap_name) => Ok(Authority::Client(bootstrap_name.1.clone(),
                                                          self.id().signing_public_key())),
             None => Err(RoutingError::NotBootstrapped),
@@ -1333,7 +1279,7 @@ impl RoutingNode {
     fn assign_network_name(&mut self, new_name: ::NameType) {
         match self.state {
             State::Disconnected => debug!("{}Assigning name {:?}", self.us(), new_name),
-            State::Bootstrapped => debug!("{}Assigning name {:?}", self.us(), new_name),
+            State::Client => debug!("{}Assigning name {:?}", self.us(), new_name),
             _ => {
                 debug!("{}We have already assigned a network name", self.us());
                 return
@@ -1350,12 +1296,11 @@ impl RoutingNode {
         debug!("{}Re-creating routing table after relocation", self.us());
         self.routing_table = RoutingTable::new(&new_name);
         self.network_name = Some(new_name);
-        self.state = State::Relocated;
     }
 
                                                                                             #[allow(unused)]
     fn look_up_client(&self, connection: &crust::Connection) -> Option<crypto::sign::PublicKey> {
-        self.relay_map
+        self.client_map
             .iter()
             .filter(|&(_, relay_connection)| relay_connection == connection)
             .next()
@@ -1366,23 +1311,23 @@ impl RoutingNode {
                                                                                             #[allow(unused)]
     fn look_up_connection(&self, connection: &crust::Connection) -> Option<&::NameType> {
         self.routing_table.look_up_connection(connection)
-                          .or(self.bootstrap_map.get(connection))
+                          .or(self.proxy_map.get(connection))
     }
 
-    /// check relay_map for a client and remove from map
+    /// check client_map for a client and remove from map
     fn dropped_client_connection(&mut self,
                                  connection: &::crust::Connection) {
-        let public_key = self.relay_map
+        let public_key = self.client_map
                              .iter()
                              .find(|&(_, relay)| relay == connection)
                              .map(|entry| entry.0.clone());
         if let Some(public_key) = public_key {
-            let _ = self.relay_map.remove(&public_key);
+            let _ = self.client_map.remove(&public_key);
         }
     }
 
     fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) {
-        let _ = self.bootstrap_map.remove(connection);
+        let _ = self.proxy_map.remove(connection);
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
@@ -1394,129 +1339,15 @@ impl RoutingNode {
         }
     }
 
-    /// Drops the associated name from the relevant connection map or from routing table.
-    /// If dropped from the routing table a churn event is triggered for the user
-    /// if the dropped peer changed our close group and churn is generated in routing.
-    /// If dropped from a connection map and multiple connections are active on the same identity
-    /// all connections will be dropped asynchronously.  Removing a node from the routing table
-    /// does not ensure the connection is dropped.
-                                                                                            #[allow(unused)]
-    pub fn drop_peer(&mut self, connection_name: &::NameType) -> RoutingResult {
-        debug!("{}Drop peer {:?}", self.us(), connection_name);
-        // let current_state = self.state.clone();
-        // match *connection_name {
-        //     ConnectionName::Routing(name) => {
-        //         let trigger_churn = self.name_in_range(&name);
-        //         let routing_table_count_prior = self.routing_table.size();
-        //         self.routing_table.drop_node(&name);
-        //
-        //         match routing_table_count_prior {
-        //             1usize => {
-        //                 error!("{}Routing Node has disconnected", self.us());
-        //                 self.state = State::Disconnected;
-        //                 let _ = self.event_sender.send(Event::Disconnected);
-        //             }
-        //             ::types::GROUP_SIZE => {
-        //                 self.state = State::Connected;
-        //             }
-        //             _ => {}
-        //         }
-        //
-        //         info!("{}RT({}) dropped node {:?}", self.us(),
-        //               self.routing_table.size(), name);
-        //
-        //         if trigger_churn {
-        //             let our_close_group = self.routing_table.our_close_group();
-        //             let mut close_group = our_close_group.iter()
-        //                                                  .map(|node_info| {
-        //                                                      node_info.public_id.name()
-        //                                                  })
-        //                                                  .collect::<Vec<::NameType>>();
-        //
-        //             close_group.insert(0, self.id.name());
-        //
-        //             let target_connections =
-        //                 our_close_group.iter()
-        //                                .filter_map(|node_info| node_info.connection)
-        //                                .collect::<Vec<::crust::Connection>>();
-        //
-        //             let churn_msg = ::direct_messages::Churn { close_group: close_group };
-        //             if let Err(err) = self.generate_churn(churn_msg, target_connections, name) {
-        //                 return Err(err);
-        //             }
-        //         }
-        //     }
-        //     ConnectionName::Bootstrap(name) => {
-        //         if self.bootstrap_map.is_some() {
-        //             let bootstrapped_prior;
-        //             let connections_to_drop;
-        //             let bootstrap_map_len_after;
-        //             {
-        //                 let bootstrap_map_ref = unwrap_option!(self.bootstrap_map.as_mut(),
-        //                                                        "Logic Error - Report bug");
-        //                 bootstrapped_prior = bootstrap_map_ref.identities_len() > 0;
-        //                 connections_to_drop = bootstrap_map_ref.drop_identity(&name).1;
-        //                 bootstrap_map_len_after = bootstrap_map_ref.identities_len();
-        //             }
-        //
-        //             if !connections_to_drop.is_empty() {
-        //                 self.drop_connections(connections_to_drop);
-        //             }
-        //
-        //             match self.state {
-        //                 State::Bootstrapped | State::Relocated => {
-        //                     if bootstrap_map_len_after == 0usize && bootstrapped_prior {
-        //                         error!("{}Routing Client has disconnected",
-        //                                self.us());
-        //                         self.state = State::Disconnected;
-        //                         let _ = self.event_sender.send(Event::Disconnected);
-        //                     };
-        //                 }
-        //                 _ =>
-        //                     debug!("{}Unhandled state {:?} in drop_peer -> \
-        //                            ConnectionName::Bootstrap", self.us(), self.state),
-        //             };
-        //         }
-        //     }
-        //     ConnectionName::Relay(::types::Address::Client(public_key)) => {
-        //         if self.relay_map.is_some() {
-        //             let (_dropped_public_id, connections_to_drop) =
-        //                 unwrap_option!(self.relay_map.as_mut(), "Logic Error - Report bug")
-        //                     .drop_identity(&Relay { public_key: public_key, });
-        //             if !connections_to_drop.is_empty() {
-        //                 self.drop_connections(connections_to_drop);
-        //             }
-        //         }
-        //     }
-        //     _ => debug!("{}Unhandled ConnectionName {:?} in drop_peer", self.us(),
-        //                 connection_name),
-        // }
-        //
-        // match self.state {
-        //     State::Disconnected => {
-        //         if current_state == State::Disconnected {
-        //             // TODO (Spandan) - This was an empty return - analyse to see if this need an
-        //             //                  error return or an Ok return
-        //             return Ok(());
-        //         }
-        //         self.restart();
-        //         self.crust_service.bootstrap(0u32);
-        //     }
-        //     _ => {}
-        // }
-
-        Ok(())
-    }
-
     // Add a client to our relay map
     fn add_client(&mut self, connection: crust::Connection, public_id: PublicId) {
-        if self.relay_map.len() == MAX_RELAYS {
+        if self.client_map.len() == MAX_RELAYS {
             warn!("{}Relay map full ({} connections) so won't add {:?} to the relay map - dropping \
                   {:?}", self.us(), MAX_RELAYS, public_id, connection);
             self.drop_crust_connection(connection);
         }
 
-        match self.relay_map.insert(public_id.signing_public_key().clone(), connection) {
+        match self.client_map.insert(public_id.signing_public_key().clone(), connection) {
             Some(old_connection) => {
                 warn!("{}Found existing entry {:?} for {:?} found while adding to relay map",
                       self.us(), old_connection, public_id);
@@ -1547,23 +1378,18 @@ impl RoutingNode {
         }
 
         if add_node_result.0 {
-            if routing_table_count_prior == 0usize {
-                // if we transition from zero to one routing connection
-                info!("{}Routing Node has connected", self.us());
-                self.state = State::Connected;
-            } else if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
+            if routing_table_count_prior == ::types::GROUP_SIZE - 1usize {
                 info!("{}Routing Node has connected to {} nodes", self.us(),
                       self.routing_table.size());
-                self.state = State::GroupConnected;
                 if let Err(err) = self.event_sender.send(Event::Connected) {
                     error!("{}Error sending {:?} to event_sender", self.us(), err.0);
                 }
                 // Drop the bootstrap connections
-                for (connection, _) in self.bootstrap_map.clone().into_iter() {
+                for (connection, _) in self.proxy_map.clone().into_iter() {
                     info!("{}Dropping bootstrap connection {:?}", self.us(), connection);
                     self.drop_crust_connection(connection);
                 }
-                self.bootstrap_map = ::std::collections::HashMap::new();
+                self.proxy_map = ::std::collections::HashMap::new();
             }
 
             if should_trigger_churn {
@@ -1598,13 +1424,13 @@ impl RoutingNode {
     // Returns the available Bootstrap connections as connections.
                                                                                             #[allow(unused)]
     fn bootstrap_connections(&self) -> Vec<::crust::Connection> {
-        self.bootstrap_map.keys().cloned().collect()
+        self.proxy_map.keys().cloned().collect()
     }
 
     // Returns the available Bootstrap connections as names.
                                                                                             #[allow(unused)]
     fn bootstrap_names(&self) -> Vec<::NameType> {
-        self.bootstrap_map.values().cloned().collect()
+        self.proxy_map.values().cloned().collect()
     }
 
     /// Returns true if the core is a full routing node and has connections
