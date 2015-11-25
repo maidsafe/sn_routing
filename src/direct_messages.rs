@@ -31,7 +31,6 @@ pub enum Content {
     Churn(Churn),
 }
 
-
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct DirectMessage {
