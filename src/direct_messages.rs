@@ -32,7 +32,7 @@ pub enum Content {
 }
 
 /// All messages sent / received are constructed as signed message.
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub struct DirectMessage {
     content: Content,
     signature: ::sodiumoxide::crypto::sign::Signature,
@@ -82,6 +82,13 @@ impl DirectMessage {
 
     pub fn encoded_content(&self) -> Result<Vec<u8>, ::cbor::CborError> {
         ::utils::encode(&self.content)
+    }
+}
+
+impl ::std::fmt::Debug for DirectMessage {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(formatter, "DirectMessage {{ content: {:?}, signature: <binary data> }}",
+               self.content)
     }
 }
 
