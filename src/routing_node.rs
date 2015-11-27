@@ -98,12 +98,12 @@ impl RoutingNode {
         let (action_tx, action_rx) = ::std::sync::mpsc::channel();
         let (category_tx, category_rx) = ::std::sync::mpsc::channel();
 
-        let routing_event_category = ::maidsafe_utilities::event_sender::RoutingEventCategory::RoutingEvent;
+        let routing_event_category = ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent;
         let action_sender = ::types::RoutingActionSender::new(action_tx,
                                                               routing_event_category,
                                                               category_tx.clone());
 
-        let crust_event_category = ::maidsafe_utilities::event_sender::RoutingEventCategory::CrustEvent;
+        let crust_event_category = ::maidsafe_utilities::event_sender::MaidSafeEventCategory::CrustEvent;
         let crust_sender = ::crust::CrustEventSender::new(crust_tx,
                                                           crust_event_category,
                                                           category_tx);
@@ -184,12 +184,12 @@ impl RoutingNode {
     }
 
     pub fn run(&mut self,
-               category_rx: ::std::sync::mpsc::Receiver<::maidsafe_utilities::event_sender::RoutingEventCategory>) {
+               category_rx: ::std::sync::mpsc::Receiver<::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
         self.crust_service.bootstrap(0u32, Some(5484));
         debug!("{}RoutingNode started running and started bootstrap", self.us());
         for it in category_rx.iter() {
             match it {
-                ::maidsafe_utilities::event_sender::RoutingEventCategory::RoutingEvent => {
+                ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::SendContent(our_authority, to_authority, content) => {
@@ -211,7 +211,7 @@ impl RoutingNode {
                         }
                     }
                 },
-                ::maidsafe_utilities::event_sender::RoutingEventCategory::CrustEvent => {
+                ::maidsafe_utilities::event_sender::MaidSafeEventCategory::CrustEvent => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         match crust_event {
                             ::crust::Event::BootstrapFinished => (),
