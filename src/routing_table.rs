@@ -147,6 +147,18 @@ impl RoutingTable {
         (false, None)
     }
 
+    /// Adds a connection to an existing entry.  Should be called after `has_node`.
+    pub fn add_connection(&mut self, their_id: &NameType, connection: Connection) {
+        use ::itertools::Itertools;
+        match self.routing_table.iter_mut().find(|node_info| node_info.id() == their_id) {
+            Some(mut node_info) => {
+                node_info.connections.push(connection);
+                node_info.connections = node_info.connections.iter().cloned().unique().collect();
+            },
+            None => error!("The NodeInfo should already exist here."),
+        }
+    }
+
     /// This is used to check whether it is worth while retrieving a contact's public key from the
     /// PKI with a view to adding the contact to our routing table.  The checking procedure is the
     /// same as for 'AddNode' above, except for the lack of a public key to check in step 1.
@@ -346,26 +358,9 @@ impl RoutingTable {
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
-        for node_info in &self.routing_table {
-            if node_info.id() == node_id {
-                return true;
-            }
-        }
-        false
+        self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
-
-                                                                                            #[allow(unused)]
-    pub fn look_up_connection(&self,
-                              connection_to_find: &::crust::Connection)
-                              -> Option<&::NameType> {
-        self.routing_table.iter()
-                          .find(|node_info|
-                              node_info.connections
-                                       .iter()
-                                       .any(|connection| connection == connection_to_find))
-                          .map(|node_info| node_info.id())
-    }
-
+                                                                                           #[allow(unused)]
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.routing_table
