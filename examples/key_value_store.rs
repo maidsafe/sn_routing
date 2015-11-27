@@ -530,8 +530,10 @@ fn main() {
     if args.flag_node {
         let mut node = Node::new();
         node.run();
+        debug!("[key_value_store -> Node Example] Eixiting main...");
     } else {
         let mut client = Client::new();
         client.run();
+        debug!("[key_value_store -> Client Example] Eixiting main...");
     }
 }

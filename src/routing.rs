@@ -35,9 +35,9 @@ type RoutingResult = Result<(), RoutingError>;
 /// On constructing a new Routing object a RoutingNode will also be started.
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
-#[derive(Clone)]
 pub struct Routing {
-    action_sender: mpsc::Sender<Action>,
+    action_sender: ::types::RoutingActionSender,
+    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
 impl Routing {
@@ -47,22 +47,14 @@ impl Routing {
     pub fn new(event_sender: mpsc::Sender<Event>) -> Routing {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-        let (action_sender, action_receiver) = mpsc::channel::<Action>();
-
         // start the handler for routing without a restriction to become a full node
-        let mut routing_node = RoutingNode::new(action_sender.clone(),
-                                                action_receiver,
-                                                event_sender,
-                                                false,
-                                                None);
+        // TODO(Spandan) Return Error to Vaults instead of unwrap_result!(...)
+        let (action_sender, raii_joiner)  = unwrap_result!(RoutingNode::new(event_sender, false, None));
 
-        let _ = thread!("Node runner", move || {
-            debug!("Started routing run().");
-            routing_node.run();
-            debug!("Routing node terminated running.");
-        });
-
-        Routing { action_sender: action_sender }
+        Routing {
+            action_sender: action_sender,
+            _raii_joiner: raii_joiner,
+        }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
@@ -182,10 +174,20 @@ impl Routing {
 
     }
 
+    // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop
+    // trait and hence is RAII friendly
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
     pub fn stop(&mut self) {
         let _ = self.action_sender.send(Action::Terminate);
+    }
+}
+
+impl Drop for Routing {
+    fn drop(&mut self) {
+        if let Err(err) = self.action_sender.send(Action::Terminate) {
+            error!("Error {:?} sending event RoutingNode", err);
+        }
     }
 }
 
