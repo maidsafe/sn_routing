@@ -88,7 +88,7 @@ pub struct RoutingNode {
     routing_table: RoutingTable,
     // our bootstrap connections
     proxy_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
-    // any clients we have relaying through us
+    // any clients we have proxying through us
     client_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
     // END
 }
@@ -223,9 +223,7 @@ impl RoutingNode {
                             ::crust::Event::NewMessage(connection, bytes) =>
                                 self.handle_new_message(connection, bytes),
                             ::crust::Event::OnConnect(connection, connection_token) =>
-                                self.handle_on_connect(unwrap_result!(connection) /* TODO */,
-                                                       connection_token),
-
+                                self.handle_on_connect(connection, connection_token),
                             ::crust::Event::ExternalEndpoints(external_endpoints) => {
                                 for external_endpoint in external_endpoints {
                                     debug!("{}Adding external endpoint {:?}", self.us(),
@@ -234,8 +232,10 @@ impl RoutingNode {
                                 }
                             },
                             ::crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
-                            ::crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
-                            ::crust::Event::OnRendezvousConnect(_connection, _response_token) => unimplemented!(),
+                            ::crust::Event::OnUdpSocketMapped(_mapped_udp_socket) =>
+                                unimplemented!(),
+                            ::crust::Event::OnRendezvousConnect(_connection, _response_token) =>
+                                unimplemented!(),
                         }
                     }
                 },
@@ -296,16 +296,27 @@ impl RoutingNode {
         }
     }
 
-    fn handle_on_connect(&mut self, connection: ::crust::Connection, _connection_token: u32) {
-        debug!("{}New connection via OnConnect {:?}", self.us(), connection);
-        match self.state() {
-            &State::Disconnected => {
-                // Established connection. Pending Validity checks
-                self.state = State::Bootstrapping;
+    fn handle_on_connect(&mut self,
+                         connection: ::std::io::Result<::crust::Connection>,
+                         connection_token: u32) {
+        match connection {
+            Ok(connection) => {
+                debug!("{}New connection via OnConnect {:?} with token {}", self.us(), connection,
+                       connection_token);
+                match self.state() {
+                    &State::Disconnected => {
+                        // Established connection. Pending Validity checks
+                        self.state = State::Bootstrapping;
+                    },
+                    _ => ()
+                };
+                ignore(self.identify(connection));
             },
-            _ => ()
-        };
-        ignore(self.identify(connection));
+            Err(error) => {
+                warn!("{}Failed to make connection with token {} - {}", self.us(),
+                      connection_token, error);
+            }
+        }
     }
 
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
@@ -390,10 +401,10 @@ impl RoutingNode {
 
     /// This the fundamental functional function in routing.
     /// It only handles messages received from connections in our routing table;
-    /// i.e. this is a pure SAFE message (and does not function as the start of a relay).
-    /// If we are the relay node for a message from the SAFE network to a node we relay for,
+    /// i.e. this is a pure SAFE message (and does not function as the start of a proxy).
+    /// If we are the proxy node for a message from the SAFE network to a node we proxy for,
     /// then we will pass out the message to the client or bootstrapping node;
-    /// no relay-messages enter the SAFE network here.
+    /// no proxy-messages enter the SAFE network here.
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
         debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
 
@@ -1124,7 +1135,7 @@ impl RoutingNode {
     }
 
     /// Send a SignedMessage out to the destination
-    /// 1. if it can be directly relayed to a Client, then it will
+    /// 1. if it can be directly sent to a Client, then it will
     /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
@@ -1155,13 +1166,17 @@ impl RoutingNode {
             return
         }
 
-        // Handle if we have a relay connection as the destination
+        // Handle if we have a client connection as the destination
         if let Authority::Client(_, ref client_public_key) = destination {
-            debug!("{}Looking for client target {:?}", self.us(), client_public_key);
-            if let Some(relay_connection) = self.client_map.get(client_public_key) {
-                self.crust_service.send(relay_connection.clone(), bytes);
+            debug!("{}Looking for client target {:?}", self.us(),
+                   ::NameType::new(
+                       ::sodiumoxide::crypto::hash::sha512::hash(&client_public_key[..]).0));
+            if let Some(client_connection) = self.client_map.get(client_public_key) {
+                self.crust_service.send(client_connection.clone(), bytes);
             } else {
-                warn!("{}Failed to find relay contact for {:?}", self.us(), client_public_key);
+                warn!("{}Failed to find client contact for {:?}", self.us(),
+                      ::NameType::new(
+                          ::sodiumoxide::crypto::hash::sha512::hash(&client_public_key[..]).0));
             }
             return
         }
@@ -1269,13 +1284,12 @@ impl RoutingNode {
     fn us(&self) -> String {
         match self.network_name {
             Some(name) => {
-                format!("Node({:?}) {:?} - ", name, self.state)
+                format!("{:?}({:?}) - ", self.state, name)
             },
             None => {
-                format!("Client({:?}) {:?} - ",
+                format!("{:?}({:?}) - ", self.state,
                         ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
-                            &self.id.signing_public_key()[..]).0),
-                        self.state)
+                            &self.id.signing_public_key()[..]).0))
             },
         }
     }
@@ -1326,7 +1340,7 @@ impl RoutingNode {
                                  connection: &::crust::Connection) {
         let public_key = self.client_map
                              .iter()
-                             .find(|&(_, relay)| relay == connection)
+                             .find(|&(_, client)| client == connection)
                              .map(|entry| entry.0.clone());
         if let Some(public_key) = public_key {
             let _ = self.client_map.remove(&public_key);
@@ -1346,21 +1360,21 @@ impl RoutingNode {
         }
     }
 
-    // Add a client to our relay map
+    // Add a client to our client map
     fn add_client(&mut self, connection: crust::Connection, public_id: PublicId) {
         if self.client_map.len() == MAX_RELAYS {
-            warn!("{}Relay map full ({} connections) so won't add {:?} to the relay map - dropping \
-                  {:?}", self.us(), MAX_RELAYS, public_id, connection);
+            warn!("{}Client map full ({} connections) so won't add {:?} to the client map - \
+                  dropping {:?}", self.us(), MAX_RELAYS, public_id, connection);
             self.drop_crust_connection(connection);
         }
 
         match self.client_map.insert(public_id.signing_public_key().clone(), connection) {
             Some(old_connection) => {
-                warn!("{}Found existing entry {:?} for {:?} found while adding to relay map",
+                warn!("{}Found existing entry {:?} for {:?} found while adding to client map",
                       self.us(), old_connection, public_id);
                 self.drop_crust_connection(old_connection);
             },
-            None => debug!("{}Added client {:?} to relay map; {:?}", self.us(),
+            None => debug!("{}Added client {:?} to client map; {:?}", self.us(),
                             public_id, connection),
         }
     }
@@ -1442,14 +1456,14 @@ impl RoutingNode {
     }
 
     /// Our authority is defined by the routing message, if we are a full node;  if we are a client,
-    /// this always returns Client authority (where the relay name is taken from the routing message
+    /// this always returns Client authority (where the proxy name is taken from the routing message
     /// destination)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         if self.state == State::Node {
             our_authority(message, &self.routing_table)
         } else {
             // if the message reached us as a client, then destination.get_location()
-            // was our relay name
+            // was our proxy's name
             Some(Authority::Client(message.destination().get_location().clone(),
                                    self.id.signing_public_key()))
         }
