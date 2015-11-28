@@ -246,7 +246,7 @@ impl RoutingNode {
     fn handle_bootstrap_finished(&mut self) {
         debug!("{}Finished bootstrapping.", self.us());
         // If we have no connections, we should start listening to allow incoming connections
-        if self.proxy_map.is_empty() {
+        if self.state == State::Disconnected {
             debug!("{}Bootstrap finished with no connections. Start Listening to allow \
                     incoming connections.", self.us());
             self.start_listening();
