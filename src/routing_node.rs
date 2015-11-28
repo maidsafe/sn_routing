@@ -51,6 +51,8 @@ const CRUST_DEFAULT_UTP_ACCEPTING_PORT: ::crust::Port = ::crust::Port::Utp(5483)
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 enum State {
     Disconnected,
+    // Transition state while validating proxy node
+    Bootstrapping,
     // We are Bootstrapped
     Client,
     // We have been Relocated and now a node
@@ -181,6 +183,9 @@ impl RoutingNode {
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         debug!("{}RoutingNode started running and started bootstrap", self.us());
         for it in category_rx.iter() {
+            if self.state == State::Node {
+                trace!("{}Routing Table size: {}", self.us(), self.routing_table.size());
+            };
             match it {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
@@ -240,9 +245,10 @@ impl RoutingNode {
 
     fn handle_bootstrap_finished(&mut self) {
         debug!("{}Finished bootstrapping.", self.us());
-        // If we have no connections, we should consider ourself to be the first node of a new
-        // network.
+        // If we have no connections, we should start listening to allow incoming connections
         if self.proxy_map.is_empty() {
+            debug!("{}Bootstrap finished with no connections. Start Listening to allow \
+                    incoming connections.", self.us());
             self.start_listening();
         }
     }
@@ -292,6 +298,13 @@ impl RoutingNode {
 
     fn handle_on_connect(&mut self, connection: ::crust::Connection, _connection_token: u32) {
         debug!("{}New connection via OnConnect {:?}", self.us(), connection);
+        match self.state() {
+            &State::Disconnected => {
+                // Established connection. Pending Validity checks
+                self.state = State::Bootstrapping;
+            },
+            _ => ()
+        };
         ignore(self.identify(connection));
     }
 
@@ -332,6 +345,9 @@ impl RoutingNode {
         debug!("{}Peer {:?} has identified itself on {:?}", self.us(), peer_public_id, connection);
         match self.state {
             State::Disconnected => {
+                unreachable!("Should not be Disconnected when handling incoming identify message");
+            },
+            State::Bootstrapping => {
                 assert!(self.proxy_map.is_empty());
                 // I think this `add_peer` function is doing some validation of the ID, but I
                 // haven't looked fully.  I guess it can't do proper validation until the PublicId
