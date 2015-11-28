@@ -48,6 +48,7 @@
 #[macro_use]
 extern crate log;
 extern crate cbor;
+extern crate itertools;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
@@ -55,8 +56,6 @@ extern crate time;
 
 extern crate crust;
 extern crate lru_time_cache;
-// TODO(Spandan) This will be removed as functionalities get exposed from this crate
-#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate message_filter;
@@ -102,9 +101,9 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
-/// Data cache for all Data types 
+/// Data cache for all Data types
 pub mod data_cache;
-/// Data cache options, may be set at runtime 
+/// Data cache options, may be set at runtime
 pub mod data_cache_options;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
