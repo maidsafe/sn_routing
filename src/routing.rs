@@ -227,7 +227,7 @@ impl Drop for Routing {
 //         let key = ::std::string::String::from("key");
 //         let value = ::std::string::String::from("value");
 //         let name = calculate_key_name(&key.clone());
-//         let data = ::utils::encode(&(key, value)).unwrap();
+//         let data = unwrap_result!(::utils::encode(&(key, value)));
 //         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
 //         debug!("Putting data {:?}", data);

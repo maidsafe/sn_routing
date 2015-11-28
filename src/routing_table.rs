@@ -434,7 +434,7 @@ mod test {
         let mut binary_id = self::bit_vec::BitVec::from_bytes(&farthest_from_tables_own_id.0);
         if index > 0 {
             for i in 0..index {
-                let bit = binary_id.get(i).unwrap();
+                let bit = unwrap_option!(binary_id.get(i), "");
                 binary_id.set(i, !bit);
             }
         }
@@ -442,12 +442,12 @@ mod test {
         match contact_type {
             ContactType::Mid => {
                 let bit_num = binary_id.len() - 1;
-                let bit = binary_id.get(bit_num).unwrap();
+                let bit = unwrap_option!(binary_id.get(bit_num), "");
                 binary_id.set(bit_num, !bit);
             }
             ContactType::Close => {
                 let bit_num = binary_id.len() - 2;
-                let bit = binary_id.get(bit_num).unwrap();
+                let bit = unwrap_option!(binary_id.get(bit_num), "");
                 binary_id.set(bit_num, !bit);
             }
             ContactType::Far => {}

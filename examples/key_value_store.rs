@@ -279,7 +279,7 @@ impl Node {
             println!("REFRESH {:?} - {:?}", client_name, stored);
             self.routing.refresh_request(1u64,
                 ::routing::authority::Authority::ClientManager(client_name.clone()),
-                encode(&stored).unwrap(), cause.clone());
+                unwrap_result!(encode(&stored)), cause.clone());
         }
         // self.db = BTreeMap::new();
         if exit { self.routing.stop(); };
@@ -315,7 +315,7 @@ impl Node {
                             client_name, stored, cause);
                         self.routing.refresh_request(1u64,
                             ::routing::authority::Authority::ClientManager(client_name.clone()),
-                            encode(&stored).unwrap(), cause.clone());
+                            unwrap_result!(encode(&stored)), cause.clone());
                     },
                     None => {},
                 };
@@ -508,7 +508,7 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = encode(&(put_where, put_what)).unwrap();
+        let data = unwrap_result!(encode(&(put_where, put_what)));
 
         self.routing_client.put_request(Authority::ClientManager(self.public_id.name().clone()),
             Data::PlainData(PlainData::new(name, data)));

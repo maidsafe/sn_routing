@@ -204,7 +204,7 @@ impl Node {
             self.routing
                 .refresh_request(1u64,
                                  ::authority::Authority::ClientManager(client_name.clone()),
-                                 ::utils::encode(&stored).unwrap(),
+                                 unwrap_result!(::utils::encode(&stored)),
                                  cause);
         }
         if exit {
@@ -248,7 +248,7 @@ impl Node {
                                cause);
                         self.routing.refresh_request(1u64,
                             ::authority::Authority::ClientManager(client_name.clone()),
-                            ::utils::encode(&stored).unwrap(), cause.clone());
+                            unwrap_result!(::utils::encode(&stored)), cause.clone());
                     }
                     None => {}
                 };

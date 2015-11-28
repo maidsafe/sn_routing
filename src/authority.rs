@@ -257,8 +257,8 @@ mod test {
             };
         }
         let our_close_group: Vec<NodeInfo> = routing_table.our_close_group();
-        let furthest_node_close_group: NodeInfo = our_close_group.last().unwrap().clone();
-        let closest_node_in_our_close_group = our_close_group.first().unwrap().clone();
+        let furthest_node_close_group = unwrap_option!(our_close_group.last(), "").clone();
+        let closest_node_in_our_close_group = unwrap_option!(our_close_group.first(), "").clone();
         let second_closest_node_in_our_close_group: NodeInfo = our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group: NameType =
@@ -295,10 +295,9 @@ mod test {
             to_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&client_manager_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&client_manager_message,
+                                                             &routing_table,
+                                                             some_data.name()), ""),
                    Authority::ClientManager(public_key_to_client_name(&client_public_key)));
 
         // assert to get a nae_manager Authority
@@ -307,10 +306,9 @@ mod test {
             to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&nae_manager_message,
-                                              &routing_table,
-                                              nae_or_client_in_our_close_group)
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&nae_manager_message,
+                                                             &routing_table,
+                                                             nae_or_client_in_our_close_group), ""),
                    Authority::NaeManager(nae_or_client_in_our_close_group));
 
         // assert to get a node_manager Authority
@@ -319,10 +317,9 @@ mod test {
             to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&node_manager_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&node_manager_message,
+                                                             &routing_table,
+                                                             some_data.name()), ""),
                    Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()));
 
         // assert to get a managed_node Authority
@@ -331,10 +328,9 @@ mod test {
             to_authority: Authority::ManagedNode(our_name.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&managed_node_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&managed_node_message,
+                                                             &routing_table,
+                                                             some_data.name()), ""),
                    Authority::ManagedNode(our_name.clone()));
 
         // --- test our_authority specific ----------------------------------------------------------------------

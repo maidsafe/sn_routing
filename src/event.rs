@@ -91,7 +91,8 @@ pub enum Event {
 impl ::std::fmt::Debug for Event {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match self {
-            &Event::Request{ ref request, ref our_authority, ref from_authority, ref response_token } => {
+            &Event::Request{ ref request, ref our_authority, ref from_authority,
+                             ref response_token } => {
                 write!(formatter, "Request(request: {:?}, our_authority: {:?}, from_authority: \
                        {:?}, response_token: {:?})", request, our_authority, from_authority,
                        response_token)

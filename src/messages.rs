@@ -279,18 +279,14 @@ mod test{
                                                        routing_message.clone(),
                                                        &keys.1);
 
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
+        let signed_message = unwrap_result!(signed_message);
 
         assert_eq!(signed_message.get_routing_message(), &routing_message);
         assert_eq!(signed_message.claimant(), &claimant);
 
         let encoded_body = signed_message.encoded_body();
 
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
+        let encoded_body = unwrap_result!(encoded_body);
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
 
         assert_eq!(signed_message.signature(), &signature);
@@ -308,18 +304,14 @@ mod test{
                                                        routing_message.clone(),
                                                        &invalid_keys.1);
 
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
+        let signed_message = unwrap_result!(signed_message);
 
         assert_eq!(signed_message.get_routing_message(), &routing_message);
         assert_eq!(signed_message.claimant(), &claimant);
 
         let encoded_body = signed_message.encoded_body();
 
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
+        let encoded_body = unwrap_result!(encoded_body);
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
 
         assert!(signed_message.signature() != &signature);
@@ -334,9 +326,7 @@ mod test{
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
+        let encoded_body = unwrap_result!(encoded_body);
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
         let signed_token = super::SignedToken {
             serialised_request: encoded_body.clone(),
@@ -344,18 +334,14 @@ mod test{
         };
         let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
+        let signed_message = unwrap_result!(signed_message);
 
         assert_eq!(signed_message.get_routing_message(), &routing_message);
         assert_eq!(signed_message.claimant(), &claimant);
 
         let signed_message_encoded_body = signed_message.encoded_body();
 
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
+        let signed_message_encoded_body = unwrap_result!(signed_message_encoded_body);
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
@@ -367,8 +353,7 @@ mod test{
 
         let signed_message_as_token = signed_message.as_token();
 
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
+        assert_eq!(unwrap_result!(signed_message_as_token), signed_token);
     }
 
     #[test]
@@ -380,9 +365,7 @@ mod test{
         let random_bits: u8 = rand::random();
         let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
 
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
+        let encoded_body = unwrap_result!(encoded_body);
         let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body.clone(),
                                                                    &invalid_keys.1);
@@ -392,18 +375,14 @@ mod test{
         };
         let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
 
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
+        let signed_message = unwrap_result!(signed_message);
 
         assert_eq!(signed_message.get_routing_message(), &routing_message);
         assert_eq!(signed_message.claimant(), &claimant);
 
         let signed_message_encoded_body = signed_message.encoded_body();
 
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
+        let signed_message_encoded_body = unwrap_result!(signed_message_encoded_body);
 
         assert_eq!(signed_message_encoded_body, encoded_body);
 
@@ -415,7 +394,6 @@ mod test{
 
         let signed_message_as_token = signed_message.as_token();
 
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
+        assert_eq!(unwrap_result!(signed_message_as_token), signed_token);
     }
 }

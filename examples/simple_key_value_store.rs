@@ -379,7 +379,7 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = encode(&(put_where, put_what)).unwrap();
+        let data = unwrap_result!(encode(&(put_where, put_what)));
 
         self.routing_client.put_request(Authority::NaeManager(name.clone()),
             Data::PlainData(PlainData::new(name, data)));

@@ -223,7 +223,7 @@ impl RoutingNode {
                             ::crust::Event::NewMessage(connection, bytes) =>
                                 self.handle_new_message(connection, bytes),
                             ::crust::Event::OnConnect(connection, connection_token) =>
-                                self.handle_on_connect(connection.unwrap() /* TODO */,
+                                self.handle_on_connect(unwrap_result!(connection) /* TODO */,
                                                        connection_token),
 
                             ::crust::Event::ExternalEndpoints(external_endpoints) => {
