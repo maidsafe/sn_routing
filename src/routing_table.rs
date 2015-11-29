@@ -209,8 +209,17 @@ impl RoutingTable {
         if self.address_in_our_close_group_range(target) {
             return self.our_close_group();    
         }
-
-
+ 
+        let mut result = Vec::new();
+        
+        // if not in close group but connected then send direct        
+        for node in &self.routing_table { 
+            if node.id() == target {
+                result.push(node.clone());
+                return result;
+            }
+        }
+         
         rt_copy.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                 cmp::Ordering::Less
             } else {
@@ -218,7 +227,7 @@ impl RoutingTable {
             }
         );
         
-        let mut result = Vec::new();
+        // otherwise send the parallel number of nearest nodes we have
         for res in rt_copy.iter().take(parallelism) {
                 result.push(res.clone());    
         }
