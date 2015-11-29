@@ -202,7 +202,6 @@ impl RoutingTable {
     /// target is within our close group.  If not, it will return the 'Parallelism()' closest
     /// contacts to the target.
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
-        let mut rt_copy = self.routing_table.clone();
 
         let parallelism = RoutingTable::get_parallelism();
 
@@ -219,7 +218,8 @@ impl RoutingTable {
                 return result;
             }
         }
-         
+        // [TODO]: Try and remove allocation here - 2015-11-29 11:23pm 
+        let mut rt_copy = self.routing_table.clone();
         rt_copy.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                 cmp::Ordering::Less
             } else {
