@@ -24,6 +24,7 @@ log = "~0.3.3"
 env_logger = "~0.3.2"
 sodiumoxide = "~0.0.9"
 crust = "~0.6.1"
+clippy = "*"
 
 [dev-dependencies]
 bit-vec = "~0.4.2"

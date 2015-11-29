@@ -56,7 +56,7 @@ impl RefreshAccumulator {
         {
             let map = self.requests
                           .entry(request.clone())
-                          .or_insert_with(|| ::std::collections::HashMap::new());
+                          .or_insert_with(::std::collections::HashMap::new);
             let _ = map.insert(sender_node, payload);
             if map.len() >= threshold {
                 payloads = Some(map.iter().map(|(_, msg)| msg.clone()).collect());

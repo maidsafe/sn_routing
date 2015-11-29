@@ -82,7 +82,7 @@ impl Id {
             return false;
         }
         self.name = relocated_name;
-        return true;
+        true
     }
 
     /// Checks if the name is updated to a relocated name.

@@ -74,12 +74,12 @@ pub enum Address {
 
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        match self {
-            &Address::Client(ref public_key) => {
+        match *self {
+            Address::Client(ref public_key) => {
                 formatter.write_str(&format!("Client({:?})", ::NameType::new(
                     ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
-            &Address::Node(ref name) => {
+            Address::Node(ref name) => {
                 formatter.write_str(&format!("Node({:?})", name))
             }
         }

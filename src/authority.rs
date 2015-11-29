@@ -42,54 +42,54 @@ pub enum Authority {
 impl Authority {
     /// Return true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
-        match self {
-            &Authority::ClientManager(_) => true,
-            &Authority::NaeManager(_) => true,
-            &Authority::NodeManager(_) => true,
-            &Authority::ManagedNode(_) => false,
-            &Authority::Client(_, _) => false,
+        match *self {
+            Authority::ClientManager(_) => true,
+            Authority::NaeManager(_) => true,
+            Authority::NodeManager(_) => true,
+            Authority::ManagedNode(_) => false,
+            Authority::Client(_, _) => false,
         }
     }
 
     /// Return the named part of an authority.
     pub fn get_location(&self) -> &NameType {
-        match self {
-            &Authority::ClientManager(ref loc) => loc,
-            &Authority::NaeManager(ref loc) => loc,
-            &Authority::NodeManager(ref loc) => loc,
-            &Authority::ManagedNode(ref loc) => loc,
-            &Authority::Client(ref loc, _) => loc,
+        match *self {
+            Authority::ClientManager(ref loc) => loc,
+            Authority::NaeManager(ref loc) => loc,
+            Authority::NodeManager(ref loc) => loc,
+            Authority::ManagedNode(ref loc) => loc,
+            Authority::Client(ref loc, _) => loc,
         }
     }
 
     /// Return the address of none group nodes.
     pub fn get_address(&self) -> Option<Address> {
-        match self {
-            &Authority::ClientManager(_) => None,
-            &Authority::NaeManager(_) => None,
-            &Authority::NodeManager(_) => None,
-            &Authority::ManagedNode(ref name) => Some(Address::Node(name.clone())),
-            &Authority::Client(_, ref public_key) => Some(Address::Client(public_key.clone())),
+        match *self {
+            Authority::ClientManager(_) => None,
+            Authority::NaeManager(_) => None,
+            Authority::NodeManager(_) => None,
+            Authority::ManagedNode(ref name) => Some(Address::Node(name.clone())),
+            Authority::Client(_, ref public_key) => Some(Address::Client(public_key.clone())),
         }
     }
 }
 
 impl Debug for Authority {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        match self {
-            &Authority::ClientManager(ref name) => {
+        match *self {
+            Authority::ClientManager(ref name) => {
                 formatter.write_str(&format!("ClientManager(name:{:?})", name))
             }
-            &Authority::NaeManager(ref name) => {
+            Authority::NaeManager(ref name) => {
                 formatter.write_str(&format!("NaeManager(name:{:?})", name))
             }
-            &Authority::NodeManager(ref name) => {
+            Authority::NodeManager(ref name) => {
                 formatter.write_str(&format!("NodeManager(name:{:?})", name))
             }
-            &Authority::ManagedNode(ref name) => {
+            Authority::ManagedNode(ref name) => {
                 formatter.write_str(&format!("ManagedNode(name:{:?})", name))
             }
-            &Authority::Client(ref relay, ref public_key) => {
+            Authority::Client(ref relay, ref public_key) => {
                 formatter.write_str(&format!("Client(relay:{:?}, public_key:{:?})",
                 relay, NameType::new(crypto::hash::sha512::hash(&public_key[..]).0)))
             }
@@ -192,17 +192,17 @@ fn determine_authority(message: &RoutingMessage,
        *message.destination().get_location() == element &&
        element != routing_table.our_name() {
         return Some(Authority::NaeManager(element));
-    } else if message.from_group().is_some() &&
+    } else if message.source_group().is_some() &&
        routing_table.address_in_our_close_group_range(message.destination().get_location()) &&
        *message.destination().get_location() != routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
-    } else if message.from_group()
+    } else if message.source_group()
               .map(|group| routing_table.address_in_our_close_group_range(&group))
               .unwrap_or(false) &&
        *message.destination().get_location() == routing_table.our_name() {
         return Some(Authority::ManagedNode(routing_table.our_name()));
     }
-    return None;
+    None
 }
 
 

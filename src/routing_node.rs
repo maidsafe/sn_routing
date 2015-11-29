@@ -195,7 +195,7 @@ impl RoutingNode {
                             },
                             Action::ClientSendContent(to_authority, content) => {
                                 debug!("{}ClientSendContent received for {:?}", self.us(), content);
-                                let _ = self.client_send_content(to_authority, content);
+                                self.client_send_content(to_authority, content);
                             },
                             Action::SetDataCacheOptions(cache_options) => {
                                 self.data_cache.set_cache_options(cache_options);
@@ -303,12 +303,9 @@ impl RoutingNode {
             Ok(connection) => {
                 debug!("{}New connection via OnConnect {:?} with token {}", self.us(), connection,
                        connection_token);
-                match self.state() {
-                    &State::Disconnected => {
+                if let State::Disconnected = *self.state() {
                         // Established connection. Pending Validity checks
                         self.state = State::Bootstrapping;
-                    },
-                    _ => ()
                 };
                 ignore(self.identify(connection));
             },
@@ -321,17 +318,14 @@ impl RoutingNode {
 
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
         debug!("{}New connection via OnAccept {:?}", self.us(), connection);
-        match self.state() {
-            &State::Disconnected => {
-                // I am the first node in the network, and I got an incoming connection so I'll
-                // promote myself as a node.
-                let new_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0).0);
-                // This will give me a new RT and set state to Relocated
-                self.assign_network_name(new_name);
-                self.state = State::Node;
-            },
-            _ => ()
-        };
+        if let State::Disconnected = *self.state() {
+            // I am the first node in the network, and I got an incoming connection so I'll
+            // promote myself as a node.
+            let new_name = NameType::new(crypto::hash::sha512::hash(&self.id().name().0).0);
+            // This will give me a new RT and set state to Relocated
+            self.assign_network_name(new_name);
+            self.state = State::Node;
+        }
         ignore(self.identify(connection));
     }
 
@@ -431,13 +425,10 @@ impl RoutingNode {
 
         // Scan for remote names.
         if self.state == State::Node {
-            match claimant {
-                ::types::Address::Node(ref name) => {
-                    debug!("{}We're connected and got message from {:?}", self.us(), name);
-                    self.refresh_routing_table(&name)
-                }
-                _ => {}
-            };
+            if let ::types::Address::Node(ref name) = claimant {
+                debug!("{}We're connected and got message from {:?}", self.us(), name);
+                self.refresh_routing_table(&name)
+            }
 
             // Forward the message.
             debug!("{}Forwarding signed message", self.us());
@@ -648,8 +639,8 @@ impl RoutingNode {
                              direct_message: ::direct_messages::DirectMessage,
                              connection: ::crust::Connection) {
         debug!("{}Direct Message Received - {:?}", self.us(), direct_message);
-        match direct_message.content() {
-            &::direct_messages::Content::Identify{ ref public_id, } => {
+        match *direct_message.content() {
+            ::direct_messages::Content::Identify{ ref public_id, } => {
                 // verify signature
                 if !direct_message.verify_signature(public_id.signing_public_key()) {
                     warn!("{}Failed signature verification on {:?} - dropping connection",
@@ -657,9 +648,9 @@ impl RoutingNode {
                     self.drop_crust_connection(connection);
                     return
                 };
-                let _ = self.handle_identify(connection, public_id);
+                self.handle_identify(connection, public_id);
             }
-            &::direct_messages::Content::Churn(ref his_close_group) => {
+            ::direct_messages::Content::Churn(ref his_close_group) => {
                 // TODO (ben 26/08/2015) verify the signature with the public_id
                 // from our routing table.
                 self.handle_churn(his_close_group);
@@ -693,7 +684,7 @@ impl RoutingNode {
 
     fn handle_churn(&mut self, churn: &::direct_messages::Churn) {
         debug!("{}CHURN: received {} names", self.us(), churn.close_group.len());
-        for his_close_node in churn.close_group.iter() {
+        for his_close_node in &churn.close_group {
             self.refresh_routing_table(his_close_node);
         }
     }
@@ -785,10 +776,10 @@ impl RoutingNode {
 
                         Ok(())
                     }
-                    _ => return Err(RoutingError::BadAuthority),
+                    _ => Err(RoutingError::BadAuthority),
                 }
             }
-            _ => return Err(RoutingError::BadAuthority),
+            _ => Err(RoutingError::BadAuthority),
         }
     }
 
@@ -828,7 +819,7 @@ impl RoutingNode {
                                  routing_message,
                                  self.id().signing_private_key()) {
             Ok(signed_message) => Ok(self.send(signed_message)),
-            Err(e) => return Err(RoutingError::Cbor(e)),
+            Err(e) => Err(RoutingError::Cbor(e)),
         }
     }
 
@@ -871,7 +862,7 @@ impl RoutingNode {
 
                 Ok(())
             }
-            _ => return Err(RoutingError::UnknownMessageType),
+            _ => Err(RoutingError::UnknownMessageType),
         }
     }
 
@@ -901,9 +892,9 @@ impl RoutingNode {
     ///    require to get our real Id from our close group and accumulate this
     ///    before accpeting us as a valid connection / id
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
-        let (from_authority, address) = match self.state() {
-            &State::Disconnected => return Err(RoutingError::NotBootstrapped),
-            &State::Client => {
+        let (from_authority, address) = match *self.state() {
+            State::Disconnected => return Err(RoutingError::NotBootstrapped),
+            State::Client => {
                 let signing_key = self.id().signing_public_key();
                 (try!(self.get_client_authority()), Address::Client(signing_key))
             }
@@ -1039,13 +1030,13 @@ impl RoutingNode {
                 self.connection_filter.add(public_id.name().clone());
                 Ok(())
             }
-            _ => return Err(RoutingError::BadAuthority),
+            _ => Err(RoutingError::BadAuthority),
         }
     }
 
-    fn connect(&mut self, connection_token: u32, endpoints: &Vec<::crust::Endpoint>) {
+    fn connect(&mut self, connection_token: u32, endpoints: &[::crust::Endpoint]) {
         debug!("{}Connect: requesting crust connect to {:?}", self.us(), endpoints);
-        self.crust_service.connect(connection_token, endpoints.clone());
+        self.crust_service.connect(connection_token, endpoints.to_owned());
     }
 
     fn get_connection_token(&mut self) -> u32 {
@@ -1210,7 +1201,7 @@ impl RoutingNode {
 
         // Request token is only set if it came from a non-group entity.
         // If it came from a group, then sentinel guarantees message validity.
-        if let &Some(ref token) = response.get_signed_token() {
+        if let Some(ref token) = *response.get_signed_token() {
             if !token.verify_signature(&self.id().signing_public_key()) {
                 return Err(RoutingError::FailedSignature);
             };
@@ -1271,7 +1262,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        return ::std::cmp::min(self.routing_table.size(), ::types::QUORUM_SIZE)
+        ::std::cmp::min(self.routing_table.size(), ::types::QUORUM_SIZE)
     }
 
     // START ==================================================================================================
@@ -1353,7 +1344,7 @@ impl RoutingNode {
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
-            for _node in self.routing_table.our_close_group().iter() { // trigger churn
+            for _node in &self.routing_table.our_close_group() { // trigger churn
                                                                       // if close node
                                                                     };
             self.routing_table.drop_node(&node_name);

@@ -159,7 +159,7 @@ impl RoutingMessage {
         self.client_key().map(|n| ::utils::public_key_to_client_name(&n))
     }
 
-    pub fn from_group(&self) -> Option<::NameType> {
+    pub fn source_group(&self) -> Option<::NameType> {
         match self.from_authority {
             ::authority::Authority::ClientManager(name) => Some(name),
             ::authority::Authority::NaeManager(name) => Some(name),

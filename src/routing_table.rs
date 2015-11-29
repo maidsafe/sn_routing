@@ -202,46 +202,27 @@ impl RoutingTable {
     /// target is within our close group.  If not, it will return the 'Parallelism()' closest
     /// contacts to the target.
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
-        let mut our_close_group = Vec::new();
-        let mut closest_to_target = Vec::new();
-        let mut result: Vec<NodeInfo> = Vec::new();
-        let mut iterations = 0usize;
+        let mut rt_copy = self.routing_table.clone();
 
-        let parallelism = if RoutingTable::get_parallelism() < self.routing_table.len() {
-            RoutingTable::get_parallelism()
-        } else {
-            self.routing_table.len()
-        };
+        let parallelism = RoutingTable::get_parallelism();
 
-        for iter in self.routing_table.iter() {
-            if iterations < RoutingTable::get_group_size() {
-                our_close_group.push(iter.clone());
-            }
-            closest_to_target.push(iter.clone());
-            iterations += 1;
+        if self.address_in_our_close_group_range(target) {
+            return self.our_close_group();    
         }
 
-        if closest_to_target.is_empty() {
-            return result;
-        }
 
-        closest_to_target.sort_by(|a, b| {
-            if closer_to_target(&a.id(), &b.id(), &target) {
+        rt_copy.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                 cmp::Ordering::Less
             } else {
                 cmp::Ordering::Greater
             }
-        });
-
-        if RoutingTable::is_any_of(&our_close_group, &closest_to_target) {
-            for iter in our_close_group.iter() {
-                result.push(iter.clone());
-            }
-        } else {
-            for iter in closest_to_target.iter().take(parallelism) {
-                result.push(iter.clone());
-            }
+        );
+        
+        let mut result = Vec::new();
+        for res in rt_copy.iter().take(parallelism) {
+                result.push(res.clone());    
         }
+
         result
     }
 
@@ -393,14 +374,14 @@ impl RoutingTable {
         self.bucket_index(new_node) > self.bucket_index(&removal_node.id())
     }
 
-    fn is_any_of(vec_close_group: &Vec<NodeInfo>, vec_closest_to_target: &Vec<NodeInfo>) -> bool {
-        for iter in vec_close_group.iter() {
-            if iter.id() == vec_closest_to_target[0].id() {
-                return true;
-            }
-        }
-        false
-    }
+    // fn is_any_of(vec_close_group: &[NodeInfo], vec_closest_to_target: &[NodeInfo]) -> bool {
+    //     for iter in vec_close_group.iter() {
+    //         if iter.id() == vec_closest_to_target[0].id() {
+    //             return true;
+    //         }
+    //     }
+    //     false
+    // }
 }
 
 
