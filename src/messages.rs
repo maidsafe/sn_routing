@@ -18,21 +18,8 @@
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// SignedToken.
 pub struct SignedToken {
-    /// Encoded request to be signed.
-    pub serialised_request: Vec<u8>,
-    /// Signature of the serialised_request signed by secret sign key.
-    pub signature: ::sodiumoxide::crypto::sign::Signature,
-}
-
-impl SignedToken {
-    /// Verify the request was signed by the secret key corresponding to the passed in public key.
-    pub fn verify_signature(&self,
-                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-                            -> bool {
-        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
-                                                     &self.serialised_request,
-                                                     &public_sign_key)
-    }
+    /// Signed RoutingMessage.
+    pub signed_routing_message: Vec<u8>,
 }
 
 impl ::std::fmt::Debug for SignedToken {
@@ -134,6 +121,7 @@ pub struct RoutingMessage {
     pub from_authority: ::authority::Authority,
     pub to_authority: ::authority::Authority,
     pub content: Content,
+    pub group_keys: Option<Vec<::sodiumoxide::crypto::sign::PublicKey>>,
 }
 
 impl RoutingMessage {
@@ -173,249 +161,107 @@ impl RoutingMessage {
 /// All messages sent / received are constructed as signed message.
 #[derive(PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
-    body: RoutingMessage,
-    claimant: ::types::Address,
-    //          when signed by Client(PublicKey) the data needs to contain it as an owner
-    //          when signed by a Node(NameType), Sentinel needs to validate the signature
-    random_bits: u8,
-    signature: ::sodiumoxide::crypto::sign::Signature,
+    signed_routing_message: Vec<u8>,
+    public_sign_key: ::sodiumoxide::crypto::sign::PublicKey
 }
 
 impl SignedMessage {
-    pub fn new(claimant: ::types::Address,
-               message: RoutingMessage,
+    pub fn new(routing_message: &RoutingMessage,
+               public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
                private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-               -> Result<SignedMessage, ::cbor::CborError> {
-        use rand::Rng;
-
-        let mut rng = ::rand::thread_rng();
-        let random_bits = rng.gen::<u8>();
-        let encoded_body = try!(::utils::encode(&(&message, &claimant, &random_bits)));
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, private_sign_key);
+                    -> Result<SignedMessage, ::cbor::CborError> {
+        let encoded_message = try!(::utils::encode(routing_message));
+        let signed_message = ::sodiumoxide::crypto::sign::sign(&encoded_message, private_sign_key);
 
         Ok(SignedMessage {
-            body: message,
-            claimant: claimant,
-            random_bits: random_bits,
-            signature: signature,
+            signed_routing_message: signed_message,
+            public_sign_key: public_sign_key
         })
     }
 
-    /// Construct a signed message from a signed token.
-    pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, ::cbor::CborError> {
-        let (message, claimant, random_bits) =
-            try!(::utils::decode(&signed_token.serialised_request));
-        Ok(SignedMessage {
-            body: message,
-            claimant: claimant,
-            random_bits: random_bits,
-            signature: signed_token.signature,
-        })
+    /// Construct a signed message from a signed token and public signing key. Note we don't attempt
+    /// to verify the signed message on construction.
+    pub fn from_token(signed_token: SignedToken,
+                      public_sign_key: ::sodiumoxide::crypto::sign::PublicKey) -> SignedMessage {
+        SignedMessage {
+            signed_routing_message: signed_token.signed_routing_message,
+            public_sign_key: public_sign_key,
+        }
     }
 
-    /// Verify the signature using the given public key.
-    #[allow(unused)]
-    pub fn verify_signature(&self,
-                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-                            -> bool {
-        let encoded_body = match ::utils::encode(&(&self.body,
-                                                   &self.claimant,
-                                                   &self.random_bits)) {
-            Ok(x) => x,
-            Err(_) => return false,
-        };
-        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
-                                                     &encoded_body,
-                                                     public_sign_key)
+    /// Verifies the message returning the RoutingMessage, or None on failure.
+    pub fn verify(&self) -> Option<RoutingMessage> {
+        match ::sodiumoxide::crypto::sign::verify(
+                &self.signed_routing_message[..], &self.public_sign_key) {
+            Ok(encoded_message) => {
+                match ::utils::decode(&encoded_message[..]) {
+                    Ok(routing_message) => Some(routing_message),
+                    Err(_) => None,
+                }
+            },
+            Err(_) => None
+        }
     }
 
-    /// Return the internal routing message.
-    pub fn get_routing_message(&self) -> &RoutingMessage {
-        &self.body
-    }
-
-    /// Return the signature.
-    pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
-        &self.signature
-    }
-
-    /// Return the encoded unsigned body of the message.
-    pub fn encoded_body(&self) -> Result<Vec<u8>, ::cbor::CborError> {
-        ::utils::encode(&(&self.body, &self.claimant, &self.random_bits))
+    /// Return public signing key.
+    pub fn signing_public_key(&self) -> &::sodiumoxide::crypto::sign::PublicKey {
+        &self.public_sign_key
     }
 
     /// Return the associated signed token.
-    pub fn as_token(&self) -> Result<SignedToken, ::cbor::CborError> {
-        Ok(SignedToken {
-            serialised_request: try!(self.encoded_body()),
-            signature: self.signature().clone(),
-        })
-    }
-
-    /// Return the message claimant.
-    pub fn claimant(&self) -> &::types::Address {
-        &self.claimant
+    pub fn as_token(&self) -> SignedToken {
+        SignedToken { signed_routing_message: self.signed_routing_message.clone(), }
     }
 }
 
 impl ::std::fmt::Debug for SignedMessage {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(formatter, "SignedMessage {{ body: {:?}, claimant: {:?}, random_bits: {}, \
-                          signature: <binary data> }}", self.body, self.claimant, self.random_bits)
+        write!(formatter, "SignedMessage {{ signed_routing_message: {:?}, public_sign_key: {:?}, }}\
+            ", self.signed_routing_message, self.public_sign_key)
     }
 }
 
 #[cfg(test)]
 mod test{
-    use rand;
-
     #[test]
     fn signed_message_new() {
-        let claimant = ::types::Address::Node(rand::random());
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
                                                                                      &keys.1);
-        let signed_message = super::SignedMessage::new(claimant.clone(),
-                                                       routing_message.clone(),
-                                                       &keys.1);
+        let signed_message = super::SignedMessage::new(&routing_message, keys.0, &keys.1);
 
         assert!(signed_message.is_ok());
 
         let signed_message = signed_message.unwrap();
+        let verified_message = signed_message.verify();
 
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
+        assert!(verified_message.is_some());
 
-        let encoded_body = signed_message.encoded_body();
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-
-        assert_eq!(signed_message.signature(), &signature);
-        assert!(signed_message.verify_signature(&keys.0));
+        let verified_routing_message = verified_message.unwrap();
+        assert_eq!(verified_routing_message, routing_message);
     }
 
     #[test]
-    fn invalid_signed_message_new() {
-        let claimant = ::types::Address::Node(rand::random());
+    fn signed_message_from_token() {
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
                                                                                      &keys.1);
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signed_message = super::SignedMessage::new(claimant.clone(),
-                                                       routing_message.clone(),
-                                                       &invalid_keys.1);
+        let signed_message = super::SignedMessage::new(&routing_message, keys.0, &keys.1);
 
         assert!(signed_message.is_ok());
 
         let signed_message = signed_message.unwrap();
+        let signed_token = signed_message.as_token();
 
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
+        let signed_message_from_token = super::SignedMessage::from_token(signed_token, keys.0);
 
-        let encoded_body = signed_message.encoded_body();
+        assert_eq!(signed_message, signed_message_from_token);
 
-        assert!(encoded_body.is_ok());
+        let verified_message = signed_message_from_token.verify();
 
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
+        assert!(verified_message.is_some());
 
-        assert!(signed_message.signature() != &signature);
-        assert!(!signed_message.verify_signature(&keys.0));
-    }
-    #[test]
-    fn signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
-                                                                                     &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-        let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(),
-            signature: signature,
-        };
-        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
-                                                                   &keys.1);
-
-        assert_eq!(signed_message.signature(), &signature);
-        assert!(signed_message.verify_signature(&keys.0));
-
-        let signed_message_as_token = signed_message.as_token();
-
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
-    }
-
-    #[test]
-    fn invalid_signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
-                                                                                     &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body.clone(),
-                                                                   &invalid_keys.1);
-        let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(),
-            signature: signature,
-        };
-        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body,
-                                                                   &keys.1);
-
-        assert!(signed_message.signature() != &signature);
-        assert!(!signed_message.verify_signature(&keys.0));
-
-        let signed_message_as_token = signed_message.as_token();
-
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
+        let verified_routing_message = verified_message.unwrap();
+        assert_eq!(verified_routing_message, routing_message);
     }
 }
