@@ -344,7 +344,7 @@ impl RoutingTable {
     pub fn has_node(&self, node_id: &NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
-                                                                                           #[allow(unused)]
+    
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.routing_table
