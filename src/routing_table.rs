@@ -377,14 +377,6 @@ impl RoutingTable {
         self.bucket_index(new_node) > self.bucket_index(&removal_node.id())
     }
 
-    // fn is_any_of(vec_close_group: &[NodeInfo], vec_closest_to_target: &[NodeInfo]) -> bool {
-    //     for iter in vec_close_group.iter() {
-    //         if iter.id() == vec_closest_to_target[0].id() {
-    //             return true;
-    //         }
-    //     }
-    //     false
-    // }
 }
 
 
