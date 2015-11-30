@@ -184,7 +184,7 @@ impl RoutingNode {
         debug!("{}RoutingNode started running and started bootstrap", self.us());
         for it in category_rx.iter() {
             if self.state == State::Node {
-                trace!("{}Routing Table size: {}", self.us(), self.routing_table.size());
+                trace!("{}Routing Table size: {}", self.us(), self.routing_table.len());
             };
             match it {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
@@ -1262,7 +1262,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min(self.routing_table.size(), ::types::QUORUM_SIZE)
+        ::std::cmp::min(self.routing_table.len(), ::types::QUORUM_SIZE)
     }
 
     // START ==================================================================================================
@@ -1400,11 +1400,11 @@ impl RoutingNode {
             return
         }
 
-        if self.routing_table.size() == 1 {
+        if self.routing_table.len() == 1 {
             self.state = State::Node;
-        } else if self.routing_table.size() == ::types::GROUP_SIZE {
+        } else if self.routing_table.len() == ::types::GROUP_SIZE {
             info!("{}Routing Node has connected to {} nodes", self.us(),
-                  self.routing_table.size());
+                  self.routing_table.len());
             if let Err(err) = self.event_sender.send(Event::Connected) {
                 error!("{}Error sending {:?} to event_sender", self.us(), err.0);
             }
