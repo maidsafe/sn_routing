@@ -237,14 +237,11 @@ impl RoutingTable {
     /// This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
     /// table if we hold less than 'GroupSize' contacts in total).
     pub fn our_close_group(&self) -> Vec<NodeInfo> {
-        let group_size = RoutingTable::get_group_size();
-        let size = cmp::min(group_size, self.routing_table.len());
-        let mut result = Vec::new();
-        for i in 0..size {
-            // is cloning advisable?
-            result.push(self.routing_table[i].clone());
-        }
-        result
+        self.routing_table.iter()
+                          .take(RoutingTable::get_group_size())
+                          .into_iter()
+                          .cloned()
+                          .collect::<Vec<_>>()
     }
 
     pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
