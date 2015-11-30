@@ -64,12 +64,10 @@ impl ImmutableData {
     pub fn name(&self) -> NameType {
         let digest = crypto::hash::sha512::hash(&self.value);
         match self.type_tag {
-            ImmutableDataType::Normal => return NameType(digest.0),
-            ImmutableDataType::Backup => return NameType(crypto::hash::sha512::hash(&digest.0).0),
+            ImmutableDataType::Normal => NameType(digest.0),
+            ImmutableDataType::Backup => NameType(crypto::hash::sha512::hash(&digest.0).0),
             ImmutableDataType::Sacrificial =>
-                return NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0)
-                                                                .0)
-                                    .0),
+                NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0),
         }
     }
 

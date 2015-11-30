@@ -69,8 +69,9 @@ impl StructuredData {
 
         let chain = identifier.0
                               .iter()
-                              .chain(type_tag_as_string.as_bytes().iter())
-                              .map(|a| *a);
+                              .cloned()
+                              .chain(type_tag_as_string.as_bytes().iter().cloned())
+                              .map(|a| a);
 
         ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
@@ -120,7 +121,7 @@ impl StructuredData {
 
     /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
     fn verify_previous_owner_signatures(&self,
-                                        owner_keys: &Vec<::sodiumoxide::crypto::sign::PublicKey>)
+                                        owner_keys: &[::sodiumoxide::crypto::sign::PublicKey])
                                         -> Result<(), ::error::RoutingError> {
         // Refuse any duplicate previous_owner_signatures (people can have many owner keys)
         // Any duplicates invalidates this type.
@@ -242,7 +243,7 @@ impl ::std::fmt::Debug for StructuredData {
                                                .map(|pub_key| ::utils::get_debug_id(&pub_key.0))
                                                .collect();
         try!(write!(formatter, " , previous_owner_keys : ("));
-        for itr in prev_owner_keys.iter() {
+        for itr in &prev_owner_keys {
             try!(write!(formatter, "{:?} ", itr));
         }
         try!(write!(formatter, ")"));
@@ -252,7 +253,7 @@ impl ::std::fmt::Debug for StructuredData {
                                                   .map(|pub_key| ::utils::get_debug_id(&pub_key.0))
                                                   .collect();
         try!(write!(formatter, " , current_owner_keys : ("));
-        for itr in current_owner_keys.iter() {
+        for itr in &current_owner_keys{
             try!(write!(formatter, "{:?} ", itr));
         }
         try!(write!(formatter, ") "));
@@ -264,7 +265,7 @@ impl ::std::fmt::Debug for StructuredData {
                                                      })
                                                      .collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
-        for itr in prev_owner_signatures.iter() {
+        for itr in &prev_owner_signatures {
             try!(write!(formatter, "{:?} ", itr));
         }
         write!(formatter, ") ")

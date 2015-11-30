@@ -289,9 +289,9 @@ mod test {
         where T: for<'a> ::rustc_serialize::Encodable + ::rustc_serialize::Decodable + Eq
     {
         let mut e = ::cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
+        unwrap_result!(e.encode(&[&obj_before]));
         let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: T = d.decode().next().unwrap().unwrap();
+        let obj_after: T = unwrap_result!(unwrap_option!(d.decode().next(), ""));
         assert_eq!(obj_after == obj_before, true)
     }
 

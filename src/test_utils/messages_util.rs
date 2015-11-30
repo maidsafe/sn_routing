@@ -27,12 +27,12 @@ fn generate_random_authority(name: ::NameType,
     let index = range.ind_sample(&mut rng);
 
     match index {
-        0 => return ::authority::Authority::ClientManager(name),
-        1 => return ::authority::Authority::NaeManager(name),
-        2 => return ::authority::Authority::NodeManager(name),
-        3 => return ::authority::Authority::ManagedNode(name),
-        4 => return ::authority::Authority::Client(name, key.clone()),
-        _ => panic!("Unexpected index."),
+        0 => ::authority::Authority::ClientManager(name),
+        1 => ::authority::Authority::NaeManager(name),
+        2 => ::authority::Authority::NodeManager(name),
+        3 => ::authority::Authority::ManagedNode(name),
+        4 => ::authority::Authority::Client(name, key.clone()),
+        _ => unreachable!(),
     }
 }
 
@@ -58,19 +58,19 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
                     Ok(structured_data) => structured_data,
                     Err(error) => panic!("StructuredData error: {:?}", error),
                 };
-            return ::data::Data::StructuredData(structured_data);
+            ::data::Data::StructuredData(structured_data)
         }
         1 => {
             let type_tag = ::immutable_data::ImmutableDataType::Normal;
             let immutable_data =
                 ::immutable_data::ImmutableData::new(type_tag,
                                                      ::types::generate_random_vec_u8(1025));
-            return ::data::Data::ImmutableData(immutable_data);
+            ::data::Data::ImmutableData(immutable_data)
         }
         2 => {
             let plain_data = ::plain_data::PlainData::new(rand::random(),
                                                           ::types::generate_random_vec_u8(1025));
-            return ::data::Data::PlainData(plain_data);
+            ::data::Data::PlainData(plain_data)
         }
         _ => panic!("Unexpected index."),
     }

@@ -128,7 +128,8 @@ mod test {
         let mut close_nodes_one_entry: Vec<::NameType> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
-            super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name).unwrap();
+            unwrap_result!(super::calculate_relocated_name(close_nodes_one_entry.clone(),
+                           &original_name));
         assert!(original_name != actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<::NameType> = Vec::new();
@@ -153,9 +154,8 @@ mod test {
         for _ in 0..::types::GROUP_SIZE {
             close_nodes.push(rand::random());
         }
-        let actual_relocated_name = super::calculate_relocated_name(close_nodes.clone(),
-                                                                    &original_name)
-                                        .unwrap();
+        let actual_relocated_name =
+            unwrap_result!(super::calculate_relocated_name(close_nodes.clone(), &original_name));
         assert!(original_name != actual_relocated_name);
         close_nodes.sort_by(|a, b| {
             if ::name_type::closer_to_target(&a, &b, &original_name) {

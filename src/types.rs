@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// TODO(Spandan) This should not require documentation - infact the whole mod should be private
+#[doc(hidden)]
+pub type RoutingActionSender = ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
+
 /// Convert u8 vector to a fixed 64 byte size array.
 ///
 /// # Panics
@@ -70,12 +74,12 @@ pub enum Address {
 
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        match self {
-            &Address::Client(ref public_key) => {
+        match *self {
+            Address::Client(ref public_key) => {
                 formatter.write_str(&format!("Client({:?})", ::NameType::new(
                     ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
-            &Address::Node(ref name) => {
+            Address::Node(ref name) => {
                 formatter.write_str(&format!("Node({:?})", name))
             }
         }

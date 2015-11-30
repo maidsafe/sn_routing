@@ -90,29 +90,30 @@ pub enum Event {
 
 impl ::std::fmt::Debug for Event {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        match self {
-            &Event::Request{ ref request, ref our_authority, ref from_authority, ref response_token } => {
+        match *self {
+            Event::Request{ ref request, ref our_authority, ref from_authority,
+                             ref response_token } => {
                 write!(formatter, "Request(request: {:?}, our_authority: {:?}, from_authority: \
                        {:?}, response_token: {:?})", request, our_authority, from_authority,
                        response_token)
             }
-            &Event::Response{ ref response, ref our_authority, ref from_authority } => {
+            Event::Response{ ref response, ref our_authority, ref from_authority } => {
                 write!(formatter, "Response(response: {:?}, our_authority: {:?}, from_authority: \
                        {:?})", response, our_authority, from_authority)
             }
-            &Event::FailedRequest{ ref request, ref our_authority, ref location,
+            Event::FailedRequest{ ref request, ref our_authority, ref location,
                                    ref interface_error } => {
                 write!(formatter, "FailedRequest(request: {:?}, our_authority: {:?}, location: \
                        {:?}, interface_error: {:?})", request, our_authority, location,
                        interface_error)
             }
-            &Event::FailedResponse{ ref response, ref our_authority, ref location,
+            Event::FailedResponse{ ref response, ref our_authority, ref location,
                                     ref interface_error } => {
                 write!(formatter, "FailedResponse(response: {:?}, our_authority: {:?}, location: \
                        {:?}, interface_error: {:?})", response, our_authority, location,
                        interface_error)
             }
-            &Event::Refresh(ref type_tag, ref target, ref payloads) => {
+            Event::Refresh(ref type_tag, ref target, ref payloads) => {
                 try!(write!(formatter, "Refresh(type_tag: {:?}, target: {:?}, payloads: (",
                             type_tag, target));
                 for payload in payloads.iter() {
@@ -120,23 +121,23 @@ impl ::std::fmt::Debug for Event {
                 }
                 write!(formatter, "))")
             }
-            &Event::Churn(ref close_group) => {
+            Event::Churn(ref close_group) => {
                 write!(formatter, "Churn(close_group: {:?})", close_group)
             }
-            &Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
+            Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
                 write!(formatter, "DoRefresh(type_tag: {:?}, target: {:?}, churn_node: {:?})",
                        type_tag, target, churn_node)
             }
-            &Event::Bootstrapped => {
+            Event::Bootstrapped => {
                 write!(formatter, "Bootstrapped")
             }
-            &Event::Connected => {
+            Event::Connected => {
                 write!(formatter, "Connected")
             }
-            &Event::Disconnected => {
+            Event::Disconnected => {
                 write!(formatter, "Disconnected")
             }
-            &Event::Terminated => {
+            Event::Terminated => {
                 write!(formatter, "Terminated")
             }
         }

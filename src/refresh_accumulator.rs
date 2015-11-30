@@ -56,7 +56,7 @@ impl RefreshAccumulator {
         {
             let map = self.requests
                           .entry(request.clone())
-                          .or_insert_with(|| ::std::collections::HashMap::new());
+                          .or_insert_with(::std::collections::HashMap::new);
             let _ = map.insert(sender_node, payload);
             if map.len() >= threshold {
                 payloads = Some(map.iter().map(|(_, msg)| msg.clone()).collect());
@@ -104,7 +104,7 @@ mod test {
                                                  bytes.clone(),
                                                  cause.clone());
             assert!(!result.0);
-            assert_eq!(result.1.unwrap().len(), threshold);
+            assert_eq!(unwrap_option!(result.1, "").len(), threshold);
             // since the message is now accumulated, it should be removed and we're good to do
             // another full iteration from scratch.
         }
