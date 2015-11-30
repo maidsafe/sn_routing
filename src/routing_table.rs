@@ -115,7 +115,7 @@ impl RoutingTable {
         }
 
         if self.has_node(&their_info.id()) {
-            debug!("Routing table {:?} has node {:?}.", self.routing_table, their_info);
+            debug!("Routing table {:?} has node {:?}. not adding", self.routing_table, their_info);
             return (false, None);
         }
 
@@ -184,17 +184,10 @@ impl RoutingTable {
 
     /// This unconditionally removes the contact from the table.
     pub fn drop_node(&mut self, node_to_drop: &NameType) {
-        let mut index_of_removal = usize::MAX;
 
-        for i in 0..self.routing_table.len() {
-            if self.routing_table[i].id() == node_to_drop {
-                index_of_removal = i;
-                break;
-            }
-        }
-
-        if index_of_removal < self.routing_table.len() {
-            let _ = self.routing_table.remove(index_of_removal);
+        if let Some(drop_this_node) = self.routing_table.iter()
+                                                        .position(|x| x.id() == node_to_drop) {
+            let _ = self.routing_table.remove(drop_this_node);
         }
     }
 
@@ -205,17 +198,17 @@ impl RoutingTable {
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
         //if in range of close_group send to all close_group
         if self.address_in_our_close_group_range(target) {
-            return self.our_close_group();    
+            return self.our_close_group();
         }
- 
-        // if not in close group but connected then send direct        
-        for node in &self.routing_table { 
+
+        // if not in close group but connected then send direct
+        for node in &self.routing_table {
             if node.id() == target {
                 return vec![node.clone()];
             }
         }
-        
-        // not in close group or routing table so send to closest known nodes up to parallelism 
+
+        // not in close group or routing table so send to closest known nodes up to parallelism
         // count
         self.routing_table.iter().sorted_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                                                         cmp::Ordering::Less
@@ -339,7 +332,7 @@ impl RoutingTable {
     pub fn has_node(&self, node_id: &NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
-    
+
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.routing_table
@@ -1221,15 +1214,15 @@ mod test {
                     routing_table_utest.buckets[i].mid_contact.clone()
                 };
                 target_nodes_ = routing_table_utest.table.target_nodes(&target);
-                
+
                 let test_parallelism = if count == 0 {
                     super::RoutingTable::get_parallelism()
                 } else {
                     1
-                }; 
-                
+                };
+
                 assert_eq!(test_parallelism, target_nodes_.len());
-                
+
                 routing_table_utest.table.our_close_group().sort_by(
                     |a, b| if ::name_type::closer_to_target(
                             &a.id(), &b.id(), &routing_table_utest.our_id) {
