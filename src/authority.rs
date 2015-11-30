@@ -190,17 +190,17 @@ fn determine_authority(message: &RoutingMessage,
     };
     if routing_table.address_in_our_close_group_range(&element) &&
        *message.destination().get_location() == element &&
-       element != routing_table.our_name() {
+       element != *routing_table.our_name() {
         return Some(Authority::NaeManager(element));
     } else if message.source_group().is_some() &&
        routing_table.address_in_our_close_group_range(message.destination().get_location()) &&
-       *message.destination().get_location() != routing_table.our_name() {
+       *message.destination().get_location() != *routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
     } else if message.source_group()
               .map(|group| routing_table.address_in_our_close_group_range(&group))
               .unwrap_or(false) &&
-       *message.destination().get_location() == routing_table.our_name() {
-        return Some(Authority::ManagedNode(routing_table.our_name()));
+       *message.destination().get_location() == *routing_table.our_name() {
+        return Some(Authority::ManagedNode(*routing_table.our_name()));
     }
     None
 }

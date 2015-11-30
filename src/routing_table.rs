@@ -151,7 +151,6 @@ impl RoutingTable {
 
     /// Adds a connection to an existing entry.  Should be called after `has_node`.
     pub fn add_connection(&mut self, their_id: &NameType, connection: Connection) {
-        use ::itertools::Itertools;
         match self.routing_table.iter_mut().find(|node_info| node_info.id() == their_id) {
             Some(mut node_info) => {
                 node_info.connections.push(connection);
@@ -265,12 +264,11 @@ impl RoutingTable {
 
     /// This returns the length of the routing table.
     pub fn len(&self) -> usize {
-        // std::lock_guard<std::mutex> lock(mutex_);
         self.routing_table.len()
     }
 
-    pub fn our_name(&self) -> NameType {
-        self.our_id.clone()
+    pub fn our_name(&self) -> &NameType {
+        &self.our_id
     }
 
     /// This returns true if the provided id is closer than or equal to the furthest node in our
