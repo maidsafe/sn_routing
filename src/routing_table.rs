@@ -19,7 +19,7 @@ use std::cmp;
 use std::usize;
 
 use crust::Connection;
-
+use itertools::*;
 use common_bits::*;
 use public_id::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
@@ -64,6 +64,8 @@ impl NodeInfo {
         &self.id
     }
 }
+
+
 
 /// The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
@@ -218,21 +220,18 @@ impl RoutingTable {
                 return result;
             }
         }
-        // [TODO]: Try and remove allocation here - 2015-11-29 11:23pm 
-        let mut rt_copy = self.routing_table.clone();
-        rt_copy.sort_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
-                cmp::Ordering::Less
-            } else {
-                cmp::Ordering::Greater
-            }
-        );
         
-        // otherwise send the parallel number of nearest nodes we have
-        for res in rt_copy.iter().take(parallelism) {
-                result.push(res.clone());    
-        }
-
-        result
+        // not in close group or routing table so send to closest known nodes up to parallelism 
+        // count
+        self.routing_table.iter().sorted_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
+                                                        cmp::Ordering::Less
+                                                    } else {
+                                                        cmp::Ordering::Greater
+                                                    }
+                                            ).into_iter()
+                                             .cloned()
+                                             .take(parallelism)
+                                             .collect::<Vec<_>>()
     }
 
     /// This returns our close group, i.e. the 'GroupSize' contacts closest to our ID (or the entire
