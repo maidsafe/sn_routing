@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{ExternalRequest, ExternalResponse, SignedToken};
+use messages::{ExternalRequest, ExternalResponse, SignedRequest};
 use error::InterfaceError;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
@@ -31,7 +31,7 @@ pub enum Event {
         /// From authority.
         from_authority: Authority,
         /// Not set when the request came from a group.
-        response_token: Option<SignedToken>,
+        signed_request: Option<SignedRequest>,
     },
     /// Response.
     Response {
@@ -92,10 +92,10 @@ impl ::std::fmt::Debug for Event {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match *self {
             Event::Request{ ref request, ref our_authority, ref from_authority,
-                             ref response_token } => {
+                             ref signed_request } => {
                 write!(formatter, "Request(request: {:?}, our_authority: {:?}, from_authority: \
                        {:?}, response_token: {:?})", request, our_authority, from_authority,
-                       response_token)
+                       signed_request)
             }
             Event::Response{ ref response, ref our_authority, ref from_authority } => {
                 write!(formatter, "Response(response: {:?}, our_authority: {:?}, from_authority: \

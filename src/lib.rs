@@ -108,7 +108,7 @@ pub mod data_cache_options;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 /// Message types defined by the library.
-pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
+pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
 

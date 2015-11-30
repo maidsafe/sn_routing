@@ -21,7 +21,7 @@ use std::sync::mpsc;
 
 use action::Action;
 use event::Event;
-use messages::SignedToken;
+use messages::SignedRequest;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
 use data_cache_options::DataCacheOptions;
@@ -94,59 +94,59 @@ impl Routing {
                                           Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
     /// Respond to a get_request (no error can be sent)
-    /// If we received the request from a group, we'll not get the signed_token.
+    /// If we received the request from a group, we'll not get the signed_request.
     pub fn get_response(&self,
                         our_authority: Authority,
                         location: Authority,
                         data: Data,
                         data_request: DataRequest,
-                        signed_token: Option<SignedToken>) {
+                        signed_request: Option<SignedRequest>) {
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Get(data, data_request, signed_token))));
+                    ExternalResponse::Get(data, data_request, signed_request))));
     }
     /// response error to a put request
     pub fn put_response(&self,
                         our_authority: Authority,
                         location: Authority,
                         response_error: ResponseError,
-                        signed_token: Option<SignedToken>) {
+                        signed_request: Option<SignedRequest>) {
         if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, signed_token))));
+                    ExternalResponse::Put(response_error, signed_request))));
     }
     /// Response error to a post request
     pub fn post_response(&self,
                          our_authority: Authority,
                          location: Authority,
                          response_error: ResponseError,
-                         signed_token: Option<SignedToken>) {
+                         signed_request: Option<SignedRequest>) {
         if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, signed_token))));
+                    ExternalResponse::Post(response_error, signed_request))));
     }
     /// response error to a delete respons
     pub fn delete_response(&self,
                            our_authority: Authority,
                            location: Authority,
                            response_error: ResponseError,
-                           signed_token: Option<SignedToken>) {
+                           signed_request: Option<SignedRequest>) {
         if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(ExternalResponse::Delete(response_error,
-                    signed_token))));
+                    signed_request))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.

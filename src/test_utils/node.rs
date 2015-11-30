@@ -47,8 +47,8 @@ impl Node {
         while let Ok(event) = self.receiver.recv() {
             debug!("Node: Received event {:?}", event);
             match event {
-                ::event::Event::Request{ request, our_authority, from_authority, response_token } =>
-                    self.handle_request(request, our_authority, from_authority, response_token),
+                ::event::Event::Request{ request, our_authority, from_authority, signed_request } =>
+                    self.handle_request(request, our_authority, from_authority, signed_request),
                 ::event::Event::Response{ response, our_authority, from_authority } => {
                     debug!("Received response event");
                     self.handle_response(response, our_authority, from_authority)
@@ -115,16 +115,16 @@ impl Node {
                       request: ::ExternalRequest,
                       our_authority: ::authority::Authority,
                       from_authority: ::authority::Authority,
-                      response_token: Option<::SignedToken>) {
+                      signed_request: Option<::SignedRequest>) {
         match request {
             ::ExternalRequest::Get(data_request, _) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
             }
             ::ExternalRequest::Put(data) => {
-                self.handle_put_request(data, our_authority, from_authority, response_token);
+                self.handle_put_request(data, our_authority, from_authority, signed_request);
             }
             ::ExternalRequest::Post(_) => {
                 debug!("Node: Post unimplemented.");
@@ -139,7 +139,7 @@ impl Node {
                           data_request: ::data::DataRequest,
                           our_authority: ::authority::Authority,
                           from_authority: ::authority::Authority,
-                          response_token: Option<::SignedToken>) {
+                          signed_request: Option<::SignedRequest>) {
         let data = match self.db.get(&data_request.name()) {
             Some(data) => data.clone(),
             None => {
@@ -152,14 +152,14 @@ impl Node {
                                   from_authority,
                                   data,
                                   data_request,
-                                  response_token);
+                                  signed_request);
     }
 
     fn handle_put_request(&mut self,
                           data: ::data::Data,
                           our_authority: ::authority::Authority,
                           _from_authority: ::authority::Authority,
-                          _response_token: Option<::SignedToken>) {
+                          _response_token: Option<::SignedRequest>) {
         match our_authority {
             ::authority::Authority::NaeManager(_) => {
                 debug!("Storing: key {:?}, value {:?}", data.name(), data);

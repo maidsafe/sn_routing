@@ -34,7 +34,7 @@ use utils::{encode, decode};
 use utils;
 use authority::{Authority, our_authority};
 
-use messages::{RoutingMessage, SignedMessage, SignedToken,
+use messages::{RoutingMessage, SignedMessage, SignedRequest,
                Content, ExternalResponse, InternalRequest, InternalResponse};
 
 use error::{RoutingError, InterfaceError};
@@ -404,7 +404,7 @@ impl RoutingNode {
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
         debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
 
-        let (message, public_sign_key) = match signed_message.verify() {
+        let (message, public_sign_key) = match signed_message.get_routing_message() {
             Some(routing_message) => (routing_message, signed_message.signing_public_key()),
             None => {
                 debug!("Signature failed.\n");
@@ -569,7 +569,7 @@ impl RoutingNode {
                     request: request,
                     our_authority: accumulated_message.to_authority,
                     from_authority: accumulated_message.from_authority,
-                    response_token: opt_token,
+                    signed_request: opt_token,
                 });
                 Ok(())
             }
@@ -594,8 +594,8 @@ impl RoutingNode {
     }
 
     fn accumulate(&mut self, signed_message: &SignedMessage)
-            -> Option<(RoutingMessage, Option<SignedToken>)> {
-        let (message, public_sign_key) = match signed_message.verify() {
+            -> Option<(RoutingMessage, Option<SignedRequest>)> {
+        let (message, public_sign_key) = match signed_message.get_routing_message() {
             Some(routing_message) => (routing_message, signed_message.signing_public_key()),
             None => return None,
         };
@@ -608,9 +608,9 @@ impl RoutingNode {
 
         // If the message is not from a group then don't accumulate
         if !message.from_authority.is_group() || is_relocation_response_msg {
-            debug!("{}Message from {:?}, returning with SignedToken", self.us(),
+            debug!("{}Message from {:?}, returning with SignedRequest", self.us(),
                    message.from_authority);
-            return Some((message, Some(signed_message.as_token())));
+            return Some((message, Some(signed_message.as_signed_request())));
         }
 
         debug!("{}Adding message with public key {:?} to message_accumulator", self.us(),
@@ -700,9 +700,7 @@ impl RoutingNode {
             content: content,
             group_keys: None,
         };
-        match SignedMessage::new(&routing_message,
-                                 self.id().signing_public_key(),
-                                 self.id().signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.id()) {
             Ok(signed_message) => self.send(signed_message),
             // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
             Err(error) => {
@@ -717,7 +715,7 @@ impl RoutingNode {
                                    request: InternalRequest,
                                    from_authority: Authority,
                                    to_authority: Authority,
-                                   response_token: SignedToken)
+                                   response_token: SignedRequest)
                                    -> RoutingResult {
         if self.client_restriction {
             debug!("{}Client restricted not requesting network name", self.us());
@@ -761,9 +759,7 @@ impl RoutingNode {
                                 response_token)),
                             group_keys: None,
                         };
-                        match SignedMessage::new(&routing_message,
-                                                 self.id().signing_public_key(),
-                                                 self.id().signing_private_key()) {
+                        match SignedMessage::new(&routing_message, &self.id()) {
                             Ok(signed_message) => self.send(signed_message),
                             Err(e) => return Err(RoutingError::Cbor(e)),
                         }
@@ -779,12 +775,12 @@ impl RoutingNode {
 
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
-                                     response_token: SignedToken) -> RoutingResult {
+                                     response_token: SignedRequest) -> RoutingResult {
         debug!("{}Handling Relocated Network Name", self.us());
 
-        let signed_message = SignedMessage::from_token(
+        let signed_message = SignedMessage::from_signed_request(
                 response_token.clone(), relocated_id.signing_public_key().clone());
-        let message = match signed_message.verify() {
+        let message = match signed_message.get_routing_message() {
             Some(routing_message) => routing_message,
             None => {
                 debug!("Signature failed.\n");
@@ -817,9 +813,7 @@ impl RoutingNode {
             group_keys: None,
         };
 
-        match SignedMessage::new(&routing_message,
-                                 self.id().signing_public_key(),
-                                 self.id().signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.id()) {
             Ok(signed_message) => Ok(self.send(signed_message)),
             Err(e) => Err(RoutingError::Cbor(e)),
         }
@@ -828,12 +822,12 @@ impl RoutingNode {
     fn handle_relocation_response(&mut self,
                                   relocated_id: ::public_id::PublicId,
                                   close_group_ids: Vec<::public_id::PublicId>,
-                                  original_signed_token: SignedToken,
+                                  signed_request: SignedRequest,
                                   _from_authority: Authority,
                                   _to_authority: Authority) -> RoutingResult {
-        let signed_message = SignedMessage::from_token(
-                original_signed_token.clone(), self.id().signing_public_key().clone());
-        let message = match signed_message.verify() {
+        let signed_message = SignedMessage::from_signed_request(
+                signed_request.clone(), self.id().signing_public_key().clone());
+        let message = match signed_message.get_routing_message() {
             Some(routing_message) => routing_message,
             None => {
                 debug!("Signature failed.\n");
@@ -920,9 +914,7 @@ impl RoutingNode {
             group_keys: None,
         };
 
-        match SignedMessage::new(&routing_message,
-                                 self.id().signing_public_key(),
-                                 self.id().signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.id()) {
             Ok(signed_message) => self.send(signed_message),
             Err(e) => return Err(RoutingError::Cbor(e)),
         };
@@ -939,7 +931,7 @@ impl RoutingNode {
                               endpoints: Vec<::crust::Endpoint>,
                               public_id: PublicId,
                               from_authority: Authority,
-                              response_token: SignedToken) -> RoutingResult {
+                              response_token: SignedRequest) -> RoutingResult {
         debug!("{}Handle ConnectRequest", self.us());
 
         // TODO(Fraser:David) How do you validate/fetch/get public key for a node ?
@@ -969,14 +961,12 @@ impl RoutingNode {
             content: Content::InternalResponse(InternalResponse::Connect {
                 endpoints: self.accepting_on.clone(),
                 public_id: PublicId::new(self.id()),
-                signed_token: response_token,
+                signed_request: response_token,
             }),
             group_keys: None,
         };
 
-        match SignedMessage::new(&routing_message,
-                                 self.id().signing_public_key(),
-                                 self.id().signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.id()) {
             Ok(signed_message) => {
                 self.send(signed_message);
                 let connection_token = self.get_connection_token();
@@ -1002,10 +992,10 @@ impl RoutingNode {
                                _to_authority: Authority) -> RoutingResult {
         debug!("{}Handle ConnectResponse", self.us());
         match response {
-            InternalResponse::Connect { public_id, endpoints, signed_token } => {
-                let signed_message = SignedMessage::from_token(
-                        signed_token.clone(), self.id().signing_public_key().clone());
-                let message = match signed_message.verify() {
+            InternalResponse::Connect { public_id, endpoints, signed_request } => {
+                let signed_message = SignedMessage::from_signed_request(
+                        signed_request.clone(), self.id().signing_public_key().clone());
+                let message = match signed_message.get_routing_message() {
                     Some(routing_message) => routing_message,
                     None => {
                         debug!("Signature failed.\n");
@@ -1074,9 +1064,7 @@ impl RoutingNode {
             content: content,
             group_keys: None,
         };
-        match SignedMessage::new(&routing_message,
-                                 self.id().signing_public_key(),
-                                 self.id().signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.id()) {
             Ok(signed_message) => self.send(signed_message),
             Err(e) => return Err(RoutingError::Cbor(e)),
         };
@@ -1092,9 +1080,7 @@ impl RoutingNode {
                     content: content.clone(),
                     group_keys: None,
                 };
-                match SignedMessage::new(&routing_message,
-                                         self.id().signing_public_key(),
-                                         self.id().signing_private_key()) {
+                match SignedMessage::new(&routing_message, &self.id()) {
                     Ok(signed_message) => self.send(signed_message),
                     // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
                     Err(error) => {
@@ -1140,7 +1126,7 @@ impl RoutingNode {
     /// 4. if all the above failed, try sending it over all available bootstrap connections
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&mut self, signed_message: SignedMessage) {
-        let message = match signed_message.verify() {
+        let message = match signed_message.get_routing_message() {
             Some(routing_message) => routing_message,
             None => {
                 debug!("Signature failed.\n");
@@ -1217,9 +1203,9 @@ impl RoutingNode {
         // Request token is only set if it came from a non-group entity.
         // If it came from a group, then sentinel guarantees message validity.
         if let Some(ref token) = *response.get_signed_token() {
-            let signed_message = SignedMessage::from_token(
+            let signed_message = SignedMessage::from_signed_request(
                     token.clone(), self.id().signing_public_key().clone());
-            match signed_message.verify() {
+            match signed_message.get_routing_message() {
                 Some(_) => {},
                 None => return Err(RoutingError::FailedSignature),
             };

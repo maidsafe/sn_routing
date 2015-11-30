@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-/// SignedToken.
-pub struct SignedToken {
+/// Contains a signed RoutingMessage request returned to originator for validation where applicable.
+pub struct SignedRequest {
     /// Signed RoutingMessage.
     pub signed_routing_message: Vec<u8>,
 }
 
-impl ::std::fmt::Debug for SignedToken {
+impl ::std::fmt::Debug for SignedRequest {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        formatter.write_str(&format!("SignedToken"))
+        formatter.write_str(&format!("SignedRequest"))
     }
 }
 
@@ -49,18 +49,18 @@ pub enum ExternalResponse {
     // the it shares most of the data with the second argument, which
     // needlessly increases bandwidth.
     /// Response to get data request.
-    Get(::data::Data, ::data::DataRequest, Option<SignedToken>),
+    Get(::data::Data, ::data::DataRequest, Option<SignedRequest>),
     /// Response to put data request on error.
-    Put(::error::ResponseError, Option<SignedToken>),
+    Put(::error::ResponseError, Option<SignedRequest>),
     /// Response to post data request on error.
-    Post(::error::ResponseError, Option<SignedToken>),
+    Post(::error::ResponseError, Option<SignedRequest>),
     /// Response to delete data request on error.
-    Delete(::error::ResponseError, Option<SignedToken>),
+    Delete(::error::ResponseError, Option<SignedRequest>),
 }
 
 impl ExternalResponse {
     /// If the *request* was from a group entity, then there is no signed token.
-    pub fn get_signed_token(&self) -> &Option<SignedToken> {
+    pub fn get_signed_token(&self) -> &Option<SignedRequest> {
         match *self {
             ExternalResponse::Get(_, _, ref r) => r,
             ExternalResponse::Put(_, ref r) => r,
@@ -78,9 +78,9 @@ pub enum InternalRequest {
     },
     RequestNetworkName(::public_id::PublicId),
     // a client can send RequestNetworkName
-    RelocatedNetworkName(::public_id::PublicId, SignedToken),
+    RelocatedNetworkName(::public_id::PublicId, SignedRequest),
     //               ~~|~~~~~  ~~|~~~~~~~~
-    //                 |         | SignedToken contains Request::RequestNetworkName and needs to
+    //                 |         | SignedRequest contains Request::RequestNetworkName and needs to
     //                 |         | be forwarded in the Request::RelocatedNetworkName;
     //                 |         | from it the original reply to authority can be read.
     //                 | contains the PublicId from RequestNetworkName, but mutated with
@@ -96,12 +96,12 @@ pub enum InternalResponse {
     Connect {
         endpoints: Vec<::crust::Endpoint>,
         public_id: ::public_id::PublicId,
-        signed_token: SignedToken,
+        signed_request: SignedRequest,
     },
-    // FindGroup(Vec<::public_id::PublicId>, SignedToken),
+    // FindGroup(Vec<::public_id::PublicId>, SignedRequest),
     // GetGroupKey(::std::collections::BTreeMap<
-    //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
-    RelocatedNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
+    //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedRequest),
+    RelocatedNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedRequest), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
                                                                                        *                 |         |              | the original Request::RequestNetworkName
                                                                                        *                 |         | the group public keys to combine FindGroup in this response
                                                                                        *                 | the cached PublicId in the group */
@@ -166,31 +166,31 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(routing_message: &RoutingMessage,
-               public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
-               private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-                    -> Result<SignedMessage, ::cbor::CborError> {
+    pub fn new(routing_message: &RoutingMessage, full_id: &::id::Id)
+            -> Result<SignedMessage, ::cbor::CborError> {
         let encoded_message = try!(::utils::encode(routing_message));
-        let signed_message = ::sodiumoxide::crypto::sign::sign(&encoded_message, private_sign_key);
+        let signed_message = ::sodiumoxide::crypto::sign::sign(
+                &encoded_message, full_id.signing_private_key());
 
         Ok(SignedMessage {
             signed_routing_message: signed_message,
-            public_sign_key: public_sign_key
+            public_sign_key: full_id.signing_public_key(),
         })
     }
 
     /// Construct a signed message from a signed token and public signing key. Note we don't attempt
     /// to verify the signed message on construction.
-    pub fn from_token(signed_token: SignedToken,
-                      public_sign_key: ::sodiumoxide::crypto::sign::PublicKey) -> SignedMessage {
+    pub fn from_signed_request(signed_request: SignedRequest,
+                               public_sign_key: ::sodiumoxide::crypto::sign::PublicKey)
+            -> SignedMessage {
         SignedMessage {
-            signed_routing_message: signed_token.signed_routing_message,
+            signed_routing_message: signed_request.signed_routing_message,
             public_sign_key: public_sign_key,
         }
     }
 
     /// Verifies the message returning the RoutingMessage, or None on failure.
-    pub fn verify(&self) -> Option<RoutingMessage> {
+    pub fn get_routing_message(&self) -> Option<RoutingMessage> {
         match ::sodiumoxide::crypto::sign::verify(
                 &self.signed_routing_message[..], &self.public_sign_key) {
             Ok(encoded_message) => {
@@ -208,9 +208,9 @@ impl SignedMessage {
         &self.public_sign_key
     }
 
-    /// Return the associated signed token.
-    pub fn as_token(&self) -> SignedToken {
-        SignedToken { signed_routing_message: self.signed_routing_message.clone(), }
+    /// Return the associated signed request.
+    pub fn as_signed_request(&self) -> SignedRequest {
+        SignedRequest { signed_routing_message: self.signed_routing_message.clone(), }
     }
 }
 
@@ -225,15 +225,15 @@ impl ::std::fmt::Debug for SignedMessage {
 mod test{
     #[test]
     fn signed_message_new() {
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
-                                                                                     &keys.1);
-        let signed_message = super::SignedMessage::new(&routing_message, keys.0, &keys.1);
+        let full_id = ::id::Id::new();
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
+                &full_id.signing_public_key(), &full_id.signing_private_key());
+        let signed_message = super::SignedMessage::new(&routing_message, &full_id);
 
         assert!(signed_message.is_ok());
 
         let signed_message = signed_message.unwrap();
-        let verified_message = signed_message.verify();
+        let verified_message = signed_message.get_routing_message();
 
         assert!(verified_message.is_some());
 
@@ -243,21 +243,22 @@ mod test{
 
     #[test]
     fn signed_message_from_token() {
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(&keys.0,
-                                                                                     &keys.1);
-        let signed_message = super::SignedMessage::new(&routing_message, keys.0, &keys.1);
+        let full_id = ::id::Id::new();
+        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
+                &full_id.signing_public_key(), &full_id.signing_private_key());
+        let signed_message = super::SignedMessage::new(&routing_message, &full_id);
 
         assert!(signed_message.is_ok());
 
         let signed_message = signed_message.unwrap();
-        let signed_token = signed_message.as_token();
+        let signed_request = signed_message.as_signed_request();
 
-        let signed_message_from_token = super::SignedMessage::from_token(signed_token, keys.0);
+        let signed_message_from_token = super::SignedMessage::from_signed_request(
+                signed_request, full_id.signing_public_key());
 
         assert_eq!(signed_message, signed_message_from_token);
 
-        let verified_message = signed_message_from_token.verify();
+        let verified_message = signed_message_from_token.get_routing_message();
 
         assert!(verified_message.is_some());
 

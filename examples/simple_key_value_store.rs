@@ -57,7 +57,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode};
-use routing::{ExternalRequest, ExternalResponse, SignedToken};
+use routing::{ExternalRequest, ExternalResponse, SignedRequest};
 use routing::id::Id;
 use routing::public_id::PublicId;
 
@@ -124,11 +124,11 @@ impl Node {
                 Event::Request{request,
                                our_authority,
                                from_authority,
-                               response_token} => {
+                               signed_request} => {
                     self.handle_request(request,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
                 },
                 Event::Churn(our_close_group) => {
                     self.handle_churn(our_close_group);
@@ -141,19 +141,19 @@ impl Node {
     fn handle_request(&mut self, request        : ExternalRequest,
                                  our_authority  : Authority,
                                  from_authority : Authority,
-                                 response_token : Option<SignedToken>) {
+                                 signed_request : Option<SignedRequest>) {
         match request {
             ExternalRequest::Get(data_request, _) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
             },
             ExternalRequest::Put(data) => {
                 self.handle_put_request(data,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
             },
             ExternalRequest::Post(_) => {
                 error!("Node: Post is not implemented, ignoring.");
@@ -167,7 +167,7 @@ impl Node {
     fn handle_get_request(&mut self, data_request: DataRequest,
                                      our_authority: Authority,
                                      from_authority: Authority,
-                                     response_token: Option<SignedToken>) {
+                                     signed_request: Option<SignedRequest>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
             _ => { error!("Node: Only serving plain data in this example"); return; }
@@ -182,13 +182,13 @@ impl Node {
                                   from_authority,
                                   Data::PlainData(data),
                                   data_request,
-                                  response_token);
+                                  signed_request);
     }
 
     fn handle_put_request(&mut self, data            : Data,
                                      our_authority   : Authority,
                                      _from_authority : Authority,
-                                     _response_token : Option<SignedToken>) {
+                                     _response_token : Option<SignedRequest>) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
             _ => { error!("Node: Only storing plain data in this example"); return; }
