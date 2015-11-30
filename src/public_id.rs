@@ -105,10 +105,11 @@ mod test {
         let obj_before = ::public_id::PublicId::new(&::id::Id::new());
 
         let mut e = ::cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
+        unwrap_result!(e.encode(&[&obj_before]));
 
         let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: ::public_id::PublicId = d.decode().next().unwrap().unwrap();
+        let obj_after: ::public_id::PublicId =
+            unwrap_result!(unwrap_option!(d.decode().next(), ""));
         assert_eq!(obj_before, obj_after);
     }
 

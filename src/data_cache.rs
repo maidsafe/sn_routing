@@ -61,37 +61,32 @@ impl DataCache {
     pub fn handle_cache_put(&mut self, message: &RoutingMessage) {
         match self.data_cache {
             Some(ref mut data_cache) => {
-                match message.content.clone() {
-                    Content::ExternalResponse(response) => {
-                        match response {
-                            ExternalResponse::Get(data, _, _) => {
-                                match data {
-                                    Data::PlainData(_) => {
-                                        if self.cache_options.plain_data_caching_enabled() {
-                                            debug!("Caching PlainData {:?}", data.name());
-                                            let _ = data_cache.insert(data.name(), data.clone());
-                                        }
-                                    }
-                                    Data::StructuredData(_) => {
-                                        if self.cache_options.structured_data_caching_enabled() {
-                                            debug!("Caching StructuredData {:?}", data.name());
-                                            let _ = data_cache.insert(data.name(), data.clone());
-                                        }
-                                    }
-                                    Data::ImmutableData(_) => {
-                                        if self.cache_options.immutable_data_caching_enabled() {
-                                            debug!("Caching ImmutableData {:?}", data.name());
-                                            // TODO verify data
-                                            let _ = data_cache.insert(data.name(), data.clone());
-                                        }
-                                    }
+                if let Content::ExternalResponse(response) = message.content.clone() {
+                    if let ExternalResponse::Get(data, _, _) = response {
+                        match data {
+                            Data::PlainData(_) => {
+                                if self.cache_options.plain_data_caching_enabled() {
+                                    debug!("Caching PlainData {:?}", data.name());
+                                    let _ = data_cache.insert(data.name(), data.clone());
                                 }
                             }
-                            _ => {}
+                            Data::StructuredData(_) => {
+                                if self.cache_options.structured_data_caching_enabled() {
+                                    debug!("Caching StructuredData {:?}", data.name());
+                                    let _ = data_cache.insert(data.name(), data.clone());
+                                }
+                            }
+                            Data::ImmutableData(_) => {
+                                if self.cache_options.immutable_data_caching_enabled() {
+                                    debug!("Caching ImmutableData {:?}", data.name());
+                                    // TODO verify data
+                                    let _ = data_cache.insert(data.name(), data.clone());
+                                }
+                            }
                         }
-
                     }
-                    _ => {}
+
+
                 }
             }
             None => {}
@@ -123,12 +118,11 @@ impl DataCache {
                                                 None => return None,
                                             }
                                         }
-                                        return None;
+                                        None
                                     }
                                     DataRequest::StructuredData(_, _) => {
                                         if self.cache_options.structured_data_caching_enabled() {
-                                            match data_cache.get(&data_request.name()) {
-                                                Some(data) => {
+                                            if let Some(data) = data_cache.get(&data_request.name()) {
                                                     debug!("Got StructuredData {:?} from \
                                                            cache", data_request.name());
                                                     let response =
@@ -136,11 +130,9 @@ impl DataCache {
                                                                               data_request,
                                                                               None);
                                                     return Some(Content::ExternalResponse(response));
-                                                }
-                                                None => return None,
                                             }
                                         }
-                                        return None;
+                                        None
                                     }
                                     DataRequest::ImmutableData(data_name, _) => {
                                         if self.cache_options.immutable_data_caching_enabled() {
@@ -157,7 +149,7 @@ impl DataCache {
                                                 None => return None,
                                             }
                                         }
-                                        return None;
+                                        None
                                     }
                                 }
                             }

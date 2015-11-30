@@ -42,54 +42,54 @@ pub enum Authority {
 impl Authority {
     /// Return true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
-        match self {
-            &Authority::ClientManager(_) => true,
-            &Authority::NaeManager(_) => true,
-            &Authority::NodeManager(_) => true,
-            &Authority::ManagedNode(_) => false,
-            &Authority::Client(_, _) => false,
+        match *self {
+            Authority::ClientManager(_) => true,
+            Authority::NaeManager(_) => true,
+            Authority::NodeManager(_) => true,
+            Authority::ManagedNode(_) => false,
+            Authority::Client(_, _) => false,
         }
     }
 
     /// Return the named part of an authority.
     pub fn get_location(&self) -> &NameType {
-        match self {
-            &Authority::ClientManager(ref loc) => loc,
-            &Authority::NaeManager(ref loc) => loc,
-            &Authority::NodeManager(ref loc) => loc,
-            &Authority::ManagedNode(ref loc) => loc,
-            &Authority::Client(ref loc, _) => loc,
+        match *self {
+            Authority::ClientManager(ref loc) => loc,
+            Authority::NaeManager(ref loc) => loc,
+            Authority::NodeManager(ref loc) => loc,
+            Authority::ManagedNode(ref loc) => loc,
+            Authority::Client(ref loc, _) => loc,
         }
     }
 
     /// Return the address of none group nodes.
     pub fn get_address(&self) -> Option<Address> {
-        match self {
-            &Authority::ClientManager(_) => None,
-            &Authority::NaeManager(_) => None,
-            &Authority::NodeManager(_) => None,
-            &Authority::ManagedNode(ref name) => Some(Address::Node(name.clone())),
-            &Authority::Client(_, ref public_key) => Some(Address::Client(public_key.clone())),
+        match *self {
+            Authority::ClientManager(_) => None,
+            Authority::NaeManager(_) => None,
+            Authority::NodeManager(_) => None,
+            Authority::ManagedNode(ref name) => Some(Address::Node(name.clone())),
+            Authority::Client(_, ref public_key) => Some(Address::Client(public_key.clone())),
         }
     }
 }
 
 impl Debug for Authority {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        match self {
-            &Authority::ClientManager(ref name) => {
+        match *self {
+            Authority::ClientManager(ref name) => {
                 formatter.write_str(&format!("ClientManager(name:{:?})", name))
             }
-            &Authority::NaeManager(ref name) => {
+            Authority::NaeManager(ref name) => {
                 formatter.write_str(&format!("NaeManager(name:{:?})", name))
             }
-            &Authority::NodeManager(ref name) => {
+            Authority::NodeManager(ref name) => {
                 formatter.write_str(&format!("NodeManager(name:{:?})", name))
             }
-            &Authority::ManagedNode(ref name) => {
+            Authority::ManagedNode(ref name) => {
                 formatter.write_str(&format!("ManagedNode(name:{:?})", name))
             }
-            &Authority::Client(ref relay, ref public_key) => {
+            Authority::Client(ref relay, ref public_key) => {
                 formatter.write_str(&format!("Client(relay:{:?}, public_key:{:?})",
                 relay, NameType::new(crypto::hash::sha512::hash(&public_key[..]).0)))
             }
@@ -164,7 +164,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         }
     };
 
-    determine_authority(message, routing_table, element)
+    determine_authority(message, routing_table, &element)
 }
 
 // determine_authority is a static method to allow unit tests to test it
@@ -173,7 +173,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
 // or outside the close group of routing table.
 fn determine_authority(message: &RoutingMessage,
                        routing_table: &RoutingTable,
-                       element: NameType)
+                       element: &NameType)
                        -> Option<Authority> {
 
     // if signed by a client in our range and destination is not the element
@@ -182,27 +182,27 @@ fn determine_authority(message: &RoutingMessage,
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.address_in_our_close_group_range(&client_name) &&
-               *message.destination().get_location() != element {
+               *message.destination().get_location() != *element {
                 return Some(Authority::ClientManager(client_name));
             }
         }
         None => {}
     };
     if routing_table.address_in_our_close_group_range(&element) &&
-       *message.destination().get_location() == element &&
+       *message.destination().get_location() == *element &&
        element != routing_table.our_name() {
-        return Some(Authority::NaeManager(element));
-    } else if message.from_group().is_some() &&
+        return Some(Authority::NaeManager(*element));
+    } else if message.source_group().is_some() &&
        routing_table.address_in_our_close_group_range(message.destination().get_location()) &&
-       *message.destination().get_location() != routing_table.our_name() {
+       *message.destination().get_location() != *routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
-    } else if message.from_group()
+    } else if message.source_group()
               .map(|group| routing_table.address_in_our_close_group_range(&group))
               .unwrap_or(false) &&
-       *message.destination().get_location() == routing_table.our_name() {
-        return Some(Authority::ManagedNode(routing_table.our_name()));
+       *message.destination().get_location() == *routing_table.our_name() {
+        return Some(Authority::ManagedNode(*routing_table.our_name()));
     }
-    return None;
+    None
 }
 
 
@@ -257,8 +257,8 @@ mod test {
             };
         }
         let our_close_group: Vec<NodeInfo> = routing_table.our_close_group();
-        let furthest_node_close_group: NodeInfo = our_close_group.last().unwrap().clone();
-        let closest_node_in_our_close_group = our_close_group.first().unwrap().clone();
+        let furthest_node_close_group = unwrap_option!(our_close_group.last(), "").clone();
+        let closest_node_in_our_close_group = unwrap_option!(our_close_group.first(), "").clone();
         let second_closest_node_in_our_close_group: NodeInfo = our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group: NameType =
@@ -295,10 +295,9 @@ mod test {
             to_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&client_manager_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&client_manager_message,
+                                                             &routing_table,
+                                                             &some_data.name()), ""),
                    Authority::ClientManager(public_key_to_client_name(&client_public_key)));
 
         // assert to get a nae_manager Authority
@@ -307,10 +306,9 @@ mod test {
             to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&nae_manager_message,
-                                              &routing_table,
-                                              nae_or_client_in_our_close_group)
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&nae_manager_message,
+                                                             &routing_table,
+                                                             &nae_or_client_in_our_close_group), ""),
                    Authority::NaeManager(nae_or_client_in_our_close_group));
 
         // assert to get a node_manager Authority
@@ -319,10 +317,9 @@ mod test {
             to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&node_manager_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&node_manager_message,
+                                                             &routing_table,
+                                                             &some_data.name()), ""),
                    Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()));
 
         // assert to get a managed_node Authority
@@ -331,10 +328,9 @@ mod test {
             to_authority: Authority::ManagedNode(our_name.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
-        assert_eq!(super::determine_authority(&managed_node_message,
-                                              &routing_table,
-                                              some_data.name())
-                       .unwrap(),
+        assert_eq!(unwrap_option!(super::determine_authority(&managed_node_message,
+                                                             &routing_table,
+                                                             &some_data.name()), ""),
                    Authority::ManagedNode(our_name.clone()));
 
         // --- test our_authority specific ----------------------------------------------------------------------
