@@ -322,16 +322,17 @@ impl RoutingTable {
     }
 
     fn bucket_index(&self, id: &NameType) -> usize {
-        for i in 1..::name_type::NAME_TYPE_LEN + 1 {
+            let mut outer_count;
+        for i in 0..::name_type::NAME_TYPE_LEN {
+            if i == 0 { outer_count = 1; } else { outer_count = i * 8; }
+
             let mut us = ::bit_set::BitSet::from_bytes(&[self.our_id.0][i]);
             let them = ::bit_set::BitSet::from_bytes(&[id.0][i]);
             us.symmetric_difference_with(&them);
-            let mut bit_count = 1;
-            for test in us.iter() {
+            for (test, num) in us.iter().enumerate() {
               if test == 0b1 {
-                  return bit_count * i  * 8;
+                  return 512 - (num * outer_count);
                   }
-              bit_count += 1;
             }
         }
         unreachable!();
