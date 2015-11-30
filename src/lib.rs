@@ -53,6 +53,7 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
+extern crate bit_set;
 
 extern crate crust;
 extern crate lru_time_cache;
@@ -61,7 +62,6 @@ extern crate maidsafe_utilities;
 extern crate message_filter;
 extern crate accumulator;
 
-mod common_bits;
 mod action;
 mod messages;
 mod direct_messages;
