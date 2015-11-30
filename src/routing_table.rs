@@ -336,7 +336,6 @@ impl RoutingTable {
             }
         }
         unreachable!();
-        // return 0;
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
