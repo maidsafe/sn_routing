@@ -87,11 +87,11 @@ impl ExternalResponse {
 pub enum InternalRequest {
     Connect {
         endpoints: Vec<::crust::Endpoint>,
-        public_id: ::public_id::PublicId,
+        public_id: ::id::PublicId,
     },
-    RequestNetworkName(::public_id::PublicId),
+    RequestNetworkName(::id::PublicId),
     // a client can send RequestNetworkName
-    RelocatedNetworkName(::public_id::PublicId, SignedToken),
+    RelocatedNetworkName(::id::PublicId, SignedToken),
     //               ~~|~~~~~  ~~|~~~~~~~~
     //                 |         | SignedToken contains Request::RequestNetworkName and needs to
     //                 |         | be forwarded in the Request::RelocatedNetworkName;
@@ -108,13 +108,13 @@ pub enum InternalRequest {
 pub enum InternalResponse {
     Connect {
         endpoints: Vec<::crust::Endpoint>,
-        public_id: ::public_id::PublicId,
+        public_id: ::id::PublicId,
         signed_token: SignedToken,
     },
-    // FindGroup(Vec<::public_id::PublicId>, SignedToken),
+    // FindGroup(Vec<::id::PublicId>, SignedToken),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
-    RelocatedNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
+    RelocatedNetworkName(::id::PublicId, Vec<::id::PublicId>, SignedToken), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
                                                                                        *                 |         |              | the original Request::RequestNetworkName
                                                                                        *                 |         | the group public keys to combine FindGroup in this response
                                                                                        *                 | the cached PublicId in the group */
@@ -156,7 +156,7 @@ impl RoutingMessage {
     }
 
     pub fn client_key_as_name(&self) -> Option<::NameType> {
-        self.client_key().map(|n| ::utils::public_key_to_client_name(&n))
+        self.client_key().map(|n| ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&n[..]).0))
     }
 
     pub fn source_group(&self) -> Option<::NameType> {

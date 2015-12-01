@@ -19,7 +19,7 @@
 use sodiumoxide;
 use std::sync::mpsc;
 
-use id::Id;
+use id::FullId;
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
@@ -45,7 +45,7 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> RoutingClient {
+    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<FullId>) -> RoutingClient {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node

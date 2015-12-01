@@ -20,7 +20,7 @@ use std::usize;
 
 use crust::Connection;
 use itertools::*;
-use public_id::PublicId;
+use id::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
 
@@ -44,6 +44,7 @@ impl NodeInfo {
             connections: connections,
         }
     }
+
     #[cfg(not(test))]
     pub fn id(&self) -> &NameType {
         self.public_id.name()
@@ -58,6 +59,7 @@ impl NodeInfo {
             id: id,
         }
     }
+
     #[cfg(test)]
     pub fn id(&self) -> &NameType {
         &self.id
@@ -516,7 +518,7 @@ mod test {
             assert_eq!(super::RoutingTable::get_optimal_len(), self.table.len());
         }
 
-        fn public_id(&self, their_id: &::NameType) -> Option<::public_id::PublicId> {
+        fn public_id(&self, their_id: &::NameType) -> Option<::id::PublicId> {
             debug_assert!(are_nodes_sorted(&self.table), "RT::public_id: Nodes are not sorted");
             match self.table.routing_table.iter().find(|&node_info| node_info.id() == their_id) {
                 Some(node) => Some(node.public_id.clone()),
@@ -544,10 +546,10 @@ mod test {
     }
 
     fn create_random_node_info() -> super::NodeInfo {
-        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let full_id = ::id::FullId::new();
         super::NodeInfo {
-            id: public_id.name().clone(),
-            public_id: public_id,
+            id: full_id.public_id().name().clone(),
+            public_id: full_id.public_id().clone(),
             connections: Vec::new(),
         }
     }
@@ -1102,13 +1104,14 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_id_name = ::id::Id::new().name();
-        let mut routing_table = super::RoutingTable::new(&our_id_name);
+        let full_id = ::id::FullId::new();
+        let our_id_name = full_id.public_id().name();
+        let mut routing_table = super::RoutingTable::new(our_id_name);
 
         let mut count: usize = 0;
         loop {
             let _ = routing_table.add_node(super::NodeInfo::new(
-                ::public_id::PublicId::new(&::id::Id::new()), vec![]));
+                ::id::FullId::new().public_id().clone(), vec![]));
             count += 1;
             if routing_table.len() >= super::RoutingTable::get_optimal_len() {
                 break;
