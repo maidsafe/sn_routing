@@ -206,20 +206,20 @@ impl RoutingTable {
         let parallelism = RoutingTable::get_parallelism();
 
         if self.address_in_our_close_group_range(target) {
-            return self.our_close_group();    
+            return self.our_close_group();
         }
- 
+
         let mut result = Vec::new();
-        
-        // if not in close group but connected then send direct        
-        for node in &self.routing_table { 
+
+        // if not in close group but connected then send direct
+        for node in &self.routing_table {
             if node.id() == target {
                 result.push(node.clone());
                 return result;
             }
         }
-        
-        // not in close group or routing table so send to closest known nodes up to parallelism 
+
+        // not in close group or routing table so send to closest known nodes up to parallelism
         // count
         self.routing_table.iter().sorted_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                                                         cmp::Ordering::Less
@@ -322,26 +322,19 @@ impl RoutingTable {
     }
 
     fn bucket_index(&self, id: &NameType) -> usize {
-            let mut outer_count;
-        for i in 0..::name_type::NAME_TYPE_LEN {
-            if i == 0 { outer_count = 1; } else { outer_count = i * 8; }
-
-            let mut us = ::bit_set::BitSet::from_bytes(&[self.our_id.0][i]);
-            let them = ::bit_set::BitSet::from_bytes(&[id.0][i]);
-            us.symmetric_difference_with(&them);
-            for (test, num) in us.iter().enumerate() {
-              if test == 0b1 {
-                  return 512 - (num * outer_count);
-                  }
-            }
+        let mut us = ::bit_set::BitSet::from_bytes(&self.our_id.0[..]);
+        let them = ::bit_set::BitSet::from_bytes(&id.0[..]);
+        us.symmetric_difference_with(&them);
+        match us.iter().min() {
+            Some(index) => index,
+            None => ::NAME_TYPE_LEN * 8,
         }
-        unreachable!();
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
-    
+
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.routing_table
@@ -368,12 +361,11 @@ impl RoutingTable {
                                         removal_node_index: usize)
                                         -> bool {
         if removal_node_index >= self.routing_table.len() {
-            return false;
+            return false
         }
         let removal_node = &self.routing_table[removal_node_index];
         self.bucket_index(new_node) > self.bucket_index(&removal_node.id())
     }
-
 }
 
 

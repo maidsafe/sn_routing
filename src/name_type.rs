@@ -32,13 +32,13 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 
 /// Errors that can occur when decoding a `NameType` from a string.
 pub enum NameTypeFromHexError {
-    /// The given invalid hex character occured at the given position.
+    /// The given invalid hex character occurred at the given position.
     InvalidCharacter(char, usize),
     /// The hex string did not encode `NAME_TYPE_LEN` bytes.
     InvalidLength,
 }
 
-/// NameType can be created using the new function by passing ID as it’s parameter.
+/// NameType can be created using the new function by passing ID as its parameter.
 #[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
