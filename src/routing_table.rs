@@ -20,7 +20,6 @@ use std::usize;
 
 use crust::Connection;
 use itertools::*;
-use common_bits::*;
 use public_id::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
@@ -307,22 +306,20 @@ impl RoutingTable {
     }
 
     fn bucket_index(&self, id: &NameType) -> usize {
-        let mut index_of_mismatch = 0usize;
+            let mut outer_count;
+        for i in 0..::name_type::NAME_TYPE_LEN {
+            if i == 0 { outer_count = 1; } else { outer_count = i * 8; }
 
-        while index_of_mismatch < self.our_id.0.len() {
-            if id.0[index_of_mismatch] != self.our_id.0[index_of_mismatch] {
-                break;
+            let mut us = ::bit_set::BitSet::from_bytes(&[self.our_id.0][i]);
+            let them = ::bit_set::BitSet::from_bytes(&[id.0][i]);
+            us.symmetric_difference_with(&them);
+            for (test, num) in us.iter().enumerate() {
+              if test == 0b1 {
+                  return 512 - (num * outer_count);
+                  }
             }
-            index_of_mismatch += 1;
         }
-
-        if index_of_mismatch == self.our_id.0.len() {
-            return 8 * self.our_id.0.len();
-        }
-
-        let common_bits = K_COMMON_BITS[self.our_id.0[index_of_mismatch] as usize]
-                                       [id.0[index_of_mismatch] as usize];
-        8 * index_of_mismatch + common_bits as usize
+        unreachable!();
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
