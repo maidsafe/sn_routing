@@ -47,7 +47,6 @@
 
 #[macro_use]
 extern crate log;
-extern crate bit_set;
 extern crate cbor;
 extern crate itertools;
 extern crate rand;

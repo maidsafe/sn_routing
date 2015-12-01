@@ -321,15 +321,22 @@ impl RoutingTable {
         }
     }
 
+    // This is equivalent to the common leading bits of `self.our_id` and `id` where "leading bits"
+    // means the most significant bits.
     fn bucket_index(&self, id: &NameType) -> usize {
         for byte_index in 0..::NAME_TYPE_LEN {
             if self.our_id.0[byte_index] != id.0[byte_index] {
-                let mut us = ::bit_set::BitSet::from_bytes(&[self.our_id.0[byte_index]]);
-                let them = ::bit_set::BitSet::from_bytes(&[id.0[byte_index]]);
-                us.symmetric_difference_with(&them);
-                // safe to unwrap since we've already checked there's a difference between the `u8`s
-                // so the XOR must yield at least one value
-                return unwrap_option!(us.iter().min(), "") + (byte_index * 8)
+                return (byte_index * 8) + match self.our_id.0[byte_index] ^ id.0[byte_index] {
+                    1 => 7,
+                    2 | 3 => 6,
+                    4...7 => 5,
+                    8...15 => 4,
+                    16...31 => 3,
+                    32...63 => 2,
+                    64...127 => 1,
+                    128...255 => 0,
+                    _ => unreachable!(),
+                }
             }
         }
         ::NAME_TYPE_LEN * 8
