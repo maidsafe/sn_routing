@@ -175,10 +175,8 @@ fn determine_authority(message: &RoutingMessage,
                        routing_table: &RoutingTable,
                        element: &NameType)
                        -> Option<Authority> {
-
     // if signed by a client in our range and destination is not the element
     // this explicitly excludes GetData from ever being passed to ClientManager
-
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.address_in_our_close_group_range(&client_name) &&
@@ -209,11 +207,9 @@ fn determine_authority(message: &RoutingMessage,
 #[cfg(test)]
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
-    use public_id::PublicId;
     use messages::{RoutingMessage, Content, ExternalRequest};
-    use id::Id;
+    use id::FullId;
     use test_utils::{xor, test};
-    use utils::public_key_to_client_name;
     use name_type::{closer_to_target, NameType};
     use authority::Authority;
     use sodiumoxide::crypto;
@@ -223,11 +219,11 @@ mod test {
 
     #[test]
     fn our_authority_full_routing_table() {
-        let id = Id::new();
-        let mut routing_table = RoutingTable::new(&id.name());
+        let full_id = FullId::new();
+        let mut routing_table = RoutingTable::new(full_id.public_id().name());
         let mut count: usize = 0;
         loop {
-            let node_info = NodeInfo::new(PublicId::new(&Id::new()),
+            let node_info = NodeInfo::new(FullId::new().public_id().clone(),
                                           vec![test::random_connection()]);
             let _ = routing_table.add_node(node_info);
             count += 1;
@@ -239,11 +235,12 @@ mod test {
             // if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
             //     panic!("Routing table does not fill up."); }
         }
-        let our_name = id.name();
+        let our_name = full_id.public_id().name();
         let (mut client_public_key, _) = crypto::sign::gen_keypair();
         count = 0;
         loop {
-            let client_name = public_key_to_client_name(&client_public_key);
+            let client_name =
+                ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
             if routing_table.address_in_our_close_group_range(&client_name) {
                 break;
             } else {
@@ -290,19 +287,21 @@ mod test {
                                                    ::types::generate_random_vec_u8(20usize)));
 
         // --- test determine_authority specific ----------------------------------------------------------------
+        let to_authority_name =
+            ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
         let client_manager_message = RoutingMessage {
             from_authority: Authority::Client(rand::random(), client_public_key.clone()),
-            to_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            to_authority: Authority::ClientManager(to_authority_name),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };
         assert_eq!(unwrap_option!(super::determine_authority(&client_manager_message,
                                                              &routing_table,
                                                              &some_data.name()), ""),
-                   Authority::ClientManager(public_key_to_client_name(&client_public_key)));
+                   Authority::ClientManager(to_authority_name));
 
         // assert to get a nae_manager Authority
         let nae_manager_message = RoutingMessage {
-            from_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            from_authority: Authority::ClientManager(to_authority_name),
             to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         };

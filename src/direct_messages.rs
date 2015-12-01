@@ -27,7 +27,7 @@ pub struct Churn {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 #[allow(variant_size_differences)]
 pub enum Content {
-    Identify { public_id: ::public_id::PublicId, },
+    Identify { public_id: ::id::PublicId, },
     Churn(Churn),
 }
 
@@ -51,7 +51,7 @@ impl DirectMessage {
         })
     }
 
-    pub fn new_identify(public_id: ::public_id::PublicId,
+    pub fn new_identify(public_id: ::id::PublicId,
                         private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
                         -> Result<DirectMessage, ::cbor::CborError> {
         let content = Content::Identify{ public_id: public_id, };
@@ -94,13 +94,11 @@ impl ::std::fmt::Debug for DirectMessage {
 
 #[cfg(test)]
 mod test {
-    use rand;
-
     #[test]
     fn verify_signature() {
-        let public_id: ::public_id::PublicId = rand::random();
+        let full_id = ::FullId::new();
         let content = ::direct_messages::Content::Identify {
-            public_id: public_id,
+            public_id: full_id.public_id().clone(),
         };
         let key = ::sodiumoxide::crypto::sign::gen_keypair();
         let other_key = ::sodiumoxide::crypto::sign::gen_keypair();
