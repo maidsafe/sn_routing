@@ -90,6 +90,7 @@ pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::Publi
         from_authority: from_authority,
         to_authority: to_authority,
         content: content,
+        group_keys: None,
     }
 }
 

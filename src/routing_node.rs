@@ -34,7 +34,7 @@ use utils::{encode, decode};
 use utils;
 use authority::{Authority, our_authority};
 
-use messages::{RoutingMessage, SignedMessage, SignedToken,
+use messages::{RoutingMessage, SignedMessage, SignedRequest,
                Content, ExternalResponse, InternalRequest, InternalResponse};
 
 use error::{RoutingError, InterfaceError};
@@ -70,10 +70,12 @@ pub struct RoutingNode {
     crust_rx: ::std::sync::mpsc::Receiver<::crust::Event>,
     action_rx: ::std::sync::mpsc::Receiver<Action>,
     event_sender: ::std::sync::mpsc::Sender<Event>,
-    claimant_message_filter: ::message_filter::MessageFilter<(RoutingMessage, Address)>,
+    message_public_key_filter: ::message_filter::MessageFilter<(RoutingMessage,
+            ::sodiumoxide::crypto::sign::PublicKey)>,
     connection_filter: ::message_filter::MessageFilter<::NameType>,
     public_id_cache: LruCache<NameType, PublicId>,
-    message_accumulator: ::accumulator::Accumulator<RoutingMessage, ()>,
+    message_accumulator: ::accumulator::Accumulator<RoutingMessage,
+            ::sodiumoxide::crypto::sign::PublicKey>,
     refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
     refresh_causes: ::message_filter::MessageFilter<::NameType>,
     // Messages which have been accumulated and then actioned
@@ -134,9 +136,9 @@ impl RoutingNode {
                 crust_rx: crust_rx,
                 action_rx: action_rx,
                 event_sender: event_sender,
-                claimant_message_filter: ::message_filter
-                                         ::MessageFilter
-                                         ::with_expiry_duration(::time::Duration::minutes(20)),
+                message_public_key_filter: ::message_filter
+                                           ::MessageFilter
+                                           ::with_expiry_duration(::time::Duration::minutes(20)),
                 connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::seconds(20)),
                 public_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
@@ -397,11 +399,15 @@ impl RoutingNode {
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
         debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
 
-        // filter check, should just return quietly
-        let message = signed_message.get_routing_message().clone();
-        let claimant = signed_message.claimant().clone();
+        let (message, public_sign_key) = match signed_message.get_routing_message() {
+            Some(routing_message) => (routing_message, signed_message.signing_public_key()),
+            None => {
+                debug!("Signature failed.\n");
+                return Err(RoutingError::FailedSignature)
+            }
+        };
 
-        if self.claimant_message_filter.check(&(message.clone(), claimant.clone())) {
+        if self.message_public_key_filter.check(&(message.clone(), public_sign_key.clone())) {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -421,14 +427,17 @@ impl RoutingNode {
 
         // Scan for remote names.
         if self.state == State::Node {
-            if let ::types::Address::Node(ref name) = claimant {
-                debug!("{}We're connected and got message from {:?}", self.us(), name);
-                self.refresh_routing_table(&name)
-            }
+            match message.from_authority {
+                ::authority::Authority::ClientManager(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::NaeManager(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::NodeManager(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::Client(_, _) => {}
+            };
 
             // Forward the message.
             debug!("{}Forwarding signed message", self.us());
-            self.claimant_message_filter.add((message.clone(), claimant.clone()));
+            self.message_public_key_filter.add((message.clone(), public_sign_key.clone()));
             self.send(signed_message.clone());
         };
 
@@ -520,12 +529,12 @@ impl RoutingNode {
                             }
                             None => return Err(RoutingError::BadAuthority),
                         };
-                        match claimant.clone() {
-                            // TODO (ben 23/08/2015) later consider whether we need to restrict it
-                            // to only from nodes within our close group
-                            Address::Node(name) => self.handle_refresh(type_tag, name, bytes,
-                                                                       refresh_authority, cause),
-                            Address::Client(_) => Err(RoutingError::BadAuthority),
+                        if accumulated_message.from_authority.is_group() {
+                            self.handle_refresh(type_tag,
+                                accumulated_message.from_authority.get_location().clone(),
+                                bytes, refresh_authority, cause)
+                        } else {
+                            return Err(RoutingError::BadAuthority);
                         }
                     }
                 }
@@ -556,7 +565,7 @@ impl RoutingNode {
                     request: request,
                     our_authority: accumulated_message.to_authority,
                     from_authority: accumulated_message.from_authority,
-                    response_token: opt_token,
+                    signed_request: opt_token,
                 });
                 Ok(())
             }
@@ -569,21 +578,23 @@ impl RoutingNode {
 
         match result {
             Ok(()) => {
-                self.claimant_message_filter.add((message, claimant));
+                self.message_public_key_filter.add((message, public_sign_key.clone()));
                 Ok(())
             }
             Err(RoutingError::UnknownMessageType) => {
-                self.claimant_message_filter.add((message, claimant));
+                self.message_public_key_filter.add((message, public_sign_key.clone()));
                 Err(RoutingError::UnknownMessageType)
             }
             Err(e) => Err(e),
         }
     }
 
-    fn accumulate(&mut self,
-                  signed_message: &SignedMessage)
-                  -> Option<(RoutingMessage, Option<SignedToken>)> {
-        let message = signed_message.get_routing_message().clone();
+    fn accumulate(&mut self, signed_message: &SignedMessage)
+            -> Option<(RoutingMessage, Option<SignedRequest>)> {
+        let (message, public_sign_key) = match signed_message.get_routing_message() {
+            Some(routing_message) => (routing_message, signed_message.signing_public_key()),
+            None => return None,
+        };
 
         let mut is_relocation_response_msg = false;
         if let Content::InternalResponse(InternalResponse::RelocatedNetworkName(..)) =
@@ -593,35 +604,16 @@ impl RoutingNode {
 
         // If the message is not from a group then don't accumulate
         if !message.from_authority.is_group() || is_relocation_response_msg {
-            debug!("{}Message from {:?}, returning with SignedToken", self.us(),
+            debug!("{}Message from {:?}, returning with SignedRequest", self.us(),
                    message.from_authority);
-            // TODO: If not from a group, then use client's public key to check
-            // the signature.
-            let token = match signed_message.as_token() {
-                Ok(token) => token,
-                Err(_) => {
-                    error!("{}Failed to generate signed token, message {:?} is dropped", self.us(),
-                           message);
-                    return None
-                }
-            };
-            return Some((message, Some(token)));
+            return Some((message, Some(signed_message.as_signed_request())));
         }
 
-        let claimant: NameType = match *signed_message.claimant() {
-            Address::Node(ref claimant) => claimant.clone(),
-            Address::Client(_) => {
-                error!("{}Claimant is a Client, but passed into message_accumulator for a group; \
-                       dropping", self.us());
-                // debug_assert!(false);
-                return None
-            }
-        };
-
-        debug!("{}Adding message from {:?} to message_accumulator", self.us(), claimant);
+        debug!("{}Adding message with public key {:?} to message_accumulator", self.us(),
+            public_sign_key);
         let dynamic_quorum_size = self.routing_table_quorum_size();
         self.message_accumulator.set_quorum_size(dynamic_quorum_size);
-        if self.message_accumulator.add(message.clone(), ()).is_some() {
+        if self.message_accumulator.add(message.clone(), public_sign_key.clone()).is_some() {
             self.handled_messages.add(message.clone());
             Some((message, None))
         } else {
@@ -702,10 +694,10 @@ impl RoutingNode {
             from_authority: try!(self.get_client_authority()),
             to_authority: to_authority,
             content: content,
+            group_keys: None,
         };
-        match SignedMessage::new(Address::Client(*self.full_id.public_id().signing_public_key()),
-                                 routing_message,
-                                 self.full_id.signing_private_key()) {
+
+        match SignedMessage::new(&routing_message, &self.full_id) {
             Ok(signed_message) => self.send(signed_message),
             // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
             Err(error) => {
@@ -720,7 +712,7 @@ impl RoutingNode {
                                    request: InternalRequest,
                                    from_authority: Authority,
                                    to_authority: Authority,
-                                   response_token: SignedToken)
+                                   response_token: SignedRequest)
                                    -> RoutingResult {
         if self.client_restriction {
             debug!("{}Client restricted not requesting network name", self.us());
@@ -763,10 +755,10 @@ impl RoutingNode {
                             content: Content::InternalRequest(
                                 InternalRequest::RelocatedNetworkName(network_public_id,
                                 response_token)),
+                            group_keys: None,
                         };
-                        match SignedMessage::new(Address::Node(*self.full_id.public_id().name()),
-                                                 routing_message,
-                                                 self.full_id.signing_private_key()) {
+
+                        match SignedMessage::new(&routing_message, &self.full_id) {
                             Ok(signed_message) => self.send(signed_message),
                             Err(e) => return Err(RoutingError::Cbor(e)),
                         }
@@ -782,13 +774,20 @@ impl RoutingNode {
 
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
-                                     response_token: SignedToken) -> RoutingResult {
+                                     response_token: SignedRequest) -> RoutingResult {
         debug!("{}Handling Relocated Network Name", self.us());
 
-        let signed_message = try!(SignedMessage::new_from_token(response_token.clone()));
-        let target_client_authority = signed_message.get_routing_message().source();
-        let from_authority = Authority::NaeManager(*self.full_id.public_id().name());
-
+        let signed_message = SignedMessage::from_signed_request(
+                response_token.clone(), relocated_id.signing_public_key().clone());
+        let message = match signed_message.get_routing_message() {
+            Some(routing_message) => routing_message,
+            None => {
+                debug!("Signature failed.\n");
+                return Err(RoutingError::FailedSignature)
+            }
+        };
+        let target_client_authority = message.source();
+        let from_authority = Authority::NaeManager(self.full_id.public_id().name().clone());
         let mut public_ids : Vec<PublicId> = self.routing_table
                                                  .our_close_group()
                                                  .iter()
@@ -802,7 +801,6 @@ impl RoutingNode {
                self.us(), relocated_id.name(), public_ids, target_client_authority);
 
         let _ = self.public_id_cache.insert(relocated_id.name().clone(), relocated_id.clone());
-
         let internal_response = InternalResponse::RelocatedNetworkName(relocated_id,
                                                                        public_ids,
                                                                        response_token);
@@ -810,11 +808,10 @@ impl RoutingNode {
             from_authority: from_authority,
             to_authority: target_client_authority,
             content: Content::InternalResponse(internal_response),
+            group_keys: None,
         };
 
-        match SignedMessage::new(Address::Node(*self.full_id.public_id().name()),
-                                 routing_message,
-                                 self.full_id.signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.full_id) {
             Ok(signed_message) => Ok(self.send(signed_message)),
             Err(e) => Err(RoutingError::Cbor(e)),
         }
@@ -823,17 +820,21 @@ impl RoutingNode {
     fn handle_relocation_response(&mut self,
                                   relocated_id: ::id::PublicId,
                                   close_group_ids: Vec<::id::PublicId>,
-                                  original_signed_token: SignedToken,
+                                  signed_request: SignedRequest,
                                   _from_authority: Authority,
                                   _to_authority: Authority) -> RoutingResult {
-        if !original_signed_token.verify_signature(&self.full_id.public_id().signing_public_key()) {
-            return Err(RoutingError::FailedSignature);
-        }
+        let signed_message = SignedMessage::from_signed_request(
+                signed_request.clone(), self.full_id.public_id().signing_public_key().clone());
+        let message = match signed_message.get_routing_message() {
+            Some(routing_message) => routing_message,
+            None => {
+                debug!("Signature failed.\n");
+                return Err(RoutingError::FailedSignature)
+            }
+        };
 
-        let original_request = try!(SignedMessage::new_from_token(original_signed_token));
-        match original_request.get_routing_message().content {
-            Content::InternalRequest(InternalRequest::RequestNetworkName(
-                    ref original_public_id)) => {
+        match message.content {
+            Content::InternalRequest(InternalRequest::RequestNetworkName(ref original_public_id)) => {
                 if *self.full_id.public_id() != *original_public_id {
                     return Err(RoutingError::BadAuthority)
                 }
@@ -884,15 +885,13 @@ impl RoutingNode {
     ///    require to get our real FullId from our close group and accumulate this
     ///    before accpeting us as a valid connection / full_id
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
-        let (from_authority, address) = match *self.state() {
+        let from_authority = match *self.state() {
             State::Disconnected => return Err(RoutingError::NotBootstrapped),
             State::Client => {
-                let signing_key = self.full_id.public_id().signing_public_key();
-                (try!(self.get_client_authority()), Address::Client(*signing_key))
+                try!(self.get_client_authority())
             }
             _ => {
-                let name = self.full_id.public_id().name();
-                (Authority::ManagedNode(*name), Address::Node(*name))
+                Authority::ManagedNode(self.full_id.public_id().name().clone())
             }
         };
 
@@ -904,9 +903,10 @@ impl RoutingNode {
                 endpoints: self.accepting_on.clone(),
                 public_id: self.full_id.public_id().clone(),
             }),
+            group_keys: None,
         };
 
-        match SignedMessage::new(address, routing_message, self.full_id.signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.full_id) {
             Ok(signed_message) => self.send(signed_message),
             Err(e) => return Err(RoutingError::Cbor(e)),
         };
@@ -923,7 +923,7 @@ impl RoutingNode {
                               endpoints: Vec<::crust::Endpoint>,
                               public_id: PublicId,
                               from_authority: Authority,
-                              response_token: SignedToken) -> RoutingResult {
+                              response_token: SignedRequest) -> RoutingResult {
         debug!("{}Handle ConnectRequest", self.us());
 
         // TODO(Fraser:David) How do you validate/fetch/get public key for a node ?
@@ -942,12 +942,6 @@ impl RoutingNode {
             }
         }
 
-        // First verify that the message is correctly self-signed.
-        if !response_token.verify_signature(&public_id.signing_public_key()) {
-            warn!("{}ConnectRequest response token invalid", self.us());
-            return Err(RoutingError::FailedSignature)
-        }
-
         if !self.routing_table.want_to_add(public_id.name()) {
             debug!("{}Connect request {:?} failed - Don't want to add", self.us(), public_id);
             return Err(RoutingError::RefusedFromRoutingTable)
@@ -959,13 +953,12 @@ impl RoutingNode {
             content: Content::InternalResponse(InternalResponse::Connect {
                 endpoints: self.accepting_on.clone(),
                 public_id: self.full_id.public_id().clone(),
-                signed_token: response_token,
+                signed_request: response_token,
             }),
+            group_keys: None,
         };
 
-        match SignedMessage::new(Address::Node(*self.full_id.public_id().name()),
-                                 routing_message,
-                                 self.full_id.signing_private_key()) {
+        match SignedMessage::new(&routing_message, &self.full_id) {
             Ok(signed_message) => {
                 self.send(signed_message);
                 let connection_token = self.get_connection_token();
@@ -991,15 +984,19 @@ impl RoutingNode {
                                _to_authority: Authority) -> RoutingResult {
         debug!("{}Handle ConnectResponse", self.us());
         match response {
-            InternalResponse::Connect { public_id, endpoints, signed_token } => {
-                if !signed_token.verify_signature(&self.full_id.public_id().signing_public_key()) {
-                    error!("{}ConnectResponse from {:?} failed our signature for the signed token",
-                           self.us(), from_authority);
-                    return Err(RoutingError::FailedSignature);
-                }
+            InternalResponse::Connect { public_id, endpoints, signed_request } => {
+                let signed_message = SignedMessage::from_signed_request(
+                        signed_request.clone(),
+                        self.full_id.public_id().signing_public_key().clone());
+                let message = match signed_message.get_routing_message() {
+                    Some(routing_message) => routing_message,
+                    None => {
+                        debug!("Signature failed.\n");
+                        return Err(RoutingError::FailedSignature)
+                    }
+                };
 
-                let connect_request = try!(SignedMessage::new_from_token(signed_token.clone()));
-                match connect_request.get_routing_message().from_authority.get_address() {
+                match message.from_authority.get_address() {
                     Some(address) => if !self.is_us(&address) {
                         error!("{}Connect response contains request that was not from us",
                                self.us());
@@ -1058,10 +1055,10 @@ impl RoutingNode {
             from_authority: our_authority,
             to_authority: to_authority,
             content: content,
+            group_keys: None,
         };
-        match SignedMessage::new(Address::Node(*self.full_id.public_id().name()),
-                                 routing_message,
-                                 self.full_id.signing_private_key()) {
+
+        match SignedMessage::new(&routing_message, &self.full_id) {
             Ok(signed_message) => self.send(signed_message),
             Err(e) => return Err(RoutingError::Cbor(e)),
         };
@@ -1075,11 +1072,10 @@ impl RoutingNode {
                     from_authority: client_authority,
                     to_authority: to_authority.clone(),
                     content: content.clone(),
+                    group_keys: None,
                 };
-                match SignedMessage::new(Address::Client(*self.full_id.public_id()
-                                                                      .signing_public_key()),
-                                         routing_message,
-                                         self.full_id.signing_private_key()) {
+
+                match SignedMessage::new(&routing_message, &self.full_id) {
                     Ok(signed_message) => self.send(signed_message),
                     // FIXME (ben 24/08/2015) find an elegant way to give the message back to user
                     Err(error) => {
@@ -1125,7 +1121,14 @@ impl RoutingNode {
     /// 4. if all the above failed, try sending it over all available bootstrap connections
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&mut self, signed_message: SignedMessage) {
-        let destination = signed_message.get_routing_message().destination();
+        let message = match signed_message.get_routing_message() {
+            Some(routing_message) => routing_message,
+            None => {
+                debug!("Signature failed.\n");
+                return
+            }
+        };
+        let destination = message.destination();
         debug!("{}Send request to {:?}", self.us(), destination);
         let bytes = match encode(&signed_message) {
             Ok(bytes) => bytes,
@@ -1195,8 +1198,11 @@ impl RoutingNode {
         // Request token is only set if it came from a non-group entity.
         // If it came from a group, then sentinel guarantees message validity.
         if let Some(ref token) = *response.get_signed_token() {
-            if !token.verify_signature(&self.full_id.public_id().signing_public_key()) {
-                return Err(RoutingError::FailedSignature);
+            let signed_message = SignedMessage::from_signed_request(
+                    token.clone(), self.full_id.public_id().signing_public_key().clone());
+            match signed_message.get_routing_message() {
+                Some(_) => {},
+                None => return Err(RoutingError::FailedSignature),
             };
         } else {
             if !self.name_in_range(to_authority.get_location()) {
@@ -1457,11 +1463,10 @@ impl RoutingNode {
 #[cfg(test)]
 mod test {
     use action::Action;
-    use sodiumoxide::crypto;
     use data::{Data, DataRequest};
     use event::Event;
     use immutable_data::{ImmutableData, ImmutableDataType};
-    use messages::{ExternalRequest, ExternalResponse, SignedToken, RoutingMessage, Content};
+    use messages::{ExternalRequest, ExternalResponse, RoutingMessage, Content};
     use rand::{thread_rng, Rng};
     //use std::sync::mpsc;
     //use super::RoutingNode;
@@ -1480,77 +1485,72 @@ mod test {
     //}
 
     // RoutingMessage's for ImmutableData Get request/response.
-    //fn generate_routing_messages() -> (RoutingMessage, RoutingMessage) {
-    //    let mut data = [0u8; 64];
-    //    thread_rng().fill_bytes(&mut data);
+    fn generate_routing_messages() -> (RoutingMessage, RoutingMessage) {
+        let mut data = [0u8; 64];
+        thread_rng().fill_bytes(&mut data);
 
-    //    let immutable = ImmutableData::new(ImmutableDataType::Normal,
-    //                                       data.iter().cloned().collect());
-    //    let immutable_data = Data::ImmutableData(immutable.clone());
-    //    let key_pair = crypto::sign::gen_keypair();
-    //    let signature = crypto::sign::sign_detached(&data, &key_pair.1);
-    //    let sign_token = SignedToken {
-    //        serialised_request: data.iter().cloned().collect(),
-    //        signature: signature,
-    //    };
+        let immutable = ImmutableData::new(ImmutableDataType::Normal,
+                                           data.iter().cloned().collect());
+        let immutable_data = Data::ImmutableData(immutable.clone());
+        let data_request = DataRequest::ImmutableData(immutable.name().clone(),
+                                                      immutable.get_type_tag().clone());
+        let request = ExternalRequest::Get(data_request.clone(), 0u8);
+        let response = ExternalResponse::Get(immutable_data, data_request, None);
 
-    //    let data_request = DataRequest::ImmutableData(immutable.name().clone(),
-    //                                                  immutable.get_type_tag().clone());
-    //    let request = ExternalRequest::Get(data_request.clone(), 0u8);
-    //    let response = ExternalResponse::Get(immutable_data, data_request, Some(sign_token));
+        let routing_message_request = RoutingMessage {
+            from_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            to_authority: Authority::NaeManager(NameType::new(data)),
+            content: Content::ExternalRequest(request),
+            group_keys: None,
+        };
 
-    //    let routing_message_request = RoutingMessage {
-    //        from_authority: Authority::ClientManager(NameType::new([1u8; 64])),
-    //        to_authority: Authority::NaeManager(NameType::new(data)),
-    //        content: Content::ExternalRequest(request),
-    //    };
+        let routing_message_response = RoutingMessage {
+            from_authority: Authority::NaeManager(NameType::new(data)),
+            to_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            content: Content::ExternalResponse(response),
+            group_keys: None,
+        };
 
-    //    let routing_message_response = RoutingMessage {
-    //        from_authority: Authority::NaeManager(NameType::new(data)),
-    //        to_authority: Authority::ClientManager(NameType::new([1u8; 64])),
-    //        content: Content::ExternalResponse(response),
-    //    };
+        (routing_message_request, routing_message_response)
+    }
 
-    //    (routing_message_request, routing_message_response)
-    //}
+    #[test]
+    fn no_caching() {
+        let mut node = create_routing_node();
+        // Get request/response RoutingMessage's for ImmutableData.
+        let (message_request, message_response) = generate_routing_messages();
 
-    //#[test]
-    // fn no_caching() {
-    //     let mut node = create_routing_node();
-    //     // Get request/response RoutingMessage's for ImmutableData.
-    //     let (message_request, message_response) = generate_routing_messages();
+        assert!(node.data_cache.handle_cache_get(&message_request).is_none());
+        node.data_cache.handle_cache_put(&message_response);
+        assert!(node.data_cache.handle_cache_get(&message_request).is_none());
+    }
 
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_none());
-    //     node.data_cache.handle_cache_put(&message_response);
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_none());
-    // }
+    #[test]
+    fn enable_immutable_data_caching() {
+        let mut node = create_routing_node();
+        // Enable caching for ImmutableData, disable for other Data types.
+        let cache_options = DataCacheOptions::with_caching(false, false, true);
+        let _ = node.data_cache.set_cache_options(cache_options);
+        // Get request/response RoutingMessage's for ImmutableData.
+        let (message_request, message_response) = generate_routing_messages();
 
-    // #[test]
-    // fn enable_immutable_data_caching() {
-    //     let mut node = create_routing_node();
-    //     // Enable caching for ImmutableData, disable for other Data types.
-    //     let cache_options = DataCacheOptions::with_caching(false, false, true);
-    //     let _ = node.data_cache.set_cache_options(cache_options);
-    //     // Get request/response RoutingMessage's for ImmutableData.
-    //     let (message_request, message_response) = generate_routing_messages();
+        assert!(node.data_cache.handle_cache_get(&message_request).is_none());
+        node.data_cache.handle_cache_put(&message_response);
+        assert!(node.data_cache.handle_cache_get(&message_request).is_some());
+    }
 
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_none());
-    //     node.data_cache.handle_cache_put(&message_response);
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_some());
-    // }
+    #[test]
+    fn disable_immutable_data_caching() {
+        let mut node = create_routing_node();
+        // Disable caching for ImmutableData, enable for other Data types.
+        let cache_options = DataCacheOptions::with_caching(true, true, false);
+        let _ = node.data_cache.set_cache_options(cache_options);
+        // Get request/response RoutingMessage's for ImmutableData.
+        let (message_request, message_response) = generate_routing_messages();
 
-    // #[test]
-    // fn disable_immutable_data_caching() {
-    //     let mut node = create_routing_node();
-    //     // Disable caching for ImmutableData, enable for other Data types.
-    //     let cache_options = DataCacheOptions::with_caching(true, true, false);
-    //     let _ = node.data_cache.set_cache_options(cache_options);
-    //     // Get request/response RoutingMessage's for ImmutableData.
-    //     let (message_request, message_response) = generate_routing_messages();
-
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_none());
-    //     node.data_cache.handle_cache_put(&message_response);
-    //     assert!(node.data_cache.handle_cache_get(&message_request).is_none());
-    // }
+        assert!(node.data_cache.handle_cache_get(&message_request).is_none());
+        node.data_cache.handle_cache_put(&message_response);
+        assert!(node.data_cache.handle_cache_get(&message_request).is_none());
+    }
 }
 */
