@@ -322,13 +322,17 @@ impl RoutingTable {
     }
 
     fn bucket_index(&self, id: &NameType) -> usize {
-        let mut us = ::bit_set::BitSet::from_bytes(&self.our_id.0[..]);
-        let them = ::bit_set::BitSet::from_bytes(&id.0[..]);
-        us.symmetric_difference_with(&them);
-        match us.iter().min() {
-            Some(index) => index,
-            None => ::NAME_TYPE_LEN * 8,
+        for byte_index in 0..::NAME_TYPE_LEN {
+            if self.our_id.0[byte_index] != id.0[byte_index] {
+                let mut us = ::bit_set::BitSet::from_bytes(&[self.our_id.0[byte_index]]);
+                let them = ::bit_set::BitSet::from_bytes(&[id.0[byte_index]]);
+                us.symmetric_difference_with(&them);
+                // safe to unwrap since we've already checked there's a difference between the `u8`s
+                // so the XOR must yield at least one value
+                return unwrap_option!(us.iter().min(), "") + (byte_index * 8)
+            }
         }
+        ::NAME_TYPE_LEN * 8
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
