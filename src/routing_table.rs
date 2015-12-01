@@ -184,11 +184,7 @@ impl RoutingTable {
 
     /// This unconditionally removes the contact from the table.
     pub fn drop_node(&mut self, node_to_drop: &NameType) {
-
-        if let Some(drop_this_node) = self.routing_table.iter()
-                                                        .position(|x| x.id() == node_to_drop) {
-            let _ = self.routing_table.remove(drop_this_node);
-        }
+        self.routing_table.retain(|x| x.id() != node_to_drop);
     }
 
     /// This returns a collection of contacts to which a message should be sent onwards.  It will
