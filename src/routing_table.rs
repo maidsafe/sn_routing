@@ -20,8 +20,7 @@ use std::usize;
 
 use crust::Connection;
 use itertools::*;
-use common_bits::*;
-use public_id::PublicId;
+use id::PublicId;
 use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
 use types;
 
@@ -45,6 +44,7 @@ impl NodeInfo {
             connections: connections,
         }
     }
+
     #[cfg(not(test))]
     pub fn id(&self) -> &NameType {
         self.public_id.name()
@@ -59,6 +59,7 @@ impl NodeInfo {
             id: id,
         }
     }
+
     #[cfg(test)]
     pub fn id(&self) -> &NameType {
         &self.id
@@ -207,20 +208,20 @@ impl RoutingTable {
         let parallelism = RoutingTable::get_parallelism();
 
         if self.address_in_our_close_group_range(target) {
-            return self.our_close_group();    
+            return self.our_close_group();
         }
- 
+
         let mut result = Vec::new();
-        
-        // if not in close group but connected then send direct        
-        for node in &self.routing_table { 
+
+        // if not in close group but connected then send direct
+        for node in &self.routing_table {
             if node.id() == target {
                 result.push(node.clone());
                 return result;
             }
         }
-        
-        // not in close group or routing table so send to closest known nodes up to parallelism 
+
+        // not in close group or routing table so send to closest known nodes up to parallelism
         // count
         self.routing_table.iter().sorted_by(|a, b| if closer_to_target(&a.id(), &b.id(), &target) {
                                                         cmp::Ordering::Less
@@ -322,29 +323,31 @@ impl RoutingTable {
         }
     }
 
+    // This is equivalent to the common leading bits of `self.our_id` and `id` where "leading bits"
+    // means the most significant bits.
     fn bucket_index(&self, id: &NameType) -> usize {
-        let mut index_of_mismatch = 0usize;
-
-        while index_of_mismatch < self.our_id.0.len() {
-            if id.0[index_of_mismatch] != self.our_id.0[index_of_mismatch] {
-                break;
+        for byte_index in 0..::NAME_TYPE_LEN {
+            if self.our_id.0[byte_index] != id.0[byte_index] {
+                return (byte_index * 8) + match self.our_id.0[byte_index] ^ id.0[byte_index] {
+                    1 => 7,
+                    2 | 3 => 6,
+                    4...7 => 5,
+                    8...15 => 4,
+                    16...31 => 3,
+                    32...63 => 2,
+                    64...127 => 1,
+                    128...255 => 0,
+                    _ => unreachable!(),
+                }
             }
-            index_of_mismatch += 1;
         }
-
-        if index_of_mismatch == self.our_id.0.len() {
-            return 8 * self.our_id.0.len();
-        }
-
-        let common_bits = K_COMMON_BITS[self.our_id.0[index_of_mismatch] as usize]
-                                       [id.0[index_of_mismatch] as usize];
-        8 * index_of_mismatch + common_bits as usize
+        ::NAME_TYPE_LEN * 8
     }
 
     pub fn has_node(&self, node_id: &NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
-    
+
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.routing_table
@@ -371,12 +374,11 @@ impl RoutingTable {
                                         removal_node_index: usize)
                                         -> bool {
         if removal_node_index >= self.routing_table.len() {
-            return false;
+            return false
         }
         let removal_node = &self.routing_table[removal_node_index];
         self.bucket_index(new_node) > self.bucket_index(&removal_node.id())
     }
-
 }
 
 
@@ -516,7 +518,7 @@ mod test {
             assert_eq!(super::RoutingTable::get_optimal_len(), self.table.len());
         }
 
-        fn public_id(&self, their_id: &::NameType) -> Option<::public_id::PublicId> {
+        fn public_id(&self, their_id: &::NameType) -> Option<::id::PublicId> {
             debug_assert!(are_nodes_sorted(&self.table), "RT::public_id: Nodes are not sorted");
             match self.table.routing_table.iter().find(|&node_info| node_info.id() == their_id) {
                 Some(node) => Some(node.public_id.clone()),
@@ -544,10 +546,10 @@ mod test {
     }
 
     fn create_random_node_info() -> super::NodeInfo {
-        let public_id = ::public_id::PublicId::new(&::id::Id::new());
+        let full_id = ::id::FullId::new();
         super::NodeInfo {
-            id: public_id.name().clone(),
-            public_id: public_id,
+            id: full_id.public_id().name().clone(),
+            public_id: full_id.public_id().clone(),
             connections: Vec::new(),
         }
     }
@@ -1102,13 +1104,14 @@ mod test {
     fn our_close_group_and_in_range() {
         // independent double verification of our_close_group()
         // this test verifies that the close group is returned sorted
-        let our_id_name = ::id::Id::new().name();
-        let mut routing_table = super::RoutingTable::new(&our_id_name);
+        let full_id = ::id::FullId::new();
+        let our_id_name = full_id.public_id().name();
+        let mut routing_table = super::RoutingTable::new(our_id_name);
 
         let mut count: usize = 0;
         loop {
             let _ = routing_table.add_node(super::NodeInfo::new(
-                ::public_id::PublicId::new(&::id::Id::new()), vec![]));
+                ::id::FullId::new().public_id().clone(), vec![]));
             count += 1;
             if routing_table.len() >= super::RoutingTable::get_optimal_len() {
                 break;
@@ -1337,5 +1340,58 @@ mod test {
         assert!(table_unit_test.our_id == table_unit_test.table.our_id);
         assert_eq!(super::RoutingTable::get_optimal_len(),
                    table_unit_test.table.routing_table.len());
+    }
+
+    #[test]
+    fn bucket_index() {
+        // Set our name for routing table to max possible value (in binary, all `1`s)
+        let our_name = ::NameType::new([255u8; ::NAME_TYPE_LEN]);
+        let routing_table = super::RoutingTable::new(&our_name);
+
+        // Iterate through each u8 element of a target name identical to ours and set it to each
+        // possible value for u8 other than 255 (since that which would a target name identical to
+        // our name)
+        for index in 0..::NAME_TYPE_LEN {
+            let mut array = [255u8; ::NAME_TYPE_LEN];
+            for modified_element in 0..255u8 {
+                array[index] = modified_element;
+                let target_name = ::NameType::new(array);
+                // `index` is equivalent to common leading bytes, so the common leading bits (CLBs)
+                // is `index` * 8 plus some value for `modified_element`.  Where
+                // 0 <= modified_element < 128, the first bit is different so CLBs is 0, and for
+                // 128 <= modified_element < 192, the second bit is different, so CLBs is 1, and so
+                // on.
+                let expected_bucket_index = (index * 8) + match modified_element {
+                    0...127 => 0,
+                    128...191 => 1,
+                    192...223 => 2,
+                    224...239 => 3,
+                    240...247 => 4,
+                    248...251 => 5,
+                    252 | 253 => 6,
+                    254 => 7,
+                    _ => unreachable!(),
+                };
+                if expected_bucket_index != routing_table.bucket_index(&target_name) {
+                    let as_binary = |name: &::NameType| -> String {
+                        let mut name_as_binary = String::new();
+                        for i in name.0.iter() {
+                            name_as_binary.push_str(&format!("{:08b}", i));
+                        }
+                        name_as_binary
+                    };
+                    println!("us:   {}", as_binary(&our_name));
+                    println!("them: {}", as_binary(&target_name));
+                    println!("index:                 {}", index);
+                    println!("modified_element:      {}", modified_element);
+                    println!("expected bucket_index: {}", expected_bucket_index);
+                    println!("actual bucket_index:   {}", routing_table.bucket_index(&target_name));
+                }
+                assert_eq!(expected_bucket_index, routing_table.bucket_index(&target_name));
+            }
+        }
+
+        // Check the bucket index of our own name is 512
+        assert_eq!(::NAME_TYPE_LEN * 8, routing_table.bucket_index(&our_name));
     }
 }

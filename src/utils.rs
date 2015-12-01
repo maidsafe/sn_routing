@@ -55,11 +55,6 @@ pub fn decode<T>(bytes: &[u8]) -> Result<T, ::cbor::CborError>
     }
 }
 
-/// The name client name is the SHA512 of the public signing key
-pub fn public_key_to_client_name(key: &::sodiumoxide::crypto::sign::PublicKey) -> ::NameType {
-    ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&key[..]).0)
-}
-
 /// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 /// In case of only one close node provided (in initial network setup scenario),
 /// relocated_name = Hash(original_name + 1st closest node id)
@@ -91,15 +86,6 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<::NameType>,
 #[cfg(test)]
 mod test {
     use rand;
-
-    #[test]
-    fn public_key_to_client_name() {
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let client_name = super::public_key_to_client_name(&sign_keys.0);
-        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&sign_keys.0[..]).0);
-
-        assert_eq!(client_name, name);
-    }
 
     #[test]
     fn encode_decode() {
