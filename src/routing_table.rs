@@ -1335,4 +1335,57 @@ mod test {
         assert_eq!(super::RoutingTable::get_optimal_len(),
                    table_unit_test.table.routing_table.len());
     }
+
+    #[test]
+    fn bucket_index() {
+        // Set our name for routing table to max possible value (in binary, all `1`s)
+        let our_name = ::NameType::new([255u8; ::NAME_TYPE_LEN]);
+        let routing_table = super::RoutingTable::new(&our_name);
+
+        // Iterate through each u8 element of a target name identical to ours and set it to each
+        // possible value for u8 other than 255 (since that which would a target name identical to
+        // our name)
+        for index in 0..::NAME_TYPE_LEN {
+            let mut array = [255u8; ::NAME_TYPE_LEN];
+            for modified_element in 0..255u8 {
+                array[index] = modified_element;
+                let target_name = ::NameType::new(array);
+                // `index` is equivalent to common leading bytes, so the common leading bits (CLBs)
+                // is `index` * 8 plus some value for `modified_element`.  Where
+                // 0 <= modified_element < 128, the first bit is different so CLBs is 0, and for
+                // 128 <= modified_element < 192, the second bit is different, so CLBs is 1, and so
+                // on.
+                let expected_bucket_index = (index * 8) + match modified_element {
+                    0...127 => 0,
+                    128...191 => 1,
+                    192...223 => 2,
+                    224...239 => 3,
+                    240...247 => 4,
+                    248...251 => 5,
+                    252 | 253 => 6,
+                    254 => 7,
+                    _ => unreachable!(),
+                };
+                if expected_bucket_index != routing_table.bucket_index(&target_name) {
+                    let as_binary = |name: &::NameType| -> String {
+                        let mut name_as_binary = String::new();
+                        for i in name.0.iter() {
+                            name_as_binary.push_str(&format!("{:08b}", i));
+                        }
+                        name_as_binary
+                    };
+                    println!("us:   {}", as_binary(&our_name));
+                    println!("them: {}", as_binary(&target_name));
+                    println!("index:                 {}", index);
+                    println!("modified_element:      {}", modified_element);
+                    println!("expected bucket_index: {}", expected_bucket_index);
+                    println!("actual bucket_index:   {}", routing_table.bucket_index(&target_name));
+                }
+                assert_eq!(expected_bucket_index, routing_table.bucket_index(&target_name));
+            }
+        }
+
+        // Check the bucket index of our own name is 512
+        assert_eq!(::NAME_TYPE_LEN * 8, routing_table.bucket_index(&our_name));
+    }
 }
