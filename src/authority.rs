@@ -259,18 +259,18 @@ mod test {
         let second_closest_node_in_our_close_group: NodeInfo = our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group: NameType =
-            xor(&xor(&closest_node_in_our_close_group.name, &our_name),
-                &second_closest_node_in_our_close_group.name);
+            xor(&xor(&closest_node_in_our_close_group.name(), &our_name),
+                &second_closest_node_in_our_close_group.name());
         // assert nae is indeed within close group
         assert!(closer_to_target(&nae_or_client_in_our_close_group,
-                                 &furthest_node_close_group.name,
+                                 &furthest_node_close_group.name(),
                                  &our_name));
         for close_node in our_close_group {
             // assert that nae does not collide with close node
-            assert!(close_node.name != nae_or_client_in_our_close_group);
+            assert!(*close_node.name() != nae_or_client_in_our_close_group);
         }
         // invert to get a far away address outside of the close group
-        let name_outside_close_group: NameType = xor(&furthest_node_close_group.name,
+        let name_outside_close_group: NameType = xor(&furthest_node_close_group.name(),
                                                      &NameType::new([255u8; 64]));
         // note: if the close group spans close to the whole address space,
         // this construction actually inverts the address into the close group range;
@@ -278,7 +278,7 @@ mod test {
         // for group_size 32; 80 nodes in the network this intermittently fails at 2%
         // for group_size 32; 100 nodes in the network this intermittently fails
         //     less than 1/8413 times, but should be exponentially less still.
-        assert!(closer_to_target(&furthest_node_close_group.name,
+        assert!(closer_to_target(&furthest_node_close_group.name(),
                                  &name_outside_close_group,
                                  &our_name));
 
@@ -315,14 +315,14 @@ mod test {
         // assert to get a node_manager Authority
         let node_manager_message = RoutingMessage {
             from_authority: Authority::NaeManager(rand::random()),
-            to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.name.clone()),
+            to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.name().clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
             group_keys: None,
         };
         assert_eq!(unwrap_option!(super::determine_authority(&node_manager_message,
                                                              &routing_table,
                                                              &some_data.name()), ""),
-                   Authority::NodeManager(second_closest_node_in_our_close_group.name.clone()));
+                   Authority::NodeManager(second_closest_node_in_our_close_group.name().clone()));
 
         // assert to get a managed_node Authority
         let managed_node_message = RoutingMessage {
@@ -360,7 +360,7 @@ mod test {
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
         let refresh_message = RoutingMessage {
-            from_authority : Authority::NaeManager(closest_node_in_our_close_group.name.clone()),
+            from_authority : Authority::NaeManager(closest_node_in_our_close_group.name().clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
                 some_bytes.clone(), rand::random())),
