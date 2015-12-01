@@ -116,7 +116,7 @@ impl RoutingTable {
         }
 
         if self.has_node(&their_info.id()) {
-            debug!("Routing table {:?} has node {:?}.", self.routing_table, their_info);
+            debug!("Routing table {:?} has node {:?}. not adding", self.routing_table, their_info);
             return (false, None);
         }
 
@@ -185,18 +185,7 @@ impl RoutingTable {
 
     /// This unconditionally removes the contact from the table.
     pub fn drop_node(&mut self, node_to_drop: &NameType) {
-        let mut index_of_removal = usize::MAX;
-
-        for i in 0..self.routing_table.len() {
-            if self.routing_table[i].id() == node_to_drop {
-                index_of_removal = i;
-                break;
-            }
-        }
-
-        if index_of_removal < self.routing_table.len() {
-            let _ = self.routing_table.remove(index_of_removal);
-        }
+        self.routing_table.retain(|x| x.id() != node_to_drop);
     }
 
     /// This returns a collection of contacts to which a message should be sent onwards.  It will
@@ -204,20 +193,15 @@ impl RoutingTable {
     /// target is within our close group.  If not, it will return the 'Parallelism()' closest
     /// contacts to the target.
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
-
-        let parallelism = RoutingTable::get_parallelism();
-
+        //if in range of close_group send to all close_group
         if self.address_in_our_close_group_range(target) {
             return self.our_close_group();
         }
 
-        let mut result = Vec::new();
-
         // if not in close group but connected then send direct
         for node in &self.routing_table {
             if node.id() == target {
-                result.push(node.clone());
-                return result;
+                return vec![node.clone()];
             }
         }
 
@@ -230,7 +214,7 @@ impl RoutingTable {
                                                     }
                                             ).into_iter()
                                              .cloned()
-                                             .take(parallelism)
+                                             .take(RoutingTable::get_parallelism())
                                              .collect::<Vec<_>>()
     }
 
@@ -1218,18 +1202,20 @@ mod test {
         }
 
         // Try with nodes far from us, first time *not* in table and second time *in* table (should
-        // return 'RoutingTable::Parallelism()' contacts closest to target)
+        // return 'RoutingTable::Parallelism()' contacts closest to target first time and the single
+        // actual target the second time)
         let mut target: ::NameType;
         for count in 0..2 {
             for i in 0..(super::RoutingTable::get_optimal_len() -
                          super::RoutingTable::get_group_len()) {
-                target = if count == 0 {
-                    routing_table_utest.buckets[i].far_contact.clone()
+                let (target, expected_len) = if count == 0 {
+                    (routing_table_utest.buckets[i].far_contact.clone(),
+                        super::RoutingTable::get_parallelism())
                 } else {
-                    routing_table_utest.buckets[i].mid_contact.clone()
+                    (routing_table_utest.buckets[i].mid_contact.clone(), 1)
                 };
                 target_nodes_ = routing_table_utest.table.target_nodes(&target);
-                assert_eq!(super::RoutingTable::get_parallelism(), target_nodes_.len());
+                assert_eq!(expected_len, target_nodes_.len());
                 routing_table_utest.table.our_close_group().sort_by(
                     |a, b| if ::name_type::closer_to_target(
                             &a.id(), &b.id(), &routing_table_utest.our_id) {
@@ -1258,7 +1244,7 @@ mod test {
                       super::RoutingTable::get_group_len())..
                       super::RoutingTable::get_optimal_len() {
                 target = if count == 0 {
-                    routing_table_utest.buckets[i].far_contact.clone()
+                    routing_table_utest.buckets[i].close_contact.clone()
                 } else {
                     routing_table_utest.buckets[i].mid_contact.clone()
                 };
