@@ -82,10 +82,10 @@ pub struct RoutingNode {
     handled_messages: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
     data_cache: ::data_cache::DataCache,
+    relocation_quorum_size: usize,
 
     full_id: FullId,
     state: State,
-    network_name: Option<NameType>,
     routing_table: RoutingTable,
     // our bootstrap connections
     proxy_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
@@ -153,9 +153,9 @@ impl RoutingNode {
                     ::time::Duration::minutes(20)),
 //                cache_options: ::data_cache_options::DataCacheOptions::new(),
                 data_cache: ::data_cache::DataCache::new(),
+                relocation_quorum_size: 0,
                 full_id: full_id,
                 state: State::Disconnected,
-                network_name: None,
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
                 client_map: ::std::collections::HashMap::new(),
@@ -301,7 +301,7 @@ impl RoutingNode {
                         // Established connection. Pending Validity checks
                         self.state = State::Bootstrapping;
                 };
-                let _ = self.identify(connection);
+                let _ = self.client_identify(connection);
             },
             Err(error) => {
                 warn!("{}Failed to make connection with token {} - {}", self.us(),
@@ -315,13 +315,12 @@ impl RoutingNode {
         if let State::Disconnected = *self.state() {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
-            let new_name =
-                NameType::new(crypto::hash::sha512::hash(&self.full_id.public_id().name().0).0);
+            let new_name = NameType::new(crypto::hash::sha512::hash(&self.full_id.public_id().name().0).0);
+
             // This will give me a new RT and set state to Relocated
             self.assign_network_name(new_name);
             self.state = State::Node;
         }
-        let _ = self.identify(connection);
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint everywhere
@@ -332,14 +331,27 @@ impl RoutingNode {
         self.dropped_bootstrap_connection(&connection);
     }
 
-    fn identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
-        debug!("{}Identifying myself via {:?}", self.us(), connection);
-        let direct_message = try!(::direct_messages::DirectMessage::new_identify(
-                                      self.full_id.public_id().clone(),
-                                      self.full_id.signing_private_key()));
-        let bytes = try!(::utils::encode(&direct_message));
-        self.crust_service.send(connection, bytes);
-        Ok(())
+    fn bootstrap_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let direct_message = ::direct_messages::DirectMessage::BootstrapIdentify {
+            public_id: self.full_id.public_id().clone(),
+            // Current quorum size should also include ourselves when sending this message. Thus
+            // the '+ 1'
+            current_quorum_size: ::std::cmp::min(self.routing_table.len() + 1, ::types::QUORUM_SIZE),
+        };
+        // TODO impl convert trait for RoutingError
+        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
+
+        Ok(self.crust_service.send(connection, bytes))
+    }
+
+    fn client_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let direct_message = ::direct_messages::DirectMessage::ClientIdentify {
+            public_id: self.full_id.public_id().clone(),
+        };
+        // TODO impl convert trait for RoutingError
+        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
+
+        Ok(self.crust_service.send(connection, bytes))
     }
 
     fn handle_identify(&mut self, connection: ::crust::Connection, peer_public_id: &PublicId) {
@@ -627,8 +639,44 @@ impl RoutingNode {
                              direct_message: ::direct_messages::DirectMessage,
                              connection: ::crust::Connection) {
         debug!("{}Direct Message Received - {:?}", self.us(), direct_message);
-        match *direct_message.content() {
-            ::direct_messages::Content::Identify{ ref public_id, } => {
+        match direct_message {
+            ::direct_messages::DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
+                if public_id.name() == ::NameType::new(::sodiumoxide
+                                                       ::crypto
+                                                       ::hash::sha512::hash(&public_id.public_sign_key().0).0) {
+                    warn!("{}Incoming Connection not validated as a proper node - dropping", self.us());
+                    self.crust_service.drop_node(connection);
+
+                    // Probably look for other bootstrap connections
+                    return
+                }
+
+                if let Some(previous_name) = self.proxy_map.insert(connection.clone(), public_id.name().clone()) {
+                    warn!("{}Adding bootstrap node to proxy map caused a prior id to eject. \
+                          Previous name: {:?}", self.us(), previous_name);
+                    warn!("{}Dropping this connection {:?}", self.us(), connection);
+                    self.crust_service.drop_node(connection);
+                    self.proxy_map.remove(&connection);
+
+                    // Probably look for other bootstrap connections
+                    return
+                }
+
+                self.state = State::Client;
+                self.relocation_quorum_size = current_quorum_size;
+            },
+            ::direct_messages::DirectMessage::ClientIdentify { ref public_id, } => {
+                if public_id.name() != ::NameType::new(::sodiumoxide
+                                                       ::crypto
+                                                       ::hash::sha512::hash(&public_id.public_sign_key().0).0) {
+                    warn!("{}Incoming Connection not validated as a proper client - dropping", self.us());
+                    self.crust_service.drop_node(connection);
+                    return
+                }
+
+                self.bootstrap_identify(connection);
+            },
+            ::direct_messages::Content::NodeIdentify { ref public_id, } => {
                 // verify signature
                 if !direct_message.verify_signature(public_id.signing_public_key()) {
                     warn!("{}Failed signature verification on {:?} - dropping connection",
@@ -1267,16 +1315,7 @@ impl RoutingNode {
 
     // Returns our name and state for logging
     fn us(&self) -> String {
-        match self.network_name {
-            Some(name) => {
-                format!("{:?}({:?}) - ", self.state, name)
-            },
-            None => {
-                format!("{:?}({:?}) - ", self.state,
-                        ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(
-                            &self.full_id.public_id().signing_public_key()[..]).0))
-            },
-        }
+        format!("{:?}({:?}) - ", self.state, self.full_id.public_id().name())
     }
 
     /// Returns true if Client(public_key) matches our public signing key, even if we are a full
@@ -1301,21 +1340,13 @@ impl RoutingNode {
     /// accepted.
     fn assign_network_name(&mut self, new_name: ::NameType) {
         match self.state {
-            State::Disconnected => debug!("{}Assigning name {:?}", self.us(), new_name),
-            State::Client => debug!("{}Assigning name {:?}", self.us(), new_name),
-            _ => {
-                debug!("{}We have already assigned a network name", self.us());
-                return
-            }
+            State::Disconnected | State::Client => debug!("{}Assigning name {:?}", self.us(), new_name),
+            _ => unreachable!("{}This should not be called", self.us()),
         }
-
-        debug_assert!(self.network_name.is_none());
-
-        self.full_id.public_id_mut().set_name(new_name.clone());
 
         debug!("{}Re-creating routing table after relocation", self.us());
         self.routing_table = RoutingTable::new(&new_name);
-        self.network_name = Some(new_name);
+        self.full_id.public_id_mut().set_name(new_name);
     }
 
     /// check client_map for a client and remove from map
