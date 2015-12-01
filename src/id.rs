@@ -15,146 +15,103 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto;
-use sodiumoxide;
-use NameType;
-
-// Note: name field is initially same as original_name, this should be later overwritten by
-// relocated name provided by the network using assign_relocated_name method
-// TODO (ben 2015-04-01) : implement order based on name
-/// Id.
-pub struct Id {
-    sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-    encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey),
-    name: NameType,
+/// Network identity component containing name, and public and private keys.
+pub struct FullId {
+    public_id: ::PublicId,
+    private_encrypt_key: ::sodiumoxide::crypto::box_::SecretKey,
+    private_sign_key: ::sodiumoxide::crypto::sign::SecretKey,
 }
 
-impl Id {
-    /// Contruct new Id.
-    pub fn new() -> Id {
-
-        let sign_keys = sodiumoxide::crypto::sign::gen_keypair();
-        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
-        Id {
-            sign_keys: sign_keys,
-            encrypt_keys: sodiumoxide::crypto::box_::gen_keypair(),
-            name: name,
+impl FullId {
+    /// Construct new FullId.
+    pub fn new() -> FullId {
+        let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
+        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        FullId {
+            public_id: ::PublicId::new(encrypt_keys.0, sign_keys.0),
+            private_encrypt_key: encrypt_keys.1,
+            private_sign_key: sign_keys.1,
         }
-    }
-
-    // FIXME: We should not copy private nor public keys.
-    /// Public signing key.
-    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-        self.sign_keys.0
-    }
-
-    /// Secret signing key.
-    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
-        &self.sign_keys.1
-    }
-
-    /// Public encryption key.
-    pub fn encrypting_public_key(&self) -> crypto::box_::PublicKey {
-        self.encrypt_keys.0
     }
 
     /// Construct with given keys, (Client requirement).
-    pub fn with_keys(sign_keys: (crypto::sign::PublicKey, crypto::sign::SecretKey),
-                     encrypt_keys: (crypto::box_::PublicKey, crypto::box_::SecretKey))
-                     -> Id {
-        let name = NameType::new(crypto::hash::sha512::hash(&sign_keys.0[..]).0);
-        Id {
-            sign_keys: sign_keys,
-            encrypt_keys: encrypt_keys,
-            name: name,
+    pub fn with_keys(encrypt_keys: (::sodiumoxide::crypto::box_::PublicKey,
+                                    ::sodiumoxide::crypto::box_::SecretKey),
+                     sign_keys: (::sodiumoxide::crypto::sign::PublicKey,
+                                 ::sodiumoxide::crypto::sign::SecretKey))
+                     -> FullId {
+        // TODO Verify that pub/priv key pairs match
+        FullId {
+            public_id: ::PublicId::new(encrypt_keys.0, sign_keys.0),
+            private_encrypt_key: encrypt_keys.1,
+            private_sign_key: sign_keys.1,
         }
     }
 
-    /// Original/relocated name.
-    pub fn name(&self) -> NameType {
-        self.name
+    /// Returns public ID reference.
+    pub fn public_id(&self) -> &::PublicId {
+        &self.public_id
     }
 
-    /// Name field is initially same as original_name, this should be later overwritten by relocated
-    /// name provided by the network using this method
-    pub fn assign_relocated_name(&mut self, relocated_name: NameType) -> bool {
-        if self.is_node() || self.name == relocated_name {
-            return false;
-        }
-        self.name = relocated_name;
-        true
+    /// Returns mutable reference to public ID.
+    pub fn public_id_mut(&mut self) -> &mut ::PublicId {
+        &mut self.public_id
     }
 
-    /// Checks if the name is updated to a relocated name.
-    pub fn is_node(&self) -> bool {
-        self.name != NameType::new(crypto::hash::sha512::hash(&self.sign_keys.0[..]).0)
+    /// Secret signing key.
+    pub fn signing_private_key(&self) -> &::sodiumoxide::crypto::sign::SecretKey {
+        &self.private_sign_key
+    }
+
+    /// Private encryption key.
+    pub fn encrypting_private_key(&self) -> &::sodiumoxide::crypto::box_::SecretKey {
+        &self.private_encrypt_key
     }
 }
 
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+/// PublicId.
+pub struct PublicId {
+    public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
+    public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
+    name: ::NameType,
+}
 
-#[cfg(test)]
-mod test{
-    use rand;
+impl ::std::fmt::Debug for PublicId {
+    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(formatter, "PublicId(name: {:?})", self.name)
+    }
+}
 
-    #[test]
-    fn with_keys_and_getters() {
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let asym_keys = ::sodiumoxide::crypto::box_::gen_keypair();
-        let id = ::id::Id::with_keys(sign_keys.clone(), asym_keys.clone());
-        let name_id = ::sodiumoxide::crypto::hash::sha512::hash(&sign_keys.0[..]).0;
-        let expected_name = ::NameType::new(name_id);
-
-        assert_eq!(expected_name, id.name());
-        assert_eq!(&sign_keys.0, &id.signing_public_key());
-        // FIXME(ben) 20/07/2015 once PartialEq is implemented for the private key, avoid slice
-        assert_eq!(&sign_keys.1[..], &id.signing_private_key()[..]);
-        assert_eq!(&asym_keys.0, &id.encrypting_public_key());
+impl PublicId {
+    /// Return initial/relocated name.
+    pub fn name(&self) -> &::NameType {
+        &self.name
     }
 
-    #[test]
-    fn is_relocated() {
-        let mut id = ::id::Id::new();
-
-        // is not relocated
-        assert!(!id.is_node());
-
-        // is relocated after changing the name
-        id.assign_relocated_name(rand::random());
-        assert!(id.is_node());
+    /// Name field is initially same as original_name, this should be replaced by relocated name
+    /// calculated by the nodes close to original_name by using this method
+    pub fn set_name(&mut self, name: ::NameType) {
+        self.name = name;
     }
 
-    #[test]
-    fn assign_relocated_name() {
-        let mut id = ::id::Id::new();
-        let original_name = id.name();
-        let cloned_original_name = original_name.clone();
-        let cloned_signing_public_key = id.signing_public_key().clone().0.to_vec();
-        let cloned_encrypting_public_key = id.encrypting_public_key().clone().0.to_vec();
-        let cloned_signing_private_key = id.signing_private_key().clone().0.to_vec();
+    /// Return public signing key.
+    pub fn encrypting_public_key(&self) -> &::sodiumoxide::crypto::box_::PublicKey {
+        &self.public_encrypt_key
+    }
 
-        // will not be relocated with same or equal name
-        assert!(!id.assign_relocated_name(original_name));
-        assert!(!id.assign_relocated_name(cloned_original_name));
+    /// Return public signing key.
+    pub fn signing_public_key(&self) -> &::sodiumoxide::crypto::sign::PublicKey {
+        &self.public_sign_key
+    }
 
-        let relocated_name: ::name_type::NameType = rand::random();
-
-        // is relocated with other name
-        assert!(id.assign_relocated_name(relocated_name));
-
-        // will not be relocated with that relocated name again or yet another name
-        assert!(!id.assign_relocated_name(relocated_name));
-        assert!(!id.assign_relocated_name(rand::random()));
-
-        // assign_relocation_name did change name properly
-        assert_eq!(relocated_name, id.name());
-        assert!(original_name != relocated_name);
-
-        // assign_relocation_name dit not change any key properties
-        assert_eq!(cloned_signing_public_key,
-                   id.signing_public_key().0.to_vec());
-        assert_eq!(cloned_encrypting_public_key,
-                   id.encrypting_public_key().0.to_vec());
-        assert_eq!(cloned_signing_private_key,
-                   id.signing_private_key().0.to_vec());
+    fn new(public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
+           public_sign_key: ::sodiumoxide::crypto::sign::PublicKey) -> PublicId {
+        PublicId {
+            public_encrypt_key: public_encrypt_key,
+            public_sign_key: public_sign_key,
+            name: ::NameType::new(
+                      ::sodiumoxide::crypto::hash::sha512::hash(&public_sign_key[..]).0),
+        }
     }
 }

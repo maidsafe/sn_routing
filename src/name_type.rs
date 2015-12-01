@@ -32,19 +32,18 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 
 /// Errors that can occur when decoding a `NameType` from a string.
 pub enum NameTypeFromHexError {
-    /// The given invalid hex character occured at the given position.
+    /// The given invalid hex character occurred at the given position.
     InvalidCharacter(char, usize),
     /// The hex string did not encode `NAME_TYPE_LEN` bytes.
     InvalidLength,
 }
 
-/// NameType can be created using the new function by passing ID as it’s parameter.
+/// NameType can be created using the new function by passing ID as its parameter.
 #[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 #[allow(unused)]
 impl NameType {
-
     /// Construct a NameType from a NAME_TYPE_LEN byte array.
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
@@ -105,6 +104,7 @@ impl PartialEq for NameType {
     }
 }
 
+// TODO - document this if required to be public, else move to test mod
 impl rand::Rand for NameType {
     fn rand<R: rand::Rng>(rng: &mut R) -> NameType {
         let mut ret = [0u8; NAME_TYPE_LEN];
@@ -260,7 +260,6 @@ impl Decodable for NameType {
 mod test {
     use cbor;
     use super::*;
-    use id::Id;
     use rand;
 
     #[test]
@@ -295,23 +294,6 @@ mod test {
     }
 
     #[test]
-    fn format_id_nametype() {
-        // test for Ids
-        for _ in 0..5 {
-            let my_id = Id::new();
-            let my_name = my_id.name();
-            let debug_id = my_name.get_debug_id();
-            let full_id = my_name.as_hex();
-            assert_eq!(debug_id.len(), 14);
-            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
-            assert_eq!(&debug_id[0..6], &full_id[0..6]);
-            assert_eq!(&debug_id[8..14],
-                       &full_id[2 * NAME_TYPE_LEN - 6..2 * NAME_TYPE_LEN]);
-            assert_eq!(&debug_id[6..8], "..");
-        }
-    }
-
-    #[test]
     fn format_random_nametype() {
         // test for Random NameType
         for _ in 0..5 {
@@ -341,15 +323,4 @@ mod test {
                    &full_id[2 * NAME_TYPE_LEN - 6..2 * NAME_TYPE_LEN]);
         assert_eq!(&debug_id[6..8], "..");
     }
-
-// TODO(Ben: resolve from_data)
-// #[test]
-// fn name_from_data() {
-//   use rustc_serialize::hex::ToHex;
-//   let data = "this is a known string".to_string().into_bytes();
-//   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
-//                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
-//                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-//   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
-// }
 }

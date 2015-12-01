@@ -53,7 +53,6 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
-extern crate bit_set;
 
 extern crate crust;
 extern crate lru_time_cache;
@@ -81,12 +80,10 @@ pub mod event;
 pub mod test_utils;
 /// Types and functions used throught the library.
 pub mod types;
-/// Private network identity component.
+/// Network identity component containing public and private IDs.
 pub mod id;
 /// Commonly required functions.
 pub mod utils;
-/// Public network identity component.
-pub mod public_id;
 /// Errors reported for failed conditions/operations.
 pub mod error;
 // FIXME (ben 8/09/2015) make the module authority private
@@ -111,4 +108,4 @@ pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
-
+pub use id::{FullId, PublicId};

@@ -58,8 +58,7 @@ use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode};
 use routing::{ExternalRequest, ExternalResponse, SignedRequest};
-use routing::id::Id;
-use routing::public_id::PublicId;
+use routing::id::FullId;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -259,9 +258,9 @@ impl Client {
     fn new() -> Client {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
 
-        let id = Id::new();
-        info!("Client has set name {:?}", PublicId::new(&id));
-        let routing_client = RoutingClient::new(event_sender, Some(id));
+        let full_id = FullId::new();
+        info!("Client has set name {:?}", full_id.public_id());
+        let routing_client = RoutingClient::new(event_sender, Some(full_id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 

@@ -22,26 +22,22 @@ extern crate time;
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
-    id: ::id::Id,
+    full_id: ::id::FullId,
 }
 
 impl Client {
-
     /// Construct new Client.
     pub fn new() -> Client {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
-        let id = ::id::Id::with_keys(sign_keys.clone(), encrypt_keys.clone());
-        let public_id = ::public_id::PublicId::new(&id);
-        let routing_client = ::routing_client::RoutingClient::new(sender, Some(id));
-
-        debug!("Client name {:?}", public_id.clone());
+        let full_id = ::id::FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        let routing_client = ::routing_client::RoutingClient::new(sender, Some(full_id));
 
         Client {
             routing_client: routing_client,
             receiver: receiver,
-            id: ::id::Id::with_keys(sign_keys, encrypt_keys),
+            full_id: ::id::FullId::with_keys(encrypt_keys, sign_keys),
         }
     }
 
@@ -84,7 +80,7 @@ impl Client {
     /// Put data onto the network.
     pub fn put(&self, data: ::data::Data) {
         debug!("Put request from Client for {:?}", data);
-        self.routing_client.put_request(::authority::Authority::ClientManager(self.name()), data);
+        self.routing_client.put_request(::authority::Authority::ClientManager(*self.name()), data);
     }
 
     // /// Post data onto the network.
@@ -108,7 +104,7 @@ impl Client {
     // }
 
     /// Return network name.
-    pub fn name(&self) -> ::NameType {
-        self.id.name()
+    pub fn name(&self) -> &::NameType {
+        self.full_id.public_id().name()
     }
 }

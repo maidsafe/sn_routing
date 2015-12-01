@@ -175,10 +175,8 @@ fn determine_authority(message: &RoutingMessage,
                        routing_table: &RoutingTable,
                        element: &NameType)
                        -> Option<Authority> {
-
     // if signed by a client in our range and destination is not the element
     // this explicitly excludes GetData from ever being passed to ClientManager
-
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.address_in_our_close_group_range(&client_name) &&
@@ -209,11 +207,9 @@ fn determine_authority(message: &RoutingMessage,
 #[cfg(test)]
 mod test {
     use routing_table::{RoutingTable, NodeInfo};
-    use public_id::PublicId;
     use messages::{RoutingMessage, Content, ExternalRequest};
-    use id::Id;
+    use id::FullId;
     use test_utils::{xor, test};
-    use utils::public_key_to_client_name;
     use name_type::{closer_to_target, NameType};
     use authority::Authority;
     use sodiumoxide::crypto;
@@ -223,11 +219,11 @@ mod test {
 
     #[test]
     fn our_authority_full_routing_table() {
-        let id = Id::new();
-        let mut routing_table = RoutingTable::new(&id.name());
+        let full_id = FullId::new();
+        let mut routing_table = RoutingTable::new(full_id.public_id().name());
         let mut count: usize = 0;
         loop {
-            let node_info = NodeInfo::new(PublicId::new(&Id::new()),
+            let node_info = NodeInfo::new(FullId::new().public_id().clone(),
                                           vec![test::random_connection()]);
             let _ = routing_table.add_node(node_info);
             count += 1;
@@ -239,11 +235,12 @@ mod test {
             // if count >= 2 * routing_table::RoutingTable::get_optimal_size() {
             //     panic!("Routing table does not fill up."); }
         }
-        let our_name = id.name();
+        let our_name = full_id.public_id().name();
         let (mut client_public_key, _) = crypto::sign::gen_keypair();
         count = 0;
         loop {
-            let client_name = public_key_to_client_name(&client_public_key);
+            let client_name =
+                ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
             if routing_table.address_in_our_close_group_range(&client_name) {
                 break;
             } else {
@@ -262,18 +259,18 @@ mod test {
         let second_closest_node_in_our_close_group: NodeInfo = our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group: NameType =
-            xor(&xor(&closest_node_in_our_close_group.id, &our_name),
-                &second_closest_node_in_our_close_group.id);
+            xor(&xor(&closest_node_in_our_close_group.name, &our_name),
+                &second_closest_node_in_our_close_group.name);
         // assert nae is indeed within close group
         assert!(closer_to_target(&nae_or_client_in_our_close_group,
-                                 &furthest_node_close_group.id,
+                                 &furthest_node_close_group.name,
                                  &our_name));
         for close_node in our_close_group {
             // assert that nae does not collide with close node
-            assert!(close_node.id != nae_or_client_in_our_close_group);
+            assert!(close_node.name != nae_or_client_in_our_close_group);
         }
         // invert to get a far away address outside of the close group
-        let name_outside_close_group: NameType = xor(&furthest_node_close_group.id,
+        let name_outside_close_group: NameType = xor(&furthest_node_close_group.name,
                                                      &NameType::new([255u8; 64]));
         // note: if the close group spans close to the whole address space,
         // this construction actually inverts the address into the close group range;
@@ -281,7 +278,7 @@ mod test {
         // for group_size 32; 80 nodes in the network this intermittently fails at 2%
         // for group_size 32; 100 nodes in the network this intermittently fails
         //     less than 1/8413 times, but should be exponentially less still.
-        assert!(closer_to_target(&furthest_node_close_group.id,
+        assert!(closer_to_target(&furthest_node_close_group.name,
                                  &name_outside_close_group,
                                  &our_name));
 
@@ -290,20 +287,22 @@ mod test {
                                                    ::types::generate_random_vec_u8(20usize)));
 
         // --- test determine_authority specific ----------------------------------------------------------------
+        let to_authority_name =
+            ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
         let client_manager_message = RoutingMessage {
             from_authority: Authority::Client(rand::random(), client_public_key.clone()),
-            to_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            to_authority: Authority::ClientManager(to_authority_name),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
             group_keys: None,
         };
         assert_eq!(unwrap_option!(super::determine_authority(&client_manager_message,
                                                              &routing_table,
                                                              &some_data.name()), ""),
-                   Authority::ClientManager(public_key_to_client_name(&client_public_key)));
+                   Authority::ClientManager(to_authority_name));
 
         // assert to get a nae_manager Authority
         let nae_manager_message = RoutingMessage {
-            from_authority: Authority::ClientManager(public_key_to_client_name(&client_public_key)),
+            from_authority: Authority::ClientManager(to_authority_name),
             to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
             group_keys: None,
@@ -316,14 +315,14 @@ mod test {
         // assert to get a node_manager Authority
         let node_manager_message = RoutingMessage {
             from_authority: Authority::NaeManager(rand::random()),
-            to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()),
+            to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.name.clone()),
             content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
             group_keys: None,
         };
         assert_eq!(unwrap_option!(super::determine_authority(&node_manager_message,
                                                              &routing_table,
                                                              &some_data.name()), ""),
-                   Authority::NodeManager(second_closest_node_in_our_close_group.id.clone()));
+                   Authority::NodeManager(second_closest_node_in_our_close_group.name.clone()));
 
         // assert to get a managed_node Authority
         let managed_node_message = RoutingMessage {
@@ -361,7 +360,7 @@ mod test {
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // assert that this is not a valid Refresh Authority
         let refresh_message = RoutingMessage {
-            from_authority : Authority::NaeManager(closest_node_in_our_close_group.id.clone()),
+            from_authority : Authority::NaeManager(closest_node_in_our_close_group.name.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
                 some_bytes.clone(), rand::random())),
