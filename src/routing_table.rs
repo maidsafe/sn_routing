@@ -28,7 +28,7 @@ static BUCKET_SIZE: usize = 1;
 pub static PARALLELISM: usize = 4;
 static OPTIMAL_SIZE: usize = 64;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeInfo {
     pub public_id: PublicId,
     pub connections: Vec<Connection>,
@@ -261,10 +261,14 @@ impl RoutingTable {
     /// considered to be in our close group range.
     pub fn address_in_our_close_group_range(&self, id: &NameType) -> bool {
         if self.routing_table.len() < types::GROUP_SIZE {
-            return true;
+            return true
         }
         let furthest_close_node = self.routing_table[types::GROUP_SIZE - 1].clone();
         closer_to_target_or_equal(&id, &furthest_close_node.id(), &self.our_id)
+    }
+
+    pub fn has_node(&self, node_id: &NameType) -> bool {
+        self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
 
     fn find_candidate_for_removal(&self) -> usize {
@@ -326,10 +330,6 @@ impl RoutingTable {
             }
         }
         ::NAME_TYPE_LEN * 8
-    }
-
-    pub fn has_node(&self, node_id: &NameType) -> bool {
-        self.routing_table.iter().any(|node_info| node_info.id() == node_id)
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
@@ -646,31 +646,16 @@ mod test {
 
         // try with our id - should fail
         test.node_info.id = test.table.our_id.clone();
-        let mut result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(test.table.len(), 0);
 
         // add first contact
         test.node_info.id = test.buckets[0].far_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(test.table.len(), 1);
 
         // try with the same contact - should fail
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(test.table.len(), 1);
 
         // Add further 'Optimallen()' - 1 contacts (should all succeed with no removals).  Set this
@@ -679,126 +664,57 @@ mod test {
 
         // Bucket 0
         test.node_info.id = test.buckets[0].mid_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(2, test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(2, test.table.len());
 
         test.node_info.id = test.buckets[0].close_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(3, test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(3, test.table.len());
 
         // Bucket 1
         test.node_info.id = test.buckets[1].far_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(4, test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(4, test.table.len());
 
         test.node_info.id = test.buckets[1].mid_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(5, test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(5, test.table.len());
 
         test.node_info.id = test.buckets[1].close_contact.clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(6, test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
         assert_eq!(6, test.table.len());
 
         // Add remaining contacts
         for i in 2..(super::RoutingTable::get_optimal_len() - 4) {
             test.node_info.id = test.buckets[i].mid_contact.clone();
-            result_of_add = test.table.add_node(test.node_info.clone());
-            assert!(result_of_add.0);
-            match result_of_add.1 {
-                Some(_) => panic!("Unexpected"),
-                None => {}
-            };
+            assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
             assert_eq!(i + 5, test.table.len());
-            result_of_add = test.table.add_node(test.node_info.clone());
-            assert!(!result_of_add.0);
-            match result_of_add.1 {
-                Some(_) => panic!("Unexpected"),
-                None => {}
-            };
+            assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
             assert_eq!(i + 5, test.table.len());
         }
 
-        // Check next 4 closer additions return 'buckets_[0].far_contact', 'buckets_[0].mid_contact',
-        // 'buckets_[1].far_contact', and 'buckets_[1].mid_contact' as dropped (in that order)
+        // Check next 4 closer additions return 'buckets_[0].far_contact',
+        // 'buckets_[0].mid_contact', 'buckets_[1].far_contact', and 'buckets_[1].mid_contact' as
+        // dropped (in that order)
         let mut dropped: Vec<::NameType> = Vec::new();
         let optimal_len = super::RoutingTable::get_optimal_len();
         for i in (optimal_len - 4)..optimal_len {
             test.node_info.id = test.buckets[i].mid_contact.clone();
-            result_of_add = test.table.add_node(test.node_info.clone());
+            let result_of_add = test.table.add_node(test.node_info.clone());
             assert!(result_of_add.0);
-            match result_of_add.1 {
-                Some(dropped_info) => {
-                    dropped.push(dropped_info.id().clone())
-                }
-                None => panic!("Unexpected"),
-            };
+            dropped.push(unwrap_option!(result_of_add.1, "").id().clone());
             assert_eq!(super::RoutingTable::get_optimal_len(), test.table.len());
-            result_of_add = test.table.add_node(test.node_info.clone());
-            assert!(!result_of_add.0);
-            match result_of_add.1 {
-                Some(_) => panic!("Unexpected"),
-                None => {}
-            };
+            assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
             assert_eq!(super::RoutingTable::get_optimal_len(), test.table.len());
         }
         assert!(test.buckets[0].far_contact == dropped[0]);
@@ -809,12 +725,7 @@ mod test {
         // Try to add far contacts again (should fail)
         for far_contact in dropped {
             test.node_info.id = far_contact.clone();
-            result_of_add = test.table.add_node(test.node_info.clone());
-            assert!(!result_of_add.0);
-            match result_of_add.1 {
-                Some(_) => panic!("Unexpected"),
-                None => {}
-            };
+            assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
             assert_eq!(super::RoutingTable::get_optimal_len(), test.table.len());
         }
 
@@ -822,26 +733,16 @@ mod test {
         test.node_info.id = test.buckets[super::RoutingTable::get_optimal_len()]
                                 .mid_contact
                                 .clone();
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
-        assert_eq!(super::RoutingTable::get_optimal_len() + 1,
-                   test.table.len());
-        result_of_add = test.table.add_node(test.node_info.clone());
-        assert!(!result_of_add.0);
-        match result_of_add.1 {
-            Some(_) => panic!("Unexpected"),
-            None => {}
-        };
-        assert_eq!(super::RoutingTable::get_optimal_len() + 1,
-                   test.table.len());
+        assert_eq!((true, None), test.table.add_node(test.node_info.clone()));
+        assert_eq!(super::RoutingTable::get_optimal_len() + 1, test.table.len());
+        assert_eq!((false, None), test.table.add_node(test.node_info.clone()));
+        assert_eq!(super::RoutingTable::get_optimal_len() + 1, test.table.len());
     }
 
     #[test]
     fn drop_node_test() {
+        use ::rand::Rng;
+
         // Check on empty table
         let mut test = RoutingTableUnitTest::new();
 
@@ -864,8 +765,9 @@ mod test {
         test.table.drop_node(&test.buckets[0].far_contact);
         assert_eq!(super::RoutingTable::get_optimal_len(), test.table.len());
 
-        // Remove all nodes one at a time
-        // TODO(Spandan) Shuffle not implemented
+        // Remove all nodes one at a time in random order
+        let mut rng = ::rand::thread_rng();
+        rng.shuffle(&mut test.added_ids[..]);
         let mut len = test.table.len();
         for id in test.added_ids {
             len -= 1;
