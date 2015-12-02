@@ -83,17 +83,17 @@ impl RoutingTable {
     //     a bucket closer to our own bucket, then we add the new contact.
     pub fn add_node(&mut self, their_info: NodeInfo) -> (bool, Option<NodeInfo>) {
         if self.our_name == *their_info.name() {
-            return (false, None);
+            return (false, None)
         }
 
         if self.has_node(&their_info.name()) {
             debug!("Routing table {:?} has node {:?}. not adding", self.routing_table, their_info);
-            return (false, None);
+            return (false, None)
         }
 
         if self.routing_table.len() < OPTIMAL_TABLE_SIZE {
             self.push_back_then_sort(their_info);
-            return (true, None);
+            return (true, None)
         }
 
         if closer_to_target(&their_info.name(),
@@ -134,19 +134,19 @@ impl RoutingTable {
     // check in step 1.
     pub fn want_to_add(&self, their_name: &NameType) -> bool {
         if self.our_name == *their_name {
-            return false;
+            return false
         }
         if self.has_node(their_name) {
-            return false;
+            return false
         }
         if self.routing_table.len() < OPTIMAL_TABLE_SIZE {
-            return true;
+            return true
         }
         let group_len = ::types::GROUP_SIZE - 1;
         if closer_to_target(&their_name,
                             &self.routing_table[group_len].name(),
                             &self.our_name) {
-            return true;
+            return true
         }
         self.new_node_is_better_than_existing(&their_name, self.find_candidate_for_removal())
     }
@@ -186,13 +186,13 @@ impl RoutingTable {
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
         //if in range of close_group send to all close_group
         if self.is_close(target) {
-            return self.our_close_group();
+            return self.our_close_group()
         }
 
         // if not in close group but connected then send direct
         for node in &self.routing_table {
             if node.name() == target {
-                return vec![node.clone()];
+                return vec![node.clone()]
             }
         }
 
