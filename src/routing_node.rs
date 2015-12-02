@@ -226,7 +226,7 @@ impl RoutingNode {
                             ::crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
                             ::crust::Event::OnUdpSocketMapped(_mapped_udp_socket) =>
                                 unimplemented!(),
-                            ::crust::Event::OnRendezvousConnect(_connection, _response_token) =>
+                            ::crust::Event::OnRendezvousConnect(_connection, _signed_request) =>
                                 unimplemented!(),
                         }
                     }
@@ -493,21 +493,21 @@ impl RoutingNode {
                 match request {
                     InternalRequest::RequestNetworkName(_) => {
                         match opt_token {
-                            Some(response_token) =>
+                            Some(signed_request) =>
                                 self.handle_request_network_name(request,
                                                                  accumulated_message.from_authority,
                                                                  accumulated_message.to_authority,
-                                                                 response_token),
+                                                                 signed_request),
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
-                    InternalRequest::RelocatedNetworkName(relocated_id, response_token) => {
+                    InternalRequest::RelocatedNetworkName(relocated_id, signed_request) => {
                         // Validate authorities
                         match (accumulated_message.from_authority,
                                accumulated_message.to_authority) {
                             (Authority::NaeManager(_), Authority::NaeManager(target_name)) => {
                                 if self.name_in_range(&target_name) {
-                                    self.handle_relocated_network_name(relocated_id, response_token)
+                                    self.handle_relocated_network_name(relocated_id, signed_request)
                                 } else {
                                     debug!("{}Ignoring RelocatedNetworkName Request as we are not \
                                            close to the relocated name", self.us());
@@ -523,11 +523,11 @@ impl RoutingNode {
                     },
                     InternalRequest::Connect { endpoints, public_id } => {
                         match opt_token {
-                            Some(response_token) =>
+                            Some(signed_request) =>
                                 self.handle_connect_request(endpoints,
                                                             public_id,
                                                             accumulated_message.from_authority,
-                                                            response_token),
+                                                            signed_request),
                             None => return Err(RoutingError::UnknownMessageType),
                         }
                     }
@@ -760,7 +760,7 @@ impl RoutingNode {
                                    request: InternalRequest,
                                    from_authority: Authority,
                                    to_authority: Authority,
-                                   response_token: SignedRequest)
+                                   signed_request: SignedRequest)
                                    -> RoutingResult {
         if self.client_restriction {
             debug!("{}Client restricted not requesting network name", self.us());
@@ -802,7 +802,7 @@ impl RoutingNode {
                             to_authority: Authority::NaeManager(relocated_name.clone()),
                             content: Content::InternalRequest(
                                 InternalRequest::RelocatedNetworkName(network_public_id,
-                                response_token)),
+                                signed_request)),
                             group_keys: None,
                         };
 
@@ -822,11 +822,11 @@ impl RoutingNode {
 
     fn handle_relocated_network_name(&mut self,
                                      relocated_id: PublicId,
-                                     response_token: SignedRequest) -> RoutingResult {
+                                     signed_request: SignedRequest) -> RoutingResult {
         debug!("{}Handling Relocated Network Name", self.us());
 
         let signed_message = SignedMessage::from_signed_request(
-                response_token.clone(), relocated_id.signing_public_key().clone());
+                signed_request.clone(), relocated_id.signing_public_key().clone());
         let message = match signed_message.get_routing_message() {
             Some(routing_message) => routing_message,
             None => {
@@ -851,7 +851,7 @@ impl RoutingNode {
         let _ = self.public_id_cache.insert(relocated_id.name().clone(), relocated_id.clone());
         let internal_response = InternalResponse::RelocatedNetworkName(relocated_id,
                                                                        public_ids,
-                                                                       response_token);
+                                                                       signed_request);
         let routing_message = RoutingMessage {
             from_authority: from_authority,
             to_authority: target_client_authority,
@@ -971,7 +971,7 @@ impl RoutingNode {
                               endpoints: Vec<::crust::Endpoint>,
                               public_id: PublicId,
                               from_authority: Authority,
-                              response_token: SignedRequest) -> RoutingResult {
+                              signed_request: SignedRequest) -> RoutingResult {
         debug!("{}Handle ConnectRequest", self.us());
 
         // TODO(Fraser:David) How do you validate/fetch/get public key for a node ?
@@ -1001,7 +1001,7 @@ impl RoutingNode {
             content: Content::InternalResponse(InternalResponse::Connect {
                 endpoints: self.accepting_on.clone(),
                 public_id: self.full_id.public_id().clone(),
-                signed_request: response_token,
+                signed_request: signed_request,
             }),
             group_keys: None,
         };
@@ -1404,7 +1404,7 @@ impl RoutingNode {
         let connection_clone = connection.clone();
         let node_info = NodeInfo::new(public_id,
                                       vec![connection]);
-        let should_trigger_churn = self.name_in_range(node_info.id());
+        let should_trigger_churn = self.name_in_range(node_info.name());
         let add_node_result = self.routing_table.add_node(node_info);
 
         match add_node_result.1 {
@@ -1448,7 +1448,7 @@ impl RoutingNode {
         let our_close_group = self.routing_table.our_close_group();
         let mut close_group: Vec<::NameType> =
             our_close_group.iter()
-            .map(|node_info| node_info.id().clone())
+            .map(|node_info| node_info.name().clone())
             .collect();
 
         close_group.insert(0, *self.full_id.public_id().name());
