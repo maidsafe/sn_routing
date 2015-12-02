@@ -15,12 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::cmp;
-use crust::Connection;
-use itertools::*;
-use id::PublicId;
-use name_type::{closer_to_target, closer_to_target_or_equal, NameType};
-
 // Defines the number of contacts which should be returned by the `target_nodes` function for a
 // target which is outwith our close group and is not a contact in the table.
 pub const PARALLELISM: usize = 4;
@@ -35,19 +29,19 @@ const OPTIMAL_TABLE_SIZE: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NodeInfo {
-    pub public_id: PublicId,
-    pub connections: Vec<Connection>,
+    pub public_id: ::id::PublicId,
+    pub connections: Vec<::crust::Connection>,
 }
 
 impl NodeInfo {
-    pub fn new(public_id: PublicId, connections: Vec<Connection>) -> NodeInfo {
+    pub fn new(public_id: ::id::PublicId, connections: Vec<::crust::Connection>) -> NodeInfo {
         NodeInfo {
             public_id: public_id,
             connections: connections,
         }
     }
 
-    pub fn name(&self) -> &NameType {
+    pub fn name(&self) -> &::NameType {
         self.public_id.name()
     }
 }
@@ -57,11 +51,11 @@ impl NodeInfo {
 // The RoutingTable class is used to maintain a list of contacts to which the node is connected.
 pub struct RoutingTable {
     routing_table: Vec<NodeInfo>,
-    our_name: NameType,
+    our_name: ::NameType,
 }
 
 impl RoutingTable {
-    pub fn new(our_name: &NameType) -> RoutingTable {
+    pub fn new(our_name: &::NameType) -> RoutingTable {
         RoutingTable {
             routing_table: Vec::<NodeInfo>::new(),
             our_name: our_name.clone(),
@@ -96,7 +90,7 @@ impl RoutingTable {
             return (true, None)
         }
 
-        if closer_to_target(&their_info.name(),
+        if ::name_type::closer_to_target(&their_info.name(),
                             &self.routing_table[::types::GROUP_SIZE].name(),
                             &self.our_name) {
             self.push_back_then_sort(their_info);
@@ -118,7 +112,8 @@ impl RoutingTable {
     }
 
     // Adds a connection to an existing entry.  Should be called after `has_node`.
-    pub fn add_connection(&mut self, their_name: &NameType, connection: Connection) {
+    pub fn add_connection(&mut self, their_name: &::NameType, connection: ::crust::Connection) {
+        use itertools::Itertools;
         match self.routing_table.iter_mut().find(|node_info| node_info.name() == their_name) {
             Some(mut node_info) => {
                 node_info.connections.push(connection);
@@ -132,7 +127,7 @@ impl RoutingTable {
     // adding the contact to our routing table, i.e. would this contact improve our table.  The
     // checking procedure is the same as for `add_node`, except for the lack of a public key to
     // check in step 1.
-    pub fn want_to_add(&self, their_name: &NameType) -> bool {
+    pub fn want_to_add(&self, their_name: &::NameType) -> bool {
         if self.our_name == *their_name {
             return false
         }
@@ -143,7 +138,7 @@ impl RoutingTable {
             return true
         }
         let group_len = ::types::GROUP_SIZE - 1;
-        if closer_to_target(&their_name,
+        if ::name_type::closer_to_target(&their_name,
                             &self.routing_table[group_len].name(),
                             &self.our_name) {
             return true
@@ -152,7 +147,7 @@ impl RoutingTable {
     }
 
     // This unconditionally removes the contact from the table.
-    pub fn drop_node(&mut self, node_to_drop: &NameType) {
+    pub fn drop_node(&mut self, node_to_drop: &::NameType) {
         self.routing_table.retain(|x| x.name() != node_to_drop);
     }
 
@@ -160,7 +155,7 @@ impl RoutingTable {
     // affected entry has no connections after removing this one, the entry is removed from the
     // routing table and its name is returned.  If the entry still has at least one connection, or
     // an entry cannot be found for 'lost_connection', the function returns 'None'.
-    pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
+    pub fn drop_connection(&mut self, lost_connection: &::crust::Connection) -> Option<::NameType> {
         let remove_connection = |node_info: &mut NodeInfo| {
             if let Some(index) = node_info.connections
                                           .iter()
@@ -183,7 +178,8 @@ impl RoutingTable {
     // return all of our close group (comprising 'GROUP_SIZE' contacts) if the closest one to the
     // target is within our close group.  If not, it will return either the 'PARALLELISM' closest
     // contacts to the target or a single contact if 'target' is the name of a contact in the table.
-    pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
+    pub fn target_nodes(&self, target: &::NameType) -> Vec<NodeInfo> {
+        use itertools::Itertools;
         //if in range of close_group send to all close_group
         if self.is_close(target) {
             return self.our_close_group()
@@ -200,10 +196,10 @@ impl RoutingTable {
         // count
         self.routing_table
             .iter()
-            .sorted_by(|a, b| if closer_to_target(&a.name(), &b.name(), &target) {
-                                  cmp::Ordering::Less
+            .sorted_by(|a, b| if ::name_type::closer_to_target(&a.name(), &b.name(), &target) {
+                                  ::std::cmp::Ordering::Less
                               } else {
-                                  cmp::Ordering::Greater
+                                  ::std::cmp::Ordering::Greater
                               })
             .into_iter()
             .cloned()
@@ -224,23 +220,23 @@ impl RoutingTable {
     // This returns true if the provided name is closer than or equal to the furthest node in our
     // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
     // considered to be close.
-    pub fn is_close(&self, name: &NameType) -> bool {
+    pub fn is_close(&self, name: &::NameType) -> bool {
         if self.routing_table.len() < ::types::GROUP_SIZE {
             return true
         }
         let furthest_close_node = self.routing_table[::types::GROUP_SIZE - 1].clone();
-        closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
+        ::name_type::closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
     }
 
     pub fn len(&self) -> usize {
         self.routing_table.len()
     }
 
-    pub fn our_name(&self) -> &NameType {
+    pub fn our_name(&self) -> &::NameType {
         &self.our_name
     }
 
-    pub fn has_node(&self, name: &NameType) -> bool {
+    pub fn has_node(&self, name: &::NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.name() == name)
     }
 
@@ -290,7 +286,7 @@ impl RoutingTable {
 
     // This is equivalent to the common leading bits of `self.our_name` and `name` where "leading
     // bits" means the most significant bits.
-    fn bucket_index(&self, name: &NameType) -> usize {
+    fn bucket_index(&self, name: &::NameType) -> usize {
         for byte_index in 0..::NAME_TYPE_LEN {
             if self.our_name.0[byte_index] != name.0[byte_index] {
                 return (byte_index * 8) + match self.our_name.0[byte_index] ^ name.0[byte_index] {
@@ -322,10 +318,10 @@ impl RoutingTable {
         self.routing_table.push(node_info);
         let name = &self.our_name;
         self.routing_table.sort_by(|a, b| {
-            if closer_to_target(&a.name(), &b.name(), name) {
-                cmp::Ordering::Less
+            if ::name_type::closer_to_target(&a.name(), &b.name(), name) {
+                ::std::cmp::Ordering::Less
             } else {
-                cmp::Ordering::Greater
+                ::std::cmp::Ordering::Greater
             }
         });
     }
@@ -333,7 +329,7 @@ impl RoutingTable {
     // Returns true if 'removal_node_index' is Some and the new node is in a closer bucket than the
     // removal candidate.
     fn new_node_is_better_than_existing(&self,
-                                        new_node: &NameType,
+                                        new_node: &::NameType,
                                         removal_node_index: Option<usize>)
                                         -> bool {
         match removal_node_index {
@@ -351,7 +347,6 @@ impl RoutingTable {
 #[cfg(test)]
 mod test {
     extern crate bit_vec;
-    use rand;
 
     enum ContactType {
         Far,
@@ -517,6 +512,7 @@ mod test {
     }
 
     fn create_random_routing_tables(num_of_tables: usize) -> Vec<super::RoutingTable> {
+        use rand;
         let mut vector: Vec<super::RoutingTable> = Vec::with_capacity(num_of_tables);
         for _ in 0..num_of_tables {
             vector.push(super::RoutingTable {
@@ -547,6 +543,7 @@ mod test {
 
     #[test]
     fn routing_table_test() {
+        use rand;
         let mut table = super::RoutingTable {
             routing_table: Vec::new(),
             our_name: rand::random(),
@@ -1023,6 +1020,7 @@ mod test {
 
     #[test]
     fn target_nodes_test() {
+        use rand;
         let mut routing_table_utest = RoutingTableUnitTest::new();
 
         // Check on empty table
