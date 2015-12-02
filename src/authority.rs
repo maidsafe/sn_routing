@@ -146,7 +146,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                         return None;
                     };
                     if destination.is_group() &&
-                        routing_table.address_in_our_close_group_range(destination.get_location()) {
+                        routing_table.is_close(destination.get_location()) {
                             return Some(destination);
                     };
                     None
@@ -179,23 +179,23 @@ fn determine_authority(message: &RoutingMessage,
     // this explicitly excludes GetData from ever being passed to ClientManager
     match message.client_key_as_name() {
         Some(client_name) => {
-            if routing_table.address_in_our_close_group_range(&client_name) &&
+            if routing_table.is_close(&client_name) &&
                *message.destination().get_location() != *element {
                 return Some(Authority::ClientManager(client_name));
             }
         }
         None => {}
     };
-    if routing_table.address_in_our_close_group_range(&element) &&
+    if routing_table.is_close(&element) &&
        *message.destination().get_location() == *element &&
        element != routing_table.our_name() {
         return Some(Authority::NaeManager(*element));
     } else if message.source_group().is_some() &&
-       routing_table.address_in_our_close_group_range(message.destination().get_location()) &&
+       routing_table.is_close(message.destination().get_location()) &&
        *message.destination().get_location() != *routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
     } else if message.source_group()
-              .map(|group| routing_table.address_in_our_close_group_range(&group))
+              .map(|group| routing_table.is_close(&group))
               .unwrap_or(false) &&
        *message.destination().get_location() == *routing_table.our_name() {
         return Some(Authority::ManagedNode(*routing_table.our_name()));
@@ -241,7 +241,7 @@ mod test {
         loop {
             let client_name =
                 ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
-            if routing_table.address_in_our_close_group_range(&client_name) {
+            if routing_table.is_close(&client_name) {
                 break;
             } else {
                 let (new_client_public_key, _) = crypto::sign::gen_keypair();

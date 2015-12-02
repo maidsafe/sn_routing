@@ -16,8 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use std::cmp;
-use std::usize;
-
 use crust::Connection;
 use itertools::*;
 use id::PublicId;
@@ -76,8 +74,9 @@ impl RoutingTable {
     // steps are used to determine whether to add the new contact or not:
     //
     // 1 - if the contact is ourself, or doesn't have a valid public key, or is already in the
-    //     table, it will not be added
-    // 2 - if the routing table is not full (len < OPTIMAL_TABLE_SIZE), the contact will be added
+    //     table, it will not be added (N.B. to append a new connection to an existing contact's
+    //     entry, use the `add_connection` function)
+    // 2 - if the routing table is not full (len() < OPTIMAL_TABLE_SIZE), the contact will be added
     // 3 - if the contact is within our close group, it will be added
     // 4 - if we can find a candidate for removal (a contact in a bucket with more than BUCKET_SIZE
     //     contacts, which is also not within our close group), and if the new contact will fit in
@@ -101,24 +100,20 @@ impl RoutingTable {
                             &self.routing_table[::types::GROUP_SIZE].name(),
                             &self.our_name) {
             self.push_back_then_sort(their_info);
-            let removal_node_index = self.find_candidate_for_removal();
-            if removal_node_index == usize::MAX {
-                return (true, None);
-            } else {
-                let removal_node = self.routing_table[removal_node_index].clone();
-                let _ = self.routing_table.remove(removal_node_index);
-                return (true, Some(removal_node));
+            return match self.find_candidate_for_removal() {
+                None => (true, None),
+                Some(node_index) => (true, Some(self.routing_table.remove(node_index))),
             }
         }
 
         let removal_node_index = self.find_candidate_for_removal();
-        if removal_node_index != usize::MAX &&
-           self.new_node_is_better_than_existing(&their_info.name(), removal_node_index) {
-            let removal_node = self.routing_table[removal_node_index].clone();
-            let _ = self.routing_table.remove(removal_node_index);
+        if self.new_node_is_better_than_existing(&their_info.name(), removal_node_index) {
+            // safe to unwrap since new_node_is_better_than_existing has returned true
+            let removal_node = self.routing_table.remove(unwrap_option!(removal_node_index, ""));
             self.push_back_then_sort(their_info);
-            return (true, Some(removal_node));
+            return (true, Some(removal_node))
         }
+
         (false, None)
     }
 
@@ -133,9 +128,10 @@ impl RoutingTable {
         }
     }
 
-    // This is used to check whether it is worth while retrieving a contact's public key from the
-    // PKI with a view to adding the contact to our routing table.  The checking procedure is the
-    // same as for 'AddNode' above, except for the lack of a public key to check in step 1.
+    // This is used to check whether it is worthwhile trying to connect to the peer with a view to
+    // adding the contact to our routing table, i.e. would this contact improve our table.  The
+    // checking procedure is the same as for `add_node`, except for the lack of a public key to
+    // check in step 1.
     pub fn want_to_add(&self, their_name: &NameType) -> bool {
         if self.our_name == *their_name {
             return false;
@@ -160,13 +156,36 @@ impl RoutingTable {
         self.routing_table.retain(|x| x.name() != node_to_drop);
     }
 
+    // This should be called when Crust notifies us that a connection has dropped.  If the
+    // affected entry has no connections after removing this one, the entry is removed from the
+    // routing table and its name is returned.  If the entry still has at least one connection, or
+    // an entry cannot be found for 'lost_connection', the function returns 'None'.
+    pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
+        let remove_connection = |node_info: &mut NodeInfo| {
+            if let Some(index) = node_info.connections
+                                          .iter()
+                                          .position(|connection| connection == lost_connection) {
+                let _ = node_info.connections.remove(index);
+                true
+            } else {
+                false
+            }
+        };
+        if let Some(node_index) = self.routing_table.iter_mut().position(remove_connection) {
+            if self.routing_table[node_index].connections.is_empty() {
+               return Some(self.routing_table.remove(node_index).name().clone())
+            }
+        }
+        None
+    }
+
     // This returns a collection of contacts to which a message should be sent onwards.  It will
     // return all of our close group (comprising 'GROUP_SIZE' contacts) if the closest one to the
     // target is within our close group.  If not, it will return either the 'PARALLELISM' closest
-    // contacts to the target or a single contact if `target` is the name of a contact in the table.
+    // contacts to the target or a single contact if 'target' is the name of a contact in the table.
     pub fn target_nodes(&self, target: &NameType) -> Vec<NodeInfo> {
         //if in range of close_group send to all close_group
-        if self.address_in_our_close_group_range(target) {
+        if self.is_close(target) {
             return self.our_close_group();
         }
 
@@ -202,26 +221,17 @@ impl RoutingTable {
                           .collect::<Vec<_>>()
     }
 
-    pub fn drop_connection(&mut self, lost_connection: &Connection) -> Option<NameType> {
-        let remove_connection = |node_info: &mut NodeInfo| {
-            if let Some(index) = node_info.connections
-                                          .iter()
-                                          .position(|connection| connection == lost_connection) {
-                let _ = node_info.connections.remove(index);
-                true
-            } else {
-                false
-            }
-        };
-        if let Some(node_index) = self.routing_table.iter_mut().position(remove_connection) {
-            if self.routing_table[node_index].connections.is_empty() {
-               return Some(self.routing_table.remove(node_index).name().clone())
-            }
+    // This returns true if the provided name is closer than or equal to the furthest node in our
+    // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
+    // considered to be close.
+    pub fn is_close(&self, name: &NameType) -> bool {
+        if self.routing_table.len() < ::types::GROUP_SIZE {
+            return true
         }
-        None
+        let furthest_close_node = self.routing_table[::types::GROUP_SIZE - 1].clone();
+        closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
     }
 
-    // This returns the length of the routing table.
     pub fn len(&self) -> usize {
         self.routing_table.len()
     }
@@ -230,22 +240,15 @@ impl RoutingTable {
         &self.our_name
     }
 
-    // This returns true if the provided name is closer than or equal to the furthest node in our
-    // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
-    // considered to be in our close group range.
-    pub fn address_in_our_close_group_range(&self, name: &NameType) -> bool {
-        if self.routing_table.len() < ::types::GROUP_SIZE {
-            return true
-        }
-        let furthest_close_node = self.routing_table[::types::GROUP_SIZE - 1].clone();
-        closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
-    }
-
     pub fn has_node(&self, name: &NameType) -> bool {
         self.routing_table.iter().any(|node_info| node_info.name() == name)
     }
 
-    fn find_candidate_for_removal(&self) -> usize {
+    // This effectively reverse iterates through all non-empty buckets (i.e. starts at furthest
+    // bucket from us) checking for overfilled ones and returning the table index of the furthest
+    // contact within that bucket.  No contacts within our close group will be considered.  If the
+    // table size is below OPTIMAL_TABLE_SIZE, this will return None.
+    fn find_candidate_for_removal(&self) -> Option<usize> {
         assert!(self.routing_table.len() >= OPTIMAL_TABLE_SIZE);
 
         let mut number_in_bucket = 0usize;
@@ -279,9 +282,9 @@ impl RoutingTable {
         }
 
         if counter < finish {
-            usize::MAX
+            None
         } else {
-            furthest_in_this_bucket
+            Some(furthest_in_this_bucket)
         }
     }
 
@@ -327,15 +330,19 @@ impl RoutingTable {
         });
     }
 
+    // Returns true if 'removal_node_index' is Some and the new node is in a closer bucket than the
+    // removal candidate.
     fn new_node_is_better_than_existing(&self,
                                         new_node: &NameType,
-                                        removal_node_index: usize)
+                                        removal_node_index: Option<usize>)
                                         -> bool {
-        if removal_node_index >= self.routing_table.len() {
-            return false
+        match removal_node_index {
+            Some(index) => {
+                let removal_node = &self.routing_table[index];
+                self.bucket_index(new_node) > self.bucket_index(&removal_node.name())
+            },
+            None => false,
         }
-        let removal_node = &self.routing_table[removal_node_index];
-        self.bucket_index(new_node) > self.bucket_index(&removal_node.name())
     }
 }
 
@@ -968,17 +975,17 @@ mod test {
         let mut closer_name: ::NameType = name.clone();
         for close_node in &our_close_group {
             assert!(::name_type::closer_to_target(&closer_name, &close_node.name(), &name));
-            assert!(routing_table.address_in_our_close_group_range(&close_node.name()));
+            assert!(routing_table.is_close(&close_node.name()));
             closer_name = close_node.name().clone();
         }
         for node in &routing_table.routing_table {
             if our_close_group.iter()
                               .filter(|close_node| close_node.name() == node.name())
                               .count() > 0 {
-                assert!(routing_table.address_in_our_close_group_range(&node.name()));
+                assert!(routing_table.is_close(&node.name()));
             } else {
                 assert_eq!(false,
-                           routing_table.address_in_our_close_group_range(&node.name()));
+                           routing_table.is_close(&node.name()));
             }
         }
     }
