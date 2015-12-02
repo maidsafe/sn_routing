@@ -45,6 +45,9 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations)]
 
+// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
+#![allow(unused)]
+
 #[macro_use]
 extern crate log;
 extern crate cbor;
