@@ -1577,7 +1577,7 @@ impl RoutingNode {
     /// Returns true if a name is in range for our close group.
     /// If the core is not a full node, this always returns false.
     pub fn name_in_range(&self, name: &NameType) -> bool {
-        self.routing_table.address_in_our_close_group_range(name)
+        self.routing_table.is_close(name)
     }
 
     /// Our authority is defined by the routing message, if we are a full node;  if we are a client,
