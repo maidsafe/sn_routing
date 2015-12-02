@@ -62,6 +62,8 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 pub const GROUP_SIZE: usize = 8;
 /// Quorum size.
 pub const QUORUM_SIZE: usize = 5;
+/// Quorum factor.
+pub const QUORUM_FACTOR: f64 = QUORUM_SIZE as f64 / GROUP_SIZE as f64;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 /// Address.

@@ -72,10 +72,16 @@ impl ExternalResponse {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
-    Connect {
-        endpoints: Vec<::crust::Endpoint>,
-        public_id: ::id::PublicId,
+    Connect,
+    Endpoints {
+        encrypted_endpoints: Vec<u8>,
+        nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
     },
+    // GetPublicId,
+    // GetPublicIdWithEndpoint {
+    //     encrypted_endpoints: Vec<u8>,
+    //     nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
+    // },
     RequestNetworkName(::id::PublicId),
     // a client can send RequestNetworkName
     RelocatedNetworkName(::id::PublicId, SignedRequest),
@@ -93,11 +99,6 @@ pub enum InternalRequest {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
-    Connect {
-        endpoints: Vec<::crust::Endpoint>,
-        public_id: ::id::PublicId,
-        signed_request: SignedRequest,
-    },
     // FindGroup(Vec<::public_id::PublicId>, SignedRequest),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedRequest),
@@ -167,10 +168,9 @@ pub struct SignedMessage {
 
 impl SignedMessage {
     pub fn new(routing_message: &RoutingMessage, full_id: &::id::FullId)
-            -> Result<SignedMessage, ::cbor::CborError> {
-        let encoded_message = try!(::utils::encode(routing_message));
-        let signed_message = ::sodiumoxide::crypto::sign::sign(
-                &encoded_message, full_id.signing_private_key());
+            -> Result<SignedMessage, ::maidsafe_utilities::serialisation::SerialisationError> {
+        let encoded_message = try!(::maidsafe_utilities::serialisation::serialise(routing_message));
+        let signed_message = ::sodiumoxide::crypto::sign::sign(&encoded_message, full_id.signing_private_key());
 
         Ok(SignedMessage {
             signed_routing_message: signed_message,
