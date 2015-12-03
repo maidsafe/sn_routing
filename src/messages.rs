@@ -77,7 +77,7 @@ pub enum InternalRequest {
         encrypted_endpoints: Vec<u8>,
         nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
     },
-    // GetPublicId,
+    GetPublicId,
     // GetPublicIdWithEndpoint {
     //     encrypted_endpoints: Vec<u8>,
     //     nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
@@ -99,6 +99,10 @@ pub enum InternalRequest {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
+    GetPublicIdResponse {
+        public_id: ::id::PublicId,
+        signed_request: SignedRequest,
+    },
     // FindGroup(Vec<::public_id::PublicId>, SignedRequest),
     // GetGroupKey(::std::collections::BTreeMap<
     //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedRequest),
@@ -189,18 +193,14 @@ impl SignedMessage {
         }
     }
 
-    /// Verifies the message returning the RoutingMessage, or None on failure.
-    pub fn get_routing_message(&self) -> Option<RoutingMessage> {
-        match ::sodiumoxide::crypto::sign::verify(
-                &self.signed_routing_message[..], &self.public_sign_key) {
-            Ok(encoded_message) => {
-                match ::utils::decode(&encoded_message[..]) {
-                    Ok(routing_message) => Some(routing_message),
-                    Err(_) => None,
-                }
-            },
-            Err(_) => None
-        }
+    /// Verifies the message returning the RoutingMessage, or RoutingError on failure.
+    pub fn get_routing_message(&self) -> Result<RoutingMessage, ::error::RoutingError> {
+        let verify_result = ::sodiumoxide::crypto::sign::verify(
+            &self.signed_routing_message, &self.public_sign_key);
+
+        let encoded_msg = try!(verify_result.map_err(|()| ::error::RoutingError::FailedSignature));
+
+        Ok(try!(::maidsafe_utilities::serialisation::deserialise(&encoded_msg)))
     }
 
     /// Return public signing key.
@@ -234,11 +234,7 @@ mod test{
         assert!(signed_message.is_ok());
 
         let signed_message = signed_message.unwrap();
-        let verified_message = signed_message.get_routing_message();
-
-        assert!(verified_message.is_some());
-
-        let verified_routing_message = verified_message.unwrap();
+        let verified_routing_message = unwrap_result!(signed_message.get_routing_message());
         assert_eq!(verified_routing_message, routing_message);
     }
 
@@ -260,11 +256,7 @@ mod test{
 
         assert_eq!(signed_message, signed_message_from_token);
 
-        let verified_message = signed_message_from_token.get_routing_message();
-
-        assert!(verified_message.is_some());
-
-        let verified_routing_message = verified_message.unwrap();
+        let verified_routing_message = unwrap_result!(signed_message_from_token.get_routing_message());
         assert_eq!(verified_routing_message, routing_message);
     }
 }

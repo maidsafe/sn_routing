@@ -136,6 +136,8 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         Content::InternalRequest(ref request) => {
             match *request {
                 // TODO Investigate
+                InternalRequest::GetPublicId => None,
+                // TODO Investigate
                 InternalRequest::Connect => None,
                 // TODO Investigate
                 InternalRequest::Endpoints { .. } => None,
