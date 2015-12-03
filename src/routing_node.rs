@@ -1137,6 +1137,17 @@ impl RoutingNode {
             return Err(RoutingError::RefusedFromRoutingTable)
         }
 
+        // TODO(Spandan) Update get in LRU to refresh the time to live and use only get()
+        if let Some(public_id) = self.node_id_cache.remove(&name) {
+            let from_authority = ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone());
+            try!(self.send_endpoints(&public_id,
+                                     from_authority,
+                                     ::authority::Authority::ManagedNode(name.clone())));
+            let _ = self.node_id_cache.insert(name, public_id.clone());
+
+            return Ok(())
+        }
+
         let request = ::messages::InternalRequest::GetPublicId;
 
         let routing_message = ::messages::RoutingMessage {
