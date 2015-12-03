@@ -117,14 +117,22 @@ impl RoutingTable {
         (false, None)
     }
 
-    // Adds a connection to an existing entry.  Should be called after `has_node`.
-    pub fn add_connection(&mut self, their_name: &NameType, connection: Connection) {
+    // Adds a connection to an existing entry.  Should be called after `has_node`. The return
+    // indicates if the given connection was added to an existing NodeInfo.
+    pub fn add_connection(&mut self, their_name: &NameType, connection: Connection) -> bool {
         match self.routing_table.iter_mut().find(|node_info| node_info.name() == their_name) {
             Some(mut node_info) => {
+                if node_info.connections.iter().any(|elt| *elt == connection) {
+                    return false
+                }
+
                 node_info.connections.push(connection);
-                node_info.connections = node_info.connections.iter().cloned().unique().collect();
+                true
             },
-            None => error!("The NodeInfo should already exist here."),
+            None => {
+                error!("The NodeInfo should already exist here.");
+                false
+            },
         }
     }
 

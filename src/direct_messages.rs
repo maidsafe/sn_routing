@@ -26,10 +26,12 @@ pub enum DirectMessage {
         current_quorum_size: usize,
     },
     ClientIdentify {
-        public_id: ::id::PublicId,
+        serialised_public_id: Vec<u8>,
+        signature: ::sodiumoxide::crypto::sign::Signature,
     },
     NodeIdentify {
-        public_id: ::id::PublicId,
+        serialised_public_id: Vec<u8>,
+        signature: ::sodiumoxide::crypto::sign::Signature,
     },
     Churn {
         close_group: Vec<::NameType>,

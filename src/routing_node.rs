@@ -300,8 +300,11 @@ impl RoutingNode {
                 if let State::Disconnected = *self.state() {
                         // Established connection. Pending Validity checks
                         self.state = State::Bootstrapping;
-                };
-                let _ = self.client_identify(connection);
+                        let _ = self.client_identify(connection);
+                        return
+                }
+
+                let _ = self.node_identify(connection);
             },
             Err(error) => {
                 warn!("{}Failed to make connection with token {} - {}", self.us(),
@@ -346,10 +349,28 @@ impl RoutingNode {
     }
 
     fn client_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let serialised_public_id = try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&serialised_public_id,
+                                                                   self.full_id.signing_private_key());
+
         let direct_message = ::direct_messages::DirectMessage::ClientIdentify {
-            public_id: self.full_id.public_id().clone(),
+            serialised_public_id: serialised_public_id,
+            signature: signature,
         };
-        // TODO impl convert trait for RoutingError
+        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
+
+        Ok(self.crust_service.send(connection, bytes))
+    }
+
+    fn node_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let serialised_public_id = try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&serialised_public_id,
+                                                                   self.full_id.signing_private_key());
+
+        let direct_message = ::direct_messages::DirectMessage::NodeIdentify {
+            serialised_public_id: serialised_public_id,
+            signature: signature,
+        };
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
 
         Ok(self.crust_service.send(connection, bytes))
@@ -412,13 +433,8 @@ impl RoutingNode {
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
         debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
 
-        let (message, public_sign_key) = match signed_message.get_routing_message() {
-            Some(routing_message) => (routing_message, signed_message.signing_public_key()),
-            None => {
-                debug!("Signature failed.\n");
-                return Err(RoutingError::FailedSignature)
-            }
-        };
+        let message = try!(signed_message.get_routing_message());
+        let public_sign_key = signed_message.signing_public_key();
 
         if self.message_public_key_filter.check(&(message.clone(), public_sign_key.clone())) {
             return Err(RoutingError::FilterCheckFailed);
@@ -530,19 +546,47 @@ impl RoutingNode {
                                 Err(RoutingError::BadAuthority)
                             },
                         }
-
                     },
                     InternalRequest::Connect => {
-                        Ok(())
-                        // match opt_token {
-                        //     Some(signed_request) =>
-                        //         self.handle_connect_request(endpoints,
-                        //                                     public_id,
-                        //                                     accumulated_message.from_authority,
-                        //                                     signed_request),
-                        //     None => return Err(RoutingError::UnknownMessageType),
-                        // }
-                    }
+                        match opt_token {
+                            Some(_signed_request) => {
+                                if let ::authority::Authority::ManagedNode(name) = accumulated_message.from_authority {
+                                    self.handle_connect_request(name)
+                                } else {
+                                    return Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::GetPublicId => {
+                        match opt_token {
+                            Some(signed_request) => {
+                                if let (::authority::Authority::ManagedNode(from_name),
+                                        ::authority::Authority::NodeManager(to_name)) =
+                                        (accumulated_message.from_authority, accumulated_message.to_authority) {
+                                    self.handle_get_public_id(from_name, to_name, signed_request)
+                                } else {
+                                    return Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalRequest::GetPublicIdWithEndpoints { .. } => {
+                        match opt_token {
+                            Some(signed_request) => {
+                                if let (::authority::Authority::ManagedNode(from_name),
+                                        ::authority::Authority::NodeManager(to_name)) =
+                                        (accumulated_message.from_authority, accumulated_message.to_authority) {
+                                    self.handle_get_public_id_with_endpoints(from_name, to_name, signed_request)
+                                } else {
+                                    return Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
                     InternalRequest::Refresh(type_tag, bytes, cause) => {
                         let refresh_authority = match our_authority {
                             Some(authority) => {
@@ -575,7 +619,24 @@ impl RoutingNode {
                                                         original_signed_token,
                                                         accumulated_message.from_authority,
                                                         accumulated_message.to_authority)
-                    }
+                    },
+                    InternalResponse::GetPublicId { public_id, signed_request } => {
+                        match opt_token {
+                            Some(signed_request) => {
+                                self.handle_get_public_id_response(public_id, signed_request)
+                            },
+                            None => Err(RoutingError::UnknownMessageType),
+                        }
+                    },
+                    InternalResponse::GetPublicIdWithEndpoints { public_id, signed_request } => {
+                        unimplemented!()
+                        // match opt_token {
+                        //     Some(signed_request) => {
+                        //         self.handle_get_public_id_with_endpoints_response(public_id, signed_request)
+                        //     },
+                        //     None => Err(RoutingError::UnknownMessageType),
+                        // }
+                    },
                 }
             }
             Content::ExternalRequest(request) => {
@@ -612,10 +673,15 @@ impl RoutingNode {
         // TODO(Fraser) Use this properly
         utils::bucket_index_range_confidence();
 
-        let (message, public_sign_key) = match signed_message.get_routing_message() {
-            Some(routing_message) => (routing_message, signed_message.signing_public_key()),
-            None => return None,
+        let message = match signed_message.get_routing_message() {
+            Ok(message) => message,
+            Err(err) => {
+                debug!("{}Signature verification failed {:?}", self.us(), err);
+                return None
+            },
         };
+
+        let public_sign_key = signed_message.signing_public_key();
 
         // If the message is not from a group then don't accumulate
         if !message.from_authority.is_group() {
@@ -643,6 +709,18 @@ impl RoutingNode {
     }
 
     // ---- Direct Messages -----------------------------------------------------------------------
+    fn verify_signed_public_id(serialised_public_id: &[u8],
+                               signature: &::sodiumoxide::crypto::sign::Signature) -> Result<::id::PublicId,
+                                                                                             RoutingError> {
+        let public_id: ::id::PublicId = try!(::maidsafe_utilities::serialisation::deserialise(serialised_public_id));
+        if ::sodiumoxide::crypto::sign::verify_detached(signature,
+                                                        serialised_public_id,
+                                                        public_id.signing_public_key()) {
+            Ok(public_id)
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
+    }
 
     fn handle_direct_message(&mut self,
                              direct_message: ::direct_messages::DirectMessage,
@@ -679,7 +757,18 @@ impl RoutingNode {
                     self.request_network_name();
                 }
             },
-            ::direct_messages::DirectMessage::ClientIdentify { ref public_id, } => {
+            ::direct_messages::DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
+                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
+                    Ok(public_id) => public_id,
+                    Err(error) => {
+                        warn!("{}Signature check failed in NodeIdentify - Dropping connection {:?}",
+                              self.us(), connection);
+                        self.crust_service.drop_node(connection);
+
+                        return
+                    }
+                };
+
                 if *public_id.name() != ::NameType::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
@@ -688,24 +777,74 @@ impl RoutingNode {
                     return
                 }
 
-                self.bootstrap_identify(connection);
+                if let Some(prev_conn) = self.client_map.insert(public_id.signing_public_key().clone(), connection) {
+                    debug!("{}Found previous connection against client key - Dropping {:?}",
+                           self.us(), prev_conn);
+                    self.crust_service.drop_node(prev_conn);
+                }
+
+                let _ = self.bootstrap_identify(connection);
             },
-            ::direct_messages::DirectMessage::NodeIdentify { .. } => {
-                // verify signature
-                // if !direct_message.verify_signature(public_id.signing_public_key()) {
-                //     warn!("{}Failed signature verification on {:?} - dropping connection",
-                //           self.us(), connection);
-                //     self.drop_crust_connection(connection);
-                //     return
-                // };
-                // self.handle_identify(connection, public_id);
+            ::direct_messages::DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
+                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
+                    Ok(public_id) => public_id,
+                    Err(error) => {
+                        warn!("{}Signature check failed in NodeIdentify - Dropping connection {:?}",
+                              self.us(), connection);
+                        self.crust_service.drop_node(connection);
+
+                        return
+                    }
+                };
+
+                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).map(|elt| elt.clone()) {
+                    if their_public_id != public_id {
+                        warn!("{}Given Public ID and Public ID in cache don't match - Given {:?} :: In cache {:?} \
+                               Dropping connection {:?}", self.us(), public_id, their_public_id, connection);
+
+                        self.crust_service.drop_node(connection);
+                        return
+                    }
+
+                    let node_info = ::routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
+                    if self.routing_table.has_node(public_id.name()) {
+                        if !self.routing_table.add_connection(public_id.name(), connection) {
+                            // We already sent an identify down this connection
+                            return
+                        }
+                    } else {
+                        let (is_added, node_removed) = self.routing_table.add_node(node_info);
+
+                        if !is_added {
+                            debug!("{}Node rejected by Routing table - Closing {:?}", self.us(), connection);
+                            self.crust_service.drop_node(connection);
+                            let _ = self.node_id_cache.remove(public_id.name());
+
+                            return
+                        }
+
+                        if let Some(node_to_drop) = node_removed {
+                            debug!("{}Node ejected by routing table on an add. Dropping node {:?}",
+                                   self.us(), node_to_drop);
+
+                            for it in node_to_drop.connections.into_iter() {
+                                self.crust_service.drop_node(it);
+                            }
+                        }
+                    }
+
+                    let _ = self.node_identify(connection);
+                } else {
+                    debug!("{}PublicId not found in node_id_cache - Dropping Connection {:?}", self.us(), connection);
+                    self.crust_service.drop_node(connection);
+                }
             },
             ::direct_messages::DirectMessage::Churn { ref close_group } => {
                 // TODO (ben 26/08/2015) verify the signature with the public_id
                 // from our routing table.
                 self.handle_churn(close_group);
             },
-        };
+        }
     }
 
     fn handle_churn(&mut self, close_group: &[::NameType]) {
@@ -794,13 +933,8 @@ impl RoutingNode {
 
         let signed_message = SignedMessage::from_signed_request(
                 signed_request.clone(), relocated_id.signing_public_key().clone());
-        let message = match signed_message.get_routing_message() {
-            Some(routing_message) => routing_message,
-            None => {
-                debug!("Signature failed.\n");
-                return Err(RoutingError::FailedSignature)
-            }
-        };
+        let message = try!(signed_message.get_routing_message());
+
         let target_client_authority = message.source();
         let from_authority = Authority::NaeManager(self.full_id.public_id().name().clone());
         let mut public_ids : Vec<PublicId> = self.routing_table
@@ -840,13 +974,7 @@ impl RoutingNode {
                                   _to_authority: Authority) -> RoutingResult {
         let signed_message = SignedMessage::from_signed_request(
                 signed_request.clone(), self.full_id.public_id().signing_public_key().clone());
-        let message = match signed_message.get_routing_message() {
-            Some(routing_message) => routing_message,
-            None => {
-                debug!("Signature failed.\n");
-                return Err(RoutingError::FailedSignature)
-            }
-        };
+        let message = try!(signed_message.get_routing_message());
 
         match message.content {
             Content::InternalRequest(InternalRequest::RequestNetworkName(ref original_public_id)) => {
@@ -953,7 +1081,7 @@ impl RoutingNode {
                     debug!("{}No longer want to connect to relocating node although present in our \
                            node_id_cache", self.us());
 
-                    Err(RoutingError::RejectedPublicId)
+                    Err(RoutingError::RefusedFromRoutingTable)
                 }
             },
             None => {
@@ -977,15 +1105,27 @@ impl RoutingNode {
             } else if let ::authority::Authority::Client(..) = to_authority {
                 Err(RoutingError::RejectedPublicId)
             } else {
-                Ok(())
-                // let request = ::messages::InternalRequest::GetPublicId;
-                // let message
+                let request = ::messages::InternalRequest::GetPublicIdWithEndpoints {
+                    encrypted_endpoints: encrypted_endpoints,
+                    nonce_bytes: nonce_bytes,
+                };
+
+                let routing_message = ::messages::RoutingMessage {
+                    from_authority: ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone()),
+                    to_authority: ::authority::Authority::NodeManager(name.clone()),
+                    content: ::messages::Content::InternalRequest(request),
+                    group_keys: None,
+                };
+
+                let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+
+                Ok(self.send(signed_message))
             }
         } else {
             debug!("{}No longer want to connect to node although present in our node_id_cache", self.us());
             let _ = self.node_id_cache.remove(name);
 
-            Err(RoutingError::RejectedPublicId)
+            Err(RoutingError::RefusedFromRoutingTable)
         }
     }
 
@@ -1008,101 +1148,136 @@ impl RoutingNode {
         }
     }
 
-    /// 1. ManagedNode(us) -> NodeManager(us) (connecting to our close group) they
-    ///    will have us already in their group or relocation cache (5 min cache) when we
-    ///    are initially connecting to our close group
-    /// 2. ManagedNode(us) -> ManagedNode(them) direct message to a node who will
-    ///    require to get our real FullId from our close group and accumulate this
-    ///    before accpeting us as a valid connection / full_id
-    #[allow(unused)]
     fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
-        unimplemented!()
-        // let from_authority = match *self.state() {
-        //     State::Disconnected => return Err(RoutingError::NotBootstrapped),
-        //     State::Client => {
-        //         try!(self.get_client_authority())
-        //     }
-        //     _ => {
-        //         Authority::ManagedNode(self.full_id.public_id().name().clone())
-        //     }
-        // };
+        let request = ::messages::InternalRequest::Connect;
 
-        // debug!("{}Sending connect request from {:?} to {:?}", self.us(), from_authority, peer_name);
-        // let routing_message = RoutingMessage {
-        //     from_authority: from_authority,
-        //     to_authority: Authority::ManagedNode(peer_name.clone()),
-        //     content: Content::InternalRequest(InternalRequest::Connect {
-        //         endpoints: self.accepting_on.clone(),
-        //         public_id: self.full_id.public_id().clone(),
-        //     }),
-        //     group_keys: None,
-        // };
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone()),
+            to_authority: ::authority::Authority::ManagedNode(peer_name.clone()),
+            content: ::messages::Content::InternalRequest(request),
+            group_keys: None,
+        };
 
-        // match SignedMessage::new(&routing_message, &self.full_id) {
-        //     Ok(signed_message) => self.send(signed_message),
-        //     Err(e) => return Err(RoutingError::Cbor(e)),
-        // };
+        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
 
-        // Ok(())
+        Ok(self.send(signed_message))
     }
 
-    /// 1. ManagedNode(them) -> NodeManager(them) (we are their close group) they
-    ///    must be in our relocation cache or known to our group memebers
-    ///    ao we may have to send a get_id to our group
-    /// 2. ManagedNode(them) -> ManagedNode(us) direct message to us
-    ///    we must ask their NodeManagers for their full_id
-    fn handle_connect_request(&mut self,
-                              endpoints: Vec<::crust::Endpoint>,
-                              public_id: PublicId,
-                              from_authority: Authority,
-                              signed_request: SignedRequest) -> RoutingResult {
-        debug!("{}Handle ConnectRequest", self.us());
+    fn handle_connect_request(&mut self, name: ::NameType) -> RoutingResult {
+        trace!("{}Handle ConnectRequest", self.us());
 
-        // TODO(Fraser:David) How do you validate/fetch/get public key for a node ?
-
-        if let Authority::Client(_, ref public_key) = from_authority {
-            let us = self.us();
-            match self.node_id_cache.get(public_id.name()) {
-                Some(cached_public_id) => if cached_public_id.signing_public_key() != public_key {
-                    warn!("{}Cached Public key does not match in ConnectRequest", us);
-                    return Err(RoutingError::BadAuthority)
-                },
-                None => {
-                    debug!("{}Public FullId not cached", us);
-                    return Err(RoutingError::BadAuthority)
-                },
-            }
-        }
-
-        if !self.routing_table.want_to_add(public_id.name()) {
-            debug!("{}Connect request {:?} failed - Don't want to add", self.us(), public_id);
+        if !self.routing_table.want_to_add(&name) {
+            debug!("{}Connect request failed - Don't want to add", self.us());
             return Err(RoutingError::RefusedFromRoutingTable)
         }
 
-        // let routing_message = RoutingMessage {
-        //     from_authority: Authority::ManagedNode(*self.full_id.public_id().name()),
-        //     to_authority: from_authority,
-        //     content: Content::InternalResponse(InternalResponse::Connect {
-        //         endpoints: self.accepting_on.clone(),
-        //         public_id: self.full_id.public_id().clone(),
-        //         signed_request: signed_request,
-        //     }),
-        //     group_keys: None,
-        // };
+        // TODO(Spandan) Update get in LRU to refresh the time to live and use only get()
+        if let Some(public_id) = self.node_id_cache.remove(&name) {
+            let from_authority = ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone());
+            try!(self.send_endpoints(&public_id,
+                                     from_authority,
+                                     ::authority::Authority::ManagedNode(name.clone())));
+            let _ = self.node_id_cache.insert(name, public_id.clone());
 
-        // match SignedMessage::new(&routing_message, &self.full_id) {
-        //     Ok(signed_message) => {
-        //         self.send(signed_message);
-        //         let connection_token = self.get_connection_token();
-        //         debug!("{}Connecting on validated ConnectRequest with connection token {:?}",
-        //                self.us(), connection_token);
-        //         self.connect(connection_token, &endpoints);
-        //         self.connection_filter.add(public_id.name().clone());
-        //     },
-        //     Err(error) => return Err(RoutingError::Cbor(error)),
-        // }
+            return Ok(())
+        }
+
+        let request = ::messages::InternalRequest::GetPublicId;
+
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone()),
+            to_authority: ::authority::Authority::NodeManager(name),
+            content: ::messages::Content::InternalRequest(request),
+            group_keys: None,
+        };
+
+        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+
+        Ok(self.send(signed_message))
+    }
+
+    fn send_public_id_response(&mut self,
+                               response: ::messages::InternalResponse,
+                               from_name: ::NameType,
+                               to_name: ::NameType) -> RoutingResult {
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::NodeManager(to_name),
+            to_authority: ::authority::Authority::ManagedNode(from_name),
+            content: ::messages::Content::InternalResponse(response),
+            group_keys: None,
+        };
+
+        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+
+        Ok(self.send(signed_message))
+    }
+
+    fn handle_get_public_id(&mut self,
+                            from_name: ::NameType,
+                            to_name: ::NameType,
+                            signed_request: ::messages::SignedRequest) -> RoutingResult {
+        trace!("{}Handle get public id", self.us());
+
+        if let Some(node_info) = self.routing_table.our_close_group().into_iter().find(|elt| *elt.name() == to_name) {
+            let response = ::messages::InternalResponse::GetPublicId {
+                public_id: node_info.public_id,
+                signed_request: signed_request,
+            };
+
+            self.send_public_id_response(response, from_name, to_name)
+        } else {
+            debug!("{}Node not found in the close group. Unable to retrieve PublicId", self.us());
+            // TODO Invent error for this
+            Err(::error::RoutingError::RejectedPublicId)
+        }
+    }
+
+    fn handle_get_public_id_response(&mut self,
+                                     public_id: ::id::PublicId,
+                                     signed_request: ::messages::SignedRequest) -> RoutingResult {
+        let orig_signed_message = ::messages
+                                  ::SignedMessage
+                                  ::from_signed_request(signed_request,
+                                                        self.full_id.public_id().signing_public_key().clone());
+        let orig_routing_message = try!(orig_signed_message.get_routing_message());
+
+        if ::messages::Content::InternalRequest(::messages::InternalRequest::GetPublicId) !=
+            orig_routing_message.content {
+            // TODO Invent error for this
+            return Err(::error::RoutingError::BadAuthority)
+        }
+
+        if !self.routing_table.want_to_add(public_id.name()) {
+            debug!("{}No longer want to add {:?} to routing table", self.us(), public_id);
+            return Err(::error::RoutingError::RefusedFromRoutingTable)
+        }
+
+        try!(self.send_endpoints(&public_id,
+                                 orig_routing_message.from_authority,
+                                 ::authority::Authority::ManagedNode(public_id.name().clone())));
+        let _ = self.node_id_cache.insert(public_id.name().clone(), public_id);
 
         Ok(())
+    }
+
+    fn handle_get_public_id_with_endpoints(&mut self,
+                                           from_name: ::NameType,
+                                           to_name: ::NameType,
+                                           signed_request: ::messages::SignedRequest) -> RoutingResult {
+        trace!("{}Handle get public id with endpoints", self.us());
+
+        if let Some(node_info) = self.routing_table.our_close_group().into_iter().find(|elt| *elt.name() == to_name) {
+            let response = ::messages::InternalResponse::GetPublicIdWithEndpoints {
+                public_id: node_info.public_id,
+                signed_request: signed_request,
+            };
+
+            self.send_public_id_response(response, from_name, to_name)
+        } else {
+            debug!("{}Node not found in the close group. Unable to retrieve PublicId", self.us());
+            // TODO Invent error for this
+            Err(::error::RoutingError::RejectedPublicId)
+        }
     }
 
     /// 1. NodeManager(us) -> ManagedNode(us), this is a close group connect, goes in routing_table
@@ -1268,12 +1443,13 @@ impl RoutingNode {
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&mut self, signed_message: SignedMessage) {
         let message = match signed_message.get_routing_message() {
-            Some(routing_message) => routing_message,
-            None => {
-                debug!("Signature failed.\n");
+            Ok(routing_message) => routing_message,
+            Err(error) => {
+                debug!("{}Signature failed. {:?}", self.us(), error);
                 return
             }
         };
+
         let destination = message.destination();
         debug!("{}Send request to {:?}", self.us(), destination);
         let bytes = match encode(&signed_message) {
@@ -1346,10 +1522,7 @@ impl RoutingNode {
         if let Some(ref token) = *response.get_signed_token() {
             let signed_message = SignedMessage::from_signed_request(
                     token.clone(), self.full_id.public_id().signing_public_key().clone());
-            match signed_message.get_routing_message() {
-                Some(_) => {},
-                None => return Err(RoutingError::FailedSignature),
-            };
+            let _ = try!(signed_message.get_routing_message());
         } else {
             if !self.name_in_range(to_authority.get_location()) {
                 return Err(RoutingError::BadAuthority);
@@ -1496,7 +1669,8 @@ impl RoutingNode {
         let peer_name = public_id.name().clone();
 
         if self.routing_table.has_node(&peer_name) {
-            return self.routing_table.add_connection(&peer_name, connection)
+            let _ = self.routing_table.add_connection(&peer_name, connection);
+            return
         }
 
         let connection_clone = connection.clone();
