@@ -140,14 +140,16 @@ impl StructuredData {
 
         let data = try!(self.data_to_sign());
         // Count valid previous_owner_signatures and refuse if quantity is not enough
-        if self.previous_owner_signatures
-               .iter()
-               .filter(|&sig| {
+
+        let check_all_keys = |&sig| {
                    owner_keys.iter()
                              .any(|ref pub_key| {
                                  ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
-                             })
-               })
+                             })};
+
+        if self.previous_owner_signatures
+               .iter()
+               .filter(|&sig| check_all_keys(sig))
                .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
             return Err(::error::RoutingError::NotEnoughSignatures);
         }
