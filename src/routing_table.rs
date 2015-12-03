@@ -225,11 +225,11 @@ impl RoutingTable {
     // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
     // considered to be close.
     pub fn is_close(&self, name: &NameType) -> bool {
-        if self.routing_table.len() < ::types::GROUP_SIZE {
-            return true
+        match self.routing_table.iter().nth(::types::GROUP_SIZE - 1) {
+            Some(node) => closer_to_target_or_equal(&name, &node.name(), &self.our_name),
+            None => true
         }
-        let furthest_close_node = self.routing_table[::types::GROUP_SIZE - 1].clone();
-        closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
+
     }
 
     pub fn len(&self) -> usize {
