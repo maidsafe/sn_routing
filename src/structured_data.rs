@@ -140,14 +140,16 @@ impl StructuredData {
 
         let data = try!(self.data_to_sign());
         // Count valid previous_owner_signatures and refuse if quantity is not enough
-        if self.previous_owner_signatures
-               .iter()
-               .filter(|&sig| {
+
+        let check_all_keys = |&sig| {
                    owner_keys.iter()
                              .any(|ref pub_key| {
                                  ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
-                             })
-               })
+                             })};
+
+        if self.previous_owner_signatures
+               .iter()
+               .filter(|&sig| check_all_keys(sig))
                .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
             return Err(::error::RoutingError::NotEnoughSignatures);
         }
@@ -170,7 +172,7 @@ impl StructuredData {
     /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
     pub fn add_signature(&mut self,
                          secret_key: &::sodiumoxide::crypto::sign::SecretKey)
-                         -> Result<isize, ::error::RoutingError> {
+                         -> Result<usize, ::error::RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = ::sodiumoxide::crypto::sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
@@ -179,7 +181,7 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) as isize / 2) - self.previous_owner_signatures.len() as isize)
+        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len() )
     }
 
     /// Overwrite any existing signatures with the new signatures provided

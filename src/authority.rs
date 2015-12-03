@@ -136,6 +136,10 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         Content::InternalRequest(ref request) => {
             match *request {
                 // TODO Investigate
+                InternalRequest::GetPublicIdWithEndpoints { .. } => None,
+                // TODO Investigate
+                InternalRequest::GetPublicId => None,
+                // TODO Investigate
                 InternalRequest::Connect => None,
                 // TODO Investigate
                 InternalRequest::Endpoints { .. } => None,
@@ -161,14 +165,14 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         Content::InternalResponse(_) => None,
     };
 
-    let element = match element {
+    let data_name = match element {
         Some(e) => e,
         None => {
             return None;
         }
     };
 
-    determine_authority(message, routing_table, &element)
+    determine_authority(message, routing_table, &data_name)
 }
 
 // determine_authority is a static method to allow unit tests to test it
@@ -199,8 +203,7 @@ fn determine_authority(message: &RoutingMessage,
        *message.destination().get_location() != *routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
     } else if message.source_group()
-              .map(|group| routing_table.is_close(&group))
-              .unwrap_or(false) &&
+              .map_or(false, |group| routing_table.is_close(&group)) &&
        *message.destination().get_location() == *routing_table.our_name() {
         return Some(Authority::ManagedNode(*routing_table.our_name()));
     }

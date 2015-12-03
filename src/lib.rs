@@ -51,7 +51,6 @@
 #[macro_use]
 extern crate log;
 extern crate cbor;
-extern crate itertools;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;

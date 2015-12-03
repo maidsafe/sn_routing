@@ -123,15 +123,24 @@ impl RoutingTable {
         (false, None)
     }
 
-    // Adds a connection to an existing entry.  Should be called after `has_node`.
-    pub fn add_connection(&mut self, their_name: &::NameType, connection: ::crust::Connection) {
-        use itertools::Itertools;
+    // Adds a connection to an existing entry.  Should be called after `has_node`. The return
+    // indicates if the given connection was added to an existing NodeInfo.
+    pub fn add_connection(&mut self,
+                          their_name: &::NameType,
+                          connection: ::crust::Connection) -> bool {
         match self.nodes.iter_mut().find(|node_info| node_info.name() == their_name) {
             Some(mut node_info) => {
+                if node_info.connections.iter().any(|elt| *elt == connection) {
+                    return false
+                }
+
                 node_info.connections.push(connection);
-                node_info.connections = node_info.connections.iter().cloned().unique().collect();
+                true
             },
-            None => error!("The NodeInfo should already exist here."),
+            None => {
+                error!("The NodeInfo should already exist here.");
+                false
+            },
         }
     }
 
@@ -140,12 +149,10 @@ impl RoutingTable {
     // checking procedure is the same as for `add_node`, except for the lack of a public key to
     // check in step 1.
     pub fn want_to_add(&self, their_name: &::NameType) -> bool {
-        if self.our_name == *their_name {
+        if self.our_name == *their_name || self.has_node(their_name)  {
             return false
         }
-        if self.has_node(their_name) {
-            return false
-        }
+
         if self.nodes.len() < OPTIMAL_TABLE_SIZE {
             return true
         }
@@ -216,15 +223,18 @@ impl RoutingTable {
     // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
     // considered to be close.
     pub fn is_close(&self, name: &::NameType) -> bool {
-        if self.nodes.len() < ::types::GROUP_SIZE {
-            return true
+        match self.nodes.iter().nth(::types::GROUP_SIZE - 1) {
+            Some(node) => ::name_type::closer_to_target_or_equal(name, node.name(), &self.our_name),
+            None => true
         }
-        let furthest_close_node = self.nodes[::types::GROUP_SIZE - 1].clone();
-        ::name_type::closer_to_target_or_equal(name, furthest_close_node.name(), &self.our_name)
     }
 
     pub fn len(&self) -> usize {
         self.nodes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
     }
 
     pub fn our_name(&self) -> &::NameType {
@@ -237,8 +247,7 @@ impl RoutingTable {
 
     // This effectively reverse iterates through all non-empty buckets (i.e. starts at furthest
     // bucket from us) checking for overfilled ones and returning the table index of the furthest
-    // contact within that bucket.  No contacts within our close group will be considered.  If the
-    // table size is below OPTIMAL_TABLE_SIZE, this will return None.
+    // contact within that bucket.  No contacts within our close group will be considered.
     fn find_candidate_for_removal(&self) -> Option<usize> {
         assert!(self.nodes.len() >= OPTIMAL_TABLE_SIZE);
 
@@ -282,22 +291,7 @@ impl RoutingTable {
     // This is equivalent to the common leading bits of `self.our_name` and `name` where "leading
     // bits" means the most significant bits.
     fn bucket_index(&self, name: &::NameType) -> usize {
-        for byte_index in 0..::NAME_TYPE_LEN {
-            if self.our_name.0[byte_index] != name.0[byte_index] {
-                return (byte_index * 8) + match self.our_name.0[byte_index] ^ name.0[byte_index] {
-                    1 => 7,
-                    2 | 3 => 6,
-                    4...7 => 5,
-                    8...15 => 4,
-                    16...31 => 3,
-                    32...63 => 2,
-                    64...127 => 1,
-                    128...255 => 0,
-                    _ => unreachable!(),
-                }
-            }
-        }
-        ::NAME_TYPE_LEN * 8
+        self.our_name.bucket_distance(name)
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
