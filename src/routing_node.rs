@@ -826,9 +826,9 @@ impl RoutingNode {
             group_keys: None,
         };
 
-        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+        let new_signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
 
-        Ok(self.send(signed_message))
+        Ok(self.send(new_signed_message))
     }
 
     // Signed Request is the original request sent by us
