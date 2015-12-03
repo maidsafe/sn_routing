@@ -236,6 +236,10 @@ impl RoutingTable {
         self.routing_table.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.routing_table.is_empty()
+    }
+
     pub fn our_name(&self) -> &NameType {
         &self.our_name
     }
