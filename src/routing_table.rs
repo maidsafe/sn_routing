@@ -133,12 +133,10 @@ impl RoutingTable {
     // checking procedure is the same as for `add_node`, except for the lack of a public key to
     // check in step 1.
     pub fn want_to_add(&self, their_name: &NameType) -> bool {
-        if self.our_name == *their_name {
+        if self.our_name == *their_name || self.has_node(their_name)  {
             return false
         }
-        if self.has_node(their_name) {
-            return false
-        }
+
         if self.routing_table.len() < OPTIMAL_TABLE_SIZE {
             return true
         }
@@ -225,15 +223,19 @@ impl RoutingTable {
     // close group. If the routing table contains less than GROUP_SIZE nodes, then every address is
     // considered to be close.
     pub fn is_close(&self, name: &NameType) -> bool {
-        if self.routing_table.len() < ::types::GROUP_SIZE {
-            return true
+        match self.routing_table.iter().nth(::types::GROUP_SIZE - 1) {
+            Some(node) => closer_to_target_or_equal(&name, &node.name(), &self.our_name),
+            None => true
         }
-        let furthest_close_node = self.routing_table[::types::GROUP_SIZE - 1].clone();
-        closer_to_target_or_equal(&name, &furthest_close_node.name(), &self.our_name)
+
     }
 
     pub fn len(&self) -> usize {
         self.routing_table.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.routing_table.is_empty()
     }
 
     pub fn our_name(&self) -> &NameType {
@@ -291,22 +293,7 @@ impl RoutingTable {
     // This is equivalent to the common leading bits of `self.our_name` and `name` where "leading
     // bits" means the most significant bits.
     fn bucket_index(&self, name: &NameType) -> usize {
-        for byte_index in 0..::NAME_TYPE_LEN {
-            if self.our_name.0[byte_index] != name.0[byte_index] {
-                return (byte_index * 8) + match self.our_name.0[byte_index] ^ name.0[byte_index] {
-                    1 => 7,
-                    2 | 3 => 6,
-                    4...7 => 5,
-                    8...15 => 4,
-                    16...31 => 3,
-                    32...63 => 2,
-                    64...127 => 1,
-                    128...255 => 0,
-                    _ => unreachable!(),
-                }
-            }
-        }
-        ::NAME_TYPE_LEN * 8
+        self.our_name.bucket_distance(name)
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {

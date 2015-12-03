@@ -18,21 +18,21 @@
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
     use std::fmt::Write;
-    let input = input.as_ref();
-    if input.len() <= 6 {
+    let input_ref = input.as_ref();
+    if input_ref.len() <= 6 {
         let mut ret = String::from("BYTES:");
-        for byte in input.iter() {
+        for byte in input_ref.iter() {
             unwrap_result!(write!(ret, "{:02x}", byte));
         }
         return ret;
     }
     format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-            input[0],
-            input[1],
-            input[2],
-            input[input.len() - 3],
-            input[input.len() - 2],
-            input[input.len() - 1])
+            input_ref[0],
+            input_ref[1],
+            input_ref[2],
+            input_ref[input_ref.len() - 3],
+            input_ref[input_ref.len() - 2],
+            input_ref[input_ref.len() - 1])
 }
 
 /// Encode a value of type T to a vector of bytes.

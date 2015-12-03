@@ -457,8 +457,7 @@ impl RoutingNode {
         // check if our calculated authority matches the destination authority of the message
         let our_authority = self.our_authority(&message);
         if our_authority.clone()
-                        .map(|our_auth| &message.to_authority != &our_auth)
-                        .unwrap_or(true) {
+                        .map_or(true, |our_auth| &message.to_authority != &our_auth) {
             // Either the message is directed at a group, and the target should be in range,
             // or it should be aimed directly at us.
             if message.destination().is_group() {
@@ -709,7 +708,7 @@ impl RoutingNode {
         };
     }
 
-    fn handle_churn(&mut self, close_group: &Vec<::NameType>) {
+    fn handle_churn(&mut self, close_group: &[::NameType]) {
         debug!("{}CHURN: received {} names", self.us(), close_group.len());
         for close_node in close_group {
             self.refresh_routing_table(close_node);
@@ -827,9 +826,9 @@ impl RoutingNode {
             group_keys: None,
         };
 
-        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+        let new_signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
 
-        Ok(self.send(signed_message))
+        Ok(self.send(new_signed_message))
     }
 
     // Signed Request is the original request sent by us
@@ -973,7 +972,7 @@ impl RoutingNode {
                                   signed_request: ::messages::SignedRequest) -> RoutingResult {
         let name = from_authority.get_location();
         if self.routing_table.want_to_add(name) {
-            if let Some(their_public_id) = self.node_id_cache.get(name).map(|elt| elt.clone()) {
+            if let Some(their_public_id) = self.node_id_cache.get(name).cloned() {
                 self.connect(encrypted_endpoints, nonce_bytes, their_public_id.encrypting_public_key())
             } else if let ::authority::Authority::Client(..) = to_authority {
                 Err(RoutingError::RejectedPublicId)
@@ -1409,7 +1408,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize, ::types::QUORUM_SIZE)
+        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize , ::types::QUORUM_SIZE)
     }
 
     // Returns our name and state for logging

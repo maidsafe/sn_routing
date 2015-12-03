@@ -59,6 +59,27 @@ impl NameType {
         self.0.to_hex()
     }
 
+    /// This is equivalent to the common leading bits of `self.id.0` and `name` where "leading
+    /// bits" means the most significant bits.
+    pub fn bucket_distance(&self, name: &NameType) -> usize {
+        for byte_index in 0..::NAME_TYPE_LEN {
+            if self.0[byte_index] != name.0[byte_index] {
+                return (byte_index * 8) + match self.0[byte_index] ^ name.0[byte_index] {
+                    1 => 7,
+                    2 | 3 => 6,
+                    4...7 => 5,
+                    8...15 => 4,
+                    16...31 => 3,
+                    32...63 => 2,
+                    64...127 => 1,
+                    128...255 => 0,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        ::NAME_TYPE_LEN * 8
+    }
+
     /// Hex-decode a `NameType` from a `&str`.
     pub fn from_hex(s: &str) -> Result<NameType, NameTypeFromHexError> {
         let data = match s.from_hex() {
