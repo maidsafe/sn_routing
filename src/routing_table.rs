@@ -352,12 +352,44 @@ mod test {
     impl Bucket {
         fn new(farthest_from_tables_own_name: ::NameType, index: usize) -> Bucket {
             Bucket {
-                far_contact: get_contact(&farthest_from_tables_own_name, index, ContactType::Far),
-                mid_contact: get_contact(&farthest_from_tables_own_name, index, ContactType::Mid),
-                close_contact: get_contact(&farthest_from_tables_own_name, index,
-                                           ContactType::Close),
+                far_contact: Self::get_contact(&farthest_from_tables_own_name, index,
+                                               ContactType::Far),
+                mid_contact: Self::get_contact(&farthest_from_tables_own_name, index,
+                                               ContactType::Mid),
+                close_contact: Self::get_contact(&farthest_from_tables_own_name, index,
+                                                 ContactType::Close),
             }
         }
+        fn get_contact(farthest_from_tables_own_name: &::NameType,
+                       index: usize,
+                       contact_type: ContactType)
+                       -> ::NameType {
+            let mut binary_name =
+                self::bit_vec::BitVec::from_bytes(&farthest_from_tables_own_name.0);
+            if index > 0 {
+                for i in 0..index {
+                    let bit = unwrap_option!(binary_name.get(i), "");
+                    binary_name.set(i, !bit);
+                }
+            }
+
+            match contact_type {
+                ContactType::Mid => {
+                    let bit_num = binary_name.len() - 1;
+                    let bit = unwrap_option!(binary_name.get(bit_num), "");
+                    binary_name.set(bit_num, !bit);
+                }
+                ContactType::Close => {
+                    let bit_num = binary_name.len() - 2;
+                    let bit = unwrap_option!(binary_name.get(bit_num), "");
+                    binary_name.set(bit_num, !bit);
+                }
+                ContactType::Far => {}
+            };
+
+            ::NameType(::types::slice_as_u8_64_array(&binary_name.to_bytes()[..]))
+        }
+
     }
 
     struct TestEnvironment {
@@ -388,6 +420,7 @@ mod test {
             }
 
             assert_eq!(self.initial_count, self.table.len());
+            assert!(are_nodes_sorted(&self.table), "Nodes are not sorted");
         }
 
         fn complete_filling_table(&mut self) {
@@ -398,6 +431,7 @@ mod test {
             }
 
             assert_eq!(OPTIMAL_TABLE_SIZE, self.table.len());
+            assert!(are_nodes_sorted(&self.table), "Nodes are not sorted");
         }
 
         fn public_id(&self, name: &::NameType) -> Option<::id::PublicId> {
@@ -461,35 +495,6 @@ mod test {
                 ::name_type::closer_to_target(window[0].name(), window[1].name(),
                                               &routing_table.our_name))
         }
-    }
-
-    fn get_contact(farthest_from_tables_own_name: &::NameType,
-                   index: usize,
-                   contact_type: ContactType)
-                   -> ::NameType {
-        let mut binary_name = self::bit_vec::BitVec::from_bytes(&farthest_from_tables_own_name.0);
-        if index > 0 {
-            for i in 0..index {
-                let bit = unwrap_option!(binary_name.get(i), "");
-                binary_name.set(i, !bit);
-            }
-        }
-
-        match contact_type {
-            ContactType::Mid => {
-                let bit_num = binary_name.len() - 1;
-                let bit = unwrap_option!(binary_name.get(bit_num), "");
-                binary_name.set(bit_num, !bit);
-            }
-            ContactType::Close => {
-                let bit_num = binary_name.len() - 2;
-                let bit = unwrap_option!(binary_name.get(bit_num), "");
-                binary_name.set(bit_num, !bit);
-            }
-            ContactType::Far => {}
-        };
-
-        ::NameType(::types::slice_as_u8_64_array(&binary_name.to_bytes()[..]))
     }
 
     fn make_sort_predicate(target: ::NameType)
