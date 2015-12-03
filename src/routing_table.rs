@@ -133,12 +133,10 @@ impl RoutingTable {
     // checking procedure is the same as for `add_node`, except for the lack of a public key to
     // check in step 1.
     pub fn want_to_add(&self, their_name: &NameType) -> bool {
-        if self.our_name == *their_name {
+        if self.our_name == *their_name || self.has_node(their_name)  {
             return false
         }
-        if self.has_node(their_name) {
-            return false
-        }
+
         if self.routing_table.len() < OPTIMAL_TABLE_SIZE {
             return true
         }

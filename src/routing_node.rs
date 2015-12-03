@@ -336,8 +336,8 @@ impl RoutingNode {
             public_id: self.full_id.public_id().clone(),
             // Current quorum size should also include ourselves when sending this message. Thus
             // the '+ 1'
-            current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1)
-                                                  * ::types::QUORUM_FACTOR), ::types::QUORUM_SIZE),
+            current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f64
+                                                  * ::types::QUORUM_FACTOR) as usize, ::types::QUORUM_SIZE),
         };
         // TODO impl convert trait for RoutingError
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
@@ -1408,7 +1408,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min((self.routing_table.len() * ::types::QUORUM_FACTOR) , ::types::QUORUM_SIZE)
+        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize , ::types::QUORUM_SIZE)
     }
 
     // Returns our name and state for logging
