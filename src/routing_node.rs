@@ -621,7 +621,7 @@ impl RoutingNode {
                                                         accumulated_message.from_authority,
                                                         accumulated_message.to_authority)
                     },
-                    InternalResponse::GetPublicIdResponse { public_id, signed_request } => {
+                    InternalResponse::GetPublicId { public_id, signed_request } => {
                         match opt_token {
                             Some(signed_request) => {
                                 self.handle_get_public_id_response(public_id, signed_request)
@@ -629,7 +629,7 @@ impl RoutingNode {
                             None => Err(RoutingError::UnknownMessageType),
                         }
                     },
-                    InternalResponse::GetPublicIdWithEndpointsResponse { public_id, signed_request } => {
+                    InternalResponse::GetPublicIdWithEndpoints { public_id, signed_request } => {
                         unimplemented!()
                         // match opt_token {
                         //     Some(signed_request) => {
@@ -1220,7 +1220,7 @@ impl RoutingNode {
         trace!("{}Handle get public id", self.us());
 
         if let Some(node_info) = self.routing_table.our_close_group().into_iter().find(|elt| *elt.name() == to_name) {
-            let response = ::messages::InternalResponse::GetPublicIdResponse {
+            let response = ::messages::InternalResponse::GetPublicId {
                 public_id: node_info.public_id,
                 signed_request: signed_request,
             };
@@ -1268,7 +1268,7 @@ impl RoutingNode {
         trace!("{}Handle get public id with endpoints", self.us());
 
         if let Some(node_info) = self.routing_table.our_close_group().into_iter().find(|elt| *elt.name() == to_name) {
-            let response = ::messages::InternalResponse::GetPublicIdWithEndpointsResponse {
+            let response = ::messages::InternalResponse::GetPublicIdWithEndpoints {
                 public_id: node_info.public_id,
                 signed_request: signed_request,
             };

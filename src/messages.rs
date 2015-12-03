@@ -99,11 +99,11 @@ pub enum InternalRequest {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
-    GetPublicIdResponse {
+    GetPublicId {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
     },
-    GetPublicIdWithEndpointsResponse {
+    GetPublicIdWithEndpoints {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
     },
