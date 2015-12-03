@@ -44,16 +44,6 @@ impl NodeInfo {
     pub fn name(&self) -> &::NameType {
         self.public_id.name()
     }
-
-    fn make_sort_predicate(target: ::NameType)
-                           -> Box<FnMut(&NodeInfo, &NodeInfo) -> ::std::cmp::Ordering> {
-        Box::new(move |lhs: &NodeInfo, rhs: &NodeInfo| {
-            match ::name_type::closer_to_target(lhs.name(), rhs.name(), &target) {
-                true => ::std::cmp::Ordering::Less,
-                false => ::std::cmp::Ordering::Greater,
-            }
-        })
-    }
 }
 
 
@@ -62,7 +52,6 @@ impl NodeInfo {
 pub struct RoutingTable {
     nodes: Vec<NodeInfo>,
     our_name: ::NameType,
-    sorter: Box<FnMut(&NodeInfo, &NodeInfo) -> ::std::cmp::Ordering>,
 }
 
 impl RoutingTable {
@@ -70,7 +59,6 @@ impl RoutingTable {
         RoutingTable {
             nodes: vec![],
             our_name: our_name.clone(),
-            sorter: NodeInfo::make_sort_predicate(our_name.clone()),
         }
     }
 
@@ -209,7 +197,11 @@ impl RoutingTable {
         // not in close group or routing table so send to closest known nodes up to parallelism
         // count
         let mut target_nodes = self.nodes.clone();
-        target_nodes.sort_by(&mut *NodeInfo::make_sort_predicate(target.clone()));
+        target_nodes.sort_by(
+            |lhs, rhs| match ::name_type::closer_to_target(lhs.name(), rhs.name(), target) {
+                true => ::std::cmp::Ordering::Less,
+                false => ::std::cmp::Ordering::Greater,
+            });
         target_nodes.into_iter().take(PARALLELISM).collect()
     }
 
@@ -305,7 +297,12 @@ impl RoutingTable {
         }
         // We didn't find an existing entry, so insert a new one
         self.nodes.push(node_info);
-        self.nodes.sort_by(&mut *self.sorter);
+        let our_name = &self.our_name;
+        self.nodes.sort_by(
+            |lhs, rhs| match ::name_type::closer_to_target(lhs.name(), rhs.name(), our_name) {
+                true => ::std::cmp::Ordering::Less,
+                false => ::std::cmp::Ordering::Greater,
+            });
     }
 
     // Returns true if 'removal_node_index' is Some and the new node is in a closer bucket than the
