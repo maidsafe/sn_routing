@@ -573,7 +573,21 @@ impl RoutingNode {
                             },
                             None => return Err(RoutingError::UnknownMessageType),
                         }
-                    }
+                    },
+                    InternalRequest::GetPublicIdWithEndpoints { .. } => {
+                        match opt_token {
+                            Some(signed_request) => {
+                                if let (::authority::Authority::ManagedNode(from_name),
+                                        ::authority::Authority::NodeManager(to_name)) =
+                                        (accumulated_message.from_authority, accumulated_message.to_authority) {
+                                    self.handle_get_public_id_with_endpoints(from_name, to_name, signed_request)
+                                } else {
+                                    return Err(RoutingError::BadAuthority)
+                                }
+                            },
+                            None => return Err(RoutingError::UnknownMessageType),
+                        }
+                    },
                     InternalRequest::Refresh(type_tag, bytes, cause) => {
                         let refresh_authority = match our_authority {
                             Some(authority) => {
@@ -614,6 +628,15 @@ impl RoutingNode {
                             },
                             None => Err(RoutingError::UnknownMessageType),
                         }
+                    },
+                    InternalResponse::GetPublicIdWithEndpointsResponse { public_id, signed_request } => {
+                        unimplemented!()
+                        // match opt_token {
+                        //     Some(signed_request) => {
+                        //         self.handle_get_public_id_with_endpoints_response(public_id, signed_request)
+                        //     },
+                        //     None => Err(RoutingError::UnknownMessageType),
+                        // }
                     },
                 }
             }
@@ -1083,9 +1106,21 @@ impl RoutingNode {
             } else if let ::authority::Authority::Client(..) = to_authority {
                 Err(RoutingError::RejectedPublicId)
             } else {
-                Ok(())
-                // let request = ::messages::InternalRequest::GetPublicId;
-                // let message
+                let request = ::messages::InternalRequest::GetPublicIdWithEndpoints {
+                    encrypted_endpoints: encrypted_endpoints,
+                    nonce_bytes: nonce_bytes,
+                };
+
+                let routing_message = ::messages::RoutingMessage {
+                    from_authority: ::authority::Authority::ManagedNode(self.full_id.public_id().name().clone()),
+                    to_authority: ::authority::Authority::NodeManager(name.clone()),
+                    content: ::messages::Content::InternalRequest(request),
+                    group_keys: None,
+                };
+
+                let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+
+                Ok(self.send(signed_message))
             }
         } else {
             debug!("{}No longer want to connect to node although present in our node_id_cache", self.us());
@@ -1162,6 +1197,22 @@ impl RoutingNode {
         Ok(self.send(signed_message))
     }
 
+    fn send_public_id_response(&mut self,
+                               response: ::messages::InternalResponse,
+                               from_name: ::NameType,
+                               to_name: ::NameType) -> RoutingResult {
+        let routing_message = ::messages::RoutingMessage {
+            from_authority: ::authority::Authority::NodeManager(to_name),
+            to_authority: ::authority::Authority::ManagedNode(from_name),
+            content: ::messages::Content::InternalResponse(response),
+            group_keys: None,
+        };
+
+        let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+
+        Ok(self.send(signed_message))
+    }
+
     fn handle_get_public_id(&mut self,
                             from_name: ::NameType,
                             to_name: ::NameType,
@@ -1174,16 +1225,7 @@ impl RoutingNode {
                 signed_request: signed_request,
             };
 
-            let routing_message = ::messages::RoutingMessage {
-                from_authority: ::authority::Authority::NodeManager(to_name),
-                to_authority: ::authority::Authority::ManagedNode(from_name),
-                content: ::messages::Content::InternalResponse(response),
-                group_keys: None,
-            };
-
-            let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
-
-            Ok(self.send(signed_message))
+            self.send_public_id_response(response, from_name, to_name)
         } else {
             debug!("{}Node not found in the close group. Unable to retrieve PublicId", self.us());
             // TODO Invent error for this
@@ -1217,6 +1259,26 @@ impl RoutingNode {
         let _ = self.node_id_cache.insert(public_id.name().clone(), public_id);
 
         Ok(())
+    }
+
+    fn handle_get_public_id_with_endpoints(&mut self,
+                                           from_name: ::NameType,
+                                           to_name: ::NameType,
+                                           signed_request: ::messages::SignedRequest) -> RoutingResult {
+        trace!("{}Handle get public id with endpoints", self.us());
+
+        if let Some(node_info) = self.routing_table.our_close_group().into_iter().find(|elt| *elt.name() == to_name) {
+            let response = ::messages::InternalResponse::GetPublicIdWithEndpointsResponse {
+                public_id: node_info.public_id,
+                signed_request: signed_request,
+            };
+
+            self.send_public_id_response(response, from_name, to_name)
+        } else {
+            debug!("{}Node not found in the close group. Unable to retrieve PublicId", self.us());
+            // TODO Invent error for this
+            Err(::error::RoutingError::RejectedPublicId)
+        }
     }
 
     /// 1. NodeManager(us) -> ManagedNode(us), this is a close group connect, goes in routing_table

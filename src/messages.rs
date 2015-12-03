@@ -78,10 +78,10 @@ pub enum InternalRequest {
         nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
     },
     GetPublicId,
-    // GetPublicIdWithEndpoint {
-    //     encrypted_endpoints: Vec<u8>,
-    //     nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
-    // },
+    GetPublicIdWithEndpoints {
+        encrypted_endpoints: Vec<u8>,
+        nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
+    },
     RequestNetworkName(::id::PublicId),
     // a client can send RequestNetworkName
     RelocatedNetworkName(::id::PublicId, SignedRequest),
@@ -100,6 +100,10 @@ pub enum InternalRequest {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
     GetPublicIdResponse {
+        public_id: ::id::PublicId,
+        signed_request: SignedRequest,
+    },
+    GetPublicIdWithEndpointsResponse {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
     },
