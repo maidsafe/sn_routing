@@ -972,7 +972,7 @@ impl RoutingNode {
                                   signed_request: ::messages::SignedRequest) -> RoutingResult {
         let name = from_authority.get_location();
         if self.routing_table.want_to_add(name) {
-            if let Some(their_public_id) = self.node_id_cache.get(name).map(|elt| elt.clone()) {
+            if let Some(their_public_id) = self.node_id_cache.get(name).cloned() {
                 self.connect(encrypted_endpoints, nonce_bytes, their_public_id.encrypting_public_key())
             } else if let ::authority::Authority::Client(..) = to_authority {
                 Err(RoutingError::RejectedPublicId)
