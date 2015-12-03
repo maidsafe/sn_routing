@@ -199,8 +199,7 @@ fn determine_authority(message: &RoutingMessage,
        *message.destination().get_location() != *routing_table.our_name() {
         return Some(Authority::NodeManager(message.destination().get_location().clone()));
     } else if message.source_group()
-              .map(|group| routing_table.is_close(&group))
-              .unwrap_or(false) &&
+              .map_or(false, |group| routing_table.is_close(&group)) &&
        *message.destination().get_location() == *routing_table.our_name() {
         return Some(Authority::ManagedNode(*routing_table.our_name()));
     }

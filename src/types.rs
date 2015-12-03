@@ -63,7 +63,7 @@ pub const GROUP_SIZE: usize = 8;
 /// Quorum size.
 pub const QUORUM_SIZE: usize = 5;
 /// Quorum factor.
-pub const QUORUM_FACTOR: f64 = QUORUM_SIZE as f64 / GROUP_SIZE as f64;
+pub const QUORUM_FACTOR: usize = QUORUM_SIZE / GROUP_SIZE;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 /// Address.
