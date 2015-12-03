@@ -295,22 +295,7 @@ impl RoutingTable {
     // This is equivalent to the common leading bits of `self.our_name` and `name` where "leading
     // bits" means the most significant bits.
     fn bucket_index(&self, name: &NameType) -> usize {
-        for byte_index in 0..::NAME_TYPE_LEN {
-            if self.our_name.0[byte_index] != name.0[byte_index] {
-                return (byte_index * 8) + match self.our_name.0[byte_index] ^ name.0[byte_index] {
-                    1 => 7,
-                    2 | 3 => 6,
-                    4...7 => 5,
-                    8...15 => 4,
-                    16...31 => 3,
-                    32...63 => 2,
-                    64...127 => 1,
-                    128...255 => 0,
-                    _ => unreachable!(),
-                }
-            }
-        }
-        ::NAME_TYPE_LEN * 8
+        self.our_name.bucket_distance(name)
     }
 
     fn push_back_then_sort(&mut self, node_info: NodeInfo) {
