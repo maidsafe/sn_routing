@@ -300,8 +300,11 @@ impl RoutingNode {
                 if let State::Disconnected = *self.state() {
                         // Established connection. Pending Validity checks
                         self.state = State::Bootstrapping;
-                };
-                let _ = self.client_identify(connection);
+                        let _ = self.client_identify(connection);
+                        return
+                }
+
+                let _ = self.node_identify(connection);
             },
             Err(error) => {
                 warn!("{}Failed to make connection with token {} - {}", self.us(),
@@ -346,10 +349,28 @@ impl RoutingNode {
     }
 
     fn client_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let serialised_public_id = try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&serialised_public_id,
+                                                                   self.full_id.signing_private_key());
+
         let direct_message = ::direct_messages::DirectMessage::ClientIdentify {
-            public_id: self.full_id.public_id().clone(),
+            serialised_public_id: serialised_public_id,
+            signature: signature,
         };
-        // TODO impl convert trait for RoutingError
+        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
+
+        Ok(self.crust_service.send(connection, bytes))
+    }
+
+    fn node_identify(&mut self, connection: ::crust::Connection) -> RoutingResult {
+        let serialised_public_id = try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+        let signature = ::sodiumoxide::crypto::sign::sign_detached(&serialised_public_id,
+                                                                   self.full_id.signing_private_key());
+
+        let direct_message = ::direct_messages::DirectMessage::NodeIdentify {
+            serialised_public_id: serialised_public_id,
+            signature: signature,
+        };
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
 
         Ok(self.crust_service.send(connection, bytes))
@@ -644,6 +665,18 @@ impl RoutingNode {
     }
 
     // ---- Direct Messages -----------------------------------------------------------------------
+    fn verify_signed_public_id(serialised_public_id: &[u8],
+                               signature: &::sodiumoxide::crypto::sign::Signature) -> Result<::id::PublicId,
+                                                                                             RoutingError> {
+        let public_id: ::id::PublicId = try!(::maidsafe_utilities::serialisation::deserialise(serialised_public_id));
+        if ::sodiumoxide::crypto::sign::verify_detached(signature,
+                                                        serialised_public_id,
+                                                        public_id.signing_public_key()) {
+            Ok(public_id)
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
+    }
 
     fn handle_direct_message(&mut self,
                              direct_message: ::direct_messages::DirectMessage,
@@ -680,7 +713,18 @@ impl RoutingNode {
                     self.request_network_name();
                 }
             },
-            ::direct_messages::DirectMessage::ClientIdentify { ref public_id, } => {
+            ::direct_messages::DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
+                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
+                    Ok(public_id) => public_id,
+                    Err(error) => {
+                        warn!("{}Signature check failed in NodeIdentify - Dropping connection {:?}",
+                              self.us(), connection);
+                        self.crust_service.drop_node(connection);
+
+                        return
+                    }
+                };
+
                 if *public_id.name() != ::NameType::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
@@ -689,24 +733,74 @@ impl RoutingNode {
                     return
                 }
 
-                self.bootstrap_identify(connection);
+                if let Some(prev_conn) = self.client_map.insert(public_id.signing_public_key().clone(), connection) {
+                    debug!("{}Found previous connection against client key - Dropping {:?}",
+                           self.us(), prev_conn);
+                    self.crust_service.drop_node(prev_conn);
+                }
+
+                let _ = self.bootstrap_identify(connection);
             },
-            ::direct_messages::DirectMessage::NodeIdentify { .. } => {
-                // verify signature
-                // if !direct_message.verify_signature(public_id.signing_public_key()) {
-                //     warn!("{}Failed signature verification on {:?} - dropping connection",
-                //           self.us(), connection);
-                //     self.drop_crust_connection(connection);
-                //     return
-                // };
-                // self.handle_identify(connection, public_id);
+            ::direct_messages::DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
+                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
+                    Ok(public_id) => public_id,
+                    Err(error) => {
+                        warn!("{}Signature check failed in NodeIdentify - Dropping connection {:?}",
+                              self.us(), connection);
+                        self.crust_service.drop_node(connection);
+
+                        return
+                    }
+                };
+
+                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).map(|elt| elt.clone()) {
+                    if their_public_id != public_id {
+                        warn!("{}Given Public ID and Public ID in cache don't match - Given {:?} :: In cache {:?} \
+                               Dropping connection {:?}", self.us(), public_id, their_public_id, connection);
+
+                        self.crust_service.drop_node(connection);
+                        return
+                    }
+
+                    let node_info = ::routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
+                    if self.routing_table.has_node(public_id.name()) {
+                        if !self.routing_table.add_connection(public_id.name(), connection) {
+                            // We already sent an identify down this connection
+                            return
+                        }
+                    } else {
+                        let (is_added, node_removed) = self.routing_table.add_node(node_info);
+
+                        if !is_added {
+                            debug!("{}Node rejected by Routing table - Closing {:?}", self.us(), connection);
+                            self.crust_service.drop_node(connection);
+                            let _ = self.node_id_cache.remove(public_id.name());
+
+                            return
+                        }
+
+                        if let Some(node_to_drop) = node_removed {
+                            debug!("{}Node ejected by routing table on an add. Dropping node {:?}",
+                                   self.us(), node_to_drop);
+
+                            for it in node_to_drop.connections.into_iter() {
+                                self.crust_service.drop_node(it);
+                            }
+                        }
+                    }
+
+                    let _ = self.node_identify(connection);
+                } else {
+                    debug!("{}PublicId not found in node_id_cache - Dropping Connection {:?}", self.us(), connection);
+                    self.crust_service.drop_node(connection);
+                }
             },
             ::direct_messages::DirectMessage::Churn { ref close_group } => {
                 // TODO (ben 26/08/2015) verify the signature with the public_id
                 // from our routing table.
                 self.handle_churn(close_group);
             },
-        };
+        }
     }
 
     fn handle_churn(&mut self, close_group: &Vec<::NameType>) {
@@ -1497,7 +1591,8 @@ impl RoutingNode {
         let peer_name = public_id.name().clone();
 
         if self.routing_table.has_node(&peer_name) {
-            return self.routing_table.add_connection(&peer_name, connection)
+            let _ = self.routing_table.add_connection(&peer_name, connection);
+            return
         }
 
         let connection_clone = connection.clone();
