@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use itertools::*;
+
 // Defines the number of contacts which should be returned by the `target_nodes` function for a
 // target which is outwith our close group and is not a contact in the table.
 pub const PARALLELISM: usize = 4;
@@ -196,13 +198,16 @@ impl RoutingTable {
 
         // not in close group or routing table so send to closest known nodes up to parallelism
         // count
-        let mut target_nodes = self.nodes.clone();
-        target_nodes.sort_by(
-            |lhs, rhs| match ::name_type::closer_to_target(lhs.name(), rhs.name(), target) {
-                true => ::std::cmp::Ordering::Less,
-                false => ::std::cmp::Ordering::Greater,
-            });
-        target_nodes.into_iter().take(PARALLELISM).collect()
+        self.nodes.iter()
+               .sorted_by(|a, b| if ::name_type::closer_to_target(&a.name(), &b.name(), &target) {
+                                     ::std::cmp::Ordering::Less
+                                 } else {
+                                     ::std::cmp::Ordering::Greater
+                                 })
+               .into_iter()
+               .cloned()
+               .take(PARALLELISM)
+               .collect::<Vec<_>>()
     }
 
     // This returns our close group, i.e. the 'GROUP_SIZE' contacts closest to our name (or the
@@ -235,6 +240,13 @@ impl RoutingTable {
 
     pub fn has_node(&self, name: &::NameType) -> bool {
         self.nodes.iter().any(|node_info| node_info.name() == name)
+    }
+
+    fn furthest_close_node(&self, name: &::NameType) -> Option<&NodeInfo> {
+        match self.nodes.iter().nth(::types::GROUP_SIZE - 1) {
+            Some(node) => Some(node),
+            None => self.nodes.last()
+        }
     }
 
     // This effectively reverse iterates through all non-empty buckets (i.e. starts at furthest
@@ -299,10 +311,11 @@ impl RoutingTable {
         self.nodes.push(node_info);
         let our_name = &self.our_name;
         self.nodes.sort_by(
-            |lhs, rhs| match ::name_type::closer_to_target(lhs.name(), rhs.name(), our_name) {
-                true => ::std::cmp::Ordering::Less,
-                false => ::std::cmp::Ordering::Greater,
-            });
+            |lhs, rhs| if ::name_type::closer_to_target(lhs.name(), rhs.name(), our_name) {
+                           ::std::cmp::Ordering::Less
+                       } else {
+                           ::std::cmp::Ordering::Greater
+                       });
     }
 
     // Returns true if 'removal_node_index' is Some and the new node is in a closer bucket than the

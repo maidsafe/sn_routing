@@ -340,7 +340,8 @@ impl RoutingNode {
             // Current quorum size should also include ourselves when sending this message. Thus
             // the '+ 1'
             current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f64
-                                                  * ::types::QUORUM_FACTOR) as usize, ::types::QUORUM_SIZE),
+                                                  * ::types::QUORUM_FACTOR).round() as usize,
+                                                 ::types::QUORUM_SIZE),
         };
         // TODO impl convert trait for RoutingError
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
@@ -797,7 +798,7 @@ impl RoutingNode {
                     }
                 };
 
-                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).map(|elt| elt.clone()) {
+                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
                     if their_public_id != public_id {
                         warn!("{}Given Public ID and Public ID in cache don't match - Given {:?} :: In cache {:?} \
                                Dropping connection {:?}", self.us(), public_id, their_public_id, connection);
