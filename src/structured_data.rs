@@ -170,7 +170,7 @@ impl StructuredData {
     /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
     pub fn add_signature(&mut self,
                          secret_key: &::sodiumoxide::crypto::sign::SecretKey)
-                         -> Result<isize, ::error::RoutingError> {
+                         -> Result<usize, ::error::RoutingError> {
         let data = try!(self.data_to_sign());
         let sig = ::sodiumoxide::crypto::sign::sign_detached(&data, secret_key);
         self.previous_owner_signatures.push(sig);
@@ -179,7 +179,7 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) as isize / 2) - self.previous_owner_signatures.len() as isize)
+        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len() )
     }
 
     /// Overwrite any existing signatures with the new signatures provided
