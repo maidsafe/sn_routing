@@ -20,98 +20,18 @@
 //! as SignedMessages (wrapping RoutingMessages) over the routing network.
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct Churn {
-    pub close_group: Vec<::NameType>,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-#[allow(variant_size_differences)]
-pub enum Content {
-    Identify { public_id: ::id::PublicId, },
-    Churn(Churn),
-}
-
-/// All messages sent / received are constructed as signed message.
-#[derive(PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
-pub struct DirectMessage {
-    content: Content,
-    signature: ::sodiumoxide::crypto::sign::Signature,
-}
-
-impl DirectMessage {
-    pub fn new(content: Content,
-               private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-               -> Result<DirectMessage, ::cbor::CborError> {
-        let encoded_content = try!(::utils::encode(&content));
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_content,
-                                                                   private_sign_key);
-        Ok(DirectMessage {
-            content: content,
-            signature: signature,
-        })
-    }
-
-    pub fn new_identify(public_id: ::id::PublicId,
-                        private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-                        -> Result<DirectMessage, ::cbor::CborError> {
-        let content = Content::Identify{ public_id: public_id, };
-        Self::new(content, private_sign_key)
-    }
-
-    pub fn verify_signature(&self,
-                            public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-                            -> bool {
-        let encoded_content = match self.encoded_content() {
-            Ok(x) => x,
-            Err(_) => return false,
-        };
-
-        ::sodiumoxide::crypto::sign::verify_detached(&self.signature,
-                                                     &encoded_content,
-                                                     public_sign_key)
-    }
-
-    pub fn content(&self) -> &Content {
-        &self.content
-    }
-
-    #[allow(unused)]
-    pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
-        &self.signature
-    }
-
-    pub fn encoded_content(&self) -> Result<Vec<u8>, ::cbor::CborError> {
-        ::utils::encode(&self.content)
-    }
-}
-
-impl ::std::fmt::Debug for DirectMessage {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(formatter, "DirectMessage {{ content: {:?}, signature: <binary data> }}",
-               self.content)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn verify_signature() {
-        let full_id = ::FullId::new();
-        let content = ::direct_messages::Content::Identify {
-            public_id: full_id.public_id().clone(),
-        };
-        let key = ::sodiumoxide::crypto::sign::gen_keypair();
-        let other_key = ::sodiumoxide::crypto::sign::gen_keypair();
-
-        match ::direct_messages::DirectMessage::new(content, &key.1) {
-            Ok(message) => {
-                // verify_signature returns true for correct public key
-                assert!(message.verify_signature(&key.0));
-
-                // verify_signature returns false for other public key
-                assert!(!message.verify_signature(&other_key.0));
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-    }
+pub enum DirectMessage {
+    BootstrapIdentify {
+        public_id: ::id::PublicId,
+        current_quorum_size: usize,
+    },
+    ClientIdentify {
+        public_id: ::id::PublicId,
+    },
+    NodeIdentify {
+        public_id: ::id::PublicId,
+    },
+    Churn {
+        close_group: Vec<::NameType>,
+    },
 }
