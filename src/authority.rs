@@ -157,14 +157,14 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         Content::InternalResponse(_) => None,
     };
 
-    let element = match element {
+    let data_name = match element {
         Some(e) => e,
         None => {
             return None;
         }
     };
 
-    determine_authority(message, routing_table, &element)
+    determine_authority(message, routing_table, &data_name)
 }
 
 // determine_authority is a static method to allow unit tests to test it
