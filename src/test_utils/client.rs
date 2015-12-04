@@ -16,8 +16,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate time;
-
 /// Network Client.
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,

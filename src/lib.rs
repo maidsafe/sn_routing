@@ -51,18 +51,17 @@
 #[macro_use]
 extern crate log;
 extern crate cbor;
-extern crate itertools;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
 
+extern crate accumulator;
 extern crate crust;
 extern crate lru_time_cache;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate message_filter;
-extern crate accumulator;
 
 mod action;
 mod messages;
