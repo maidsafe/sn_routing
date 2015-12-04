@@ -82,19 +82,18 @@ pub enum InternalRequest {
         encrypted_endpoints: Vec<u8>,
         nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
     },
-    RequestNetworkName(::id::PublicId),
-    // a client can send RequestNetworkName
-    RelocatedNetworkName(::id::PublicId, SignedRequest),
-    //               ~~|~~~~~  ~~|~~~~~~~~
-    //                 |         | SignedRequest contains Request::RequestNetworkName and needs to
-    //                 |         | be forwarded in the Request::RelocatedNetworkName;
-    //                 |         | from it the original reply to authority can be read.
-    //                 | contains the PublicId from RequestNetworkName, but mutated with
-    //                 | the network assigned name
-    /// Refresh allows a persona to republish account records (identified with type_tag:u64 and
-    /// the serialised payload:Vec<u8>).  The cause of the Refresh is the NameType of the node
-    /// that caused the churn event.
-    Refresh(u64, Vec<u8>, ::NameType),
+    Relocate {
+        current_public_id: ::id::PublicId,
+    },
+    ExpectCloseNode {
+        expect_public_id: ::id::PublicId,
+    },
+    GetMyCloseGroup,
+    Refresh {
+        type_tag: u64,
+        message: Vec<u8>,
+        cause: ::NameType,
+    },
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -107,13 +106,14 @@ pub enum InternalResponse {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
     },
-    // FindGroup(Vec<::public_id::PublicId>, SignedRequest),
-    // GetGroupKey(::std::collections::BTreeMap<
-    //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedRequest),
-    RelocatedNetworkName(::id::PublicId, Vec<::id::PublicId>, SignedRequest), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
-                                                                                       *                 |         |              | the original Request::RequestNetworkName
-                                                                                       *                 |         | the group public keys to combine FindGroup in this response
-                                                                                       *                 | the cached PublicId in the group */
+    Relocate {
+        new_public_id: id::PublicId,
+        signed_request: SignedRequest,
+    },
+    GetMyCloseGroup {
+        close_group_ids: Vec<::id::PublicId>,
+        signed_request: SignedRequest,
+    },
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
