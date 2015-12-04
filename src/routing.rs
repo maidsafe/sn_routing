@@ -165,7 +165,11 @@ impl Routing {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
-            Content::InternalRequest(InternalRequest::Refresh(type_tag, content, cause))));
+            Content::InternalRequest(InternalRequest::Refresh {
+                type_tag: type_tag,
+                message: content,
+                cause: cause,
+            })));
     }
 
     /// Dynamically enable/disable caching for Data types.
