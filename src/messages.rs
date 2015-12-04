@@ -72,7 +72,7 @@ impl ExternalResponse {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
-    Relocate {
+    GetNetworkName {
         current_id: ::id::PublicId,
     },
     ExpectCloseNode {
@@ -98,7 +98,7 @@ pub enum InternalRequest {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
-    Relocate {
+    GetNetworkName {
         relocated_id: ::id::PublicId,
         signed_request: SignedRequest,
     },

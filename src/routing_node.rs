@@ -515,11 +515,11 @@ impl RoutingNode {
         let result = match accumulated_message.content {
             Content::InternalRequest(request) => {
                 match request {
-                    InternalRequest::Relocate { current_id, } => {
-                       self.handle_relocate_request(opt_token,
-                                                    current_id,
-                                                    accumulated_message.from_authority,
-                                                    accumulated_message.to_authority)
+                    InternalRequest::GetNetworkName { current_id, } => {
+                       self.handle_get_network_name_request(opt_token,
+                                                            current_id,
+                                                            accumulated_message.from_authority,
+                                                            accumulated_message.to_authority)
                     },
                     InternalRequest::ExpectCloseNode { expect_id, } => {
                         self.handle_expect_close_node_request(opt_token, expect_id)
@@ -584,8 +584,8 @@ impl RoutingNode {
             }
             Content::InternalResponse(response) => {
                 match response {
-                    InternalResponse::Relocate { relocated_id, signed_request, } => {
-                        self.handle_relocate_response(relocated_id, signed_request)
+                    InternalResponse::GetNetworkName { relocated_id, signed_request, } => {
+                        self.handle_get_network_name_response(relocated_id, signed_request)
                     },
                     InternalResponse::GetCloseGroup { close_group_ids, signed_request, } => {
                         self.handle_get_close_group_response(accumulated_message.to_authority,
@@ -638,7 +638,7 @@ impl RoutingNode {
 
         debug!("{}Adding message with public key {:?} to message_accumulator", self.us(), public_sign_key);
 
-        let dynamic_quorum_size = if let Content::InternalResponse(InternalResponse::Relocate { .. }) =
+        let dynamic_quorum_size = if let Content::InternalResponse(InternalResponse::GetNetworkName { .. }) =
                                          message.content {
             self.relocation_quorum_size
         } else {
@@ -807,7 +807,7 @@ impl RoutingNode {
 
         let to_authority = ::authority::Authority::NaeManager(*self.full_id.public_id().name());
 
-        let internal_request = ::messages::InternalRequest::Relocate {
+        let internal_request = ::messages::InternalRequest::GetNetworkName {
             current_id: self.full_id.public_id().clone(),
         };
 
@@ -825,11 +825,11 @@ impl RoutingNode {
     }
 
     // Received by X; From A -> X
-    fn handle_relocate_request(&mut self,
-                               opt_token: Option<::messages::SignedRequest>,
-                               mut their_public_id: ::id::PublicId,
-                               from_authority: Authority,
-                               to_authority: Authority) -> RoutingResult {
+    fn handle_get_network_name_request(&mut self,
+                                       opt_token: Option<::messages::SignedRequest>,
+                                       mut their_public_id: ::id::PublicId,
+                                       from_authority: Authority,
+                                       to_authority: Authority) -> RoutingResult {
         let signed_request = match opt_token {
             Some(signed_request) => signed_request,
             None => {
@@ -864,7 +864,7 @@ impl RoutingNode {
 
                 // From X -> A (via B)
                 {
-                    let response = ::messages::InternalResponse::Relocate {
+                    let response = ::messages::InternalResponse::GetNetworkName {
                         relocated_id: their_public_id.clone(),
                         signed_request: signed_request,
                     };
@@ -922,17 +922,17 @@ impl RoutingNode {
     }
 
     // Received by A; From X -> A
-    fn handle_relocate_response(&mut self,
-                                relocated_id: ::id::PublicId,
-                                signed_request: ::messages::SignedRequest) -> RoutingResult {
-        trace!("{}[fn handle_relocate_response]", self.us());
+    fn handle_get_network_name_response(&mut self,
+                                        relocated_id: ::id::PublicId,
+                                        signed_request: ::messages::SignedRequest) -> RoutingResult {
+        trace!("{}[fn handle_get_network_name_response]", self.us());
 
         let signed_message = SignedMessage::from_signed_request(
                 signed_request.clone(), self.full_id.public_id().signing_public_key().clone());
         let routing_message = try!(signed_message.get_routing_message());
 
         match routing_message.content {
-            Content::InternalRequest(InternalRequest::Relocate { current_id, }) => {
+            Content::InternalRequest(InternalRequest::GetNetworkName { current_id, }) => {
                 if *self.full_id.public_id() != current_id {
                     return Err(RoutingError::BadAuthority)
                 }

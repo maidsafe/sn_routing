@@ -145,7 +145,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                 // TODO Investigate
                 InternalRequest::Endpoints { .. } => None,
                 // TODO Investigate
-                InternalRequest::Relocate { .. } => None,
+                InternalRequest::GetNetworkName { .. } => None,
                 InternalRequest::Refresh { .. } => {
                     let ref to_authority = message.to_authority;
                     if message.from_authority != *to_authority {
