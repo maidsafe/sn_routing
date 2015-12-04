@@ -25,7 +25,6 @@
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!
 //! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
-//!
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
@@ -46,6 +45,9 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations)]
 
+// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
+#![allow(unused)]
+
 #[macro_use]
 extern crate log;
 extern crate cbor;
@@ -54,23 +56,20 @@ extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
 
+extern crate accumulator;
 extern crate crust;
-// extern crate accumulator;
 extern crate lru_time_cache;
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate message_filter;
 
-mod common_bits;
 mod action;
-mod filter;
 mod messages;
 mod direct_messages;
 mod name_type;
 mod routing_table;
 mod routing_node;
-mod routing_core;
 mod refresh_accumulator;
-mod message_accumulator;
-mod utilities;
 mod connection_management;
 
 /// Routing provides an actionable interface to routing.
@@ -83,12 +82,10 @@ pub mod event;
 pub mod test_utils;
 /// Types and functions used throught the library.
 pub mod types;
-/// Private network identity component.
+/// Network identity component containing public and private IDs.
 pub mod id;
 /// Commonly required functions.
 pub mod utils;
-/// Public network identity component.
-pub mod public_id;
 /// Errors reported for failed conditions/operations.
 pub mod error;
 // FIXME (ben 8/09/2015) make the module authority private
@@ -103,9 +100,14 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
+/// Data cache for all Data types
+pub mod data_cache;
+/// Data cache options, may be set at runtime
+pub mod data_cache_options;
 /// NameType is a 512bit name to address elements on the DHT network.
 pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
 /// Message types defined by the library.
-pub use messages::{SignedToken, ExternalRequest, ExternalResponse};
+pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.
 pub use authority::Authority;
+pub use id::{FullId, PublicId};

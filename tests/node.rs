@@ -16,13 +16,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[macro_use]
-extern crate log;
-extern crate env_logger;
+extern crate maidsafe_utilities;
 extern crate routing;
 
 /// Run a routing node.
 pub fn main () {
-    ::env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    ::maidsafe_utilities::log::init(true);
     ::routing::test_utils::node::Node::new().run();
 }

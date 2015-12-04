@@ -30,8 +30,9 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
-
+#[macro_use]
+#[allow(unused_extern_crates)]
+extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
@@ -41,7 +42,6 @@ extern crate routing;
 use std::io;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread::spawn;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -57,9 +57,8 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode};
-use routing::{ExternalRequest, ExternalResponse, SignedToken};
-use routing::id::Id;
-use routing::public_id::PublicId;
+use routing::{ExternalRequest, ExternalResponse, SignedRequest};
+use routing::id::FullId;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -124,14 +123,14 @@ impl Node {
                 Event::Request{request,
                                our_authority,
                                from_authority,
-                               response_token} => {
+                               signed_request} => {
                     self.handle_request(request,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
                 },
-                Event::Churn(our_close_group, cause) => {
-                    self.handle_churn(our_close_group, cause);
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
                 }
                 _ => {}
             }
@@ -141,19 +140,19 @@ impl Node {
     fn handle_request(&mut self, request        : ExternalRequest,
                                  our_authority  : Authority,
                                  from_authority : Authority,
-                                 response_token : Option<SignedToken>) {
+                                 signed_request : Option<SignedRequest>) {
         match request {
             ExternalRequest::Get(data_request, _) => {
                 self.handle_get_request(data_request,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
             },
             ExternalRequest::Put(data) => {
                 self.handle_put_request(data,
                                         our_authority,
                                         from_authority,
-                                        response_token);
+                                        signed_request);
             },
             ExternalRequest::Post(_) => {
                 error!("Node: Post is not implemented, ignoring.");
@@ -167,7 +166,7 @@ impl Node {
     fn handle_get_request(&mut self, data_request: DataRequest,
                                      our_authority: Authority,
                                      from_authority: Authority,
-                                     response_token: Option<SignedToken>) {
+                                     signed_request: Option<SignedRequest>) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
             _ => { error!("Node: Only serving plain data in this example"); return; }
@@ -182,13 +181,13 @@ impl Node {
                                   from_authority,
                                   Data::PlainData(data),
                                   data_request,
-                                  response_token);
+                                  signed_request);
     }
 
     fn handle_put_request(&mut self, data            : Data,
                                      our_authority   : Authority,
                                      _from_authority : Authority,
-                                     _response_token : Option<SignedToken>) {
+                                     _response_token : Option<SignedRequest>) {
         let plain_data = match data {
             Data::PlainData(plain_data) => plain_data,
             _ => { error!("Node: Only storing plain data in this example"); return; }
@@ -206,8 +205,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>,
-        _cause: ::routing::NameType) {
+    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
         info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());
@@ -260,13 +258,13 @@ impl Client {
     fn new() -> Client {
         let (event_sender, event_receiver) = mpsc::channel::<Event>();
 
-        let id = Id::new();
-        info!("Client has set name {:?}", PublicId::new(&id));
-        let routing_client = RoutingClient::new(event_sender, Some(id));
+        let full_id = FullId::new();
+        info!("Client has set name {:?}", full_id.public_id());
+        let routing_client = RoutingClient::new(event_sender, Some(full_id));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
-        let _ = spawn(move || { Client::read_user_commands(command_sender); });
+        let _ = thread!("Command reader", move || { Client::read_user_commands(command_sender); });
 
         Client {
             routing_client   : routing_client,
@@ -380,7 +378,7 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = encode(&(put_where, put_what)).unwrap();
+        let data = unwrap_result!(encode(&(put_where, put_what)));
 
         self.routing_client.put_request(Authority::NaeManager(name.clone()),
             Data::PlainData(PlainData::new(name, data)));
@@ -393,10 +391,7 @@ impl Client {
 
 ////////////////////////////////////////////////////////////////////////////////
 fn main() {
-    match env_logger::init() {
-        Ok(()) => {},
-        Err(e) => println!("Error initialising logger; continuing without: {:?}", e)
-    }
+    ::maidsafe_utilities::log::init(true);
 
     let args: Args = Docopt::new(USAGE)
                             .and_then(|docopt| docopt.decode())

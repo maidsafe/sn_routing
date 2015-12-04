@@ -22,24 +22,13 @@
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(unused)]
 pub enum Action {
-    SendMessage(::messages::SignedMessage),
-    //          ~~|~~~~~~~~~~
-    //            | a fully signed message with a given claimant
     SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
-    SendConfirmationHello(::crust::Connection, ::types::Address),
-    RequestNetworkName(::authority::Authority, ::messages::Content),
     ClientSendContent(::authority::Authority, ::messages::Content),
     //          ~~|~~~~~~  ~~|~~~~
     //            |          | the bare content for a message to be formed
     //            | the destination authority
     // RoutingNode will form the RoutingMessage and sign it as its own identity
-    Churn(::direct_messages::Churn, Vec<::crust::Connection>, ::NameType),
-    SetCacheOptions(::types::CacheOptions),
-    DropConnections(Vec<::crust::Connection>),
-    MatchConnection(Option<(::routing_core::ExpectedConnection, Option<::crust::Connection>)>,
-                    Option<(::crust::Connection, Option<::direct_messages::Hello>)>),
-    Rebootstrap,
+    SetDataCacheOptions(::data_cache_options::DataCacheOptions),
     Terminate,
 }

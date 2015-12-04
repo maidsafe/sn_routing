@@ -27,7 +27,6 @@ pub struct Node {
 }
 
 impl Node {
-
     /// Construct a new node.
     pub fn new() -> Node {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
@@ -48,48 +47,56 @@ impl Node {
         while let Ok(event) = self.receiver.recv() {
             debug!("Node: Received event {:?}", event);
             match event {
-                ::event::Event::Request{ request, our_authority, from_authority, response_token } =>
-                    self.handle_request(request, our_authority, from_authority, response_token),
+                ::event::Event::Request{ request, our_authority, from_authority, signed_request } =>
+                    self.handle_request(request, our_authority, from_authority, signed_request),
                 ::event::Event::Response{ response, our_authority, from_authority } => {
                     debug!("Received response event");
                     self.handle_response(response, our_authority, from_authority)
-                },
+                }
                 ::event::Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
                     debug!("Received refresh event");
-                    if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
-                        type_tag, our_authority); continue; };
+                    if type_tag != 1u64 {
+                        error!("Received refresh for tag {:?} from {:?}",
+                               type_tag,
+                               our_authority);
+                        continue;
+                    };
                     self.handle_refresh(our_authority, vec_of_bytes);
-                },
+                }
                 ::event::Event::DoRefresh(type_tag, our_authority, cause) => {
                     debug!("Received do refresh event");
-                    if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
-                        type_tag, our_authority); continue; };
+                    if type_tag != 1u64 {
+                        error!("Received DoRefresh for tag {:?} from {:?}",
+                               type_tag,
+                               our_authority);
+                        continue;
+                    };
                     self.handle_do_refresh(our_authority, cause);
-                },
-                ::event::Event::Churn(close_group, cause) => {
+                }
+                ::event::Event::Churn(close_group) => {
                     debug!("Received churn event");
-                    self.handle_churn(close_group, cause)
-                },
+                    self.handle_churn(close_group)
+                }
                 ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
                     debug!("Received connected event");
                     self.connected = true;
-                },
+                }
                 ::event::Event::Disconnected => debug!("Received disconnected event"),
                 ::event::Event::FailedRequest{ request, our_authority, location, interface_error } => {
                     debug!("Received failed request event");
                     self.handle_failed_request(request, our_authority, location, interface_error)
-                },
+                }
                 ::event::Event::FailedResponse{ response, our_authority, location, interface_error } => {
                     debug!("Received failed response event");
                     self.handle_failed_response(response, our_authority, location, interface_error)
-                },
+                }
                 ::event::Event::Terminated => {
                     debug!("Received terminate event");
                     self.stop();
-                    break
-                },
-            };
+                    break;
+                }
+            }
         }
     }
 
@@ -104,55 +111,66 @@ impl Node {
         self.routing.stop();
     }
 
-    fn handle_request(&mut self, request: ::ExternalRequest,
-                                 our_authority: ::authority::Authority,
-                                 from_authority: ::authority::Authority,
-                                 response_token: Option<::SignedToken>) {
+    fn handle_request(&mut self,
+                      request: ::ExternalRequest,
+                      our_authority: ::authority::Authority,
+                      from_authority: ::authority::Authority,
+                      signed_request: Option<::SignedRequest>) {
         match request {
             ::ExternalRequest::Get(data_request, _) => {
-                self.handle_get_request(data_request, our_authority, from_authority, response_token);
-            },
+                self.handle_get_request(data_request,
+                                        our_authority,
+                                        from_authority,
+                                        signed_request);
+            }
             ::ExternalRequest::Put(data) => {
-                self.handle_put_request(data, our_authority, from_authority, response_token);
-            },
+                self.handle_put_request(data, our_authority, from_authority, signed_request);
+            }
             ::ExternalRequest::Post(_) => {
                 debug!("Node: Post unimplemented.");
-            },
+            }
             ::ExternalRequest::Delete(_) => {
                 debug!("Node: Delete unimplemented.");
-            },
+            }
         }
     }
 
-    fn handle_get_request(&mut self, data_request: ::data::DataRequest,
-                                     our_authority: ::authority::Authority,
-                                     from_authority: ::authority::Authority,
-                                     response_token: Option<::SignedToken>) {
+    fn handle_get_request(&mut self,
+                          data_request: ::data::DataRequest,
+                          our_authority: ::authority::Authority,
+                          from_authority: ::authority::Authority,
+                          signed_request: Option<::SignedRequest>) {
         let data = match self.db.get(&data_request.name()) {
             Some(data) => data.clone(),
             None => {
                 debug!("GetDataRequest failed for {:?}.", data_request.name());
-                return
+                return;
             }
         };
 
-        self.routing.get_response(our_authority, from_authority, data, data_request, response_token);
+        self.routing.get_response(our_authority,
+                                  from_authority,
+                                  data,
+                                  data_request,
+                                  signed_request);
     }
 
-    fn handle_put_request(&mut self, data: ::data::Data,
-                                     our_authority: ::authority::Authority,
-                                     _from_authority: ::authority::Authority,
-                                     _response_token: Option<::SignedToken>) {
+    fn handle_put_request(&mut self,
+                          data: ::data::Data,
+                          our_authority: ::authority::Authority,
+                          _from_authority: ::authority::Authority,
+                          _response_token: Option<::SignedRequest>) {
         match our_authority {
             ::authority::Authority::NaeManager(_) => {
                 debug!("Storing: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
-            },
+            }
             ::authority::Authority::ClientManager(_) => {
                 debug!("Sending: key {:?}, value {:?}", data.name(), data);
-                self.routing.put_request(
-                    our_authority, ::authority::Authority::NaeManager(data.name()), data); 
-            },
+                self.routing.put_request(our_authority,
+                                         ::authority::Authority::NaeManager(data.name()),
+                                         data);
+            }
             _ => {
                 debug!("Node: Unexpected our_authority ({:?})", our_authority);
                 assert!(false);
@@ -160,12 +178,13 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::NameType>, cause: ::NameType) {
+    fn handle_churn(&mut self, our_close_group: Vec<::NameType>) {
         let mut exit = false;
         if our_close_group.len() < ::types::GROUP_SIZE {
             if self.connected {
                 debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                    our_close_group.len(), ::types::GROUP_SIZE);
+                       our_close_group.len(),
+                       ::types::GROUP_SIZE);
                 exit = true;
             } else {
                 debug!("Ignoring churn as we are not yet connected.");
@@ -173,72 +192,85 @@ impl Node {
             }
         }
 
+        // FIXME Cause needs to get removed from refresh as well
+        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // just so that interface requirements are met
+        let cause = ::rand::random::<::NameType>();
+
         debug!("Handle churn for close group size {:?}", our_close_group.len());
 
-        for (client_name, stored) in self.client_accounts.iter() {
+        for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
-            self.routing.refresh_request(1u64,
-                ::authority::Authority::ClientManager(client_name.clone()),
-                ::utils::encode(&stored).unwrap(), cause.clone());
+            self.routing
+                .refresh_request(1u64,
+                                 ::authority::Authority::ClientManager(client_name.clone()),
+                                 unwrap_result!(::utils::encode(&stored)),
+                                 cause);
         }
-        if exit { self.routing.stop(); };
+        if exit {
+            self.routing.stop();
+        }
     }
 
-    fn handle_refresh(&mut self, our_authority: ::authority::Authority, vec_of_bytes: Vec<Vec<u8>>) {
-        let mut records : Vec<u64> = Vec::new();
+    fn handle_refresh(&mut self,
+            our_authority: ::authority::Authority,
+            vec_of_bytes: Vec<Vec<u8>>) {
+        let mut records: Vec<u64> = Vec::new();
         let mut fail_parsing_count = 0usize;
         for bytes in vec_of_bytes {
             match ::utils::decode(&bytes) {
                 Ok(record) => records.push(record),
-                Err(_) => fail_parsing_count += 1usize,
-            };
+                    Err(_) => fail_parsing_count += 1usize,
+            }
         }
         let median = median(records.clone());
-        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
-            records, fail_parsing_count);
-        match our_authority {
-             ::authority::Authority::ClientManager(client_name) => {
-                 let _ = self.client_accounts.insert(client_name, median);
-             },
-             _ => {},
-        };
+        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
+                our_authority,
+                median,
+                records,
+                fail_parsing_count);
+        if let ::authority::Authority::ClientManager(client_name) = our_authority {
+            let _ = self.client_accounts.insert(client_name, median);
+        }
     }
 
     fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::NameType) {
-        match our_authority {
-            ::authority::Authority::ClientManager(client_name) => {
-                match self.client_accounts.get(&client_name) {
-                    Some(stored) => {
-                        debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-                            client_name, stored, cause);
-                        self.routing.refresh_request(1u64,
+        if let ::authority::Authority::ClientManager(client_name) = our_authority {
+            match self.client_accounts.get(&client_name) {
+                Some(stored) => {
+                    debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",
+                            client_name,
+                            stored,
+                            cause);
+                    self.routing.refresh_request(1u64,
                             ::authority::Authority::ClientManager(client_name.clone()),
-                            ::utils::encode(&stored).unwrap(), cause.clone());
-                    },
-                    None => {},
-                };
-            },
-            _ => {},
-        };
+                            unwrap_result!(::utils::encode(&stored)), cause.clone());
+                }
+                None => {}
+            };
+        }
     }
 
-    fn handle_response(&mut self, _response: ::ExternalResponse,
-                                  _our_authority: ::authority::Authority,
-                                  _from_authority: ::authority::Authority,) {
+    fn handle_response(&mut self,
+                       _response: ::ExternalResponse,
+                       _our_authority: ::authority::Authority,
+                       _from_authority: ::authority::Authority) {
         unimplemented!();
     }
 
-    fn handle_failed_request(&mut self, _request: ::ExternalRequest,
-                                        _our_authority: Option<::authority::Authority>,
-                                        _location: ::authority::Authority,
-                                        _interface_error: ::error::InterfaceError) {
+    fn handle_failed_request(&mut self,
+                             _request: ::ExternalRequest,
+                             _our_authority: Option<::authority::Authority>,
+                             _location: ::authority::Authority,
+                             _interface_error: ::error::InterfaceError) {
         unimplemented!();
     }
 
-    fn handle_failed_response(&mut self, _response: ::ExternalResponse,
-                                         _our_authority: Option<::authority::Authority>,
-                                         _location: ::authority::Authority,
-                                         _interface_error: ::error::InterfaceError) {
+    fn handle_failed_response(&mut self,
+                              _response: ::ExternalResponse,
+                              _our_authority: Option<::authority::Authority>,
+                              _location: ::authority::Authority,
+                              _interface_error: ::error::InterfaceError) {
         unimplemented!();
     }
 }

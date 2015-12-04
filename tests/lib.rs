@@ -32,19 +32,21 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate routing;
 extern crate sodiumoxide;
 
 use std::error::Error;
 
 fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
-    env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    ::maidsafe_utilities::log::init(false);
     let mut processes = Vec::new();
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
             exe_path.pop();
-            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("node")
+            std::path::Path::new("./target").join(unwrap_option!(exe_path.iter().last(), ""))
+                                            .join("node")
         }
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
@@ -101,7 +103,7 @@ mod test {
         let key = ::std::string::String::from("key");
         let value = ::std::string::String::from("value");
         let name = super::calculate_key_name(&key.clone());
-        let data = ::routing::utils::encode(&(key, value)).unwrap();
+        let data = unwrap_result!(::routing::utils::encode(&(key, value)));
         let data = ::routing::data::Data::PlainData(
             ::routing::plain_data::PlainData::new(name.clone(), data));
 

@@ -23,7 +23,7 @@ use std::fmt;
 use rand;
 
 /// Constant byte length of NameType.
-pub const NAME_TYPE_LEN : usize = 64;
+pub const NAME_TYPE_LEN: usize = 64;
 
 /// Returns true if both slices are equal in length and have equal contents.
 pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
@@ -32,19 +32,18 @@ pub fn slice_equal<T: PartialEq>(lhs: &[T], rhs: &[T]) -> bool {
 
 /// Errors that can occur when decoding a `NameType` from a string.
 pub enum NameTypeFromHexError {
-    /// The given invalid hex character occured at the given position.
+    /// The given invalid hex character occurred at the given position.
     InvalidCharacter(char, usize),
     /// The hex string did not encode `NAME_TYPE_LEN` bytes.
     InvalidLength,
 }
 
-/// NameType can be created using the new function by passing ID as it’s parameter.
+/// NameType can be created using the new function by passing ID as its parameter.
 #[derive(Eq, Copy)]
 pub struct NameType(pub [u8; NAME_TYPE_LEN]);
 
 #[allow(unused)]
 impl NameType {
-
     /// Construct a NameType from a NAME_TYPE_LEN byte array.
     pub fn new(id: [u8; NAME_TYPE_LEN]) -> NameType {
         NameType(id)
@@ -60,14 +59,34 @@ impl NameType {
         self.0.to_hex()
     }
 
+    /// This is equivalent to the common leading bits of `self.id.0` and `name` where "leading
+    /// bits" means the most significant bits.
+    pub fn bucket_distance(&self, name: &NameType) -> usize {
+        for byte_index in 0..::NAME_TYPE_LEN {
+            if self.0[byte_index] != name.0[byte_index] {
+                return (byte_index * 8) + match self.0[byte_index] ^ name.0[byte_index] {
+                    1 => 7,
+                    2 | 3 => 6,
+                    4...7 => 5,
+                    8...15 => 4,
+                    16...31 => 3,
+                    32...63 => 2,
+                    64...127 => 1,
+                    128...255 => 0,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        ::NAME_TYPE_LEN * 8
+    }
+
     /// Hex-decode a `NameType` from a `&str`.
     pub fn from_hex(s: &str) -> Result<NameType, NameTypeFromHexError> {
         let data = match s.from_hex() {
-            Ok(v)   => v,
-            Err(FromHexError::InvalidHexCharacter(c, p))
-                => return Err(NameTypeFromHexError::InvalidCharacter(c, p)),
-            Err(FromHexError::InvalidHexLength)
-                => return Err(NameTypeFromHexError::InvalidLength),
+            Ok(v) => v,
+            Err(FromHexError::InvalidHexCharacter(c, p)) =>
+                return Err(NameTypeFromHexError::InvalidCharacter(c, p)),
+            Err(FromHexError::InvalidHexLength) => return Err(NameTypeFromHexError::InvalidLength),
         };
         if data.len() != NAME_TYPE_LEN {
             return Err(NameTypeFromHexError::InvalidLength);
@@ -78,20 +97,15 @@ impl NameType {
     // Private function exposed in fmt Debug {:?} and Display {} traits.
     fn get_debug_id(&self) -> String {
         format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
-              self.0[0],
-              self.0[1],
-              self.0[2],
-              self.0[NAME_TYPE_LEN-3],
-              self.0[NAME_TYPE_LEN-2],
-              self.0[NAME_TYPE_LEN-1])
+                self.0[0],
+                self.0[1],
+                self.0[2],
+                self.0[NAME_TYPE_LEN - 3],
+                self.0[NAME_TYPE_LEN - 2],
+                self.0[NAME_TYPE_LEN - 1])
     }
 }
 
-impl ::utilities::Identifiable for NameType {
-    fn valid_public_id(&self, public_id: &::public_id::PublicId) -> bool {
-        *self == public_id.name()
-    }
-}
 
 impl fmt::Debug for NameType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -111,6 +125,7 @@ impl PartialEq for NameType {
     }
 }
 
+// TODO - document this if required to be public, else move to test mod
 impl rand::Rand for NameType {
     fn rand<R: rand::Rng>(rng: &mut R) -> NameType {
         let mut ret = [0u8; NAME_TYPE_LEN];
@@ -130,7 +145,7 @@ pub fn closer_to_target(lhs: &NameType, rhs: &NameType, target: &NameType) -> bo
         let res_1 = rhs.0[i] ^ target.0[i];
 
         if res_0 != res_1 {
-            return res_0 < res_1
+            return res_0 < res_1;
         }
     }
     false
@@ -145,7 +160,7 @@ pub fn closer_to_target_or_equal(lhs: &NameType, rhs: &NameType, target: &NameTy
         let res_1 = rhs.0[i] ^ target.0[i];
 
         if res_0 != res_1 {
-            return res_0 < res_1
+            return res_0 < res_1;
         }
     }
     true
@@ -234,32 +249,31 @@ impl ::std::ops::Index<::std::ops::RangeFull> for NameType {
 impl Encodable for NameType {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
         encoder.emit_seq(NAME_TYPE_LEN, |encoder| {
-                for (i, e) in self[..].iter().enumerate() {
-                    try!(encoder.emit_seq_elt(i, |encoder| e.encode(encoder)))
-                }
-                Ok(())
-            })
+            for (i, e) in self[..].iter().enumerate() {
+                try!(encoder.emit_seq_elt(i, |encoder| e.encode(encoder)))
+            }
+            Ok(())
+        })
     }
 }
 
 impl Decodable for NameType {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<NameType, D::Error> {
         decoder.read_seq(|decoder, len| {
-                if len != NAME_TYPE_LEN {
-                    return Err(decoder.error(
-                        &format!("Expecting array of length: {}, but found {}",
-                                 NAME_TYPE_LEN, len)));
+            if len != NAME_TYPE_LEN {
+                return Err(decoder.error(&format!("Expecting array of length: {}, but found {}",
+                                                  NAME_TYPE_LEN,
+                                                  len)));
+            }
+            let mut res = NameType([0; NAME_TYPE_LEN]);
+            {
+                let NameType(ref mut arr) = res;
+                for (i, val) in arr.iter_mut().enumerate() {
+                    *val = try!(decoder.read_seq_elt(i, |decoder| Decodable::decode(decoder)));
                 }
-                let mut res = NameType([0; NAME_TYPE_LEN]);
-                {
-                    let NameType(ref mut arr) = res;
-                    for (i, val) in arr.iter_mut().enumerate() {
-                        *val = try!(decoder.read_seq_elt(i,
-                            |decoder| Decodable::decode(decoder)));
-                    }
-                }
-                Ok(res)
-            })
+            }
+            Ok(res)
+        })
     }
 }
 
@@ -267,17 +281,16 @@ impl Decodable for NameType {
 mod test {
     use cbor;
     use super::*;
-    use id::Id;
     use rand;
 
     #[test]
     fn serialisation_name_type() {
         let obj_before: NameType = rand::random();
         let mut e = cbor::Encoder::from_memory();
-        e.encode(&[&obj_before]).unwrap();
+        unwrap_result!(e.encode(&[&obj_before]));
 
         let mut d = cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: NameType = d.decode().next().unwrap().unwrap();
+        let obj_after: NameType = unwrap_result!(unwrap_option!(d.decode().next(), ""));
         assert_eq!(obj_before, obj_after);
     }
 
@@ -302,32 +315,17 @@ mod test {
     }
 
     #[test]
-    fn format_id_nametype() {
-        // test for Ids
-        for _ in 0..5 {
-            let my_id = Id::new();
-            let my_name = my_id.name();
-            let debug_id = my_name.get_debug_id();
-            let full_id = my_name.as_hex();
-            assert_eq!(debug_id.len(), 14);
-            assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
-            assert_eq!(&debug_id[0..6], &full_id[0..6]);
-            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
-            assert_eq!(&debug_id[6..8], "..");
-        }
-    }
-
-    #[test]
     fn format_random_nametype() {
         // test for Random NameType
         for _ in 0..5 {
-            let my_name : NameType = rand::random();
+            let my_name: NameType = rand::random();
             let debug_id = my_name.get_debug_id();
             let full_id = my_name.as_hex();
             assert_eq!(debug_id.len(), 14);
             assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
             assert_eq!(&debug_id[0..6], &full_id[0..6]);
-            assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+            assert_eq!(&debug_id[8..14],
+                       &full_id[2 * NAME_TYPE_LEN - 6..2 * NAME_TYPE_LEN]);
             assert_eq!(&debug_id[6..8], "..");
         }
     }
@@ -342,18 +340,8 @@ mod test {
         assert_eq!(debug_id.len(), 14);
         assert_eq!(full_id.len(), 2 * NAME_TYPE_LEN);
         assert_eq!(&debug_id[0..6], &full_id[0..6]);
-        assert_eq!(&debug_id[8..14], &full_id[2*NAME_TYPE_LEN-6..2*NAME_TYPE_LEN]);
+        assert_eq!(&debug_id[8..14],
+                   &full_id[2 * NAME_TYPE_LEN - 6..2 * NAME_TYPE_LEN]);
         assert_eq!(&debug_id[6..8], "..");
     }
-
-    //TODO(Ben: resolve from_data)
-    // #[test]
-    // fn name_from_data() {
-    //   use rustc_serialize::hex::ToHex;
-    //   let data = "this is a known string".to_string().into_bytes();
-    //   let expected_name = "8758b09d420bdb901d68fdd6888b38ce9ede06aad7f\
-    //                        e1e0ea81feffc76260554b9d46fb6ea3b169ff8bb02\
-    //                        ef14a03a122da52f3063bcb1bfb22cffc614def522".to_string();
-    //   assert_eq!(&expected_name, &NameType::from_data(&data).0.to_hex());
-    // }
 }

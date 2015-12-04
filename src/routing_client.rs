@@ -18,9 +18,8 @@
 
 use sodiumoxide;
 use std::sync::mpsc;
-use std::thread::spawn;
 
-use id::Id;
+use id::FullId;
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
@@ -34,10 +33,10 @@ type RoutingResult = Result<(), RoutingError>;
 /// Routing provides an actionable interface to RoutingNode.  On constructing a new Routing object a
 /// RoutingNode will also be started. Routing objects are clonable for multithreading, or a Routing
 /// object can be cloned with a new set of keys while preserving a single RoutingNode.
-#[derive(Clone)]
 pub struct RoutingClient {
-    action_sender: mpsc::Sender<Action>,
+    action_sender: ::types::RoutingActionSender,
     get_counter: u8,
+    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
 impl RoutingClient {
@@ -46,22 +45,17 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> RoutingClient {
+    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<FullId>) -> RoutingClient {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-        let (action_sender, action_receiver) = mpsc::channel::<Action>();
-
         // start the handler for routing with a restriction to become a full node
-        let mut routing_node =
-            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, true, keys);
+        let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender, true, keys));
 
-        let _ = spawn(move || {
-            debug!("Started routing client run().");
-            routing_node.run();
-            debug!("Routing client node terminated running.");
-        });
-
-        RoutingClient { action_sender: action_sender, get_counter: 0u8 }
+        RoutingClient {
+            action_sender: action_sender,
+            get_counter: 0u8,
+            _raii_joiner: raii_joiner,
+        }
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
@@ -95,9 +89,19 @@ impl RoutingClient {
                 Content::ExternalRequest(ExternalRequest::Delete(data))));
     }
 
+    // TODO(Spandan) Should be removed as Routing is now made to implement drop
+    // trait and hence is RAII friendly - safe_core should be modified accordingly
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
     pub fn stop(&mut self) {
         let _ = self.action_sender.send(Action::Terminate);
+    }
+}
+
+impl Drop for RoutingClient {
+    fn drop(&mut self) {
+        if let Err(err) = self.action_sender.send(Action::Terminate) {
+            error!("Error {:?} sending event to RoutingNode", err);
+        }
     }
 }

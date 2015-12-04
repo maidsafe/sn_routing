@@ -16,40 +16,34 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate time;
-
 /// Network Client.
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
-    id: ::id::Id,
+    full_id: ::id::FullId,
 }
 
 impl Client {
-
     /// Construct new Client.
     pub fn new() -> Client {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
-        let id = ::id::Id::with_keys(sign_keys.clone(), encrypt_keys.clone());
-        let public_id = ::public_id::PublicId::new(&id);
-        let routing_client = ::routing_client::RoutingClient::new(sender, Some(id));
-
-        debug!("Client name {:?}", public_id.clone());
+        let full_id = ::id::FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        let routing_client = ::routing_client::RoutingClient::new(sender, Some(full_id));
 
         Client {
             routing_client: routing_client,
             receiver: receiver,
-            id: ::id::Id::with_keys(sign_keys, encrypt_keys),
+            full_id: ::id::FullId::with_keys(encrypt_keys, sign_keys),
         }
     }
 
     /// Get data from the network.
     pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
         debug!("Get request from Client for {:?}", request);
-        self.routing_client.get_request(
-            ::authority::Authority::NaeManager(request.name()), request.clone());
+        self.routing_client.get_request(::authority::Authority::NaeManager(request.name()),
+                                        request.clone());
 
         // Block until the data arrives.
         let timeout = ::time::Duration::milliseconds(10000);
@@ -57,20 +51,17 @@ impl Client {
         loop {
             while let Ok(event) = self.receiver.try_recv() {
                 debug!("Client received routing event: {:?}", event);
-                match event {
-                    ::event::Event::Response{ response, our_authority: _, from_authority : _} => {
-                        match response {
-                            ::messages::ExternalResponse::Get(data, _, _) => {
-                                debug!("Client received data {:?} for get request.", data);
-                                debug!("Get took {:?} to arrive.",
-                                        ::time::SteadyTime::now() - time);
-                                return Some(data);
-                            },
-                            _ => debug!("Received unexpected external response {:?},", response),
-                        };
-                    },
-                    _ => {},
-                };
+                if let ::event::Event::Response{ response, our_authority: _, from_authority : _} = event {
+                    match response {
+                        ::messages::ExternalResponse::Get(data, _, _) => {
+                            debug!("Client received data {:?} for get request.", data);
+                            debug!("Get took {:?} to arrive.",
+                                    ::time::SteadyTime::now() - time);
+                            return Some(data);
+                        }
+                        _ => debug!("Received unexpected external response {:?},", response),
+                    };
+                }
 
                 break;
             }
@@ -87,7 +78,7 @@ impl Client {
     /// Put data onto the network.
     pub fn put(&self, data: ::data::Data) {
         debug!("Put request from Client for {:?}", data);
-        self.routing_client.put_request(::authority::Authority::ClientManager(self.name()), data);
+        self.routing_client.put_request(::authority::Authority::ClientManager(*self.name()), data);
     }
 
     // /// Post data onto the network.
@@ -111,7 +102,7 @@ impl Client {
     // }
 
     /// Return network name.
-    pub fn name(&self) -> ::NameType {
-        self.id.name()
+    pub fn name(&self) -> &::NameType {
+        self.full_id.public_id().name()
     }
 }

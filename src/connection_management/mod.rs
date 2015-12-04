@@ -18,4 +18,4 @@
 /// HolePunchingState.
 mod hole_punching_state;
 
-pub use ::connection_management::hole_punching_state::HolePunchingState;
+pub use connection_management::hole_punching_state::HolePunchingState;
