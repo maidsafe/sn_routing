@@ -72,6 +72,13 @@ impl ExternalResponse {
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalRequest {
+    GetNetworkName {
+        current_id: ::id::PublicId,
+    },
+    ExpectCloseNode {
+        expect_id: ::id::PublicId,
+    },
+    GetCloseGroup,
     Connect,
     Endpoints {
         encrypted_endpoints: Vec<u8>,
@@ -82,23 +89,23 @@ pub enum InternalRequest {
         encrypted_endpoints: Vec<u8>,
         nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
     },
-    RequestNetworkName(::id::PublicId),
-    // a client can send RequestNetworkName
-    RelocatedNetworkName(::id::PublicId, SignedRequest),
-    //               ~~|~~~~~  ~~|~~~~~~~~
-    //                 |         | SignedRequest contains Request::RequestNetworkName and needs to
-    //                 |         | be forwarded in the Request::RelocatedNetworkName;
-    //                 |         | from it the original reply to authority can be read.
-    //                 | contains the PublicId from RequestNetworkName, but mutated with
-    //                 | the network assigned name
-    /// Refresh allows a persona to republish account records (identified with type_tag:u64 and
-    /// the serialised payload:Vec<u8>).  The cause of the Refresh is the NameType of the node
-    /// that caused the churn event.
-    Refresh(u64, Vec<u8>, ::NameType),
+    Refresh {
+        type_tag: u64,
+        message: Vec<u8>,
+        cause: ::NameType,
+    },
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub enum InternalResponse {
+    GetNetworkName {
+        relocated_id: ::id::PublicId,
+        signed_request: SignedRequest,
+    },
+    GetCloseGroup {
+        close_group_ids: Vec<::id::PublicId>,
+        signed_request: SignedRequest,
+    },
     GetPublicId {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
@@ -107,13 +114,6 @@ pub enum InternalResponse {
         public_id: ::id::PublicId,
         signed_request: SignedRequest,
     },
-    // FindGroup(Vec<::public_id::PublicId>, SignedRequest),
-    // GetGroupKey(::std::collections::BTreeMap<
-    //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedRequest),
-    RelocatedNetworkName(::id::PublicId, Vec<::id::PublicId>, SignedRequest), /*               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
-                                                                                       *                 |         |              | the original Request::RequestNetworkName
-                                                                                       *                 |         | the group public keys to combine FindGroup in this response
-                                                                                       *                 | the cached PublicId in the group */
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
@@ -134,13 +134,13 @@ pub struct RoutingMessage {
 }
 
 impl RoutingMessage {
-    pub fn source(&self) -> ::authority::Authority {
-        self.from_authority.clone()
-    }
+    // pub fn source(&self) -> ::authority::Authority {
+    //     self.from_authority.clone()
+    // }
 
-    pub fn destination(&self) -> ::authority::Authority {
-        self.to_authority.clone()
-    }
+    // pub fn destination(&self) -> ::authority::Authority {
+    //     self.to_authority.clone()
+    // }
 
     pub fn client_key(&self) -> Option<::sodiumoxide::crypto::sign::PublicKey> {
         match self.from_authority {
@@ -168,10 +168,10 @@ impl RoutingMessage {
 }
 
 /// All messages sent / received are constructed as signed message.
-#[derive(PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Clone, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
     signed_routing_message: Vec<u8>,
-    public_sign_key: ::sodiumoxide::crypto::sign::PublicKey
+    public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
 }
 
 impl SignedMessage {
