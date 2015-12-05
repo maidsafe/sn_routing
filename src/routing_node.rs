@@ -340,7 +340,7 @@ impl RoutingNode {
             // the '+ 1'
             current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f64
                                                   * ::types::QUORUM_FACTOR).round() as usize,
-                                                 ::types::QUORUM_SIZE),
+                                                 ::kademlia_routing_table::QUORUM_SIZE),
         };
         // TODO impl convert trait for RoutingError
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
@@ -1624,7 +1624,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize , ::types::QUORUM_SIZE)
+        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize , ::kademlia_routing_table::QUORUM_SIZE)
     }
 
     // Returns our name and state for logging
@@ -1740,7 +1740,7 @@ impl RoutingNode {
 
         if self.routing_table.len() == 1 {
             self.state = State::Node;
-        } else if self.routing_table.len() == ::types::GROUP_SIZE {
+        } else if self.routing_table.len() == ::kademlia_routing_table::GROUP_SIZE {
             info!("{}Routing Node has connected to {} nodes", self.us(),
                   self.routing_table.len());
             if let Err(err) = self.event_sender.send(Event::Connected) {

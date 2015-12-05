@@ -37,6 +37,7 @@ extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate rand;
+extern crate kademlia_routing_table;
 
 extern crate routing;
 extern crate xor_name;
@@ -253,10 +254,10 @@ impl Node {
     fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
         // let mut exit = false;
         let exit = false;
-        if our_close_group.len() < ::routing::types::GROUP_SIZE {
+        if our_close_group.len() < ::kademlia_routing_table::GROUP_SIZE {
             if self.connected {
                 println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                    our_close_group.len(), ::routing::types::GROUP_SIZE);
+                    our_close_group.len(), ::kademlia_routing_table::GROUP_SIZE);
                 // exit = true;
             } else {
                 println!("Ignoring churn as we are not yet connected.");
