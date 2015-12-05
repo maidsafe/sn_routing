@@ -127,23 +127,23 @@ pub enum Content {
 /// the bare (unsigned) routing message
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RoutingMessage {
-    pub from_authority: ::authority::Authority,
-    pub to_authority: ::authority::Authority,
+    pub source: ::authority::Authority,
+    pub destination: ::authority::Authority,
     pub content: Content,
     pub group_keys: Option<Vec<::sodiumoxide::crypto::sign::PublicKey>>,
 }
 
 impl RoutingMessage {
     // pub fn source(&self) -> ::authority::Authority {
-    //     self.from_authority.clone()
+    //     self.source.clone()
     // }
 
     // pub fn destination(&self) -> ::authority::Authority {
-    //     self.to_authority.clone()
+    //     self.destination.clone()
     // }
 
     pub fn client_key(&self) -> Option<::sodiumoxide::crypto::sign::PublicKey> {
-        match self.from_authority {
+        match self.source {
             ::authority::Authority::ClientManager(_) => None,
             ::authority::Authority::NaeManager(_) => None,
             ::authority::Authority::NodeManager(_) => None,
@@ -157,7 +157,7 @@ impl RoutingMessage {
     }
 
     pub fn source_group(&self) -> Option<::NameType> {
-        match self.from_authority {
+        match self.source {
             ::authority::Authority::ClientManager(name) => Some(name),
             ::authority::Authority::NaeManager(name) => Some(name),
             ::authority::Authority::NodeManager(name) => Some(name),
