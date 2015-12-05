@@ -102,7 +102,7 @@ impl Client {
     // }
 
     /// Return network name.
-    pub fn name(&self) -> &::NameType {
+    pub fn name(&self) -> &::XorName {
         self.full_id.public_id().name()
     }
 }

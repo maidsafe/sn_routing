@@ -58,6 +58,7 @@ extern crate time;
 extern crate itertools;
 
 extern crate accumulator;
+extern crate xor_name;
 extern crate crust;
 extern crate lru_time_cache;
 #[macro_use]
@@ -67,7 +68,6 @@ extern crate message_filter;
 mod action;
 mod messages;
 mod direct_messages;
-mod name_type;
 mod routing_table;
 mod routing_node;
 mod refresh_accumulator;
@@ -105,8 +105,8 @@ pub mod data;
 pub mod data_cache;
 /// Data cache options, may be set at runtime
 pub mod data_cache_options;
-/// NameType is a 512bit name to address elements on the DHT network.
-pub use name_type::{NameType, closer_to_target, NAME_TYPE_LEN};
+/// XorName is a 512bit name to address elements on the DHT network.
+pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
 pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
 /// Persona types recognised by the network.

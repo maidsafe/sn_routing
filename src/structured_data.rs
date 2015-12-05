@@ -25,7 +25,7 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
-    identifier: ::NameType,
+    identifier: ::XorName,
     data: Vec<u8>,
     previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
     version: u64,
@@ -38,7 +38,7 @@ impl StructuredData {
 
     /// Constructor
     pub fn new(type_tag: u64,
-               identifier: ::NameType,
+               identifier: ::XorName,
                version: u64,
                data: Vec<u8>,
                current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
@@ -64,7 +64,7 @@ impl StructuredData {
 
     /// This is a static function required for computing a name give the tag-type and identifier to
     /// be use by GETs
-    pub fn compute_name(type_tag: u64, identifier: &::NameType) -> ::NameType {
+    pub fn compute_name(type_tag: u64, identifier: &::XorName) -> ::XorName {
         let type_tag_as_string = type_tag.to_string();
 
         let chain = identifier.0
@@ -73,7 +73,7 @@ impl StructuredData {
                               .chain(type_tag_as_string.as_bytes().iter().cloned())
                               .map(|a| a);
 
-        ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
+        ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
 
     /// replace this data item with an updated version if such exists, otherwise fail.
@@ -96,7 +96,7 @@ impl StructuredData {
     }
 
     /// Returns name and validates invariants
-    pub fn name(&self) -> ::NameType {
+    pub fn name(&self) -> ::XorName {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
@@ -196,7 +196,7 @@ impl StructuredData {
     }
 
     /// Get the identifier
-    pub fn get_identifier(&self) -> &::NameType {
+    pub fn get_identifier(&self) -> &::XorName {
         &self.identifier
     }
 
@@ -394,7 +394,7 @@ mod test {
         let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
         let new_owner = ::sodiumoxide::crypto::sign::gen_keypair();
 
-        let identifier: ::NameType = rand::random();
+        let identifier: ::XorName = rand::random();
 
         // Owned by keys1 keys2 and keys3
         match super::StructuredData::new(0,

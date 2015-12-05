@@ -17,7 +17,7 @@
 
 use rand;
 
-fn generate_random_authority(name: ::NameType,
+fn generate_random_authority(name: ::XorName,
                              key: &::sodiumoxide::crypto::sign::PublicKey)
                              -> ::authority::Authority {
     use rand::distributions::IndependentSample;

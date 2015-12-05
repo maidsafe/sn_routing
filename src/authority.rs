@@ -17,7 +17,7 @@
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use routing_table::RoutingTable;
-use NameType;
+use XorName;
 use sodiumoxide::crypto;
 use std::fmt::{Debug, Formatter, Error};
 
@@ -28,15 +28,15 @@ use types::Address;
 /// Authority.
 pub enum Authority {
     /// Signed by a client and corresponding ClientName is in our range.
-    ClientManager(NameType),
+    ClientManager(XorName),
     /// We are responsible for this element and the destination is the element.
-    NaeManager(NameType),
+    NaeManager(XorName),
     /// The destination is not the element, and we are responsible for it.
-    NodeManager(NameType),
+    NodeManager(XorName),
     /// Our name is the destination and the message came from within our range.
-    ManagedNode(NameType),
+    ManagedNode(XorName),
     /// Client can specify a location where a relay will be found.
-    Client(NameType, crypto::sign::PublicKey),
+    Client(XorName, crypto::sign::PublicKey),
 }
 
 impl Authority {
@@ -52,7 +52,7 @@ impl Authority {
     }
 
     /// Return the named part of an authority.
-    pub fn get_location(&self) -> &NameType {
+    pub fn get_location(&self) -> &XorName {
         match *self {
             Authority::ClientManager(ref loc) => loc,
             Authority::NaeManager(ref loc) => loc,
@@ -91,7 +91,7 @@ impl Debug for Authority {
             }
             Authority::Client(ref relay, ref public_key) => {
                 formatter.write_str(&format!("Client(relay:{:?}, public_key:{:?})",
-                relay, NameType::new(crypto::hash::sha512::hash(&public_key[..]).0)))
+                relay, XorName::new(crypto::hash::sha512::hash(&public_key[..]).0)))
             }
         }
     }
@@ -179,7 +179,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable<::id
 // or outside the close group of routing table.
 fn determine_authority(message: &RoutingMessage,
                        routing_table: &RoutingTable<::id::PublicId, ::crust::Connection>,
-                       element: &NameType)
+                       element: &XorName)
                        -> Option<Authority> {
     // if signed by a client in our range and destination is not the element
     // this explicitly excludes GetData from ever being passed to ClientManager
@@ -215,7 +215,7 @@ mod test {
     use messages::{RoutingMessage, Content, ExternalRequest};
     use id::FullId;
     use test_utils::{xor, test};
-    use name_type::{closer_to_target, NameType};
+    use xor_name::{closer_to_target, XorName};
     use authority::Authority;
     use sodiumoxide::crypto;
     use data::Data;
@@ -224,22 +224,22 @@ mod test {
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestNodeInfo {
-       name : ::name_type::NameType,
+       name : ::xor_name::XorName,
     }
 
     impl TestNodeInfo {
         fn new() -> TestNodeInfo {
             TestNodeInfo {
-            name: ::rand::random::<::name_type::NameType>()
+            name: ::rand::random::<::xor_name::XorName>()
             }
         }
-        fn set_name(&mut self, name: ::name_type::NameType) {
+        fn set_name(&mut self, name: ::xor_name::XorName) {
             self.name = name;
         }
     }
 
     impl ::routing_table::HasName for TestNodeInfo {
-        fn name(&self) ->&::name_type::NameType {
+        fn name(&self) ->&::xor_name::XorName {
             &self.name
         }
     }
@@ -267,7 +267,7 @@ mod test {
         count = 0;
         loop {
             let client_name =
-                ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
+                ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
             if routing_table.is_close(&client_name) {
                 break;
             } else {
@@ -285,7 +285,7 @@ mod test {
         let closest_node_in_our_close_group = unwrap_option!(our_close_group.first(), "").clone();
         let second_closest_node_in_our_close_group: NodeInfo<TestNodeInfo, u64> = our_close_group[1].clone();
 
-        let nae_or_client_in_our_close_group: NameType =
+        let nae_or_client_in_our_close_group: XorName =
             xor(&xor(&closest_node_in_our_close_group.name(), &our_name),
                 &second_closest_node_in_our_close_group.name());
         // assert nae is indeed within close group
@@ -297,8 +297,8 @@ mod test {
             assert!(*close_node.name() != nae_or_client_in_our_close_group);
         }
         // invert to get a far away address outside of the close group
-        let name_outside_close_group: NameType = xor(&furthest_node_close_group.name(),
-                                                     &NameType::new([255u8; 64]));
+        let name_outside_close_group: XorName = xor(&furthest_node_close_group.name(),
+                                                     &XorName::new([255u8; 64]));
         // note: if the close group spans close to the whole address space,
         // this construction actually inverts the address into the close group range;
         // for group_size 32; 64 node in the network this intermittently fails at 41%
@@ -315,7 +315,7 @@ mod test {
 
         // --- test determine_authority specific ----------------------------------------------------------------
         // let to_authority_name =
-        //     ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
+        //     ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
         // let client_manager_message = RoutingMessage {
         //     from_authority: Authority::Client(rand::random(), client_public_key.clone()),
         //     to_authority: Authority::ClientManager(to_authority_name),

@@ -92,7 +92,7 @@ pub enum InternalRequest {
     Refresh {
         type_tag: u64,
         message: Vec<u8>,
-        cause: ::NameType,
+        cause: ::XorName,
     },
 }
 
@@ -152,11 +152,11 @@ impl RoutingMessage {
         }
     }
 
-    pub fn client_key_as_name(&self) -> Option<::NameType> {
-        self.client_key().map(|n| ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&n[..]).0))
+    pub fn client_key_as_name(&self) -> Option<::XorName> {
+        self.client_key().map(|n| ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&n[..]).0))
     }
 
-    pub fn source_group(&self) -> Option<::NameType> {
+    pub fn source_group(&self) -> Option<::XorName> {
         match self.from_authority {
             ::authority::Authority::ClientManager(name) => Some(name),
             ::authority::Authority::NaeManager(name) => Some(name),

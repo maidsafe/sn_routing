@@ -19,7 +19,7 @@
 
 use lru_time_cache::LruCache;
 
-use NameType;
+use XorName;
 use data_cache_options::DataCacheOptions;
 use data::{Data, DataRequest};
 
@@ -31,7 +31,7 @@ use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse};
 /// Routing Node
 pub struct DataCache {
     cache_options: DataCacheOptions,
-    data_cache: Option<LruCache<NameType, Data>>,
+    data_cache: Option<LruCache<XorName, Data>>,
 }
 
 impl DataCache {
@@ -48,7 +48,7 @@ impl DataCache {
         if self.cache_options.caching_enabled() {
             match self.data_cache {
                 None => self.data_cache =
-                    Some(LruCache::<NameType, Data>::with_expiry_duration(
+                    Some(LruCache::<XorName, Data>::with_expiry_duration(
                             ::time::Duration::minutes(10))),
                 Some(_) => {}
             }

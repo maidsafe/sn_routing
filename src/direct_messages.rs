@@ -34,6 +34,6 @@ pub enum DirectMessage {
         signature: ::sodiumoxide::crypto::sign::Signature,
     },
     Churn {
-        close_group: Vec<::NameType>,
+        close_group: Vec<::XorName>,
     },
 }

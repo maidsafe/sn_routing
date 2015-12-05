@@ -26,7 +26,7 @@ use lru_time_cache::LruCache;
 
 use action::Action;
 use event::Event;
-use NameType;
+use XorName;
 use id::FullId;
 use id::PublicId;
 use types::Address;
@@ -71,12 +71,12 @@ pub struct RoutingNode {
     action_rx: ::std::sync::mpsc::Receiver<Action>,
     event_sender: ::std::sync::mpsc::Sender<Event>,
     signed_message_filter: ::message_filter::MessageFilter<::messages::SignedMessage>,
-    connection_filter: ::message_filter::MessageFilter<::NameType>,
-    node_id_cache: LruCache<NameType, PublicId>,
+    connection_filter: ::message_filter::MessageFilter<::XorName>,
+    node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: ::accumulator::Accumulator<RoutingMessage,
             ::sodiumoxide::crypto::sign::PublicKey>,
     refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
-    refresh_causes: ::message_filter::MessageFilter<::NameType>,
+    refresh_causes: ::message_filter::MessageFilter<::XorName>,
     // Messages which have been accumulated and then actioned
     handled_messages: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
@@ -87,7 +87,7 @@ pub struct RoutingNode {
     state: State,
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
     // our bootstrap connections
-    proxy_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
+    proxy_map: ::std::collections::HashMap<::crust::Connection, ::XorName>,
     // any clients we have proxying through us
     client_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
 }
@@ -317,7 +317,7 @@ impl RoutingNode {
         if let State::Disconnected = *self.state() {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
-            let new_name = NameType::new(crypto::hash::sha512::hash(&self.full_id.public_id().name().0).0);
+            let new_name = XorName::new(crypto::hash::sha512::hash(&self.full_id.public_id().name().0).0);
 
             // This will give me a new RT and set state to Relocated
             self.assign_network_name(new_name);
@@ -675,7 +675,7 @@ impl RoutingNode {
         debug!("{}Direct Message Received - {:?}", self.us(), direct_message);
         match direct_message {
             ::direct_messages::DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
-                if *public_id.name() == ::NameType::new(::sodiumoxide
+                if *public_id.name() == ::XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("{}Incoming Connection not validated as a proper node - dropping", self.us());
@@ -716,7 +716,7 @@ impl RoutingNode {
                     }
                 };
 
-                if *public_id.name() != ::NameType::new(::sodiumoxide
+                if *public_id.name() != ::XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("{}Incoming Connection not validated as a proper client - dropping", self.us());
@@ -794,7 +794,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_churn(&mut self, close_group: &[::NameType]) {
+    fn handle_churn(&mut self, close_group: &[::XorName]) {
         debug!("{}CHURN: received {} names", self.us(), close_group.len());
         for close_node in close_group {
             self.refresh_routing_table(close_node);
@@ -842,7 +842,7 @@ impl RoutingNode {
         match (&from_authority, &to_authority) {
             (&Authority::Client(_bootstrap_node, key), &Authority::NaeManager(name)) => {
                 let hashed_key = ::sodiumoxide::crypto::hash::sha512::hash(&key.0);
-                let close_group_to_client = NameType::new(hashed_key.0);
+                let close_group_to_client = XorName::new(hashed_key.0);
 
                 if !(self.name_in_range(&close_group_to_client) && close_group_to_client == name) {
                     // TODO(Spandan) Create a better error
@@ -854,7 +854,7 @@ impl RoutingNode {
                         .our_close_group()
                         .iter()
                         .map(|node_info| node_info.public_id.name().clone())
-                        .collect::<Vec<NameType>>();
+                        .collect::<Vec<XorName>>();
                 close_group.push(*self.full_id.public_id().name());
 
                 let relocated_name = try!(utils::calculate_relocated_name(close_group, &their_public_id.name()));
@@ -1161,7 +1161,7 @@ impl RoutingNode {
     /// Scan all passing messages for the existence of nodes in the address space.  If a node is
     /// detected with a name that would improve our routing table, then try to connect.  We ignore
     /// all re-occurrences of this name for one second if we make the attempt to connect.
-    fn refresh_routing_table(&mut self, from_node: &NameType) {
+    fn refresh_routing_table(&mut self, from_node: &XorName) {
         if !self.connection_filter.check(from_node) {
             if self.routing_table.want_to_add(from_node) {
                 debug!("{}Refresh routing table for peer {:?}", self.us(), from_node);
@@ -1175,7 +1175,7 @@ impl RoutingNode {
         }
     }
 
-    fn send_connect_request(&mut self, peer_name: &NameType) -> RoutingResult {
+    fn send_connect_request(&mut self, peer_name: &XorName) -> RoutingResult {
         let request = ::messages::InternalRequest::Connect;
 
         let routing_message = ::messages::RoutingMessage {
@@ -1192,7 +1192,7 @@ impl RoutingNode {
 
     fn handle_connect_request(&mut self,
                               opt_token: Option<::messages::SignedRequest>,
-                              name: ::NameType) -> RoutingResult {
+                              name: ::XorName) -> RoutingResult {
         trace!("{}Handle ConnectRequest", self.us());
 
         if opt_token.is_none() {
@@ -1233,8 +1233,8 @@ impl RoutingNode {
 
     fn send_public_id_for_close_node(&mut self,
                                      response: ::messages::InternalResponse,
-                                     from_name: ::NameType,
-                                     to_name: ::NameType) -> RoutingResult {
+                                     from_name: ::XorName,
+                                     to_name: ::XorName) -> RoutingResult {
         let routing_message = ::messages::RoutingMessage {
             from_authority: ::authority::Authority::NodeManager(to_name),
             to_authority: ::authority::Authority::ManagedNode(from_name),
@@ -1249,8 +1249,8 @@ impl RoutingNode {
 
     fn handle_get_public_id(&mut self,
                             opt_token: Option<::messages::SignedRequest>,
-                            from_name: ::NameType,
-                            to_name: ::NameType) -> RoutingResult {
+                            from_name: ::XorName,
+                            to_name: ::XorName) -> RoutingResult {
         trace!("{}Handle get public id", self.us());
 
         let signed_request = match opt_token {
@@ -1305,8 +1305,8 @@ impl RoutingNode {
 
     fn handle_get_public_id_with_endpoints(&mut self,
                                            opt_token: Option<::messages::SignedRequest>,
-                                           from_name: ::NameType,
-                                           to_name: ::NameType) -> RoutingResult {
+                                           from_name: ::XorName,
+                                           to_name: ::XorName) -> RoutingResult {
         trace!("{}Handle get public id with endpoints", self.us());
 
         let signed_request = match opt_token {
@@ -1521,13 +1521,13 @@ impl RoutingNode {
         // Handle if we have a client connection as the destination
         if let Authority::Client(_, ref client_public_key) = destination {
             debug!("{}Looking for client target {:?}", self.us(),
-                   ::NameType::new(
+                   ::XorName::new(
                        ::sodiumoxide::crypto::hash::sha512::hash(&client_public_key[..]).0));
             if let Some(client_connection) = self.client_map.get(client_public_key) {
                 self.crust_service.send(client_connection.clone(), bytes);
             } else {
                 warn!("{}Failed to find client contact for {:?}", self.us(),
-                      ::NameType::new(
+                      ::XorName::new(
                           ::sodiumoxide::crypto::hash::sha512::hash(&client_public_key[..]).0));
             }
             return
@@ -1583,10 +1583,10 @@ impl RoutingNode {
 
     fn handle_refresh(&mut self,
                       type_tag: u64,
-                      sender: NameType,
+                      sender: XorName,
                       payload: Vec<u8>,
                       our_authority: Authority,
-                      cause: ::NameType)
+                      cause: ::XorName)
                       -> RoutingResult {
         debug_assert!(our_authority.is_group());
         let threshold = self.routing_table_quorum_size();
@@ -1652,7 +1652,7 @@ impl RoutingNode {
     /// Assigning a network received name to the core.  If a name is already assigned, the function
     /// returns false and no action is taken.  After a name is assigned, Routing connections can be
     /// accepted.
-    fn assign_network_name(&mut self, new_name: ::NameType) {
+    fn assign_network_name(&mut self, new_name: ::XorName) {
         match self.state {
             State::Disconnected | State::Client => debug!("{}Assigning name {:?}", self.us(), new_name),
             _ => unreachable!("{}This should not be called", self.us()),
@@ -1767,7 +1767,7 @@ impl RoutingNode {
             target_group.iter().flat_map(
                 |node_info| node_info.connections.iter().cloned()).collect::<Vec<_>>();
 
-        let mut close_group: Vec<::NameType> =
+        let mut close_group: Vec<::XorName> =
             target_group.iter()
             .map(|node_info| node_info.name().clone())
             .collect();
@@ -1792,7 +1792,7 @@ impl RoutingNode {
 
     /// Returns true if a name is in range for our close group.
     /// If the core is not a full node, this always returns false.
-    pub fn name_in_range(&self, name: &NameType) -> bool {
+    pub fn name_in_range(&self, name: &XorName) -> bool {
         self.routing_table.is_close(name)
     }
 
@@ -1828,7 +1828,7 @@ mod test {
     use rand::{thread_rng, Rng};
     //use std::sync::mpsc;
     //use super::RoutingNode;
-    use NameType;
+    use XorName;
     use authority::Authority;
     use data_cache_options::DataCacheOptions;
 
@@ -1856,15 +1856,15 @@ mod test {
         let response = ExternalResponse::Get(immutable_data, data_request, None);
 
         let routing_message_request = RoutingMessage {
-            from_authority: Authority::ClientManager(NameType::new([1u8; 64])),
-            to_authority: Authority::NaeManager(NameType::new(data)),
+            from_authority: Authority::ClientManager(XorName::new([1u8; 64])),
+            to_authority: Authority::NaeManager(XorName::new(data)),
             content: Content::ExternalRequest(request),
             group_keys: None,
         };
 
         let routing_message_response = RoutingMessage {
-            from_authority: Authority::NaeManager(NameType::new(data)),
-            to_authority: Authority::ClientManager(NameType::new([1u8; 64])),
+            from_authority: Authority::NaeManager(XorName::new(data)),
+            to_authority: Authority::ClientManager(XorName::new([1u8; 64])),
             content: Content::ExternalResponse(response),
             group_keys: None,
         };
