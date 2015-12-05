@@ -53,6 +53,7 @@ impl FullId {
         &self.public_id
     }
 
+
     /// Returns mutable reference to public ID.
     pub fn public_id_mut(&mut self) -> &mut ::PublicId {
         &mut self.public_id
@@ -74,7 +75,7 @@ impl FullId {
 pub struct PublicId {
     public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
     public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
-    name: ::NameType,
+    name: ::XorName,
 }
 
 impl ::std::fmt::Debug for PublicId {
@@ -83,15 +84,22 @@ impl ::std::fmt::Debug for PublicId {
     }
 }
 
+impl ::kademlia_routing_table::HasName for PublicId {
+    fn name(&self)-> &::XorName {
+        &self.name
+    }
+}
+
 impl PublicId {
+
     /// Return initial/relocated name.
-    pub fn name(&self) -> &::NameType {
+    pub fn name(&self) -> &::XorName {
         &self.name
     }
 
     /// Name field is initially same as original_name, this should be replaced by relocated name
     /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: ::NameType) {
+    pub fn set_name(&mut self, name: ::XorName) {
         self.name = name;
     }
 
@@ -110,7 +118,7 @@ impl PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: ::NameType::new(
+            name: ::XorName::new(
                       ::sodiumoxide::crypto::hash::sha512::hash(&public_sign_key[..]).0),
         }
     }

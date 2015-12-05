@@ -36,7 +36,7 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
-
+extern crate xor_name;
 extern crate routing;
 
 use std::io;
@@ -52,7 +52,7 @@ use sodiumoxide::crypto;
 use routing::routing::Routing;
 use routing::routing_client::RoutingClient;
 use routing::authority::Authority;
-use routing::NameType;
+use routing::XorName;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
@@ -92,7 +92,7 @@ struct Args {
 struct Node {
     routing  : Routing,
     receiver : Receiver<Event>,
-    db       : BTreeMap<NameType, PlainData>,
+    db       : BTreeMap<XorName, PlainData>,
 }
 
 impl Node {
@@ -205,7 +205,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, _our_close_group: Vec<::routing::NameType>) {
+    fn handle_churn(&mut self, _our_close_group: Vec<::xor_name::XorName>) {
         info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());
@@ -384,8 +384,8 @@ impl Client {
             Data::PlainData(PlainData::new(name, data)));
     }
 
-    fn calculate_key_name(key: &String) -> NameType {
-        NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+    fn calculate_key_name(key: &String) -> XorName {
+        XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }
 

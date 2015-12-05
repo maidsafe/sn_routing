@@ -157,7 +157,7 @@ impl Routing {
                            type_tag: u64,
                            our_authority: Authority,
                            content: Vec<u8>,
-                           cause: ::NameType) {
+                           cause: ::XorName) {
         if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
                    type_tag,
@@ -217,8 +217,8 @@ impl Drop for Routing {
 //         }
 //     }
 
-//     fn calculate_key_name(key: &::std::string::String) -> ::NameType {
-//         ::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+//     fn calculate_key_name(key: &::std::string::String) -> ::XorName {
+//         ::XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
 //     }
 
 //     #[test]
