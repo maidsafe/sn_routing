@@ -121,9 +121,6 @@ impl Debug for Authority {
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
 pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> Option<Authority> {
-    // Purposely listing all the cases and not using wild cards so
-    // that if a new message is added to the MessageType enum, compiler
-    // will warn us that we need to add it here.
     let element = match message.content {
         Content::ExternalRequest(ref request) => {
             match *request {
@@ -136,6 +133,10 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
         Content::InternalRequest(ref request) => {
             match *request {
                 // TODO Investigate
+                InternalRequest::GetCloseGroup => None,
+                // TODO Investigate
+                InternalRequest::ExpectCloseNode { .. } => None,
+                // TODO Investigate
                 InternalRequest::GetPublicIdWithEndpoints { .. } => None,
                 // TODO Investigate
                 InternalRequest::GetPublicId => None,
@@ -143,22 +144,19 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
                 InternalRequest::Connect => None,
                 // TODO Investigate
                 InternalRequest::Endpoints { .. } => None,
-
-                InternalRequest::RequestNetworkName(ref public_id) =>
-                    Some(public_id.name().clone()),
-                InternalRequest::RelocatedNetworkName(ref public_id, _) =>
-                    Some(public_id.name().clone()),
-                InternalRequest::Refresh(_, _, _) => {
-                    let destination = message.destination();
-                    if destination != message.source() {
-                        return None;
-                    };
-                    if destination.is_group() &&
-                        routing_table.is_close(destination.get_location()) {
-                            return Some(destination);
-                    };
+                // TODO Investigate
+                InternalRequest::GetNetworkName { .. } => None,
+                InternalRequest::Refresh { .. } => {
+                    let ref to_authority = message.to_authority;
+                    if message.from_authority != *to_authority {
+                        return None
+                    }
+                    if to_authority.is_group() &&
+                        routing_table.is_close(to_authority.get_location()) {
+                            return Some(to_authority.clone())
+                    }
                     None
-                }
+                },
             }
         }
         Content::ExternalResponse(_) => None,
@@ -188,23 +186,23 @@ fn determine_authority(message: &RoutingMessage,
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.is_close(&client_name) &&
-               *message.destination().get_location() != *element {
+               *message.to_authority.get_location() != *element {
                 return Some(Authority::ClientManager(client_name));
             }
         }
         None => {}
     };
     if routing_table.is_close(&element) &&
-       *message.destination().get_location() == *element &&
+       *message.to_authority.get_location() == *element &&
        element != routing_table.our_name() {
         return Some(Authority::NaeManager(*element));
     } else if message.source_group().is_some() &&
-       routing_table.is_close(message.destination().get_location()) &&
-       *message.destination().get_location() != *routing_table.our_name() {
-        return Some(Authority::NodeManager(message.destination().get_location().clone()));
+       routing_table.is_close(message.to_authority.get_location()) &&
+       *message.to_authority.get_location() != *routing_table.our_name() {
+        return Some(Authority::NodeManager(message.to_authority.get_location().clone()));
     } else if message.source_group()
               .map_or(false, |group| routing_table.is_close(&group)) &&
-       *message.destination().get_location() == *routing_table.our_name() {
+       *message.to_authority.get_location() == *routing_table.our_name() {
         return Some(Authority::ManagedNode(*routing_table.our_name()));
     }
     None
@@ -346,12 +344,17 @@ mod test {
         // --- test our_authority specific ----------------------------------------------------------------------
         let some_bytes = ::types::generate_random_vec_u8(20usize);
         // assert to get Refresh Authorities
+        let request = ::messages::InternalRequest::Refresh {
+            type_tag: 0,
+            message: some_bytes.clone(),
+            cause: rand::random(),
+        };
+
         let refresh_message = RoutingMessage {
             from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
-            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), rand::random())),
-            group_keys: None,
+            content        : Content::InternalRequest(request.clone()),
+            group_keys     : None,
         };
         assert_eq!(super::our_authority(&refresh_message, &routing_table),
                    Some(Authority::NaeManager(nae_or_client_in_our_close_group.clone())));
@@ -360,8 +363,7 @@ mod test {
         let refresh_message = RoutingMessage {
             from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
-            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), rand::random())),
+            content        : Content::InternalRequest(request.clone()),
             group_keys: None,
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
@@ -369,8 +371,7 @@ mod test {
         let refresh_message = RoutingMessage {
             from_authority : Authority::NaeManager(closest_node_in_our_close_group.name().clone()),
             to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
-            content        : Content::InternalRequest(::messages::InternalRequest::Refresh(0u64,
-                some_bytes.clone(), rand::random())),
+            content        : Content::InternalRequest(request),
             group_keys: None,
         };
         assert!(super::our_authority(&refresh_message, &routing_table).is_none());
