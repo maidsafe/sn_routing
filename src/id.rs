@@ -53,6 +53,7 @@ impl FullId {
         &self.public_id
     }
 
+
     /// Returns mutable reference to public ID.
     pub fn public_id_mut(&mut self) -> &mut ::PublicId {
         &mut self.public_id
@@ -83,7 +84,14 @@ impl ::std::fmt::Debug for PublicId {
     }
 }
 
+impl ::routing_table::HasName for PublicId {
+    fn name(&self)-> &::NameType {
+        &self.name
+    }
+}
+
 impl PublicId {
+
     /// Return initial/relocated name.
     pub fn name(&self) -> &::NameType {
         &self.name

@@ -120,7 +120,7 @@ impl Debug for Authority {
 
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
-pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> Option<Authority> {
+pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable<::id::PublicId, ::crust::Connection>) -> Option<Authority> {
     let element = match message.content {
         Content::ExternalRequest(ref request) => {
             match *request {
@@ -178,7 +178,7 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable) -> 
 // in particular element needs to be controllably inside
 // or outside the close group of routing table.
 fn determine_authority(message: &RoutingMessage,
-                       routing_table: &RoutingTable,
+                       routing_table: &RoutingTable<::id::PublicId, ::crust::Connection>,
                        element: &NameType)
                        -> Option<Authority> {
     // if signed by a client in our range and destination is not the element

@@ -29,14 +29,19 @@ const BUCKET_SIZE: usize = 1;
 // the table size can exceed this size if required.
 const OPTIMAL_TABLE_SIZE: usize = 64;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NodeInfo {
-    pub public_id: ::id::PublicId,
-    pub connections: Vec<::crust::Connection>,
+// required trait for the info held on a node by routing_table
+pub trait HasName {
+    fn name(&self) -> &::NameType;
 }
 
-impl NodeInfo {
-    pub fn new(public_id: ::id::PublicId, connections: Vec<::crust::Connection>) -> NodeInfo {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NodeInfo<T, U> {
+    pub public_id: T,
+    pub connections: Vec<U>,
+}
+
+impl <T: PartialEq + HasName + ::std::fmt::Debug, U : PartialEq> NodeInfo<T, U> {
+    pub fn new(public_id: T, connections: Vec<U>) -> NodeInfo<T, U> {
         NodeInfo {
             public_id: public_id,
             connections: connections,
@@ -48,16 +53,22 @@ impl NodeInfo {
     }
 }
 
-
+//
+// #[derive(Clone, Debug, PartialEq, Eq)]
+// pub struct RoutingNode {
+//     node_info : NodeInfo<T,U>,
+//     bucket_index : usize
+// }
 
 // The RoutingTable class is used to maintain a list of contacts to which the node is connected.
-pub struct RoutingTable {
-    nodes: Vec<NodeInfo>,
+pub struct RoutingTable<T, U> {
+    nodes: Vec<NodeInfo<T,U>>,
     our_name: ::NameType,
 }
 
-impl RoutingTable {
-    pub fn new(our_name: &::NameType) -> RoutingTable {
+impl <T : PartialEq + HasName + ::std::fmt::Debug + ::std::clone::Clone,
+      U : PartialEq + ::std::fmt::Debug + ::std::clone::Clone>RoutingTable<T, U> {
+    pub fn new(our_name: &::NameType) -> RoutingTable<T, U> {
         RoutingTable {
             nodes: vec![],
             our_name: our_name.clone(),
@@ -66,18 +77,8 @@ impl RoutingTable {
 
     // Adds a contact to the routing table.  If the contact is added, the first return arg is true,
     // otherwise false.  If adding the contact caused another contact to be dropped, the dropped
-    // one is returned in the second field, otherwise the optional field is empty.  The following
-    // steps are used to determine whether to add the new contact or not:
-    //
-    // 1 - if the contact is ourself, or doesn't have a valid public key, or is already in the
-    //     table, it will not be added (N.B. to append a new connection to an existing contact's
-    //     entry, use the `add_connection` function)
-    // 2 - if the routing table is not full (len() < OPTIMAL_TABLE_SIZE), the contact will be added
-    // 3 - if the contact is within our close group, it will be added
-    // 4 - if we can find a candidate for removal (a contact in a bucket with more than BUCKET_SIZE
-    //     contacts, which is also not within our close group), and if the new contact will fit in
-    //     a bucket closer to our own bucket, then we add the new contact.
-    pub fn add_node(&mut self, their_info: NodeInfo) -> (bool, Option<NodeInfo>) {
+    // one is returned in the second field, otherwise the optional field is empty.
+    pub fn add_node(&mut self, their_info: NodeInfo<T, U>) -> (bool, Option<NodeInfo<T, U>>) {
         if self.our_name == *their_info.name() {
             return (false, None)
         }
@@ -104,7 +105,6 @@ impl RoutingTable {
 
         let removal_node_index = self.find_candidate_for_removal();
         if self.new_node_is_better_than_existing(their_info.name(), removal_node_index) {
-            // safe to unwrap since new_node_is_better_than_existing has returned true
             let removal_node = self.nodes.remove(unwrap_option!(removal_node_index, ""));
             self.push_back_then_sort(their_info);
             return (true, Some(removal_node))
@@ -117,7 +117,7 @@ impl RoutingTable {
     // indicates if the given connection was added to an existing NodeInfo.
     pub fn add_connection(&mut self,
                           their_name: &::NameType,
-                          connection: ::crust::Connection) -> bool {
+                          connection: U) -> bool {
         match self.nodes.iter_mut().find(|node_info| node_info.name() == their_name) {
             Some(mut node_info) => {
                 if node_info.connections.iter().any(|elt| *elt == connection) {
@@ -158,12 +158,12 @@ impl RoutingTable {
         self.nodes.retain(|node_info| node_info.name() != node_to_drop);
     }
 
-    // This should be called when Crust notifies us that a connection has dropped.  If the
+    // This should be called when a connection has dropped.  If the
     // affected entry has no connections after removing this one, the entry is removed from the
     // routing table and its name is returned.  If the entry still has at least one connection, or
     // an entry cannot be found for 'lost_connection', the function returns 'None'.
-    pub fn drop_connection(&mut self, lost_connection: &::crust::Connection) -> Option<::NameType> {
-        let remove_connection = |node_info: &mut NodeInfo| {
+    pub fn drop_connection(&mut self, lost_connection: &U) -> Option<::NameType> {
+        let remove_connection = |node_info: &mut NodeInfo<T,U>| {
             if let Some(index) = node_info.connections
                                           .iter()
                                           .position(|connection| connection == lost_connection) {
@@ -185,7 +185,7 @@ impl RoutingTable {
     // return all of our close group (comprising 'GROUP_SIZE' contacts) if the closest one to the
     // target is within our close group.  If not, it will return either the 'PARALLELISM' closest
     // contacts to the target or a single contact if 'target' is the name of a contact in the table.
-    pub fn target_nodes(&self, target: &::NameType) -> Vec<NodeInfo> {
+    pub fn target_nodes(&self, target: &::NameType) -> Vec<NodeInfo<T, U>> {
         //if in range of close_group send to all close_group
         if self.is_close(target) {
             return self.our_close_group()
@@ -212,7 +212,7 @@ impl RoutingTable {
 
     // This returns our close group, i.e. the 'GROUP_SIZE' contacts closest to our name (or the
     // entire table if we hold less than 'GROUP_SIZE' contacts in total) sorted by closeness to us.
-    pub fn our_close_group(&self) -> Vec<NodeInfo> {
+    pub fn our_close_group(&self) -> Vec<NodeInfo<T, U>> {
         self.nodes.iter().take(::types::GROUP_SIZE).cloned().collect()
     }
 
@@ -242,7 +242,7 @@ impl RoutingTable {
         self.nodes.iter().any(|node_info| node_info.name() == name)
     }
 
-    fn furthest_close_node(&self, name: &::NameType) -> Option<&NodeInfo> {
+    fn furthest_close_node(&self, name: &::NameType) -> Option<&NodeInfo<T, U>> {
         match self.nodes.iter().nth(::types::GROUP_SIZE - 1) {
             Some(node) => Some(node),
             None => self.nodes.last()
@@ -298,7 +298,7 @@ impl RoutingTable {
         self.our_name.bucket_distance(name)
     }
 
-    fn push_back_then_sort(&mut self, node_info: NodeInfo) {
+    fn push_back_then_sort(&mut self, node_info: NodeInfo<T, U>) {
         {  // Try to find and update an existing entry
             if let Some(mut entry) = self.nodes
                                          .iter_mut()

@@ -85,7 +85,7 @@ pub struct RoutingNode {
 
     full_id: FullId,
     state: State,
-    routing_table: RoutingTable,
+    routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
     // our bootstrap connections
     proxy_map: ::std::collections::HashMap<::crust::Connection, ::NameType>,
     // any clients we have proxying through us
@@ -1194,7 +1194,7 @@ impl RoutingNode {
                               opt_token: Option<::messages::SignedRequest>,
                               name: ::NameType) -> RoutingResult {
         trace!("{}Handle ConnectRequest", self.us());
-        
+
         if opt_token.is_none() {
             // Carry on because presence of this signed_request would not have affected our flow of
             // messages, but log it as a programming error because we should have got it.
