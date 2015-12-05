@@ -55,7 +55,6 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
-extern crate itertools;
 
 extern crate accumulator;
 extern crate xor_name;
@@ -64,11 +63,11 @@ extern crate lru_time_cache;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate message_filter;
+extern crate kademlia_routing_table;
 
 mod action;
 mod messages;
 mod direct_messages;
-mod routing_table;
 mod routing_node;
 mod refresh_accumulator;
 mod connection_management;

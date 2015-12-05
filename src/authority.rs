@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
-use routing_table::RoutingTable;
+use kademlia_routing_table::RoutingTable;
 use XorName;
 use sodiumoxide::crypto;
 use std::fmt::{Debug, Formatter, Error};
@@ -211,7 +211,7 @@ fn determine_authority(message: &RoutingMessage,
 
 #[cfg(test)]
 mod test {
-    use routing_table::{RoutingTable, NodeInfo};
+    use kademlia_routing_table::{RoutingTable, NodeInfo};
     use messages::{RoutingMessage, Content, ExternalRequest};
     use id::FullId;
     use test_utils::{xor, test};
@@ -238,7 +238,7 @@ mod test {
         }
     }
 
-    impl ::routing_table::HasName for TestNodeInfo {
+    impl ::kademlia_routing_table::HasName for TestNodeInfo {
         fn name(&self) ->&::xor_name::XorName {
             &self.name
         }

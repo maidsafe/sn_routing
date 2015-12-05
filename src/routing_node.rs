@@ -18,7 +18,7 @@
 
 use crust;
 
-use routing_table::{RoutingTable, NodeInfo};
+use kademlia_routing_table::{RoutingTable, NodeInfo};
 
 use sodiumoxide::crypto;
 
@@ -753,7 +753,7 @@ impl RoutingNode {
                         return
                     }
 
-                    let node_info = ::routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
+                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
                     if self.routing_table.has_node(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection

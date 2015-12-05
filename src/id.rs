@@ -84,7 +84,7 @@ impl ::std::fmt::Debug for PublicId {
     }
 }
 
-impl ::routing_table::HasName for PublicId {
+impl ::kademlia_routing_table::HasName for PublicId {
     fn name(&self)-> &::XorName {
         &self.name
     }
