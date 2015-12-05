@@ -339,8 +339,29 @@ impl <T : PartialEq + HasName + ::std::fmt::Debug + ::std::clone::Clone,
 #[cfg(test)]
 mod test {
     extern crate bit_vec;
-    use super::{RoutingTable, NodeInfo, OPTIMAL_TABLE_SIZE, PARALLELISM};
+    use super::{RoutingTable, NodeInfo, OPTIMAL_TABLE_SIZE, PARALLELISM, HasName};
 
+   #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TestNodeInfo {
+       name : ::name_type::NameType,
+    }
+
+    impl TestNodeInfo {
+        fn new() -> TestNodeInfo {
+            TestNodeInfo {
+            name: ::rand::random::<::name_type::NameType>()
+            }
+        }
+        fn set_name(&mut self, name: ::name_type::NameType) {
+            self.name = name;
+        }
+    }
+
+    impl HasName for TestNodeInfo {
+        fn name(&self) ->&::name_type::NameType {
+            &self.name
+        }
+    }
     enum ContactType {
         Far,
         Mid,
@@ -397,9 +418,9 @@ mod test {
     }
 
     struct TestEnvironment {
-        table: RoutingTable,
+        table: RoutingTable<TestNodeInfo, u64>,
         buckets: Vec<Bucket>,
-        node_info: NodeInfo,
+        node_info: NodeInfo<TestNodeInfo, u64>,
         initial_count: usize,
         added_names: Vec<::NameType>,
     }
@@ -438,7 +459,7 @@ mod test {
             assert!(are_nodes_sorted(&self.table), "Nodes are not sorted");
         }
 
-        fn public_id(&self, name: &::NameType) -> Option<::id::PublicId> {
+        fn public_id(&self, name: &::NameType) -> Option<TestNodeInfo> {
             assert!(are_nodes_sorted(&self.table), "Nodes are not sorted");
             match self.table.nodes.iter().find(|node_info| node_info.name() == name) {
                 Some(node) => Some(node.public_id.clone()),
@@ -474,24 +495,23 @@ mod test {
         buckets
     }
 
-    fn create_random_node_info() -> NodeInfo {
-        let full_id = ::id::FullId::new();
+    fn create_random_node_info() -> NodeInfo<TestNodeInfo, u64> {
         NodeInfo {
-            public_id: full_id.public_id().clone(),
+            public_id: TestNodeInfo::new(),
             connections: Vec::new(),
         }
     }
 
-    fn create_random_routing_tables(num_of_tables: usize) -> Vec<RoutingTable> {
+    fn create_random_routing_tables(num_of_tables: usize) -> Vec<RoutingTable<TestNodeInfo, u64>> {
         use rand;
-        let mut vector: Vec<RoutingTable> = Vec::with_capacity(num_of_tables);
+        let mut vector: Vec<RoutingTable<TestNodeInfo, u64>> = Vec::with_capacity(num_of_tables);
         for _ in 0..num_of_tables {
             vector.push(RoutingTable::new(&rand::random()));
         }
         vector
     }
 
-    fn are_nodes_sorted(routing_table: &RoutingTable) -> bool {
+    fn are_nodes_sorted(routing_table: &RoutingTable<TestNodeInfo, u64>) -> bool {
         if routing_table.nodes.len() < 2 {
             true
         } else {
@@ -878,7 +898,7 @@ mod test {
         let mut count: usize = 0;
         loop {
             let _ = routing_table.add_node(NodeInfo::new(
-                ::id::FullId::new().public_id().clone(), vec![]));
+                TestNodeInfo::new(), vec![]));
             count += 1;
             if routing_table.len() >= OPTIMAL_TABLE_SIZE {
                 break;
@@ -887,7 +907,7 @@ mod test {
                 panic!("Routing table does not fill up.");
             }
         }
-        let our_close_group: Vec<NodeInfo> = routing_table.our_close_group();
+        let our_close_group: Vec<NodeInfo<TestNodeInfo, u64>> = routing_table.our_close_group();
         assert_eq!(our_close_group.len(), ::types::GROUP_SIZE);
         let mut closer_name: ::NameType = name.clone();
         for close_node in &our_close_group {
@@ -1069,7 +1089,7 @@ mod test {
     fn bucket_index() {
         // Set our name for routing table to max possible value (in binary, all `1`s)
         let our_name = ::NameType::new([255u8; ::NAME_TYPE_LEN]);
-        let routing_table = RoutingTable::new(&our_name);
+        let routing_table = RoutingTable::<TestNodeInfo, u64>::new(&our_name);
 
         // Iterate through each u8 element of a target name identical to ours and set it to each
         // possible value for u8 other than 255 (since that which would a target name identical to
