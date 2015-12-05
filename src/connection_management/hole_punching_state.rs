@@ -19,17 +19,17 @@
 /// HolePunchingState.
 #[allow(unused)]
 pub enum HolePunchingState {
-    /// Mapping(NameType)
-    Mapping(::NameType),
+    /// Mapping(XorName)
+    Mapping(::XorName),
 
-    /// Connecting(NameType, UdpSocket, secret)
-    Connecting(::NameType, ::std::net::UdpSocket, Option<[u8; 4]>),
+    /// Connecting(XorName, UdpSocket, secret)
+    Connecting(::XorName, ::std::net::UdpSocket, Option<[u8; 4]>),
 
-    /// Punching(NameType, UdpSocket, secret, number_of_failed_attempts)
-    Punching(::NameType, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
+    /// Punching(XorName, UdpSocket, secret, number_of_failed_attempts)
+    Punching(::XorName, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
 
-    /// RendezvousConnecting(NameType, UdpSocket)
-    RendezvousConnecting(::NameType, ::std::net::UdpSocket),
+    /// RendezvousConnecting(XorName, UdpSocket)
+    RendezvousConnecting(::XorName, ::std::net::UdpSocket),
 }
 
 #[cfg(test)]
@@ -38,7 +38,7 @@ mod test {
 
     #[test]
     fn hole_punching_state() {
-        let name: ::NameType = rand::random();
+        let name: ::XorName = rand::random();
         let secret: Option<[u8; 4]> = None;
         let number_of_failed_attempts: u32 = 1;
 

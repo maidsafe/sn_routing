@@ -168,7 +168,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::NameType = rand::random();
+        let name: ::XorName = rand::random();
         let node_address = ::types::Address::Node(name);
 
         match node_address {

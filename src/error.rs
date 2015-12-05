@@ -30,7 +30,7 @@ pub enum ResponseError {
     /// failure to complete request for data
     FailedRequestForData(::data::Data),
     /// had to clear Sacrificial Data in order to complete request
-    HadToClearSacrificial(::NameType, u32),
+    HadToClearSacrificial(::XorName, u32),
 }
 
 impl From<::cbor::CborError> for ResponseError {
@@ -267,8 +267,8 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
 
-        // test serialization of HadToClearSacrificial(::NameType, u32)
-        let name: ::NameType = rand::random();
+        // test serialization of HadToClearSacrificial(::XorName, u32)
+        let name: ::XorName = rand::random();
         test_object(::error::ResponseError::HadToClearSacrificial(name, 0u32));
     }
 
@@ -306,7 +306,7 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
 
-        let name: ::name_type::NameType = rand::random();
+        let name: ::xor_name::XorName = rand::random();
         assert_eq!("Had to clear sacrificial data to complete request",
                    ::std::error::Error::description(
                        &::error::ResponseError::HadToClearSacrificial(name, 0u32)));

@@ -37,8 +37,10 @@ extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate rand;
+extern crate kademlia_routing_table;
 
 extern crate routing;
+extern crate xor_name;
 
 use std::io;
 use std::sync::mpsc;
@@ -53,7 +55,7 @@ use sodiumoxide::crypto;
 use routing::routing::Routing;
 use routing::routing_client::RoutingClient;
 use routing::authority::Authority;
-use routing::NameType;
+use routing::XorName;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
@@ -94,8 +96,8 @@ struct Args {
 struct Node {
     routing: Routing,
     receiver: Receiver<Event>,
-    db: BTreeMap<::routing::NameType, PlainData>,
-    client_accounts: BTreeMap<::routing::NameType, u64>,
+    db: BTreeMap<::xor_name::XorName, PlainData>,
+    client_accounts: BTreeMap<::xor_name::XorName, u64>,
     connected: bool,
 }
 
@@ -225,7 +227,7 @@ impl Node {
             Authority::ClientManager(_) => {
                 match from_authority {
                     ::routing::authority::Authority::Client(_, public_key) => {
-                        let client_name = ::routing::NameType::new(
+                        let client_name = ::xor_name::XorName::new(
                             ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0);
                         *self.client_accounts.entry(client_name)
                             .or_insert(0u64) += data.payload_size() as u64;
@@ -249,13 +251,13 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::routing::NameType>) {
+    fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
         // let mut exit = false;
         let exit = false;
-        if our_close_group.len() < ::routing::types::GROUP_SIZE {
+        if our_close_group.len() < ::kademlia_routing_table::GROUP_SIZE {
             if self.connected {
                 println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                    our_close_group.len(), ::routing::types::GROUP_SIZE);
+                    our_close_group.len(), ::kademlia_routing_table::GROUP_SIZE);
                 // exit = true;
             } else {
                 println!("Ignoring churn as we are not yet connected.");
@@ -273,7 +275,7 @@ impl Node {
         // FIXME Cause needs to get removed from refresh as well
         // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
         // just so that interface requirements are met
-        let cause = rand::random::<NameType>();
+        let cause = rand::random::<XorName>();
 
         for (client_name, stored) in self.client_accounts.iter() {
             println!("REFRESH {:?} - {:?}", client_name, stored);
@@ -306,7 +308,7 @@ impl Node {
     }
 
     fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
-        cause: ::routing::NameType) {
+        cause: ::xor_name::XorName) {
         match our_authority {
             ::routing::authority::Authority::ClientManager(client_name) => {
                 match self.client_accounts.get(&client_name) {
@@ -514,8 +516,8 @@ impl Client {
             Data::PlainData(PlainData::new(name, data)));
     }
 
-    fn calculate_key_name(key: &String) -> NameType {
-        NameType::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+    fn calculate_key_name(key: &String) -> XorName {
+        XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }
 

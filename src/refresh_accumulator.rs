@@ -16,12 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 // Tuple of source/target group, type tag, and name of node causing churn
-pub type Request = (::authority::Authority, u64, ::NameType);
+pub type Request = (::authority::Authority, u64, ::XorName);
 
 pub struct RefreshAccumulator {
     // Map of refresh request and <map of sender and payload>
     requests: ::lru_time_cache::LruCache<Request,
-                                           ::std::collections::HashMap<::NameType, Vec<u8>>>,
+                                           ::std::collections::HashMap<::XorName, Vec<u8>>>,
 }
 
 impl RefreshAccumulator {
@@ -37,10 +37,10 @@ impl RefreshAccumulator {
     pub fn add_message(&mut self,
                        threshold: usize,
                        type_tag: u64,
-                       sender_node: ::NameType,
+                       sender_node: ::XorName,
                        sender_group: ::authority::Authority,
                        payload: Vec<u8>,
-                       cause: ::NameType)
+                       cause: ::XorName)
                        -> (bool, Option<Vec<Vec<u8>>>) {
         debug!("RefreshAccumulator for {:?} caused by {:?}",
                sender_group,
@@ -76,7 +76,7 @@ mod test {
         let threshold = 5usize;
         let bytes = ::types::generate_random_vec_u8(120usize);
         let group = ::authority::Authority::NaeManager(::rand::random());
-        let cause: ::NameType = ::rand::random();
+        let cause: ::XorName = ::rand::random();
         let mut accumulator = ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
             ::time::Duration::minutes(10));
 

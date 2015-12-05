@@ -21,8 +21,8 @@ pub struct Node {
     routing: ::routing::Routing,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
     sender: ::std::sync::mpsc::Sender<::event::Event>,
-    db: ::std::collections::BTreeMap<::NameType, ::data::Data>,
-    client_accounts: ::std::collections::BTreeMap<::NameType, u64>,
+    db: ::std::collections::BTreeMap<::XorName, ::data::Data>,
+    client_accounts: ::std::collections::BTreeMap<::XorName, u64>,
     connected: bool,
 }
 
@@ -178,13 +178,13 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::NameType>) {
+    fn handle_churn(&mut self, our_close_group: Vec<::XorName>) {
         let mut exit = false;
-        if our_close_group.len() < ::types::GROUP_SIZE {
+        if our_close_group.len() < ::kademlia_routing_table::GROUP_SIZE {
             if self.connected {
                 debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
                        our_close_group.len(),
-                       ::types::GROUP_SIZE);
+                       ::kademlia_routing_table::GROUP_SIZE);
                 exit = true;
             } else {
                 debug!("Ignoring churn as we are not yet connected.");
@@ -195,7 +195,7 @@ impl Node {
         // FIXME Cause needs to get removed from refresh as well
         // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
         // just so that interface requirements are met
-        let cause = ::rand::random::<::NameType>();
+        let cause = ::rand::random::<::XorName>();
 
         debug!("Handle churn for close group size {:?}", our_close_group.len());
 
@@ -234,7 +234,7 @@ impl Node {
         }
     }
 
-    fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::NameType) {
+    fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::XorName) {
         if let ::authority::Authority::ClientManager(client_name) = our_authority {
             match self.client_accounts.get(&client_name) {
                 Some(stored) => {

@@ -20,7 +20,7 @@
 
 ## [0.3.11]
 - [#699](https://github.com/maidsafe/routing/pull/699) implement debug for StructuredData
-- [#696](https://github.com/maidsafe/routing/pull/696) expose NAME_TYPE_LEN and random traits
+- [#696](https://github.com/maidsafe/routing/pull/696) expose XOR_NAME_LEN and random traits
 - [#695](https://github.com/maidsafe/routing/pull/695) correct style error in error.rs
 - [#692](https://github.com/maidsafe/routing/pull/692) add cause and event::DoRefresh for improvements to churn
 - [#691](https://github.com/maidsafe/routing/pull/691) update QA libsodium documentation
@@ -57,7 +57,7 @@
 ## [0.3.5] improvements to ResponseError and testing
 
 - [#647](https://github.com/maidsafe/routing/pull/647) CI disallow failures on windows x86 (32bit) architecture
-- [#646](https://github.com/maidsafe/routing/pull/646) correct ResponseError::HadToClearSacrificial to return NameType and u32 size
+- [#646](https://github.com/maidsafe/routing/pull/646) correct ResponseError::HadToClearSacrificial to return XorName and u32 size
 - [#645](https://github.com/maidsafe/routing/pull/645) key_value_store to test < Client | ClientManager > < ClientManager | NaeManager > behaviour
 
 ## [0.3.4] Improvements to filter and accumulator behavior

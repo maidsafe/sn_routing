@@ -36,7 +36,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate routing;
 extern crate sodiumoxide;
-
+extern crate xor_name;
 use std::error::Error;
 
 fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
@@ -79,8 +79,8 @@ fn stop_nodes(processes: &mut Vec<::std::process::Child>) {
     }
 }
 
-fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
-    ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+fn calculate_key_name(key: &::std::string::String) -> ::xor_name::XorName {
+    ::xor_name::XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
 }
 
 #[cfg(test)]
