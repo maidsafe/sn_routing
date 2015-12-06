@@ -89,7 +89,7 @@ pub mod utils;
 /// Errors reported for failed conditions/operations.
 pub mod error;
 // FIXME (ben 8/09/2015) make the module authority private
-// Persona types recognised by network.
+/// Persona types recognised by network.
 pub mod authority;
 /// StructuredData type.
 pub mod structured_data;
