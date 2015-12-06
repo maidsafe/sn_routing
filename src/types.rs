@@ -58,9 +58,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-/// Quorum factor.
-pub const QUORUM_FACTOR: f32 = ::kademlia_routing_table::QUORUM_SIZE as f32 /
-                               ::kademlia_routing_table::GROUP_SIZE as f32;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 /// Address.

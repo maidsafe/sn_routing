@@ -375,8 +375,7 @@ impl RoutingNode {
             public_id: self.full_id.public_id().clone(),
         // Current quorum size should also include ourselves when sending this message. Thus
         // the '+ 1'
-            current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f32
-                                                  * ::types::QUORUM_FACTOR).round() as usize,
+            current_quorum_size: ::std::cmp::min((self.routing_table.len() + 1),
                                                  ::kademlia_routing_table::QUORUM_SIZE),
         };
         // TODO impl convert trait for RoutingError
@@ -1794,8 +1793,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min((self.routing_table.len() as f32 * ::types::QUORUM_FACTOR).round() as usize,
-                        ::kademlia_routing_table::QUORUM_SIZE)
+        ::std::cmp::min(self.routing_table.len(), ::kademlia_routing_table::QUORUM_SIZE)
     }
 
     // Returns our name and state for logging
