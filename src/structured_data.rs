@@ -35,7 +35,6 @@ pub struct StructuredData {
 
 
 impl StructuredData {
-
     /// Constructor
     pub fn new(type_tag: u64,
                identifier: ::XorName,
@@ -142,10 +141,11 @@ impl StructuredData {
         // Count valid previous_owner_signatures and refuse if quantity is not enough
 
         let check_all_keys = |&sig| {
-                   owner_keys.iter()
-                             .any(|ref pub_key| {
-                                 ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
-                             })};
+            owner_keys.iter()
+                      .any(|ref pub_key| {
+                          ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
+                      })
+        };
 
         if self.previous_owner_signatures
                .iter()
@@ -181,7 +181,7 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len() )
+        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len())
     }
 
     /// Overwrite any existing signatures with the new signatures provided
@@ -255,7 +255,7 @@ impl ::std::fmt::Debug for StructuredData {
                                                   .map(|pub_key| ::utils::get_debug_id(&pub_key.0))
                                                   .collect();
         try!(write!(formatter, " , current_owner_keys : ("));
-        for itr in &current_owner_keys{
+        for itr in &current_owner_keys {
             try!(write!(formatter, "{:?} ", itr));
         }
         try!(write!(formatter, ") "));
@@ -291,8 +291,10 @@ mod test {
                                          owner_keys.clone(),
                                          vec![],
                                          Some(&keys.1)) {
-            Ok(structured_data) => assert_eq!(
-                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+            Ok(structured_data) => {
+                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+                           Some(()))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
     }
@@ -310,8 +312,10 @@ mod test {
                                          owner_keys.clone(),
                                          vec![],
                                          None) {
-            Ok(structured_data) => assert_eq!(
-                  structured_data.verify_previous_owner_signatures(&owner_keys).ok(), Some(())),
+            Ok(structured_data) => {
+                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+                           Some(()))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
     }

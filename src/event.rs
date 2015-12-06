@@ -93,29 +93,46 @@ impl ::std::fmt::Debug for Event {
         match *self {
             Event::Request{ ref request, ref our_authority, ref from_authority,
                              ref signed_request } => {
-                write!(formatter, "Request(request: {:?}, our_authority: {:?}, from_authority: \
-                       {:?}, response_token: {:?})", request, our_authority, from_authority,
+                write!(formatter,
+                       "Request(request: {:?}, our_authority: {:?}, from_authority: {:?}, \
+                        response_token: {:?})",
+                       request,
+                       our_authority,
+                       from_authority,
                        signed_request)
             }
             Event::Response{ ref response, ref our_authority, ref from_authority } => {
-                write!(formatter, "Response(response: {:?}, our_authority: {:?}, from_authority: \
-                       {:?})", response, our_authority, from_authority)
+                write!(formatter,
+                       "Response(response: {:?}, our_authority: {:?}, from_authority: {:?})",
+                       response,
+                       our_authority,
+                       from_authority)
             }
             Event::FailedRequest{ ref request, ref our_authority, ref location,
                                    ref interface_error } => {
-                write!(formatter, "FailedRequest(request: {:?}, our_authority: {:?}, location: \
-                       {:?}, interface_error: {:?})", request, our_authority, location,
+                write!(formatter,
+                       "FailedRequest(request: {:?}, our_authority: {:?}, location: {:?}, \
+                        interface_error: {:?})",
+                       request,
+                       our_authority,
+                       location,
                        interface_error)
             }
             Event::FailedResponse{ ref response, ref our_authority, ref location,
                                     ref interface_error } => {
-                write!(formatter, "FailedResponse(response: {:?}, our_authority: {:?}, location: \
-                       {:?}, interface_error: {:?})", response, our_authority, location,
+                write!(formatter,
+                       "FailedResponse(response: {:?}, our_authority: {:?}, location: {:?}, \
+                        interface_error: {:?})",
+                       response,
+                       our_authority,
+                       location,
                        interface_error)
             }
             Event::Refresh(ref type_tag, ref target, ref payloads) => {
-                try!(write!(formatter, "Refresh(type_tag: {:?}, target: {:?}, payloads: (",
-                            type_tag, target));
+                try!(write!(formatter,
+                            "Refresh(type_tag: {:?}, target: {:?}, payloads: (",
+                            type_tag,
+                            target));
                 for payload in payloads.iter() {
                     try!(write!(formatter, "{:?} ", ::utils::get_debug_id(&payload[..])));
                 }
@@ -125,21 +142,16 @@ impl ::std::fmt::Debug for Event {
                 write!(formatter, "Churn(close_group: {:?})", close_group)
             }
             Event::DoRefresh(ref type_tag, ref target, ref churn_node) => {
-                write!(formatter, "DoRefresh(type_tag: {:?}, target: {:?}, churn_node: {:?})",
-                       type_tag, target, churn_node)
+                write!(formatter,
+                       "DoRefresh(type_tag: {:?}, target: {:?}, churn_node: {:?})",
+                       type_tag,
+                       target,
+                       churn_node)
             }
-            Event::Bootstrapped => {
-                write!(formatter, "Bootstrapped")
-            }
-            Event::Connected => {
-                write!(formatter, "Connected")
-            }
-            Event::Disconnected => {
-                write!(formatter, "Disconnected")
-            }
-            Event::Terminated => {
-                write!(formatter, "Terminated")
-            }
+            Event::Bootstrapped => write!(formatter, "Bootstrapped"),
+            Event::Connected => write!(formatter, "Connected"),
+            Event::Disconnected => write!(formatter, "Disconnected"),
+            Event::Terminated => write!(formatter, "Terminated"),
         }
     }
 }

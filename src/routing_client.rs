@@ -49,7 +49,9 @@ impl RoutingClient {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender, true, keys));
+        let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender,
+                                                                           true,
+                                                                           keys));
 
         RoutingClient {
             action_sender: action_sender,

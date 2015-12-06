@@ -49,7 +49,9 @@ impl Routing {
 
         // start the handler for routing without a restriction to become a full node
         // TODO(Spandan) Return Error to Vaults instead of unwrap_result!(...)
-        let (action_sender, raii_joiner)  = unwrap_result!(RoutingNode::new(event_sender, false, None));
+        let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender,
+                                                                           false,
+                                                                           None));
 
         Routing {
             action_sender: action_sender,
@@ -164,12 +166,15 @@ impl Routing {
                    our_authority);
             return;
         };
-        let _ = self.action_sender.send(Action::SendContent(our_authority.clone(), our_authority,
-            Content::InternalRequest(InternalRequest::Refresh {
-                type_tag: type_tag,
-                message: content,
-                cause: cause,
-            })));
+        let _ =
+            self.action_sender
+                .send(Action::SendContent(our_authority.clone(),
+                                          our_authority,
+                                          Content::InternalRequest(InternalRequest::Refresh {
+                                              type_tag: type_tag,
+                                              message: content,
+                                              cause: cause,
+                                          })));
     }
 
     /// Dynamically enable/disable caching for Data types.

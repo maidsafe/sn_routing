@@ -175,10 +175,13 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub fn new(routing_message: &RoutingMessage, full_id: &::id::FullId)
-            -> Result<SignedMessage, ::maidsafe_utilities::serialisation::SerialisationError> {
+    pub fn new
+               (routing_message: &RoutingMessage,
+                full_id: &::id::FullId)
+                -> Result<SignedMessage, ::maidsafe_utilities::serialisation::SerialisationError> {
         let encoded_message = try!(::maidsafe_utilities::serialisation::serialise(routing_message));
-        let signed_message = ::sodiumoxide::crypto::sign::sign(&encoded_message, full_id.signing_private_key());
+        let signed_message = ::sodiumoxide::crypto::sign::sign(&encoded_message,
+                                                               full_id.signing_private_key());
 
         Ok(SignedMessage {
             signed_routing_message: signed_message,
@@ -190,7 +193,7 @@ impl SignedMessage {
     /// to verify the signed message on construction.
     pub fn from_signed_request(signed_request: SignedRequest,
                                public_sign_key: ::sodiumoxide::crypto::sign::PublicKey)
-            -> SignedMessage {
+                               -> SignedMessage {
         SignedMessage {
             signed_routing_message: signed_request.signed_routing_message,
             public_sign_key: public_sign_key,
@@ -199,10 +202,12 @@ impl SignedMessage {
 
     /// Verifies the message returning the RoutingMessage, or RoutingError on failure.
     pub fn get_routing_message(&self) -> Result<RoutingMessage, ::error::RoutingError> {
-        let verify_result = ::sodiumoxide::crypto::sign::verify(
-            &self.signed_routing_message, &self.public_sign_key);
+        let verify_result = ::sodiumoxide::crypto::sign::verify(&self.signed_routing_message,
+                                                                &self.public_sign_key);
 
-        let encoded_msg = try!(verify_result.map_err(|()| ::error::RoutingError::FailedSignature));
+        let encoded_msg = try!(verify_result.map_err(|()| {
+            ::error::RoutingError::FailedSignature
+        }));
 
         Ok(try!(::maidsafe_utilities::serialisation::deserialise(&encoded_msg)))
     }
@@ -214,25 +219,28 @@ impl SignedMessage {
 
     /// Return the associated signed request.
     pub fn as_signed_request(&self) -> SignedRequest {
-        SignedRequest { signed_routing_message: self.signed_routing_message.clone(), }
+        SignedRequest { signed_routing_message: self.signed_routing_message.clone() }
     }
 }
 
 impl ::std::fmt::Debug for SignedMessage {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(formatter, "SignedMessage {{ signed_routing_message: {:?}, public_sign_key: {:?}, }}\
-            ", self.signed_routing_message, self.public_sign_key)
+        write!(formatter,
+               "SignedMessage {{ signed_routing_message: {:?}, public_sign_key: {:?}, }}",
+               self.signed_routing_message,
+               self.public_sign_key)
     }
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     #[test]
     fn signed_message_new() {
         let full_id = ::id::FullId::new();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
-                full_id.public_id().signing_public_key(),
-                full_id.signing_private_key());
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(full_id.public_id()
+                                                                          .signing_public_key(),
+                                                                   full_id.signing_private_key());
         let signed_message = super::SignedMessage::new(&routing_message, &full_id);
 
         assert!(signed_message.is_ok());
@@ -245,9 +253,10 @@ mod test{
     #[test]
     fn signed_message_from_token() {
         let full_id = ::id::FullId::new();
-        let routing_message = ::test_utils::messages_util::arbitrary_routing_message(
-                full_id.public_id().signing_public_key(),
-                full_id.signing_private_key());
+        let routing_message =
+            ::test_utils::messages_util::arbitrary_routing_message(full_id.public_id()
+                                                                          .signing_public_key(),
+                                                                   full_id.signing_private_key());
         let signed_message = super::SignedMessage::new(&routing_message, &full_id);
 
         assert!(signed_message.is_ok());
@@ -255,12 +264,16 @@ mod test{
         let signed_message = signed_message.unwrap();
         let signed_request = signed_message.as_signed_request();
 
-        let signed_message_from_token = super::SignedMessage::from_signed_request(
-                signed_request, full_id.public_id().signing_public_key().clone());
+        let signed_message_from_token =
+            super::SignedMessage::from_signed_request(signed_request,
+                                                      full_id.public_id()
+                                                             .signing_public_key()
+                                                             .clone());
 
         assert_eq!(signed_message, signed_message_from_token);
 
-        let verified_routing_message = unwrap_result!(signed_message_from_token.get_routing_message());
+        let verified_routing_message =
+            unwrap_result!(signed_message_from_token.get_routing_message());
         assert_eq!(verified_routing_message, routing_message);
     }
 }

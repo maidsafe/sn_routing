@@ -41,7 +41,6 @@ pub struct ImmutableData {
 }
 
 impl ImmutableData {
-
     /// Creates a new instance of ImmutableData
     pub fn new(type_tag: ImmutableDataType, value: Vec<u8>) -> ImmutableData {
         ImmutableData {
@@ -66,8 +65,9 @@ impl ImmutableData {
         match self.type_tag {
             ImmutableDataType::Normal => XorName(digest.0),
             ImmutableDataType::Backup => XorName(crypto::hash::sha512::hash(&digest.0).0),
-            ImmutableDataType::Sacrificial =>
-                XorName(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0),
+            ImmutableDataType::Sacrificial => {
+                XorName(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0)
+            }
         }
     }
 

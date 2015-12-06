@@ -78,9 +78,7 @@ impl ::std::fmt::Debug for Address {
                 formatter.write_str(&format!("Client({:?})", ::XorName::new(
                     ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
-            Address::Node(ref name) => {
-                formatter.write_str(&format!("Node({:?})", name))
-            }
+            Address::Node(ref name) => formatter.write_str(&format!("Node({:?})", name)),
         }
     }
 }

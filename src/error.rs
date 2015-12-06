@@ -46,8 +46,9 @@ impl ::std::error::Error for ResponseError {
             ResponseError::LowBalance(_, _) => "LowBalance",
             ResponseError::InvalidRequest(_) => "Invalid request",
             ResponseError::FailedRequestForData(_) => "Failed request for data",
-            ResponseError::HadToClearSacrificial(_, _) =>
-                "Had to clear sacrificial data to complete request",
+            ResponseError::HadToClearSacrificial(_, _) => {
+                "Had to clear sacrificial data to complete request"
+            }
         }
     }
 
@@ -60,14 +61,18 @@ impl ::std::fmt::Display for ResponseError {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             ResponseError::Abort => ::std::fmt::Display::fmt("ResponseError::Abort", formatter),
-            ResponseError::LowBalance(_, _) =>
-                ::std::fmt::Display::fmt("ResponseError::LowBalance", formatter),
-            ResponseError::InvalidRequest(_) =>
-                ::std::fmt::Display::fmt("ResponsError::InvalidRequest", formatter),
-            ResponseError::FailedRequestForData(_) =>
-                ::std::fmt::Display::fmt("ResponseError::FailedToStoreData", formatter),
-            ResponseError::HadToClearSacrificial(_, _) =>
-                ::std::fmt::Display::fmt("ResponseError::HadToClearSacrificial", formatter),
+            ResponseError::LowBalance(_, _) => {
+                ::std::fmt::Display::fmt("ResponseError::LowBalance", formatter)
+            }
+            ResponseError::InvalidRequest(_) => {
+                ::std::fmt::Display::fmt("ResponsError::InvalidRequest", formatter)
+            }
+            ResponseError::FailedRequestForData(_) => {
+                ::std::fmt::Display::fmt("ResponseError::FailedToStoreData", formatter)
+            }
+            ResponseError::HadToClearSacrificial(_, _) => {
+                ::std::fmt::Display::fmt("ResponseError::HadToClearSacrificial", formatter)
+            }
         }
     }
 }
@@ -98,8 +103,9 @@ impl ::std::error::Error for InterfaceError {
 impl ::std::fmt::Display for InterfaceError {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            InterfaceError::NotConnected =>
-                ::std::fmt::Display::fmt("InterfaceError::NotConnected", formatter),
+            InterfaceError::NotConnected => {
+                ::std::fmt::Display::fmt("InterfaceError::NotConnected", formatter)
+            }
         }
     }
 }
@@ -247,9 +253,10 @@ mod test {
 
         // test serialization of LowBalance(Data, u32)
         match create_data() {
-            Ok(d) =>
+            Ok(d) => {
                 test_object(::error::ResponseError::LowBalance(::data::Data::StructuredData(d),
-                                                               0u32)),
+                                                               0u32))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 
@@ -286,23 +293,29 @@ mod test {
                    ::std::error::Error::description(&::error::ResponseError::Abort));
 
         match create_data() {
-            Ok(d) => assert_eq!("LowBalance",
+            Ok(d) => {
+                assert_eq!("LowBalance",
                 ::std::error::Error::description(
-                    &::error::ResponseError::LowBalance(::data::Data::StructuredData(d), 0u32))),
+                    &::error::ResponseError::LowBalance(::data::Data::StructuredData(d), 0u32)))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         match create_data() {
-            Ok(d) => assert_eq!("Invalid request",
+            Ok(d) => {
+                assert_eq!("Invalid request",
                 ::std::error::Error::description(
-                    &::error::ResponseError::InvalidRequest(::data::Data::StructuredData(d)))),
+                    &::error::ResponseError::InvalidRequest(::data::Data::StructuredData(d))))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         match create_data() {
-            Ok(d) => assert_eq!("Failed request for data",
+            Ok(d) => {
+                assert_eq!("Failed request for data",
                 ::std::error::Error::description(
-                   &::error::ResponseError::FailedRequestForData(::data::Data::StructuredData(d)))),
+                   &::error::ResponseError::FailedRequestForData(::data::Data::StructuredData(d))))
+            }
             Err(error) => panic!("Error: {:?}", error),
         }
 

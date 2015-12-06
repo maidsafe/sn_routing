@@ -120,7 +120,9 @@ impl Debug for Authority {
 
 // extract the element from RoutingMessage,
 // then pass on to determine_authority
-pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable<::id::PublicId, ::crust::Connection>) -> Option<Authority> {
+pub fn our_authority(message: &RoutingMessage,
+                     routing_table: &RoutingTable<::id::PublicId, ::crust::Connection>)
+                     -> Option<Authority> {
     let element = match message.content {
         Content::ExternalRequest(ref request) => {
             match *request {
@@ -149,14 +151,14 @@ pub fn our_authority(message: &RoutingMessage, routing_table: &RoutingTable<::id
                 InternalRequest::Refresh { .. } => {
                     let ref to_authority = message.to_authority;
                     if message.from_authority != *to_authority {
-                        return None
+                        return None;
                     }
                     if to_authority.is_group() &&
-                        routing_table.is_close(to_authority.get_location()) {
-                            return Some(to_authority.clone())
+                       routing_table.is_close(to_authority.get_location()) {
+                        return Some(to_authority.clone());
                     }
                     None
-                },
+                }
             }
         }
         Content::ExternalResponse(_) => None,
@@ -192,8 +194,7 @@ fn determine_authority(message: &RoutingMessage,
         }
         None => {}
     };
-    if routing_table.is_close(&element) &&
-       *message.to_authority.get_location() == *element &&
+    if routing_table.is_close(&element) && *message.to_authority.get_location() == *element &&
        element != routing_table.our_name() {
         return Some(Authority::NaeManager(*element));
     } else if message.source_group().is_some() &&
@@ -224,14 +225,12 @@ mod test {
 
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestNodeInfo {
-       name : ::xor_name::XorName,
+        name: ::xor_name::XorName,
     }
 
     impl TestNodeInfo {
         fn new() -> TestNodeInfo {
-            TestNodeInfo {
-            name: ::rand::random::<::xor_name::XorName>()
-            }
+            TestNodeInfo { name: ::rand::random::<::xor_name::XorName>() }
         }
         fn set_name(&mut self, name: ::xor_name::XorName) {
             self.name = name;
@@ -239,7 +238,7 @@ mod test {
     }
 
     impl ::kademlia_routing_table::HasName for TestNodeInfo {
-        fn name(&self) ->&::xor_name::XorName {
+        fn name(&self) -> &::xor_name::XorName {
             &self.name
         }
     }
@@ -251,7 +250,7 @@ mod test {
         let mut count: usize = 0;
         loop {
             let node_info = NodeInfo::<TestNodeInfo, u64>::new(TestNodeInfo::new().clone(),
-                                          vec![::rand::random::<u64>()]);
+                                                               vec![::rand::random::<u64>()]);
             let _ = routing_table.add_node(node_info);
             count += 1;
             if count > 100 {
@@ -283,7 +282,8 @@ mod test {
         let our_close_group: Vec<NodeInfo<TestNodeInfo, u64>> = routing_table.our_close_group();
         let furthest_node_close_group = unwrap_option!(our_close_group.last(), "").clone();
         let closest_node_in_our_close_group = unwrap_option!(our_close_group.first(), "").clone();
-        let second_closest_node_in_our_close_group: NodeInfo<TestNodeInfo, u64> = our_close_group[1].clone();
+        let second_closest_node_in_our_close_group: NodeInfo<TestNodeInfo, u64> =
+            our_close_group[1].clone();
 
         let nae_or_client_in_our_close_group: XorName =
             xor(&xor(&closest_node_in_our_close_group.name(), &our_name),
@@ -298,7 +298,7 @@ mod test {
         }
         // invert to get a far away address outside of the close group
         let name_outside_close_group: XorName = xor(&furthest_node_close_group.name(),
-                                                     &XorName::new([255u8; 64]));
+                                                    &XorName::new([255u8; 64]));
         // note: if the close group spans close to the whole address space,
         // this construction actually inverts the address into the close group range;
         // for group_size 32; 64 node in the network this intermittently fails at 41%

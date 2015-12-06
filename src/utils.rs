@@ -104,8 +104,7 @@ mod test {
             Err(_) => panic!("Unexpected deserialisation error."),
         };
 
-        assert_eq!(name,
-                   ::XorName(::types::slice_as_u8_64_array(&decoded[..])));
+        assert_eq!(name, ::XorName(::types::slice_as_u8_64_array(&decoded[..])));
     }
 
     #[test]
@@ -120,7 +119,7 @@ mod test {
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
             unwrap_result!(super::calculate_relocated_name(close_nodes_one_entry.clone(),
-                           &original_name));
+                                                           &original_name));
         assert!(original_name != actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<::XorName> = Vec::new();

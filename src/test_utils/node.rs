@@ -197,7 +197,8 @@ impl Node {
         // just so that interface requirements are met
         let cause = ::rand::random::<::XorName>();
 
-        debug!("Handle churn for close group size {:?}", our_close_group.len());
+        debug!("Handle churn for close group size {:?}",
+               our_close_group.len());
 
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
@@ -213,22 +214,22 @@ impl Node {
     }
 
     fn handle_refresh(&mut self,
-            our_authority: ::authority::Authority,
-            vec_of_bytes: Vec<Vec<u8>>) {
+                      our_authority: ::authority::Authority,
+                      vec_of_bytes: Vec<Vec<u8>>) {
         let mut records: Vec<u64> = Vec::new();
         let mut fail_parsing_count = 0usize;
         for bytes in vec_of_bytes {
             match ::utils::decode(&bytes) {
                 Ok(record) => records.push(record),
-                    Err(_) => fail_parsing_count += 1usize,
+                Err(_) => fail_parsing_count += 1usize,
             }
         }
         let median = median(records.clone());
         debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-                our_authority,
-                median,
-                records,
-                fail_parsing_count);
+               our_authority,
+               median,
+               records,
+               fail_parsing_count);
         if let ::authority::Authority::ClientManager(client_name) = our_authority {
             let _ = self.client_accounts.insert(client_name, median);
         }
@@ -239,9 +240,9 @@ impl Node {
             match self.client_accounts.get(&client_name) {
                 Some(stored) => {
                     debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-                            client_name,
-                            stored,
-                            cause);
+                           client_name,
+                           stored,
+                           cause);
                     self.routing.refresh_request(1u64,
                             ::authority::Authority::ClientManager(client_name.clone()),
                             unwrap_result!(::utils::encode(&stored)), cause.clone());
