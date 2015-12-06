@@ -375,7 +375,7 @@ impl RoutingNode {
             public_id: self.full_id.public_id().clone(),
         // Current quorum size should also include ourselves when sending this message. Thus
         // the '+ 1'
-            current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f64
+            current_quorum_size: ::std::cmp::min(((self.routing_table.len() + 1) as f32
                                                   * ::types::QUORUM_FACTOR).round() as usize,
                                                  ::kademlia_routing_table::QUORUM_SIZE),
         };
@@ -1028,17 +1028,17 @@ impl RoutingNode {
 
                 let request = ::messages::InternalRequest::GetCloseGroup;
 
-                let routing_message = ::messages::RoutingMessage {
+                let routing_msg = ::messages::RoutingMessage {
                     from_authority: from_authority,
                     to_authority: ::authority::Authority::NodeManager(*relocated_id.name()),
                     content: ::messages::Content::InternalRequest(request),
                     group_keys: None,
                 };
 
-                let signed_message = try!(::messages::SignedMessage::new(&routing_message,
+                let signed_msg = try!(::messages::SignedMessage::new(&routing_msg,
                                                                          &self.full_id));
 
-                Ok(self.send(signed_message))
+                Ok(self.send(signed_msg))
             }
             _ => Err(RoutingError::UnknownMessageType),
         }
@@ -1794,7 +1794,7 @@ impl RoutingNode {
 
 
     fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min((self.routing_table.len() as f64 * ::types::QUORUM_FACTOR) as usize,
+        ::std::cmp::min((self.routing_table.len() as f32 * ::types::QUORUM_FACTOR).round() as usize,
                         ::kademlia_routing_table::QUORUM_SIZE)
     }
 

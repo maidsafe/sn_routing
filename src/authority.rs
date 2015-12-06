@@ -149,7 +149,7 @@ pub fn our_authority(message: &RoutingMessage,
                 // TODO Investigate
                 InternalRequest::GetNetworkName { .. } => None,
                 InternalRequest::Refresh { .. } => {
-                    let ref to_authority = message.to_authority;
+                    let to_authority = &message.to_authority;
                     if message.from_authority != *to_authority {
                         return None;
                     }
