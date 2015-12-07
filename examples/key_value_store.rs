@@ -254,10 +254,10 @@ impl Node {
     fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
         // let mut exit = false;
         let exit = false;
-        if our_close_group.len() < ::kademlia_routing_table::GROUP_SIZE {
+        if our_close_group.len() < ::kademlia_routing_table::group_size() {
             if self.connected {
                 println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                    our_close_group.len(), ::kademlia_routing_table::GROUP_SIZE);
+                    our_close_group.len(), ::kademlia_routing_table::group_size());
                 // exit = true;
             } else {
                 println!("Ignoring churn as we are not yet connected.");
