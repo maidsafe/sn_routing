@@ -1606,13 +1606,13 @@ impl RoutingNode {
         }
     }
 
-    fn send_failed_message_to_user(&self, to_authority: Authority, content: Content) {
+    fn send_failed_message_to_user(&self, destination_authority: Authority, content: Content) {
         match content {
             Content::ExternalRequest(external_request) => {
                 self.send_to_user(Event::FailedRequest {
                     request: external_request,
                     our_authority: None,
-                    location: to_authority,
+                    location: destination_authority,
                     interface_error: InterfaceError::NotConnected,
                 });
             }
@@ -1620,7 +1620,7 @@ impl RoutingNode {
                 self.send_to_user(Event::FailedResponse {
                     response: external_response,
                     our_authority: None,
-                    location: to_authority,
+                    location: destination_authority,
                     interface_error: InterfaceError::NotConnected,
                 });
             }
@@ -1712,8 +1712,8 @@ impl RoutingNode {
 
     fn handle_external_response(&mut self,
                                 response: ExternalResponse,
-                                to_authority: Authority,
-                                from_authority: Authority)
+                                response_destination_authority: Authority,
+                                response_source_authority: Authority)
                                 -> RoutingResult {
 
         // Request token is only set if it came from a non-group entity.
@@ -1726,15 +1726,15 @@ impl RoutingNode {
                                                                         .clone());
             let _ = try!(signed_message.get_routing_message());
         } else {
-            if !self.name_in_range(to_authority.get_location()) {
+            if !self.name_in_range(response_destination_authority.get_location()) {
                 return Err(RoutingError::BadAuthority);
             };
         };
 
         self.send_to_user(Event::Response {
             response: response,
-            our_authority: to_authority,
-            from_authority: from_authority,
+            our_authority: response_destination_authority,
+            from_authority: response_source_authority,
         });
 
         Ok(())
@@ -2039,15 +2039,15 @@ impl RoutingNode {
 // let response = ExternalResponse::Get(immutable_data, data_request, None);
 //
 // let routing_message_request = RoutingMessage {
-// from_authority: Authority::ClientManager(XorName::new([1u8; 64])),
-// to_authority: Authority::NaeManager(XorName::new(data)),
+// source_authority: Authority::ClientManager(XorName::new([1u8; 64])),
+// destination_authority: Authority::NaeManager(XorName::new(data)),
 // content: Content::ExternalRequest(request),
 // group_keys: None,
 // };
 //
 // let routing_message_response = RoutingMessage {
-// from_authority: Authority::NaeManager(XorName::new(data)),
-// to_authority: Authority::ClientManager(XorName::new([1u8; 64])),
+// source_authority: Authority::NaeManager(XorName::new(data)),
+// destination_authority: Authority::ClientManager(XorName::new([1u8; 64])),
 // content: Content::ExternalResponse(response),
 // group_keys: None,
 // };
