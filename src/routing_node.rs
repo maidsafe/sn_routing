@@ -379,8 +379,8 @@ impl RoutingNode {
             public_id: self.full_id.public_id().clone(),
         // Current quorum size should also include ourselves when sending this message. Thus
         // the '+ 1'
-            current_quorum_size: ::std::cmp::min((self.routing_table.len() + 1),
-                                                 ::kademlia_routing_table::quorum_size()),
+            current_quorum_size: self.routing_table.dynamic_quorum_size() + 1,
+
         };
         // TODO impl convert trait for RoutingError
         let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
@@ -705,15 +705,7 @@ impl RoutingNode {
                self.us(),
                public_sign_key);
 
-        let dynamic_quorum_size =
-            if let Content::InternalResponse(InternalResponse::GetNetworkName { .. }) =
-                   message.content {
-                self.relocation_quorum_size
-            } else {
-                self.routing_table_quorum_size()
-            };
-
-        self.message_accumulator.set_quorum_size(dynamic_quorum_size);
+        self.message_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
         if self.message_accumulator.add(message.clone(), public_sign_key.clone()).is_some() {
             self.handled_messages.add(message.clone());
             Some(message.clone())
@@ -1748,7 +1740,7 @@ impl RoutingNode {
                       cause: ::XorName)
                       -> RoutingResult {
         debug_assert!(our_authority.is_group());
-        let threshold = self.routing_table_quorum_size();
+        let threshold = self.routing_table.dynamic_quorum_size();
         let unknown_cause = !self.refresh_causes.check(&cause);
         let (is_new_request, payloads) = self.refresh_accumulator
                                              .add_message(threshold,
@@ -1782,10 +1774,6 @@ impl RoutingNode {
         }
     }
 
-
-    fn routing_table_quorum_size(&self) -> usize {
-        ::std::cmp::min(self.routing_table.len(), ::kademlia_routing_table::quorum_size())
-    }
 
     // Returns our name and state for logging
     fn us(&self) -> String {
