@@ -565,7 +565,13 @@ impl RoutingNode {
         } else {
             (routing_message, Some(signed_message.as_signed_request()))
         };
+        self.handle_accumulated_message(accumulated_message, opt_token)
+    }
 
+    fn handle_accumulated_message(&mut self,
+                                  accumulated_message: ::messages::RoutingMessage,
+                                  opt_token: Option<SignedRequest>)
+                                  -> RoutingResult {
         let result = match accumulated_message.content {
             Content::InternalRequest(request) => {
                 match request {
@@ -620,22 +626,16 @@ impl RoutingNode {
                     }
                     // From Group
                     InternalRequest::Refresh { type_tag, message, cause, } => {
-                        let refresh_authority = match our_authority {
-                            Some(authority) => {
-                                if !authority.is_group() {
+                        if  !accumulated_message.to_authority.is_group() {
                                     return Err(RoutingError::BadAuthority);
-                                };
-                                authority
                             }
-                            None => return Err(RoutingError::BadAuthority),
-                        };
                         if accumulated_message.from_authority.is_group() {
                             self.handle_refresh(type_tag,
                                                 accumulated_message.from_authority
                                                                    .get_location()
                                                                    .clone(),
                                                 message,
-                                                refresh_authority,
+                                                accumulated_message.to_authority,
                                                 cause)
                         } else {
                             return Err(RoutingError::BadAuthority);
@@ -689,6 +689,7 @@ impl RoutingNode {
             }
             Err(e) => Err(e),
         }
+
     }
 
     fn accumulate(&mut self,
