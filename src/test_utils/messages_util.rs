@@ -81,14 +81,14 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                                  secret_key: &::sodiumoxide::crypto::sign::SecretKey)
                                  -> ::messages::RoutingMessage {
-    let source = generate_random_authority(rand::random(), public_key);
-    let destination = generate_random_authority(rand::random(), public_key);
+    let source_authority = generate_random_authority(rand::random(), public_key);
+    let destination_authority = generate_random_authority(rand::random(), public_key);
     let data = generate_random_data(public_key, secret_key);
     let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
 
     ::messages::RoutingMessage {
-        source: source,
-        destination: destination,
+        source_authority: source_authority,
+        destination_authority: destination_authority,
         content: content,
         group_keys: None,
     }
