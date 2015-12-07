@@ -77,18 +77,18 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
 }
 
 /// Semi-random routing message.
-// TODO Brian: Randomize Content and rename to random_routing_message.
+// TODO Randomize Content and rename to random_routing_message.
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                                  secret_key: &::sodiumoxide::crypto::sign::SecretKey)
                                  -> ::messages::RoutingMessage {
-    let from_authority = generate_random_authority(rand::random(), public_key);
-    let to_authority = generate_random_authority(rand::random(), public_key);
+    let source_authority = generate_random_authority(rand::random(), public_key);
+    let destination_authority = generate_random_authority(rand::random(), public_key);
     let data = generate_random_data(public_key, secret_key);
     let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
 
     ::messages::RoutingMessage {
-        from_authority: from_authority,
-        to_authority: to_authority,
+        source_authority: source_authority,
+        destination_authority: destination_authority,
         content: content,
         group_keys: None,
     }

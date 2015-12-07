@@ -149,13 +149,13 @@ pub fn our_authority(message: &RoutingMessage,
                 // TODO Investigate
                 InternalRequest::GetNetworkName { .. } => None,
                 InternalRequest::Refresh { .. } => {
-                    let to_authority = &message.to_authority;
-                    if message.from_authority != *to_authority {
-                        return None;
+                    let ref destination_authority = message.destination_authority;
+                    if message.source_authority != *destination_authority {
+                        return None
                     }
-                    if to_authority.is_group() &&
-                       routing_table.is_close(to_authority.get_location()) {
-                        return Some(to_authority.clone());
+                    if destination_authority.is_group() &&
+                        routing_table.is_close(destination_authority.get_location()) {
+                            return Some(destination_authority.clone())
                     }
                     None
                 }
@@ -188,22 +188,23 @@ fn determine_authority(message: &RoutingMessage,
     match message.client_key_as_name() {
         Some(client_name) => {
             if routing_table.is_close(&client_name) &&
-               *message.to_authority.get_location() != *element {
+               *message.destination_authority.get_location() != *element {
                 return Some(Authority::ClientManager(client_name));
             }
         }
         None => {}
     };
-    if routing_table.is_close(&element) && *message.to_authority.get_location() == *element &&
+
+    if routing_table.is_close(&element) && *message.destination_authority.get_location() == *element &&
        element != routing_table.our_name() {
         return Some(Authority::NaeManager(*element));
     } else if message.source_group().is_some() &&
-       routing_table.is_close(message.to_authority.get_location()) &&
-       *message.to_authority.get_location() != *routing_table.our_name() {
-        return Some(Authority::NodeManager(message.to_authority.get_location().clone()));
+       routing_table.is_close(message.destination_authority.get_location()) &&
+       *message.destination_authority.get_location() != *routing_table.our_name() {
+        return Some(Authority::NodeManager(message.destination_authority.get_location().clone()));
     } else if message.source_group()
               .map_or(false, |group| routing_table.is_close(&group)) &&
-       *message.to_authority.get_location() == *routing_table.our_name() {
+       *message.destination_authority.get_location() == *routing_table.our_name() {
         return Some(Authority::ManagedNode(*routing_table.our_name()));
     }
     None
@@ -314,23 +315,24 @@ mod test {
                                                    ::types::generate_random_vec_u8(20usize)));
 
         // --- test determine_authority specific ----------------------------------------------------------------
-        // let to_authority_name =
+
+        // let destination_name =
         //     ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&client_public_key.0).0);
         // let client_manager_message = RoutingMessage {
-        //     from_authority: Authority::Client(rand::random(), client_public_key.clone()),
-        //     to_authority: Authority::ClientManager(to_authority_name),
+        //     source_authority: Authority::Client(rand::random(), client_public_key.clone()),
+        //     destination_authority: Authority::ClientManager(destination_name),
         //     content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         //     group_keys: None,
         // };
         // assert_eq!(unwrap_option!(super::determine_authority(&client_manager_message,
         //                                                      &routing_table,
         //                                                      &some_data.name()), ""),
-        //            Authority::ClientManager(to_authority_name));
+        //            Authority::ClientManager(destination_name));
         //
         // // assert to get a nae_manager Authority
         // let nae_manager_message = RoutingMessage {
-        //     from_authority: Authority::ClientManager(to_authority_name),
-        //     to_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+        //     source_authority: Authority::ClientManager(destination_name),
+        //     destination_authority: Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
         //     content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         //     group_keys: None,
         // };
@@ -341,8 +343,8 @@ mod test {
         //
         // // // assert to get a node_manager Authority
         // let node_manager_message = RoutingMessage {
-        //     from_authority: Authority::NaeManager(rand::random()),
-        //     to_authority: Authority::NodeManager(second_closest_node_in_our_close_group.name().clone()),
+        //     source_authority: Authority::NaeManager(rand::random()),
+        //     destination_authority: Authority::NodeManager(second_closest_node_in_our_close_group.name().clone()),
         //     content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         //     group_keys: None,
         // };
@@ -353,8 +355,8 @@ mod test {
         //
         // // assert to get a managed_node Authority
         // let managed_node_message = RoutingMessage {
-        //     from_authority: Authority::NodeManager(our_name.clone()),
-        //     to_authority: Authority::ManagedNode(our_name.clone()),
+        //     source_authority: Authority::NodeManager(our_name.clone()),
+        //     destination_authority: Authority::ManagedNode(our_name.clone()),
         //     content: Content::ExternalRequest(ExternalRequest::Put(some_data.clone())),
         //     group_keys: None,
         // };
@@ -373,8 +375,8 @@ mod test {
         // };
         //
         // let refresh_message = RoutingMessage {
-        //     from_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
-        //     to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+        //     source_authority : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+        //     destination_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
         //     content        : Content::InternalRequest(request.clone()),
         //     group_keys     : None,
         // };
@@ -383,16 +385,16 @@ mod test {
         //
         // // assert that this is not a valid Refresh Authority
         // let refresh_message = RoutingMessage {
-        //     from_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
-        //     to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+        //     source_authority : Authority::ClientManager(nae_or_client_in_our_close_group.clone()),
+        //     destination_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
         //     content        : Content::InternalRequest(request.clone()),
         //     group_keys: None,
         // };
         // assert!(super::our_authority(&refresh_message, &routing_table).is_none());
         // // assert that this is not a valid Refresh Authority
         // let refresh_message = RoutingMessage {
-        //     from_authority : Authority::NaeManager(closest_node_in_our_close_group.name().clone()),
-        //     to_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
+        //     source_authority : Authority::NaeManager(closest_node_in_our_close_group.name().clone()),
+        //     destination_authority   : Authority::NaeManager(nae_or_client_in_our_close_group.clone()),
         //     content        : Content::InternalRequest(request),
         //     group_keys: None,
         // };
