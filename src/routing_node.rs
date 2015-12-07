@@ -507,11 +507,9 @@ impl RoutingNode {
         if self.state == State::Node {
             // Node Harvesting
             match routing_message.from_authority {
-                ::authority::Authority::ClientManager(ref name) => {
-                    self.refresh_routing_table(&name)
-                }
-                ::authority::Authority::NaeManager(ref name) => self.refresh_routing_table(&name),
-                ::authority::Authority::NodeManager(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::ClientManager(ref name) |
+                ::authority::Authority::NaeManager(ref name)  |
+                ::authority::Authority::NodeManager(ref name) |
                 ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
                 ::authority::Authority::Client(_, _) => {}
             };
