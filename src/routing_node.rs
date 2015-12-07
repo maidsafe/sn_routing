@@ -506,13 +506,14 @@ impl RoutingNode {
         // Scan for remote names.
         if self.state == State::Node {
             // Node Harvesting
-            match routing_message.from_authority {
-                ::authority::Authority::ClientManager(ref name) |
-                ::authority::Authority::NaeManager(ref name)  |
-                ::authority::Authority::NodeManager(ref name) |
-                ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
-                ::authority::Authority::Client(_, _) => {}
-            };
+            // FIXME(dirvine) The name here is not a node we cannot harvest it :07/12/2015
+            // match routing_message.from_authority {
+            //     ::authority::Authority::ClientManager(ref name) |
+            //     ::authority::Authority::NaeManager(ref name)  |
+            //     ::authority::Authority::NodeManager(ref name) |
+            //     ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
+            //     ::authority::Authority::Client(_, _) => {}
+            // };
 
             // Forward the message.
             debug!("{}Forwarding signed message", self.us());
