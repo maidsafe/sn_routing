@@ -226,8 +226,7 @@ impl SignedMessage {
 impl ::std::fmt::Debug for SignedMessage {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(formatter,
-               "SignedMessage {{ signed_routing_message: {:?}, public_sign_key: {:?}, }}",
-               self.signed_routing_message,
+               "SignedMessage {{ signed_routing_message: (..), public_sign_key: {:?}, }}",
                self.public_sign_key)
     }
 }

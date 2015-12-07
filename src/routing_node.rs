@@ -16,6 +16,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::io;
 use crust;
 
 use kademlia_routing_table::{RoutingTable, NodeInfo};
@@ -45,8 +46,8 @@ type RoutingResult = Result<(), RoutingError>;
 const MAX_RELAYS: usize = 100;
 const ROUTING_NODE_THREAD_NAME: &'static str = "RoutingNodeThread";
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
-const CRUST_DEFAULT_TCP_ACCEPTING_PORT: ::crust::Port = ::crust::Port::Tcp(5483);
-const CRUST_DEFAULT_UTP_ACCEPTING_PORT: ::crust::Port = ::crust::Port::Utp(5483);
+const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
+const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 enum State {
@@ -213,8 +214,8 @@ impl RoutingNode {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         match crust_event {
                             ::crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            ::crust::Event::OnAccept(connection) => {
-                                self.handle_on_accept(connection)
+                            ::crust::Event::OnAccept(endpoint, connection) => {
+                                self.handle_on_accept(endpoint, connection)
                             }
 
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
@@ -225,8 +226,8 @@ impl RoutingNode {
                             ::crust::Event::NewMessage(connection, bytes) => {
                                 self.handle_new_message(connection, bytes)
                             }
-                            ::crust::Event::OnConnect(connection, connection_token) => {
-                                self.handle_on_connect(connection, connection_token)
+                            ::crust::Event::OnConnect(io_result, connection_token) => {
+                                self.handle_on_connect(io_result, connection_token)
                             }
                             ::crust::Event::ExternalEndpoints(external_endpoints) => {
                                 for external_endpoint in external_endpoints {
@@ -274,7 +275,7 @@ impl RoutingNode {
         match self.crust_service.start_accepting(CRUST_DEFAULT_TCP_ACCEPTING_PORT) {
             Ok(endpoint) => {
                 info!("{}Running TCP listener on {:?}", self.us(), endpoint);
-                self.accepting_on.push(endpoint);
+                // self.accepting_on.push(endpoint);
             }
             Err(error) => {
                 warn!("{}Failed to listen on {:?}: {:?}",
@@ -286,7 +287,7 @@ impl RoutingNode {
         match self.crust_service.start_accepting(CRUST_DEFAULT_UTP_ACCEPTING_PORT) {
             Ok(endpoint) => {
                 info!("{}Running uTP listener on {:?}", self.us(), endpoint);
-                self.accepting_on.push(endpoint);
+                // self.accepting_on.push(endpoint);
             }
             Err(error) => {
                 warn!("{}Failed to listen on {:?}: {:?}",
@@ -302,7 +303,7 @@ impl RoutingNode {
         self.crust_service.get_external_endpoints();
     }
 
-    fn handle_new_message(&mut self, connection: ::crust::Connection, bytes: Vec<u8>) {
+    fn handle_new_message(&mut self, connection: crust::Connection, bytes: Vec<u8>) {
         match decode::<SignedMessage>(&bytes) {
             Ok(message) => {
                 let _ = self.handle_routing_message(message);
@@ -323,14 +324,16 @@ impl RoutingNode {
     }
 
     fn handle_on_connect(&mut self,
-                         connection: ::std::io::Result<::crust::Connection>,
+                         result: io::Result<(crust::Endpoint, crust::Connection)>,
                          connection_token: u32) {
-        match connection {
-            Ok(connection) => {
+        match result {
+            Ok((endpoint, connection)) => {
                 debug!("{}New connection via OnConnect {:?} with token {}",
                        self.us(),
                        connection,
                        connection_token);
+                debug!("Adding endpoint via OnConnect {:?}.", endpoint);
+                self.accepting_on.push(endpoint);
                 if let State::Disconnected = *self.state() {
                     // Established connection. Pending Validity checks
                     self.state = State::Bootstrapping;
@@ -349,7 +352,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_on_accept(&mut self, connection: ::crust::Connection) {
+    fn handle_on_accept(&mut self, endpoint: crust::Endpoint, connection: crust::Connection) {
         debug!("{}New connection via OnAccept {:?}", self.us(), connection);
         if let State::Disconnected = *self.state() {
             // I am the first node in the network, and I got an incoming connection so I'll
@@ -364,10 +367,12 @@ impl RoutingNode {
             self.assign_network_name(new_name);
             self.state = State::Node;
         }
+        debug!("Adding endpoint via OnAccept {:?}.", endpoint);
+        self.accepting_on.push(endpoint);
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint everywhere
-    fn handle_lost_connection(&mut self, connection: ::crust::Connection) {
+    fn handle_lost_connection(&mut self, connection: crust::Connection) {
         debug!("{}Lost connection on {:?}", self.us(), connection);
         self.dropped_routing_node_connection(&connection);
         self.dropped_client_connection(&connection);
@@ -479,7 +484,7 @@ impl RoutingNode {
     /// then we will pass out the message to the client or bootstrapping node;
     /// no proxy-messages enter the SAFE network here.
     fn handle_routing_message(&mut self, signed_message: SignedMessage) -> RoutingResult {
-        debug!("{}Signed Message Received - {:?}",
+        debug!("{}Signed Message Received {:?}",
                self.us(),
                signed_message);
 
@@ -497,6 +502,8 @@ impl RoutingNode {
             debug!("{}This message has already been actioned.", self.us());
             return Err(RoutingError::FilterCheckFailed);
         }
+
+        debug!("Handling Routing Message {:?}.", routing_message);
 
         // Cache a response if from a GetRequest and caching is enabled for the Data type.
         self.data_cache.handle_cache_put(&routing_message);
@@ -1114,6 +1121,7 @@ impl RoutingNode {
                       destination_authority: ::authority::Authority)
                       -> RoutingResult {
         // TODO(Brian) validate accepting_on has valid entries in future
+        debug!("Sending endpoints {:?}.", self.accepting_on);
         let encoded_endpoints =
             try!(::maidsafe_utilities::serialisation::serialise(&self.accepting_on));
         let nonce = ::sodiumoxide::crypto::box_::gen_nonce();
@@ -1639,8 +1647,8 @@ impl RoutingNode {
             }
         };
 
-        let destination_authority = message.destination_authority;
-        debug!("{}Send request to {:?}", self.us(), destination_authority);
+        let destination_authority = message.destination_authority.clone();
+        debug!("{}Send request {:?} to {:?}", self.us(), message.content, destination_authority);
         let bytes = match encode(&signed_message) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -1662,7 +1670,7 @@ impl RoutingNode {
                 self.crust_service.send(connection.clone(), bytes.clone());
                 debug!("{}Sent {:?} to bootstrap connection {:?}",
                        self.us(),
-                       signed_message,
+                       message,
                        connection);
             }
             return;
