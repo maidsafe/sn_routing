@@ -26,7 +26,6 @@ pub struct PlainData {
 }
 
 impl PlainData {
-
     /// Creates a new instance of PlainData
     pub fn new(name: XorName, value: Vec<u8>) -> PlainData {
         PlainData {
