@@ -19,7 +19,7 @@
 
 use lru_time_cache::LruCache;
 
-use NameType;
+use XorName;
 use data_cache_options::DataCacheOptions;
 use data::{Data, DataRequest};
 
@@ -31,16 +31,16 @@ use messages::{RoutingMessage, Content, ExternalRequest, ExternalResponse};
 /// Routing Node
 pub struct DataCache {
     cache_options: DataCacheOptions,
-    data_cache: Option<LruCache<NameType, Data>>,
+    data_cache: Option<LruCache<XorName, Data>>,
 }
 
 impl DataCache {
     /// constructor
-    pub fn new() ->DataCache {
+    pub fn new() -> DataCache {
         DataCache {
-        cache_options : DataCacheOptions::new(),
-        data_cache : None    
-        }   
+            cache_options: DataCacheOptions::new(),
+            data_cache: None,
+        }
     }
     /// Set cache via the DataCacheOptions struct
     pub fn set_cache_options(&mut self, cache_options: DataCacheOptions) {
@@ -48,7 +48,7 @@ impl DataCache {
         if self.cache_options.caching_enabled() {
             match self.data_cache {
                 None => self.data_cache =
-                    Some(LruCache::<NameType, Data>::with_expiry_duration(
+                    Some(LruCache::<XorName, Data>::with_expiry_duration(
                             ::time::Duration::minutes(10))),
                 Some(_) => {}
             }
@@ -93,7 +93,7 @@ impl DataCache {
         }
 
     }
-  
+
     /// if we have cached the data then return it here.
     pub fn handle_cache_get(&mut self, message: &RoutingMessage) -> Option<Content> {
         match self.data_cache {
@@ -122,14 +122,14 @@ impl DataCache {
                                     }
                                     DataRequest::StructuredData(_, _) => {
                                         if self.cache_options.structured_data_caching_enabled() {
-                                            if let Some(data) = data_cache.get(&data_request.name()) {
-                                                    debug!("Got StructuredData {:?} from \
-                                                           cache", data_request.name());
-                                                    let response =
-                                                        ExternalResponse::Get(data.clone(),
-                                                                              data_request,
-                                                                              None);
-                                                    return Some(Content::ExternalResponse(response));
+                                            if let Some(data) =
+                                                   data_cache.get(&data_request.name()) {
+                                                debug!("Got StructuredData {:?} from cache",
+                                                       data_request.name());
+                                                let response = ExternalResponse::Get(data.clone(),
+                                                                                     data_request,
+                                                                                     None);
+                                                return Some(Content::ExternalResponse(response));
                                             }
                                         }
                                         None
@@ -138,8 +138,8 @@ impl DataCache {
                                         if self.cache_options.immutable_data_caching_enabled() {
                                             match data_cache.get(&data_name) {
                                                 Some(data) => {
-                                                    debug!("Got ImmutableData {:?} from \
-                                                           cache", data_name);
+                                                    debug!("Got ImmutableData {:?} from cache",
+                                                           data_name);
                                                     let response =
                                                         ExternalResponse::Get(data.clone(),
                                                                               data_request,
@@ -155,11 +155,9 @@ impl DataCache {
                             }
                             _ => None,
                         }
-
                     }
                     _ => None,
                 }
-
             }
             None => None,
         }
@@ -169,7 +167,6 @@ impl DataCache {
 #[cfg(test)]
 mod test {
     #[test]
-    fn not_tested() {
-    }
+    fn not_tested() {}
 
 }

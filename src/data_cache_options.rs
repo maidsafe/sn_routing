@@ -25,7 +25,6 @@ pub struct DataCacheOptions {
 }
 
 impl DataCacheOptions {
-
     /// Constructor
     pub fn new() -> DataCacheOptions {
         DataCacheOptions {
@@ -88,7 +87,7 @@ impl DataCacheOptions {
 
 #[cfg(test)]
 mod test {
-    use super::*; 
+    use super::*;
 
     #[test]
     fn check_conversions() {
@@ -168,7 +167,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::NameType = rand::random();
+        let name: ::XorName = rand::random();
         let node_address = ::types::Address::Node(name);
 
         match node_address {

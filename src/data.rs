@@ -19,7 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use plain_data::PlainData;
-use NameType;
+use XorName;
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
@@ -34,7 +34,7 @@ pub enum Data {
 
 impl Data {
     /// Return data name.
-    pub fn name(&self) -> NameType {
+    pub fn name(&self) -> XorName {
         match *self {
             Data::StructuredData(ref d) => d.name(),
             Data::ImmutableData(ref d) => d.name(),
@@ -56,16 +56,16 @@ impl Data {
 /// DataRequest.
 pub enum DataRequest {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
-    StructuredData(NameType, u64),
+    StructuredData(XorName, u64),
     /// Data request, (Identifier, Type), for ImmutableData types.
-    ImmutableData(NameType, ImmutableDataType),
+    ImmutableData(XorName, ImmutableDataType),
     /// Request for PlainData.
-    PlainData(NameType),
+    PlainData(XorName),
 }
 
 impl DataRequest {
     /// DataRequest name.
-    pub fn name(&self) -> NameType {
+    pub fn name(&self) -> XorName {
         match *self {
             DataRequest::StructuredData(ref name, tag) => StructuredData::compute_name(tag, name),
             DataRequest::ImmutableData(ref name, _) => name.clone(),
@@ -106,7 +106,7 @@ mod test {
                    ::data::Data::ImmutableData(immutable_data).name());
 
         // name() resolves correctly for PlainData
-        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.name(),
                    ::data::Data::PlainData(plain_data).name());
@@ -140,7 +140,7 @@ mod test {
                    ::data::Data::ImmutableData(immutable_data).payload_size());
 
         // payload_size() resolves correctly for PlainData
-        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.payload_size(),
                    ::data::Data::PlainData(plain_data).payload_size());
@@ -148,7 +148,7 @@ mod test {
 
     #[test]
     fn data_request_name() {
-        let name = ::NameType(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
         // name() resolves correctly for StructuedData
         let tag = 0;

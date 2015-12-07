@@ -18,7 +18,7 @@
 use std::fmt::{Debug, Formatter, Error};
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
-use NameType;
+use XorName;
 use sodiumoxide::crypto;
 
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
@@ -41,7 +41,6 @@ pub struct ImmutableData {
 }
 
 impl ImmutableData {
-
     /// Creates a new instance of ImmutableData
     pub fn new(type_tag: ImmutableDataType, value: Vec<u8>) -> ImmutableData {
         ImmutableData {
@@ -61,13 +60,14 @@ impl ImmutableData {
     }
 
     /// Returns name ensuring invariant
-    pub fn name(&self) -> NameType {
+    pub fn name(&self) -> XorName {
         let digest = crypto::hash::sha512::hash(&self.value);
         match self.type_tag {
-            ImmutableDataType::Normal => NameType(digest.0),
-            ImmutableDataType::Backup => NameType(crypto::hash::sha512::hash(&digest.0).0),
-            ImmutableDataType::Sacrificial =>
-                NameType(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0),
+            ImmutableDataType::Normal => XorName(digest.0),
+            ImmutableDataType::Backup => XorName(crypto::hash::sha512::hash(&digest.0).0),
+            ImmutableDataType::Sacrificial => {
+                XorName(crypto::hash::sha512::hash(&crypto::hash::sha512::hash(&digest.0).0).0)
+            }
         }
     }
 

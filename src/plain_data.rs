@@ -16,19 +16,18 @@
 // relating to use of the SAFE Network Software.
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
-use NameType;
+use XorName;
 
 /// PlainData
 #[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PlainData {
-    name: NameType,
+    name: XorName,
     value: Vec<u8>,
 }
 
 impl PlainData {
-
     /// Creates a new instance of PlainData
-    pub fn new(name: NameType, value: Vec<u8>) -> PlainData {
+    pub fn new(name: XorName, value: Vec<u8>) -> PlainData {
         PlainData {
             name: name,
             value: value,
@@ -42,7 +41,7 @@ impl PlainData {
 
 
     /// Returns name ensuring invariant
-    pub fn name(&self) -> NameType {
+    pub fn name(&self) -> XorName {
         self.name.clone()
     }
 
@@ -59,7 +58,7 @@ mod test {
 
     extern crate rand;
 
-    use NameType;
+    use XorName;
     use super::PlainData;
     use self::rand::Rng;
     use sodiumoxide::crypto;
@@ -78,8 +77,8 @@ mod test {
 
     #[test]
     fn basic_check() {
-        let name1 = NameType(crypto::hash::sha512::hash(&generate_random()).0);
-        let name2 = NameType(crypto::hash::sha512::hash(&generate_random()).0);
+        let name1 = XorName(crypto::hash::sha512::hash(&generate_random()).0);
+        let name2 = XorName(crypto::hash::sha512::hash(&generate_random()).0);
         let value1 = generate_random();
         let value2 = generate_random();
         let plain_data1 = PlainData::new(name1, value1.clone());

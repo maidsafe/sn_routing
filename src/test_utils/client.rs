@@ -51,12 +51,12 @@ impl Client {
         loop {
             while let Ok(event) = self.receiver.try_recv() {
                 debug!("Client received routing event: {:?}", event);
-                if let ::event::Event::Response{ response, our_authority: _, from_authority : _} = event {
+                if let ::event::Event::Response{ response, our_authority: _, from_authority : _} =
+                       event {
                     match response {
                         ::messages::ExternalResponse::Get(data, _, _) => {
                             debug!("Client received data {:?} for get request.", data);
-                            debug!("Get took {:?} to arrive.",
-                                    ::time::SteadyTime::now() - time);
+                            debug!("Get took {:?} to arrive.", ::time::SteadyTime::now() - time);
                             return Some(data);
                         }
                         _ => debug!("Received unexpected external response {:?},", response),
@@ -102,7 +102,7 @@ impl Client {
     // }
 
     /// Return network name.
-    pub fn name(&self) -> &::NameType {
+    pub fn name(&self) -> &::XorName {
         self.full_id.public_id().name()
     }
 }

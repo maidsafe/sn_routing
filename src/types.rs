@@ -58,12 +58,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-/// Group size.
-pub const GROUP_SIZE: usize = 8;
-/// Quorum size.
-pub const QUORUM_SIZE: usize = 5;
-/// Quorum factor.
-pub const QUORUM_FACTOR: f64 = QUORUM_SIZE as f64 / GROUP_SIZE as f64;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
 /// Address.
@@ -71,19 +65,17 @@ pub enum Address {
     /// Is a client with supplied public key.
     Client(::sodiumoxide::crypto::sign::PublicKey),
     /// Is a node with given name.
-    Node(::NameType),
+    Node(::XorName),
 }
 
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match *self {
             Address::Client(ref public_key) => {
-                formatter.write_str(&format!("Client({:?})", ::NameType::new(
+                formatter.write_str(&format!("Client({:?})", ::XorName::new(
                     ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
-            Address::Node(ref name) => {
-                formatter.write_str(&format!("Node({:?})", name))
-            }
+            Address::Node(ref name) => formatter.write_str(&format!("Node({:?})", name)),
         }
     }
 }
@@ -118,7 +110,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::NameType = rand::random();
+        let name: ::XorName = rand::random();
         let node_address = super::Address::Node(name);
 
         match node_address {
