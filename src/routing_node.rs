@@ -186,8 +186,12 @@ impl RoutingNode {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
-                            Action::SendContent(source_authority, destination_authority, content) => {
-                                let _ = self.send_content(source_authority, destination_authority, content);
+                            Action::SendContent(source_authority,
+                                                destination_authority,
+                                                content) => {
+                                let _ = self.send_content(source_authority,
+                                                          destination_authority,
+                                                          content);
                             },
                             Action::ClientSendContent(destination_authority, content) => {
                                 debug!("{}ClientSendContent received for {:?}", self.us(), content);
@@ -318,7 +322,9 @@ impl RoutingNode {
         }
     }
 
-    fn handle_on_connect(&mut self, connection: ::std::io::Result<::crust::Connection>, connection_token: u32) {
+    fn handle_on_connect(&mut self,
+                         connection: ::std::io::Result<::crust::Connection>,
+                         connection_token: u32) {
         match connection {
             Ok(connection) => {
                 debug!("{}New connection via OnConnect {:?} with token {}",
@@ -606,7 +612,8 @@ impl RoutingNode {
                     InternalRequest::GetPublicId => {
                         if let (::authority::Authority::ManagedNode(from_name),
                                 ::authority::Authority::NodeManager(to_name)) =
-                                (accumulated_message.source_authority, accumulated_message.destination_authority) {
+                                (accumulated_message.source_authority,
+                                 accumulated_message.destination_authority) {
                             self.handle_get_public_id(opt_token, from_name, to_name)
                         } else {
                             return Err(RoutingError::BadAuthority);
@@ -615,7 +622,8 @@ impl RoutingNode {
                     InternalRequest::GetPublicIdWithEndpoints { .. } => {
                         if let (::authority::Authority::ManagedNode(from_name),
                                 ::authority::Authority::NodeManager(to_name)) =
-                                (accumulated_message.source_authority, accumulated_message.destination_authority) {
+                                (accumulated_message.source_authority,
+                                 accumulated_message.destination_authority) {
                             self.handle_get_public_id_with_endpoints(opt_token, from_name, to_name)
                         } else {
                             return Err(RoutingError::BadAuthority);
