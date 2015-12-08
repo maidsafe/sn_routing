@@ -332,8 +332,10 @@ impl RoutingNode {
                        self.us(),
                        connection,
                        connection_token);
-                debug!("Adding endpoint via OnConnect {:?}.", endpoint);
-                self.accepting_on.push(endpoint);
+                if !self.accepting_on.iter().any(|&e| e == endpoint) {
+                    debug!("Received external endpoint via OnConnect {:?}.", endpoint);
+                    self.accepting_on.push(endpoint);
+                }
                 if let State::Disconnected = *self.state() {
                     // Established connection. Pending Validity checks
                     self.state = State::Bootstrapping;
@@ -367,8 +369,10 @@ impl RoutingNode {
             self.assign_network_name(new_name);
             self.state = State::Node;
         }
-        debug!("Adding endpoint via OnAccept {:?}.", endpoint);
-        self.accepting_on.push(endpoint);
+        if !self.accepting_on.iter().any(|&e| e == endpoint) {
+            debug!("Received external endpoint via OnAccept {:?}.", endpoint);
+            self.accepting_on.push(endpoint);
+        }
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint everywhere
