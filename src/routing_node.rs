@@ -77,10 +77,9 @@ pub struct RoutingNode {
                                                       ::sodiumoxide::crypto::sign::PublicKey>,
     refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
     refresh_causes: ::message_filter::MessageFilter<::XorName>,
-    // Messages which have been accumulated and then actioned
+    // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
-    data_cache: ::data_cache::DataCache,
     relocation_quorum_size: usize,
 
     full_id: FullId,
@@ -90,6 +89,7 @@ pub struct RoutingNode {
     proxy_map: ::std::collections::HashMap<::crust::Connection, PublicId>,
     // any clients we have proxying through us
     client_map: ::std::collections::HashMap<crypto::sign::PublicKey, ::crust::Connection>,
+    data_cache: LruCache<XorName, Data>,
 }
 
 impl RoutingNode {
@@ -152,13 +152,13 @@ impl RoutingNode {
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
             // cache_options: ::data_cache_options::DataCacheOptions::new(),
-                data_cache: ::data_cache::DataCache::new(),
                 relocation_quorum_size: 0,
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
                 client_map: ::std::collections::HashMap::new(),
+                data_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             };
 
             routing_node.run(category_rx);
@@ -300,22 +300,149 @@ impl RoutingNode {
         // Either swarm or Direction check
         if self.state == State::Node {
             if self.routing_table.is_close(signed_msg.content().dst.get_name()) {
-                if self.full_id.public_id().name() != signed_msg.content().dst.get_name() &&
-                   signed_msg.content().dst.is_group() {
+                if signed_msg.content().dst.is_group() {
                     // Swarm
-                    let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                                       self.full_id.public_id().name(),
-                                                       self.full_id.signing_private_key()));
-                    self.send(hop_msg);
+                    self.send(signed_msg.clone());
                 }
             } else if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                                     &hop_name,
-                                                    signed_msg.content().dst.get_name()) {
+                                                    signed_msg.content().dst().get_name()) {
                 return Err(RoutingError::DirectionCheckFailed)
+            }
+
+            // Cache handling
+            if let Some(data) = self.get_from_cache(signed_msg.content()) {
+                let content = ResponseContent::Get {
+                    result: Ok(data.clone()),
+                };
+
+                let response_msg = ResponseMessage {
+                    src: Authority::ManagedNode(self.full_id.public_id().name().clone(),
+                    dst: signed_msg.content().src().clone(),
+                    content: content,
+                };
+
+                let routing_msg = RoutingMessage::Response(response_msg);
+                let signed_msg = SignedMessage::new(routing_msg, &self.full_id);
+
+                return self.send(signed_msg)
+            }
+
+            self.add_to_cache(signed_msg.content());
+
+            // Forwarding the message not meant for us (transit)
+            if !self.routing_table.is_close(signed_msg.content().dst.get_name()) {
+                self.send(signed_msg.clone());
             }
         }
 
+        // Hereafter this msg is for us
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id())
+    }
+
+    fn get_from_cache(&self, routing_msg: &RoutingMessage) -> Option<&Data> {
+        match *routing_msg {
+            RoutingMessage::Request(RequestContent::Get(DataRequest::ImmutableData(ref name, _))) =>
+                self.data_cache.get(name),
+            _ => None,
+        }
+    }
+
+    fn add_to_cache(&self, routing_msg: &RoutingMessage) {
+        match *routing_msg {
+            RoutingMessage::Response(ResponseContent::Get { result: Ok(ref data), }) => {
+                if let Data::ImmutableData(_) = *data {
+                    let _ = self.data_cache.insert(data.name().clone(), data.clone());
+                }
+            },
+            _ => (),
+        }
+    }
+
+    /// This the fundamental functional function in routing.
+    /// It only handles messages received from connections in our routing table;
+    /// i.e. this is a pure SAFE message (and does not function as the start of a proxy).
+    /// If we are the proxy node for a message from the SAFE network to a node we proxy for,
+    /// then we will pass out the message to the client or bootstrapping node;
+    /// no proxy-messages enter the SAFE network here.
+    fn handle_routing_message(&mut self, routing_msg: RoutingMessage, public_id: PublicId) -> RoutingResult {
+        if self.grp_msg_filter.check(&routing_message) {
+            return Err(RoutingError::FilterCheckFailed)
+        }
+
+        // Cache a response if from a GetRequest and caching is enabled for the Data type.
+        self.data_cache.handle_cache_put(&routing_message);
+        // Get from cache if it's there.
+        if let Some(content) = self.data_cache.handle_cache_get(&routing_message) {
+            let source_authority = ::authority::Authority::ManagedNode(*self.full_id
+                                                                            .public_id()
+                                                                            .name());
+            return self.send_content(source_authority, routing_message.source_authority, content);
+        }
+
+        // Scan for remote names.
+        if self.state == State::Node {
+            // Node Harvesting
+            match routing_message.source_authority {
+                ::authority::Authority::ClientManager(ref name) |
+                ::authority::Authority::NaeManager(ref name)  |
+                ::authority::Authority::NodeManager(ref name) |
+                ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
+                ::authority::Authority::Client(_, _) => {}
+            };
+
+            // Forward the message.
+            debug!("{}Forwarding signed message", self.us());
+            // Swarm
+            self.send(signed_message.clone());
+        }
+
+        // TODO Needs discussion as to what this block does
+        // check if our calculated authority matches the destination authority of the message
+        let our_authority = self.our_authority(&routing_message);
+        if our_authority.clone()
+                        .map_or(true, |our_auth| &routing_message.destination_authority != &our_auth) {
+            // Either the message is directed at a group, and the target should be in range,
+            // or it should be aimed directly at us.
+            if routing_message.destination_authority.is_group() {
+                if !self.name_in_range(routing_message.destination_authority.get_location()) {
+                    debug!("{}Name {:?} not in range",
+                           self.us(),
+                           routing_message.destination_authority.get_location());
+                    return Err(RoutingError::BadAuthority);
+                };
+                debug!("{}Received an in-range group message", self.us());
+            } else {
+                match routing_message.destination_authority.get_address() {
+                    Some(ref address) => {
+                        if !self.is_us(address) {
+                            debug!("{}Destination address {:?} is not us", self.us(), address);
+                            return Err(RoutingError::BadAuthority);
+                        }
+                    }
+                    None => return Err(RoutingError::BadAuthority),
+                }
+            }
+        }
+
+        // Accumulate message
+        debug!("{}Accumulating signed message", self.us());
+
+        // If the message is not from a group then don't accumulate
+        let (accumulated_message, opt_token) = if routing_message.source_authority.is_group() {
+            match self.accumulate(&routing_message,
+                                  signed_message.signing_public_key().clone()) {
+                Some(output_message) => (output_message, None),
+                None => {
+                    debug!("{}Not enough signatures. Not processing request yet",
+                           self.us());
+                    return Err(::error::RoutingError::NotEnoughSignatures);
+                }
+            }
+        } else {
+            (routing_message, Some(signed_message.as_signed_request()))
+        };
+        self.handle_accumulated_message(accumulated_message, opt_token)
     }
 
     fn handle_bootstrap_finished(&mut self) {
@@ -524,93 +651,6 @@ impl RoutingNode {
     //     }
     // }
 
-    /// This the fundamental functional function in routing.
-    /// It only handles messages received from connections in our routing table;
-    /// i.e. this is a pure SAFE message (and does not function as the start of a proxy).
-    /// If we are the proxy node for a message from the SAFE network to a node we proxy for,
-    /// then we will pass out the message to the client or bootstrapping node;
-    /// no proxy-messages enter the SAFE network here.
-    fn handle_routing_message(&mut self, routing_msg: RoutingMessage, public_id: PublicId) -> RoutingResult {
-        debug!("{}Signed Message Received - {:?}", self.us(), signed_message);
-
-        if self.grp_msg_filter.check(&routing_message) {
-            return Err(RoutingError::FilterCheckFailed)
-        }
-
-        // Cache a response if from a GetRequest and caching is enabled for the Data type.
-        self.data_cache.handle_cache_put(&routing_message);
-        // Get from cache if it's there.
-        if let Some(content) = self.data_cache.handle_cache_get(&routing_message) {
-            let source_authority = ::authority::Authority::ManagedNode(*self.full_id
-                                                                            .public_id()
-                                                                            .name());
-            return self.send_content(source_authority, routing_message.source_authority, content);
-        }
-
-        // Scan for remote names.
-        if self.state == State::Node {
-            // Node Harvesting
-            match routing_message.source_authority {
-                ::authority::Authority::ClientManager(ref name) |
-                ::authority::Authority::NaeManager(ref name)  |
-                ::authority::Authority::NodeManager(ref name) |
-                ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
-                ::authority::Authority::Client(_, _) => {}
-            };
-
-            // Forward the message.
-            debug!("{}Forwarding signed message", self.us());
-            // Swarm
-            self.send(signed_message.clone());
-        }
-
-        // TODO Needs discussion as to what this block does
-        // check if our calculated authority matches the destination authority of the message
-        let our_authority = self.our_authority(&routing_message);
-        if our_authority.clone()
-                        .map_or(true, |our_auth| &routing_message.destination_authority != &our_auth) {
-            // Either the message is directed at a group, and the target should be in range,
-            // or it should be aimed directly at us.
-            if routing_message.destination_authority.is_group() {
-                if !self.name_in_range(routing_message.destination_authority.get_location()) {
-                    debug!("{}Name {:?} not in range",
-                           self.us(),
-                           routing_message.destination_authority.get_location());
-                    return Err(RoutingError::BadAuthority);
-                };
-                debug!("{}Received an in-range group message", self.us());
-            } else {
-                match routing_message.destination_authority.get_address() {
-                    Some(ref address) => {
-                        if !self.is_us(address) {
-                            debug!("{}Destination address {:?} is not us", self.us(), address);
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                    None => return Err(RoutingError::BadAuthority),
-                }
-            }
-        }
-
-        // Accumulate message
-        debug!("{}Accumulating signed message", self.us());
-
-        // If the message is not from a group then don't accumulate
-        let (accumulated_message, opt_token) = if routing_message.source_authority.is_group() {
-            match self.accumulate(&routing_message,
-                                  signed_message.signing_public_key().clone()) {
-                Some(output_message) => (output_message, None),
-                None => {
-                    debug!("{}Not enough signatures. Not processing request yet",
-                           self.us());
-                    return Err(::error::RoutingError::NotEnoughSignatures);
-                }
-            }
-        } else {
-            (routing_message, Some(signed_message.as_signed_request()))
-        };
-        self.handle_accumulated_message(accumulated_message, opt_token)
-    }
 
     fn handle_accumulated_message(&mut self,
                                   accumulated_message: ::messages::RoutingMessage,

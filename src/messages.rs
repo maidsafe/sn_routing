@@ -126,6 +126,22 @@ pub enum RoutingMessage {
     Response(ResponseMessage),
 }
 
+impl RoutingMessage {
+    pub fn src(&self) -> &Authority {
+        match *self {
+            Request(ref msg) => &msg.src,
+            Response(ref msg) => &msg.src,
+        }
+    }
+
+    pub fn dst(&self) -> &Authority {
+        match *self {
+            Request(ref msg) => &msg.dst,
+            Response(ref msg) => &msg.dst,
+        }
+    }
+}
+
 #[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
 pub struct RequestMessage {
     pub src: Authority,
@@ -138,7 +154,6 @@ pub struct ResponseMessage {
     pub src: Authority,
     pub dst: Authority,
     pub content: ResponseContent,
-    pub request: SignedMessage,
 }
 
 #[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
