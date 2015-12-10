@@ -26,7 +26,7 @@ use routing_node::RoutingNode;
 use data::{Data, DataRequest};
 use error::RoutingError;
 use authority::Authority;
-use messages::{ExternalRequest, Content};
+use messages::{RequestMessage, RequestContent};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -52,7 +52,6 @@ impl RoutingClient {
         let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender,
                                                                            true,
                                                                            keys));
-
         RoutingClient {
             action_sender: action_sender,
             get_counter: 0u8,
@@ -65,8 +64,7 @@ impl RoutingClient {
         self.get_counter = self.get_counter.wrapping_add(1);
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
-                Content::ExternalRequest(
-                    ExternalRequest::Get(data_request, self.get_counter))));
+                ::messages::RequestContent::Get(data_request)));
     }
 
     /// Add something to the network
@@ -74,21 +72,21 @@ impl RoutingClient {
         debug!("Received put request from Client for {:?}", data);
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Put(data))));
+                ::messages::RequestContent::Put(data)));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, location: Authority, data: Data) {
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Post(data))));
+                ::messages::RequestContent::Post(data)));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, location: Authority, data: Data) {
         let _ = self.action_sender.send(Action::ClientSendContent(
                 location,
-                Content::ExternalRequest(ExternalRequest::Delete(data))));
+                ::messages::RequestContent::Delete(data)));
     }
 
     // TODO(Spandan) Should be removed as Routing is now made to implement drop
