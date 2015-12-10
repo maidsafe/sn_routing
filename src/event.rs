@@ -78,8 +78,6 @@ pub enum Event {
     /// also accumulated a DoRefresh indicates precisely one account routing will expect the
     /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
     DoRefresh(u64, ::authority::Authority, ::XorName),
-    /// Bootstrapped.
-    Bootstrapped,
     /// Connected.
     Connected,
     /// Disconnected.
@@ -148,7 +146,6 @@ impl ::std::fmt::Debug for Event {
                        target,
                        churn_node)
             }
-            Event::Bootstrapped => write!(formatter, "Bootstrapped"),
             Event::Connected => write!(formatter, "Connected"),
             Event::Disconnected => write!(formatter, "Disconnected"),
             Event::Terminated => write!(formatter, "Terminated"),
