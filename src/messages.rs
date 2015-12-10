@@ -18,6 +18,7 @@
 use data::{Data};
 use id::{PublicId};
 use xor_name::XorName;
+use error::{RoutingError, ResponseError};
 use sodiumoxide::crypto::{box_, sign, hash};
 use authority::{SourceAuthority, DestinationAuthority};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
@@ -62,10 +63,10 @@ impl HopMessage {
             content: SignedMessage,
             name: name,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
-        }
+        })
     }
 
-    pub fn verify(&self, verification_key: &sign::PublicKey) -> RoutingResult {
+    pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.name)));
         if !sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
             Ok(())
@@ -91,7 +92,7 @@ pub struct SignedMessage {
 }
 
 impl SignedMessage {
-    pub new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
+    pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
         Ok(SignedMessage {
             content: content,
@@ -100,7 +101,7 @@ impl SignedMessage {
         })
     }
 
-    pub verify(&self) -> RoutingResult {
+    pub fn verify(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
         if !sign::verify_detached(&self.signature, &signed_bytes, self.public_id().signing_public_key()) {
             Ok(())
@@ -110,12 +111,12 @@ impl SignedMessage {
     }
 
     // TODO Maybe verify signature also
-    pub content(&self) -> &RoutingMessage {
+    pub fn content(&self) -> &RoutingMessage {
         &self.content
     }
 
     // TODO Maybe verify signature also
-    pub public_id(&self) -> &PublicId {
+    pub fn public_id(&self) -> &PublicId {
         &self.public_id
     }
 }

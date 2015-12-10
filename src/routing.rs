@@ -27,7 +27,8 @@ use data::{Data, DataRequest};
 use data_cache_options::DataCacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
-use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
+               RequestContent, ResponseContent, Message};
 
 type RoutingResult = Result<(), RoutingError>;
 
