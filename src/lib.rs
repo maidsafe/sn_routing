@@ -100,14 +100,11 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
-/// Data cache for all Data types
-pub mod data_cache;
-/// Data cache options, may be set at runtime
-pub mod data_cache_options;
 /// XorName is a 512bit name to address elements on the DHT network.
 pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
-pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
+pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
+                   RequestContent, ResponseContent, Message};
 /// Persona types recognised by the network.
 pub use authority::Authority;
 pub use id::{FullId, PublicId};

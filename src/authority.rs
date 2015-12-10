@@ -15,14 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rustc_serialize::{Decoder, Encodable, Encoder};
 use kademlia_routing_table::RoutingTable;
-use XorName;
+use xor_name::XorName;
 use sodiumoxide::crypto;
 use std::fmt::{Debug, Formatter, Error};
-
-use messages::{RoutingMessage, Content, ExternalRequest, InternalRequest};
-use types::Address;
 
 /// Authority.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
@@ -392,5 +388,5 @@ impl Debug for Authority {
         //     group_keys: None,
         // };
         // assert!(super::our_authority(&refresh_message, &routing_table).is_none());
-    }
-}
+    // }
+// }
