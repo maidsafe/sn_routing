@@ -200,6 +200,8 @@ pub enum ResponseContent {
     },
     GetPublicIdWithEndpoints {
         public_id: PublicId,
+        encrypted_endpoints: Vec<u8>,
+        nonce_bytes: [u8; box_::NONCEBYTES],
     },
     GetCloseGroup {
         close_group_ids: Vec<PublicId>,

@@ -25,13 +25,11 @@ pub enum Event {
     /// Request.
     Request {
         /// External request.
-        request: ExternalRequest,
+        content: RequestContent,
         /// Our authority.
-        our_authority: Authority,
+        src: Authority,
         /// From authority.
-        from_authority: Authority,
-        /// Not set when the request came from a group.
-        signed_request: Option<SignedRequest>,
+        dst: Authority,
     },
     /// Response.
     Response {
