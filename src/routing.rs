@@ -21,10 +21,8 @@ use std::sync::mpsc;
 
 use action::Action;
 use event::Event;
-use messages::SignedRequest;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use data_cache_options::DataCacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,

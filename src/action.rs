@@ -23,12 +23,7 @@
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
-    SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
-    ClientSendContent(::authority::Authority, ::messages::Content),
-    //          ~~|~~~~~~  ~~|~~~~
-    //            |          | the bare content for a message to be formed
-    //            | the destination authority
-    // RoutingNode will form the RoutingMessage and sign it as its own identity
-    SetDataCacheOptions(::data_cache_options::DataCacheOptions),
+    SendContent(::authority::Authority, ::authority::Authority, ::messages::RequestMessage),
+    ClientSendContent(::authority::Authority, ::messages::RequestMessage),
     Terminate,
 }

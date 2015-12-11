@@ -66,7 +66,6 @@ pub struct RoutingNode {
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
-    relocation_quorum_size: usize,
 
     full_id: FullId,
     state: State,
@@ -138,7 +137,6 @@ impl RoutingNode {
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
             // cache_options: ::data_cache_options::DataCacheOptions::new(),
-                relocation_quorum_size: 0,
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
@@ -273,7 +271,7 @@ impl RoutingNode {
                              signed_msg: SignedMessage,
                              hop_name: XorName,
                              connection: ::crust::Connection) -> Result<(), RoutingError> {
-        try!(signed_msg.verify());
+        try!(signed_msg.check_integrity());
 
         // Prevents
         // 1) someone sending messages repeatedly to us
@@ -285,7 +283,9 @@ impl RoutingNode {
 
         // Either swarm or Direction check
         if self.state == State::Node {
-            if self.routing_table.is_close(signed_msg.content().dst.get_name()) {
+            if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+                self.signed_msg_security_check(&signed_msg);
+
                 if signed_msg.content().dst.is_group() {
                     // Swarm
                     self.send(signed_msg.clone());
@@ -320,10 +320,47 @@ impl RoutingNode {
             if !self.routing_table.is_close(signed_msg.content().dst.get_name()) {
                 self.send(signed_msg.clone());
             }
+        } else if self.state == State::Client {
+            match *signed_msg.content().dst() {
+                Authority::Client { ref client_key, _ } => {
+                    if self.full_id.public_id().signing_public_key() != client_key {
+                        return Err(RoutingError::BadAuthority)
+                    }
+                },
+                _ => return Err(RoutingError::BadAuthority),
+            }
+        } else {
+            return Err(RoutingError::InvalidStateForOperation)
         }
 
         // Hereafter this msg is for us
-        self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id())
+        self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
+    }
+
+    fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
+        if signed_msg.content().src().is_group() {
+            // TODO validate unconfirmed node that belongs to the src group
+            if !self.routing_table.try_confirm_safe_group_distance(routing_message.src().get_name(),
+                                                                   public_id.name()) {
+                return Err(RoutingError::RoutingTableBucketIndexFailed)
+            }
+        } else {
+            match (signed_msg.content().dst(), signed_msg.content().src()) {
+                (Authority::NodeManager(manager_name), Authority::ManagedNode(node_name)) => {
+                    // TODO confirm sender is in our routing table
+                },
+                // Security validation if came from a Client: This validation ensures that the
+                // source authority matches the signed message's public_id. This prevents cases
+                // where attacker can provide a fake SignedMessage wrapper over somebody else's
+                // (Client's) RoutingMessage.
+                (_, Authority::Client { ref client_key, _ }) => {
+                    if client_key != signed_msg.public_id().signing_public_key() {
+                        return Err(RoutingError::FailedSignature)
+                    }
+                },
+                _ => (),
+            }
+        }
     }
 
     fn get_from_cache(&self, routing_msg: &RoutingMessage) -> Option<&Data> {
@@ -348,84 +385,115 @@ impl RoutingNode {
     /// If we are the proxy node for a message from the SAFE network to a node we proxy for,
     /// then we will pass out the message to the client or bootstrapping node;
     /// no proxy-messages enter the SAFE network here.
-    fn handle_routing_message(&mut self, routing_msg: RoutingMessage, public_id: PublicId) -> Result<(), RoutingError> {
+    fn handle_routing_message(&mut self,
+                              mut routing_msg: RoutingMessage,
+                              public_id: PublicId) -> Result<(), RoutingError> {
         if self.grp_msg_filter.check(&routing_message) {
             return Err(RoutingError::FilterCheckFailed)
         }
 
-        // Cache a response if from a GetRequest and caching is enabled for the Data type.
-        self.data_cache.handle_cache_put(&routing_message);
-        // Get from cache if it's there.
-        if let Some(content) = self.data_cache.handle_cache_get(&routing_message) {
-            let source_authority = ::authority::Authority::ManagedNode(*self.full_id
-                                                                            .public_id()
-                                                                            .name());
-            return self.send_content(source_authority, routing_message.source_authority, content);
+        routing_msg = if routing_message.src().is_group() {
+            match self.accumulate(routing_message, &public_id) {
+                Some(output_msg) => {
+                    let _ = self.grp_msg_filter.insert(output_msg.clone());
+                    output_msg
+                },
+                None => return Err(::error::RoutingError::NotEnoughSignatures),
+            }
         }
 
-        // Scan for remote names.
+        match routing_msg {
+            RoutingMessage::Request(msg) => self.handle_request_message(msg),
+            RoutingMessage::Response(msg) => self.handle_response_message(msg),
+        }
+    }
+
+    fn accumulate(&mut self, message: ::messages::RoutingMessage, public_id: &PublicId) -> Option<RoutingMessage> {
+        // For clients we already have set it on reception of BootstrapIdentify message
+        // TODO For clients for eg., there was only one node in the network, it would continue to
+        // have quorum size of 1 even though the network grew later. Handle this case.
         if self.state == State::Node {
-            // Node Harvesting
-            match routing_message.source_authority {
-                ::authority::Authority::ClientManager(ref name) |
-                ::authority::Authority::NaeManager(ref name)  |
-                ::authority::Authority::NodeManager(ref name) |
-                ::authority::Authority::ManagedNode(ref name) => self.refresh_routing_table(&name),
-                ::authority::Authority::Client(_, _) => {}
-            };
-
-            // Forward the message.
-            debug!("{}Forwarding signed message", self.us());
-            // Swarm
-            self.send(signed_message.clone());
+            self.message_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
         }
 
-        // TODO Needs discussion as to what this block does
-        // check if our calculated authority matches the destination authority of the message
-        let our_authority = self.our_authority(&routing_message);
-        if our_authority.clone()
-                        .map_or(true, |our_auth| &routing_message.destination_authority != &our_auth) {
-            // Either the message is directed at a group, and the target should be in range,
-            // or it should be aimed directly at us.
-            if routing_message.destination_authority.is_group() {
-                if !self.name_in_range(routing_message.destination_authority.get_location()) {
-                    debug!("{}Name {:?} not in range",
-                           self.us(),
-                           routing_message.destination_authority.get_location());
-                    return Err(RoutingError::BadAuthority);
-                };
-                debug!("{}Received an in-range group message", self.us());
-            } else {
-                match routing_message.destination_authority.get_address() {
-                    Some(ref address) => {
-                        if !self.is_us(address) {
-                            debug!("{}Destination address {:?} is not us", self.us(), address);
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                    None => return Err(RoutingError::BadAuthority),
-                }
-            }
-        }
-
-        // Accumulate message
-        debug!("{}Accumulating signed message", self.us());
-
-        // If the message is not from a group then don't accumulate
-        let (accumulated_message, opt_token) = if routing_message.source_authority.is_group() {
-            match self.accumulate(&routing_message,
-                                  signed_message.signing_public_key().clone()) {
-                Some(output_message) => (output_message, None),
-                None => {
-                    debug!("{}Not enough signatures. Not processing request yet",
-                           self.us());
-                    return Err(::error::RoutingError::NotEnoughSignatures);
-                }
-            }
+        if self.message_accumulator.add(message.clone(), public_id.clone()).is_some() {
+            Some(message)
         } else {
-            (routing_message, Some(signed_message.as_signed_request()))
-        };
-        self.handle_accumulated_message(accumulated_message, opt_token)
+            None
+        }
+    }
+
+    fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
+        match request_msg.content {
+            RequestContent::GetNetworkName { current_id } => {
+                self.handle_get_network_name_request(current_id,
+                                                     accumulated_message.source_authority,
+                                                     accumulated_message.destination_authority)
+            },
+            RequestContent::ExpectCloseNode
+        }
+        InternalRequest::ExpectCloseNode { expect_id, } => {
+            self.handle_expect_close_node_request(opt_token, expect_id)
+        }
+        InternalRequest::GetCloseGroup => {
+            self.handle_get_close_group_request(opt_token,
+                                                accumulated_message.source_authority,
+                                                accumulated_message.destination_authority)
+        }
+        InternalRequest::Endpoints { encrypted_endpoints, nonce_bytes } => {
+            self.handle_endpoints(opt_token,
+                                  encrypted_endpoints,
+                                  nonce_bytes,
+                                  accumulated_message.source_authority,
+                                  accumulated_message.destination_authority)
+        }
+        InternalRequest::Connect => {
+            if let ::authority::Authority::ManagedNode(name) =
+                    accumulated_message.source_authority {
+                self.handle_connect_request(opt_token, name)
+            } else {
+                return Err(RoutingError::BadAuthority);
+            }
+        }
+        InternalRequest::GetPublicId => {
+            if let (::authority::Authority::ManagedNode(from_name),
+                    ::authority::Authority::NodeManager(to_name)) =
+                    (accumulated_message.source_authority,
+                     accumulated_message.destination_authority) {
+                self.handle_get_public_id(opt_token, from_name, to_name)
+            } else {
+                return Err(RoutingError::BadAuthority);
+            }
+        }
+        InternalRequest::GetPublicIdWithEndpoints { .. } => {
+            if let (::authority::Authority::ManagedNode(from_name),
+                    ::authority::Authority::NodeManager(to_name)) =
+                    (accumulated_message.source_authority,
+                     accumulated_message.destination_authority) {
+                self.handle_get_public_id_with_endpoints(opt_token, from_name, to_name)
+            } else {
+                return Err(RoutingError::BadAuthority);
+            }
+        }
+        // From Group
+        InternalRequest::Refresh { type_tag, message, cause, } => {
+            if accumulated_message.source_authority.is_group() {
+                self.handle_refresh(type_tag,
+                                    accumulated_message.source_authority
+                                                       .get_location()
+                                                       .clone(),
+                                    message,
+                                    accumulated_message.destination_authority,
+                                    cause)
+            } else {
+                return Err(RoutingError::BadAuthority);
+            }
+        }
+        }
+    }
+
+    fn handle_response_message(&mut self, response_msg: ResponseMessage) -> Result<(), RoutingError> {
+        ;
     }
 
     fn handle_bootstrap_finished(&mut self) {
@@ -642,70 +710,6 @@ impl RoutingNode {
         let result = match accumulated_message.content {
             Content::InternalRequest(request) => {
                 match request {
-                    InternalRequest::GetNetworkName { current_id, } => {
-                       self.handle_get_network_name_request(opt_token,
-                                                            current_id,
-                                                            accumulated_message.source_authority,
-                                                            accumulated_message.destination_authority)
-                    }
-                    InternalRequest::ExpectCloseNode { expect_id, } => {
-                        self.handle_expect_close_node_request(opt_token, expect_id)
-                    }
-                    InternalRequest::GetCloseGroup => {
-                        self.handle_get_close_group_request(opt_token,
-                                                            accumulated_message.source_authority,
-                                                            accumulated_message.destination_authority)
-                    }
-                    InternalRequest::Endpoints { encrypted_endpoints, nonce_bytes } => {
-                        self.handle_endpoints(opt_token,
-                                              encrypted_endpoints,
-                                              nonce_bytes,
-                                              accumulated_message.source_authority,
-                                              accumulated_message.destination_authority)
-                    }
-                    InternalRequest::Connect => {
-                        if let ::authority::Authority::ManagedNode(name) =
-                                accumulated_message.source_authority {
-                            self.handle_connect_request(opt_token, name)
-                        } else {
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                    InternalRequest::GetPublicId => {
-                        if let (::authority::Authority::ManagedNode(from_name),
-                                ::authority::Authority::NodeManager(to_name)) =
-                                (accumulated_message.source_authority,
-                                 accumulated_message.destination_authority) {
-                            self.handle_get_public_id(opt_token, from_name, to_name)
-                        } else {
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                    InternalRequest::GetPublicIdWithEndpoints { .. } => {
-                        if let (::authority::Authority::ManagedNode(from_name),
-                                ::authority::Authority::NodeManager(to_name)) =
-                                (accumulated_message.source_authority,
-                                 accumulated_message.destination_authority) {
-                            self.handle_get_public_id_with_endpoints(opt_token, from_name, to_name)
-                        } else {
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                    // From Group
-                    InternalRequest::Refresh { type_tag, message, cause, } => {
-                        if accumulated_message.source_authority.is_group() {
-                            self.handle_refresh(type_tag,
-                                                accumulated_message.source_authority
-                                                                   .get_location()
-                                                                   .clone(),
-                                                message,
-                                                accumulated_message.destination_authority,
-                                                cause)
-                        } else {
-                            return Err(RoutingError::BadAuthority);
-                        }
-                    }
-                }
             }
             Content::InternalResponse(response) => {
                 match response {
@@ -756,26 +760,6 @@ impl RoutingNode {
 
     }
 
-    fn accumulate(&mut self,
-                  message: &::messages::RoutingMessage,
-                  public_sign_key: ::sodiumoxide::crypto::sign::PublicKey)
-                  -> Option<RoutingMessage> {
-        // TODO(Fraser) Use this properly
-        utils::bucket_index_range_confidence();
-
-        debug!("{}Adding message with public key {:?} to message_accumulator",
-               self.us(),
-               public_sign_key);
-
-        self.message_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
-        if self.message_accumulator.add(message.clone(), public_sign_key.clone()).is_some() {
-            self.grp_msg_filter.add(message.clone());
-            Some(message.clone())
-        } else {
-            None
-        }
-    }
-
     // ---- Direct Messages -----------------------------------------------------------------------
     fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &::sodiumoxide::crypto::sign::Signature)
@@ -821,7 +805,7 @@ impl RoutingNode {
                 }
 
                 self.state = State::Client;
-                self.relocation_quorum_size = current_quorum_size;
+                self.message_accumulator.set_quorum_size(current_quorum_size);
 
                 // Only if we started as a client but eventually want to be a node
                 if self.client_restriction {
@@ -953,27 +937,17 @@ impl RoutingNode {
 
     // Received by X; From A -> X
     fn handle_get_network_name_request(&mut self,
-                                       opt_token: Option<::messages::SignedRequest>,
-                                       mut their_public_id: ::id::PublicId,
+                                       mut their_public_id: PublicId,
                                        request_source: Authority,
                                        request_destination: Authority) -> Result<(), RoutingError> {
-        let signed_request = match opt_token {
-            Some(signed_request) => signed_request,
-            None => {
-                error!("{}Programming Error - Shouldn't be encountered. Investigate",
-                       self.us());
-                return Err(::error::RoutingError::UnknownMessageType);
-            }
-        };
-
         match (&request_source, &request_destination) {
-            (&Authority::Client(_bootstrap_node, key), &Authority::NaeManager(name)) => {
-                let hashed_key = ::sodiumoxide::crypto::hash::sha512::hash(&key.0);
+            (&Authority::Client { client_key, _ }, &Authority::NaeManager(name)) => {
+                let hashed_key = sha512::hash(&client_key.0);
                 let close_group_to_client = XorName::new(hashed_key.0);
 
-                if !(self.name_in_range(&close_group_to_client) && close_group_to_client == name) {
-                    // TODO(Spandan) Create a better error
-                    return Err(RoutingError::BadAuthority);
+                // Validate Client (relocating node) has contacted the correct Group-X
+                if close_group_to_client != name {
+                    return Err(RoutingError::InvalidDestination)
                 }
 
                 let mut close_group = self.routing_table
@@ -986,45 +960,41 @@ impl RoutingNode {
                 let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                           &their_public_id.name()));
 
-                debug!("{}Got a request for network name from {:?}, assigning {:?}",
-                       self.us(),
-                       request_source,
-                       relocated_name);
-
                 their_public_id.set_name(relocated_name.clone());
 
                 // From X -> A (via B)
                 {
-                    let response = ::messages::InternalResponse::GetNetworkName {
-                        relocated_id: their_public_id.clone(),
-                        signed_request: signed_request,
+                    let response_content = ResponseContent::GetNetworkName {
+                        relocated_id: their_public_id,
                     };
 
-                    let routing_message = RoutingMessage {
-                        source_authority: request_destination.clone(),
-                        destination_authority: request_source,
-                        content: ::messages::Content::InternalResponse(response),
-                        group_keys: None,
+                    let response_msg = ResponseMessage {
+                        src: request_destination.clone(),
+                        dst: request_source.clone(),
+                        content: response_content,
                     };
 
-                    let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+                    let routing_msg = RoutingMessage::Response(response_msg);
+
+                    let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
                     self.send(signed_message);
                 }
 
                 // From X -> Y; Send to close group of the relocated name
                 {
-                    let request = ::messages::InternalRequest::ExpectCloseNode {
+                    let request_content = RequestContent::ExpectCloseNode {
                         expect_id: their_public_id.clone(),
                     };
 
-                    let routing_message = RoutingMessage {
-                        source_authority: request_destination,
-                        destination_authority: Authority::NodeManager(relocated_name),
-                        content: ::messages::Content::InternalRequest(request),
-                        group_keys: None,
+                    let response_msg = ResponseMessage {
+                        src: request_destination.clone(),
+                        dst: Authority::NodeManager(relocated_name),
+                        content: request_content,
                     };
 
-                    let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
+                    let routing_msg = RoutingMessage::Request(request_msg);
+
+                    let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
 
                     Ok(self.send(signed_message))
                 }

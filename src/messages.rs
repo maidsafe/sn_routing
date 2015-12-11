@@ -101,7 +101,7 @@ impl SignedMessage {
         })
     }
 
-    pub fn verify(&self) -> Result<(), RoutingError> {
+    pub fn check_integrity(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
         if !sign::verify_detached(&self.signature, &signed_bytes, self.public_id().signing_public_key()) {
             Ok(())
