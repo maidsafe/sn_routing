@@ -20,7 +20,7 @@ use id::{PublicId};
 use xor_name::XorName;
 use error::{RoutingError, ResponseError};
 use sodiumoxide::crypto::{box_, sign, hash};
-use authority::{SourceAuthority, DestinationAuthority};
+use authority::Authority;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]

@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{ExternalRequest, ExternalResponse, SignedRequest};
 use error::InterfaceError;
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent, Message};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Clone, Eq, PartialEq)]

@@ -23,7 +23,7 @@ use sodiumoxide::crypto;
 use id::{FullId, PublicId};
 use lru_time_cache::LruCache;
 use error::{RoutingError, ResponseError};
-use authority::{Authority, our_authority};
+use authority::Authority;
 use kademlia_routing_table::{RoutingTable, NodeInfo};
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
                RequestContent, ResponseContent, Message};
@@ -2035,7 +2035,7 @@ impl RoutingNode {
     /// destination_authority)
     pub fn our_authority(&self, message: &RoutingMessage) -> Option<Authority> {
         if self.state == State::Node {
-            our_authority(message, &self.routing_table)
+            message.destination_authority.get_name().clone()
         } else {
             // if the message reached us as a client, then destination_authority.get_location()
             // was our proxy's name
