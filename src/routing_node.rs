@@ -424,69 +424,91 @@ impl RoutingNode {
     }
 
     fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
-        match request_msg.content {
-            RequestContent::GetNetworkName { current_id } => {
-                self.handle_get_network_name_request(current_id,
-                                                     accumulated_message.source_authority,
-                                                     accumulated_message.destination_authority)
+        match (request_msg.content, request_msg.src, request_msg.dst) {
+            (RequestContent::GetNetworkName { current_id, },
+             Authority::Client { client_key, proxy_node_name },
+             Authority::NaeManager(dst_name)) => {
+                self.handle_get_network_name_request(current_id, client_key, proxy_node_name, dst_name)
             },
-            RequestContent::ExpectCloseNode
-        }
-        InternalRequest::ExpectCloseNode { expect_id, } => {
-            self.handle_expect_close_node_request(opt_token, expect_id)
-        }
-        InternalRequest::GetCloseGroup => {
-            self.handle_get_close_group_request(opt_token,
-                                                accumulated_message.source_authority,
-                                                accumulated_message.destination_authority)
-        }
-        InternalRequest::Endpoints { encrypted_endpoints, nonce_bytes } => {
-            self.handle_endpoints(opt_token,
-                                  encrypted_endpoints,
-                                  nonce_bytes,
-                                  accumulated_message.source_authority,
-                                  accumulated_message.destination_authority)
-        }
-        InternalRequest::Connect => {
-            if let ::authority::Authority::ManagedNode(name) =
-                    accumulated_message.source_authority {
-                self.handle_connect_request(opt_token, name)
-            } else {
-                return Err(RoutingError::BadAuthority);
+            (RequestContent::ExpectCloseNode { expect_id, },
+             Authority::NaeManager(_),
+             Authority::NodeManager(_)) => {
+                self.handle_expect_close_node_request(expect_id, src_name, dst_name)
+            },
+            (RequestContent::GetCloseGroup,
+             Authority::Client { client_key, proxy_node_name, },
+             Authority::NodeManager(dst_name)) => {
+                self.handle_get_close_group_request(client_key, proxy_node_name, dst_name)
+            },
+            (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
+             Authority::Client { client_key, proxy_node_name, },
+             Authority::ManagedNode(dst_name)) => {
+                self.handle_endpoints_from_client(encrypted_endpoints,
+                                                  nonce_bytes,
+                                                  client_key,
+                                                  proxy_node_name,
+                                                  dst_name)
+            },
+            (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
+             Authority::ManagedNode(src_name),
+             Authority::ManagedNode(dst_name)) => {
+                self.handle_endpoints_from_node(encrypted_endpoints, nonce_bytes, src_name, dst_name)
+            },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            InternalRequest::Connect => {
+                if let ::authority::Authority::ManagedNode(name) =
+                        accumulated_message.source_authority {
+                    self.handle_connect_request(opt_token, name)
+                } else {
+                    return Err(RoutingError::BadAuthority);
+                }
             }
-        }
-        InternalRequest::GetPublicId => {
-            if let (::authority::Authority::ManagedNode(from_name),
-                    ::authority::Authority::NodeManager(to_name)) =
-                    (accumulated_message.source_authority,
-                     accumulated_message.destination_authority) {
-                self.handle_get_public_id(opt_token, from_name, to_name)
-            } else {
-                return Err(RoutingError::BadAuthority);
+            InternalRequest::GetPublicId => {
+                if let (::authority::Authority::ManagedNode(from_name),
+                        ::authority::Authority::NodeManager(to_name)) =
+                        (accumulated_message.source_authority,
+                         accumulated_message.destination_authority) {
+                    self.handle_get_public_id(opt_token, from_name, to_name)
+                } else {
+                    return Err(RoutingError::BadAuthority);
+                }
             }
-        }
-        InternalRequest::GetPublicIdWithEndpoints { .. } => {
-            if let (::authority::Authority::ManagedNode(from_name),
-                    ::authority::Authority::NodeManager(to_name)) =
-                    (accumulated_message.source_authority,
-                     accumulated_message.destination_authority) {
-                self.handle_get_public_id_with_endpoints(opt_token, from_name, to_name)
-            } else {
-                return Err(RoutingError::BadAuthority);
+            InternalRequest::GetPublicIdWithEndpoints { .. } => {
+                if let (::authority::Authority::ManagedNode(from_name),
+                        ::authority::Authority::NodeManager(to_name)) =
+                        (accumulated_message.source_authority,
+                         accumulated_message.destination_authority) {
+                    self.handle_get_public_id_with_endpoints(opt_token, from_name, to_name)
+                } else {
+                    return Err(RoutingError::BadAuthority);
+                }
             }
-        }
-        // From Group
-        InternalRequest::Refresh { type_tag, message, cause, } => {
-            if accumulated_message.source_authority.is_group() {
-                self.handle_refresh(type_tag,
-                                    accumulated_message.source_authority
-                                                       .get_location()
-                                                       .clone(),
-                                    message,
-                                    accumulated_message.destination_authority,
-                                    cause)
-            } else {
-                return Err(RoutingError::BadAuthority);
+            // From Group
+            InternalRequest::Refresh { type_tag, message, cause, } => {
+                if accumulated_message.source_authority.is_group() {
+                    self.handle_refresh(type_tag,
+                                        accumulated_message.source_authority
+                                                           .get_location()
+                                                           .clone(),
+                                        message,
+                                        accumulated_message.destination_authority,
+                                        cause)
+                } else {
+                    return Err(RoutingError::BadAuthority);
+                }
             }
         }
         }
@@ -938,89 +960,72 @@ impl RoutingNode {
     // Received by X; From A -> X
     fn handle_get_network_name_request(&mut self,
                                        mut their_public_id: PublicId,
-                                       request_source: Authority,
-                                       request_destination: Authority) -> Result<(), RoutingError> {
-        match (&request_source, &request_destination) {
-            (&Authority::Client { client_key, _ }, &Authority::NaeManager(name)) => {
-                let hashed_key = sha512::hash(&client_key.0);
-                let close_group_to_client = XorName::new(hashed_key.0);
+                                       client_key: sign::PublicKey,
+                                       proxy_name: XorName,
+                                       dst_name: XorName) -> Result<(), RoutingError> {
+        let hashed_key = sha512::hash(&client_key.0);
+        let close_group_to_client = XorName::new(hashed_key.0);
 
-                // Validate Client (relocating node) has contacted the correct Group-X
-                if close_group_to_client != name {
-                    return Err(RoutingError::InvalidDestination)
-                }
+        // Validate Client (relocating node) has contacted the correct Group-X
+        if close_group_to_client != dst_name {
+            return Err(RoutingError::InvalidDestination)
+        }
 
-                let mut close_group = self.routing_table
-                                          .our_close_group()
-                                          .iter()
-                                          .map(|node_info| node_info.public_id.name().clone())
-                                          .collect::<Vec<XorName>>();
-                close_group.push(*self.full_id.public_id().name());
+        let mut close_group = self.routing_table
+                                  .our_close_group()
+                                  .iter()
+                                  .map(|node_info| node_info.public_id.name().clone())
+                                  .collect_vec();
+        close_group.push(*self.full_id.public_id().name());
 
-                let relocated_name = try!(utils::calculate_relocated_name(close_group,
-                                                                          &their_public_id.name()));
+        let relocated_name = try!(utils::calculate_relocated_name(close_group,
+                                                                  &their_public_id.name()));
 
-                their_public_id.set_name(relocated_name.clone());
+        their_public_id.set_name(relocated_name.clone());
 
-                // From X -> A (via B)
-                {
-                    let response_content = ResponseContent::GetNetworkName {
-                        relocated_id: their_public_id,
-                    };
+        // From X -> A (via B)
+        {
+            let response_content = ResponseContent::GetNetworkName {
+                relocated_id: their_public_id,
+            };
 
-                    let response_msg = ResponseMessage {
-                        src: request_destination.clone(),
-                        dst: request_source.clone(),
-                        content: response_content,
-                    };
+            let response_msg = ResponseMessage {
+                src: Authority::NaeManager(dst_name.clone()),
+                dst: Authority::Client { client_key: client_key, proxy_node_name: proxy_name, },
+                content: response_content,
+            };
 
-                    let routing_msg = RoutingMessage::Response(response_msg);
+            let routing_msg = RoutingMessage::Response(response_msg);
 
-                    let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-                    self.send(signed_message);
-                }
+            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
+            self.send(signed_message);
+        }
 
-                // From X -> Y; Send to close group of the relocated name
-                {
-                    let request_content = RequestContent::ExpectCloseNode {
-                        expect_id: their_public_id.clone(),
-                    };
+        // From X -> Y; Send to close group of the relocated name
+        {
+            let request_content = RequestContent::ExpectCloseNode {
+                expect_id: their_public_id.clone(),
+            };
 
-                    let response_msg = ResponseMessage {
-                        src: request_destination.clone(),
-                        dst: Authority::NodeManager(relocated_name),
-                        content: request_content,
-                    };
+            let response_msg = ResponseMessage {
+                src: Authority::NaeManager(dst_name),
+                dst: Authority::NodeManager(relocated_name),
+                content: request_content,
+            };
 
-                    let routing_msg = RoutingMessage::Request(request_msg);
+            let routing_msg = RoutingMessage::Request(request_msg);
 
-                    let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
+            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
 
-                    Ok(self.send(signed_message))
-                }
-            }
-            _ => Err(RoutingError::BadAuthority),
+            Ok(self.send(signed_message))
         }
     }
 
     // Received by Y; From X -> Y
-    fn handle_expect_close_node_request(&mut self,
-                                        opt_token: Option<::messages::SignedRequest>,
-                                        expect_id: ::id::PublicId)
-                                        -> Result<(), RoutingError> {
-        trace!("{}[fn handle_expect_close_node_request]", self.us());
-
-        if opt_token.is_some() {
-            error!("{}Programming Error - Shouldn't be encountered. Investigate",
-                   self.us());
-            return Err(::error::RoutingError::UnknownMessageType);
-        }
-
+    fn handle_expect_close_node_request(&mut self, expect_id: PublicId) {
         if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
-            warn!("{}Previous id {:?} with same name found during \
-                   handle_expect_close_node_request. Ignoring that",
-                  self.us(),
-                  prev_id);
+            warn!("{}Previous id {:?} with same name found during handle_expect_close_node_request. Ignoring that",
+                  self.us(), prev_id);
         }
 
         Ok(())
@@ -1070,41 +1075,31 @@ impl RoutingNode {
 
     // Received by Y; From A -> Y
     fn handle_get_close_group_request(&mut self,
-                                      opt_token: Option<::messages::SignedRequest>,
-                                      request_source: ::authority::Authority,
-                                      request_destination: ::authority::Authority)
-                                      -> Result<(), RoutingError> {
-        let signed_request = match opt_token {
-            Some(signed_request) => signed_request,
-            None => {
-                error!("{}Programming Error - Shouldn't be encountered. Investigate",
-                       self.us());
-                return Err(::error::RoutingError::UnknownMessageType);
-            }
-        };
-
-        let mut public_ids: Vec<PublicId> = self.routing_table
-                                                .our_close_group()
-                                                .into_iter()
-                                                .map(|node_info| node_info.public_id)
-                                                .collect();
+                                      client_key: sign::PublicKey,
+                                      proxy_name: XorName,
+                                      dst_name: XorName) -> Result<(), RoutingError> {
+        let mut public_ids = self.routing_table
+                                 .our_close_group()
+                                 .into_iter()
+                                 .map(|node_info| node_info.public_id)
+                                 .collect_vec();
 
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
 
-        let response = ::messages::InternalResponse::GetCloseGroup {
+        let response_content = ResponseContent::GetCloseGroup {
             close_group_ids: public_ids,
-            signed_request: signed_request,
         };
 
-        let routing_message = ::messages::RoutingMessage {
-            source_authority: request_destination,
-            destination_authority: request_source,
-            content: ::messages::Content::InternalResponse(response),
-            group_keys: None,
+        let response_msg = ResponseMessage {
+            src: Authority::NodeManager(dst_name),
+            dst: Authority::Client { client_key: client_key, proxy_node_name: proxy_name, },
+            content: response_content,
         };
 
-        let signed_message = try!(::messages::SignedMessage::new(&routing_message, &self.full_id));
+        let routing_message = RoutingMessage::Response(response_msg);
+
+        let signed_message = try!(::messages::SignedMessage::new(routing_message, &self.full_id));
 
         Ok(self.send(signed_message))
     }
@@ -1174,95 +1169,41 @@ impl RoutingNode {
         Ok(self.send(signed_message))
     }
 
-    fn handle_endpoints(&mut self,
-                        opt_token: Option<::messages::SignedRequest>,
-                        encrypted_endpoints: Vec<u8>,
-                        nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
-                        request_source: ::authority::Authority,
-                        request_destination: ::authority::Authority)
-                        -> Result<(), RoutingError> {
-        let signed_request = match opt_token {
-            Some(signed_request) => signed_request,
-            None => {
-                error!("{}Programming Error - Shouldn't be encountered. Investigate",
-                       self.us());
-                return Err(::error::RoutingError::UnknownMessageType);
-            }
-        };
-
-        match request_source {
-            ::authority::Authority::Client(_bootstrap_node, public_key) => {
-                self.handle_endpoints_from_client(encrypted_endpoints,
-                                                  nonce_bytes,
-                                                  public_key,
-                                                  request_source,
-                                                  request_destination,
-                                                  signed_request)
-            }
-            ::authority::Authority::ManagedNode(name) => {
-                self.handle_endpoints_from_node(encrypted_endpoints,
-                                                nonce_bytes,
-                                                request_source,
-                                                request_destination,
-                                                signed_request)
-            }
-            _ => {
-                warn!("{}Invalid authority for handle_endpoints", self.us());
-                Err(::error::RoutingError::BadAuthority)
-            }
-        }
-    }
-
     fn handle_endpoints_from_client(&mut self,
                                     encrypted_endpoints: Vec<u8>,
                                     nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
                                     client_key: ::sodiumoxide::crypto::sign::PublicKey,
-                                    request_source: ::authority::Authority,
-                                    request_destination: ::authority::Authority,
-                                    signed_request: ::messages::SignedRequest)
-                                    -> Result<(), RoutingError> {
-        match self.node_id_cache
-                  .retrieve_all()
-                  .iter()
-                  .find(|elt| *elt.1.signing_public_key() == client_key) {
+                                    proxy_name: XorName,
+                                    dst_name: XorName) -> Result<(), RoutingError> {
+        match self.node_id_cache.retrieve_all().iter().find(|elt| *elt.1.signing_public_key() == client_key) {
             Some(&(ref name, ref their_public_id)) => {
                 if self.routing_table.want_to_add(&name) {
-                    try!(self.connect(encrypted_endpoints,
-                                      nonce_bytes,
-                                      their_public_id.encrypting_public_key()));
-                    self.send_endpoints(their_public_id, request_destination, request_source)
+                    try!(self.connect(encrypted_endpoints, nonce_bytes, their_public_id.encrypting_public_key()));
+                    self.send_endpoints(their_public_id,
+                                        Authority::ManagedNode(dst_name),
+                                        Authority::Client { client_key: client_key, proxy_node_name: proxy_name, })
                 } else {
-                    debug!("{}No longer want to connect to relocating node although present in \
-                            our node_id_cache",
-                           self.us());
-
                     Err(RoutingError::RefusedFromRoutingTable)
                 }
-            }
-            None => {
-                debug!("{}Key was not previously cached. Ignoring Endpoint request from unknown \
-                        relocating node",
-                       self.us());
-                Err(RoutingError::RejectedPublicId)
-            }
+            },
+            None => Err(RoutingError::RejectedPublicId),
         }
     }
 
     fn handle_endpoints_from_node(&mut self,
                                   encrypted_endpoints: Vec<u8>,
                                   nonce_bytes: [u8; ::sodiumoxide::crypto::box_::NONCEBYTES],
-                                  request_source: ::authority::Authority,
-                                  request_destination: ::authority::Authority,
-                                  signed_request: ::messages::SignedRequest) -> Result<(), RoutingError> {
-        let name = request_source.get_location();
-        if self.routing_table.want_to_add(name) {
-            if let Some(their_public_id) = self.node_id_cache.get(name).cloned() {
+                                  src_name: XorName,
+                                  dst_name: XorName) -> Result<(), RoutingError> {
+        if self.routing_table.want_to_add(&src_name) {
+            if let Some(their_public_id) = self.node_id_cache.get(src_name).map(|id| id.clone()) {
                 self.connect(encrypted_endpoints,
                              nonce_bytes,
                              their_public_id.encrypting_public_key())
-            } else if let ::authority::Authority::Client(..) = request_destination {
-                Err(RoutingError::RejectedPublicId)
             } else {
+                let request_content = RequestContent::GetPublicIdWithEndpoints {
+                    ;
+                };
                 let request = ::messages::InternalRequest::GetPublicIdWithEndpoints {
                     encrypted_endpoints: encrypted_endpoints,
                     nonce_bytes: nonce_bytes,
@@ -1273,7 +1214,7 @@ impl RoutingNode {
                                                                     .public_id()
                                                                     .name()
                                                                     .clone()),
-                    destination_authority: ::authority::Authority::NodeManager(name.clone()),
+                    destination_authority: ::authority::Authority::NodeManager(src_name.clone()),
                     content: ::messages::Content::InternalRequest(request),
                     group_keys: None,
                 };
@@ -1285,7 +1226,7 @@ impl RoutingNode {
         } else {
             debug!("{}No longer want to connect to node although present in our node_id_cache",
                    self.us());
-            let _ = self.node_id_cache.remove(name);
+            let _ = self.node_id_cache.remove(src_name);
 
             Err(RoutingError::RefusedFromRoutingTable)
         }
