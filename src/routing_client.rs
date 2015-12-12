@@ -62,31 +62,31 @@ impl RoutingClient {
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn get_request(&mut self, location: Authority, data_request: DataRequest) {
         self.get_counter = self.get_counter.wrapping_add(1);
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                ::messages::RequestContent::Get(data_request)));
+        let _ = self.action_sender
+                    .send(Action::ClientSendContent(location,
+                                                    ::messages::RequestContent::Get(data_request)));
     }
 
     /// Add something to the network
     pub fn put_request(&self, location: Authority, data: Data) {
         debug!("Received put request from Client for {:?}", data);
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                ::messages::RequestContent::Put(data)));
+        let _ = self.action_sender
+                    .send(Action::ClientSendContent(location,
+                                                    ::messages::RequestContent::Put(data)));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                ::messages::RequestContent::Post(data)));
+        let _ = self.action_sender
+                    .send(Action::ClientSendContent(location,
+                                                    ::messages::RequestContent::Post(data)));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                ::messages::RequestContent::Delete(data)));
+        let _ = self.action_sender
+                    .send(Action::ClientSendContent(location,
+                                                    ::messages::RequestContent::Delete(data)));
     }
 
     // TODO(Spandan) Should be removed as Routing is now made to implement drop

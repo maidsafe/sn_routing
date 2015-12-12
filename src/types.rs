@@ -17,7 +17,8 @@
 
 // TODO(Spandan) This should not require documentation - infact the whole mod should be private
 #[doc(hidden)]
-pub type RoutingActionSender = ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
+pub type RoutingActionSender =
+    ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
 
 /// Convert u8 vector to a fixed 64 byte size array.
 ///

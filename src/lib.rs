@@ -89,7 +89,7 @@ pub mod utils;
 /// Errors reported for failed conditions/operations.
 pub mod error;
 // FIXME (ben 8/09/2015) make the module authority private
-/// Persona types recognised by network.
+// Persona types recognised by network.
 pub mod authority;
 /// StructuredData type.
 pub mod structured_data;
@@ -103,8 +103,8 @@ pub mod data;
 /// XorName is a 512bit name to address elements on the DHT network.
 pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
-pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
-                   RequestContent, ResponseContent, Message};
+pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+                   ResponseMessage, RequestContent, ResponseContent, Message};
 /// Persona types recognised by the network.
 pub use authority::Authority;
 pub use id::{FullId, PublicId};

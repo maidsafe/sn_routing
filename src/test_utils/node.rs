@@ -16,8 +16,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
-               RequestContent, ResponseContent, Message};
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message};
 /// Network Node.
 pub struct Node {
     routing: ::routing::Routing,
@@ -119,9 +119,7 @@ impl Node {
                       from_authority: ::authority::Authority) {
         match request {
             RequestContent::Get(data_request) => {
-                self.handle_get_request(data_request,
-                                        our_authority,
-                                        from_authority);
+                self.handle_get_request(data_request, our_authority, from_authority);
             }
             RequestContent::Put(data) => {
                 self.handle_put_request(data, our_authority, from_authority);
@@ -147,10 +145,7 @@ impl Node {
             }
         };
 
-        self.routing.get_response(our_authority,
-                                  from_authority,
-                                  data,
-                                  data_request);
+        self.routing.get_response(our_authority, from_authority, data, data_request);
     }
 
     fn handle_put_request(&mut self,

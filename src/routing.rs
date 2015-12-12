@@ -25,8 +25,8 @@ use routing_node::RoutingNode;
 use data::{Data, DataRequest};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
-               RequestContent, ResponseContent, Message};
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -63,36 +63,30 @@ impl Routing {
                        our_authority: Authority,
                        location: Authority,
                        data_request: DataRequest) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                RequestContent::Get(data_request, 0u8)));
+        let _ = self.action_sender.send(Action::SendContent(our_authority,
+                                                            location,
+                                                            RequestContent::Get(data_request,
+                                                                                0u8)));
     }
 
     /// Add something to the network
     pub fn put_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          RequestContent::Put(data)));
+        let _ = self.action_sender
+                    .send(Action::SendContent(our_authority, location, RequestContent::Put(data)));
     }
 
     /// Change something already on the network
     pub fn post_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          RequestContent::Post(data)));
+        let _ = self.action_sender
+                    .send(Action::SendContent(our_authority, location, RequestContent::Post(data)));
     }
 
     /// Remove something from the network
     pub fn delete_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          RequestContent::Delete(data)));
+        let _ = self.action_sender
+                    .send(Action::SendContent(our_authority,
+                                              location,
+                                              RequestContent::Delete(data)));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_request.
@@ -101,49 +95,49 @@ impl Routing {
                         _location: Authority,
                         _data: Data,
                         _data_request: DataRequest) {
-        /*let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Get(data, data_request, signed_request))));*/
+        // let _ = self.action_sender.send(Action::SendContent(
+        // our_authority, location,
+        // Content::ExternalResponse(
+        // ExternalResponse::Get(data, data_request, signed_request))));
     }
     /// response error to a put request
     pub fn put_response(&self,
                         _our_authority: Authority,
                         _location: Authority,
                         _response_error: ResponseError) {
-        /*if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, signed_request))));*/
+        // if response_error == ::error::ResponseError::Abort {
+        // return;
+        // };
+        // let _ = self.action_sender.send(Action::SendContent(
+        // our_authority, location,
+        // Content::ExternalResponse(
+        // ExternalResponse::Put(response_error, signed_request))));
     }
     /// Response error to a post request
     pub fn post_response(&self,
                          _our_authority: Authority,
                          _location: Authority,
                          _response_error: ResponseError) {
-        /*if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, signed_request))));*/
+        // if response_error == ::error::ResponseError::Abort {
+        // return;
+        // };
+        // let _ = self.action_sender.send(Action::SendContent(
+        // our_authority, location,
+        // Content::ExternalResponse(
+        // ExternalResponse::Post(response_error, signed_request))));
     }
     /// response error to a delete respons
     pub fn delete_response(&self,
                            _our_authority: Authority,
                            _location: Authority,
                            _response_error: ResponseError) {
-        /*if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(ExternalResponse::Delete(response_error,
-                    signed_request))));*/
+        // if response_error == ::error::ResponseError::Abort {
+        // return;
+        // };
+        // let _ = self.action_sender.send(Action::SendContent(
+        // our_authority, location,
+        // Content::ExternalResponse(ExternalResponse::Delete(response_error,
+        // signed_request))));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -155,21 +149,21 @@ impl Routing {
                            _our_authority: Authority,
                            _content: Vec<u8>,
                            _cause: ::XorName) {
-        /*if !our_authority.is_group() {
-            error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-                   type_tag,
-                   our_authority);
-            return;
-        };
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority.clone(),
-                                          our_authority,
-                                          Content::InternalRequest(InternalRequest::Refresh {
-                                              type_tag: type_tag,
-                                              message: content,
-                                              cause: cause,
-                                          })));*/
+        // if !our_authority.is_group() {
+        // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
+        // type_tag,
+        // our_authority);
+        // return;
+        // };
+        // let _ =
+        // self.action_sender
+        // .send(Action::SendContent(our_authority.clone(),
+        // our_authority,
+        // Content::InternalRequest(InternalRequest::Refresh {
+        // type_tag: type_tag,
+        // message: content,
+        // cause: cause,
+        // })));
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop

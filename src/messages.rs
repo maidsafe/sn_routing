@@ -22,7 +22,7 @@ use error::{RoutingError, ResponseError};
 use sodiumoxide::crypto::{box_, sign, hash};
 use authority::Authority;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-
+use rustc_serialize::{Decoder, Encoder};
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum Message {
     DirectMessage(DirectMessage),
@@ -51,13 +51,16 @@ pub enum DirectMessage {
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct HopMessage {
-	content: SignedMessage,
-	name: XorName,
+    content: SignedMessage,
+    name: XorName,
     signature: sign::Signature,
 }
 
 impl HopMessage {
-    pub fn new(content: SignedMessage, name: XorName, sign_key: &sign::SecretKey) -> Result<HopMessage, RoutingError> {
+    pub fn new(content: SignedMessage,
+               name: XorName,
+               sign_key: &sign::SecretKey)
+               -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, &name)));
         Ok(HopMessage {
             content: content,
@@ -86,8 +89,8 @@ impl HopMessage {
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
-	content: RoutingMessage,
-	public_id: PublicId,
+    content: RoutingMessage,
+    public_id: PublicId,
     signature: sign::Signature,
 }
 
@@ -103,7 +106,9 @@ impl SignedMessage {
 
     pub fn check_integrity(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
-        if !sign::verify_detached(&self.signature, &signed_bytes, self.public_id().signing_public_key()) {
+        if !sign::verify_detached(&self.signature,
+                                  &signed_bytes,
+                                  self.public_id().signing_public_key()) {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -189,6 +194,19 @@ pub enum RequestContent {
     Delete(Data),
 }
 
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum GetResultType {
+    Success(Data),
+    Failure(RequestMessage, ResponseError),
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum APIResultType {
+    Success(hash::sha512::Digest),
+    Failure(RequestMessage, ResponseError),
+}
+
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum ResponseContent {
     // ---------- Internal ------------
@@ -208,15 +226,15 @@ pub enum ResponseContent {
     },
     // ---------- External ------------
     Get {
-        result: Result<Data, (RequestMessage, ResponseError)>,
+        result: GetResultType,
     },
     Put {
-        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
+        result: APIResultType,
     },
     Post {
-        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
+        result: APIResultType,
     },
     Delete {
-        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
+        result: APIResultType,
     },
 }

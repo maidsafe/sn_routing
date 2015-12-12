@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use rand;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
-               RequestContent, ResponseContent, Message};
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message};
 
 fn generate_random_authority(name: ::XorName,
                              key: &::sodiumoxide::crypto::sign::PublicKey)
@@ -33,7 +33,12 @@ fn generate_random_authority(name: ::XorName,
         1 => ::authority::Authority::NaeManager(name),
         2 => ::authority::Authority::NodeManager(name),
         3 => ::authority::Authority::ManagedNode(name),
-        4 => ::authority::Authority::Client{ client_key: key.clone(), proxy_node_name: name },
+        4 => {
+            ::authority::Authority::Client {
+                client_key: key.clone(),
+                proxy_node_name: name,
+            }
+        }
         _ => unreachable!(),
     }
 }
