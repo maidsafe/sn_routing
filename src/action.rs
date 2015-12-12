@@ -23,7 +23,7 @@
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
-    SendContent(::authority::Authority, ::authority::Authority, ::messages::RequestMessage),
-    ClientSendContent(::authority::Authority, ::messages::RequestMessage),
+    SendContent(::authority::Authority, ::authority::Authority, ::messages::RequestContent),
+    ClientSendContent(::authority::Authority, ::messages::RequestContent),
     Terminate,
 }
