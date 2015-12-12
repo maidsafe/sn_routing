@@ -21,10 +21,8 @@ use std::sync::mpsc;
 
 use action::Action;
 use event::Event;
-use messages::SignedRequest;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use data_cache_options::DataCacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
@@ -67,7 +65,7 @@ impl Routing {
                        data_request: DataRequest) {
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Get(data_request, 0u8))));
+                RequestContent::Get(data_request, 0u8)));
     }
 
     /// Add something to the network
@@ -76,7 +74,7 @@ impl Routing {
             self.action_sender
                 .send(Action::SendContent(our_authority,
                                           location,
-                                          Content::ExternalRequest(ExternalRequest::Put(data))));
+                                          RequestContent::Put(data)));
     }
 
     /// Change something already on the network
@@ -85,7 +83,7 @@ impl Routing {
             self.action_sender
                 .send(Action::SendContent(our_authority,
                                           location,
-                                          Content::ExternalRequest(ExternalRequest::Post(data))));
+                                          RequestContent::Post(data)));
     }
 
     /// Remove something from the network
@@ -94,62 +92,58 @@ impl Routing {
             self.action_sender
                 .send(Action::SendContent(our_authority,
                                           location,
-                                          Content::ExternalRequest(ExternalRequest::Delete(data))));
+                                          RequestContent::Delete(data)));
     }
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_request.
     pub fn get_response(&self,
-                        our_authority: Authority,
-                        location: Authority,
-                        data: Data,
-                        data_request: DataRequest,
-                        signed_request: Option<SignedRequest>) {
-        let _ = self.action_sender.send(Action::SendContent(
+                        _our_authority: Authority,
+                        _location: Authority,
+                        _data: Data,
+                        _data_request: DataRequest) {
+        /*let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Get(data, data_request, signed_request))));
+                    ExternalResponse::Get(data, data_request, signed_request))));*/
     }
     /// response error to a put request
     pub fn put_response(&self,
-                        our_authority: Authority,
-                        location: Authority,
-                        response_error: ResponseError,
-                        signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
+                        _our_authority: Authority,
+                        _location: Authority,
+                        _response_error: ResponseError) {
+        /*if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, signed_request))));
+                    ExternalResponse::Put(response_error, signed_request))));*/
     }
     /// Response error to a post request
     pub fn post_response(&self,
-                         our_authority: Authority,
-                         location: Authority,
-                         response_error: ResponseError,
-                         signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
+                         _our_authority: Authority,
+                         _location: Authority,
+                         _response_error: ResponseError) {
+        /*if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, signed_request))));
+                    ExternalResponse::Post(response_error, signed_request))));*/
     }
     /// response error to a delete respons
     pub fn delete_response(&self,
-                           our_authority: Authority,
-                           location: Authority,
-                           response_error: ResponseError,
-                           signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
+                           _our_authority: Authority,
+                           _location: Authority,
+                           _response_error: ResponseError) {
+        /*if response_error == ::error::ResponseError::Abort {
             return;
         };
         let _ = self.action_sender.send(Action::SendContent(
                 our_authority, location,
                 Content::ExternalResponse(ExternalResponse::Delete(response_error,
-                    signed_request))));
+                    signed_request))));*/
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -157,11 +151,11 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
     pub fn refresh_request(&self,
-                           type_tag: u64,
-                           our_authority: Authority,
-                           content: Vec<u8>,
-                           cause: ::XorName) {
-        if !our_authority.is_group() {
+                           _type_tag: u64,
+                           _our_authority: Authority,
+                           _content: Vec<u8>,
+                           _cause: ::XorName) {
+        /*if !our_authority.is_group() {
             error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
                    type_tag,
                    our_authority);
@@ -175,13 +169,7 @@ impl Routing {
                                               type_tag: type_tag,
                                               message: content,
                                               cause: cause,
-                                          })));
-    }
-
-    /// Dynamically enable/disable caching for Data types.
-    pub fn set_cache_options(&self, cache_options: DataCacheOptions) {
-        let _ = self.action_sender.send(Action::SetDataCacheOptions(cache_options));
-
+                                          })));*/
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop

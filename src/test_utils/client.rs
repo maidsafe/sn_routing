@@ -16,6 +16,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
+               RequestContent, ResponseContent, Message};
+
 /// Network Client.
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
@@ -54,7 +57,7 @@ impl Client {
                 if let ::event::Event::Response{ response, our_authority: _, from_authority : _} =
                        event {
                     match response {
-                        ::messages::ExternalResponse::Get(data, _, _) => {
+                        ResponseContent::Get(data, _, _) => {
                             debug!("Client received data {:?} for get request.", data);
                             debug!("Get took {:?} to arrive.", ::time::SteadyTime::now() - time);
                             return Some(data);

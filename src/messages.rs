@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data::{Data};
-use id::{PublicId};
+use data::{Data, DataRequest};
+use id::{PublicId, FullId};
 use xor_name::XorName;
 use error::{RoutingError, ResponseError};
 use sodiumoxide::crypto::{box_, sign, hash};
@@ -57,10 +57,10 @@ pub struct HopMessage {
 }
 
 impl HopMessage {
-    pub fn new(content: SignedMessage, name: XorName, sign_key: &sign::PrivateKey) -> Result<HopMessage, RoutingError> {
+    pub fn new(content: SignedMessage, name: XorName, sign_key: &sign::SecretKey) -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, &name)));
         Ok(HopMessage {
-            content: SignedMessage,
+            content: content,
             name: name,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
@@ -84,7 +84,7 @@ impl HopMessage {
     }
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
 	content: RoutingMessage,
 	public_id: PublicId,
@@ -101,7 +101,7 @@ impl SignedMessage {
         })
     }
 
-    pub fn verify(&self) -> Result<(), RoutingError> {
+    pub fn check_integrity(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
         if !sign::verify_detached(&self.signature, &signed_bytes, self.public_id().signing_public_key()) {
             Ok(())
@@ -121,7 +121,7 @@ impl SignedMessage {
     }
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum RoutingMessage {
     Request(RequestMessage),
     Response(ResponseMessage),
@@ -130,34 +130,34 @@ pub enum RoutingMessage {
 impl RoutingMessage {
     pub fn src(&self) -> &Authority {
         match *self {
-            Request(ref msg) => &msg.src,
-            Response(ref msg) => &msg.src,
+            RoutingMessage::Request(ref msg) => &msg.src,
+            RoutingMessage::Response(ref msg) => &msg.src,
         }
     }
 
     pub fn dst(&self) -> &Authority {
         match *self {
-            Request(ref msg) => &msg.dst,
-            Response(ref msg) => &msg.dst,
+            RoutingMessage::Request(ref msg) => &msg.dst,
+            RoutingMessage::Response(ref msg) => &msg.dst,
         }
     }
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct RequestMessage {
     pub src: Authority,
     pub dst: Authority,
     pub content: RequestContent,
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct ResponseMessage {
     pub src: Authority,
     pub dst: Authority,
     pub content: ResponseContent,
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum RequestContent {
     // ---------- Internal ------------
     GetNetworkName {
@@ -189,7 +189,7 @@ pub enum RequestContent {
     Delete(Data),
 }
 
-#[derive(Ord, PartialOrd, Clone, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum ResponseContent {
     // ---------- Internal ------------
     GetNetworkName {
@@ -200,6 +200,8 @@ pub enum ResponseContent {
     },
     GetPublicIdWithEndpoints {
         public_id: PublicId,
+        encrypted_endpoints: Vec<u8>,
+        nonce_bytes: [u8; box_::NONCEBYTES],
     },
     GetCloseGroup {
         close_group_ids: Vec<PublicId>,
@@ -209,12 +211,12 @@ pub enum ResponseContent {
         result: Result<Data, (RequestMessage, ResponseError)>,
     },
     Put {
-        result: Result<sha512::hash::Digest, (RequestMessage, ResponseError)>,
+        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
     },
     Post {
-        result: Result<sha512::hash::Digest, (RequestMessage, ResponseError)>,
+        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
     },
     Delete {
-        result: Result<sha512::hash::Digest, (RequestMessage, ResponseError)>,
+        result: Result<hash::sha512::Digest, (RequestMessage, ResponseError)>,
     },
 }

@@ -185,6 +185,10 @@ pub enum RoutingError {
     UnknownConnection,
     /// The message is not getting closer to the target
     DirectionCheckFailed,
+    /// Density mismatch
+    RoutingTableBucketIndexFailed,
+    /// Invalid Destination
+    InvalidDestination,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {

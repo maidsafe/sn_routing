@@ -16,6 +16,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage, ResponseMessage,
+               RequestContent, ResponseContent, Message};
 /// Network Node.
 pub struct Node {
     routing: ::routing::Routing,
@@ -112,24 +114,22 @@ impl Node {
     }
 
     fn handle_request(&mut self,
-                      request: ::ExternalRequest,
+                      request: RequestContent,
                       our_authority: ::authority::Authority,
-                      from_authority: ::authority::Authority,
-                      signed_request: Option<::SignedRequest>) {
+                      from_authority: ::authority::Authority) {
         match request {
-            ::ExternalRequest::Get(data_request, _) => {
+            RequestContent::Get(data_request) => {
                 self.handle_get_request(data_request,
                                         our_authority,
-                                        from_authority,
-                                        signed_request);
+                                        from_authority);
             }
-            ::ExternalRequest::Put(data) => {
-                self.handle_put_request(data, our_authority, from_authority, signed_request);
+            RequestContent::Put(data) => {
+                self.handle_put_request(data, our_authority, from_authority);
             }
-            ::ExternalRequest::Post(_) => {
+            RequestContent::Post(_) => {
                 debug!("Node: Post unimplemented.");
             }
-            ::ExternalRequest::Delete(_) => {
+            RequestContent::Delete(_) => {
                 debug!("Node: Delete unimplemented.");
             }
         }
@@ -138,8 +138,7 @@ impl Node {
     fn handle_get_request(&mut self,
                           data_request: ::data::DataRequest,
                           our_authority: ::authority::Authority,
-                          from_authority: ::authority::Authority,
-                          signed_request: Option<::SignedRequest>) {
+                          from_authority: ::authority::Authority) {
         let data = match self.db.get(&data_request.name()) {
             Some(data) => data.clone(),
             None => {
@@ -151,15 +150,13 @@ impl Node {
         self.routing.get_response(our_authority,
                                   from_authority,
                                   data,
-                                  data_request,
-                                  signed_request);
+                                  data_request);
     }
 
     fn handle_put_request(&mut self,
                           data: ::data::Data,
                           our_authority: ::authority::Authority,
-                          _from_authority: ::authority::Authority,
-                          _response_token: Option<::SignedRequest>) {
+                          _from_authority: ::authority::Authority) {
         match our_authority {
             ::authority::Authority::NaeManager(_) => {
                 debug!("Storing: key {:?}, value {:?}", data.name(), data);
@@ -253,14 +250,12 @@ impl Node {
     }
 
     fn handle_response(&mut self,
-                       _response: ::ExternalResponse,
                        _our_authority: ::authority::Authority,
                        _from_authority: ::authority::Authority) {
         unimplemented!();
     }
 
     fn handle_failed_request(&mut self,
-                             _request: ::ExternalRequest,
                              _our_authority: Option<::authority::Authority>,
                              _location: ::authority::Authority,
                              _interface_error: ::error::InterfaceError) {
@@ -268,7 +263,6 @@ impl Node {
     }
 
     fn handle_failed_response(&mut self,
-                              _response: ::ExternalResponse,
                               _our_authority: Option<::authority::Authority>,
                               _location: ::authority::Authority,
                               _interface_error: ::error::InterfaceError) {
