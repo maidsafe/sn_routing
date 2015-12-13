@@ -368,7 +368,7 @@ impl RoutingNode {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _)),
                     ..
                 }) => {
-                self.data_cache.get(name)
+                self.data_cache.get(&name)
             }
             _ => None,
         }
@@ -1389,7 +1389,7 @@ impl RoutingNode {
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
-    fn send(&mut self, _signed_message: SignedMessage)-> Result<(), RoutingError> {
+    fn send(&self, _signed_message: SignedMessage)-> Result<(), RoutingError> {
         Ok(())
     // let message = match signed_message.get_routing_message() {
     //     Ok(routing_message) => routing_message,

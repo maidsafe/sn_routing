@@ -78,8 +78,8 @@ impl HopMessage {
         }
     }
 
-    pub fn extract(self) -> (SignedMessage, XorName) {
-        (self.content, self.name)
+    pub fn extract(&self) -> (SignedMessage, XorName) {
+        (self.content.clone(), self.name.clone())
     }
 
     pub fn name(&self) -> &XorName {
