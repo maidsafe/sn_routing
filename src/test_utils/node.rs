@@ -47,13 +47,12 @@ impl Node {
     /// Run event loop.
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
-            debug!("Node: Received event {:?}", event);
             match event {
-                ::event::Event::Request{ request, our_authority, from_authority, signed_request } =>
-                    self.handle_request(request, our_authority, from_authority, signed_request),
-                ::event::Event::Response{ response, our_authority, from_authority } => {
+                ::event::Event::Request{ content, src, dst } =>
+                    self.handle_request(content, src, dst),
+                ::event::Event::Response{ content, src, dst } => {
                     debug!("Received response event");
-                    self.handle_response(response, our_authority, from_authority)
+                    self.handle_response(content, src, dst)
                 }
                 ::event::Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
                     debug!("Received refresh event");
@@ -79,19 +78,19 @@ impl Node {
                     debug!("Received churn event");
                     self.handle_churn(close_group)
                 }
-                ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
+                // ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
                     debug!("Received connected event");
                     self.connected = true;
                 }
                 ::event::Event::Disconnected => debug!("Received disconnected event"),
-                ::event::Event::FailedRequest{ request, our_authority, location, interface_error } => {
+                ::event::Event::FailedRequest{ request, src, dst, interface_error } => {
                     debug!("Received failed request event");
-                    self.handle_failed_request(request, our_authority, location, interface_error)
+                    self.handle_failed_request(request, src, dst, interface_error)
                 }
-                ::event::Event::FailedResponse{ response, our_authority, location, interface_error } => {
+                ::event::Event::FailedResponse{ response, src, dst, interface_error } => {
                     debug!("Received failed response event");
-                    self.handle_failed_response(response, our_authority, location, interface_error)
+                    self.handle_failed_response(response, src, dst, interface_error)
                 }
                 ::event::Event::Terminated => {
                     debug!("Received terminate event");
@@ -120,16 +119,17 @@ impl Node {
         match request {
             RequestContent::Get(data_request) => {
                 self.handle_get_request(data_request, our_authority, from_authority);
-            }
+            },
             RequestContent::Put(data) => {
                 self.handle_put_request(data, our_authority, from_authority);
-            }
+            },
             RequestContent::Post(_) => {
                 debug!("Node: Post unimplemented.");
-            }
+            },
             RequestContent::Delete(_) => {
                 debug!("Node: Delete unimplemented.");
-            }
+            },
+            _ => ()
         }
     }
 
@@ -245,21 +245,24 @@ impl Node {
     }
 
     fn handle_response(&mut self,
-                       _our_authority: ::authority::Authority,
-                       _from_authority: ::authority::Authority) {
+                       _content: ResponseContent,
+                       _src: ::authority::Authority,
+                       _dst: ::authority::Authority) {
         unimplemented!();
     }
 
     fn handle_failed_request(&mut self,
-                             _our_authority: Option<::authority::Authority>,
-                             _location: ::authority::Authority,
+                             _content: RequestContent,
+                             _src: Option<::authority::Authority>,
+                             _dst: ::authority::Authority,
                              _interface_error: ::error::InterfaceError) {
         unimplemented!();
     }
 
     fn handle_failed_response(&mut self,
-                              _our_authority: Option<::authority::Authority>,
-                              _location: ::authority::Authority,
+                              _content: ResponseContent,
+                              _src: Option<::authority::Authority>,
+                              _dst: ::authority::Authority,
                               _interface_error: ::error::InterfaceError) {
         unimplemented!();
     }
