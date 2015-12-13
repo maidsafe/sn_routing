@@ -17,7 +17,7 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType};
 
 /// Network Client.
 pub struct Client {
@@ -53,16 +53,16 @@ impl Client {
         let time = ::time::SteadyTime::now();
         loop {
             while let Ok(event) = self.receiver.try_recv() {
-                debug!("Client received routing event: {:?}", event);
-                if let ::event::Event::Response{ response, our_authority: _, from_authority : _} =
+                if let ::event::Event::Response{ content, src: _, dst : _} =
                        event {
-                    match response {
-                        ResponseContent::Get(data, _, _) => {
-                            debug!("Client received data {:?} for get request.", data);
-                            debug!("Get took {:?} to arrive.", ::time::SteadyTime::now() - time);
-                            return Some(data);
+                    match content {
+                        ResponseContent::Get{ result } => {
+                            match result {
+                                GetResultType::Success(data) => return Some(data),
+                                GetResultType::Failure(..) => return None,
+                            }
                         }
-                        _ => debug!("Received unexpected external response {:?},", response),
+                        _ => debug!("Received unexpected external response {:?},", content),
                     };
                 }
 

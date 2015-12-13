@@ -37,7 +37,7 @@ pub enum Event {
     /// FailedRequest.
     FailedRequest {
         /// External request.
-        request: RequestMessage,
+        request: RequestContent,
         /// Our authority.
         src: Option<Authority>,
         /// From authority.
@@ -48,7 +48,7 @@ pub enum Event {
     /// FailedResponse.
     FailedResponse {
         /// External response.
-        response: ResponseMessage,
+        response: ResponseContent,
         /// Our authority.
         src: Option<Authority>,
         /// From authority.
