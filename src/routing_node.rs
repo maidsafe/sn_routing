@@ -363,12 +363,14 @@ impl RoutingNode {
     }
 
     fn get_from_cache(&self, routing_msg: &RoutingMessage) -> Option<&Data> {
-        match *routing_msg {
-            RoutingMessage::Request(RequestMessage {
+        match routing_msg {
+            &RoutingMessage::Request(RequestMessage {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _)),
                     ..
                 }) => {
-                self.data_cache.get(&name)
+                // self.data_cache.get(&name)
+                // FIXME(dirvine) borrow check :13/12/2015
+                None
             }
             _ => None,
         }
@@ -380,7 +382,8 @@ impl RoutingNode {
                     content: ResponseContent::Get { result: GetResultType::Success(ref data @ Data::ImmutableData(_)), },
                     ..
                 }) => {
-                let _ = self.data_cache.insert(data.name().clone(), data.clone());
+                // let _ = self.data_cache.insert(data.name().clone(), data.clone());
+                // FIXME(dirvine) borrow check :13/12/2015
             }
             _ => (),
         }
@@ -397,7 +400,7 @@ impl RoutingNode {
 
         // TODO Node Harvest here ??
         if routing_msg.src().is_group() {
-            if let Some(output_msg) =  self.accumulate(routing_msg, &public_id) {
+            if let Some(output_msg) =  self.accumulate(routing_msg.clone(), &public_id) {
                    let _ = self.grp_msg_filter.insert(output_msg.clone());
             } else {
                 return Err(::error::RoutingError::NotEnoughSignatures);
@@ -427,7 +430,7 @@ impl RoutingNode {
     }
 
     fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
-        match (request_msg.content, request_msg.src, request_msg.dst) {
+        match (request_msg.content.clone(), request_msg.src.clone(), request_msg.dst.clone()) {
             (RequestContent::GetNetworkName { current_id, },
              Authority::Client { client_key, proxy_node_name },
              Authority::NaeManager(dst_name)) => {
@@ -514,7 +517,7 @@ impl RoutingNode {
     fn handle_response_message(&mut self,
                                response_msg: ResponseMessage)
                                -> Result<(), RoutingError> {
-        match (response_msg.content, response_msg.src, response_msg.dst) {
+        match (response_msg.content.clone(), response_msg.src.clone(), response_msg.dst.clone()) {
             (ResponseContent::GetNetworkName { relocated_id, },
              Authority::NaeManager(_),
              Authority::Client { client_key, proxy_node_name, }) => {
@@ -729,7 +732,7 @@ impl RoutingNode {
                     return Ok(())
                 }
 
-                if let Some(previous_name) = self.proxy_map.insert(connection, *public_id) {
+                if let Some(previous_name) = self.proxy_map.insert(connection, public_id.clone()) {
                     warn!("Adding bootstrap node to proxy map caused a prior id to eject. \
                           Previous name: {:?}", previous_name);
                     warn!("Dropping this connection {:?}", connection);
@@ -909,7 +912,7 @@ impl RoutingNode {
         // From X -> A (via B)
         {
             let response_content = ResponseContent::GetNetworkName {
-                relocated_id: their_public_id,
+                relocated_id: their_public_id.clone(),
             };
 
             let response_msg = ResponseMessage {
@@ -1042,7 +1045,7 @@ impl RoutingNode {
         Ok(())
     }
 
-    fn send_endpoints(&mut self,
+    fn send_endpoints(&self,
                       their_public_id: &::id::PublicId,
                       src_authority: Authority,
                       dst_authority: Authority)
@@ -1164,13 +1167,12 @@ impl RoutingNode {
             return Err(RoutingError::RefusedFromRoutingTable);
         }
 
+        let our_name = self.full_id.public_id().name();
         if let Some(public_id) = self.node_id_cache.get(&src_name) {
-            try!(self.send_endpoints(public_id,
-                                     Authority::ManagedNode(self.full_id
-                                                                .public_id()
-                                                                .name()
-                                                                .clone()),
-                                     Authority::ManagedNode(src_name)));
+            // FIXME(dirvine) borrow check fix :13/12/2015
+            // try!(self.send_endpoints(public_id,
+            //                          Authority::ManagedNode(*our_name),
+            //                          Authority::ManagedNode(src_name)));
             return Ok(());
         }
 
