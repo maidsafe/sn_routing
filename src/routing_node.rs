@@ -420,7 +420,13 @@ impl RoutingNode {
                 return Err(::error::RoutingError::NotEnoughSignatures);
             }
         }
+        self.dispatch_request_response(routing_msg)
+    }
 
+
+    fn dispatch_request_response(&mut self,
+                                 routing_msg: RoutingMessage)
+                                 -> Result<(), RoutingError> {
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
