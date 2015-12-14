@@ -23,6 +23,7 @@ use sodiumoxide::crypto::{box_, sign, hash};
 use authority::Authority;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use rustc_serialize::{Decoder, Encoder};
+
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum Message {
     DirectMessage(DirectMessage),
@@ -71,7 +72,7 @@ impl HopMessage {
 
     pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.name)));
-        if !sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
+        if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
             Ok(())
         } else {
             Err(RoutingError::FailedSignature)
@@ -110,7 +111,7 @@ impl SignedMessage {
 
     pub fn check_integrity(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
-        if !sign::verify_detached(&self.signature,
+        if sign::verify_detached(&self.signature,
                                   &signed_bytes,
                                   self.public_id().signing_public_key()) {
             Ok(())

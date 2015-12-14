@@ -68,7 +68,6 @@ extern crate kademlia_routing_table;
 
 mod action;
 mod messages;
-mod direct_messages;
 mod routing_node;
 mod refresh_accumulator;
 mod connection_management;

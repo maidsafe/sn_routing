@@ -161,9 +161,6 @@ impl RoutingNode {
                    ::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         for it in category_rx.iter() {
-            if self.state == State::Node {
-                trace!("Routing Table size: {}", self.routing_table.len());
-            };
             match it {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
@@ -199,8 +196,10 @@ impl RoutingNode {
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
                             ::crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
                             ::crust::Event::NewMessage(connection, bytes) => {
-                                if let Err(err) = self.handle_new_message(connection, bytes) {
-                                    error!("{:?} {:?}", self, err);
+                                match self.handle_new_message(connection, bytes) {
+                                    Err(RoutingError::FilterCheckFailed) => (),
+                                    Err(err) => error!("{:?} {:?}", self, err),
+                                    Ok(_) => (),
                                 }
                             }
                             ::crust::Event::OnConnect(connection, connection_token) => {
@@ -219,6 +218,14 @@ impl RoutingNode {
                     }
                 }
             } // Category Match
+
+            if self.state == State::Node {
+                trace!("Routing Table size: {}", self.routing_table.len());
+                // self.routing_table.our_close_group().iter().all(|elt| {
+                //     trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
+                //     true
+                // });
+            }
         } // Category Rx
     }
 
@@ -256,14 +263,10 @@ impl RoutingNode {
         }
 
         let (content, name) = hop_msg.extract();
-        self.handle_signed_message(content, name, connection)
+        self.handle_signed_message(content, name)
     }
 
-    fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
-                             hop_name: XorName,
-                             connection: ::crust::Connection)
-                             -> Result<(), RoutingError> {
+    fn handle_signed_message(&mut self, signed_msg: SignedMessage, hop_name: XorName) -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
         // Prevents
@@ -275,7 +278,17 @@ impl RoutingNode {
 
         // Either swarm or Direction check
         if self.state == State::Node {
-            self.handle_signed_message_for_node(&signed_msg, &hop_name, &connection)
+            // Since endpoint messages while bootstrapping are sent to a client we still need to
+            // accept endpoint msgs sent to us even if we have become a node.
+            if let &Authority::Client { ref client_key, .. } = signed_msg.content().dst() {
+                if client_key == self.full_id.public_id().signing_public_key() {
+                    if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
+                        signed_msg.content() {
+                        try!(self.handle_signed_message_for_client(&signed_msg));
+                    }
+                }
+            }
+            self.handle_signed_message_for_node(&signed_msg, &hop_name, )
         } else if self.state == State::Client {
             self.handle_signed_message_for_client(&signed_msg)
         } else {
@@ -285,8 +298,7 @@ impl RoutingNode {
 
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
-                                      hop_name: &XorName,
-                                      connection: &::crust::Connection) -> Result<(), RoutingError> {
+                                      hop_name: &XorName) -> Result<(), RoutingError> {
         // Node Harvesting
         if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
             self.routing_table.want_to_add(signed_msg.public_id().name()) {
@@ -294,6 +306,7 @@ impl RoutingNode {
         }
 
         if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+            // TODO
             self.signed_msg_security_check(&signed_msg);
 
             if signed_msg.content().dst().is_group() {
@@ -600,17 +613,17 @@ impl RoutingNode {
                       error)
             }
         }
-        match self.crust_service.start_accepting(CRUST_DEFAULT_UTP_ACCEPTING_PORT) {
-            Ok(endpoint) => {
-                info!("Running uTP listener on {:?}", endpoint);
-                self.accepting_on.push(endpoint);
-            }
-            Err(error) => {
-                warn!("Failed to listen on {:?}: {:?}",
-                      CRUST_DEFAULT_UTP_ACCEPTING_PORT,
-                      error)
-            }
-        }
+        // match self.crust_service.start_accepting(CRUST_DEFAULT_UTP_ACCEPTING_PORT) {
+        //     Ok(endpoint) => {
+        //         info!("Running uTP listener on {:?}", endpoint);
+        //         self.accepting_on.push(endpoint);
+        //     }
+        //     Err(error) => {
+        //         warn!("Failed to listen on {:?}: {:?}",
+        //               CRUST_DEFAULT_UTP_ACCEPTING_PORT,
+        //               error)
+        //     }
+        // }
 
         // The above commands will give us only internal endpoints on which we're accepting. The
         // next command will try to find external endpoints. The result shall be returned async
@@ -642,7 +655,6 @@ impl RoutingNode {
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
         debug!("New connection via OnAccept {:?} {:?}", connection, self);
         if self.state == State::Disconnected {
-            trace!("{:?} handle_on_accept", self);
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
             let new_name = XorName::new(hash::sha512::hash(&self.full_id
@@ -666,13 +678,15 @@ impl RoutingNode {
     }
 
     fn bootstrap_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
-        let direct_message = ::direct_messages::DirectMessage::BootstrapIdentify {
+        let direct_message = DirectMessage::BootstrapIdentify {
             public_id: self.full_id.public_id().clone(),
             // Current quorum size should also include ourselves when sending this message. Thus
             // the '+ 1'
             current_quorum_size: self.routing_table.dynamic_quorum_size() + 1,
         };
-        let raw_bytes = try!(serialise(&direct_message));
+
+        let message = Message::DirectMessage(direct_message);
+        let raw_bytes = try!(serialise(&message));
 
         Ok(self.crust_service.send(connection, raw_bytes))
     }
@@ -684,13 +698,15 @@ impl RoutingNode {
                                             self.full_id
                                                 .signing_private_key());
 
-        let direct_message = ::direct_messages::DirectMessage::ClientIdentify {
+        let direct_message = DirectMessage::ClientIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
         };
-        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
 
-        Ok(self.crust_service.send(connection, bytes))
+        let message = Message::DirectMessage(direct_message);
+        let raw_bytes = try!(serialise(&message));
+
+        Ok(self.crust_service.send(connection, raw_bytes))
     }
 
     fn node_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
@@ -700,16 +716,17 @@ impl RoutingNode {
                                             self.full_id
                                                 .signing_private_key());
 
-        let direct_message = ::direct_messages::DirectMessage::NodeIdentify {
+        let direct_message = DirectMessage::NodeIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
         };
-        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
 
-        Ok(self.crust_service.send(connection, bytes))
+        let message = Message::DirectMessage(direct_message);
+        let raw_bytes = try!(serialise(&message));
+
+        Ok(self.crust_service.send(connection, raw_bytes))
     }
 
-    // ---- Direct Messages -----------------------------------------------------------------------
     fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &sign::Signature)
                                -> Result<::id::PublicId, RoutingError> {
@@ -729,7 +746,7 @@ impl RoutingNode {
                              connection: ::crust::Connection)
                              -> Result<(), RoutingError> {
         match direct_message {
-            ::messages::DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
+            DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
                 if *public_id.name() == ::XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
@@ -759,13 +776,11 @@ impl RoutingNode {
                 if self.client_restriction {
                     let _ = self.event_sender.send(Event::Connected);
                 } else {
-                    trace!("{:?} Relocating", self);
                     self.relocate();
                 };
                 Ok(())
             }
-            ::messages::DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
-                trace!("{:?} Rxd ClientIdentify", self);
+            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
 
                 let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
                     Ok(public_id) => public_id,
@@ -795,7 +810,7 @@ impl RoutingNode {
                 let _ = self.bootstrap_identify(connection);
                 Ok(())
             }
-            ::messages::DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
+            DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
                 let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id,
                                                                            signature) {
                     Ok(public_id) => public_id,
@@ -820,8 +835,7 @@ impl RoutingNode {
                         return Ok(());
                     }
 
-                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(),
-                                                                            vec![connection]);
+                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
@@ -831,16 +845,16 @@ impl RoutingNode {
                         let (is_added, node_removed) = self.routing_table.add_node(node_info);
 
                         if !is_added {
-                            debug!("Node rejected by Routing table - Closing {:?}", connection);
                             self.crust_service.drop_node(connection);
                             let _ = self.node_id_cache.remove(public_id.name());
 
                             return Ok(());
                         }
 
+                        self.state = State::Node;
+
                         if let Some(node_to_drop) = node_removed {
-                            debug!("Node ejected by routing table on an add. Dropping node {:?}",
-                                   node_to_drop);
+                            debug!("Node ejected by routing table on an add. Dropping node {:?}", node_to_drop);
 
                             for it in node_to_drop.connections.into_iter() {
                                 self.crust_service.drop_node(it);
@@ -857,7 +871,7 @@ impl RoutingNode {
                     return Ok(());
                 }
             }
-            ::messages::DirectMessage::Churn { ref close_group } => {
+            DirectMessage::Churn { ref close_group } => {
                 // Message needs signature validation
                 self.handle_churn(close_group);
                 Ok(())
@@ -1067,13 +1081,10 @@ impl RoutingNode {
 
     fn send_endpoints(&mut self,
                       their_public_id: ::id::PublicId,
-                      src_authority: Authority,
-                      dst_authority: Authority)
+                      src: Authority,
+                      dst: Authority)
                       -> Result<(), RoutingError> {
-        trace!("{:?} send_endpoints", self);
-
-        let encoded_endpoints =
-            try!(::maidsafe_utilities::serialisation::serialise(&self.accepting_on));
+        let encoded_endpoints = try!(serialise(&self.accepting_on));
         let nonce = box_::gen_nonce();
         let encrypted_endpoints = box_::seal(&encoded_endpoints,
                                              &nonce,
@@ -1086,8 +1097,8 @@ impl RoutingNode {
         };
 
         let request_msg = RequestMessage {
-            src: src_authority,
-            dst: dst_authority,
+            src: src,
+            dst: dst,
             content: request_content,
         };
 
@@ -1350,11 +1361,11 @@ impl RoutingNode {
 
     fn relay_to_client(&mut self, signed_msg: SignedMessage, client_key: &sign::PublicKey) -> Result<(), RoutingError> {
         let connection = try!(self.client_map.get(client_key).ok_or(RoutingError::ClientConnectionNotFound));
-
         let hop_msg = try!(HopMessage::new(signed_msg,
                                            self.full_id.public_id().name().clone(),
                                            self.full_id.signing_private_key()));
-        let raw_bytes = try!(serialise(&hop_msg));
+        let message = Message::HopMessage(hop_msg);
+        let raw_bytes = try!(serialise(&message));
 
         Ok(self.crust_service.send(connection.clone(), raw_bytes))
     }
@@ -1365,16 +1376,16 @@ impl RoutingNode {
     /// 3. if the destination is in range for us, then send it to all our close group nodes
     /// 4. if all the above failed, try sending it over all available bootstrap connections
     /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
-    fn send(&mut self, signed_message: SignedMessage) -> Result<(), RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_message,
+    fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
                                            self.full_id.public_id().name().clone(),
                                            self.full_id.signing_private_key()));
-
-        let raw_bytes = try!(serialise(&hop_msg));
+        let message = Message::HopMessage(hop_msg);
+        let raw_bytes = try!(serialise(&message));
 
         // If we're a client going to be a node, send via our bootstrap connection
         if self.state == State::Client {
-            if let Authority::Client { ref client_key, ref proxy_node_name, } = *hop_msg.content().content().src() {
+            if let Authority::Client { ref client_key, ref proxy_node_name, } = *signed_msg.content().src() {
                 if let Some((connection, _)) = self.proxy_map.iter().find(|elt| elt.1.name() == proxy_node_name) {
                     return Ok(self.crust_service.send(connection.clone(), raw_bytes))
                 }
@@ -1388,7 +1399,7 @@ impl RoutingNode {
         }
 
         // Query routing table to send it out parallel or to our close group (ourselves excluded)
-        let targets = self.routing_table.target_nodes(hop_msg.content().content().dst().get_name());
+        let targets = self.routing_table.target_nodes(signed_msg.content().dst().get_name());
         targets.iter().all(|node_info| {
             node_info.connections.iter().all(|connection| {
                 self.crust_service.send(connection.clone(), raw_bytes.clone());
@@ -1397,10 +1408,10 @@ impl RoutingNode {
         });
 
         // If we need to handle this message, handle it.
-        if self.routing_table.is_close(hop_msg.content().content().dst().get_name()) {
-            if self.signed_message_filter.insert(hop_msg.content().clone()).is_none() {
-                return self.handle_routing_message(hop_msg.content().content().clone(),
-                                                   hop_msg.content().public_id().clone())
+        if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+            if self.signed_message_filter.insert(signed_msg.clone()).is_none() {
+                let hop_name = self.full_id.public_id().name().clone();
+                return self.handle_signed_message_for_node(&signed_msg, &hop_name);
             }
         }
 
@@ -1489,7 +1500,7 @@ impl RoutingNode {
                 // trigger churn
                 // if close node
             }
-            self.routing_table.drop_node(&node_name);
+            // self.routing_table.drop_node(&node_name);
         }
     }
 }
