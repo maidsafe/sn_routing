@@ -281,7 +281,7 @@ impl RoutingNode {
         // Either swarm or Direction check
         if self.state == State::Node {
             // Since endpoint request / GetCloseGroup response messages while relocating are sent
-            // to a client we still need to accept endpoint msgs sent to us even if we have become a node.
+            // to a client we still need to accept these msgs sent to us even if we have become a node.
             if let &Authority::Client { ref client_key, .. } = signed_msg.content().dst() {
                 if client_key == self.full_id.public_id().signing_public_key() {
                     if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
@@ -1068,14 +1068,6 @@ impl RoutingNode {
 
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
-
-        // Sorting the close group we return sorted by the destination
-        let client_name = XorName::new(hash::sha512::hash(&client_key.0).0);
-        public_ids.sort_by(|a, b| if ::xor_name::closer_to_target(&a.name(), &b.name(), &client_name) {
-            ::std::cmp::Ordering::Less
-        } else {
-            ::std::cmp::Ordering::Greater
-        });
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
