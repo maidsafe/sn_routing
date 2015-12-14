@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use authority::Authority;
+use messages::{RoutingMessage, RequestContent};
+
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
 ///       for it to be sent on across the network.
@@ -23,12 +26,10 @@
 ///       After completion RoutingNode will send Event::Terminated.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
-    SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
-    ClientSendContent(::authority::Authority, ::messages::Content),
-    //          ~~|~~~~~~  ~~|~~~~
-    //            |          | the bare content for a message to be formed
-    //            | the destination authority
-    // RoutingNode will form the RoutingMessage and sign it as its own identity
-    SetDataCacheOptions(::data_cache_options::DataCacheOptions),
+    NodeSendMessage(RoutingMessage),
+    ClientSendRequest {
+        content: RequestContent,
+        dst: Authority,
+    },
     Terminate,
 }

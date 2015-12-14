@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use rand;
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message};
 
 fn generate_random_authority(name: ::XorName,
                              key: &::sodiumoxide::crypto::sign::PublicKey)
@@ -31,7 +33,12 @@ fn generate_random_authority(name: ::XorName,
         1 => ::authority::Authority::NaeManager(name),
         2 => ::authority::Authority::NodeManager(name),
         3 => ::authority::Authority::ManagedNode(name),
-        4 => ::authority::Authority::Client(name, key.clone()),
+        4 => {
+            ::authority::Authority::Client {
+                client_key: key.clone(),
+                proxy_node_name: name,
+            }
+        }
         _ => unreachable!(),
     }
 }
@@ -80,17 +87,16 @@ fn generate_random_data(public_sign_key: &::sodiumoxide::crypto::sign::PublicKey
 // TODO Randomize Content and rename to random_routing_message.
 pub fn arbitrary_routing_message(public_key: &::sodiumoxide::crypto::sign::PublicKey,
                                  secret_key: &::sodiumoxide::crypto::sign::SecretKey)
-                                 -> ::messages::RoutingMessage {
+                                 -> ::messages::RequestMessage {
     let source_authority = generate_random_authority(rand::random(), public_key);
     let destination_authority = generate_random_authority(rand::random(), public_key);
     let data = generate_random_data(public_key, secret_key);
-    let content = ::messages::Content::ExternalRequest(::messages::ExternalRequest::Put(data));
+    let content = RequestContent::Put(data);
 
-    ::messages::RoutingMessage {
-        source_authority: source_authority,
-        destination_authority: destination_authority,
+    RequestMessage {
+        src: source_authority,
+        dst: destination_authority,
         content: content,
-        group_keys: None,
     }
 }
 

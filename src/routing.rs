@@ -21,13 +21,13 @@ use std::sync::mpsc;
 
 use action::Action;
 use event::Event;
-use messages::SignedRequest;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use data_cache_options::DataCacheOptions;
 use error::{RoutingError, ResponseError};
 use authority::Authority;
-use messages::{ExternalRequest, ExternalResponse, InternalRequest, Content};
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType,
+               ApiResultType};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -44,143 +44,136 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Routing {
+    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
         // TODO(Spandan) Return Error to Vaults instead of unwrap_result!(...)
-        let (action_sender, raii_joiner) = unwrap_result!(RoutingNode::new(event_sender,
-                                                                           false,
-                                                                           None));
+        let (action_sender, raii_joiner) = try!(RoutingNode::new(event_sender, false, None));
 
-        Routing {
+        Ok(Routing {
             action_sender: action_sender,
             _raii_joiner: raii_joiner,
-        }
+        })
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&self,
-                       our_authority: Authority,
-                       location: Authority,
-                       data_request: DataRequest) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalRequest(ExternalRequest::Get(data_request, 0u8))));
+    pub fn send_get_request(&self, src: Authority, dst: Authority, data_request: DataRequest) {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src,
+            dst: dst,
+            content: RequestContent::Get(data_request),
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
 
     /// Add something to the network
-    pub fn put_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          Content::ExternalRequest(ExternalRequest::Put(data))));
+    pub fn send_put_request(&self, src: Authority, dst: Authority, data: Data) {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src,
+            dst: dst,
+            content: RequestContent::Put(data),
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
 
     /// Change something already on the network
-    pub fn post_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          Content::ExternalRequest(ExternalRequest::Post(data))));
+    pub fn send_post_request(&self, src: Authority, dst: Authority, data: Data) {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src,
+            dst: dst,
+            content: RequestContent::Post(data),
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, our_authority: Authority, location: Authority, data: Data) {
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority,
-                                          location,
-                                          Content::ExternalRequest(ExternalRequest::Delete(data))));
+    pub fn send_delete_request(&self, src: Authority, dst: Authority, data: Data) {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src,
+            dst: dst,
+            content: RequestContent::Delete(data),
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_request.
-    pub fn get_response(&self,
-                        our_authority: Authority,
-                        location: Authority,
-                        data: Data,
-                        data_request: DataRequest,
-                        signed_request: Option<SignedRequest>) {
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Get(data, data_request, signed_request))));
+    pub fn send_get_response(&self,
+                             src: Authority,
+                             dst: Authority,
+                             result: GetResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Get { result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// response error to a put request
-    pub fn put_response(&self,
-                        our_authority: Authority,
-                        location: Authority,
-                        response_error: ResponseError,
-                        signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Put(response_error, signed_request))));
+    pub fn send_put_response(&self,
+                             src: Authority,
+                             dst: Authority,
+                             result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Put{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// Response error to a post request
-    pub fn post_response(&self,
-                         our_authority: Authority,
-                         location: Authority,
-                         response_error: ResponseError,
-                         signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(
-                    ExternalResponse::Post(response_error, signed_request))));
+    pub fn send_post_response(&self,
+                              src: Authority,
+                              dst: Authority,
+                              result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Post{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// response error to a delete respons
-    pub fn delete_response(&self,
-                           our_authority: Authority,
-                           location: Authority,
-                           response_error: ResponseError,
-                           signed_request: Option<SignedRequest>) {
-        if response_error == ::error::ResponseError::Abort {
-            return;
-        };
-        let _ = self.action_sender.send(Action::SendContent(
-                our_authority, location,
-                Content::ExternalResponse(ExternalResponse::Delete(response_error,
-                    signed_request))));
+    pub fn send_delete_response(&self,
+                                src: Authority,
+                                dst: Authority,
+                                result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Delete{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
-    /// content. If the authority provided (our_authority) is not a group, the request for refresh will be dropped.
-    pub fn refresh_request(&self,
-                           type_tag: u64,
-                           our_authority: Authority,
-                           content: Vec<u8>,
-                           cause: ::XorName) {
-        if !our_authority.is_group() {
-            error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-                   type_tag,
-                   our_authority);
-            return;
-        };
-        let _ =
-            self.action_sender
-                .send(Action::SendContent(our_authority.clone(),
-                                          our_authority,
-                                          Content::InternalRequest(InternalRequest::Refresh {
-                                              type_tag: type_tag,
-                                              message: content,
-                                              cause: cause,
-                                          })));
-    }
-
-    /// Dynamically enable/disable caching for Data types.
-    pub fn set_cache_options(&self, cache_options: DataCacheOptions) {
-        let _ = self.action_sender.send(Action::SetDataCacheOptions(cache_options));
-
+    /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
+    pub fn send_refresh_request(&self,
+                           _type_tag: u64,
+                           _src: Authority,
+                           _content: Vec<u8>,
+                           _cause: ::XorName) {
+        // if !src.is_group() {
+        // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
+        // type_tag,
+        // src);
+        // return;
+        // };
+        // let _ =
+        // self.action_sender
+        // .send(Action::SendContent(src.clone(),
+        // src,
+        // Content::InternalRequest(InternalRequest::Refresh {
+        // type_tag: type_tag,
+        // message: content,
+        // cause: cause,
+        // })));
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop
@@ -199,7 +192,6 @@ impl Drop for Routing {
         }
     }
 }
-
 
 // #[cfg(test)]
 // mod test {
