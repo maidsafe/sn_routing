@@ -36,8 +36,6 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
-extern crate rand;
-extern crate kademlia_routing_table;
 
 extern crate routing;
 extern crate xor_name;
@@ -60,7 +58,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode};
-use routing::{ExternalRequest, ExternalResponse, SignedRequest};
+use routing::{RequestMessage, RequestContent, ResponseContent, GetResultType, ApiResultType};
 use routing::id::FullId;
 use routing::id::PublicId;
 
@@ -104,7 +102,7 @@ struct Node {
 impl Node {
     fn new() -> Node {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let routing = Routing::new(sender);
+        let routing = unwrap_result!(Routing::new(sender));
 
         Node {
             routing: routing,
@@ -128,74 +126,54 @@ impl Node {
             info!("Node: Received event {:?}", event);
 
             match event {
-                Event::Request{request,
-                               our_authority,
-                               from_authority,
-                               signed_request} => {
-                    self.handle_request(request,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
+                Event::Request(msg) => {
+                    self.handle_request(msg);
                 },
                 Event::Connected => {
                     self.connected = true;
                     println!("Node is connected.")
                 },
-                Event::Churn(our_close_group) => {
-                    self.handle_churn(our_close_group);
-                },
-                Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
-                    if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
-                        type_tag, our_authority); continue; };
-                    self.handle_refresh(our_authority, vec_of_bytes);
-                },
-                Event::DoRefresh(type_tag, our_authority, cause) => {
-                    // on DoRefresh, refresh the explicit record provided with that cause
-                    if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
-                        type_tag, our_authority); continue; };
-                    self.handle_do_refresh(our_authority, cause);
-                }
+                // Event::Churn(our_close_group) => {
+                //     self.handle_churn(our_close_group);
+                // },
+                // Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
+                //     // if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
+                //     //     type_tag, our_authority); continue; };
+                //     // self.handle_refresh(our_authority, vec_of_bytes);
+                // },
+                // Event::DoRefresh(type_tag, our_authority, cause) => {
+                //     // on DoRefresh, refresh the explicit record provided with that cause
+                //     // if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
+                //     //     type_tag, our_authority); continue; };
+                //     // self.handle_do_refresh(our_authority, cause);
+                // }
                 Event::Terminated => {
                     break;
                 },
-                _ => {},
+                _ => (),
             }
         }
     }
 
-    fn handle_request(&mut self, request        : ExternalRequest,
-                                 our_authority  : Authority,
-                                 from_authority : Authority,
-                                 signed_request : Option<SignedRequest>) {
-        match request {
-            ExternalRequest::Get(data_request, _) => {
-                self.handle_get_request(data_request,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
+    fn handle_request(&mut self, request_msg : RequestMessage) {
+        match request_msg.content {
+            RequestContent::Get(data_request) => {
+                self.handle_get_request(data_request, request_msg.src, request_msg.dst);
             },
-            ExternalRequest::Put(data) => {
-                self.handle_put_request(data,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
+            RequestContent::Put(data) => {
+                self.handle_put_request(data, request_msg.src, request_msg.dst);
             },
-            ExternalRequest::Post(_) => {
-                println!("Node: Post is not implemented, ignoring.");
-            },
-            ExternalRequest::Delete(_) => {
-                println!("Node: Delete is not implemented, ignoring.");
-            },
+            _ => println!("Node: Request {:?} not handled, ignoring.", request_msg),
         }
     }
 
-    fn handle_get_request(&mut self, data_request: DataRequest,
-                                     our_authority: Authority,
-                                     from_authority: Authority,
-                                     signed_request: Option<SignedRequest>) {
+    fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
-            _ => { println!("Node: Only serving plain data in this example"); return; }
+            _ => {
+                println!("Node: Only serving plain data in this example");
+                return
+            },
         };
 
         let data = match self.db.get(&name) {
@@ -203,128 +181,126 @@ impl Node {
             None => return,
         };
 
-        self.routing.get_response(our_authority,
-                                  from_authority,
-                                  Data::PlainData(data),
-                                  data_request,
-                                  signed_request);
+        let get_result = GetResultType::Success(Data::PlainData(data));
+
+        self.routing.send_get_response(dst, src, get_result)
     }
 
-    fn handle_put_request(&mut self, data            : Data,
-                                     our_authority   : Authority,
-                                     from_authority  : Authority,
-                                     _signed_request : Option<SignedRequest>) {
+    fn handle_put_request(&mut self, data : Data, src: Authority, dst: Authority) {
         let plain_data = match data.clone() {
             Data::PlainData(plain_data) => plain_data,
-            _ => { println!("Node: Only storing plain data in this example"); return; }
+            _ => {
+                println!("Node: Only storing plain data in this example");
+                return
+            },
         };
 
-        match our_authority {
+        match dst {
             Authority::NaeManager(_) => {
                 println!("Storing: key {:?}, value {:?}", plain_data.name(), plain_data);
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             Authority::ClientManager(_) => {
-                match from_authority {
-                    ::routing::authority::Authority::Client(_, public_key) => {
+                match src {
+                    ::routing::authority::Authority::Client { client_key, .. } => {
                         let client_name = ::xor_name::XorName::new(
-                            ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0);
+                            ::sodiumoxide::crypto::hash::sha512::hash(&client_key[..]).0);
                         *self.client_accounts.entry(client_name)
                             .or_insert(0u64) += data.payload_size() as u64;
                         println!("Client ({:?}) stored {:?} bytes", client_name,
                             self.client_accounts.get(&client_name));
                         debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
-                        self.routing.put_request(
-                            our_authority, Authority::NaeManager(plain_data.name()), data);
+                        self.routing.send_put_request(
+                            dst, Authority::NaeManager(plain_data.name()), data);
                     },
                     _ => {
-                        println!("Node: Unexpected from_authority ({:?})", from_authority);
+                        println!("Node: Unexpected from_authority ({:?})", src);
                         assert!(false);
                     },
-                };
+                }
 
             },
             _ => {
-                println!("Node: Unexpected our_authority ({:?})", our_authority);
+                println!("Node: Unexpected our_authority ({:?})", dst);
                 assert!(false);
             }
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
-        // let mut exit = false;
-        let exit = false;
-        if our_close_group.len() < ::kademlia_routing_table::group_size() {
-            if self.connected {
-                println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                    our_close_group.len(), ::kademlia_routing_table::group_size());
-                // exit = true;
-            } else {
-                println!("Ignoring churn as we are not yet connected.");
-                return;
-            }
-        }
-        println!("Handle churn for close group size {:?}", our_close_group.len());
-        // for value in self.db.values() {
-        //     println!("CHURN {:?}", value.name());
-        //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
-        //         ::routing::authority::Authority::NaeManager(value.name()),
-        //         ::routing::data::Data::PlainData(value.clone()));
-        // }
+    // fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
+    //     // let mut exit = false;
+    //     let exit = false;
+    //     if our_close_group.len() < ::kademlia_routing_table::group_size() {
+    //         if self.connected {
+    //             println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
+    //                 our_close_group.len(), ::kademlia_routing_table::group_size());
+    //             // exit = true;
+    //         } else {
+    //             println!("Ignoring churn as we are not yet connected.");
+    //             return;
+    //         }
+    //     }
+    //     println!("Handle churn for close group size {:?}", our_close_group.len());
+    //     // for value in self.db.values() {
+    //     //     println!("CHURN {:?}", value.name());
+    //     //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
+    //     //         ::routing::authority::Authority::NaeManager(value.name()),
+    //     //         ::routing::data::Data::PlainData(value.clone()));
+    //     // }
 
-        // FIXME Cause needs to get removed from refresh as well
-        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
-        // just so that interface requirements are met
-        let cause = rand::random::<XorName>();
+    //     // FIXME Cause needs to get removed from refresh as well
+    //     // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+    //     // just so that interface requirements are met
+    //     let cause = rand::random::<XorName>();
 
-        for (client_name, stored) in self.client_accounts.iter() {
-            println!("REFRESH {:?} - {:?}", client_name, stored);
-            self.routing.refresh_request(1u64,
-                ::routing::authority::Authority::ClientManager(client_name.clone()),
-                unwrap_result!(encode(&stored)), cause.clone());
-        }
-        // self.db = BTreeMap::new();
-        if exit { self.routing.stop(); };
-    }
+    //     for (client_name, stored) in self.client_accounts.iter() {
+    //         println!("REFRESH {:?} - {:?}", client_name, stored);
+    //         self.routing.send_refresh_request(1u64,
+    //             ::routing::authority::Authority::ClientManager(client_name.clone()),
+    //             unwrap_result!(encode(&stored)), cause.clone());
+    //     }
+    //     // self.db = BTreeMap::new();
+    //     if exit { self.routing.stop(); };
+    // }
 
-    fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
-        let mut records : Vec<u64> = Vec::new();
-        let mut fail_parsing_count = 0usize;
-        for bytes in vec_of_bytes {
-            match decode(&bytes) {
-                Ok(record) => records.push(record),
-                Err(_) => fail_parsing_count += 1usize,
-            };
-        }
-        let median = median(records.clone());
-        println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
-            records, fail_parsing_count);
-        match our_authority {
-             ::routing::authority::Authority::ClientManager(client_name) => {
-                 let _ = self.client_accounts.insert(client_name, median);
-             },
-             _ => {},
-        };
-    }
+    // fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
+    //     let mut records : Vec<u64> = Vec::new();
+    //     let mut fail_parsing_count = 0usize;
+    //     for bytes in vec_of_bytes {
+    //         match decode(&bytes) {
+    //             Ok(record) => records.push(record),
+    //             Err(_) => fail_parsing_count += 1usize,
+    //         };
+    //     }
+    //     let median = median(records.clone());
+    //     println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
+    //         records, fail_parsing_count);
+    //     match our_authority {
+    //          ::routing::authority::Authority::ClientManager(client_name) => {
+    //              let _ = self.client_accounts.insert(client_name, median);
+    //          },
+    //          _ => {},
+    //     };
+    // }
 
-    fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
-        cause: ::xor_name::XorName) {
-        match our_authority {
-            ::routing::authority::Authority::ClientManager(client_name) => {
-                match self.client_accounts.get(&client_name) {
-                    Some(stored) => {
-                        println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-                            client_name, stored, cause);
-                        self.routing.refresh_request(1u64,
-                            ::routing::authority::Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(encode(&stored)), cause.clone());
-                    },
-                    None => {},
-                };
-            },
-            _ => {},
-        };
-    }
+    // fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
+    //     cause: ::xor_name::XorName) {
+    //     match our_authority {
+    //         ::routing::authority::Authority::ClientManager(client_name) => {
+    //             match self.client_accounts.get(&client_name) {
+    //                 Some(stored) => {
+    //                     println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
+    //                         client_name, stored, cause);
+    //                     self.routing.send_refresh_request(1u64,
+    //                         ::routing::authority::Authority::ClientManager(client_name.clone()),
+    //                         unwrap_result!(encode(&stored)), cause.clone());
+    //                 },
+    //                 None => {},
+    //             };
+    //         },
+    //         _ => {},
+    //     };
+    // }
 }
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
@@ -391,7 +367,7 @@ impl Client {
         let full_id = FullId::new();
         let public_id = full_id.public_id().clone();
         println!("Client has set name {:?}", public_id);
-        let routing_client = RoutingClient::new(event_sender, Some(full_id));
+        let routing_client = unwrap_result!(RoutingClient::new(event_sender, Some(full_id)));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
@@ -471,11 +447,9 @@ impl Client {
     fn handle_routing_event(&mut self, event : Event) {
         debug!("Client received routing event: {:?}", event);
         match event {
-            Event::Response{
-                response, our_authority : _our_authority,
-                from_authority : _from_authority} => {
-                match response {
-                    ExternalResponse::Get(data, _data_request, _opt_signed_token) => {
+            Event::Response(msg) => {
+                match msg.content {
+                    ResponseContent::Get { result: GetResultType::Success(data) } => {
                         let plain_data = match data {
                             Data::PlainData(plain_data) => plain_data,
                             _ => {
@@ -490,29 +464,27 @@ impl Client {
                         };
                         println!("Got value {:?} on key {:?}", value, key);
                     },
-                    ExternalResponse::Put(response_error, _opt_signed_token) => {
-                        error!("Failed to store: {:?}", response_error);
+                    ResponseContent::Put { result: ApiResultType::Failure(_, err), } => {
+                        error!("Failed to store: {:?}", err);
                     },
-                    _ => error!("Received external response {:?}, but not handled in example",
-                        response),
-                };
+                    _ => error!("Received response {:?}, but not handled in example", msg),
+                }
             },
-            _ => {},
-        };
+            _ => (),
+        }
     }
 
     fn send_get_request(&mut self, what: String) {
         let name = Client::calculate_key_name(&what);
 
-        self.routing_client.get_request(Authority::ClientManager(name.clone()),
-            DataRequest::PlainData(name));
+        self.routing_client.send_get_request(Authority::ClientManager(name.clone()), DataRequest::PlainData(name));
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
         let data = unwrap_result!(encode(&(put_where, put_what)));
 
-        self.routing_client.put_request(Authority::ClientManager(self.public_id.name().clone()),
+        self.routing_client.send_put_request(Authority::ClientManager(self.public_id.name().clone()),
             Data::PlainData(PlainData::new(name, data)));
     }
 

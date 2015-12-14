@@ -35,16 +35,17 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations)]
-
+        unused_qualifications, unused_results)]
+#![allow(missing_docs, box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+         missing_debug_implementations, variant_size_differences)]
+// FIXME(dirvine) deny missing docs :13/12/2015
+// FIXME(dirvine) warn variant_size_differences :13/12/2015
 // TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
 #![allow(unused)]
 
@@ -55,7 +56,7 @@ extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
-
+extern crate itertools;
 extern crate accumulator;
 extern crate xor_name;
 extern crate crust;
@@ -67,7 +68,6 @@ extern crate kademlia_routing_table;
 
 mod action;
 mod messages;
-mod direct_messages;
 mod routing_node;
 mod refresh_accumulator;
 mod connection_management;
@@ -89,7 +89,7 @@ pub mod utils;
 /// Errors reported for failed conditions/operations.
 pub mod error;
 // FIXME (ben 8/09/2015) make the module authority private
-/// Persona types recognised by network.
+// Persona types recognised by network.
 pub mod authority;
 /// StructuredData type.
 pub mod structured_data;
@@ -100,14 +100,11 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
-/// Data cache for all Data types
-pub mod data_cache;
-/// Data cache options, may be set at runtime
-pub mod data_cache_options;
 /// XorName is a 512bit name to address elements on the DHT network.
 pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
-pub use messages::{SignedRequest, ExternalRequest, ExternalResponse};
+pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+                   ResponseMessage, RequestContent, ResponseContent, Message, GetResultType, ApiResultType};
 /// Persona types recognised by the network.
 pub use authority::Authority;
 pub use id::{FullId, PublicId};

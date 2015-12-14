@@ -16,6 +16,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use routing_client::RoutingClient;
+use authority::Authority;
+use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
+               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType};
+
 /// Network Client.
 pub struct Client {
     routing_client: ::routing_client::RoutingClient,
@@ -30,7 +35,7 @@ impl Client {
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
         let full_id = ::id::FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = ::routing_client::RoutingClient::new(sender, Some(full_id));
+        let routing_client = unwrap_result!(RoutingClient::new(sender, Some(full_id)));
 
         Client {
             routing_client: routing_client,
@@ -42,24 +47,22 @@ impl Client {
     /// Get data from the network.
     pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
         debug!("Get request from Client for {:?}", request);
-        self.routing_client.get_request(::authority::Authority::NaeManager(request.name()),
-                                        request.clone());
+        self.routing_client.send_get_request(Authority::NaeManager(request.name()), request.clone());
 
         // Block until the data arrives.
         let timeout = ::time::Duration::milliseconds(10000);
         let time = ::time::SteadyTime::now();
         loop {
             while let Ok(event) = self.receiver.try_recv() {
-                debug!("Client received routing event: {:?}", event);
-                if let ::event::Event::Response{ response, our_authority: _, from_authority : _} =
-                       event {
-                    match response {
-                        ::messages::ExternalResponse::Get(data, _, _) => {
-                            debug!("Client received data {:?} for get request.", data);
-                            debug!("Get took {:?} to arrive.", ::time::SteadyTime::now() - time);
-                            return Some(data);
+                if let ::event::Event::Response(msg) = event {
+                    match msg.content {
+                        ResponseContent::Get{ result } => {
+                            match result {
+                                GetResultType::Success(data) => return Some(data),
+                                GetResultType::Failure(..) => return None,
+                            }
                         }
-                        _ => debug!("Received unexpected external response {:?},", response),
+                        _ => debug!("Received unexpected external response {:?},", msg),
                     };
                 }
 
@@ -78,7 +81,7 @@ impl Client {
     /// Put data onto the network.
     pub fn put(&self, data: ::data::Data) {
         debug!("Put request from Client for {:?}", data);
-        self.routing_client.put_request(::authority::Authority::ClientManager(*self.name()), data);
+        self.routing_client.send_put_request(Authority::ClientManager(*self.name()), data);
     }
 
     // /// Post data onto the network.

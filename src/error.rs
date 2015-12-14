@@ -181,6 +181,20 @@ pub enum RoutingError {
     SerialisationError(::maidsafe_utilities::serialisation::SerialisationError),
     /// Asymmetric Decryption Failure
     AsymmetricDecryptionFailure,
+    /// Unknown Connection
+    UnknownConnection,
+    /// The message is not getting closer to the target
+    DirectionCheckFailed,
+    /// Density mismatch
+    RoutingTableBucketIndexFailed,
+    /// Invalid Destination
+    InvalidDestination,
+    /// Connection to proxy node does not exist in proxy map
+    ProxyConnectionNotFound,
+    /// Connection to client does not exist in client map
+    ClientConnectionNotFound,
+    /// Invalid Source
+    InvalidSource,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {
