@@ -189,6 +189,12 @@ pub enum RoutingError {
     RoutingTableBucketIndexFailed,
     /// Invalid Destination
     InvalidDestination,
+    /// Connection to proxy node does not exist in proxy map
+    ProxyConnectionNotFound,
+    /// Connection to client does not exist in client map
+    ClientConnectionNotFound,
+    /// Invalid Source
+    InvalidSource,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {

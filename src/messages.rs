@@ -85,6 +85,10 @@ impl HopMessage {
     pub fn name(&self) -> &XorName {
         &self.name
     }
+
+    pub fn content(&self) -> &SignedMessage {
+        &self.content
+    }
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]

@@ -53,15 +53,15 @@ impl Client {
         let time = ::time::SteadyTime::now();
         loop {
             while let Ok(event) = self.receiver.try_recv() {
-                if let ::event::Event::Response{ content, ..} = event {
-                    match content {
+                if let ::event::Event::Response(msg) = event {
+                    match msg.content {
                         ResponseContent::Get{ result } => {
                             match result {
                                 GetResultType::Success(data) => return Some(data),
                                 GetResultType::Failure(..) => return None,
                             }
                         }
-                        _ => debug!("Received unexpected external response {:?},", content),
+                        _ => debug!("Received unexpected external response {:?},", msg),
                     };
                 }
 

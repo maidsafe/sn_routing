@@ -23,36 +23,18 @@ use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent}
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     /// Request.
-    Request {
-        content: RequestContent,
-        src: Authority,
-        dst: Authority,
-    },
+    Request(RequestMessage),
     /// Response.
-    Response {
-        content: ResponseContent,
-        src: Authority,
-        dst: Authority,
-    },
+    Response(ResponseMessage),
     /// FailedRequest.
     FailedRequest {
-        /// External request.
-        request: RequestContent,
-        /// Our authority.
-        src: Option<Authority>,
-        /// From authority.
-        dst: Authority,
+        content: RequestMessage,
         /// Interface error.
         interface_error: InterfaceError,
     },
     /// FailedResponse.
     FailedResponse {
-        /// External response.
-        response: ResponseContent,
-        /// Our authority.
-        src: Option<Authority>,
-        /// From authority.
-        dst: Authority,
+        content: ResponseMessage,
         /// Interface error.
         interface_error: InterfaceError,
     },
