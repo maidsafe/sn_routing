@@ -219,13 +219,13 @@ impl RoutingNode {
                 }
             } // Category Match
 
-            if self.state == State::Node {
-                trace!("Routing Table size: {}", self.routing_table.len());
-                // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
-                //     true
-                // });
-            }
+            // if self.state == State::Node {
+            //     trace!("Routing Table size: {}", self.routing_table.len());
+            //     self.routing_table.our_close_group().iter().all(|elt| {
+            //         trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
+            //         true
+            //     });
+            // }
         } // Category Rx
     }
 
@@ -288,7 +288,7 @@ impl RoutingNode {
                     }
                 }
             }
-            self.handle_signed_message_for_node(&signed_msg, &hop_name, )
+            self.handle_signed_message_for_node(&signed_msg, &hop_name)
         } else if self.state == State::Client {
             self.handle_signed_message_for_client(&signed_msg)
         } else {
@@ -319,10 +319,19 @@ impl RoutingNode {
             } else if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
                 return self.relay_to_client(signed_msg.clone(), client_key);
             }
-        } else if !::xor_name::closer_to_target(self.full_id.public_id().name(),
-                                         &hop_name,
-                                         signed_msg.content().dst().get_name()) {
-            return Err(RoutingError::DirectionCheckFailed)
+        } else {
+            // If message is coming from a client who we are the proxy node for
+            // send the message on to the network
+            if let &Authority::Client { ref proxy_node_name, .. } = signed_msg.content().src() {
+                if proxy_node_name == self.full_id.public_id().name() {
+                    return self.send(signed_msg.clone());
+                }
+            }
+            if !::xor_name::closer_to_target(self.full_id.public_id().name(),
+                                             &hop_name,
+                                             signed_msg.content().dst().get_name()) {
+                return Err(RoutingError::DirectionCheckFailed)
+            }
         }
 
         // Cache handling
@@ -377,7 +386,7 @@ impl RoutingNode {
                 (&Authority::NodeManager(manager_name),
                  &Authority::ManagedNode(node_name)) => {
                     // TODO confirm sender is in our routing table
-                    unimplemented!();
+                    Ok(())
                 }
                 // Security validation if came from a Client: This validation ensures that the
                 // source authority matches the signed message's public_id. This prevents cases
@@ -682,9 +691,7 @@ impl RoutingNode {
     fn bootstrap_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
         let direct_message = DirectMessage::BootstrapIdentify {
             public_id: self.full_id.public_id().clone(),
-            // Current quorum size should also include ourselves when sending this message. Thus
-            // the '+ 1'
-            current_quorum_size: self.routing_table.dynamic_quorum_size() + 1,
+            current_quorum_size: self.routing_table.dynamic_quorum_size(),
         };
 
         let message = Message::DirectMessage(direct_message);
@@ -1133,7 +1140,7 @@ impl RoutingNode {
                   .iter()
                   .find(|elt| *elt.1.signing_public_key() == client_key) {
             Some(&(ref name, ref their_public_id)) => {
-                if self.routing_table.want_to_add(&name) {
+                if self.want_address_in_routing_table(&name) {
                     try!(self.connect(encrypted_endpoints,
                                       nonce_bytes,
                                       their_public_id.encrypting_public_key()));
@@ -1157,7 +1164,7 @@ impl RoutingNode {
                                   src_name: XorName,
                                   dst: Authority)
                                   -> Result<(), RoutingError> {
-        if self.routing_table.want_to_add(&src_name) {
+        if self.want_address_in_routing_table(&src_name) {
             if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
                 self.connect(encrypted_endpoints,
                              nonce_bytes,
@@ -1208,7 +1215,7 @@ impl RoutingNode {
                               src_name: XorName,
                               dst_name: XorName)
                               -> Result<(), RoutingError> {
-        if !self.routing_table.want_to_add(&src_name) {
+        if !self.want_address_in_routing_table(&src_name) {
             return Err(RoutingError::RefusedFromRoutingTable);
         }
 
@@ -1265,7 +1272,7 @@ impl RoutingNode {
                                      public_id: PublicId,
                                      dst_name: XorName)
                                      -> Result<(), RoutingError> {
-        if !self.routing_table.want_to_add(public_id.name()) {
+        if !self.want_address_in_routing_table(public_id.name()) {
             return Err(::error::RoutingError::RefusedFromRoutingTable);
         }
 
@@ -1315,7 +1322,7 @@ impl RoutingNode {
                                                     nonce_bytes: [u8; box_::NONCEBYTES],
                                                     dst_name: XorName)
                                                     -> Result<(), RoutingError> {
-        if !self.routing_table.want_to_add(public_id.name()) {
+        if !self.want_address_in_routing_table(public_id.name()) {
             return Err(::error::RoutingError::RefusedFromRoutingTable);
         }
 
@@ -1514,6 +1521,12 @@ impl RoutingNode {
             }
             // self.routing_table.drop_node(&node_name);
         }
+    }
+
+    // Used to check if a given name is something we want in our RT
+    // regardless of if we already have an entry for same in the RT
+    fn want_address_in_routing_table(&self, name: &XorName) -> bool {
+        self.routing_table.get(name).is_some() || self.routing_table.want_to_add(name)
     }
 }
 
