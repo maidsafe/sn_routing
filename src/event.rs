@@ -20,7 +20,7 @@ use error::InterfaceError;
 use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Event {
     /// Request.
     Request(RequestMessage),

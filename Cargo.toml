@@ -31,11 +31,11 @@ kademlia_routing_table = "~0.0.4"
 bit-vec = "~0.4.2"
 docopt = "~0.6.78"
 
-[[example]]
-name = "simple_key_value_store"
-path = "examples/simple_key_value_store.rs"
-test = true
-bench = false
+#[[example]]
+#name = "simple_key_value_store"
+#path = "examples/simple_key_value_store.rs"
+#test = true
+#bench = false
 
 [[example]]
 name = "key_value_store"

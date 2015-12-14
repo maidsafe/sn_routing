@@ -199,7 +199,9 @@ impl RoutingNode {
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
                             ::crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
                             ::crust::Event::NewMessage(connection, bytes) => {
-                                let _ = self.handle_new_message(connection, bytes);
+                                if let Err(err) = self.handle_new_message(connection, bytes) {
+                                    error!("{:?} {:?}", self, err);
+                                }
                             }
                             ::crust::Event::OnConnect(connection, connection_token) => {
                                 self.handle_on_connect(connection, connection_token)
@@ -621,29 +623,26 @@ impl RoutingNode {
                          connection_token: u32) {
         match connection {
             Ok(connection) => {
-                debug!("New connection via OnConnect {:?} with token {}",
-                       connection,
-                       connection_token);
+                debug!("New connection via OnConnect {:?} with token {}", connection, connection_token);
                 if self.state == State::Disconnected {
                     // Established connection. Pending Validity checks
                     self.state = State::Bootstrapping;
                     let _ = self.client_identify(connection);
-                    return;
+                    return
                 }
 
                 let _ = self.node_identify(connection);
             }
             Err(error) => {
-                warn!("Failed to make connection with token {} - {}",
-                      connection_token,
-                      error);
+                warn!("Failed to make connection with token {} - {}", connection_token, error);
             }
         }
     }
 
     fn handle_on_accept(&mut self, connection: ::crust::Connection) {
-        debug!("New connection via OnAccept {:?}", connection);
+        debug!("New connection via OnAccept {:?} {:?}", connection, self);
         if self.state == State::Disconnected {
+            trace!("{:?} handle_on_accept", self);
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
             let new_name = XorName::new(hash::sha512::hash(&self.full_id
@@ -760,11 +759,14 @@ impl RoutingNode {
                 if self.client_restriction {
                     let _ = self.event_sender.send(Event::Connected);
                 } else {
+                    trace!("{:?} Relocating", self);
                     self.relocate();
                 };
                 Ok(())
             }
             ::messages::DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
+                trace!("{:?} Rxd ClientIdentify", self);
+
                 let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
                     Ok(public_id) => public_id,
                     Err(error) => {
@@ -1068,6 +1070,8 @@ impl RoutingNode {
                       src_authority: Authority,
                       dst_authority: Authority)
                       -> Result<(), RoutingError> {
+        trace!("{:?} send_endpoints", self);
+
         let encoded_endpoints =
             try!(::maidsafe_utilities::serialisation::serialise(&self.accepting_on));
         let nonce = box_::gen_nonce();

@@ -106,7 +106,7 @@ impl Routing {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::Get{ result: result },
+            content: ResponseContent::Get { result: result },
         });
         let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
