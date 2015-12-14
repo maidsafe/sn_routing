@@ -58,6 +58,7 @@ pub struct RoutingNode {
     accepting_on: Vec<::crust::Endpoint>,
     // for RoutingNode
     client_restriction: bool,
+    is_listening: bool,
     crust_rx: ::std::sync::mpsc::Receiver<::crust::Event>,
     action_rx: ::std::sync::mpsc::Receiver<Action>,
     event_sender: ::std::sync::mpsc::Sender<Event>,
@@ -120,6 +121,7 @@ impl RoutingNode {
                 accepting_on: vec![],
             // Counter starts at 1, 0 is reserved for bootstrapping.
                 client_restriction: client_restriction,
+                is_listening: false,
                 crust_rx: crust_rx,
                 action_rx: action_rx,
                 event_sender: event_sender,
@@ -219,13 +221,13 @@ impl RoutingNode {
                 }
             } // Category Match
 
-            // if self.state == State::Node {
-            //     trace!("Routing Table size: {}", self.routing_table.len());
-            //     self.routing_table.our_close_group().iter().all(|elt| {
-            //         trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
-            //         true
-            //     });
-            // }
+            if self.state == State::Node {
+                trace!("Routing Table size: {}", self.routing_table.len());
+                // self.routing_table.our_close_group().iter().all(|elt| {
+                //     trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
+                //     true
+                // });
+            }
         } // Category Rx
     }
 
@@ -278,13 +280,18 @@ impl RoutingNode {
 
         // Either swarm or Direction check
         if self.state == State::Node {
-            // Since endpoint messages while bootstrapping are sent to a client we still need to
-            // accept endpoint msgs sent to us even if we have become a node.
+            // Since endpoint request / GetCloseGroup response messages while relocating are sent
+            // to a client we still need to accept these msgs sent to us even if we have become a node.
             if let &Authority::Client { ref client_key, .. } = signed_msg.content().dst() {
                 if client_key == self.full_id.public_id().signing_public_key() {
                     if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
                         signed_msg.content() {
-                        try!(self.handle_signed_message_for_client(&signed_msg));
+                        self.handle_signed_message_for_client(&signed_msg);
+                    }
+
+                    if let &RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) =
+                        signed_msg.content() {
+                        self.handle_signed_message_for_client(&signed_msg);
                     }
                 }
             }
@@ -434,10 +441,17 @@ impl RoutingNode {
         }
 
         if routing_msg.src().is_group() {
-            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
-                let _ = self.grp_msg_filter.insert(output_msg.clone());
-            } else {
-                return Err(::error::RoutingError::NotEnoughSignatures);
+            // Dont accumulate GetCloseGroupResponse as close_group info received is unique
+            // to each node in the sender group
+            match routing_msg {
+                RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) => (),
+                _ => {
+                    if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+                        let _ = self.grp_msg_filter.insert(output_msg.clone());
+                    } else {
+                        return Err(::error::RoutingError::NotEnoughSignatures);
+                    }
+                }
             }
         }
         self.dispatch_request_response(routing_msg)
@@ -605,6 +619,12 @@ impl RoutingNode {
     }
 
     fn start_listening(&mut self) {
+        if self.is_listening {
+            // TODO Implement a better call once fn
+            return;
+        }
+        self.is_listening = true;
+
         match self.crust_service.start_beacon(CRUST_DEFAULT_BEACON_PORT) {
             Ok(port) => info!("Running Crust beacon listener on port {}", port),
             Err(error) => {
@@ -1049,14 +1069,6 @@ impl RoutingNode {
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
 
-        // Sorting the close group we return sorted by the destination
-        let client_name = XorName::new(hash::sha512::hash(&client_key.0).0);
-        public_ids.sort_by(|a, b| if ::xor_name::closer_to_target(&a.name(), &b.name(), &client_name) {
-            ::std::cmp::Ordering::Less
-        } else {
-            ::std::cmp::Ordering::Greater
-        });
-
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
         let response_msg = ResponseMessage {
@@ -1085,14 +1097,15 @@ impl RoutingNode {
 
         // From A -> Each in Y
         for peer_id in close_group_ids {
-            try!(self.send_endpoints(peer_id.clone(),
-                                     Authority::Client {
-                                         client_key: client_key,
-                                         proxy_node_name: proxy_name,
-                                     },
-                                     ::authority::Authority::ManagedNode(*peer_id.name())));
-
-            let _ = self.node_id_cache.insert(*peer_id.name(), peer_id);
+            if self.node_id_cache.insert(*peer_id.name(), peer_id.clone()).is_none() &&
+               self.routing_table.want_to_add(peer_id.name()) {
+                try!(self.send_endpoints(peer_id.clone(),
+                                         Authority::Client {
+                                             client_key: client_key,
+                                             proxy_node_name: proxy_name,
+                                         },
+                                         ::authority::Authority::ManagedNode(*peer_id.name())));
+            }
         }
 
         Ok(())
