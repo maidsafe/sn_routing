@@ -127,7 +127,7 @@ impl RoutingNode {
                                        ::MessageFilter
                                        ::with_expiry_duration(::time::Duration::minutes(20)),
                 connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                    ::time::Duration::seconds(20)),
+                    ::time::Duration::seconds(20)), // TODO Needs further discussion on interval
                 node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
                 message_accumulator: ::accumulator::Accumulator::with_duration(1,
                     ::time::Duration::minutes(5)),
@@ -168,12 +168,21 @@ impl RoutingNode {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
-                            Action::SendContent(src, dst, content) => {
-                                let _ = self.send_content(src, dst, content);
-                            }
-                            Action::ClientSendContent(dst, content) => {
-                                self.client_send_content(dst, content);
-                            }
+                            Action::NodeSendMessage(msg) => {
+                                let _ = self.send_message(msg);
+                            },
+                            Action::ClientSendRequest { content, dst, } => {
+                                if let Ok(src) = self.get_client_authority() {
+                                    let request_msg = RequestMessage {
+                                        content: content,
+                                        src: src,
+                                        dst: dst,
+                                    };
+
+                                    let routing_msg = RoutingMessage::Request(request_msg);
+                                    let _ = self.send_message(routing_msg);
+                                }
+                            },
                             Action::Terminate => {
                                 let _ = self.event_sender.send(Event::Terminated);
                                 self.crust_service.stop();
@@ -186,18 +195,11 @@ impl RoutingNode {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         match crust_event {
                             ::crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            ::crust::Event::OnAccept(connection) => {
-                                self.handle_on_accept(connection)
-                            }
-
+                            ::crust::Event::OnAccept(connection) => self.handle_on_accept(connection),
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
-                            ::crust::Event::LostConnection(connection) => {
-                                self.handle_lost_connection(connection)
-                            }
-
+                            ::crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
                             ::crust::Event::NewMessage(connection, bytes) => {
                                 let _ = self.handle_new_message(connection, bytes);
-                                // FIXME(dirvine) handle error  :12/12/2015
                             }
                             ::crust::Event::OnConnect(connection, connection_token) => {
                                 self.handle_on_connect(connection, connection_token)
@@ -231,10 +233,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_hop_message(&mut self,
-                          hop_msg: &HopMessage,
-                          connection: ::crust::Connection)
-                          -> Result<(), RoutingError> {
+    fn handle_hop_message(&mut self, hop_msg: &HopMessage, connection: ::crust::Connection) -> Result<(), RoutingError> {
         if self.state == State::Node {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
@@ -285,8 +284,13 @@ impl RoutingNode {
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName,
-                                      connection: &::crust::Connection)
-                                      -> Result<(), RoutingError> {
+                                      connection: &::crust::Connection) -> Result<(), RoutingError> {
+        // Node Harvesting
+        if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
+            self.routing_table.want_to_add(signed_msg.public_id().name()) {
+            let _ = self.send_connect_request(signed_msg.public_id().name());
+        }
+
         if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
             self.signed_msg_security_check(&signed_msg);
 
@@ -303,7 +307,7 @@ impl RoutingNode {
         } else if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                          &hop_name,
                                          signed_msg.content().dst().get_name()) {
-            return Err(RoutingError::DirectionCheckFailed);
+            return Err(RoutingError::DirectionCheckFailed)
         }
 
         // Cache handling
@@ -331,10 +335,7 @@ impl RoutingNode {
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
     }
 
-    fn handle_signed_message_for_client(&mut self,
-                                        signed_msg: &SignedMessage)
-                                        -> Result<(), RoutingError> {
-
+    fn handle_signed_message_for_client(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         match *signed_msg.content().dst() {
             Authority::Client { ref client_key, .. } => {
                 if self.full_id.public_id().signing_public_key() != client_key {
@@ -348,12 +349,13 @@ impl RoutingNode {
 
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         if signed_msg.content().src().is_group() {
-            // TODO validate unconfirmed node that belongs to the src group
+            // TODO validate unconfirmed node is a valid node in the network
             if !self.routing_table
                     .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
                                                      signed_msg.public_id().name()) {
-                return Err(RoutingError::RoutingTableBucketIndexFailed);
-            };
+                return Err(RoutingError::RoutingTableBucketIndexFailed)
+            }
+
             Ok(())
         } else {
             match (signed_msg.content().dst(), signed_msg.content().src()) {
@@ -405,7 +407,6 @@ impl RoutingNode {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        // TODO Node Harvest here ??
         if routing_msg.src().is_group() {
             if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                 let _ = self.grp_msg_filter.insert(output_msg.clone());
@@ -672,10 +673,9 @@ impl RoutingNode {
             // the '+ 1'
             current_quorum_size: self.routing_table.dynamic_quorum_size() + 1,
         };
-        // TODO impl convert trait for RoutingError
-        let bytes = try!(::maidsafe_utilities::serialisation::serialise(&direct_message));
+        let raw_bytes = try!(serialise(&direct_message));
 
-        Ok(self.crust_service.send(connection, bytes))
+        Ok(self.crust_service.send(connection, raw_bytes))
     }
 
     fn client_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
@@ -1230,7 +1230,6 @@ impl RoutingNode {
 
             self.send(signed_msg)
         } else {
-            // TODO Invent error for this
             Err(::error::RoutingError::RejectedPublicId)
         }
     }
@@ -1279,7 +1278,6 @@ impl RoutingNode {
 
             self.send(signed_msg)
         } else {
-            // TODO Invent error for this
             Err(::error::RoutingError::RejectedPublicId)
         }
     }
@@ -1327,69 +1325,23 @@ impl RoutingNode {
 
     // ----- Send Functions -----------------------------------------------------------------------
 
-    fn send_content(&mut self,
-                    _src: Authority,
-                    _dst: Authority,
-                    _content: RequestContent)
-                    -> Result<(), RoutingError> {
-        // TODO Does this need split up for Requests / Responses
-        Ok(())
+    fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        // TODO crust should return the routing msg when it detects an interface error
+        let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
+        match self.send(signed_msg) {
+            Err(RoutingError::Interface(err)) => {
+                let failure_event = Event::SendFailure {
+                    content: routing_msg,
+                    interface_error: err,
+                };
 
-        //
-        // let routing_message = RoutingMessage {
-        // source_authority: source_authority,
-        // destination_authority: destination_authority,
-        // content: content,
-        // group_keys: None,
-        // };
-        //
-        // let signed_message = try!(SignedMessage::new(&routing_message, &self.full_id));
-        //
-        // Ok(self.send(signed_message))
-    }
+                let _ = self.event_sender.send(failure_event);
 
-    fn client_send_content(&mut self,
-                           dst: Authority,
-                           content: RequestContent)
-                           -> Result<(), RoutingError> {
-        let request_msg = RequestMessage {
-            src: try!(self.get_client_authority()),
-            dst: dst,
-            content: content,
-        };
-
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        // TODO Check and send local failures to client
-        self.send(signed_msg)
-    }
-
-    fn send_failed_message_to_user(&self, _dst: Authority, _content: RequestContent) {
-        // match content {
-        // Content::ExternalRequest(external_request) => {
-        // self.send_to_user(Event::FailedRequest {
-        // request: external_request,
-        // our_authority: None,
-        // location: destination_authority,
-        // interface_error: InterfaceError::NotConnected,
-        // });
-        // }
-        // Content::ExternalResponse(external_response) => {
-        // self.send_to_user(Event::FailedResponse {
-        // response: external_response,
-        // our_authority: None,
-        // location: destination_authority,
-        // interface_error: InterfaceError::NotConnected,
-        // });
-        // }
-        // _ => {
-        // error!("{}InternalRequest/Response was sent back to user {:?}",
-        // self,
-        // content)
-        // }
-        // }
+                Ok(())
+            },
+            Err(err) => Err(err),
+            Ok(()) => Ok(()),
+        }
     }
 
     fn relay_to_client(&mut self, signed_msg: SignedMessage, client_key: &sign::PublicKey) -> Result<(), RoutingError> {

@@ -32,7 +32,7 @@ impl Node {
     /// Construct a new node.
     pub fn new() -> Node {
         let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
-        let routing = ::routing::Routing::new(sender.clone());
+        let routing = unwrap_result!(::routing::Routing::new(sender.clone()));
 
         Node {
             routing: routing,
@@ -80,13 +80,9 @@ impl Node {
                     self.connected = true;
                 },
                 ::event::Event::Disconnected => debug!("Received disconnected event"),
-                ::event::Event::FailedRequest { content, interface_error, } => {
+                ::event::Event::SendFailure { content, interface_error, } => {
                     debug!("Received failed request event");
-                    self.handle_failed_request(content, interface_error)
-                },
-                ::event::Event::FailedResponse { content, interface_error, } => {
-                    debug!("Received failed response event");
-                    self.handle_failed_response(content, interface_error)
+                    self.handle_send_failure(content, interface_error)
                 },
                 ::event::Event::Terminated => {
                     debug!("Received terminate event");
@@ -138,7 +134,7 @@ impl Node {
             }
         };
 
-        self.routing.get_response(our_authority, from_authority, data, data_request);
+        self.routing.send_get_response(our_authority, from_authority, data, data_request);
     }
 
     fn handle_put_request(&mut self,
@@ -152,7 +148,7 @@ impl Node {
             }
             ::authority::Authority::ClientManager(_) => {
                 debug!("Sending: key {:?}, value {:?}", data.name(), data);
-                self.routing.put_request(our_authority,
+                self.routing.send_put_request(our_authority,
                                          ::authority::Authority::NaeManager(data.name()),
                                          data);
             }
@@ -188,7 +184,7 @@ impl Node {
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
             self.routing
-                .refresh_request(1u64,
+                .send_refresh_request(1u64,
                                  ::authority::Authority::ClientManager(client_name.clone()),
                                  unwrap_result!(::utils::encode(&stored)),
                                  cause);
@@ -228,7 +224,7 @@ impl Node {
                            client_name,
                            stored,
                            cause);
-                    self.routing.refresh_request(1u64,
+                    self.routing.send_refresh_request(1u64,
                             ::authority::Authority::ClientManager(client_name.clone()),
                             unwrap_result!(::utils::encode(&stored)), cause.clone());
                 },
@@ -241,11 +237,7 @@ impl Node {
         unimplemented!()
     }
 
-    fn handle_failed_request(&mut self, _content: RequestMessage, _interface_error: ::error::InterfaceError) {
-        unimplemented!()
-    }
-
-    fn handle_failed_response(&mut self, _content: ResponseMessage, _interface_error: ::error::InterfaceError) {
+    fn handle_send_failure(&mut self, _content: RoutingMessage, _interface_error: ::error::InterfaceError) {
         unimplemented!()
     }
 }

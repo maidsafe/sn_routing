@@ -17,7 +17,7 @@
 
 use authority::Authority;
 use error::InterfaceError;
-use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Clone, Eq, PartialEq)]
@@ -27,15 +27,8 @@ pub enum Event {
     /// Response.
     Response(ResponseMessage),
     /// FailedRequest.
-    FailedRequest {
-        content: RequestMessage,
-        /// Interface error.
-        interface_error: InterfaceError,
-    },
-    /// FailedResponse.
-    FailedResponse {
-        content: ResponseMessage,
-        /// Interface error.
+    SendFailure {
+        content: RoutingMessage,
         interface_error: InterfaceError,
     },
     /// Refresh reports to the user the collected accounts for a given refresh event,
