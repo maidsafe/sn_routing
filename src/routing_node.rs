@@ -418,6 +418,8 @@ impl RoutingNode {
                               mut routing_msg: RoutingMessage,
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
+        trace!("{:?} Rxd {:?}", self, routing_msg);
+
         if self.grp_msg_filter.contains(&routing_msg) {
             return Err(RoutingError::FilterCheckFailed);
         }
@@ -747,6 +749,8 @@ impl RoutingNode {
                              -> Result<(), RoutingError> {
         match direct_message {
             DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
+                trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}", self, current_quorum_size);
+
                 if *public_id.name() == ::XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
@@ -1037,6 +1041,14 @@ impl RoutingNode {
 
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
+
+        // Sorting the close group we return sorted by the destination
+        let client_name = XorName::new(hash::sha512::hash(&client_key.0).0);
+        public_ids.sort_by(|a, b| if ::xor_name::closer_to_target(&a.name(), &b.name(), &client_name) {
+            ::std::cmp::Ordering::Less
+        } else {
+            ::std::cmp::Ordering::Greater
+        });
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
