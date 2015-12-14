@@ -53,8 +53,7 @@ impl Client {
         let time = ::time::SteadyTime::now();
         loop {
             while let Ok(event) = self.receiver.try_recv() {
-                if let ::event::Event::Response{ content, src: _, dst : _} =
-                       event {
+                if let ::event::Event::Response{ content, ..} = event {
                     match content {
                         ResponseContent::Get{ result } => {
                             match result {

@@ -278,7 +278,7 @@ impl RoutingNode {
         } else if self.state == State::Client {
             self.handle_signed_message_for_client(&signed_msg)
         } else {
-            return Err(RoutingError::InvalidStateForOperation);
+            Err(RoutingError::InvalidStateForOperation)
         }
     }
 
@@ -319,9 +319,9 @@ impl RoutingNode {
             };
 
             let routing_msg = RoutingMessage::Response(response_msg);
-            let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
+            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
 
-            return self.send(signed_msg.clone());
+            return self.send(signed_message);
         }
 
         self.add_to_cache(signed_msg.content());
@@ -372,7 +372,7 @@ impl RoutingNode {
                     if client_key != signed_msg.public_id().signing_public_key() {
                         return Err(RoutingError::FailedSignature);
                     };
-                    return Ok(());
+                    Ok(())
                 }
                 _ => Ok(()),
             }
@@ -380,8 +380,8 @@ impl RoutingNode {
     }
 
     fn get_from_cache(&self, routing_msg: &RoutingMessage) -> Option<&Data> {
-        match routing_msg {
-            &RoutingMessage::Request(RequestMessage {
+        match *routing_msg {
+            RoutingMessage::Request(RequestMessage {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _)),
                     ..
                 }) => {
@@ -394,15 +394,12 @@ impl RoutingNode {
     }
 
     fn add_to_cache(&self, routing_msg: &RoutingMessage) {
-        match *routing_msg {
-            RoutingMessage::Response(ResponseMessage {
+        if let RoutingMessage::Response(ResponseMessage {
                     content: ResponseContent::Get { result: GetResultType::Success(ref data @ Data::ImmutableData(_)), },
                     ..
-                }) => {
-                // let _ = self.data_cache.insert(data.name().clone(), data.clone());
-                // FIXME(dirvine) borrow check :13/12/2015
-            }
-            _ => (),
+                }) = *routing_msg {
+    // let _ = self.data_cache.insert(data.name().clone(), data.clone());
+    // FIXME(dirvine) borrow check :13/12/2015
         }
     }
 
@@ -805,7 +802,7 @@ impl RoutingNode {
                 }
 
                 let _ = self.bootstrap_identify(connection);
-                return Ok(());
+                Ok(())
             }
             ::messages::DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
                 let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id,
@@ -872,7 +869,7 @@ impl RoutingNode {
             ::messages::DirectMessage::Churn { ref close_group } => {
                 // Message needs signature validation
                 self.handle_churn(close_group);
-                return Ok(());
+                Ok(())
             }
         }
     }
@@ -1145,7 +1142,7 @@ impl RoutingNode {
                                   dst: Authority)
                                   -> Result<(), RoutingError> {
         if self.routing_table.want_to_add(&src_name) {
-            if let Some(their_public_id) = self.node_id_cache.get(&src_name).map(|id| id.clone()) {
+            if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
                 self.connect(encrypted_endpoints,
                              nonce_bytes,
                              their_public_id.encrypting_public_key())
