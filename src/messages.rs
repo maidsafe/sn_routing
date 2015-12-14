@@ -206,7 +206,7 @@ pub enum GetResultType {
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum APIResultType {
+pub enum ApiResultType {
     Success(hash::sha512::Digest),
     Failure(RequestMessage, ResponseError),
 }
@@ -233,12 +233,12 @@ pub enum ResponseContent {
         result: GetResultType,
     },
     Put {
-        result: APIResultType,
+        result: ApiResultType,
     },
     Post {
-        result: APIResultType,
+        result: ApiResultType,
     },
     Delete {
-        result: APIResultType,
+        result: ApiResultType,
     },
 }

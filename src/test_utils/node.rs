@@ -17,7 +17,7 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType};
 /// Network Node.
 pub struct Node {
     routing: ::routing::Routing,
@@ -50,25 +50,25 @@ impl Node {
             match event {
                 ::event::Event::Request(msg) => self.handle_request(msg),
                 ::event::Event::Response(msg) => self.handle_response(msg),
-                ::event::Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
+                ::event::Event::Refresh(type_tag, src, vec_of_bytes) => {
                     debug!("Received refresh event");
                     if type_tag != 1u64 {
                         error!("Received refresh for tag {:?} from {:?}",
                                type_tag,
-                               our_authority);
+                               src);
                         continue;
                     };
-                    self.handle_refresh(our_authority, vec_of_bytes);
+                    self.handle_refresh(src, vec_of_bytes);
                 },
-                ::event::Event::DoRefresh(type_tag, our_authority, cause) => {
+                ::event::Event::DoRefresh(type_tag, src, cause) => {
                     debug!("Received do refresh event");
                     if type_tag != 1u64 {
                         error!("Received DoRefresh for tag {:?} from {:?}",
                                type_tag,
-                               our_authority);
+                               src);
                         continue;
                     };
-                    self.handle_do_refresh(our_authority, cause);
+                    self.handle_do_refresh(src, cause);
                 },
                 ::event::Event::Churn(close_group) => {
                     debug!("Received churn event");
@@ -124,36 +124,34 @@ impl Node {
 
     fn handle_get_request(&mut self,
                           data_request: ::data::DataRequest,
-                          our_authority: ::authority::Authority,
-                          from_authority: ::authority::Authority) {
+                          src: ::authority::Authority,
+                          dst: ::authority::Authority) {
         let data = match self.db.get(&data_request.name()) {
-            Some(data) => data.clone(),
+            Some(data) => self.routing.send_get_response(src, dst, GetResultType::Success(data.clone())),
             None => {
                 debug!("GetDataRequest failed for {:?}.", data_request.name());
-                return;
+                return
             }
         };
-
-        self.routing.send_get_response(our_authority, from_authority, data, data_request);
     }
 
     fn handle_put_request(&mut self,
                           data: ::data::Data,
-                          our_authority: ::authority::Authority,
-                          _from_authority: ::authority::Authority) {
-        match our_authority {
+                          src: ::authority::Authority,
+                          _dst: ::authority::Authority) {
+        match src {
             ::authority::Authority::NaeManager(_) => {
                 debug!("Storing: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
             }
             ::authority::Authority::ClientManager(_) => {
                 debug!("Sending: key {:?}, value {:?}", data.name(), data);
-                self.routing.send_put_request(our_authority,
+                self.routing.send_put_request(src,
                                          ::authority::Authority::NaeManager(data.name()),
                                          data);
             }
             _ => {
-                debug!("Node: Unexpected our_authority ({:?})", our_authority);
+                debug!("Node: Unexpected src ({:?})", src);
                 assert!(false);
             }
         }
@@ -195,7 +193,7 @@ impl Node {
     }
 
     fn handle_refresh(&mut self,
-                      our_authority: ::authority::Authority,
+                      src: ::authority::Authority,
                       vec_of_bytes: Vec<Vec<u8>>) {
         let mut records: Vec<u64> = Vec::new();
         let mut fail_parsing_count = 0usize;
@@ -207,17 +205,17 @@ impl Node {
         }
         let median = median(records.clone());
         debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-               our_authority,
+               src,
                median,
                records,
                fail_parsing_count);
-        if let ::authority::Authority::ClientManager(client_name) = our_authority {
+        if let ::authority::Authority::ClientManager(client_name) = src {
             let _ = self.client_accounts.insert(client_name, median);
         }
     }
 
-    fn handle_do_refresh(&self, our_authority: ::authority::Authority, cause: ::XorName) {
-        if let ::authority::Authority::ClientManager(client_name) = our_authority {
+    fn handle_do_refresh(&self, src: ::authority::Authority, cause: ::XorName) {
+        if let ::authority::Authority::ClientManager(client_name) = src {
             match self.client_accounts.get(&client_name) {
                 Some(stored) => {
                     debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",

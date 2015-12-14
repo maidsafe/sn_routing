@@ -26,7 +26,8 @@ use data::{Data, DataRequest};
 use error::{RoutingError, ResponseError};
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType,
+               ApiResultType};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -95,56 +96,58 @@ impl Routing {
         });
         let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// Respond to a get_request (no error can be sent)
     /// If we received the request from a group, we'll not get the signed_request.
     pub fn send_get_response(&self,
-                        src: Authority,
-                        dst: Authority,
-                        data: Data,
-                        data_request: DataRequest) {
-        // let _ = self.action_sender.send(Action::SendContent(
-        // src, dst,
-        // Content::ExternalResponse(
-        // ExternalResponse::Get(data, data_request, signed_request))));
+                             src: Authority,
+                             dst: Authority,
+                             result: GetResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Get{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// response error to a put request
     pub fn send_put_response(&self,
-                        _src: Authority,
-                        _dst: Authority,
-                        _response_error: ResponseError) {
-        // if response_error == ::error::ResponseError::Abort {
-        // return;
-        // };
-        // let _ = self.action_sender.send(Action::SendContent(
-        // src, dst,
-        // Content::ExternalResponse(
-        // ExternalResponse::Put(response_error, signed_request))));
+                             src: Authority,
+                             dst: Authority,
+                             result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Put{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// Response error to a post request
     pub fn send_post_response(&self,
-                         _src: Authority,
-                         _dst: Authority,
-                         _response_error: ResponseError) {
-        // if response_error == ::error::ResponseError::Abort {
-        // return;
-        // };
-        // let _ = self.action_sender.send(Action::SendContent(
-        // src, dst,
-        // Content::ExternalResponse(
-        // ExternalResponse::Post(response_error, signed_request))));
+                              src: Authority,
+                              dst: Authority,
+                              result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Post{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
+
     /// response error to a delete respons
     pub fn send_delete_response(&self,
-                           _src: Authority,
-                           _dst: Authority,
-                           _response_error: ResponseError) {
-        // if response_error == ::error::ResponseError::Abort {
-        // return;
-        // };
-        // let _ = self.action_sender.send(Action::SendContent(
-        // src, dst,
-        // Content::ExternalResponse(ExternalResponse::Delete(response_error,
-        // signed_request))));
+                                src: Authority,
+                                dst: Authority,
+                                result: ApiResultType) {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::Delete{ result: result },
+        });
+        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
     }
 
     /// Refresh the content in the close group nodes of group address content::name.

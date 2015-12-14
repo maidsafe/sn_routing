@@ -31,7 +31,7 @@ use maidsafe_utilities::serialisation::{serialise, deserialise};
 use data::{Data, DataRequest};
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
                ResponseMessage, RequestContent, ResponseContent, Message, GetResultType,
-               APIResultType};
+               ApiResultType};
 use utils;
 
 const MAX_RELAYS: usize = 100;
