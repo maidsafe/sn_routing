@@ -22,6 +22,7 @@ use ip::IpAddr;
 
 pub struct Acceptors {
     endpoints: HashSet<::crust::Endpoint>,
+    bootstrap_ip: Option<IpAddr>,
     tcp_accepting_port: Option<Port>,
     utp_accepting_port: Option<Port>,
 }
@@ -30,14 +31,25 @@ impl Acceptors {
     pub fn new() -> Acceptors {
         Acceptors {
             endpoints: HashSet::new(),
+            bootstrap_ip: None,
             tcp_accepting_port: None,
             utp_accepting_port: None,
         }
     }
 
+    pub fn set_bootstrap_ip(&mut self, bootstrap_endpoint: Endpoint) {
+        self.bootstrap_ip = Some(Self::ip_from_socketaddr(bootstrap_endpoint.get_address()));
+    }
+
     pub fn set_tcp_accepting_port(&mut self, accepting_port: Port) {
         match accepting_port {
-            Port::Tcp(port) => self.tcp_accepting_port = Some(Port::Tcp(port)),
+            Port::Tcp(port) => {
+                self.tcp_accepting_port = Some(Port::Tcp(port));
+                if let Some(ref bootstrap_ip) = self.bootstrap_ip {
+                    let _ = self.endpoints.insert(Endpoint::new(bootstrap_ip.clone(),
+                                                                Port::Tcp(port)));
+                }
+            },
             _ => unreachable!(),
         }
     }

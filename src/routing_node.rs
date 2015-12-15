@@ -242,10 +242,14 @@ impl RoutingNode {
                 }
             } // Category Match
 
-            if self.state == State::Node && self.routing_table.len() != prev_routing_table_len {
+            if self.state == State::Node {
                 prev_routing_table_len = self.routing_table.len();
                 trace!(" -----------------------------------");
                 trace!("| Routing Table size updated to: {}", self.routing_table.len());
+                // self.routing_table.our_close_group().iter().all(|elt| {
+                //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
+                //     true
+                // });
                 trace!(" -----------------------------------");
             }
         } // Category Rx
@@ -693,10 +697,11 @@ impl RoutingNode {
                          connection_token: u32) {
         match result {
             Ok((endpoint, connection)) => {
-                self.acceptors.add(endpoint);
+                self.acceptors.add(endpoint.clone());
                 debug!("New connection via OnConnect {:?} with token {}", connection, connection_token);
                 if self.state == State::Disconnected {
                     // Established connection. Pending Validity checks
+                    self.acceptors.set_bootstrap_ip(endpoint);
                     self.state = State::Bootstrapping;
                     let _ = self.client_identify(connection);
                     return
