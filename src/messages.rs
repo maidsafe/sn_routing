@@ -18,7 +18,7 @@
 use data::{Data, DataRequest};
 use id::{PublicId, FullId};
 use xor_name::XorName;
-use error::{RoutingError, ResponseError};
+use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign, hash};
 use authority::Authority;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
@@ -199,19 +199,6 @@ pub enum RequestContent {
     Delete(Data),
 }
 
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum GetResultType {
-    Success(Data),
-    Failure(RequestMessage, ResponseError),
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum ApiResultType {
-    Success(hash::sha512::Digest),
-    Failure(RequestMessage, ResponseError),
-}
-
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum ResponseContent {
     // ---------- Internal ------------
@@ -230,16 +217,24 @@ pub enum ResponseContent {
         close_group_ids: Vec<PublicId>,
     },
     // ---------- External ------------
-    Get {
-        result: GetResultType,
+    GetSuccess(Data),
+    PutSuccess(hash::sha512::Digest),
+    PostSuccess(hash::sha512::Digest),
+    DeleteSuccess(hash::sha512::Digest),
+    GetFailure {
+        request: RequestMessage,
+        external_error_indicator: Vec<u8>,
     },
-    Put {
-        result: ApiResultType,
+    PutFailure {
+        request: RequestMessage,
+        external_error_indicator: Vec<u8>,
     },
-    Post {
-        result: ApiResultType,
+    PostFailure {
+        request: RequestMessage,
+        external_error_indicator: Vec<u8>,
     },
-    Delete {
-        result: ApiResultType,
+    DeleteFailure {
+        request: RequestMessage,
+        external_error_indicator: Vec<u8>,
     },
 }

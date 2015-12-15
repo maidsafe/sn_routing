@@ -104,7 +104,7 @@ pub mod data;
 pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
 pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-                   ResponseMessage, RequestContent, ResponseContent, Message, GetResultType, ApiResultType};
+                   ResponseMessage, RequestContent, ResponseContent, Message};
 /// Persona types recognised by the network.
 pub use authority::Authority;
 pub use id::{FullId, PublicId};

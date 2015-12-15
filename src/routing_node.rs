@@ -25,14 +25,13 @@ use xor_name::XorName;
 use sodiumoxide::crypto::{box_, sign, hash};
 use id::{FullId, PublicId};
 use lru_time_cache::LruCache;
-use error::{RoutingError, ResponseError};
+use error::{RoutingError, InterfaceError};
 use authority::Authority;
 use kademlia_routing_table::{RoutingTable, NodeInfo};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use data::{Data, DataRequest};
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType,
-               ApiResultType};
+               ResponseMessage, RequestContent, ResponseContent, Message};
 use utils;
 
 const MAX_RELAYS: usize = 100;
@@ -162,16 +161,26 @@ impl RoutingNode {
     pub fn run(&mut self,
                category_rx: ::std::sync::mpsc::Receiver<
                    ::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
+        let mut prev_routing_table_len = 0;
+
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         for it in category_rx.iter() {
             match it {
                 ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
-                            Action::NodeSendMessage(msg) => {
-                                let _ = self.send_message(msg);
+                            Action::NodeSendMessage { content, result_tx, } => {
+                                match self.send_message(content) {
+                                    Err(RoutingError::Interface(err)) => {
+                                        let _ = result_tx.send(Err(err));
+                                    },
+                                    Err(_err) => (),
+                                    Ok(()) => {
+                                        let _ = result_tx.send(Ok(()));
+                                    },
+                                }
                             },
-                            Action::ClientSendRequest { content, dst, } => {
+                            Action::ClientSendRequest { content, dst, result_tx, } => {
                                 if let Ok(src) = self.get_client_authority() {
                                     let request_msg = RequestMessage {
                                         content: content,
@@ -180,7 +189,15 @@ impl RoutingNode {
                                     };
 
                                     let routing_msg = RoutingMessage::Request(request_msg);
-                                    let _ = self.send_message(routing_msg);
+                                    match self.send_message(routing_msg) {
+                                        Err(RoutingError::Interface(err)) => {
+                                            let _ = result_tx.send(Err(err));
+                                        },
+                                        Err(_err) => (),
+                                        Ok(()) => {
+                                            let _ = result_tx.send(Ok(()));
+                                        },
+                                    }
                                 }
                             },
                             Action::Terminate => {
@@ -224,12 +241,11 @@ impl RoutingNode {
                 }
             } // Category Match
 
-            if self.state == State::Node {
-                trace!("Routing Table size: {}", self.routing_table.len());
-                // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
-                //     true
-                // });
+            if self.state == State::Node && self.routing_table.len() != prev_routing_table_len {
+                prev_routing_table_len = self.routing_table.len();
+                trace!(" -----------------------------------");
+                trace!("| Routing Table size updated to: {}", self.routing_table.len());
+                trace!(" -----------------------------------");
             }
         } // Category Rx
     }
@@ -346,7 +362,7 @@ impl RoutingNode {
 
         // Cache handling
         if let Some(data) = self.get_from_cache(signed_msg.content()).cloned() {
-            let content = ResponseContent::Get { result: GetResultType::Success(data) };
+            let content = ResponseContent::GetSuccess(data);
 
             let response_msg = ResponseMessage {
                 src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
@@ -425,7 +441,7 @@ impl RoutingNode {
 
     fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
         if let RoutingMessage::Response(ResponseMessage {
-                    content: ResponseContent::Get { result: GetResultType::Success(ref data @ Data::ImmutableData(_)), },
+                    content: ResponseContent::GetSuccess(ref data @ Data::ImmutableData(_)),
                     ..
                 }) = *routing_msg {
             let _ = self.data_cache.insert(data.name().clone(), data.clone());
@@ -542,8 +558,8 @@ impl RoutingNode {
                                                          src_name,
                                                          dst_name)
             },
-            (RequestContent::Get(_), _, _) |
-            (RequestContent::Put(_), _, _) |
+            (RequestContent::Get(_), _, _)  |
+            (RequestContent::Put(_), _, _)  |
             (RequestContent::Post(_), _, _) |
             (RequestContent::Delete(_), _, _) => {
                 let event = Event::Request(request_msg);
@@ -596,10 +612,14 @@ impl RoutingNode {
              Authority::Client { client_key, proxy_node_name, }) => {
                 self.handle_get_close_group_response(close_group_ids, client_key, proxy_node_name)
             },
-            (ResponseContent::Get{..}, _, _) |
-            (ResponseContent::Put{..}, _, _) |
-            (ResponseContent::Post{..}, _, _) |
-            (ResponseContent::Delete{..}, _, _) => {
+            (ResponseContent::GetSuccess(_), _, _)    |
+            (ResponseContent::PutSuccess(_), _, _)    |
+            (ResponseContent::PostSuccess(_), _, _)   |
+            (ResponseContent::DeleteSuccess(_), _, _) |
+            (ResponseContent::GetFailure{..}, _, _)   |
+            (ResponseContent::PutFailure{..}, _, _)   |
+            (ResponseContent::PostFailure{..}, _, _)  |
+            (ResponseContent::DeleteFailure{..}, _, _) => {
                 let event = Event::Response(response_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
@@ -1386,20 +1406,8 @@ impl RoutingNode {
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
-        match self.send(signed_msg) {
-            Err(RoutingError::Interface(err)) => {
-                let failure_event = Event::SendFailure {
-                    content: routing_msg,
-                    interface_error: err,
-                };
 
-                let _ = self.event_sender.send(failure_event);
-
-                Ok(())
-            },
-            Err(err) => Err(err),
-            Ok(()) => Ok(()),
-        }
+        self.send(signed_msg)
     }
 
     fn relay_to_client(&mut self, signed_msg: SignedMessage, client_key: &sign::PublicKey) -> Result<(), RoutingError> {
