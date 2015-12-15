@@ -58,7 +58,7 @@ use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
 use routing::utils::{encode, decode};
-use routing::{RequestMessage, RequestContent, ResponseContent, GetResultType, ApiResultType};
+use routing::{RequestMessage, RequestContent, ResponseContent};
 use routing::id::FullId;
 use routing::id::PublicId;
 
@@ -181,9 +181,9 @@ impl Node {
             None => return,
         };
 
-        let get_result = GetResultType::Success(Data::PlainData(data));
+        let response_content = ResponseContent::GetSuccess(Data::PlainData(data));
 
-        self.routing.send_get_response(dst, src, get_result)
+        unwrap_result!(self.routing.send_get_response(dst, src, response_content))
     }
 
     fn handle_put_request(&mut self, data : Data, src: Authority, dst: Authority) {
@@ -210,8 +210,10 @@ impl Node {
                         println!("Client ({:?}) stored {:?} bytes", client_name,
                             self.client_accounts.get(&client_name));
                         debug!("Sending: key {:?}, value {:?}", plain_data.name(), plain_data);
-                        self.routing.send_put_request(
-                            dst, Authority::NaeManager(plain_data.name()), data);
+                        let name = data.name();
+                        let request_content = RequestContent::Put(data);
+                        unwrap_result!(self.routing.send_put_request(
+                            dst, Authority::NaeManager(name), request_content));
                     },
                     _ => {
                         println!("Node: Unexpected from_authority ({:?})", src);
@@ -449,7 +451,7 @@ impl Client {
         match event {
             Event::Response(msg) => {
                 match msg.content {
-                    ResponseContent::Get { result: GetResultType::Success(data) } => {
+                    ResponseContent::GetSuccess(data) => {
                         let plain_data = match data {
                             Data::PlainData(plain_data) => plain_data,
                             _ => {
@@ -464,8 +466,8 @@ impl Client {
                         };
                         println!("Got value {:?} on key {:?}", value, key);
                     },
-                    ResponseContent::Put { result: ApiResultType::Failure(_, err), } => {
-                        error!("Failed to store: {:?}", err);
+                    ResponseContent::PutFailure { ..} => {
+                        error!("Failed to store");
                     },
                     _ => error!("Received response {:?}, but not handled in example", msg),
                 }
@@ -477,15 +479,16 @@ impl Client {
     fn send_get_request(&mut self, what: String) {
         let name = Client::calculate_key_name(&what);
 
-        self.routing_client.send_get_request(Authority::ClientManager(name.clone()), DataRequest::PlainData(name));
+        unwrap_result!(self.routing_client.send_get_request(Authority::ClientManager(name.clone()),
+                                                            DataRequest::PlainData(name)));
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
         let data = unwrap_result!(encode(&(put_where, put_what)));
 
-        self.routing_client.send_put_request(Authority::ClientManager(self.public_id.name().clone()),
-            Data::PlainData(PlainData::new(name, data)));
+        unwrap_result!(self.routing_client.send_put_request(Authority::ClientManager(self.public_id.name().clone()),
+            Data::PlainData(PlainData::new(name, data))));
     }
 
     fn calculate_key_name(key: &String) -> XorName {

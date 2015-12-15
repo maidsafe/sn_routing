@@ -26,11 +26,6 @@ pub enum Event {
     Request(RequestMessage),
     /// Response.
     Response(ResponseMessage),
-    /// FailedRequest.
-    SendFailure {
-        content: RoutingMessage,
-        interface_error: InterfaceError,
-    },
     /// Refresh reports to the user the collected accounts for a given refresh event,
     /// the arguments are type_tag:u64, authority: Authority, vector_of_bytes: Vec<Vec<u8>>
     Refresh(u64, ::authority::Authority, Vec<Vec<u8>>),

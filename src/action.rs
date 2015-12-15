@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
+use error::InterfaceError;
+use std::sync::mpsc::Sender;
 use messages::{RoutingMessage, RequestContent};
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
@@ -24,12 +26,28 @@ use messages::{RoutingMessage, RequestContent};
 ///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone)]
 pub enum Action {
-    NodeSendMessage(RoutingMessage),
+    NodeSendMessage {
+        content: RoutingMessage,
+        result_tx: Sender<Result<(), InterfaceError>>,
+    },
     ClientSendRequest {
         content: RequestContent,
         dst: Authority,
+        result_tx: Sender<Result<(), InterfaceError>>,
     },
     Terminate,
+}
+
+impl ::std::fmt::Debug for Action {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            Action::NodeSendMessage { ref content, .. } =>
+                write!(f, "Action::NodeSendMessage {{ {:?}, result_tx }}", content),
+            Action::ClientSendRequest { ref content, ref dst, .. } =>
+                write!(f, "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}", content, dst),
+            Action::Terminate => write!(f, "Action::Terminate"),
+        }
+    }
 }
