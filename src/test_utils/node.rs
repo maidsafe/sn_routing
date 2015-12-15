@@ -17,8 +17,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 /// Network Node.
 pub struct Node {
@@ -124,13 +123,18 @@ impl Node {
                           data_request: ::data::DataRequest,
                           src: Authority,
                           dst: Authority) {
-        let data = match self.db.get(&data_request.name()) {
-            Some(data) => self.routing.send_get_response(src, dst, ResponseContent::GetSuccess(data.clone())),
+        match self.db.get(&data_request.name()) {
+            Some(data) => {
+                unwrap_result!(self.routing.send_get_response(
+                    src,
+                    dst,
+                    ResponseContent::GetSuccess(data.clone())))
+            },
             None => {
                 debug!("GetDataRequest failed for {:?}.", data_request.name());
                 return
             }
-        };
+        }
     }
 
     fn handle_put_request(&mut self,
@@ -146,7 +150,7 @@ impl Node {
                 debug!("Sending: key {:?}, value {:?}", data.name(), data);
                 let dst = Authority::NaeManager(data.name());
                 let request_content = RequestContent::Put(data);
-                self.routing.send_put_request(src, dst, request_content);
+                unwrap_result!(self.routing.send_put_request(src, dst, request_content));
             }
             _ => {
                 debug!("Node: Unexpected src ({:?})", src);
@@ -179,11 +183,11 @@ impl Node {
 
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
-            self.routing
-                .send_refresh_request(1u64,
-                                 Authority::ClientManager(client_name.clone()),
-                                 unwrap_result!(::utils::encode(&stored)),
-                                 cause);
+            unwrap_result!(self.routing.send_refresh_request(
+                1u64,
+                Authority::ClientManager(client_name.clone()),
+                unwrap_result!(::utils::encode(&stored)),
+                cause));
         }
         if exit {
             self.routing.stop();
@@ -220,9 +224,12 @@ impl Node {
                            client_name,
                            stored,
                            cause);
-                    self.routing.send_refresh_request(1u64,
+                    unwrap_result!(
+                        self.routing.send_refresh_request(
+                            1u64,
                             Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::utils::encode(&stored)), cause.clone());
+                            unwrap_result!(::utils::encode(&stored)),
+                            cause.clone()));
                 },
                 None => (),
             }

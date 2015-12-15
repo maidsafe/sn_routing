@@ -26,7 +26,7 @@ use routing_node::RoutingNode;
 use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use messages::{RequestMessage, RequestContent, RoutingMessage};
+use messages::RequestContent;
 
 type RoutingResult = Result<(), RoutingError>;
 

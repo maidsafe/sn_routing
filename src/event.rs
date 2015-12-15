@@ -16,8 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use authority::Authority;
-use error::InterfaceError;
-use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use messages::{RequestMessage, ResponseMessage};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -28,7 +27,7 @@ pub enum Event {
     Response(ResponseMessage),
     /// Refresh reports to the user the collected accounts for a given refresh event,
     /// the arguments are type_tag:u64, authority: Authority, vector_of_bytes: Vec<Vec<u8>>
-    Refresh(u64, ::authority::Authority, Vec<Vec<u8>>),
+    Refresh(u64, Authority, Vec<Vec<u8>>),
     /// Churn reports whenever our close group is changed, and provides our new close group
     /// as a Vec<XorName> and the name of the node that joined or left our close group
     /// as XorName.  Our close group is sorted from our name and always includes our own name
@@ -39,7 +38,7 @@ pub enum Event {
     /// that initiated the call for refresh.  To ensure that the account of the current user is
     /// also accumulated a DoRefresh indicates precisely one account routing will expect the
     /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
-    DoRefresh(u64, ::authority::Authority, ::XorName),
+    DoRefresh(u64, Authority, ::XorName),
     /// Connected.
     Connected,
     /// Disconnected.

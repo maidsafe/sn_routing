@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::RoutingTable;
 use xor_name::XorName;
-use sodiumoxide::crypto::{box_, sign, hash};
+use sodiumoxide::crypto::{sign, hash};
 use std::fmt::{Debug, Formatter, Error};
 
 /// Authority.

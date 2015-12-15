@@ -22,11 +22,9 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
-use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 type RoutingResult = Result<(), RoutingError>;
 

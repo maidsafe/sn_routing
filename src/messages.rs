@@ -21,7 +21,7 @@ use xor_name::XorName;
 use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign, hash};
 use authority::Authority;
-use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]
