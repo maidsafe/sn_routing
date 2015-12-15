@@ -48,8 +48,9 @@ use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 pub enum InterfaceError {
     /// NotConnected.
     NotConnected,
-    /// Error while listening to a message in a rust channel
+    /// Error while trying to receive a message from a channel
     ChannelRxError(RecvError),
+    /// Error while trying to transmit an event via a channel
     EventSenderError(EventSenderError<MaidSafeEventCategory, Action>),
 }
 

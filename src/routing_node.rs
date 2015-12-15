@@ -51,7 +51,6 @@ enum State {
     Node,
 }
 
-/// Routing Node
 pub struct RoutingNode {
     // for CRUST
     crust_service: ::crust::Service,
@@ -728,7 +727,6 @@ impl RoutingNode {
         self.acceptors.add(endpoint);
     }
 
-    /// When CRUST reports a lost connection, ensure we remove the endpoint everywhere
     fn handle_lost_connection(&mut self, connection: ::crust::Connection) {
         debug!("Lost connection on {:?}", connection);
         self.dropped_routing_node_connection(&connection);
@@ -1419,12 +1417,6 @@ impl RoutingNode {
         Ok(self.crust_service.send(connection.clone(), raw_bytes))
     }
 
-    /// Send a SignedMessage out to the destination
-    /// 1. if it can be directly sent to a Client, then it will
-    /// 2. if we can forward it to nodes closer to the destination, it will be sent in parallel
-    /// 3. if the destination is in range for us, then send it to all our close group nodes
-    /// 4. if all the above failed, try sending it over all available bootstrap connections
-    /// 5. finally, if we are a node and the message concerns us, queue it for processing later.
     fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
         let hop_msg = try!(HopMessage::new(signed_msg.clone(),
                                            self.full_id.public_id().name().clone(),
@@ -1526,7 +1518,6 @@ impl RoutingNode {
         self.full_id.public_id_mut().set_name(new_name);
     }
 
-    /// check client_map for a client and remove from map
     fn dropped_client_connection(&mut self, connection: &::crust::Connection) {
         let public_key = self.client_map
                              .iter()

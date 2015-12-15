@@ -19,26 +19,31 @@ use xor_name::XorName;
 use sodiumoxide::crypto::{sign, hash};
 use std::fmt::{Debug, Formatter, Error};
 
-/// Authority.
+/// Persona types recognised by network.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority {
-    /// Signed by a client and corresponding ClientName is in our range.
+    /// Manager of Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(XorName),
-    /// We are responsible for this element and the destination is the element.
+    /// Manager of a network-addressable element.  XorName is the name of the element in question.
     NaeManager(XorName),
-    /// The destination is not the element, and we are responsible for it.
+    /// Manager of a ManagedNode.  XorName is that of the ManagedNode.
     NodeManager(XorName),
-    /// Our name is the destination and the message came from within our range.
+    /// A non-client node (i.e. a vault) which is managed by NodeManagers.  XorName is provided
+    /// by the network relocation process immediately after bootstrapping.
     ManagedNode(XorName),
-    /// Client can specify a location where a relay will be found.
+    /// A Client.
     Client {
+        /// The client's public signing key.  The hash of this specifies the location of the Client
+        /// in the network address space.
         client_key: sign::PublicKey,
+        /// The name of the single ManagedNode which the Client connects to and proxies all messages
+        /// through.
         proxy_node_name: XorName,
     },
 }
 
 impl Authority {
-    /// Return true if group authority, otherwise false.
+    /// Returns true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
         match *self {
             Authority::ClientManager(_) => true,
@@ -49,7 +54,7 @@ impl Authority {
         }
     }
 
-    /// Return the name of authority.
+    /// Returns the name of authority.
     pub fn get_name(&self) -> &XorName {
         match *self {
             Authority::ClientManager(ref name) => name,
