@@ -33,6 +33,7 @@ use data::{Data, DataRequest};
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
                ResponseMessage, RequestContent, ResponseContent, Message};
 use utils;
+use acceptors::Acceptors;
 
 const MAX_RELAYS: usize = 100;
 const ROUTING_NODE_THREAD_NAME: &'static str = "RoutingNodeThread";
@@ -55,7 +56,7 @@ enum State {
 pub struct RoutingNode {
     // for CRUST
     crust_service: ::crust::Service,
-    accepting_on: Vec<::crust::Endpoint>,
+    acceptors: Acceptors,
     // for RoutingNode
     client_restriction: bool,
     is_listening: bool,
@@ -118,8 +119,7 @@ impl RoutingNode {
         let joiner = thread!(ROUTING_NODE_THREAD_NAME, move || {
             let mut routing_node = RoutingNode {
                 crust_service: crust_service,
-                accepting_on: vec![],
-            // Counter starts at 1, 0 is reserved for bootstrapping.
+                acceptors: Acceptors::new(),
                 client_restriction: client_restriction,
                 is_listening: false,
                 crust_rx: crust_rx,
@@ -230,7 +230,8 @@ impl RoutingNode {
                             ::crust::Event::ExternalEndpoints(external_endpoints) => {
                                 for external_endpoint in external_endpoints {
                                     debug!("Adding external endpoint {:?}", external_endpoint);
-                                    self.accepting_on.push(external_endpoint);
+                                    // TODO - reimplement
+                                    // self.accepting_on.push(external_endpoint);
                                 }
                             }
                             ::crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
@@ -659,6 +660,7 @@ impl RoutingNode {
         match self.crust_service.start_accepting(CRUST_DEFAULT_TCP_ACCEPTING_PORT) {
             Ok(endpoint) => {
                 info!("Running TCP listener on {:?}", endpoint);
+                self.acceptors.set_tcp_accepting_port(endpoint.get_port());
                 // self.accepting_on.push(endpoint);
             }
             Err(error) => {
@@ -670,7 +672,8 @@ impl RoutingNode {
         // match self.crust_service.start_accepting(CRUST_DEFAULT_UTP_ACCEPTING_PORT) {
         //     Ok(endpoint) => {
         //         info!("Running uTP listener on {:?}", endpoint);
-        //         self.accepting_on.push(endpoint);
+        //         self.acceptors.set_utp_accepting_port(endpoint.get_port());
+        //         // self.accepting_on.push(endpoint);
         //     }
         //     Err(error) => {
         //         warn!("Failed to listen on {:?}: {:?}",
@@ -690,10 +693,7 @@ impl RoutingNode {
                          connection_token: u32) {
         match result {
             Ok((endpoint, connection)) => {
-                if !self.accepting_on.iter().any(|&e| e == endpoint) {
-                    debug!("Received external endpoint via OnConnect {:?}.", endpoint);
-                    self.accepting_on.push(endpoint);
-                }
+                self.acceptors.add(endpoint);
                 debug!("New connection via OnConnect {:?} with token {}", connection, connection_token);
                 if self.state == State::Disconnected {
                     // Established connection. Pending Validity checks
@@ -725,10 +725,7 @@ impl RoutingNode {
             self.set_self_node_name(new_name);
             self.state = State::Node;
         }
-        if !self.accepting_on.iter().any(|&e| e == endpoint) {
-            debug!("Received external endpoint via OnAccept {:?}.", endpoint);
-            self.accepting_on.push(endpoint);
-        }
+        self.acceptors.add(endpoint);
     }
 
     /// When CRUST reports a lost connection, ensure we remove the endpoint everywhere
@@ -1147,7 +1144,8 @@ impl RoutingNode {
                       src: Authority,
                       dst: Authority)
                       -> Result<(), RoutingError> {
-        let encoded_endpoints = try!(serialise(&self.accepting_on));
+        trace!("{:?} sending endpoints {:?}", self, self.acceptors.endpoints());
+        let encoded_endpoints = try!(serialise(&self.acceptors.endpoints()));
         let nonce = box_::gen_nonce();
         let encrypted_endpoints = box_::seal(&encoded_endpoints,
                                              &nonce,
