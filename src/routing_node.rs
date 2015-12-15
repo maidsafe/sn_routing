@@ -160,6 +160,8 @@ impl RoutingNode {
     pub fn run(&mut self,
                category_rx: ::std::sync::mpsc::Receiver<
                    ::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
+        let mut prev_routing_table_len = 0;
+
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         for it in category_rx.iter() {
             match it {
@@ -236,12 +238,11 @@ impl RoutingNode {
                 }
             } // Category Match
 
-            if self.state == State::Node {
-                trace!("Routing Table size: {}", self.routing_table.len());
-                // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?}  ::   Connections {:?}", elt.public_id.name(), elt.connections.len());
-                //     true
-                // });
+            if self.state == State::Node && self.routing_table.len() != prev_routing_table_len {
+                prev_routing_table_len = self.routing_table.len();
+                trace!(" -----------------------------------");
+                trace!("| Routing Table size updated to: {}", self.routing_table.len());
+                trace!(" -----------------------------------");
             }
         } // Category Rx
     }
