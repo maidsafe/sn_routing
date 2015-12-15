@@ -17,14 +17,14 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver, channel};
 
 use id::FullId;
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use error::RoutingError;
+use error::{RoutingError, InterfaceError};
 use authority::Authority;
 use messages::{RequestMessage, RequestContent, RoutingMessage};
 
@@ -34,6 +34,8 @@ type RoutingResult = Result<(), RoutingError>;
 /// RoutingNode will also be started. Routing objects are clonable for multithreading, or a Routing
 /// object can be cloned with a new set of keys while preserving a single RoutingNode.
 pub struct RoutingClient {
+    interface_result_tx: Sender<Result<(), InterfaceError>>,
+    interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: ::types::RoutingActionSender,
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
@@ -44,36 +46,52 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<FullId>) -> Result<RoutingClient, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<RoutingClient, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
         let (action_sender, raii_joiner) = try!(RoutingNode::new(event_sender, true, keys));
 
+        let (tx, rx) = channel();
+
         Ok(RoutingClient {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
             action_sender: action_sender,
             _raii_joiner: raii_joiner,
         })
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) {
-        let _ = self.action_sender.send(create_send_action(RequestContent::Get(data_request), dst));
+    pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Get(data_request), dst)
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self, dst: Authority, data: Data) {
-        let _ = self.action_sender.send(create_send_action(RequestContent::Put(data), dst));
+    pub fn send_put_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Put(data), dst)
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self, dst: Authority, data: Data) {
-        let _ = self.action_sender.send(create_send_action(RequestContent::Post(data), dst));
+    pub fn send_post_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Post(data), dst)
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self, dst: Authority, data: Data) {
-        let _ = self.action_sender.send(create_send_action(RequestContent::Delete(data), dst));
+    pub fn send_delete_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Delete(data), dst)
+    }
+
+    fn send_action(&self, content: RequestContent, dst: Authority) -> Result<(), InterfaceError> {
+        let action = Action::ClientSendRequest {
+            content: content,
+            dst: dst,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        try!(self.action_sender.send(action));
+
+        try!(self.interface_result_rx.recv())
     }
 }
 
@@ -82,12 +100,5 @@ impl Drop for RoutingClient {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
             error!("Error {:?} sending event to RoutingNode", err);
         }
-    }
-}
-
-fn create_send_action(content: RequestContent, dst: Authority) -> Action {
-    Action::ClientSendRequest {
-        content: content,
-        dst: dst,
     }
 }

@@ -19,7 +19,7 @@
 use routing_client::RoutingClient;
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType};
+               ResponseMessage, RequestContent, ResponseContent, Message};
 
 /// Network Client.
 pub struct Client {
@@ -56,12 +56,8 @@ impl Client {
             while let Ok(event) = self.receiver.try_recv() {
                 if let ::event::Event::Response(msg) = event {
                     match msg.content {
-                        ResponseContent::Get{ result } => {
-                            match result {
-                                GetResultType::Success(data) => return Some(data),
-                                GetResultType::Failure(..) => return None,
-                            }
-                        }
+                        ResponseContent::GetSuccess(data) => return Some(data),
+                        ResponseContent::GetFailure { .. } => return None,
                         _ => debug!("Received unexpected external response {:?},", msg),
                     };
                 }

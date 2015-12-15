@@ -17,17 +17,16 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver, channel};
 
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use error::{RoutingError, ResponseError};
+use error::{RoutingError, InterfaceError};
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message, GetResultType,
-               ApiResultType};
+               ResponseMessage, RequestContent, ResponseContent, Message};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -36,6 +35,8 @@ type RoutingResult = Result<(), RoutingError>;
 /// Routing objects are clonable for multithreading, or a Routing object can be
 /// cloned with a new set of keys while preserving a single RoutingNode.
 pub struct Routing {
+    interface_result_tx: Sender<Result<(), InterfaceError>>,
+    interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: ::types::RoutingActionSender,
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
@@ -44,57 +45,72 @@ impl Routing {
     /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
     /// The RoutingNode will attempt to achieve full routing node status.
     /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<Routing, RoutingError> {
+    pub fn new(event_sender: Sender<Event>) -> Result<Routing, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        // TODO(Spandan) Return Error to Vaults instead of unwrap_result!(...)
         let (action_sender, raii_joiner) = try!(RoutingNode::new(event_sender, false, None));
 
+        let (tx, rx) = channel();
+
         Ok(Routing {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
             action_sender: action_sender,
             _raii_joiner: raii_joiner,
         })
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn send_get_request(&self, src: Authority, dst: Authority, data_request: DataRequest) {
+    pub fn send_get_request(&self,
+                            src: Authority,
+                            dst: Authority,
+                            content: RequestContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Get(data_request),
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self, src: Authority, dst: Authority, data: Data) {
+    pub fn send_put_request(&self,
+                            src: Authority,
+                            dst: Authority,
+                            content: RequestContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Put(data),
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self, src: Authority, dst: Authority, data: Data) {
+    pub fn send_post_request(&self,
+                             src: Authority,
+                             dst: Authority,
+                             content: RequestContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Post(data),
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self, src: Authority, dst: Authority, data: Data) {
+    pub fn send_delete_request(&self,
+                               src: Authority,
+                               dst: Authority,
+                               content: RequestContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Delete(data),
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Respond to a get_request (no error can be sent)
@@ -102,52 +118,52 @@ impl Routing {
     pub fn send_get_response(&self,
                              src: Authority,
                              dst: Authority,
-                             result: GetResultType) {
+                             content: ResponseContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::Get { result: result },
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// response error to a put request
     pub fn send_put_response(&self,
                              src: Authority,
                              dst: Authority,
-                             result: ApiResultType) {
+                             content: ResponseContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::Put{ result: result },
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Response error to a post request
     pub fn send_post_response(&self,
                               src: Authority,
                               dst: Authority,
-                              result: ApiResultType) {
+                              content: ResponseContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::Post{ result: result },
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// response error to a delete respons
     pub fn send_delete_response(&self,
                                 src: Authority,
                                 dst: Authority,
-                                result: ApiResultType) {
+                                content: ResponseContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::Delete{ result: result },
+            content: content,
         });
-        let _ = self.action_sender.send(Action::NodeSendMessage(routing_msg));
+        self.send_action(routing_msg)
     }
 
     /// Refresh the content in the close group nodes of group address content::name.
@@ -158,7 +174,8 @@ impl Routing {
                            _type_tag: u64,
                            _src: Authority,
                            _content: Vec<u8>,
-                           _cause: ::XorName) {
+                           _cause: ::XorName) -> Result<(), InterfaceError> {
+        unimplemented!()
         // if !src.is_group() {
         // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
         // type_tag,
@@ -182,6 +199,15 @@ impl Routing {
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
     pub fn stop(&mut self) {
         let _ = self.action_sender.send(Action::Terminate);
+    }
+
+    fn send_action(&self, routing_msg: RoutingMessage) -> Result<(), InterfaceError> {
+        try!(self.action_sender.send(Action::NodeSendMessage {
+            content: routing_msg,
+            result_tx: self.interface_result_tx.clone(),
+        }));
+
+        try!(self.interface_result_rx.recv())
     }
 }
 
