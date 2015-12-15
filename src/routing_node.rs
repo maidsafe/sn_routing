@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::io;
 use itertools::Itertools;
 use crust;
 use std::fmt::{Debug, Formatter, Error};
@@ -36,8 +37,8 @@ use utils;
 const MAX_RELAYS: usize = 100;
 const ROUTING_NODE_THREAD_NAME: &'static str = "RoutingNodeThread";
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
-const CRUST_DEFAULT_TCP_ACCEPTING_PORT: ::crust::Port = ::crust::Port::Tcp(5483);
-const CRUST_DEFAULT_UTP_ACCEPTING_PORT: ::crust::Port = ::crust::Port::Utp(5483);
+const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
+const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 enum State {
@@ -211,7 +212,9 @@ impl RoutingNode {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         match crust_event {
                             ::crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            ::crust::Event::OnAccept(connection) => self.handle_on_accept(connection),
+                            ::crust::Event::OnAccept(endpoint, connection) => {
+                                self.handle_on_accept(endpoint, connection)
+                            }
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
                             ::crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
                             ::crust::Event::NewMessage(connection, bytes) => {
@@ -221,8 +224,8 @@ impl RoutingNode {
                                     Ok(_) => (),
                                 }
                             }
-                            ::crust::Event::OnConnect(connection, connection_token) => {
-                                self.handle_on_connect(connection, connection_token)
+                            ::crust::Event::OnConnect(io_result, connection_token) => {
+                                self.handle_on_connect(io_result, connection_token)
                             }
                             ::crust::Event::ExternalEndpoints(external_endpoints) => {
                                 for external_endpoint in external_endpoints {
@@ -656,7 +659,7 @@ impl RoutingNode {
         match self.crust_service.start_accepting(CRUST_DEFAULT_TCP_ACCEPTING_PORT) {
             Ok(endpoint) => {
                 info!("Running TCP listener on {:?}", endpoint);
-                self.accepting_on.push(endpoint);
+                // self.accepting_on.push(endpoint);
             }
             Err(error) => {
                 warn!("Failed to listen on {:?}: {:?}",
@@ -683,10 +686,14 @@ impl RoutingNode {
     }
 
     fn handle_on_connect(&mut self,
-                         connection: ::std::io::Result<::crust::Connection>,
+                         result: io::Result<(crust::Endpoint, crust::Connection)>,
                          connection_token: u32) {
-        match connection {
-            Ok(connection) => {
+        match result {
+            Ok((endpoint, connection)) => {
+                if !self.accepting_on.iter().any(|&e| e == endpoint) {
+                    debug!("Received external endpoint via OnConnect {:?}.", endpoint);
+                    self.accepting_on.push(endpoint);
+                }
                 debug!("New connection via OnConnect {:?} with token {}", connection, connection_token);
                 if self.state == State::Disconnected {
                     // Established connection. Pending Validity checks
@@ -703,7 +710,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_on_accept(&mut self, connection: ::crust::Connection) {
+    fn handle_on_accept(&mut self, endpoint: crust::Endpoint, connection: ::crust::Connection) {
         debug!("New connection via OnAccept {:?} {:?}", connection, self);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
@@ -717,6 +724,10 @@ impl RoutingNode {
             // This will give me a new RT and set state to Relocated
             self.set_self_node_name(new_name);
             self.state = State::Node;
+        }
+        if !self.accepting_on.iter().any(|&e| e == endpoint) {
+            debug!("Received external endpoint via OnAccept {:?}.", endpoint);
+            self.accepting_on.push(endpoint);
         }
     }
 
