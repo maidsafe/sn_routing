@@ -37,25 +37,6 @@ pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
             input_ref[input_ref.len() - 1])
 }
 
-/// Encode a value of type T to a vector of bytes.
-pub fn encode<T>(value: &T) -> Result<Vec<u8>, ::cbor::CborError>
-    where T: ::rustc_serialize::Encodable
-{
-    let mut enc = ::cbor::Encoder::from_memory();
-    try!(enc.encode(&[value]));
-    Ok(enc.into_bytes())
-}
-
-/// Decode a vcetor of bytes to a value of type T, otherwise error on failure.
-pub fn decode<T>(bytes: &[u8]) -> Result<T, ::cbor::CborError>
-    where T: ::rustc_serialize::Decodable
-{
-    let mut dec = ::cbor::Decoder::from_bytes(bytes);
-    match dec.decode().next() {
-        Some(result) => result,
-        None => Err(::cbor::CborError::UnexpectedEOF),
-    }
-}
 
 /// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 /// In case of only one close node provided (in initial network setup scenario),
@@ -95,20 +76,6 @@ mod test {
     use rand;
     use xor_name::XorName;
 
-    #[test]
-    fn encode_decode() {
-        let name: XorName = rand::random();
-        let encoded = match super::encode(&name) {
-            Ok(encoded) => encoded,
-            Err(_) => panic!("Unexpected serialisation error."),
-        };
-        let decoded: Vec<u8> = match super::decode(&encoded) {
-            Ok(decoded) => decoded,
-            Err(_) => panic!("Unexpected deserialisation error."),
-        };
-
-        assert_eq!(name, XorName(::types::slice_as_u8_64_array(&decoded[..])));
-    }
 
     #[test]
     fn calculate_relocated_name() {

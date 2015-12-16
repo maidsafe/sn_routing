@@ -180,7 +180,7 @@ impl Node {
             unwrap_result!(self.routing.send_refresh_request(
                 1u64,
                 Authority::ClientManager(client_name.clone()),
-                unwrap_result!(::utils::encode(&stored)),
+                unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
                 cause));
         }
         if exit {
@@ -192,7 +192,7 @@ impl Node {
         let mut records: Vec<u64> = Vec::new();
         let mut fail_parsing_count = 0usize;
         for bytes in vec_of_bytes {
-            match ::utils::decode(&bytes) {
+            match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
                 Ok(record) => records.push(record),
                 Err(_) => fail_parsing_count += 1usize,
             }
@@ -220,7 +220,7 @@ impl Node {
                         self.routing.send_refresh_request(
                             1u64,
                             Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::utils::encode(&stored)),
+                            unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
                             cause.clone()));
                 }
                 None => (),

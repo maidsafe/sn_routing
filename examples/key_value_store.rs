@@ -62,7 +62,6 @@ use routing::authority::Authority;
 use routing::event::Event;
 use routing::data::{Data, DataRequest};
 use routing::plain_data::PlainData;
-use routing::utils::{encode, decode};
 use routing::{RequestMessage, RequestContent, ResponseContent};
 use routing::id::FullId;
 use routing::id::PublicId;
@@ -407,7 +406,7 @@ impl Client {
                                 return;
                             }
                         };
-                        let (key, value): (String, String) = match decode(plain_data.value()) {
+                        let (key, value): (String, String) = match ::maidsafe_utilities::serialisation::deserialise(plain_data.value()) {
                             Ok((key, value)) => (key, value),
                             Err(_) => {
                                 error!("Failed to decode get response.");
@@ -436,7 +435,8 @@ impl Client {
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = unwrap_result!(encode(&(put_where, put_what)));
+        let data = unwrap_result!(maidsafe_utilities::serialisation::serialise(&(put_where,
+                                                                                 put_what)));
 
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(self.public_id
