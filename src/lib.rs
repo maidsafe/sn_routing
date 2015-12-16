@@ -15,16 +15,24 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! The main API for routing nodes (this is where you give the network its rules)
+//! The API for routing nodes (this is where you give the network its rules)
 //!
 //! The network will report **from authority your authority** and validate cryptographically any
-//! message via group consensus. This means any facade you implement will set out what you deem to
-//! be a valid operation.  Routing will provide a valid message sender and authority that will allow
-//! you to set up many decentralised services.
+//! message via group consensus or direct (clients). This means any facade you implement
+//! will set out what you deem to be a valid operation.
+
+//! Routing will provide
+//! 1.  Valid message sender
+//! 2.  Confirmed from authority
+//! 3.  Confirmed your authhority
+//! 4.  Exaclty 1 copy of each message
+//!
+//! This should allow relatively easy set up many decentralised services. Setting rules for
+//! data types and what can be done wiht such types at differnt personas will allow a fairly complex
+//! network to be configured wiht relative ease.
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!
-//! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
