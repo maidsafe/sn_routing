@@ -87,6 +87,7 @@ fn calculate_key_name(key: &::std::string::String) -> ::xor_name::XorName {
 
 #[cfg(test)]
 mod test {
+    use routing::{PlainData, Data, DataRequest};
 
     #[test]
     fn start_stop_nodes() {
@@ -106,9 +107,7 @@ mod test {
         let value = ::std::string::String::from("value");
         let name = super::calculate_key_name(&key.clone());
         let data = unwrap_result!(::maidsafe_utilities::serialisation::serialise(&(key, value)));
-        let data =
-            ::routing::data::Data::PlainData(::routing::plain_data::PlainData::new(name.clone(),
-                                                                                   data));
+        let data = Data::PlainData(PlainData::new(name.clone(), data));
 
         debug!("Putting data {:?}", data);
         client.put(data.clone());
@@ -116,7 +115,7 @@ mod test {
         let interval = ::std::time::Duration::from_millis(5000);
         ::std::thread::sleep(interval);
 
-        let recovered_data = match client.get(::routing::data::DataRequest::PlainData(name)) {
+        let recovered_data = match client.get(DataRequest::PlainData(name)) {
             Some(data) => data,
             None => panic!("Failed to recover stored data: {}.", name),
         };

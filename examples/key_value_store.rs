@@ -56,15 +56,14 @@ use xor_name::XorName;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
-use routing::routing::Routing;
-use routing::routing_client::RoutingClient;
-use routing::authority::Authority;
-use routing::event::Event;
-use routing::data::{Data, DataRequest};
-use routing::plain_data::PlainData;
+use routing::Routing;
+use routing::RoutingClient;
+use routing::Authority;
+use routing::Event;
+use routing::{Data, DataRequest};
+use routing::PlainData;
 use routing::{RequestMessage, RequestContent, ResponseContent};
-use routing::id::FullId;
-use routing::id::PublicId;
+use routing::{FullId, PublicId};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -217,7 +216,7 @@ impl Node {
             }
             Authority::ClientManager(_) => {
                 match src {
-                    ::routing::authority::Authority::Client { client_key, .. } => {
+                    Authority::Client { client_key, .. } => {
                         let client_name = ::xor_name::XorName::new(
                             ::sodiumoxide::crypto::hash::sha512::hash(&client_key[..]).0);
                         *self.client_accounts

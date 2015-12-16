@@ -40,6 +40,8 @@ extern crate rand;
 extern crate time;
 extern crate routing;
 
+use routing::Event;
+
 #[allow(missing_docs)]
 pub fn main () {
     use rand::distributions::IndependentSample;
@@ -67,7 +69,7 @@ pub fn main () {
                 let sample = range.ind_sample(&mut rng);
                 if sample == 0 {
                     debug!("Stopping node.");
-                    let _ = sender.send(::routing::event::Event::Terminated);
+                    let _ = sender.send(Event::Terminated);
                     running = false;
                 }
                 time = ::time::SteadyTime::now();
