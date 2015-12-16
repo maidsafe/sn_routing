@@ -267,9 +267,10 @@ impl Node {
                 cause: cause,
             };
 
-            let _ = self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()), request_content);
+            unwrap_result!(self.routing.send_refresh_request(
+                Authority::ClientManager(client_name.clone()),
+                request_content));
         }
-        // self.db = BTreeMap::new();
     }
 
     fn handle_refresh(&mut self, src: Authority, vec_of_bytes: Vec<Vec<u8>>) {

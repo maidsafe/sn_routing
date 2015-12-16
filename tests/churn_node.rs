@@ -33,61 +33,60 @@
          missing_debug_implementations, variant_size_differences)]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
-extern crate maidsafe_utilities;
 extern crate rand;
 extern crate time;
+
+extern crate maidsafe_utilities;
 extern crate routing;
 
-use routing::Event;
-
-#[allow(missing_docs)]
+/// Run a routing node that generates churn.
 pub fn main () {
     use rand::distributions::IndependentSample;
 
-    ::maidsafe_utilities::log::init(true);
+    maidsafe_utilities::log::init(true);
 
-    let mut time = ::time::SteadyTime::now();
-    let runtime = ::time::Duration::minutes(5);
-    let stoptime = ::time::Duration::minutes(2);
-    let mut rng = ::rand::thread_rng();
-    let range = ::rand::distributions::Range::new(0, 20);
-    let mut node = ::routing::test_utils::node::Node::new();
+    let mut rng = rand::thread_rng();
+    let mut time = time::SteadyTime::now();
+    let minutes = rand::distributions::Range::new(1, 4);
+    let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
+    let sample = rand::distributions::Range::new(0, 5);
+    let mut node = routing::test_utils::node::Node::new();
     let mut sender = node.get_sender();
 
-    debug!("Running node.");
-    let _ = thread!("Initial churn node", move || node.run());
+    println!("Running node for {:?}", duration);
+    let _ = std::thread::spawn(move || node.run());
     let mut running = true;
 
-    debug!("Entering loop.");
+    println!("Entering loop.");
     loop {
         if running {
-            debug!("Node online.");
-            if time + runtime < ::time::SteadyTime::now() {
-                debug!("Reached run time.");
-                let sample = range.ind_sample(&mut rng);
-                if sample == 0 {
-                    debug!("Stopping node.");
-                    let _ = sender.send(Event::Terminated);
+            println!("Node online.");
+            if time + duration < time::SteadyTime::now() {
+                println!("Reached run time.");
+                let state = sample.ind_sample(&mut rng);
+                if state == 0 {
+                    let _ = sender.send(routing::Event::Terminated);
                     running = false;
+                    duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
+                    println!("Stopping node for {:?}", duration);
                 }
                 time = ::time::SteadyTime::now();
             }
         } else {
-            debug!("Node offline.");
-            if time + stoptime < ::time::SteadyTime::now() {
-                debug!("Reached stop time.");
-                node = ::routing::test_utils::node::Node::new();
+            println!("Node offline.");
+            if time + duration < ::time::SteadyTime::now() {
+                println!("Reached stop time.");
+                node = routing::test_utils::node::Node::new();
                 sender = node.get_sender();
-                debug!("Running node.");
-                let _ = thread!("Later churn node", move || node.run());
+                let _ = std::thread::spawn(move || node.run());
                 running = true;
-                time = ::time::SteadyTime::now();
+                duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
+                time = time::SteadyTime::now();
+                println!("Running node for {:?}", duration);
             }
         }
 
-        let interval = ::std::time::Duration::from_millis(10000);
-        ::std::thread::sleep(interval);
+        let interval = std::time::Duration::from_millis(10000);
+        std::thread::sleep(interval);
     }
 }

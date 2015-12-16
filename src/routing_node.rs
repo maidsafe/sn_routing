@@ -333,7 +333,7 @@ impl RoutingNode {
 
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
-                                      hop_name: &XorName)
+                                      _hop_name: &XorName)
                                       -> Result<(), RoutingError> {
         // Node Harvesting
         if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
@@ -363,11 +363,11 @@ impl RoutingNode {
                     return self.send(signed_msg.clone());
                 }
             }
-            if !::xor_name::closer_to_target(self.full_id.public_id().name(),
-                                             &hop_name,
-                                             signed_msg.content().dst().get_name()) {
-                return Err(RoutingError::DirectionCheckFailed);
-            }
+            // if !::xor_name::closer_to_target(self.full_id.public_id().name(),
+            //                                  &hop_name,
+            //                                  signed_msg.content().dst().get_name()) {
+            //     return Err(RoutingError::DirectionCheckFailed);
+            // }
         }
 
         // Cache handling

@@ -155,26 +155,12 @@ impl Node {
     }
 
     fn handle_churn(&mut self, our_close_group: Vec<XorName>) {
-        let mut exit = false;
-        if our_close_group.len() < ::kademlia_routing_table::group_size() {
-            if self.connected {
-                debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                       our_close_group.len(),
-                       ::kademlia_routing_table::group_size());
-                exit = true;
-            } else {
-                debug!("Ignoring churn as we are not yet connected.");
-                return;
-            }
-        }
-
         // FIXME Cause needs to get removed from refresh as well
         // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
         // just so that interface requirements are met
         let cause = ::rand::random::<XorName>();
 
-        debug!("Handle churn for close group size {:?}",
-               our_close_group.len());
+        debug!("Handle churn for close group size {:?}", our_close_group.len());
 
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
@@ -186,9 +172,6 @@ impl Node {
             unwrap_result!(self.routing.send_refresh_request(
                 Authority::ClientManager(client_name.clone()),
                 request_content));
-        }
-        if exit {
-            self.routing.stop();
         }
     }
 
