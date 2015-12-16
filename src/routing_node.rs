@@ -923,8 +923,6 @@ impl RoutingNode {
                 }
             }
             DirectMessage::Churn { ref close_group } => {
-                // Message needs signature validation
-                debug!("Churn received.");
                 self.handle_churn(close_group);
                 Ok(())
             }
