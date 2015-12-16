@@ -75,43 +75,37 @@ extern crate maidsafe_utilities;
 extern crate message_filter;
 extern crate kademlia_routing_table;
 
-mod acceptors;
+mod id;
+mod data;
+mod utils;
+mod event;
+mod error;
 mod action;
+mod routing;
 mod messages;
+mod authority;
+mod acceptors;
+mod plain_data;
 mod routing_node;
+mod immutable_data;
+mod routing_client;
+mod structured_data;
 mod refresh_accumulator;
 mod connection_management;
 
-/// Routing provides an actionable interface to routing.
-pub mod routing;
-/// Client interface to routing.
-pub mod routing_client;
-/// Event provides the events the user can expect to receive from routing.
-pub mod event;
-/// Utility structs and functions used during testing.
+/// TODO Remove this from public visibility
 pub mod test_utils;
 /// Types and functions used throughout the library.
 pub mod types;
-/// Network identity component containing public and private IDs.
-pub mod id;
-/// Commonly required functions.
-pub mod utils;
-/// Errors reported for failed conditions/operations.
-pub mod error;
-/// Persona types recognised by network.
-pub mod authority;
-/// StructuredData type.
-pub mod structured_data;
-/// ImmutableData type.
-pub mod immutable_data;
-/// PlainData type.
-pub mod plain_data;
-/// Data types used in messages.
-pub mod data;
 
-/// Message types defined by the library.
-pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-                   ResponseMessage, RequestContent, ResponseContent, Message};
-/// Persona types recognised by the network.
+pub use event::Event;
+pub use routing::Routing;
 pub use authority::Authority;
+pub use plain_data::PlainData;
 pub use id::{FullId, PublicId};
+pub use data::{Data, DataRequest};
+pub use routing_client::RoutingClient;
+pub use immutable_data::ImmutableData;
+pub use error::{RoutingError, InterfaceError};
+pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
+pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};

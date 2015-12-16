@@ -17,6 +17,7 @@
 
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
+
 use xor_name::XorName;
 
 /// StructuredData
