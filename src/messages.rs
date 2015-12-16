@@ -115,10 +115,6 @@ impl HopMessage {
     pub fn name(&self) -> &XorName {
         &self.name
     }
-    /// Return signed message fomr hop message
-    pub fn content(&self) -> &SignedMessage {
-        &self.content
-    }
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.

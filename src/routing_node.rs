@@ -242,8 +242,7 @@ impl RoutingNode {
 
             if self.state == State::Node {
                 trace!(" -----------------------------------");
-                trace!("| Routing Table size updated to: {}",
-                       self.routing_table.len());
+                trace!("| Routing Table size updated to: {}", self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
                 //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
                 //     true
@@ -412,11 +411,13 @@ impl RoutingNode {
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         if signed_msg.content().src().is_group() {
             // TODO validate unconfirmed node is a valid node in the network
-            if !self.routing_table
-                    .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
-                                                     signed_msg.public_id().name()) {
-                return Err(RoutingError::RoutingTableBucketIndexFailed);
-            }
+
+            // FIXME This check will need to get finalised in routing table
+            // if !self.routing_table
+            //         .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
+            //                                          signed_msg.public_id().name()) {
+            //     return Err(RoutingError::RoutingTableBucketIndexFailed);
+            // }
 
             Ok(())
         } else {

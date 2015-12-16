@@ -66,11 +66,6 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
     Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
 }
 
-/// Validate the incoming group of a group message
-pub fn bucket_index_range_confidence() -> bool {
-    true
-}
-
 #[cfg(test)]
 mod test {
     use rand;
