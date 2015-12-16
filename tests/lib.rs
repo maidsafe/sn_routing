@@ -26,41 +26,45 @@
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
+        unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations)]
+         missing_debug_implementations, variant_size_differences)]
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate maidsafe_utilities;
 extern crate routing;
 extern crate sodiumoxide;
-
+extern crate xor_name;
 use std::error::Error;
 
 fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
-    env_logger::init().unwrap_or_else(|e| println!("Error initialising logger: {:?}", e));
+    ::maidsafe_utilities::log::init(false);
     let mut processes = Vec::new();
     let executable_path = match std::env::current_exe() {
         Ok(mut exe_path) => {
             exe_path.pop();
-            std::path::Path::new("./target").join(exe_path.iter().last().unwrap()).join("node")
+            std::path::Path::new("./target")
+                .join(unwrap_option!(exe_path.iter().last(), ""))
+                .join("node")
         }
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
 
-    debug!("Expecting node executable at path {}", executable_path.to_path_buf().display());
+    debug!("Expecting node executable at path {}",
+           executable_path.to_path_buf().display());
 
     for i in 0..number_of_nodes {
-        processes.push(
-            match ::std::process::Command::new(
-                executable_path.to_path_buf()).stderr(::std::process::Stdio::piped()).spawn() {
-                    Err(e) => panic!("Failed to spawn process: {}", e.description()),
-                    Ok(process) => {
-                        debug!("Starting Node {:05}", process.id());
-                    	process
-                    }
-            });
+        processes.push(match ::std::process::Command::new(executable_path.to_path_buf())
+                                 .stderr(::std::process::Stdio::piped())
+                                 .spawn() {
+            Err(e) => panic!("Failed to spawn process: {}", e.description()),
+            Ok(process) => {
+                debug!("Starting Node {:05}", process.id());
+                process
+            }
+        });
         let interval = ::std::time::Duration::from_millis(1000 + i as u64 * 1000);
         ::std::thread::sleep(interval);
     }
@@ -71,24 +75,24 @@ fn start_nodes(number_of_nodes: u32) -> Vec<::std::process::Child> {
 }
 
 fn stop_nodes(processes: &mut Vec<::std::process::Child>) {
-	while let Some(mut process) = processes.pop() {
-		debug!("Stopping Node {:05}", process.id());
+    while let Some(mut process) = processes.pop() {
+        debug!("Stopping Node {:05}", process.id());
         let _ = process.kill();
     }
 }
 
-fn calculate_key_name(key: &::std::string::String) -> ::routing::NameType {
-    ::routing::NameType::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+fn calculate_key_name(key: &::std::string::String) -> ::xor_name::XorName {
+    ::xor_name::XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
 }
 
 #[cfg(test)]
 mod test {
 
-	#[test]
-	fn start_stop_nodes() {
+    #[test]
+    fn start_stop_nodes() {
         let mut nodes = super::start_nodes(3u32);
-		super::stop_nodes(&mut nodes);
-	}
+        super::stop_nodes(&mut nodes);
+    }
 
     #[test]
     #[ignore]
@@ -101,9 +105,10 @@ mod test {
         let key = ::std::string::String::from("key");
         let value = ::std::string::String::from("value");
         let name = super::calculate_key_name(&key.clone());
-        let data = ::routing::utils::encode(&(key, value)).unwrap();
-        let data = ::routing::data::Data::PlainData(
-            ::routing::plain_data::PlainData::new(name.clone(), data));
+        let data = unwrap_result!(::maidsafe_utilities::serialisation::serialise(&(key, value)));
+        let data =
+            ::routing::data::Data::PlainData(::routing::plain_data::PlainData::new(name.clone(),
+                                                                                   data));
 
         debug!("Putting data {:?}", data);
         client.put(data.clone());

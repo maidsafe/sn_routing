@@ -16,29 +16,32 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 /// HolePunchingState.
 #[allow(unused)]
 pub enum HolePunchingState {
-    /// Mapping(NameType)
-    Mapping(::NameType),
+    /// Mapping(XorName)
+    Mapping(XorName),
 
-    /// Connecting(NameType, UdpSocket, secret)
-    Connecting(::NameType, ::std::net::UdpSocket, Option<[u8; 4]>),
+    /// Connecting(XorName, UdpSocket, secret)
+    Connecting(XorName, ::std::net::UdpSocket, Option<[u8; 4]>),
 
-    /// Punching(NameType, UdpSocket, secret, number_of_failed_attempts)
-    Punching(::NameType, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
+    /// Punching(XorName, UdpSocket, secret, number_of_failed_attempts)
+    Punching(XorName, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
 
-    /// RendezvousConnecting(NameType, UdpSocket)
-    RendezvousConnecting(::NameType, ::std::net::UdpSocket)
+    /// RendezvousConnecting(XorName, UdpSocket)
+    RendezvousConnecting(XorName, ::std::net::UdpSocket),
 }
 
 #[cfg(test)]
 mod test {
     use rand;
-    
+    use xor_name::XorName;
+
     #[test]
     fn hole_punching_state() {
-        let name: ::NameType = rand::random();
+        let name: XorName = rand::random();
         let secret: Option<[u8; 4]> = None;
         let number_of_failed_attempts: u32 = 1;
 
@@ -51,10 +54,7 @@ mod test {
         match sr1 {
             Err(why) => panic!("{:?}", why),
             Ok(socket) => {
-                let connecting_state = super::HolePunchingState::Connecting(
-                    name,
-                    socket,
-                    secret);
+                let connecting_state = super::HolePunchingState::Connecting(name, socket, secret);
                 assert_match_state(connecting_state, false, true, false, false);
             }
         }
@@ -64,11 +64,10 @@ mod test {
         match sr2 {
             Err(why) => panic!("{:?}", why),
             Ok(socket) => {
-                let punching_state = super::HolePunchingState::Punching(
-                    name,
-                    socket,
-                    secret,
-                    number_of_failed_attempts);
+                let punching_state = super::HolePunchingState::Punching(name,
+                                                                        socket,
+                                                                        secret,
+                                                                        number_of_failed_attempts);
                 assert_match_state(punching_state, false, false, true, false);
             }
         }
@@ -78,26 +77,28 @@ mod test {
         match sr3 {
             Err(why) => panic!("{:?}", why),
             Ok(socket) => {
-                let rendezvous_state = super::HolePunchingState::RendezvousConnecting(
-                    name,
-                    socket);
+                let rendezvous_state = super::HolePunchingState::RendezvousConnecting(name, socket);
                 assert_match_state(rendezvous_state, false, false, false, true);
             }
         }
     }
 
-    fn assert_match_state(
-        state: ::connection_management::HolePunchingState,
-        is_mapping: bool,
-        is_connecting: bool,
-        is_punching: bool,
-        is_rendezvous_connecting: bool) {
+    fn assert_match_state(state: ::connection_management::HolePunchingState,
+                          is_mapping: bool,
+                          is_connecting: bool,
+                          is_punching: bool,
+                          is_rendezvous_connecting: bool) {
         match state {
             ::connection_management::HolePunchingState::Mapping(_) => assert!(is_mapping),
-            ::connection_management::HolePunchingState::Connecting(_,_,_) => assert!(is_connecting),
-            ::connection_management::HolePunchingState::Punching(_,_,_,_) => assert!(is_punching),
-            ::connection_management::HolePunchingState::RendezvousConnecting(_,_) =>
-                assert!(is_rendezvous_connecting),
+            ::connection_management::HolePunchingState::Connecting(_, _, _) => {
+                assert!(is_connecting)
+            }
+            ::connection_management::HolePunchingState::Punching(_, _, _, _) => {
+                assert!(is_punching)
+            }
+            ::connection_management::HolePunchingState::RendezvousConnecting(_, _) => {
+                assert!(is_rendezvous_connecting)
+            }
         }
     }
 }

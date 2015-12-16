@@ -15,486 +15,333 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ConnectRequest {
-    pub endpoints: Vec<::crust::Endpoint>,
-    pub public_id: ::public_id::PublicId,
+use data::{Data, DataRequest};
+use id::{PublicId, FullId};
+use xor_name::XorName;
+use error::RoutingError;
+use sodiumoxide::crypto::{box_, sign, hash};
+use authority::Authority;
+use maidsafe_utilities::serialisation::serialise;
+use rustc_serialize::{Decoder, Encoder};
+
+/// Wrapper of all messages.
+/// This is the only type allowed to be sent / received on the network
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub enum Message {
+    /// A message sent between w nodes directly
+    DirectMessage(DirectMessage),
+    /// A message ent across the network (in transit)
+    HopMessage(HopMessage),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct ConnectResponse {
-    pub endpoints: Vec<::crust::Endpoint>,
-    pub public_id: ::public_id::PublicId,
+/// Messages sent direct to a node
+/// Allows routing to directly send specific messages between nodes
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub enum DirectMessage {
+    /// Sent from bootstrap node to client
+    BootstrapIdentify {
+        /// keys and clamed name
+        public_id: ::id::PublicId,
+        /// quorum size, dynamically calculated
+        current_quorum_size: usize,
+    },
+    /// Sent form client -> bootstrap node
+    ClientIdentify {
+        /// keys and claimed name. Serialised outside routing
+        serialised_public_id: Vec<u8>,
+        /// Signature of the originator of this message
+        signature: sign::Signature,
+    },
+    /// Sent form a node to a node
+    NodeIdentify {
+        /// keys and claimed name, serialised outside routing
+        serialised_public_id: Vec<u8>,
+        /// Signature of the originator of this message
+        signature: sign::Signature,
+    },
+    /// If  our close group changes, tell all our close group memebers of change
+    /// They may be interested in some id's for harvesting
+    /// Importantly this wil allow nodes to `see` nodes in their clsoe group vanish
+    /// even they do not have an actual connection (i.e. both behind symmetric NAT)
+    Churn {
+        /// Close group (to self) as calculated by a node.
+        close_group: Vec<XorName>,
+    },
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-/// SignedToken.
-pub struct SignedToken {
-    /// Encoded request to be signed.
-    pub serialised_request: Vec<u8>,
-    /// Signature of the serialised_request signed by secret sign key.
-    pub signature: ::sodiumoxide::crypto::sign::Signature,
+/// A wrapper for all messages sent form node to node.
+/// Allows nodes to be sure there has been no alteration of message in transit. Also defeats
+/// MiTM attacks
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub struct HopMessage {
+    /// wrapped signed message
+    content: SignedMessage,
+    /// name claimed to have sent hop message
+    name: XorName,
+    /// signatire to be validated against public key held by name
+    signature: sign::Signature,
 }
 
-impl SignedToken {
-
-    /// Verify the request was signed by the secret key corresponding to the passed in public key. 
-    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-            -> bool {
-        ::sodiumoxide::crypto::sign::verify_detached(
-            &self.signature, &self.serialised_request, &public_sign_key)
+impl HopMessage {
+    /// Wrap a signed message for transmission to next hop.
+    pub fn new(content: SignedMessage,
+               name: XorName,
+               sign_key: &sign::SecretKey)
+               -> Result<HopMessage, RoutingError> {
+        let bytes_to_sign = try!(serialise(&(&content, &name)));
+        Ok(HopMessage {
+            content: content,
+            name: name,
+            signature: sign::sign_detached(&bytes_to_sign, sign_key),
+        })
     }
-}
-
-impl ::std::fmt::Debug for SignedToken {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        formatter.write_str(&format!("SignedToken"))
-    }
-}
-
-/// These are the message types routing provides.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-/// ExternalRequest.
-pub enum ExternalRequest {
-    /// Request to get data from the network.
-    Get(::data::DataRequest, u8),
-    /// Request to put data onto the network.
-    Put(::data::Data),
-    /// Request to mutate data on the network.
-    Post(::data::Data),
-    /// Request to delete data from the network.
-    Delete(::data::Data),
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-/// ExternalResponse.
-pub enum ExternalResponse {
-    // TODO: Applies to Get: Technical depth: if the third param here is Some(...) then
-    // the it shares most of the data with the second argument, which
-    // needlessly increases bandwidth.
-
-    /// Response to get data request.
-    Get(::data::Data, ::data::DataRequest, Option<SignedToken>),
-    /// Response to put data request on error.
-    Put(::error::ResponseError, Option<SignedToken>),
-    /// Response to post data request on error.
-    Post(::error::ResponseError, Option<SignedToken>),
-    /// Response to delete data request on error.
-    Delete(::error::ResponseError, Option<SignedToken>),
-}
-
-impl ExternalResponse {
-
-    /// If the *request* was from a group entity, then there is no signed token.
-    pub fn get_signed_token(&self) -> &Option<SignedToken> {
-        match *self {
-            ExternalResponse::Get(_, _, ref r) => r,
-            ExternalResponse::Put(_, ref r) => r,
-            ExternalResponse::Post(_, ref r) => r,
-            ExternalResponse::Delete(_, ref r) => r,
+    /// Validate message is signed by public key contained in message.
+    /// this does not validate the message came from know node. That requires a check against
+    /// the routing table of the node to identify the name associated with the PublicKey
+    pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
+        let signed_bytes = try!(serialise(&(&self.content, &self.name)));
+        if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
         }
     }
+    /// return a signed message, does not validate message. [#verify] must be called prior
+    /// to ensure sender is valid and validly signed he message
+    pub fn extract(&self) -> (SignedMessage, XorName) {
+        (self.content.clone(), self.name.clone())
+    }
+    /// The name asociated with te hop message.
+    pub fn name(&self) -> &XorName {
+        &self.name
+    }
+    /// Return signed message fomr hop message
+    pub fn content(&self) -> &SignedMessage {
+        &self.content
+    }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum InternalRequest {
-    Connect(ConnectRequest),
-    RequestNetworkName(::public_id::PublicId),
-    // a client can send RequestNetworkName
-    CacheNetworkName(::public_id::PublicId, SignedToken),
-    //               ~~|~~~~~  ~~|~~~~~~~~
-    //                 |         | SignedToken contains Request::RequestNetworkName and needs to
-    //                 |         | be forwarded in the Request::CacheNetworkName;
-    //                 |         | from it the original reply to authority can be read.
-    //                 | contains the PublicId from RequestNetworkName, but mutated with
-    //                 | the network assigned name
-    /// Refresh allows a persona to republish account records (identified with type_tag:u64 and
-    /// the serialised payload:Vec<u8>).  The cause of the Refresh is the NameType of the node
-    /// that caused the churn event.
-    Refresh(u64, Vec<u8>, ::NameType),
+/// Wrapper around a routing message, signed by the originator of the message.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub struct SignedMessage {
+    /// A request or response type message.
+    content: RoutingMessage,
+    /// Claimed public_id of a node/client. If cline then it is self verifyable. For nodes we need
+    /// to confirm this PublicId via a network message to the group of the claimed name.
+    public_id: PublicId,
+    signature: sign::Signature,
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum InternalResponse {
-    Connect(ConnectResponse, SignedToken),
-    // FindGroup(Vec<::public_id::PublicId>, SignedToken),
-    // GetGroupKey(::std::collections::BTreeMap<
-    //      ::NameType, ::sodiumoxide::crypto::sign::PublicKey>, SignedToken),
-    CacheNetworkName(::public_id::PublicId, Vec<::public_id::PublicId>, SignedToken),
-    //               ~~|~~~~~  ~~|~~~~~~~~~~  ~~|~~~~~~~~
-    //                 |         |              | the original Request::RequestNetworkName
-    //                 |         | the group public keys to combine FindGroup in this response
-    //                 | the cached PublicId in the group
+impl SignedMessage {
+    /// Construct a signed message wrapper around a routing message.
+    pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
+        let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
+        Ok(SignedMessage {
+            content: content,
+            public_id: full_id.public_id().clone(),
+            signature: sign::sign_detached(&bytes_to_sign, full_id.signing_private_key()),
+        })
+    }
+    /// confirm signature against `claimed` PublicId contained in signed message
+    pub fn check_integrity(&self) -> Result<(), RoutingError> {
+        let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
+        if sign::verify_detached(&self.signature,
+                                 &signed_bytes,
+                                 self.public_id().signing_public_key()) {
+            Ok(())
+        } else {
+            Err(RoutingError::FailedSignature)
+        }
+    }
+
+    /// The routing message that was singed.
+    pub fn content(&self) -> &RoutingMessage {
+        &self.content
+    }
+
+    /// PublicId associated with the signed message
+    pub fn public_id(&self) -> &PublicId {
+        &self.public_id
+    }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub enum Content {
-    ExternalRequest(ExternalRequest),
-    InternalRequest(InternalRequest),
-    ExternalResponse(ExternalResponse),
-    InternalResponse(InternalResponse),
-}
-
-/// the bare (unsigned) routing message
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct RoutingMessage {
-    // version_number     : u8
-    pub from_authority: ::authority::Authority,
-    pub to_authority: ::authority::Authority,
-    pub content: Content,
+/// Variant type to old `either` a request or response
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum RoutingMessage {
+    /// outgoing RPC type message.
+    Request(RequestMessage),
+    /// Incoming answer to request RPC.
+    Response(ResponseMessage),
 }
 
 impl RoutingMessage {
-
-    #[allow(dead_code)]
-    pub fn source(&self) -> ::authority::Authority {
-        self.from_authority.clone()
-    }
-
-    pub fn destination(&self) -> ::authority::Authority {
-        self.to_authority.clone()
-    }
-
-    pub fn client_key(&self) -> Option<::sodiumoxide::crypto::sign::PublicKey> {
-        match self.from_authority {
-            ::authority::Authority::ClientManager(_) => None,
-            ::authority::Authority::NaeManager(_) => None,
-            ::authority::Authority::NodeManager(_) => None,
-            ::authority::Authority::ManagedNode(_) => None,
-            ::authority::Authority::Client(_, key) => Some(key),
+    /// Return source authority of routing message.
+    pub fn src(&self) -> &Authority {
+        match *self {
+            RoutingMessage::Request(ref msg) => &msg.src,
+            RoutingMessage::Response(ref msg) => &msg.src,
         }
     }
-
-    pub fn client_key_as_name(&self) -> Option<::NameType> {
-        self.client_key().map(|n| ::utils::public_key_to_client_name(&n))
-    }
-
-    pub fn from_group(&self) -> Option<::NameType> {
-        match self.from_authority {
-            ::authority::Authority::ClientManager(name) => Some(name),
-            ::authority::Authority::NaeManager(name) => Some(name),
-            ::authority::Authority::NodeManager(name) => Some(name),
-            ::authority::Authority::ManagedNode(_) => None,
-            ::authority::Authority::Client(_, _) => None,
+    /// Return destination authority of routing message.
+    pub fn dst(&self) -> &Authority {
+        match *self {
+            RoutingMessage::Request(ref msg) => &msg.dst,
+            RoutingMessage::Response(ref msg) => &msg.dst,
         }
     }
 }
 
-/// All messages sent / received are constructed as signed message.
-#[derive(PartialEq, Eq, Clone, Debug, RustcEncodable, RustcDecodable)]
-pub struct SignedMessage {
-    body: RoutingMessage,
-    claimant: ::types::Address,
-    //          when signed by Client(PublicKey) the data needs to contain it as an owner
-    //          when signed by a Node(NameType), Sentinel needs to validate the signature
-    random_bits: u8,
-    signature: ::sodiumoxide::crypto::sign::Signature,
+/// A request message wrapper
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub struct RequestMessage {
+    /// Source address and persona type
+    pub src: Authority,
+    /// Destination target address (may be a group)
+    pub dst: Authority,
+    /// Varient of request types
+    pub content: RequestContent,
 }
 
-#[allow(unused)]
-impl SignedMessage {
-    pub fn new(claimant: ::types::Address,
-               message: RoutingMessage,
-               private_sign_key: &::sodiumoxide::crypto::sign::SecretKey)
-               -> Result<SignedMessage, ::cbor::CborError> {
-        use ::rand::Rng;
-
-        let mut rng = ::rand::thread_rng();
-        let random_bits = rng.gen::<u8>();
-        let encoded_body = try!(::utils::encode(&(&message, &claimant, &random_bits)));
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, private_sign_key);
-
-        Ok(SignedMessage { body: message, claimant: claimant,
-            random_bits: random_bits, signature: signature })
-    }
-
-    /// Construct a signed message passing in the signature.
-    pub fn with_signature(claimant: ::types::Address,
-                          message: RoutingMessage,
-                          random_bits: u8,
-                          signature: ::sodiumoxide::crypto::sign::Signature)
-                          -> Result<SignedMessage, ::cbor::CborError> {
-
-        Ok(SignedMessage { body: message, claimant: claimant,
-              random_bits: random_bits, signature: signature })
-    }
-
-    /// Construct a signed message from a signed token.
-    pub fn new_from_token(signed_token: SignedToken) -> Result<SignedMessage, ::cbor::CborError> {
-        let (message, claimant, random_bits) =
-            try!(::utils::decode(&signed_token.serialised_request));
-
-        Ok(SignedMessage { body: message, claimant: claimant,
-            random_bits: random_bits, signature: signed_token.signature })
-    }
-
-    /// Verify the signature using the given public key.
-    pub fn verify_signature(&self, public_sign_key: &::sodiumoxide::crypto::sign::PublicKey)
-            -> bool {
-        let encoded_body = match ::utils::encode(&(&self.body, &self.claimant, &self.random_bits)) {
-            Ok(x) => x,
-            Err(_) => return false,
-        };
-
-        ::sodiumoxide::crypto::sign::verify_detached(
-            &self.signature, &encoded_body, public_sign_key)
-    }
-
-    /// Return the internal routing message.
-    pub fn get_routing_message(&self) -> &RoutingMessage {
-        &self.body
-    }
-
-    /// Return the signature.
-    pub fn signature(&self) -> &::sodiumoxide::crypto::sign::Signature {
-        &self.signature
-    }
-
-    /// Return the encoded unsigned body of the message.
-    pub fn encoded_body(&self) -> Result<Vec<u8>, ::cbor::CborError> {
-        ::utils::encode(&(&self.body, &self.claimant, &self.random_bits))
-    }
-
-    /// Return the associated signed token.
-    pub fn as_token(&self) -> Result<SignedToken, ::cbor::CborError> {
-        Ok(SignedToken {
-                serialised_request: try!(self.encoded_body()),
-                signature: self.signature().clone(),
-            })
-    }
-
-    /// Return the message claimant.
-    pub fn claimant(&self) -> &::types::Address {
-        &self.claimant
-    }
+/// A response message wrapper
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub struct ResponseMessage {
+    /// Source address and persona type
+    pub src: Authority,
+    /// Destination target address (may be a group)
+    pub dst: Authority,
+    /// varient of response types
+    pub content: ResponseContent,
 }
 
-
-#[cfg(test)]
-mod test{
-    use rand;
-
-    #[test]
-    fn signed_message_new() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let signed_message =
-            super::SignedMessage::new(claimant.clone(), routing_message.clone(), &keys.1);
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let encoded_body = signed_message.encoded_body();
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-
-        assert_eq!(signed_message.signature(), &signature);
-        assert!(signed_message.verify_signature(&keys.0));
-    }
-
-    #[test]
-    fn invalid_signed_message_new() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signed_message =
-            super::SignedMessage::new(claimant.clone(), routing_message.clone(), &invalid_keys.1);
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let encoded_body = signed_message.encoded_body();
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-
-        assert!(signed_message.signature() != &signature);
-        assert!(!signed_message.verify_signature(&keys.0));
-    }
-
-    #[test]
-    fn signed_message_with_signature() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-        let signed_message = super::SignedMessage::with_signature(
-                claimant.clone(), routing_message.clone(), random_bits, signature);
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
-
-        assert_eq!(signed_message.signature(), &signature);
-        assert!(signed_message.verify_signature(&keys.0));
-    }
-
-    #[test]
-    fn invalid_signed_message_with_signature() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &invalid_keys.1);
-        let signed_message = super::SignedMessage::with_signature(
-                claimant.clone(), routing_message.clone(), random_bits, signature);
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
-
-        assert!(signed_message.signature() != &signature);
-        assert!(!signed_message.verify_signature(&keys.0));
-    }
-
-    #[test]
-    fn signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let signature = ::sodiumoxide::crypto::sign::sign_detached(&encoded_body, &keys.1);
-        let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(), signature:  signature
-        };
-        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
-
-        assert_eq!(signed_message.signature(), &signature);
-        assert!(signed_message.verify_signature(&keys.0));
-
-        let signed_message_as_token = signed_message.as_token();
-
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
-    }
-
-    #[test]
-    fn invalid_signed_message_new_from_token() {
-        let claimant = ::types::Address::Node(rand::random());
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let routing_message =
-            ::test_utils::messages_util::arbitrary_routing_message(&keys.0, &keys.1);
-        let random_bits: u8 = rand::random();
-        let encoded_body = ::utils::encode(&(&routing_message, &claimant, &random_bits));
-
-        assert!(encoded_body.is_ok());
-
-        let encoded_body = encoded_body.unwrap();
-        let invalid_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&encoded_body.clone(), &invalid_keys.1);
-        let signed_token = super::SignedToken {
-            serialised_request: encoded_body.clone(), signature:  signature
-        };
-        let signed_message = super::SignedMessage::new_from_token(signed_token.clone());
-
-        assert!(signed_message.is_ok());
-
-        let signed_message = signed_message.unwrap();
-
-        assert_eq!(signed_message.get_routing_message(), &routing_message);
-        assert_eq!(signed_message.claimant(), &claimant);
-
-        let signed_message_encoded_body = signed_message.encoded_body();
-
-        assert!(signed_message_encoded_body.is_ok());
-
-        let signed_message_encoded_body = signed_message_encoded_body.unwrap();
-
-        assert_eq!(signed_message_encoded_body, encoded_body);
-
-        let signature =
-                ::sodiumoxide::crypto::sign::sign_detached(&signed_message_encoded_body, &keys.1);
-
-        assert!(signed_message.signature() != &signature);
-        assert!(!signed_message.verify_signature(&keys.0));
-
-        let signed_message_as_token = signed_message.as_token();
-
-        assert!(signed_message_as_token.is_ok());
-        assert_eq!(signed_message_as_token.unwrap(), signed_token);
-    }
+/// types of requests allowed on network
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum RequestContent {
+    // ---------- Internal ------------
+    /// Ask network to alter your PublciId name and forward to appropriate group
+    /// Client -> NaeManager
+    GetNetworkName {
+        /// Your PublicId (public keys and name)
+        current_id: PublicId,
+    },
+    /// Receiving group of relocatted name will get this message
+    ExpectCloseNode {
+        /// Your PublicId (public keys and name)
+        expect_id: PublicId,
+    },
+    /// Ask each memeber of a group near an address for the PublicId of that node
+    GetCloseGroup,
+    /// Request a connection to this node
+    Connect,
+    /// Send our endpoints encrypted toa node we wish to connect to and have the keys for
+    Endpoints {
+        /// encrypted crust endpoints (socket addr and protocol)
+        encrypted_endpoints: Vec<u8>,
+        /// nonce used to provide a salt in the encrytped message
+        nonce_bytes: [u8; box_::NONCEBYTES],
+    },
+    /// Ask each memeber of a group near a node address for the PublicId
+    GetPublicId,
+    /// Ask for a publicId but provide our endpoints encrytped
+    GetPublicIdWithEndpoints {
+        /// encrypted crust endpoints (socket addr and protocol)
+        encrypted_endpoints: Vec<u8>,
+        /// nonce used to provide a salt in the encrytped message
+        nonce_bytes: [u8; box_::NONCEBYTES],
+    },
+    /// Message from upper layers sending network state on any network churn event
+    Refresh {
+        /// externally defined type identifier
+        type_tag: u64,
+        /// externally defined message
+        message: Vec<u8>,
+        /// The node that caused the churn event.
+        /// Used here (passed up to upper layers in churn event) who must give it back in
+        /// which allows filtering of different churn events (used as unique identifier)
+        cause: XorName,
+    },
+    // ---------- External ------------
+    /// Ask for data from network, passed from API with data name as parameter
+    Get(DataRequest),
+    /// Put data to network. Provide actual data as parameter
+    Put(Data),
+    /// Post data to network. Provide actual data as parameter
+    Post(Data),
+    /// Delete data from network. Provide actual data as parameter
+    Delete(Data),
+}
+
+/// Types of respnses to exepect on the network.
+/// All responses will map to a specific request and where request was from a single node
+/// or client the response will contatin the singed request. This prevents forgery or co-ersion
+/// attacks.
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum ResponseContent {
+    // ---------- Internal ------------
+    /// Reply with the altered publicId
+    /// NaeManager -> Client
+    GetNetworkName {
+        /// Supplied publicId with name altered
+        relocated_id: PublicId,
+    },
+    /// Reply with the requested PublciId
+    /// NodeManager -> Client | ManagedNode
+    GetPublicId {
+        /// The relocatted PublciId
+        public_id: PublicId,
+    },
+    /// Send our publicId along with senders encrypted endpoints bak to sender
+    /// ManagedNode -> ManagedNode | client
+    GetPublicIdWithEndpoints {
+        /// Our publicId
+        public_id: PublicId,
+        /// their endpoints
+        encrypted_endpoints: Vec<u8>,
+        /// message salt
+        nonce_bytes: [u8; box_::NONCEBYTES],
+    },
+    /// Return the close PublicId's back to requestor
+    /// NodeManager -> client | ManagedNode
+    GetCloseGroup {
+        /// Our close group publci Id's
+        close_group_ids: Vec<PublicId>,
+    },
+    // ---------- External ------------
+    /// Should not be ignored. The data requested sent back
+    /// (ManagedNode (cache) | NaeManagers) -> client
+    /// ManagedNode -> NaeManagers
+    GetSuccess(Data),
+    /// Success token for Put (may be ignored)
+    PutSuccess(hash::sha512::Digest),
+    /// Success token for Post  (may be ignored)
+    PostSuccess(hash::sha512::Digest),
+    /// Success token for delete  (may be ignored)
+    DeleteSuccess(hash::sha512::Digest),
+    /// Error for Get, includes signed request to prevent injection attacks
+    GetFailure {
+        /// Originators signed reuest
+        request: RequestMessage,
+        /// Error type sent back, may be injected form upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for Put, includes signed request to prevent injection attacks
+    PutFailure {
+        /// Originators signed reuest
+        request: RequestMessage,
+        /// Error type sent back, may be injected form upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for Post, includes signed request to prevent injection attacks
+    PostFailure {
+        /// Originators signed reuest
+        request: RequestMessage,
+        /// Error type sent back, may be injected form upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for delete, includes signed request to prevent injection attacks
+    DeleteFailure {
+        /// Originators signed reuest
+        request: RequestMessage,
+        /// Error type sent back, may be injected form upper layers
+        external_error_indicator: Vec<u8>,
+    },
 }

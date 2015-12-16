@@ -26,11 +26,11 @@ pub use self::node::*;
 pub use self::client::*;
 pub use self::messages_util::*;
 
-use NameType;
+use xor_name::XorName;
 
-/// Return XOR of two NameType's.
-pub fn xor(lhs: &NameType, rhs: &NameType) -> NameType {
-    let mut result = NameType::new([0u8; 64]);
+/// Return XOR of two XorName's.
+pub fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
+    let mut result = XorName::new([0u8; 64]);
     for i in 0..lhs.0.len() {
         result.0[i] = lhs.0[i] ^ rhs.0[i];
     }

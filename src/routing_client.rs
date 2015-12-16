@@ -17,27 +17,27 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc;
-use std::thread::spawn;
+use std::sync::mpsc::{Sender, Receiver, channel};
 
-use id::Id;
+use id::FullId;
 use action::Action;
 use event::Event;
 use routing_node::RoutingNode;
 use data::{Data, DataRequest};
-use error::RoutingError;
+use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use messages::{ExternalRequest, Content};
+use messages::RequestContent;
 
 type RoutingResult = Result<(), RoutingError>;
 
 /// Routing provides an actionable interface to RoutingNode.  On constructing a new Routing object a
 /// RoutingNode will also be started. Routing objects are clonable for multithreading, or a Routing
 /// object can be cloned with a new set of keys while preserving a single RoutingNode.
-#[derive(Clone)]
 pub struct RoutingClient {
-    action_sender: mpsc::Sender<Action>,
-    get_counter: u8,
+    interface_result_tx: Sender<Result<(), InterfaceError>>,
+    interface_result_rx: Receiver<Result<(), InterfaceError>>,
+    action_sender: ::types::RoutingActionSender,
+    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
 impl RoutingClient {
@@ -46,58 +46,64 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: mpsc::Sender<Event>, keys: Option<Id>) -> RoutingClient {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>)
+               -> Result<RoutingClient, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
-        let (action_sender, action_receiver) = mpsc::channel::<Action>();
-
         // start the handler for routing with a restriction to become a full node
-        let mut routing_node =
-            RoutingNode::new(action_sender.clone(), action_receiver, event_sender, true, keys);
+        let (action_sender, raii_joiner) = try!(RoutingNode::new(event_sender, true, keys));
 
-        let _ = spawn(move || {
-            debug!("Started routing client run().");
-            routing_node.run();
-            debug!("Routing client node terminated running.");
-        });
+        let (tx, rx) = channel();
 
-        RoutingClient { action_sender: action_sender, get_counter: 0u8 }
+        Ok(RoutingClient {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            _raii_joiner: raii_joiner,
+        })
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn get_request(&mut self, location: Authority, data_request: DataRequest) {
-        self.get_counter = self.get_counter.wrapping_add(1);
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                Content::ExternalRequest(
-                    ExternalRequest::Get(data_request, self.get_counter))));
+    pub fn send_get_request(&mut self,
+                            dst: Authority,
+                            data_request: DataRequest)
+                            -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Get(data_request), dst)
     }
 
     /// Add something to the network
-    pub fn put_request(&self, location: Authority, data: Data) {
-        debug!("Received put request from Client for {:?}", data);
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                Content::ExternalRequest(ExternalRequest::Put(data))));
+    pub fn send_put_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Put(data), dst)
     }
 
     /// Change something already on the network
-    pub fn post_request(&self, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                Content::ExternalRequest(ExternalRequest::Post(data))));
+    pub fn send_post_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Post(data), dst)
     }
 
     /// Remove something from the network
-    pub fn delete_request(&self, location: Authority, data: Data) {
-        let _ = self.action_sender.send(Action::ClientSendContent(
-                location,
-                Content::ExternalRequest(ExternalRequest::Delete(data))));
+    pub fn send_delete_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        self.send_action(RequestContent::Delete(data), dst)
     }
 
-    /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
-    /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    pub fn stop(&mut self) {
-        let _ = self.action_sender.send(Action::Terminate);
+    fn send_action(&self, content: RequestContent, dst: Authority) -> Result<(), InterfaceError> {
+        let action = Action::ClientSendRequest {
+            content: content,
+            dst: dst,
+            result_tx: self.interface_result_tx.clone(),
+        };
+
+        try!(self.action_sender.send(action));
+
+        try!(self.interface_result_rx.recv())
+    }
+}
+
+impl Drop for RoutingClient {
+    fn drop(&mut self) {
+        if let Err(err) = self.action_sender.send(Action::Terminate) {
+            error!("Error {:?} sending event to RoutingNode", err);
+        }
     }
 }

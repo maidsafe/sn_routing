@@ -15,31 +15,44 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use authority::Authority;
+use error::InterfaceError;
+use std::sync::mpsc::Sender;
+use messages::{RoutingMessage, RequestContent};
+
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
 ///       for it to be sent on across the network.
 ///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
 ///       pending events should be handled.
 ///       After completion RoutingNode will send Event::Terminated.
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(unused)]
+#[derive(Clone)]
 pub enum Action {
-    SendMessage(::messages::SignedMessage),
-    //          ~~|~~~~~~~~~~
-    //            | a fully signed message with a given claimant
-    SendContent(::authority::Authority, ::authority::Authority, ::messages::Content),
-    SendConfirmationHello(::crust::Connection, ::types::Address),
-    RequestNetworkName(::authority::Authority, ::messages::Content),
-    ClientSendContent(::authority::Authority, ::messages::Content),
-    //          ~~|~~~~~~  ~~|~~~~
-    //            |          | the bare content for a message to be formed
-    //            | the destination authority
-    // RoutingNode will form the RoutingMessage and sign it as its own identity
-    Churn(::direct_messages::Churn, Vec<::crust::Connection>, ::NameType),
-    SetCacheOptions(::types::CacheOptions),
-    DropConnections(Vec<::crust::Connection>),
-    MatchConnection(Option<(::routing_node::ExpectedConnection, Option<::crust::Connection>)>,
-                    Option<(::crust::Connection, Option<::direct_messages::Hello>)>),
-    Rebootstrap,
+    NodeSendMessage {
+        content: RoutingMessage,
+        result_tx: Sender<Result<(), InterfaceError>>,
+    },
+    ClientSendRequest {
+        content: RequestContent,
+        dst: Authority,
+        result_tx: Sender<Result<(), InterfaceError>>,
+    },
     Terminate,
+}
+
+impl ::std::fmt::Debug for Action {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            Action::NodeSendMessage { ref content, .. } => {
+                write!(f, "Action::NodeSendMessage {{ {:?}, result_tx }}", content)
+            }
+            Action::ClientSendRequest { ref content, ref dst, .. } => {
+                write!(f,
+                       "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
+                       content,
+                       dst)
+            }
+            Action::Terminate => write!(f, "Action::Terminate"),
+        }
+    }
 }
