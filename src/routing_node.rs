@@ -242,7 +242,8 @@ impl RoutingNode {
 
             if self.state == State::Node {
                 trace!(" -----------------------------------");
-                trace!("| Routing Table size updated to: {}", self.routing_table.len());
+                trace!("| Routing Table size updated to: {}",
+                       self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
                 //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
                 //     true
