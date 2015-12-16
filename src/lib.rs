@@ -22,9 +22,13 @@
 //! will set out what you deem to be a valid operation.
 
 //! Routing will provide
+//!
 //! 1.  Valid message sender
+//!
 //! 2.  Confirmed from authority
+//!
 //! 3.  Confirmed your authhority
+//!
 //! 4.  Exaclty 1 copy of each message
 //!
 //! This should allow relatively easy set up many decentralised services. Setting rules for
