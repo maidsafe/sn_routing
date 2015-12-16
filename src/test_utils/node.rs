@@ -19,6 +19,7 @@
 use authority::Authority;
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
                ResponseMessage, RequestContent, ResponseContent, Message};
+use maidsafe_utilities::serialisation::serialise;
 
 /// Network Node.
 pub struct Node {
@@ -179,11 +180,12 @@ impl Node {
 
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
-            self.routing
-                .send_refresh_request(1u64,
-                                 Authority::ClientManager(client_name.clone()),
-                                 unwrap_result!(::utils::encode(&stored)),
-                                 cause);
+            let request_content = RequestContent::Refresh {
+                type_tag: 1u64,
+                message: serialise(&stored).unwrap(),
+                cause: cause,
+            };
+            self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()), request_content);
         }
         if exit {
             self.routing.stop();
@@ -220,9 +222,13 @@ impl Node {
                            client_name,
                            stored,
                            cause);
-                    self.routing.send_refresh_request(1u64,
-                            Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::utils::encode(&stored)), cause.clone());
+
+                    let request_content = RequestContent::Refresh {
+                        type_tag: 1u64,
+                        message: serialise(&stored).unwrap(),
+                        cause: cause,
+                    };
+                    self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()), request_content);
                 },
                 None => (),
             }

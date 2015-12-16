@@ -33,39 +33,37 @@ impl RefreshAccumulator {
 
     // The first return value is true if this represents the first instance of a new refresh
     // request.  The second return value is `None` if we have accumulated < `threshold` instances of
-    // the request, otherwise it is the accumulated collection of payloads for the request.
+    // the request, otherwise it is the accumulated collection of messsages for the request.
     pub fn add_message(&mut self,
                        threshold: usize,
                        type_tag: u64,
-                       sender_node: ::XorName,
-                       sender_group: ::authority::Authority,
-                       payload: Vec<u8>,
-                       cause: ::XorName)
+                       messsage: Vec<u8>,
+                       cause: ::XorName,
+                       // src_name: ::XorName,
+                       dst: ::authority::Authority)
                        -> (bool, Option<Vec<Vec<u8>>>) {
-        debug!("RefreshAccumulator for {:?} caused by {:?}",
-               sender_group,
-               cause);
-        let request = (sender_group, type_tag, cause);
-        // if this is the first instance of a new refresh request
+        debug!("RefreshAccumulator for {:?} caused by {:?}", dst, cause);
+        let request = (dst, type_tag, cause);
+        // Is this is the first instance of a new refresh request.
         let first_request = !self.requests.contains_key(&request);
         if threshold <= 1 {
-            return (first_request, Some(vec![payload]));
+            return (first_request, Some(vec![messsage]));
         }
 
-        let mut payloads = None;
+        let mut messsages = None;
         {
             let map = self.requests
                           .entry(request.clone())
                           .or_insert_with(::std::collections::HashMap::new);
-            let _ = map.insert(sender_node, payload);
+            // let _ = map.insert(src_name, messsage);
             if map.len() >= threshold {
-                payloads = Some(map.iter().map(|(_, msg)| msg.clone()).collect());
+                messsages = Some(map.iter().map(|(_, msg)| msg.clone()).collect());
             }
         }
-        if payloads.is_some() {
+        if messsages.is_some() {
             let _ = self.requests.remove(&request);
         }
-        (first_request, payloads)
+        (first_request, messsages)
     }
 }
 

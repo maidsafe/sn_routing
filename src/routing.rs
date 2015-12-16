@@ -171,26 +171,14 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
     pub fn send_refresh_request(&self,
-                           _type_tag: u64,
-                           _src: Authority,
-                           _content: Vec<u8>,
-                           _cause: ::XorName) -> Result<(), InterfaceError> {
-        unimplemented!()
-        // if !src.is_group() {
-        // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-        // type_tag,
-        // src);
-        // return;
-        // };
-        // let _ =
-        // self.action_sender
-        // .send(Action::SendContent(src.clone(),
-        // src,
-        // Content::InternalRequest(InternalRequest::Refresh {
-        // type_tag: type_tag,
-        // message: content,
-        // cause: cause,
-        // })));
+                                src: Authority,
+                                content: RequestContent) -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src.clone(),
+            dst: src,
+            content: content,
+        });
+        self.send_action(routing_msg)
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop

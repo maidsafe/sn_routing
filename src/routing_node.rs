@@ -27,7 +27,7 @@ use id::{FullId, PublicId};
 use lru_time_cache::LruCache;
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use kademlia_routing_table::{RoutingTable, NodeInfo};
+use kademlia_routing_table::{RoutingTable, NodeInfo, HasName};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use data::{Data, DataRequest};
 use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
@@ -567,23 +567,15 @@ impl RoutingNode {
                 let _ = self.event_sender.send(event);
                 Ok(())
             },
+            (RequestContent::Refresh { type_tag, message, cause },
+             Authority::ClientManager(_),
+             Authority::ClientManager(_)) => {
+                self.handle_refresh(type_tag, message, cause, request_msg.dst)
+            },
             _ => {
                 warn!("Unhandled request - Message {:?}", request_msg);
                 Err(RoutingError::BadAuthority)
             },
-            // RequestContent::Refresh { type_tag, message, cause, } => {
-            //     if accumulated_message.source_authority.is_group() {
-            //         self.handle_refresh(type_tag,
-            //                             accumulated_message.source_authority
-            //                                                .get_location()
-            //                                                .clone(),
-            //                             message,
-            //                             accumulated_message.destination_authority,
-            //                             cause)
-            //     } else {
-            //         return Err(RoutingError::BadAuthority);
-            //     }
-            // }
         }
     }
 
@@ -932,6 +924,7 @@ impl RoutingNode {
             }
             DirectMessage::Churn { ref close_group } => {
                 // Message needs signature validation
+                debug!("Churn received.");
                 self.handle_churn(close_group);
                 Ok(())
             }
@@ -1470,36 +1463,30 @@ impl RoutingNode {
     // ----- Message Handlers that return to the event channel ------------------------------------
 
     fn handle_refresh(&mut self,
-                      _type_tag: u64,
-                      _sender: XorName,
-                      _payload: Vec<u8>,
-                      _our_authority: Authority,
-                      _cause: ::XorName)
-                      -> Result<(), RoutingError> {
-        Ok(())
-        // debug_assert!(our_authority.is_group());
-        // let threshold = self.routing_table.dynamic_quorum_size();
-        // let unknown_cause = !self.refresh_causes.check(&cause);
-        // let (is_new_request, payloads) = self.refresh_accumulator
-        // .add_message(threshold,
-        // type_tag.clone(),
-        // sender,
-        // our_authority.clone(),
-        // payload,
-        // cause);
+                      type_tag: u64,
+                      message: Vec<u8>,
+                      cause: XorName,
+                      dst: Authority) -> Result<(), RoutingError> {
+        let quorum = self.routing_table.dynamic_quorum_size();
+        let unknown_cause = !self.refresh_causes.contains(&cause);
+        let (is_new_request, messages) = self.refresh_accumulator.add_message(quorum,
+                                                                              type_tag.clone(),
+                                                                              message,
+                                                                              cause,
+                                                                              dst.clone());
+        
         // If this is a new refresh instance, notify user to perform refresh.
-        // if unknown_cause && is_new_request {
-        // let _ = self.event_sender.send(::event::Event::DoRefresh(type_tag,
-        // our_authority.clone(),
-        // cause.clone()));
-        // }
-        // match payloads {
-        // Some(payloads) => {
-        // let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority, payloads));
-        // Ok(())
-        // }
-        // None => Err(::error::RoutingError::NotEnoughSignatures),
-        // }
+        if unknown_cause && is_new_request {
+            let _ = self.event_sender.send(::event::Event::DoRefresh(type_tag, dst.clone(), cause.clone()));
+        }
+
+        match messages {
+            Some(messages) => {
+                let _ = self.event_sender.send(Event::Refresh(type_tag, dst, messages));
+                Ok(())
+            }
+            None => Err(::error::RoutingError::NotEnoughSignatures),
+        }
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
@@ -1544,10 +1531,28 @@ impl RoutingNode {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
+        let close_group_nodes = self.routing_table.our_close_group();
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
-            for _node in &self.routing_table.our_close_group() {
-                // trigger churn
-                // if close node
+            for node in close_group_nodes.iter() {
+                if *node.name() == node_name {
+                    let _ = self.refresh_causes.insert(node_name);
+                    let new_close_group_nodes = self.routing_table.our_close_group();
+                    let close_group = new_close_group_nodes.iter().map(|n| n.name()).cloned().collect::<Vec<XorName>>();
+                    let direct_message = DirectMessage::Churn { close_group: close_group.clone() };
+
+                    let message = Message::DirectMessage(direct_message);
+                    let raw_bytes = match serialise(&message) {
+                        Ok(raw_bytes) => raw_bytes,
+                        Err(_) => return
+                    };
+
+                    for node in new_close_group_nodes.iter() {
+                        for connection in node.connections.clone() {
+                            self.crust_service.send(connection.clone(), raw_bytes.clone());
+                        }
+                    }
+                    let _ = self.event_sender.send(Event::Churn(close_group));
+                }
             }
             // self.routing_table.drop_node(&node_name);
         }

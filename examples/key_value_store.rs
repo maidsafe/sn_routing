@@ -30,6 +30,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate rand;
 #[macro_use]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
@@ -39,6 +40,7 @@ extern crate sodiumoxide;
 
 extern crate routing;
 extern crate xor_name;
+extern crate kademlia_routing_table;
 
 use std::io;
 use std::sync::mpsc;
@@ -50,6 +52,7 @@ use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
+use maidsafe_utilities::serialisation::{serialise, deserialise};
 use routing::routing::Routing;
 use routing::routing_client::RoutingClient;
 use routing::authority::Authority;
@@ -133,20 +136,23 @@ impl Node {
                     self.connected = true;
                     println!("Node is connected.")
                 },
-                // Event::Churn(our_close_group) => {
-                //     self.handle_churn(our_close_group);
-                // },
-                // Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
-                //     // if type_tag != 1u64 { error!("Received refresh for tag {:?} from {:?}",
-                //     //     type_tag, our_authority); continue; };
-                //     // self.handle_refresh(our_authority, vec_of_bytes);
-                // },
-                // Event::DoRefresh(type_tag, our_authority, cause) => {
-                //     // on DoRefresh, refresh the explicit record provided with that cause
-                //     // if type_tag != 1u64 { error!("Received DoRefresh for tag {:?} from {:?}",
-                //     //     type_tag, our_authority); continue; };
-                //     // self.handle_do_refresh(our_authority, cause);
-                // }
+                Event::Churn(our_close_group) => {
+                    self.handle_churn(our_close_group);
+                },
+                Event::Refresh(type_tag, our_authority, vec_of_bytes) => {
+                    if type_tag != 1u64 {
+                        error!("Received refresh for tag {:?} from {:?}", type_tag, our_authority);
+                        continue;
+                    };
+                    self.handle_refresh(our_authority, vec_of_bytes);
+                },
+                Event::DoRefresh(type_tag, our_authority, cause) => {
+                    if type_tag != 1u64 {
+                        error!("Received DoRefresh for tag {:?} from {:?}", type_tag, our_authority);
+                        continue;
+                    };
+                    self.handle_do_refresh(our_authority, cause);
+                }
                 Event::Terminated => {
                     break;
                 },
@@ -229,80 +235,78 @@ impl Node {
         }
     }
 
-    // fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
-    //     // let mut exit = false;
-    //     let exit = false;
-    //     if our_close_group.len() < ::kademlia_routing_table::group_size() {
-    //         if self.connected {
-    //             println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-    //                 our_close_group.len(), ::kademlia_routing_table::group_size());
-    //             // exit = true;
-    //         } else {
-    //             println!("Ignoring churn as we are not yet connected.");
-    //             return;
-    //         }
-    //     }
-    //     println!("Handle churn for close group size {:?}", our_close_group.len());
-    //     // for value in self.db.values() {
-    //     //     println!("CHURN {:?}", value.name());
-    //     //     self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
-    //     //         ::routing::authority::Authority::NaeManager(value.name()),
-    //     //         ::routing::data::Data::PlainData(value.clone()));
-    //     // }
+    fn handle_churn(&mut self, our_close_group: Vec<::xor_name::XorName>) {
+        // let mut exit = false;
+        let exit = false;
+        if our_close_group.len() < ::kademlia_routing_table::group_size() {
+            if self.connected {
+                println!("Close group ({:?}) has fallen below group size {:?}, terminating node",
+                    our_close_group.len(), ::kademlia_routing_table::group_size());
+                // exit = true;
+            } else {
+                println!("Ignoring churn as we are not yet connected.");
+                return;
+            }
+        }
+        println!("Handle churn for close group size {:?}", our_close_group.len());
 
-    //     // FIXME Cause needs to get removed from refresh as well
-    //     // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
-    //     // just so that interface requirements are met
-    //     let cause = rand::random::<XorName>();
+        // FIXME Cause needs to get removed from refresh as well
+        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // just so that interface requirements are met
+        let cause = rand::random::<XorName>();
 
-    //     for (client_name, stored) in self.client_accounts.iter() {
-    //         println!("REFRESH {:?} - {:?}", client_name, stored);
-    //         self.routing.send_refresh_request(1u64,
-    //             ::routing::authority::Authority::ClientManager(client_name.clone()),
-    //             unwrap_result!(encode(&stored)), cause.clone());
-    //     }
-    //     // self.db = BTreeMap::new();
-    //     if exit { self.routing.stop(); };
-    // }
+        for (client_name, stored) in self.client_accounts.iter() {
+            println!("REFRESH {:?} - {:?}", client_name, stored);
+            let request_content = RequestContent::Refresh {
+                type_tag: 1u64,
+                message: serialise(&stored).unwrap(),
+                cause: cause,
+            };
 
-    // fn handle_refresh(&mut self, our_authority: Authority, vec_of_bytes: Vec<Vec<u8>>) {
-    //     let mut records : Vec<u64> = Vec::new();
-    //     let mut fail_parsing_count = 0usize;
-    //     for bytes in vec_of_bytes {
-    //         match decode(&bytes) {
-    //             Ok(record) => records.push(record),
-    //             Err(_) => fail_parsing_count += 1usize,
-    //         };
-    //     }
-    //     let median = median(records.clone());
-    //     println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})", our_authority, median,
-    //         records, fail_parsing_count);
-    //     match our_authority {
-    //          ::routing::authority::Authority::ClientManager(client_name) => {
-    //              let _ = self.client_accounts.insert(client_name, median);
-    //          },
-    //          _ => {},
-    //     };
-    // }
+            let _ = self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()), request_content);
+        }
+        // self.db = BTreeMap::new();
+        if exit { self.routing.stop(); };
+    }
 
-    // fn handle_do_refresh(&self, our_authority: ::routing::authority::Authority,
-    //     cause: ::xor_name::XorName) {
-    //     match our_authority {
-    //         ::routing::authority::Authority::ClientManager(client_name) => {
-    //             match self.client_accounts.get(&client_name) {
-    //                 Some(stored) => {
-    //                     println!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-    //                         client_name, stored, cause);
-    //                     self.routing.send_refresh_request(1u64,
-    //                         ::routing::authority::Authority::ClientManager(client_name.clone()),
-    //                         unwrap_result!(encode(&stored)), cause.clone());
-    //                 },
-    //                 None => {},
-    //             };
-    //         },
-    //         _ => {},
-    //     };
-    // }
+    fn handle_refresh(&mut self, src: Authority, vec_of_bytes: Vec<Vec<u8>>) {
+        let mut records: Vec<u64> = Vec::new();
+        let mut fail_parsing_count = 0usize;
+        for bytes in vec_of_bytes {
+            match deserialise(&bytes) {
+                Ok(record) => records.push(record),
+                Err(_) => fail_parsing_count += 1usize,
+            }
+        }
+        let median = median(records.clone());
+        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
+               src,
+               median,
+               records,
+               fail_parsing_count);
+        if let Authority::ClientManager(client_name) = src {
+            let _ = self.client_accounts.insert(client_name, median);
+        }
+    }
+
+    fn handle_do_refresh(&self, src: Authority, cause: XorName) {
+        if let Authority::ClientManager(client_name) = src {
+            match self.client_accounts.get(&client_name) {
+                Some(stored) => {
+                    debug!("DoRefresh for client {:?} storing {:?} caused by {:?}", client_name, stored, cause);
+
+                    let request_content = RequestContent::Refresh {
+                        type_tag: 1u64,
+                        message: serialise(&stored).unwrap(),
+                        cause: cause,
+                    };
+                    let _ = self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()),
+                                                              request_content);
+                },
+                None => (),
+            }
+        }
+    }
 }
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
