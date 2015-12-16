@@ -105,7 +105,8 @@ pub use plain_data::PlainData;
 pub use id::{FullId, PublicId};
 pub use data::{Data, DataRequest};
 pub use routing_client::RoutingClient;
-pub use immutable_data::ImmutableData;
+pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use error::{RoutingError, InterfaceError};
 pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
-pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent,
+                   ResponseContent};
