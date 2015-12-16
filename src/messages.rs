@@ -182,7 +182,7 @@ impl RoutingMessage {
             RoutingMessage::Response(ref msg) => &msg.src,
         }
     }
-    /// Return source authority of routing message.
+    /// Return destination authority of routing message.
     pub fn dst(&self) -> &Authority {
         match *self {
             RoutingMessage::Request(ref msg) => &msg.dst,
