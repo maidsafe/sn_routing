@@ -1,5 +1,13 @@
 # Routing - Change Log
 
+## [0.5.1]
+ - Expose ImmutableDataType
+
+## [0.5.0]
+- Cleanup of routing API.
+- Exposing of success and failure event for GET, PUT, POST and DELETE
+- Separating XorName and Routing Table into their own crates
+
 ## [0.4.2]
 - Remove wildcard dependencies
 

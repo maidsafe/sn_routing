@@ -16,10 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use rand;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use xor_name::XorName;
+use messages::{RequestMessage, RequestContent};
 
-fn generate_random_authority(name: ::XorName,
+fn generate_random_authority(name: XorName,
                              key: &::sodiumoxide::crypto::sign::PublicKey)
                              -> ::authority::Authority {
     use rand::distributions::IndependentSample;

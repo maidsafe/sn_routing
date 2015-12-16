@@ -15,16 +15,28 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! The main API for routing nodes (this is where you give the network its rules)
+//! The API for routing nodes (this is where you give the network its rules)
 //!
 //! The network will report **from authority your authority** and validate cryptographically any
-//! message via group consensus. This means any facade you implement will set out what you deem to
-//! be a valid operation.  Routing will provide a valid message sender and authority that will allow
-//! you to set up many decentralised services.
+//! message via group consensus or direct (clients). This means any facade you implement
+//! will set out what you deem to be a valid operation.
+
+//! Routing will provide
+//!
+//! 1.  Valid message sender
+//!
+//! 2.  Confirmed from authority
+//!
+//! 3.  Confirmed your authhority
+//!
+//! 4.  Exaclty 1 copy of each message
+//!
+//! This should allow relatively easy set up many decentralised services. Setting rules for
+//! data types and what can be done wiht such types at differnt personas will allow a fairly complex
+//! network to be configured wiht relative ease.
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!
-//! We use Iana tag representations http://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
@@ -35,19 +47,15 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes,
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
         unused_qualifications, unused_results)]
-#![allow(missing_docs, box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
-// FIXME(dirvine) deny missing docs :13/12/2015
-// FIXME(dirvine) warn variant_size_differences :13/12/2015
-// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
-#![allow(unused)]
 
 #[macro_use]
 extern crate log;
@@ -67,46 +75,38 @@ extern crate maidsafe_utilities;
 extern crate message_filter;
 extern crate kademlia_routing_table;
 
-mod acceptors;
+mod id;
+mod data;
+mod utils;
+mod event;
+mod error;
 mod action;
+mod routing;
 mod messages;
+mod authority;
+mod acceptors;
+mod plain_data;
 mod routing_node;
+mod immutable_data;
+mod routing_client;
+mod structured_data;
 mod refresh_accumulator;
 mod connection_management;
 
-/// Routing provides an actionable interface to routing.
-pub mod routing;
-/// Client interface to routing.
-pub mod routing_client;
-/// Event provides the events the user can expect to receive from routing.
-pub mod event;
-/// Utility structs and functions used during testing.
+/// TODO Remove this from public visibility
 pub mod test_utils;
-/// Types and functions used throught the library.
+/// Types and functions used throughout the library.
 pub mod types;
-/// Network identity component containing public and private IDs.
-pub mod id;
-/// Commonly required functions.
-pub mod utils;
-/// Errors reported for failed conditions/operations.
-pub mod error;
-// FIXME (ben 8/09/2015) make the module authority private
-// Persona types recognised by network.
-pub mod authority;
-/// StructuredData type.
-pub mod structured_data;
-/// ImmutableData type.
-pub mod immutable_data;
-/// PlainData type.
-pub mod plain_data;
-/// Data types used in messages.
-pub mod data;
 
-/// XorName is a 512bit name to address elements on the DHT network.
-pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
-/// Message types defined by the library.
-pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-                   ResponseMessage, RequestContent, ResponseContent, Message};
-/// Persona types recognised by the network.
+pub use event::Event;
+pub use routing::Routing;
 pub use authority::Authority;
+pub use plain_data::PlainData;
 pub use id::{FullId, PublicId};
+pub use data::{Data, DataRequest};
+pub use routing_client::RoutingClient;
+pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use error::{RoutingError, InterfaceError};
+pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
+pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent,
+                   ResponseContent};

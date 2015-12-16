@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 /// Network identity component containing name, and public and private keys.
 pub struct FullId {
     public_id: ::PublicId,
@@ -75,7 +77,7 @@ impl FullId {
 pub struct PublicId {
     public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
     public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
-    name: ::XorName,
+    name: XorName,
 }
 
 impl ::std::fmt::Debug for PublicId {
@@ -85,20 +87,20 @@ impl ::std::fmt::Debug for PublicId {
 }
 
 impl ::kademlia_routing_table::HasName for PublicId {
-    fn name(&self) -> &::XorName {
+    fn name(&self) -> &XorName {
         &self.name
     }
 }
 
 impl PublicId {
     /// Return initial/relocated name.
-    pub fn name(&self) -> &::XorName {
+    pub fn name(&self) -> &XorName {
         &self.name
     }
 
     /// Name field is initially same as original_name, this should be replaced by relocated name
     /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: ::XorName) {
+    pub fn set_name(&mut self, name: XorName) {
         self.name = name;
     }
 
@@ -118,7 +120,7 @@ impl PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: ::XorName::new(::sodiumoxide::crypto::hash::sha512::hash(&public_sign_key[..]).0),
+            name: XorName::new(::sodiumoxide::crypto::hash::sha512::hash(&public_sign_key[..]).0),
         }
     }
 }

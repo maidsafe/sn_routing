@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
-use XorName;
+use xor_name::XorName;
 
 /// PlainData
 #[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -58,7 +58,7 @@ mod test {
 
     extern crate rand;
 
-    use XorName;
+    use xor_name::XorName;
     use super::PlainData;
     use self::rand::Rng;
     use sodiumoxide::crypto;

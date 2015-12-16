@@ -19,7 +19,7 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use plain_data::PlainData;
-use XorName;
+use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
@@ -77,6 +77,7 @@ impl DataRequest {
 #[cfg(test)]
 mod test {
     use rand;
+    use xor_name::XorName;
 
     #[test]
     fn data_name() {
@@ -106,7 +107,7 @@ mod test {
                    ::data::Data::ImmutableData(immutable_data).name());
 
         // name() resolves correctly for PlainData
-        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.name(),
                    ::data::Data::PlainData(plain_data).name());
@@ -140,7 +141,7 @@ mod test {
                    ::data::Data::ImmutableData(immutable_data).payload_size());
 
         // payload_size() resolves correctly for PlainData
-        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
         let plain_data = ::plain_data::PlainData::new(name, vec![]);
         assert_eq!(plain_data.payload_size(),
                    ::data::Data::PlainData(plain_data).payload_size());
@@ -148,7 +149,7 @@ mod test {
 
     #[test]
     fn data_request_name() {
-        let name = ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
 
         // name() resolves correctly for StructuedData
         let tag = 0;

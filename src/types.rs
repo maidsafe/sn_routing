@@ -59,28 +59,6 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     vec
 }
 
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, RustcEncodable, RustcDecodable)]
-/// Address.
-pub enum Address {
-    /// Is a client with supplied public key.
-    Client(::sodiumoxide::crypto::sign::PublicKey),
-    /// Is a node with given name.
-    Node(::XorName),
-}
-
-impl ::std::fmt::Debug for Address {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        match *self {
-            Address::Client(ref public_key) => {
-                formatter.write_str(&format!("Client({:?})", ::XorName::new(
-                    ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
-            }
-            Address::Node(ref name) => formatter.write_str(&format!("Node({:?})", name)),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     #[test]
@@ -96,27 +74,5 @@ mod test {
 
         assert_eq!(32, array.len());
         assert_eq!(&bytes[..], &array[..]);
-    }
-
-
-    #[test]
-    fn address() {
-        use rand;
-
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let client_address = super::Address::Client(sign_keys.0);
-
-        match client_address {
-            super::Address::Client(public_sign_key) => assert_eq!(sign_keys.0, public_sign_key),
-            _ => panic!("Unexpected error."),
-        }
-
-        let name: ::XorName = rand::random();
-        let node_address = super::Address::Node(name);
-
-        match node_address {
-            super::Address::Node(node_name) => assert_eq!(name, node_name),
-            _ => panic!("Unexpected error."),
-        }
     }
 }
