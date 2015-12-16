@@ -21,12 +21,11 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 
 use action::Action;
 use event::Event;
+use xor_name::XorName;
 use routing_node::RoutingNode;
-use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -65,7 +64,8 @@ impl Routing {
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
-                            content: RequestContent) -> Result<(), InterfaceError> {
+                            content: RequestContent)
+                            -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -78,7 +78,8 @@ impl Routing {
     pub fn send_put_request(&self,
                             src: Authority,
                             dst: Authority,
-                            content: RequestContent) -> Result<(), InterfaceError> {
+                            content: RequestContent)
+                            -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -91,7 +92,8 @@ impl Routing {
     pub fn send_post_request(&self,
                              src: Authority,
                              dst: Authority,
-                             content: RequestContent) -> Result<(), InterfaceError> {
+                             content: RequestContent)
+                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -104,7 +106,8 @@ impl Routing {
     pub fn send_delete_request(&self,
                                src: Authority,
                                dst: Authority,
-                               content: RequestContent) -> Result<(), InterfaceError> {
+                               content: RequestContent)
+                               -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -118,7 +121,8 @@ impl Routing {
     pub fn send_get_response(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent) -> Result<(), InterfaceError> {
+                             content: ResponseContent)
+                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -131,7 +135,8 @@ impl Routing {
     pub fn send_put_response(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent) -> Result<(), InterfaceError> {
+                             content: ResponseContent)
+                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -144,7 +149,8 @@ impl Routing {
     pub fn send_post_response(&self,
                               src: Authority,
                               dst: Authority,
-                              content: ResponseContent) -> Result<(), InterfaceError> {
+                              content: ResponseContent)
+                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -157,7 +163,8 @@ impl Routing {
     pub fn send_delete_response(&self,
                                 src: Authority,
                                 dst: Authority,
-                                content: ResponseContent) -> Result<(), InterfaceError> {
+                                content: ResponseContent)
+                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -171,10 +178,11 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
     pub fn send_refresh_request(&self,
-                           _type_tag: u64,
-                           _src: Authority,
-                           _content: Vec<u8>,
-                           _cause: ::XorName) -> Result<(), InterfaceError> {
+                                _type_tag: u64,
+                                _src: Authority,
+                                _content: Vec<u8>,
+                                _cause: XorName)
+                                -> Result<(), InterfaceError> {
         unimplemented!()
         // if !src.is_group() {
         // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
@@ -240,8 +248,8 @@ impl Drop for Routing {
 //         }
 //     }
 
-//     fn calculate_key_name(key: &::std::string::String) -> ::XorName {
-//         ::XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+//     fn calculate_key_name(key: &::std::string::String) -> XorName {
+//         XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
 //     }
 
 //     #[test]

@@ -16,17 +16,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
 
 /// Network Node.
 pub struct Node {
     routing: ::routing::Routing,
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
     sender: ::std::sync::mpsc::Sender<::event::Event>,
-    db: ::std::collections::BTreeMap<::XorName, ::data::Data>,
-    client_accounts: ::std::collections::BTreeMap<::XorName, u64>,
+    db: ::std::collections::BTreeMap<XorName, ::data::Data>,
+    client_accounts: ::std::collections::BTreeMap<XorName, u64>,
     connected: bool,
 }
 
@@ -55,38 +55,34 @@ impl Node {
                 ::event::Event::Refresh(type_tag, src, vec_of_bytes) => {
                     debug!("Received refresh event");
                     if type_tag != 1u64 {
-                        error!("Received refresh for tag {:?} from {:?}",
-                               type_tag,
-                               src);
+                        error!("Received refresh for tag {:?} from {:?}", type_tag, src);
                         continue;
                     };
                     self.handle_refresh(src, vec_of_bytes);
-                },
+                }
                 ::event::Event::DoRefresh(type_tag, src, cause) => {
                     debug!("Received do refresh event");
                     if type_tag != 1u64 {
-                        error!("Received DoRefresh for tag {:?} from {:?}",
-                               type_tag,
-                               src);
+                        error!("Received DoRefresh for tag {:?} from {:?}", type_tag, src);
                         continue;
                     };
                     self.handle_do_refresh(src, cause);
-                },
+                }
                 ::event::Event::Churn(close_group) => {
                     debug!("Received churn event");
                     self.handle_churn(close_group)
-                },
+                }
                 // ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
                     debug!("Received connected event");
                     self.connected = true;
-                },
+                }
                 ::event::Event::Disconnected => debug!("Received disconnected event"),
                 ::event::Event::Terminated => {
                     debug!("Received terminate event");
                     self.stop();
                     break;
-                },
+                }
             }
         }
     }
@@ -106,17 +102,17 @@ impl Node {
         match msg.content {
             RequestContent::Get(data_request) => {
                 self.handle_get_request(data_request, msg.src, msg.dst);
-            },
+            }
             RequestContent::Put(data) => {
                 self.handle_put_request(data, msg.src, msg.dst);
-            },
+            }
             RequestContent::Post(_) => {
                 debug!("Node: Post unimplemented.");
-            },
+            }
             RequestContent::Delete(_) => {
                 debug!("Node: Delete unimplemented.");
-            },
-            _ => ()
+            }
+            _ => (),
         }
     }
 
@@ -124,19 +120,21 @@ impl Node {
                           data_request: ::data::DataRequest,
                           src: Authority,
                           dst: Authority) {
-        let data = match self.db.get(&data_request.name()) {
-            Some(data) => self.routing.send_get_response(src, dst, ResponseContent::GetSuccess(data.clone())),
+        match self.db.get(&data_request.name()) {
+            Some(data) => {
+                unwrap_result!(self.routing
+                                   .send_get_response(src,
+                                                      dst,
+                                                      ResponseContent::GetSuccess(data.clone())))
+            }
             None => {
                 debug!("GetDataRequest failed for {:?}.", data_request.name());
-                return
+                return;
             }
-        };
+        }
     }
 
-    fn handle_put_request(&mut self,
-                          data: ::data::Data,
-                          src: Authority,
-                          _dst: Authority) {
+    fn handle_put_request(&mut self, data: ::data::Data, src: Authority, _dst: Authority) {
         match src {
             Authority::NaeManager(_) => {
                 debug!("Storing: key {:?}, value {:?}", data.name(), data);
@@ -146,7 +144,7 @@ impl Node {
                 debug!("Sending: key {:?}, value {:?}", data.name(), data);
                 let dst = Authority::NaeManager(data.name());
                 let request_content = RequestContent::Put(data);
-                self.routing.send_put_request(src, dst, request_content);
+                unwrap_result!(self.routing.send_put_request(src, dst, request_content));
             }
             _ => {
                 debug!("Node: Unexpected src ({:?})", src);
@@ -155,7 +153,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<::XorName>) {
+    fn handle_churn(&mut self, our_close_group: Vec<XorName>) {
         let mut exit = false;
         if our_close_group.len() < ::kademlia_routing_table::group_size() {
             if self.connected {
@@ -172,31 +170,29 @@ impl Node {
         // FIXME Cause needs to get removed from refresh as well
         // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
         // just so that interface requirements are met
-        let cause = ::rand::random::<::XorName>();
+        let cause = ::rand::random::<XorName>();
 
         debug!("Handle churn for close group size {:?}",
                our_close_group.len());
 
         for (client_name, stored) in &self.client_accounts {
             debug!("REFRESH {:?} - {:?}", client_name, stored);
-            self.routing
-                .send_refresh_request(1u64,
-                                 Authority::ClientManager(client_name.clone()),
-                                 unwrap_result!(::utils::encode(&stored)),
-                                 cause);
+            unwrap_result!(self.routing.send_refresh_request(
+                1u64,
+                Authority::ClientManager(client_name.clone()),
+                unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
+                cause));
         }
         if exit {
             self.routing.stop();
         }
     }
 
-    fn handle_refresh(&mut self,
-                      src: Authority,
-                      vec_of_bytes: Vec<Vec<u8>>) {
+    fn handle_refresh(&mut self, src: Authority, vec_of_bytes: Vec<Vec<u8>>) {
         let mut records: Vec<u64> = Vec::new();
         let mut fail_parsing_count = 0usize;
         for bytes in vec_of_bytes {
-            match ::utils::decode(&bytes) {
+            match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
                 Ok(record) => records.push(record),
                 Err(_) => fail_parsing_count += 1usize,
             }
@@ -212,7 +208,7 @@ impl Node {
         }
     }
 
-    fn handle_do_refresh(&self, src: Authority, cause: ::XorName) {
+    fn handle_do_refresh(&self, src: Authority, cause: XorName) {
         if let Authority::ClientManager(client_name) = src {
             match self.client_accounts.get(&client_name) {
                 Some(stored) => {
@@ -220,10 +216,13 @@ impl Node {
                            client_name,
                            stored,
                            cause);
-                    self.routing.send_refresh_request(1u64,
+                    unwrap_result!(
+                        self.routing.send_refresh_request(
+                            1u64,
                             Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::utils::encode(&stored)), cause.clone());
-                },
+                            unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
+                            cause.clone()));
+                }
                 None => (),
             }
         }

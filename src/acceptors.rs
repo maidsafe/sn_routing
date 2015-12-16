@@ -46,14 +46,15 @@ impl Acceptors {
             Port::Tcp(port) => {
                 self.tcp_accepting_port = Some(Port::Tcp(port));
                 if let Some(ref bootstrap_ip) = self.bootstrap_ip {
-                    let _ = self.endpoints.insert(Endpoint::new(bootstrap_ip.clone(),
-                                                                Port::Tcp(port)));
+                    let _ = self.endpoints
+                                .insert(Endpoint::new(bootstrap_ip.clone(), Port::Tcp(port)));
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }
 
+    #[allow(unused)]
     pub fn set_utp_accepting_port(&mut self, accepting_port: Port) {
         match accepting_port {
             Port::Utp(port) => self.utp_accepting_port = Some(Port::Utp(port)),
@@ -65,16 +66,18 @@ impl Acceptors {
         match our_endpoint {
             Endpoint::Tcp(socket_addr) => {
                 if let Some(ref port) = self.tcp_accepting_port {
-                    let _ = self.endpoints.insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
-                                                                port.clone()));
+                    let _ = self.endpoints
+                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
+                                                      port.clone()));
                 }
-            },
+            }
             Endpoint::Utp(socket_addr) => {
                 if let Some(ref port) = self.utp_accepting_port {
-                    let _ = self.endpoints.insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
-                                                                port.clone()));
+                    let _ = self.endpoints
+                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
+                                                      port.clone()));
                 }
-            },
+            }
         }
     }
 

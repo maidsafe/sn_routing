@@ -16,29 +16,32 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 /// HolePunchingState.
 #[allow(unused)]
 pub enum HolePunchingState {
     /// Mapping(XorName)
-    Mapping(::XorName),
+    Mapping(XorName),
 
     /// Connecting(XorName, UdpSocket, secret)
-    Connecting(::XorName, ::std::net::UdpSocket, Option<[u8; 4]>),
+    Connecting(XorName, ::std::net::UdpSocket, Option<[u8; 4]>),
 
     /// Punching(XorName, UdpSocket, secret, number_of_failed_attempts)
-    Punching(::XorName, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
+    Punching(XorName, ::std::net::UdpSocket, Option<[u8; 4]>, u32),
 
     /// RendezvousConnecting(XorName, UdpSocket)
-    RendezvousConnecting(::XorName, ::std::net::UdpSocket),
+    RendezvousConnecting(XorName, ::std::net::UdpSocket),
 }
 
 #[cfg(test)]
 mod test {
     use rand;
+    use xor_name::XorName;
 
     #[test]
     fn hole_punching_state() {
-        let name: ::XorName = rand::random();
+        let name: XorName = rand::random();
         let secret: Option<[u8; 4]> = None;
         let number_of_failed_attempts: u32 = 1;
 

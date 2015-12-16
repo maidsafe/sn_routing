@@ -18,8 +18,8 @@
 
 use routing_client::RoutingClient;
 use authority::Authority;
-use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
-               ResponseMessage, RequestContent, ResponseContent, Message};
+use messages::ResponseContent;
+use xor_name::XorName;
 
 /// Network Client.
 pub struct Client {
@@ -47,7 +47,8 @@ impl Client {
     /// Get data from the network.
     pub fn get(&mut self, request: ::data::DataRequest) -> Option<::data::Data> {
         debug!("Get request from Client for {:?}", request);
-        self.routing_client.send_get_request(Authority::NaeManager(request.name()), request.clone());
+        unwrap_result!(self.routing_client.send_get_request(Authority::NaeManager(request.name()),
+                                                            request.clone()));
 
         // Block until the data arrives.
         let timeout = ::time::Duration::milliseconds(10000);
@@ -77,7 +78,8 @@ impl Client {
     /// Put data onto the network.
     pub fn put(&self, data: ::data::Data) {
         debug!("Put request from Client for {:?}", data);
-        self.routing_client.send_put_request(Authority::ClientManager(*self.name()), data);
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     // /// Post data onto the network.
@@ -101,7 +103,7 @@ impl Client {
     // }
 
     /// Return network name.
-    pub fn name(&self) -> &::XorName {
+    pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
     }
 }

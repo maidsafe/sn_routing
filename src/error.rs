@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use std::sync::mpsc::{SendError, RecvError};
+use std::sync::mpsc::RecvError;
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 
 // TODO This will be in a crate common to only Vaults and Client
@@ -36,7 +36,7 @@ use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 //     /// had to clear Sacrificial Data in order to complete request
 //     HadToClearSacrificial(::XorName, u32),
 // }
-// 
+//
 // impl From<::cbor::CborError> for ResponseError {
 //     fn from(_error: ::cbor::CborError) -> ResponseError {
 //         ResponseError::Abort
@@ -48,8 +48,9 @@ use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 pub enum InterfaceError {
     /// NotConnected.
     NotConnected,
-    /// Error while listening to a message in a rust channel
+    /// Error while trying to receive a message from a channel
     ChannelRxError(RecvError),
+    /// Error while trying to transmit an event via a channel
     EventSenderError(EventSenderError<MaidSafeEventCategory, Action>),
 }
 
