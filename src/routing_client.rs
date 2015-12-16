@@ -46,7 +46,9 @@ impl RoutingClient {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantely instantiate termination of the client.
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<RoutingClient, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>)
+               -> Result<RoutingClient, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
@@ -63,7 +65,10 @@ impl RoutingClient {
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) -> Result<(), InterfaceError> {
+    pub fn send_get_request(&mut self,
+                            dst: Authority,
+                            data_request: DataRequest)
+                            -> Result<(), InterfaceError> {
         self.send_action(RequestContent::Get(data_request), dst)
     }
 

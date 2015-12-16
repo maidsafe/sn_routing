@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
 use authority::Authority;
 use messages::{RequestMessage, ResponseMessage};
 
@@ -32,13 +33,13 @@ pub enum Event {
     /// as a Vec<XorName> and the name of the node that joined or left our close group
     /// as XorName.  Our close group is sorted from our name and always includes our own name
     /// as the first element.
-    Churn(Vec<::XorName>),
+    Churn(Vec<XorName>),
     /// DoRefresh reports that a Refresh message is circulating the effective close group
     /// of the given Authority, but that the user is outside of the close group of the churn
     /// that initiated the call for refresh.  To ensure that the account of the current user is
     /// also accumulated a DoRefresh indicates precisely one account routing will expect the
     /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
-    DoRefresh(u64, Authority, ::XorName),
+    DoRefresh(u64, Authority, XorName),
     /// Connected.
     Connected,
     /// Disconnected.

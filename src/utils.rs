@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 /// Formatted string from a vector of bytes.
 pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
     use std::fmt::Write;
@@ -58,9 +60,9 @@ pub fn decode<T>(bytes: &[u8]) -> Result<T, ::cbor::CborError>
 /// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
 /// In case of only one close node provided (in initial network setup scenario),
 /// relocated_name = Hash(original_name + 1st closest node id)
-pub fn calculate_relocated_name(mut close_nodes: Vec<::XorName>,
-                                original_name: &::XorName)
-                                -> Result<::XorName, ::error::RoutingError> {
+pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
+                                original_name: &XorName)
+                                -> Result<XorName, ::error::RoutingError> {
     if close_nodes.is_empty() {
         return Err(::error::RoutingError::RoutingTableEmpty);
     }
@@ -80,7 +82,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<::XorName>,
             combined.push(*i);
         }
     }
-    Ok(::XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
+    Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
 }
 
 /// Validate the incoming group of a group message
@@ -91,10 +93,11 @@ pub fn bucket_index_range_confidence() -> bool {
 #[cfg(test)]
 mod test {
     use rand;
+    use xor_name::XorName;
 
     #[test]
     fn encode_decode() {
-        let name: ::XorName = rand::random();
+        let name: XorName = rand::random();
         let encoded = match super::encode(&name) {
             Ok(encoded) => encoded,
             Err(_) => panic!("Unexpected serialisation error."),
@@ -104,25 +107,25 @@ mod test {
             Err(_) => panic!("Unexpected deserialisation error."),
         };
 
-        assert_eq!(name, ::XorName(::types::slice_as_u8_64_array(&decoded[..])));
+        assert_eq!(name, XorName(::types::slice_as_u8_64_array(&decoded[..])));
     }
 
     #[test]
     fn calculate_relocated_name() {
-        let original_name: ::XorName = rand::random();
+        let original_name: XorName = rand::random();
 
         // empty close nodes
         assert!(super::calculate_relocated_name(Vec::new(), &original_name).is_err());
 
         // one entry
-        let mut close_nodes_one_entry: Vec<::XorName> = Vec::new();
+        let mut close_nodes_one_entry: Vec<XorName> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
             unwrap_result!(super::calculate_relocated_name(close_nodes_one_entry.clone(),
                                                            &original_name));
         assert!(original_name != actual_relocated_name_one_entry);
 
-        let mut combined_one_node_vec: Vec<::XorName> = Vec::new();
+        let mut combined_one_node_vec: Vec<XorName> = Vec::new();
         combined_one_node_vec.push(original_name.clone());
         combined_one_node_vec.push(close_nodes_one_entry[0].clone());
 
@@ -134,13 +137,13 @@ mod test {
         }
 
         let expected_relocated_name_one_node =
-            ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined_one_node).0);
+            XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined_one_node).0);
 
         assert_eq!(actual_relocated_name_one_entry,
                    expected_relocated_name_one_node);
 
         // populated closed nodes
-        let mut close_nodes: Vec<::XorName> = Vec::new();
+        let mut close_nodes: Vec<XorName> = Vec::new();
         for _ in 0..::kademlia_routing_table::GROUP_SIZE {
             close_nodes.push(rand::random());
         }
@@ -168,8 +171,8 @@ mod test {
             combined.push(*i);
         }
 
-        let expected_relocated_name =
-            ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0);
+        let expected_relocated_name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined)
+                                                  .0);
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -183,7 +186,7 @@ mod test {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name =
-            ::XorName(::sodiumoxide::crypto::hash::sha512::hash(&invalid_combined).0);
+            XorName(::sodiumoxide::crypto::hash::sha512::hash(&invalid_combined).0);
         assert!(invalid_relocated_name != actual_relocated_name);
     }
 }

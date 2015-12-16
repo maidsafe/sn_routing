@@ -18,7 +18,7 @@
 use std::fmt::{Debug, Formatter, Error};
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
-use XorName;
+use xor_name::XorName;
 use sodiumoxide::crypto;
 
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]

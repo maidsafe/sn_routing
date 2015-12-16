@@ -26,7 +26,7 @@ pub use self::node::*;
 pub use self::client::*;
 pub use self::messages_util::*;
 
-use XorName;
+use xor_name::XorName;
 
 /// Return XOR of two XorName's.
 pub fn xor(lhs: &XorName, rhs: &XorName) -> XorName {

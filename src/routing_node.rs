@@ -62,11 +62,11 @@ pub struct RoutingNode {
     action_rx: ::std::sync::mpsc::Receiver<Action>,
     event_sender: ::std::sync::mpsc::Sender<Event>,
     signed_message_filter: ::message_filter::MessageFilter<::messages::SignedMessage>,
-    connection_filter: ::message_filter::MessageFilter<::XorName>,
+    connection_filter: ::message_filter::MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
     // refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
-    // refresh_causes: ::message_filter::MessageFilter<::XorName>,
+    // refresh_causes: ::message_filter::MessageFilter<XorName>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
@@ -131,11 +131,11 @@ impl RoutingNode {
                 node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
                 message_accumulator: ::accumulator::Accumulator::with_duration(1,
                     ::time::Duration::minutes(5)),
-                // refresh_accumulator:
-                //     ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
-                //         ::time::Duration::minutes(5)),
-                // refresh_causes: ::message_filter::MessageFilter::with_expiry_duration(
-                //     ::time::Duration::minutes(5)),
+            // refresh_accumulator:
+            //     ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
+            //         ::time::Duration::minutes(5)),
+            // refresh_causes: ::message_filter::MessageFilter::with_expiry_duration(
+            //     ::time::Duration::minutes(5)),
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
             // cache_options: ::data_cache_options::DataCacheOptions::new(),
@@ -169,13 +169,13 @@ impl RoutingNode {
                                 match self.send_message(content) {
                                     Err(RoutingError::Interface(err)) => {
                                         let _ = result_tx.send(Err(err));
-                                    },
+                                    }
                                     Err(_err) => (),
                                     Ok(()) => {
                                         let _ = result_tx.send(Ok(()));
-                                    },
+                                    }
                                 }
-                            },
+                            }
                             Action::ClientSendRequest { content, dst, result_tx, } => {
                                 if let Ok(src) = self.get_client_authority() {
                                     let request_msg = RequestMessage {
@@ -188,14 +188,14 @@ impl RoutingNode {
                                     match self.send_message(routing_msg) {
                                         Err(RoutingError::Interface(err)) => {
                                             let _ = result_tx.send(Err(err));
-                                        },
+                                        }
                                         Err(_err) => (),
                                         Ok(()) => {
                                             let _ = result_tx.send(Ok(()));
-                                        },
+                                        }
                                     }
                                 }
-                            },
+                            }
                             Action::Terminate => {
                                 let _ = self.event_sender.send(Event::Terminated);
                                 self.crust_service.stop();
@@ -212,7 +212,9 @@ impl RoutingNode {
                                 self.handle_on_accept(endpoint, connection)
                             }
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
-                            ::crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
+                            ::crust::Event::LostConnection(connection) => {
+                                self.handle_lost_connection(connection)
+                            }
                             ::crust::Event::NewMessage(connection, bytes) => {
                                 match self.handle_new_message(connection, bytes) {
                                     Err(RoutingError::FilterCheckFailed) => (),
@@ -240,7 +242,8 @@ impl RoutingNode {
 
             if self.state == State::Node {
                 trace!(" -----------------------------------");
-                trace!("| Routing Table size updated to: {}", self.routing_table.len());
+                trace!("| Routing Table size updated to: {}",
+                       self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
                 //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
                 //     true
@@ -263,7 +266,10 @@ impl RoutingNode {
         }
     }
 
-    fn handle_hop_message(&mut self, hop_msg: &HopMessage, connection: ::crust::Connection) -> Result<(), RoutingError> {
+    fn handle_hop_message(&mut self,
+                          hop_msg: &HopMessage,
+                          connection: ::crust::Connection)
+                          -> Result<(), RoutingError> {
         if self.state == State::Node {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
@@ -287,7 +293,10 @@ impl RoutingNode {
         self.handle_signed_message(content, name)
     }
 
-    fn handle_signed_message(&mut self, signed_msg: SignedMessage, hop_name: XorName) -> Result<(), RoutingError> {
+    fn handle_signed_message(&mut self,
+                             signed_msg: SignedMessage,
+                             hop_name: XorName)
+                             -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
         // Prevents
@@ -324,10 +333,11 @@ impl RoutingNode {
 
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
-                                      hop_name: &XorName) -> Result<(), RoutingError> {
+                                      hop_name: &XorName)
+                                      -> Result<(), RoutingError> {
         // Node Harvesting
         if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
-            self.routing_table.want_to_add(signed_msg.public_id().name()) {
+           self.routing_table.want_to_add(signed_msg.public_id().name()) {
             let _ = self.send_connect_request(signed_msg.public_id().name());
         }
 
@@ -356,7 +366,7 @@ impl RoutingNode {
             if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                              &hop_name,
                                              signed_msg.content().dst().get_name()) {
-                return Err(RoutingError::DirectionCheckFailed)
+                return Err(RoutingError::DirectionCheckFailed);
             }
         }
 
@@ -385,7 +395,9 @@ impl RoutingNode {
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
     }
 
-    fn handle_signed_message_for_client(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
+    fn handle_signed_message_for_client(&mut self,
+                                        signed_msg: &SignedMessage)
+                                        -> Result<(), RoutingError> {
         match *signed_msg.content().dst() {
             Authority::Client { ref client_key, .. } => {
                 if self.full_id.public_id().signing_public_key() != client_key {
@@ -403,13 +415,14 @@ impl RoutingNode {
             if !self.routing_table
                     .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
                                                      signed_msg.public_id().name()) {
-                return Err(RoutingError::RoutingTableBucketIndexFailed)
+                return Err(RoutingError::RoutingTableBucketIndexFailed);
             }
 
             Ok(())
         } else {
             match (signed_msg.content().dst(), signed_msg.content().src()) {
-                (&Authority::NodeManager(_manager_name), &Authority::ManagedNode(_node_name)) => {
+                (&Authority::NodeManager(_manager_name),
+                 &Authority::ManagedNode(_node_name)) => {
                     // TODO confirm sender is in our routing table
                     Ok(())
                 }
@@ -514,7 +527,7 @@ impl RoutingNode {
                                                      client_key,
                                                      proxy_node_name,
                                                      dst_name)
-            },
+            }
             (RequestContent::ExpectCloseNode { expect_id, },
              Authority::NaeManager(_),
              Authority::NodeManager(_)) => self.handle_expect_close_node_request(expect_id),
@@ -522,7 +535,7 @@ impl RoutingNode {
              Authority::Client { client_key, proxy_node_name, },
              Authority::NodeManager(dst_name)) => {
                 self.handle_get_close_group_request(client_key, proxy_node_name, dst_name)
-            },
+            }
             (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
              Authority::Client { client_key, proxy_node_name, },
              Authority::ManagedNode(dst_name)) => {
@@ -531,7 +544,7 @@ impl RoutingNode {
                                                   client_key,
                                                   proxy_node_name,
                                                   dst_name)
-            },
+            }
             (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
              Authority::ManagedNode(src_name),
              Authority::Client { .. }) |
@@ -542,7 +555,7 @@ impl RoutingNode {
                                                 nonce_bytes,
                                                 src_name,
                                                 request_msg.dst)
-            },
+            }
             (RequestContent::Connect,
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(dst_name)) => self.handle_connect_request(src_name, dst_name),
@@ -556,19 +569,19 @@ impl RoutingNode {
                                                          nonce_bytes,
                                                          src_name,
                                                          dst_name)
-            },
-            (RequestContent::Get(_), _, _)  |
-            (RequestContent::Put(_), _, _)  |
+            }
+            (RequestContent::Get(_), _, _) |
+            (RequestContent::Put(_), _, _) |
             (RequestContent::Post(_), _, _) |
             (RequestContent::Delete(_), _, _) => {
                 let event = Event::Request(request_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
-            },
+            }
             _ => {
                 warn!("Unhandled request - Message {:?}", request_msg);
                 Err(RoutingError::BadAuthority)
-            },
+            }
             // RequestContent::Refresh { type_tag, message, cause, } => {
             //     if accumulated_message.source_authority.is_group() {
             //         self.handle_refresh(type_tag,
@@ -595,38 +608,38 @@ impl RoutingNode {
              Authority::NaeManager(_),
              Authority::Client { client_key, proxy_node_name, }) => {
                 self.handle_get_network_name_response(relocated_id, client_key, proxy_node_name)
-            },
+            }
             (ResponseContent::GetPublicId { public_id, },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_response(public_id, dst_name)
-            },
+            }
             (ResponseContent::GetPublicIdWithEndpoints { public_id, encrypted_endpoints, nonce_bytes },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_with_endpoints_response(public_id, encrypted_endpoints, nonce_bytes, dst_name)
-            },
+            }
             (ResponseContent::GetCloseGroup { close_group_ids },
              Authority::NodeManager(_),
              Authority::Client { client_key, proxy_node_name, }) => {
                 self.handle_get_close_group_response(close_group_ids, client_key, proxy_node_name)
-            },
-            (ResponseContent::GetSuccess(_), _, _)    |
-            (ResponseContent::PutSuccess(_), _, _)    |
-            (ResponseContent::PostSuccess(_), _, _)   |
+            }
+            (ResponseContent::GetSuccess(_), _, _) |
+            (ResponseContent::PutSuccess(_), _, _) |
+            (ResponseContent::PostSuccess(_), _, _) |
             (ResponseContent::DeleteSuccess(_), _, _) |
-            (ResponseContent::GetFailure{..}, _, _)   |
-            (ResponseContent::PutFailure{..}, _, _)   |
-            (ResponseContent::PostFailure{..}, _, _)  |
+            (ResponseContent::GetFailure{..}, _, _) |
+            (ResponseContent::PutFailure{..}, _, _) |
+            (ResponseContent::PostFailure{..}, _, _) |
             (ResponseContent::DeleteFailure{..}, _, _) => {
                 let event = Event::Response(response_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
-            },
+            }
             _ => {
                 warn!("Unhandled response - Message {:?}", response_msg);
                 Err(RoutingError::BadAuthority)
-            },
+            }
         }
     }
 
@@ -692,19 +705,23 @@ impl RoutingNode {
         match result {
             Ok((endpoint, connection)) => {
                 self.acceptors.add(endpoint.clone());
-                debug!("New connection via OnConnect {:?} with token {}", connection, connection_token);
+                debug!("New connection via OnConnect {:?} with token {}",
+                       connection,
+                       connection_token);
                 if self.state == State::Disconnected {
                     // Established connection. Pending Validity checks
                     self.acceptors.set_bootstrap_ip(endpoint);
                     self.state = State::Bootstrapping;
                     let _ = self.client_identify(connection);
-                    return
+                    return;
                 }
 
                 let _ = self.node_identify(connection);
             }
             Err(error) => {
-                warn!("Failed to make connection with token {} - {}", connection_token, error);
+                warn!("Failed to make connection with token {} - {}",
+                      connection_token,
+                      error);
             }
         }
     }
@@ -802,9 +819,11 @@ impl RoutingNode {
                              -> Result<(), RoutingError> {
         match direct_message {
             DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
-                trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}", self, current_quorum_size);
+                trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}",
+                       self,
+                       current_quorum_size);
 
-                if *public_id.name() == ::XorName::new(::sodiumoxide
+                if *public_id.name() == XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("Incoming Connection not validated as a proper node - dropping");
@@ -839,7 +858,8 @@ impl RoutingNode {
             }
             DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
 
-                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id, signature) {
+                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id,
+                                                                           signature) {
                     Ok(public_id) => public_id,
                     Err(_) => {
                         warn!("Signature check failed in NodeIdentify - Dropping connection {:?}",
@@ -847,10 +867,10 @@ impl RoutingNode {
                         self.crust_service.drop_node(connection);
 
                         return Ok(());
-                    },
+                    }
                 };
 
-                if *public_id.name() != ::XorName::new(::sodiumoxide
+                if *public_id.name() != XorName::new(::sodiumoxide
                                                         ::crypto
                                                         ::hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("Incoming Connection not validated as a proper client - dropping");
@@ -858,7 +878,9 @@ impl RoutingNode {
                     return Ok(());
                 }
 
-                if let Some(prev_conn) = self.client_map.insert(public_id.signing_public_key().clone(), connection) {
+                if let Some(prev_conn) = self.client_map
+                                             .insert(public_id.signing_public_key().clone(),
+                                                     connection) {
                     debug!("Found previous connection against client key - Dropping {:?}",
                            prev_conn);
                     self.crust_service.drop_node(prev_conn);
@@ -892,7 +914,8 @@ impl RoutingNode {
                         return Ok(());
                     }
 
-                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(), vec![connection]);
+                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(),
+                                                                            vec![connection]);
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
@@ -911,7 +934,8 @@ impl RoutingNode {
                         self.state = State::Node;
 
                         if let Some(node_to_drop) = node_removed {
-                            debug!("Node ejected by routing table on an add. Dropping node {:?}", node_to_drop);
+                            debug!("Node ejected by routing table on an add. Dropping node {:?}",
+                                   node_to_drop);
 
                             for it in node_to_drop.connections.into_iter() {
                                 self.crust_service.drop_node(it);
@@ -936,7 +960,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_churn(&mut self, close_group: &[::XorName]) -> Result<(), RoutingError> {
+    fn handle_churn(&mut self, close_group: &[XorName]) -> Result<(), RoutingError> {
         for close_node in close_group {
             if self.connection_filter.contains(close_node) {
                 return Err(RoutingError::FilterCheckFailed);
@@ -1142,7 +1166,9 @@ impl RoutingNode {
                       src: Authority,
                       dst: Authority)
                       -> Result<(), RoutingError> {
-        trace!("{:?} sending endpoints {:?}", self, self.acceptors.endpoints());
+        trace!("{:?} sending endpoints {:?}",
+               self,
+               self.acceptors.endpoints());
         let encoded_endpoints = try!(serialise(&self.acceptors.endpoints()));
         let nonce = box_::gen_nonce();
         let encrypted_endpoints = box_::seal(&encoded_endpoints,
@@ -1264,7 +1290,7 @@ impl RoutingNode {
             try!(self.send_endpoints(public_id,
                                      Authority::ManagedNode(our_name),
                                      Authority::ManagedNode(src_name)));
-            return Ok(())
+            return Ok(());
         }
 
         let request_content = RequestContent::GetPublicId;
@@ -1406,8 +1432,13 @@ impl RoutingNode {
         self.send(signed_msg)
     }
 
-    fn relay_to_client(&mut self, signed_msg: SignedMessage, client_key: &sign::PublicKey) -> Result<(), RoutingError> {
-        let connection = try!(self.client_map.get(client_key).ok_or(RoutingError::ClientConnectionNotFound));
+    fn relay_to_client(&mut self,
+                       signed_msg: SignedMessage,
+                       client_key: &sign::PublicKey)
+                       -> Result<(), RoutingError> {
+        let connection = try!(self.client_map
+                                  .get(client_key)
+                                  .ok_or(RoutingError::ClientConnectionNotFound));
         let hop_msg = try!(HopMessage::new(signed_msg,
                                            self.full_id.public_id().name().clone(),
                                            self.full_id.signing_private_key()));
@@ -1427,16 +1458,20 @@ impl RoutingNode {
         // If we're a client going to be a node, send via our bootstrap connection
         if self.state == State::Client {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
-                if let Some((connection, _)) = self.proxy_map.iter().find(|elt| elt.1.name() == proxy_node_name) {
-                    return Ok(self.crust_service.send(connection.clone(), raw_bytes))
+                if let Some((connection, _)) = self.proxy_map
+                                                   .iter()
+                                                   .find(|elt| elt.1.name() == proxy_node_name) {
+                    return Ok(self.crust_service.send(connection.clone(), raw_bytes));
                 }
 
-                error!("{:?} Unable to find connection to proxy node in proxy map", self);
-                return Err(RoutingError::ProxyConnectionNotFound)
+                error!("{:?} Unable to find connection to proxy node in proxy map",
+                       self);
+                return Err(RoutingError::ProxyConnectionNotFound);
             }
 
-            error!("{:?} Source should be client if our state is a Client", self);
-            return Err(RoutingError::InvalidSource)
+            error!("{:?} Source should be client if our state is a Client",
+                   self);
+            return Err(RoutingError::InvalidSource);
         }
 
         // Query routing table to send it out parallel or to our close group (ourselves excluded)
@@ -1467,7 +1502,7 @@ impl RoutingNode {
                       _sender: XorName,
                       _payload: Vec<u8>,
                       _our_authority: Authority,
-                      _cause: ::XorName)
+                      _cause: XorName)
                       -> Result<(), RoutingError> {
         Ok(())
         // debug_assert!(our_authority.is_group());

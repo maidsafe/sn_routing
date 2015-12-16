@@ -65,7 +65,7 @@ pub enum DirectMessage {
     /// even they do not have an actual connection (i.e. both behind symmetric NAT)
     Churn {
         /// Close group (to self) as calculated by a node.
-        close_group: Vec<::XorName>,
+        close_group: Vec<XorName>,
     },
 }
 
@@ -257,7 +257,7 @@ pub enum RequestContent {
         /// The node that caused the churn event.
         /// Used here (passed up to upper layers in churn event) who must give it back in
         /// which allows filtering of different churn events (used as unique identifier)
-        cause: ::XorName,
+        cause: XorName,
     },
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter

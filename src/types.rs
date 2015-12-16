@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 // TODO(Spandan) This should not require documentation - infact the whole mod should be private
 #[doc(hidden)]
 pub type RoutingActionSender =
@@ -66,14 +68,14 @@ pub enum Address {
     /// Is a client with supplied public key.
     Client(::sodiumoxide::crypto::sign::PublicKey),
     /// Is a node with given name.
-    Node(::XorName),
+    Node(XorName),
 }
 
 impl ::std::fmt::Debug for Address {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         match *self {
             Address::Client(ref public_key) => {
-                formatter.write_str(&format!("Client({:?})", ::XorName::new(
+                formatter.write_str(&format!("Client({:?})", XorName::new(
                     ::sodiumoxide::crypto::hash::sha512::hash(&public_key[..]).0)))
             }
             Address::Node(ref name) => formatter.write_str(&format!("Node({:?})", name)),
@@ -83,6 +85,8 @@ impl ::std::fmt::Debug for Address {
 
 #[cfg(test)]
 mod test {
+    use xor_name::XorName;
+
     #[test]
     fn check_conversions() {
         let bytes = super::generate_random_vec_u8(64);
@@ -111,7 +115,7 @@ mod test {
             _ => panic!("Unexpected error."),
         }
 
-        let name: ::XorName = rand::random();
+        let name: XorName = rand::random();
         let node_address = super::Address::Node(name);
 
         match node_address {

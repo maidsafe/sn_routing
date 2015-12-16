@@ -43,10 +43,15 @@ pub enum Action {
 impl ::std::fmt::Debug for Action {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            Action::NodeSendMessage { ref content, .. } =>
-                write!(f, "Action::NodeSendMessage {{ {:?}, result_tx }}", content),
-            Action::ClientSendRequest { ref content, ref dst, .. } =>
-                write!(f, "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}", content, dst),
+            Action::NodeSendMessage { ref content, .. } => {
+                write!(f, "Action::NodeSendMessage {{ {:?}, result_tx }}", content)
+            }
+            Action::ClientSendRequest { ref content, ref dst, .. } => {
+                write!(f,
+                       "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
+                       content,
+                       dst)
+            }
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }

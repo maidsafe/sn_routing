@@ -97,8 +97,6 @@ pub mod plain_data;
 /// Data types used in messages.
 pub mod data;
 
-/// XorName is a 512bit name to address elements on the DHT network.
-pub use xor_name::{XorName, closer_to_target, XOR_NAME_LEN};
 /// Message types defined by the library.
 pub use messages::{DirectMessage, HopMessage, SignedMessage, RoutingMessage, RequestMessage,
                    ResponseMessage, RequestContent, ResponseContent, Message};
