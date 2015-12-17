@@ -264,10 +264,10 @@ mod test {
                                       AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
-        evaluate_result!(e.encode(&[&obj_before]));
+        unwrap_result!(e.encode(&[&obj_before]));
 
         let mut d = ::cbor::Decoder::from_bytes(e.into_bytes());
-        let obj_after: Account = evaluate_result!(evaluate_option!(d.decode().next(), ""));
+        let obj_after: Account = unwrap_result!(unwrap_option!(d.decode().next(), ""));
 
         assert_eq!(obj_before, obj_after);
     }

@@ -209,7 +209,7 @@ mod test {
             let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
             let identifier = random();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-            let structured_data = evaluate_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
+            let structured_data = unwrap_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
                                      ::routing::types::generate_random_vec_u8(1024), vec![keys.0],
                                      vec![], Some(&keys.1)));
             let data_name = structured_data.name();
@@ -274,7 +274,7 @@ mod test {
                                     "Failed to get inital data"));
 
         // incorrect version
-        let mut sd_new_bad = evaluate_result!(::routing::structured_data::StructuredData::new(0,
+        let mut sd_new_bad = unwrap_result!(::routing::structured_data::StructuredData::new(0,
                                                                                               *env.structured_data
                                                                                                   .get_identifier(),
                                                                                               3,
@@ -293,7 +293,7 @@ mod test {
                                     "Failed to get original data."));
 
         // correct version
-        let mut sd_new = evaluate_result!(::routing::structured_data::StructuredData::new(0,
+        let mut sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
                                                                                           *env.structured_data
                                                                                               .get_identifier(),
                                                                                           1,
@@ -314,7 +314,7 @@ mod test {
 
         // update to a new owner, wrong signature
         let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
-        sd_new_bad = evaluate_result!(::routing::structured_data::StructuredData::new(0,
+        sd_new_bad = unwrap_result!(::routing::structured_data::StructuredData::new(0,
                                                                                       *env.structured_data
                                                                                           .get_identifier(),
                                                                                       2,
@@ -334,7 +334,7 @@ mod test {
                                     "Failed to get updated data"));
 
         // update to a new owner, correct signature
-        sd_new = evaluate_result!(::routing::structured_data::StructuredData::new(0,
+        sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
                                                                                   *env.structured_data
                                                                                       .get_identifier(),
                                                                                   2,

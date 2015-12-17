@@ -141,14 +141,10 @@ impl Vault {
              &RequestContent::Put(Data::ImmutableData(_))) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_))) => {
-                self.maid_manager.handle_put(&self.routing, &request)
-            }
+             &RequestContent::Put(Data::StructuredData(_))) => self.maid_manager.handle_put(&self.routing, &request),
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.data_manager.handle_put(&self.routing, data)
-            }
+             &RequestContent::Put(Data::ImmutableData(ref data))) => self.data_manager.handle_put(&self.routing, data),
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::StructuredData(ref data))) => self.sd_manager.handle_put(data),
@@ -281,15 +277,21 @@ impl Vault {
 }
 
 
-/*
+
 #[cfg(all(test, not(feature = "use-mock-routing")))]
 mod test {
     use super::*;
+    use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::log;
-    use ::xor_name::XorName;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
+                  RequestMessage, ResponseContent, ResponseMessage, RoutingClient, StructuredData};
+    use std::sync::mpsc;
+    use time::{Duration, SteadyTime};
+    use xor_name::XorName;
 
     struct VaultComms {
-        notifier: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
+        notifier: ::std::sync::mpsc::Receiver<(Event)>,
         killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
         join_handle: Option<::std::thread::JoinHandle<()>>,
     }
@@ -299,95 +301,60 @@ mod test {
             println!("Starting vault {}", index);
             let (sender, receiver) = ::std::sync::mpsc::channel();
             let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
-            let mut vault = Vault::new(Some(sender), Some(killer.clone()));
-            let join_handle = Some(evaluate_result!(::std::thread::Builder::new()
-                                                        .name(format!("Vault {} worker", index))
-                                                        .spawn(move || vault.do_run())));
+            let mut vault = unwrap_result!(Vault::new(Some(sender), Some(killer.clone())));
+            let join_handle = Some(unwrap_result!(::std::thread::Builder::new()
+                                                      .name(format!("Vault {} worker", index))
+                                                      .spawn(move || vault.do_run())));
             let vault_comms = VaultComms {
                 notifier: receiver,
                 killer: killer,
                 join_handle: join_handle,
             };
             let mut temp_comms = vec![vault_comms];
-            let _ = evaluate_result!(wait_for_hits(&temp_comms,
-                                                   10,
-                                                   index,
-                                                   ::time::Duration::seconds(10 * (index + 1) as i64)));
+            let _ = unwrap_result!(wait_for_hits(&temp_comms,
+                                                 10,
+                                                 index,
+                                                 ::time::Duration::seconds(10 * (index + 1) as i64)));
             temp_comms.remove(0)
         }
 
         fn stop(&mut self) {
             self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
             if let Some(join_handle) = self.join_handle.take() {
-                evaluate_result!(join_handle.join());
+                unwrap_result!(join_handle.join());
             }
         }
     }
 
     struct Client {
-        routing: ::routing::routing_client::RoutingClient,
-        receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+        routing: RoutingClient,
+        receiver: ::std::sync::mpsc::Receiver<Data>,
         name: XorName,
     }
 
     impl Client {
         fn new() -> Client {
-            use routing::event::Event;
-            let (sender, receiver) = ::std::sync::mpsc::channel();
-            let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
-            let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(Event)>,
-                                    client_sender: ::std::sync::mpsc::Sender<(::routing::data::Data)>| {
+            let client_receiving = |routing_receiver: mpsc::Receiver<Event>,
+                                    network_event_sender: mpsc::Sender<Event>,
+                                    client_sender: mpsc::Sender<Data>| {
                 let _ = ::std::thread::spawn(move || {
-                    while let Ok(event) = receiver.recv() {
+                    while let Ok(event) = routing_receiver.recv() {
                         match event {
-                            Event::Request{ request, our_authority, from_authority, response_token } => {
-                                info!("as {:?} received request: {:?} from {:?} having token {:?}",
-                                      our_authority,
-                                      request,
-                                      from_authority,
-                                      response_token == None)
-                            }
-                            Event::Response{ response, our_authority, from_authority } => {
-                                info!("as {:?} received response: {:?} from {:?}",
-                                      our_authority,
-                                      response,
-                                      from_authority);
+                            Event::Request(request) => panic!("Received {:?}", request),
+                            Event::Response(response) => {
+                                info!("Received {:?}", response);
                                 match response {
-                                    routing::Response::Get(data, _, _) => {
-                                        let _ = client_sender.clone().send(data);
+                                    ResponseMessage{ content: ResponseContent::GetSuccess(data), .. } => {
+                                        let _ = client_sender.send(data);
                                     }
                                     _ => panic!("not expected!"),
                                 }
                             }
-                            Event::Refresh(_type_tag, _group_name, _accounts) => info!("client received a refresh"),
-                            Event::Churn(_close_group, _churn_node) => info!("client received a churn"),
-                            Event::DoRefresh(_type_tag, _our_authority, _churn_node) => {
-                                info!("client received a do-refresh")
-                            }
-                            Event::Connected => info!("client connected"),
+                            Event::Refresh(_, _, _) => info!("client received a refresh"),
+                            Event::Churn(_) => info!("client received a churn"),
+                            Event::DoRefresh(_, _, _) => info!("client received a do_refresh"),
+                            Event::Connected => unwrap_result!(network_event_sender.send(Event::Connected)),
                             Event::Disconnected => info!("client disconnected"),
-                            Event::FailedRequest{ request, our_authority, location, interface_error } => {
-                                info!("as {:?} received request: {:?} targeting {:?} having error {:?}",
-                                      our_authority,
-                                      request,
-                                      location,
-                                      interface_error)
-                            }
-                            Event::FailedResponse{ response, our_authority, location,
-                                                   interface_error } => {
-                                info!("as {:?} received response: {:?} targeting {:?} having error {:?}",
-                                      our_authority,
-                                      response,
-                                      location,
-                                      interface_error)
-                            }
-                            Event::Bootstrapped => {
-                                // Send an empty data to indicate bootstrapped
-                                let _ = client_sender.clone().send(::routing::data::Data::PlainData(
-                                    ::routing::plain_data::PlainData::new(
-                                        XorName::new([0u8; 64]), vec![])));
-                                info!("client routing Bootstrapped");
-                            }
                             Event::Terminated => {
                                 info!("client routing listening terminated");
                                 break;
@@ -396,26 +363,30 @@ mod test {
                     }
                 });
             };
-            let _ = client_receiving(receiver, client_sender);
-            let id = ::routing::id::Id::new();
-            let client_name = id.name();
-            let client_routing = ::routing::routing_client::RoutingClient::new(sender, Some(id));
-            let starting_time = ::time::SteadyTime::now();
-            let time_limit = ::time::Duration::minutes(1);
+            let (routing_sender, routing_receiver) = mpsc::channel();
+            let (network_event_sender, network_event_receiver) = mpsc::channel();
+            let (data_sender, data_receiver) = mpsc::channel();
+            let _ = client_receiving(routing_receiver, network_event_sender, data_sender);
+
+            let id = FullId::new();
+            let client_name = id.public_id().name().clone();
+            let client_routing = unwrap_result!(RoutingClient::new(routing_sender, Some(id)));
+            let starting_time = SteadyTime::now();
+            let time_limit = Duration::minutes(1);
             loop {
-                match client_receiver.try_recv() {
-                    Err(_) => {}
-                    Ok(_) => break,
+                match network_event_receiver.try_recv() {
+                    Ok(Event::Connected) => break,
+                    Err(_) => (),
+                    _ => panic!("Failed to connect"),
                 }
-                let duration = ::std::time::Duration::from_millis(1);
-                ::std::thread::sleep(duration);
+                ::std::thread::sleep(::std::time::Duration::from_millis(100));
                 if starting_time + time_limit < ::time::SteadyTime::now() {
                     panic!("new client can't get bootstrapped in expected duration");
                 }
             }
             Client {
                 routing: client_routing,
-                receiver: client_receiver,
+                receiver: data_receiver,
                 name: client_name,
             }
         }
@@ -458,7 +429,7 @@ mod test {
         }
 
         fn network_size() -> usize {
-            kademlia_routing_table::GROUP_SIZE
+            GROUP_SIZE as usize
         }
 
         fn consume_vaults_events(&self, time_limit: ::time::Duration) {
@@ -487,7 +458,7 @@ mod test {
 
     impl Drop for Environment {
         fn drop(&mut self) {
-            self.client.routing.stop();
+            // self.client.routing.stop();
             self.stop_all_vaults();
             remove_files();
         }
@@ -510,44 +481,39 @@ mod test {
             for i in 0..vaults_comms.len() {
                 match vaults_comms[i].notifier.try_recv() {
                     Err(_) => {}
-                    Ok(::routing::event::Event::Request{ request, our_authority,
-                                                         from_authority, response_token }) => {
-                        debug!("as {:?} received request: {:?} from {:?} having token {:?}",
-                               our_authority,
-                               request,
-                               from_authority,
-                               response_token == None);
-                        match (expected_tag, our_authority, request) {
-                            (1, ::routing::Authority::NaeManager(_), _) => hit_vaults.push(i),
-                            (3,
-                             ::routing::Authority::ManagedNode(_),
-                             ::routing::ExternalRequest::Put(_)) => hit_vaults.push(i),
+                    Ok(Event::Request(RequestMessage{ src, dst, content })) => {
+                        debug!("as {:?} received request: {:?} from {:?}",
+                               dst,
+                               content,
+                               src);
+                        match (expected_tag, dst, content) {
+                            (1, Authority::NaeManager(_), _) => hit_vaults.push(i),
+                            (3, Authority::ManagedNode(_), RequestContent::Put(_)) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
-                    Ok(::routing::event::Event::Churn(_, _)) => {
+                    Ok(Event::Churn(_ /* , _ */)) => {
                         if expected_tag == 10 {
                             hit_vaults.push(i);
                         }
                     }
-                    Ok(::routing::event::Event::Refresh(type_tag, _, _)) => {
+                    Ok(Event::Refresh(type_tag, _, _)) => {
                         match (expected_tag, type_tag) {
                             (20, 2) => hit_vaults.push(i),
                             (21, 5) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
-                    Ok(::routing::event::Event::Response{ response, our_authority,
-                                                          from_authority }) => {
+                    Ok(Event::Response(ResponseMessage{ src, dst, content })) => {
                         debug!("as {:?} received response: {:?} from {:?}",
-                               our_authority,
-                               response,
-                               from_authority);
-                        match (expected_tag, response, our_authority, from_authority) {
+                               dst,
+                               content,
+                               src);
+                        match (expected_tag, content, dst, src) {
                             (30,
-                             routing::Response::Put(_, _),
-                             ::routing::Authority::NodeManager(_),
-                             ::routing::Authority::NaeManager(_)) => hit_vaults.push(i),
+                             ResponseContent::PutFailure{ .. },
+                             Authority::NodeManager(_),
+                             Authority::NaeManager(_)) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
@@ -568,8 +534,8 @@ mod test {
         Ok(hit_vaults)
     }
 
-    fn wait_for_client_get(client_receiver: &::std::sync::mpsc::Receiver<(::routing::data::Data)>,
-                           expected_data: ::routing::data::Data,
+    fn wait_for_client_get(client_receiver: &::std::sync::mpsc::Receiver<Data>,
+                           expected_data: Data,
                            time_limit: ::time::Duration) {
         let starting_time = ::time::SteadyTime::now();
         loop {
@@ -638,278 +604,271 @@ mod test {
         // ======================= Put/Get test ====================================================
         println!("\n======================= Put/Get test ====================================================");
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::ImmutableData(im_data.clone()));
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               3,
-                                               ::data_manager::REPLICANTS,
-                                               ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::ImmutableData(im_data.clone())));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             3,
+                                             ::data_manager::REPLICANTS,
+                                             ::time::Duration::minutes(3)));
         println!("Getting data");
-        env.client.routing.get_request(::data_manager::Authority(im_data.name()),
-            ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ImmutableDataType::Normal));
+        unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
+                                            DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal)));
         wait_for_client_get(&env.client.receiver,
-                            ::routing::data::Data::ImmutableData(im_data),
-                            ::time::Duration::minutes(1));
-        env.consume_vaults_events(::time::Duration::seconds(10));
+                            Data::ImmutableData(im_data),
+                            Duration::minutes(1));
+        env.consume_vaults_events(Duration::seconds(10));
 
         // ======================= Post test =======================================================
         println!("\n======================= Post test =======================================================");
         let name = random();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
-                                                                                  name,
-                                                                                  0,
-                                                                                  value.clone(),
-                                                                                  vec![sign_keys.0],
-                                                                                  vec![],
-                                                                                  Some(&sign_keys.1)));
+        let sd = unwrap_result!(StructuredData::new(0,
+                                                    name,
+                                                    0,
+                                                    value.clone(),
+                                                    vec![sign_keys.0],
+                                                    vec![],
+                                                    Some(&sign_keys.1)));
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::StructuredData(sd.clone()));
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               1,
-                                               kademlia_routing_table::GROUP_SIZE,
-                                               ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::StructuredData(sd.clone())));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             1,
+                                             GROUP_SIZE as usize,
+                                             Duration::minutes(3)));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = evaluate_result!(::routing::structured_data::StructuredData::new(0,
-                                                                                      name,
-                                                                                      1,
-                                                                                      value.clone(),
-                                                                                      vec![keys.0],
-                                                                                      vec![sign_keys.0],
-                                                                                      Some(&sign_keys.1)));
+        let sd_new = unwrap_result!(StructuredData::new(0,
+                                                        name,
+                                                        1,
+                                                        value.clone(),
+                                                        vec![keys.0],
+                                                        vec![sign_keys.0],
+                                                        Some(&sign_keys.1)));
         println!("Posting data");
-        env.client.routing.post_request(::sd_manager::Authority(sd.name()),
-                                        ::routing::data::Data::StructuredData(sd_new.clone()));
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               1,
-                                               kademlia_routing_table::GROUP_SIZE,
-                                               ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_post_request(Authority::NaeManager(sd.name()),
+                                             Data::StructuredData(sd_new.clone())));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             1,
+                                             GROUP_SIZE as usize,
+                                             Duration::minutes(3)));
 
         println!("Getting data");
-        env.client.routing.get_request(::sd_manager::Authority(sd.name()),
-                                       ::routing::data::DataRequest::StructuredData(name, 0));
+        unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
+                                            DataRequest::StructuredData(name, 0)));
         wait_for_client_get(&env.client.receiver,
-                            ::routing::data::Data::StructuredData(sd_new),
-                            ::time::Duration::minutes(1));
+                            Data::StructuredData(sd_new),
+                            Duration::minutes(1));
 
         // ======================= Churn (node down) ImmutableData test ============================
         println!("\n======================= Churn (node down) ImmutableData test ============================");
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::ImmutableData(im_data.clone()));
-        let pmid_nodes = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                                        3,
-                                                        ::data_manager::REPLICANTS,
-                                                        ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::ImmutableData(im_data.clone())));
+        let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                                      3,
+                                                      ::data_manager::REPLICANTS,
+                                                      Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);
         env.vaults_comms[pmid_nodes[0]].stop();
         // Waiting for the notifications happen
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               30,
-                                               kademlia_routing_table::GROUP_SIZE / 2 + 1,
-                                               ::time::Duration::minutes(3)));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             30,
+                                             GROUP_SIZE as usize / 2 + 1,
+                                             Duration::minutes(3)));
         env.consume_vaults_events(::time::Duration::seconds(10));
 
         // ======================= Churn (node up) ImmutableData test ==============================
         println!("\n======================= Churn (node up) ImmutableData test ==============================");
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::ImmutableData(im_data.clone()));
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               3,
-                                               ::data_manager::REPLICANTS,
-                                               ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::ImmutableData(im_data.clone())));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             3,
+                                             ::data_manager::REPLICANTS,
+                                             Duration::minutes(3)));
 
         println!("Starting new vault");
         let mut index = Environment::network_size() - 1;
         env.vaults_comms.push(VaultComms::new(index));
 
         println!("Getting data");
-        env.client.routing.get_request(::data_manager::Authority(im_data.name()),
-                                       ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ImmutableDataType::Normal));
+        unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
+                                            DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal)));
         wait_for_client_get(&env.client.receiver,
-                            ::routing::data::Data::ImmutableData(im_data),
-                            ::time::Duration::minutes(1));
-        env.consume_vaults_events(::time::Duration::seconds(10));
+                            Data::ImmutableData(im_data),
+                            Duration::minutes(1));
+        env.consume_vaults_events(Duration::seconds(10));
 
         // ======================= Churn (two nodes down) ImmutableData test =======================
         println!("\n======================= Churn (two nodes down) ImmutableData test =======================");
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
+        let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::ImmutableData(im_data.clone()));
-        let pmid_nodes = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                                        3,
-                                                        ::data_manager::REPLICANTS,
-                                                        ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::ImmutableData(im_data.clone())));
+        let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                                      3,
+                                                      ::data_manager::REPLICANTS,
+                                                      Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);
         env.vaults_comms[pmid_nodes[0]].stop();
         println!("Stopping vault {}", pmid_nodes[1]);
         env.vaults_comms[pmid_nodes[1]].stop();
         // Waiting for the replications happen
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms, 3, 1, ::time::Duration::minutes(3)));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms, 3, 1, ::time::Duration::minutes(3)));
 
         // ======================= Churn (node up) StructuredData test =============================
         println!("\n======================= Churn (node up) StructuredData test =============================");
         let name = random();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
-                                                                                  name,
-                                                                                  0,
-                                                                                  value.clone(),
-                                                                                  vec![sign_keys.0],
-                                                                                  vec![],
-                                                                                  Some(&sign_keys.1)));
+        let sd = unwrap_result!(StructuredData::new(0,
+                                                    name,
+                                                    0,
+                                                    value.clone(),
+                                                    vec![sign_keys.0],
+                                                    vec![],
+                                                    Some(&sign_keys.1)));
         println!("Putting data");
-        env.client.routing.put_request(::maid_manager::Authority(env.client.name),
-                                       ::routing::data::Data::StructuredData(sd.clone()));
-        let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
-                                               1,
-                                               kademlia_routing_table::GROUP_SIZE - 2,
-                                               ::time::Duration::minutes(3)));
+        unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
+                                            Data::StructuredData(sd.clone())));
+        let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
+                                             1,
+                                             GROUP_SIZE as usize - 2,
+                                             Duration::minutes(3)));
 
         println!("Starting new vault");
         index = Environment::network_size() - 2;
         env.vaults_comms.push(VaultComms::new(index));
 
         println!("Getting data");
-        env.client.routing.get_request(::sd_manager::Authority(sd.name()),
-                                       ::routing::data::DataRequest::StructuredData(name, 0));
+        unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
+                                            DataRequest::StructuredData(name, 0)));
         wait_for_client_get(&env.client.receiver,
-                            ::routing::data::Data::StructuredData(sd),
-                            ::time::Duration::minutes(1));
+                            Data::StructuredData(sd),
+                            Duration::minutes(1));
     }
 }
 
 
-
-#[cfg(all(test, feature = "use-mock-routing"))]
-mod mock_routing_test {
-    use super::*;
-
-    struct VaultComms {
-        receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
-        killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
-        join_handle: Option<::std::thread::JoinHandle<()>>,
-    }
-
-    impl Drop for VaultComms {
-        fn drop(&mut self) {
-            self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
-            if let Some(join_handle) = self.join_handle.take() {
-                evaluate_result!(join_handle.join());
-            }
-        }
-    }
-
-
-    fn mock_env_setup() -> (Routing, VaultComms) {
-        ::utils::initialise_logger();
-        let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
-        let mut vault = Vault::new(None, Some(killer.clone()));
-        let mut routing = vault.pmid_node.routing();
-        let receiver = routing.get_client_receiver();
-        let join_handle = Some(evaluate_result!(::std::thread::Builder::new().spawn(move || vault.do_run())));
-
-        let mut available_nodes = Vec::with_capacity(30);
-        for _ in 0..30 {
-            available_nodes.push(random());
-        }
-        routing.churn_event(available_nodes, random());
-        (routing,
-         VaultComms {
-            receiver: receiver,
-            killer: killer,
-            join_handle: join_handle,
-        })
-    }
-
-    #[test]
-    fn put_get_flow() {
-        let (mut routing, vault_comms) = mock_env_setup();
-
-        let client_name = random();
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let im_data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
-        routing.client_put(client_name,
-                           sign_keys.0,
-                           ::routing::data::Data::ImmutableData(im_data.clone()));
-        let duration = ::std::time::Duration::from_millis(2000);
-        ::std::thread::sleep(duration);
-
-        let data_request =
-            ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                                                        ImmutableDataType::Normal);
-        routing.client_get(client_name, sign_keys.0, data_request);
-        for it in vault_comms.receiver.iter() {
-            assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
-            break;
-        }
-    }
-
-    #[test]
-    fn post_flow() {
-        let (mut routing, vault_comms) = mock_env_setup();
-
-        let name = random();
-        let value = ::routing::types::generate_random_vec_u8(1024);
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
-                                                                                  name,
-                                                                                  0,
-                                                                                  value.clone(),
-                                                                                  vec![sign_keys.0],
-                                                                                  vec![],
-                                                                                  Some(&sign_keys.1)));
-
-        let client_name = random();
-        routing.client_put(client_name,
-                           sign_keys.0,
-                           ::routing::data::Data::StructuredData(sd.clone()));
-        let duration = ::std::time::Duration::from_millis(2000);
-        ::std::thread::sleep(duration);
-
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-        let sd_new = evaluate_result!(::routing::structured_data::StructuredData::new(0,
-                                                                                      name,
-                                                                                      1,
-                                                                                      value.clone(),
-                                                                                      vec![keys.0],
-                                                                                      vec![sign_keys.0],
-                                                                                      Some(&sign_keys.1)));
-        routing.client_post(client_name,
-                            sign_keys.0,
-                            ::routing::data::Data::StructuredData(sd_new.clone()));
-        let duration = ::std::time::Duration::from_millis(2000);
-        ::std::thread::sleep(duration);
-
-        let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
-        routing.client_get(client_name, sign_keys.0, data_request);
-        for it in vault_comms.receiver.iter() {
-            assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
-            break;
-        }
-    }
-}
-*/
+// #[cfg(all(test, feature = "use-mock-routing"))]
+// mod mock_routing_test {
+// use super::*;
+//
+// struct VaultComms {
+// receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+// killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
+// join_handle: Option<::std::thread::JoinHandle<()>>,
+// }
+//
+// impl Drop for VaultComms {
+// fn drop(&mut self) {
+// self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
+// if let Some(join_handle) = self.join_handle.take() {
+// unwrap_result!(join_handle.join());
+// }
+// }
+// }
+//
+//
+// fn mock_env_setup() -> (Routing, VaultComms) {
+// ::utils::initialise_logger();
+// let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
+// let mut vault = Vault::new(None, Some(killer.clone()));
+// let mut routing = vault.pmid_node.routing();
+// let receiver = routing.get_client_receiver();
+// let join_handle = Some(unwrap_result!(::std::thread::Builder::new().spawn(move || vault.do_run())));
+//
+// let mut available_nodes = Vec::with_capacity(30);
+// for _ in 0..30 {
+// available_nodes.push(random());
+// }
+// routing.churn_event(available_nodes, random());
+// (routing,
+// VaultComms {
+// receiver: receiver,
+// killer: killer,
+// join_handle: join_handle,
+// })
+// }
+//
+// #[test]
+// fn put_get_flow() {
+// let (mut routing, vault_comms) = mock_env_setup();
+//
+// let client_name = random();
+// let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+// let value = ::routing::types::generate_random_vec_u8(1024);
+// let im_data =
+// ImmutableData::new(ImmutableDataType::Normal, value);
+// routing.client_put(client_name,
+// sign_keys.0,
+// ::routing::data::Data::ImmutableData(im_data.clone()));
+// let duration = ::std::time::Duration::from_millis(2000);
+// ::std::thread::sleep(duration);
+//
+// let data_request =
+// ::routing::data::DataRequest::ImmutableData(im_data.name(),
+// ImmutableDataType::Normal);
+// routing.client_get(client_name, sign_keys.0, data_request);
+// for it in vault_comms.receiver.iter() {
+// assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
+// break;
+// }
+// }
+//
+// #[test]
+// fn post_flow() {
+// let (mut routing, vault_comms) = mock_env_setup();
+//
+// let name = random();
+// let value = ::routing::types::generate_random_vec_u8(1024);
+// let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+// let sd = unwrap_result!(::routing::structured_data::StructuredData::new(0,
+// name,
+// 0,
+// value.clone(),
+// vec![sign_keys.0],
+// vec![],
+// Some(&sign_keys.1)));
+//
+// let client_name = random();
+// routing.client_put(client_name,
+// sign_keys.0,
+// ::routing::data::Data::StructuredData(sd.clone()));
+// let duration = ::std::time::Duration::from_millis(2000);
+// ::std::thread::sleep(duration);
+//
+// let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+// let sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
+// name,
+// 1,
+// value.clone(),
+// vec![keys.0],
+// vec![sign_keys.0],
+// Some(&sign_keys.1)));
+// routing.client_post(client_name,
+// sign_keys.0,
+// ::routing::data::Data::StructuredData(sd_new.clone()));
+// let duration = ::std::time::Duration::from_millis(2000);
+// ::std::thread::sleep(duration);
+//
+// let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
+// routing.client_get(client_name, sign_keys.0, data_request);
+// for it in vault_comms.receiver.iter() {
+// assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
+// break;
+// }
+// }
+// }
+//
