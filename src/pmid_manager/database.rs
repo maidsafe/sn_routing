@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage, StructuredData};
+use maidsafe_utilities::serialisation::serialise;
+use routing::Authority;
 use xor_name::XorName;
 type PmidNodeName = XorName;
 
@@ -136,6 +135,7 @@ impl Database {
         entry.put_data(size)
     }
 
+    #[allow(unused)]
     pub fn delete_data(&mut self, name: &PmidNodeName, size: u64) {
         let default: AccountValue = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
@@ -159,10 +159,10 @@ impl Database {
                 if let Ok(serialised_account) = serialise(&[account]) {
                     debug!("PmidManager sending refresh for account {:?}",
                            our_authority.get_name());
-                    routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                 our_authority.clone(),
-                                                 serialised_account,
-                                                 churn_node.clone());
+                    let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                         our_authority.clone(),
+                                                         serialised_account,
+                                                         churn_node.clone());
                 }
             }
         }
@@ -185,10 +185,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("PmidManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                     our_authority.clone(),
-                                                     serialised_account,
-                                                     churn_node.clone());
+                        let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                             our_authority.clone(),
+                                                             serialised_account,
+                                                             churn_node.clone());
                     }
                 }
             }
@@ -197,6 +197,7 @@ impl Database {
         ::utils::NOT_HANDLED
     }
 
+    #[allow(unused)]
     pub fn cleanup(&mut self) {
         self.storage.clear();
     }

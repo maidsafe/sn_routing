@@ -16,9 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use kademlia_routing_table;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use maidsafe_utilities::serialisation::serialise;
+use routing::StructuredData;
 use xor_name::XorName;
 
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.

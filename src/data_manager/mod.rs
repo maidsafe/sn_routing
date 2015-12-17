@@ -156,7 +156,7 @@ impl DataManager {
                        self.id,
                        fetch_name,
                        dst);
-                routing.send_get_request(src, dst, content);
+                let _ = routing.send_get_request(src, dst, content);
                 let _ = self.ongoing_gets
                             .insert((fetch_name.clone(), pmid.clone()),
                                     ::time::SteadyTime::now());
@@ -195,7 +195,7 @@ impl DataManager {
             let src = Authority::NaeManager(data_name);
             let dst = Authority::NodeManager(pmid);
             let content = RequestContent::Put(Data::ImmutableData(data.clone()));
-            routing.send_put_request(src, dst, content);
+            let _ = routing.send_put_request(src, dst, content);
         }
     }
 
@@ -204,7 +204,7 @@ impl DataManager {
             ResponseContent::GetSuccess(Data::ImmutableData(ref data)) => data.clone(),
             _ => unreachable!("Error in vault demuxing"),
         };
-        let data_name = data.name();
+        let _data_name = data.name();
 
         // // Respond if there is a corresponding cached request.
         // if self.request_cache.contains_key(&(data_name, *))) {
@@ -253,6 +253,7 @@ impl DataManager {
                               _external_error_indicator: &Vec<u8>) {
     }
 
+    #[allow(unused)]
     pub fn handle_put_failure(&mut self, response: ResponseMessage) {
         // match response {
         //     ::routing::error::ResponseError::FailedRequestForData(data) => {
@@ -326,10 +327,10 @@ impl DataManager {
         // close_group[0] is supposed to be the vault id
         let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
         if let Ok(serialised_stats) = serialise(&[data_manager_stats.clone()]) {
-            routing.send_refresh_request(STATS_TAG,
-                                         Authority::NaeManager(churn_node.clone()),
-                                         serialised_stats,
-                                         churn_node.clone());
+            let _ = routing.send_refresh_request(STATS_TAG,
+                                                 Authority::NaeManager(churn_node.clone()),
+                                                 serialised_stats,
+                                                 churn_node.clone());
         }
         self.set_node_table(close_group);
     }
@@ -358,6 +359,7 @@ impl DataManager {
         self.nodes_in_table.len()
     }
 
+    #[allow(unused)]
     fn replicate_to(&mut self, name: &XorName) -> Option<XorName> {
         let pmid_nodes = self.database.get_pmid_nodes(name);
         if pmid_nodes.len() < MIN_REPLICANTS && pmid_nodes.len() > 0 {
@@ -419,6 +421,7 @@ impl DataManager {
     //     }
     // }
 
+    #[allow(unused)]
     fn handle_had_to_clear_sacrificial(&mut self, data_name: XorName, pmid_node_name: XorName) {
         // giving less weight when removing a sacrificial data
         self.resource_index = ::std::cmp::max(1, self.resource_index - 1);

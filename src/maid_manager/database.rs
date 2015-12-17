@@ -15,9 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use maidsafe_utilities::serialisation::serialise;
+use routing::Authority;
 use xor_name::XorName;
 type MaidNodeName = XorName;
 
@@ -111,6 +110,7 @@ impl Database {
         Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
+    #[allow(unused)]
     pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
         let default: AccountValue = Default::default();
         self.storage.entry(name.clone()).or_insert(default).space_available
@@ -138,10 +138,10 @@ impl Database {
             if let Ok(serialised_account) = serialise(&[account]) {
                 debug!("MaidManager sending refresh for account {:?}",
                        our_authority.get_name());
-                routing.send_refresh_request(super::ACCOUNT_TAG,
-                                             our_authority.clone(),
-                                             serialised_account,
-                                             churn_node.clone());
+                let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                     our_authority.clone(),
+                                                     serialised_account,
+                                                     churn_node.clone());
             }
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -163,10 +163,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("MaidManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                     our_authority.clone(),
-                                                     serialised_account,
-                                                     churn_node.clone());
+                        let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                             our_authority.clone(),
+                                                             serialised_account,
+                                                             churn_node.clone());
                     }
                 }
             }
@@ -175,6 +175,7 @@ impl Database {
         ::utils::NOT_HANDLED
     }
 
+    #[allow(unused)]
     pub fn cleanup(&mut self) {
         self.storage.clear();
     }

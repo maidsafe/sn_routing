@@ -111,6 +111,7 @@ impl Database {
         let _ = self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
     }
 
+    #[allow(unused)]
     pub fn add_pmid_node(&mut self, name: &DataName, pmid_node: PmidNode) {
         let nodes = self.storage.entry(name.clone()).or_insert(vec![pmid_node.clone()]);
         if !nodes.contains(&pmid_node) {
@@ -181,10 +182,10 @@ impl Database {
             if let Ok(serialised_account) = serialise(&[account]) {
                 debug!("DataManager sending refresh for account {:?}",
                        target_authority.get_name());
-                routing.send_refresh_request(super::ACCOUNT_TAG,
-                                             target_authority,
-                                             serialised_account,
-                                             churn_node.clone());
+                let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                     target_authority,
+                                                     serialised_account,
+                                                     churn_node.clone());
             }
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -207,10 +208,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("DataManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                     our_authority.clone(),
-                                                     serialised_account,
-                                                     churn_node.clone());
+                        let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                             our_authority.clone(),
+                                                             serialised_account,
+                                                             churn_node.clone());
                     }
                 }
             }
@@ -219,6 +220,7 @@ impl Database {
         ::utils::NOT_HANDLED
     }
 
+    #[allow(unused)]
     pub fn cleanup(&mut self) {
         self.storage.clear();
     }

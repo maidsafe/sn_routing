@@ -17,8 +17,7 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, ResponseContent, StructuredData};
 use vault::Routing;
 use xor_name::XorName;
 
@@ -137,7 +136,7 @@ impl StructuredDataManager {
             let data = self.chunk_store.get(&name);
             let src = Authority::NaeManager(name);
             debug!("SD Manager sending refresh for account {:?}", name);
-            routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
+            let _ = routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
 
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -159,7 +158,7 @@ impl StructuredDataManager {
                     let data = self.chunk_store.get(&name);
                     debug!("SD Manager sending on_refresh for account {:?}",
                            our_authority.get_name());
-                    routing.send_refresh_request(ACCOUNT_TAG, our_authority.clone(), data, churn_node.clone());
+                    let _ = routing.send_refresh_request(ACCOUNT_TAG, our_authority.clone(), data, churn_node.clone());
                 }
             }
             return ::utils::HANDLED;

@@ -16,10 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage, StructuredData};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage, ResponseContent};
 use vault::Routing;
-use xor_name::XorName;
 
 pub struct PmidNode {
     chunk_store: ::chunk_store::ChunkStore,

@@ -15,9 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{Authority, Data, ImmutableData, RequestContent, ResponseMessage};
 use vault::Routing;
 use xor_name::XorName;
 
@@ -46,6 +44,7 @@ impl PmidManager {
         let _ = routing.send_put_request(src, dst, content);
     }
 
+    #[allow(unused)]
     pub fn handle_put_failure(&mut self, _response: ResponseMessage) {
 /*        match from_authority {
             &Authority::ManagedNode(from_address) => {

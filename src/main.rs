@@ -37,8 +37,6 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![allow(unused)]
-
 #[macro_use]
 extern crate log;
 #[macro_use]

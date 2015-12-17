@@ -15,9 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent};
 use vault::Routing;
 use xor_name::XorName;
 
@@ -59,7 +57,7 @@ impl MaidManager {
 
         let dst = Authority::NaeManager(data.name());
         let content = RequestContent::Put(data);
-        routing.send_put_request(request.dst.clone(), dst, content);
+        let _ = routing.send_put_request(request.dst.clone(), dst, content);
     }
 
     pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
