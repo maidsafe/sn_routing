@@ -27,7 +27,11 @@ impl GetRequest {
                location: ::routing::Authority,
                request_for: ::routing::data::DataRequest)
                -> GetRequest {
-        GetRequest { our_authority: our_authority, location: location, request_for: request_for }
+        GetRequest {
+            our_authority: our_authority,
+            location: location,
+            request_for: request_for,
+        }
     }
 }
 
@@ -43,7 +47,11 @@ impl PutRequest {
                location: ::routing::Authority,
                data: ::routing::data::Data)
                -> PutRequest {
-        PutRequest { our_authority: our_authority, location: location, data: data }
+        PutRequest {
+            our_authority: our_authority,
+            location: location,
+            data: data,
+        }
     }
 }
 
@@ -60,7 +68,11 @@ impl PostRequest {
                location: ::routing::Authority,
                data: ::routing::data::Data)
                -> PostRequest {
-        PostRequest { our_authority: our_authority, location: location, data: data }
+        PostRequest {
+            our_authority: our_authority,
+            location: location,
+            data: data,
+        }
     }
 }
 
@@ -77,7 +89,11 @@ impl DeleteRequest {
                location: ::routing::Authority,
                data: ::routing::data::Data)
                -> DeleteRequest {
-        DeleteRequest { our_authority: our_authority, location: location, data: data }
+        DeleteRequest {
+            our_authority: our_authority,
+            location: location,
+            data: data,
+        }
     }
 }
 
@@ -190,8 +206,13 @@ impl RefreshRequest {
     pub fn new(type_tag: u64,
                our_authority: ::routing::Authority,
                content: Vec<u8>,
-               churn_node: XorName) -> RefreshRequest {
-        RefreshRequest { type_tag: type_tag, our_authority: our_authority,
-                         content: content, churn_node: churn_node }
+               churn_node: XorName)
+               -> RefreshRequest {
+        RefreshRequest {
+            type_tag: type_tag,
+            our_authority: our_authority,
+            content: content,
+            churn_node: churn_node,
+        }
     }
 }

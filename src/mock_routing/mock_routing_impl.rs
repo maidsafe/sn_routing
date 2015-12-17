@@ -54,10 +54,8 @@ impl MockRoutingImpl {
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data_request: ::routing::data::DataRequest) {
         let (_name, our_authority) = match data_request {
-            ::routing::data::DataRequest::ImmutableData(name, _) =>
-                (name.clone(), ::data_manager::Authority(name)),
-            ::routing::data::DataRequest::StructuredData(name, _) =>
-                (name.clone(), ::sd_manager::Authority(name)),
+            ::routing::data::DataRequest::ImmutableData(name, _) => (name.clone(), ::data_manager::Authority(name)),
+            ::routing::data::DataRequest::StructuredData(name, _) => (name.clone(), ::sd_manager::Authority(name)),
             _ => panic!("unexpected"),
         };
         let cloned_sender = self.sender.clone();
@@ -105,8 +103,7 @@ impl MockRoutingImpl {
         });
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<XorName>,
-                       churn_node: XorName) {
+    pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             let _ = cloned_sender.send(::routing::event::Event::Churn(nodes, churn_node));
@@ -138,9 +135,8 @@ impl MockRoutingImpl {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        request_for: ::routing::data::DataRequest) {
-        self.get_requests_given.push(super::api_calls::GetRequest::new(our_authority.clone(),
-                                                                       location.clone(),
-                                                                       request_for.clone()));
+        self.get_requests_given
+            .push(super::api_calls::GetRequest::new(our_authority.clone(), location.clone(), request_for.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -173,8 +169,7 @@ impl MockRoutingImpl {
             match location.clone() {
                 ::routing::Authority::NaeManager(_) => {
                     let _ = cloned_sender.send(::routing::event::Event::Response {
-                        response: ::routing::ExternalResponse::Get(data.clone(), data_request,
-                                                                   response_token),
+                        response: ::routing::ExternalResponse::Get(data.clone(), data_request, response_token),
                         our_authority: location,
                         from_authority: our_authority,
                     });
@@ -191,9 +186,8 @@ impl MockRoutingImpl {
                        our_authority: ::routing::Authority,
                        location: ::routing::Authority,
                        data: ::routing::data::Data) {
-        self.put_requests_given.push(super::api_calls::PutRequest::new(our_authority.clone(),
-                                                                       location.clone(),
-                                                                       data.clone()));
+        self.put_requests_given
+            .push(super::api_calls::PutRequest::new(our_authority.clone(), location.clone(), data.clone()));
         let delay_ms = self.network_delay_ms;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -233,8 +227,8 @@ impl MockRoutingImpl {
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
                            churn_node: XorName) {
-        self.refresh_requests_given.push(super::api_calls::RefreshRequest::new(
-                type_tag, our_authority.clone(), content.clone(), churn_node));
+        self.refresh_requests_given
+            .push(super::api_calls::RefreshRequest::new(type_tag, our_authority.clone(), content.clone(), churn_node));
         // routing is expected to accumulate the refresh requests
         // for the same group into one event request to vault
         let delay_ms = self.network_delay_ms;
@@ -245,9 +239,7 @@ impl MockRoutingImpl {
             for _ in 2..::data_manager::REPLICANTS {
                 refresh_contents.push(content.clone());
             }
-            let _ = cloned_sender.send(::routing::event::Event::Refresh(type_tag,
-                                                                        our_authority,
-                                                                        refresh_contents));
+            let _ = cloned_sender.send(::routing::event::Event::Refresh(type_tag, our_authority, refresh_contents));
         });
     }
 

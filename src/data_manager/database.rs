@@ -58,7 +58,8 @@ impl ::types::Refreshable for Account {
         let mut stats = Vec::<(PmidNode, u64)>::new();
         for response in responses {
             debug!("DataManager merging one response of chunk {:?} stored on nodes {:?}",
-                   response.name, response.data_holders);
+                   response.name,
+                   response.data_holders);
             if response.name == from_group {
                 for holder in response.data_holders.iter() {
                     if candidates.contains(holder) {
@@ -80,7 +81,9 @@ impl ::types::Refreshable for Account {
                 pmids.push(stats[i].0.clone());
             }
         }
-        debug!("DataManager merged chunk {:?} stored on nodes {:?}", from_group, pmids);
+        debug!("DataManager merged chunk {:?} stored on nodes {:?}",
+               from_group,
+               pmids);
         if pmids.len() == 0 {
             None
         } else {
@@ -97,9 +100,7 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Database {
-        Database {
-            storage: ::std::collections::HashMap::with_capacity(10000),
-        }
+        Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
     pub fn exist(&mut self, name: &DataName) -> bool {
@@ -142,11 +143,16 @@ impl Database {
         let _ = self.storage.remove(&merged_account.name);
         let data_holders = merged_account.data_holders.clone();
         let _ = self.storage.insert(merged_account.name, merged_account.data_holders);
-        info!("DataManager updated account {:?} to {:?}", merged_account.name, data_holders);
+        info!("DataManager updated account {:?} to {:?}",
+              merged_account.name,
+              data_holders);
     }
 
-    pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &XorName,
-                        offline: bool) -> Vec<(XorName, Vec<XorName>)> {
+    pub fn handle_churn(&mut self,
+                        routing: &::vault::Routing,
+                        churn_node: &XorName,
+                        offline: bool)
+                        -> Vec<(XorName, Vec<XorName>)> {
         let mut on_going_gets = vec![];
         for (key, mut value) in self.storage.iter_mut() {
             if offline {
@@ -154,13 +160,14 @@ impl Database {
                     if value[i] == *churn_node {
                         let _ = value.remove(i);
                         for pmid_node in value.iter() {
-                            info!("DataManager sends out a Get request in churn_down, \
-                                   fetching data {:?} from pmid_node {:?}", *key, pmid_node);
+                            info!("DataManager sends out a Get request in churn_down, fetching data {:?} from \
+                                   pmid_node {:?}",
+                                  *key,
+                                  pmid_node);
                             let src = Authority::NaeManager((*key).clone());
                             let dst = Authority::ManagedNode(pmid_node.clone());
-                            let content = RequestContent::Get(
-                                DataRequest::ImmutableData((*key).clone(),
-                                ImmutableDataType::Backup));
+                            let content = RequestContent::Get(DataRequest::ImmutableData((*key).clone(),
+                                                                                         ImmutableDataType::Backup));
                             let _ = routing.send_get_request(src, dst, content);
                         }
                         on_going_gets.push(((*key).clone(), (*value).clone()));
@@ -174,8 +181,10 @@ impl Database {
             if let Ok(serialised_account) = serialise(&[account]) {
                 debug!("DataManager sending refresh for account {:?}",
                        target_authority.get_name());
-                routing.send_refresh_request(super::ACCOUNT_TAG, target_authority,
-                                             serialised_account, churn_node.clone());
+                routing.send_refresh_request(super::ACCOUNT_TAG,
+                                             target_authority,
+                                             serialised_account,
+                                             churn_node.clone());
             }
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -189,7 +198,8 @@ impl Database {
                       type_tag: &u64,
                       our_authority: &::routing::Authority,
                       churn_node: &XorName,
-                      routing: &::vault::Routing) -> Option<()> {
+                      routing: &::vault::Routing)
+                      -> Option<()> {
         if type_tag == &super::ACCOUNT_TAG {
             for (key, value) in self.storage.iter() {
                 if key == our_authority.get_name() {
@@ -197,8 +207,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("DataManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                                     serialised_account, churn_node.clone());
+                        routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                     our_authority.clone(),
+                                                     serialised_account,
+                                                     churn_node.clone());
                     }
                 }
             }
@@ -222,8 +234,8 @@ mod test {
     fn exist() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         let mut pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
@@ -240,8 +252,8 @@ mod test {
     fn put() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 
@@ -262,8 +274,8 @@ mod test {
     fn remove_pmid() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 
@@ -288,8 +300,8 @@ mod test {
     fn replace_pmids() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
         let mut new_pmid_nodes: Vec<XorName> = vec![];
@@ -318,8 +330,8 @@ mod test {
     fn handle_account_transfer() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 

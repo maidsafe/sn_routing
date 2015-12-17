@@ -86,19 +86,15 @@ impl PmidManager {
         ::utils::HANDLED
 */    }
 
-    pub fn handle_refresh(&mut self,
-                          type_tag: &u64,
-                          our_authority: &Authority,
-                          payloads: &Vec<Vec<u8>>)
-                          -> Option<()> {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority::NodeManager(from_group) = our_authority {
-                if let Some(merged_account) = ::utils::merge::<Account>(from_group,
-                                                                        payloads.clone()) {
+                if let Some(merged_account) = ::utils::merge::<Account>(from_group, payloads.clone()) {
                     self.database.handle_account_transfer(merged_account);
                 }
             } else {
-                warn!("Invalid authority for refresh at PmidManager: {:?}", our_authority);
+                warn!("Invalid authority for refresh at PmidManager: {:?}",
+                      our_authority);
             }
             ::utils::HANDLED
         } else {
@@ -106,10 +102,7 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_churn(&mut self,
-                        routing: &mut Routing,
-                        close_group: &Vec<XorName>,
-                        churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &mut Routing, close_group: &Vec<XorName>, churn_node: &XorName) {
         self.database.handle_churn(close_group, routing, churn_node);
     }
 
@@ -117,7 +110,8 @@ impl PmidManager {
                       routing: &mut Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
-                      churn_node: &XorName) -> Option<()> {
+                      churn_node: &XorName)
+                      -> Option<()> {
         self.database.do_refresh(type_tag, our_authority, churn_node, routing)
     }
 
@@ -144,13 +138,18 @@ impl PmidManager {
 mod test {
     use super::*;
 
-    fn env_setup() -> (::routing::Authority, ::vault::Routing, PmidManager, ::routing::Authority,
-                       ::routing::immutable_data::ImmutableData) {
+    fn env_setup()
+        -> (::routing::Authority,
+            ::vault::Routing,
+            PmidManager,
+            ::routing::Authority,
+            ::routing::immutable_data::ImmutableData)
+    {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let pmid_manager = PmidManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         (Authority(::utils::random_name()),
          routing,
          pmid_manager,
@@ -160,24 +159,35 @@ mod test {
 
     #[test]
     fn handle_put() {
-        let (our_authority, routing, mut pmid_manager, from_authority, data) = env_setup();
+        let (our_authority,
+             routing,
+             mut pmid_manager,
+             from_authority,
+             data) = env_setup();
         assert_eq!(::utils::HANDLED,
-            pmid_manager.handle_put(&our_authority, &from_authority,
-                                    &::routing::data::Data::ImmutableData(data.clone())));
+                   pmid_manager.handle_put(&our_authority,
+                                           &from_authority,
+                                           &::routing::data::Data::ImmutableData(data.clone())));
         let put_requests = routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].our_authority, our_authority);
         assert_eq!(put_requests[0].location,
                    Authority::ManagedNode(our_authority.get_name().clone()));
-        assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
+        assert_eq!(put_requests[0].data,
+                   ::routing::data::Data::ImmutableData(data));
     }
 
     #[test]
     fn handle_churn_and_account_transfer() {
-        let (our_authority, routing, mut pmid_manager, from_authority, data) = env_setup();
+        let (our_authority,
+             routing,
+             mut pmid_manager,
+             from_authority,
+             data) = env_setup();
         assert_eq!(::utils::HANDLED,
-            pmid_manager.handle_put(&our_authority, &from_authority,
-                                    &::routing::data::Data::ImmutableData(data.clone())));
+                   pmid_manager.handle_put(&our_authority,
+                                           &from_authority,
+                                           &::routing::data::Data::ImmutableData(data.clone())));
         let close_group = vec![XorName::new([1u8; 64]),
                                XorName::new([2u8; 64]),
                                XorName::new([3u8; 64]),
@@ -192,7 +202,8 @@ mod test {
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-        assert_eq!(refresh_requests[0].our_authority.get_name(), our_authority.get_name());
+        assert_eq!(refresh_requests[0].our_authority.get_name(),
+                   our_authority.get_name());
 
         let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {

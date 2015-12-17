@@ -29,7 +29,10 @@ pub struct Account {
 
 impl Account {
     fn new(name: MaidNodeName, value: AccountValue) -> Account {
-        Account { name: name, value: value }
+        Account {
+            name: name,
+            value: value,
+        }
     }
 }
 
@@ -61,13 +64,19 @@ impl Default for AccountValue {
     // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
     //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> AccountValue {
-        AccountValue { data_stored: 0, space_available: 1073741824 }
+        AccountValue {
+            data_stored: 0,
+            space_available: 1073741824,
+        }
     }
 }
 
 impl AccountValue {
     fn new(data_stored: u64, space_available: u64) -> AccountValue {
-        AccountValue { data_stored: data_stored, space_available: space_available }
+        AccountValue {
+            data_stored: data_stored,
+            space_available: space_available,
+        }
     }
 
     fn put_data(&mut self, size: u64) -> bool {
@@ -117,19 +126,22 @@ impl Database {
         let _ = self.storage.remove(&merged_account.name);
         let value = merged_account.value.clone();
         let _ = self.storage.insert(merged_account.name, merged_account.value);
-        info!("MaidManager updated account {:?} to {:?}", merged_account.name, value);
+        info!("MaidManager updated account {:?} to {:?}",
+              merged_account.name,
+              value);
     }
 
-    pub fn handle_churn(&mut self, routing: &::vault::Routing,
-                        churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &XorName) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
             let our_authority = Authority::ClientManager(account.name);
             if let Ok(serialised_account) = serialise(&[account]) {
                 debug!("MaidManager sending refresh for account {:?}",
                        our_authority.get_name());
-                routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                             serialised_account, churn_node.clone());
+                routing.send_refresh_request(super::ACCOUNT_TAG,
+                                             our_authority.clone(),
+                                             serialised_account,
+                                             churn_node.clone());
             }
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -142,7 +154,8 @@ impl Database {
                       type_tag: &u64,
                       our_authority: &::routing::Authority,
                       churn_node: &XorName,
-                      routing: &::vault::Routing) -> Option<()> {
+                      routing: &::vault::Routing)
+                      -> Option<()> {
         if type_tag == &super::ACCOUNT_TAG {
             for (key, value) in self.storage.iter() {
                 if key == our_authority.get_name() {
@@ -150,8 +163,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("MaidManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                                     serialised_account, churn_node.clone());
+                        routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                     our_authority.clone(),
+                                                     serialised_account,
+                                                     churn_node.clone());
                     }
                 }
             }
@@ -243,8 +258,7 @@ mod test {
     #[test]
     fn maid_manager_account_serialisation() {
         let obj_before = Account::new(XorName([1u8; 64]),
-                                      AccountValue::new(::rand::random::<u64>(),
-                                                        ::rand::random::<u64>()));
+                                      AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
         evaluate_result!(e.encode(&[&obj_before]));

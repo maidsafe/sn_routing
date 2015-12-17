@@ -43,7 +43,7 @@ impl ChunkStore {
     }
 
     pub fn put(&mut self, name: &XorName, value: Vec<u8>) {
-        use ::std::io::Write;
+        use std::io::Write;
 
         if !self.has_disk_space(value.len()) {
             return warn!("Not enough space in ChunkStore.");
@@ -56,29 +56,29 @@ impl ChunkStore {
         let path_name = ::std::path::Path::new(&hex_name);
         let path = self.tempdir.path().join(path_name);
         let _ = ::std::fs::File::create(&path)
-            .and_then(|mut file| {
-                file.write(&value[..])
-                    .and_then(|size| {
-                        self.current_disk_usage += size;
-                        file.sync_all().map(|_| self.current_disk_usage)
+                    .and_then(|mut file| {
+                        file.write(&value[..])
+                            .and_then(|size| {
+                                self.current_disk_usage += size;
+                                file.sync_all().map(|_| self.current_disk_usage)
+                            })
+                            .map(|_| file)
                     })
-                    .map(|_| file)
-            })
-            .or_else(|error| {
-                error!("ChunkStore failed to put to file {:?}: {}", path, error);
-                Err(error)
-            });
+                    .or_else(|error| {
+                        error!("ChunkStore failed to put to file {:?}: {}", path, error);
+                        Err(error)
+                    });
     }
 
     pub fn delete(&mut self, name: &XorName) {
         let _ = self.dir_entry(name)
                     .and_then(|entry| {
                         let _ = entry.metadata()
-                                     .and_then(|metadata|
-                                         Ok(self.current_disk_usage -= metadata.len() as usize))
+                                     .and_then(|metadata| Ok(self.current_disk_usage -= metadata.len() as usize))
                                      .or_else(|error| {
                                          error!("ChunkStore failed to get metadata for {:?}: {}",
-                                                entry.path(), error);
+                                                entry.path(),
+                                                error);
                                          Err(error)
                                      });
                         ::std::fs::remove_file(entry.path())
@@ -91,13 +91,14 @@ impl ChunkStore {
     }
 
     pub fn get(&self, name: &XorName) -> Vec<u8> {
-        use ::std::io::Read;
+        use std::io::Read;
         self.dir_entry(name)
             .and_then(|entry| ::std::fs::File::open(&entry.path()).ok())
             .and_then(|mut file| {
                 let mut contents = Vec::<u8>::new();
                 file.read_to_end(&mut contents).ok().and_then(|_| Some(contents))
-            }).unwrap_or(vec![])
+            })
+            .unwrap_or(vec![])
     }
 
     pub fn max_disk_usage(&self) -> usize {
@@ -113,17 +114,18 @@ impl ChunkStore {
     }
 
     pub fn names(&self) -> Vec<XorName> {
-        use ::rustc_serialize::hex::FromHex;
-        ::std::fs::read_dir(&self.tempdir.path()).and_then(|dir_entries| {
-            let dir_entry_to_routing_name = |dir_entry: ::std::io::Result<::std::fs::DirEntry>| {
-                dir_entry.ok()
-                         .and_then(|entry| entry.file_name().into_string().ok())
-                         .and_then(|hex_name| hex_name.from_hex().ok())
-                         .and_then(|bytes| Some(XorName::new(
-                             ::routing::types::slice_as_u8_64_array(&*bytes))))
-            };
-            Ok(dir_entries.filter_map(dir_entry_to_routing_name).collect())
-        }).unwrap_or(vec![])
+        use rustc_serialize::hex::FromHex;
+        ::std::fs::read_dir(&self.tempdir.path())
+            .and_then(|dir_entries| {
+                let dir_entry_to_routing_name = |dir_entry: ::std::io::Result<::std::fs::DirEntry>| {
+                    dir_entry.ok()
+                             .and_then(|entry| entry.file_name().into_string().ok())
+                             .and_then(|hex_name| hex_name.from_hex().ok())
+                             .and_then(|bytes| Some(XorName::new(::routing::types::slice_as_u8_64_array(&*bytes))))
+                };
+                Ok(dir_entries.filter_map(dir_entry_to_routing_name).collect())
+            })
+            .unwrap_or(vec![])
     }
 
     pub fn has_disk_space(&self, required_space: usize) -> bool {
@@ -131,7 +133,7 @@ impl ChunkStore {
     }
 
     fn to_hex_string(&self, name: &XorName) -> String {
-        use ::rustc_serialize::hex::ToHex;
+        use rustc_serialize::hex::ToHex;
         name.get_id().to_hex()
     }
 
@@ -139,11 +141,12 @@ impl ChunkStore {
         ::std::fs::read_dir(&self.tempdir.path()).ok().and_then(|mut dir_entries| {
             let hex_name = self.to_hex_string(name);
             dir_entries.find(|dir_entry| {
-                match dir_entry {
-                    &Ok(ref entry) => entry.file_name().to_str() == Some(&hex_name[..]),
-                    &Err(_) => false,
-                }
-            }).and_then(|entry_result| entry_result.ok())
+                           match dir_entry {
+                               &Ok(ref entry) => entry.file_name().to_str() == Some(&hex_name[..]),
+                               &Err(_) => false,
+                           }
+                       })
+                       .and_then(|entry_result| entry_result.ok())
         })
     }
 
@@ -178,13 +181,15 @@ impl ChunkStore {
                     Some(own_dir.len())
                 });
             }
-            None => {},
+            None => {}
         }
     }
 
     #[allow(unsafe_code)]
     fn get_own_pid() -> u32 {
-        extern { fn getpid() -> u32; }
+        extern "C" {
+            fn getpid() -> u32;
+        }
         unsafe { getpid() }
     }
 
@@ -197,8 +202,10 @@ impl ChunkStore {
                 return None;
             }
         };
-        Some(Self::find_safe_vault_processes(
-                String::from_utf8_lossy(&output.stdout).split("\n").collect(), 1))
+        Some(Self::find_safe_vault_processes(String::from_utf8_lossy(&output.stdout)
+                                                 .split("\n")
+                                                 .collect(),
+                                             1))
     }
 
     #[cfg(not(windows))]
@@ -210,19 +217,22 @@ impl ChunkStore {
                 return None;
             }
         };
-        Some(Self::find_safe_vault_processes(
-                String::from_utf8_lossy(&output.stdout).split("\n").collect(), 0))
+        Some(Self::find_safe_vault_processes(String::from_utf8_lossy(&output.stdout)
+                                                 .split("\n")
+                                                 .collect(),
+                                             0))
     }
 
     fn find_safe_vault_processes(lines: Vec<&str>, column: usize) -> Vec<String> {
-        lines.iter().filter_map(|line| {
-            if line.contains("safe_vault") {
-                let vv: Vec<&str> = line.split_whitespace().collect();
-                Some(String::from(vv[column]))
-            } else {
-                None
-            }
-        }).collect()
+        lines.iter()
+             .filter_map(|line| {
+                 if line.contains("safe_vault") {
+                     let vv: Vec<&str> = line.split_whitespace().collect();
+                     Some(String::from(vv[column]))
+                 } else {
+                     None
+                 }
+             })
+             .collect()
     }
-
 }

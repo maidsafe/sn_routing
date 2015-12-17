@@ -27,8 +27,7 @@ pub struct MockRouting {
 impl MockRouting {
     pub fn new(event_sender: ::std::sync::mpsc::Sender<(::routing::event::Event)>) -> MockRouting {
         MockRouting {
-            pimpl: ::std::sync::Arc::new(::std::sync::Mutex::new(
-                mock_routing_impl::MockRoutingImpl::new(event_sender))),
+            pimpl: ::std::sync::Arc::new(::std::sync::Mutex::new(mock_routing_impl::MockRoutingImpl::new(event_sender))),
         }
     }
 
@@ -58,8 +57,7 @@ impl MockRouting {
         evaluate_result!(self.pimpl.lock()).client_post(client_address, client_pub_key, data)
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<XorName>,
-                       churn_node: XorName) {
+    pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
         evaluate_result!(self.pimpl.lock()).churn_event(nodes, churn_node)
     }
 
@@ -103,8 +101,7 @@ impl MockRouting {
                         data: ::routing::data::Data,
                         data_request: ::routing::data::DataRequest,
                         response_token: Option<::routing::SignedToken>) {
-        evaluate_result!(self.pimpl.lock())
-            .get_response(our_authority, location, data, data_request, response_token)
+        evaluate_result!(self.pimpl.lock()).get_response(our_authority, location, data, data_request, response_token)
     }
 
     pub fn put_request(&mut self,
@@ -119,8 +116,7 @@ impl MockRouting {
                         location: ::routing::Authority,
                         response_error: ::routing::error::ResponseError,
                         signed_token: Option<::routing::SignedToken>) {
-        evaluate_result!(self.pimpl.lock())
-            .put_response(our_authority, location, response_error, signed_token)
+        evaluate_result!(self.pimpl.lock()).put_response(our_authority, location, response_error, signed_token)
     }
 
     pub fn refresh_request(&self,
@@ -128,8 +124,7 @@ impl MockRouting {
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
                            churn_node: XorName) {
-        evaluate_result!(self.pimpl.lock()).refresh_request(type_tag, our_authority,
-                                                   content, churn_node)
+        evaluate_result!(self.pimpl.lock()).refresh_request(type_tag, our_authority, content, churn_node)
     }
 
     pub fn stop(&self) {

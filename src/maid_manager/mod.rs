@@ -48,11 +48,13 @@ impl MaidManager {
             // let error = ::routing::error::ResponseError::LowBalance(data.clone(),
             let src = request.dst.clone();
             let dst = request.src.clone();
-            let content = ResponseContent::PutFailure{ request: request.clone(),
-                                                       external_error_indicator: vec![] };  // TODO - set proper error value
+            let content = ResponseContent::PutFailure {
+                request: request.clone(),
+                external_error_indicator: vec![],
+            };  // TODO - set proper error value
             debug!("As {:?} sending {:?} to {:?}", src, content, dst);
             let _ = routing.send_put_response(src, dst, content);
-            return
+            return;
         }
 
         let dst = Authority::NaeManager(data.name());
@@ -60,19 +62,15 @@ impl MaidManager {
         routing.send_put_request(request.dst.clone(), dst, content);
     }
 
-    pub fn handle_refresh(&mut self,
-                          type_tag: &u64,
-                          our_authority: &Authority,
-                          payloads: &Vec<Vec<u8>>)
-                          -> Option<()> {
+    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
             if let &Authority::ClientManager(from_group) = our_authority {
-                if let Some(merged_account) = ::utils::merge::<Account>(from_group,
-                                                                        payloads.clone()) {
+                if let Some(merged_account) = ::utils::merge::<Account>(from_group, payloads.clone()) {
                     self.database.handle_account_transfer(merged_account);
                 }
             } else {
-                warn!("Invalid authority for refresh at MaidManager: {:?}", our_authority);
+                warn!("Invalid authority for refresh at MaidManager: {:?}",
+                      our_authority);
             }
             ::utils::HANDLED
         } else {
@@ -88,7 +86,8 @@ impl MaidManager {
                       routing: &mut Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
-                      churn_node: &XorName) -> Option<()> {
+                      churn_node: &XorName)
+                      -> Option<()> {
         self.database.do_refresh(type_tag, our_authority, churn_node, routing)
     }
 
@@ -104,15 +103,20 @@ impl MaidManager {
 mod test {
     use super::*;
 
-    fn env_setup() -> (::routing::Authority, ::vault::Routing, MaidManager, ::routing::Authority,
-                       ::routing::immutable_data::ImmutableData) {
+    fn env_setup()
+        -> (::routing::Authority,
+            ::vault::Routing,
+            MaidManager,
+            ::routing::Authority,
+            ::routing::immutable_data::ImmutableData)
+    {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let maid_manager = MaidManager::new(routing.clone());
         let from = ::utils::random_name();
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         (Authority(from.clone()),
          routing,
          maid_manager,
@@ -124,13 +128,17 @@ mod test {
     fn handle_put() {
         let (our_authority, routing, mut maid_manager, client, data) = env_setup();
         assert_eq!(::utils::HANDLED,
-            maid_manager.handle_put(&our_authority, &client,
-                                    &::routing::data::Data::ImmutableData(data.clone()), &None));
+                   maid_manager.handle_put(&our_authority,
+                                           &client,
+                                           &::routing::data::Data::ImmutableData(data.clone()),
+                                           &None));
         let put_requests = routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].our_authority, our_authority);
-        assert_eq!(put_requests[0].location, ::data_manager::Authority(data.name()));
-        assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
+        assert_eq!(put_requests[0].location,
+                   ::data_manager::Authority(data.name()));
+        assert_eq!(put_requests[0].data,
+                   ::routing::data::Data::ImmutableData(data));
     }
 
     #[test]
@@ -138,13 +146,16 @@ mod test {
         let churn_node = ::utils::random_name();
         let (our_authority, routing, mut maid_manager, client, data) = env_setup();
         assert_eq!(::utils::HANDLED,
-            maid_manager.handle_put(&our_authority, &client,
-                                    &::routing::data::Data::ImmutableData(data.clone()), &None));
+                   maid_manager.handle_put(&our_authority,
+                                           &client,
+                                           &::routing::data::Data::ImmutableData(data.clone()),
+                                           &None));
         maid_manager.handle_churn(&churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-        assert_eq!(refresh_requests[0].our_authority.get_name(), client.get_name());
+        assert_eq!(refresh_requests[0].our_authority.get_name(),
+                   client.get_name());
 
         let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {

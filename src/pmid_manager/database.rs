@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 type PmidNodeName = XorName;
 
@@ -29,7 +29,10 @@ pub struct Account {
 
 impl Account {
     fn new(name: PmidNodeName, value: AccountValue) -> Account {
-        Account { name: name, value: value }
+        Account {
+            name: name,
+            value: value,
+        }
     }
 }
 
@@ -61,7 +64,10 @@ impl Default for AccountValue {
     // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
     //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> AccountValue {
-        AccountValue { stored_total_size: 0, lost_total_size: 0 }
+        AccountValue {
+            stored_total_size: 0,
+            lost_total_size: 0,
+        }
     }
 }
 
@@ -73,9 +79,9 @@ impl AccountValue {
         }
     }
 
-  // Always return true to allow pmid_node carry out removal of Sacrificial copies
-  // Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
-  // copies separately to trigger an early alert
+    // Always return true to allow pmid_node carry out removal of Sacrificial copies
+    // Otherwise AccountValue need to remember storage info of Primary, Backup and Sacrificial
+    // copies separately to trigger an early alert
     fn put_data(&mut self, size: u64) {
         // if (self.stored_total_size + size) > self.offered_space {
         //   return false;
@@ -140,11 +146,12 @@ impl Database {
         let _ = self.storage.remove(&merged_account.name);
         let value = merged_account.value.clone();
         let _ = self.storage.insert(merged_account.name, merged_account.value);
-        info!("PmidManager updated account {:?} to {:?}", merged_account.name, value);
+        info!("PmidManager updated account {:?} to {:?}",
+              merged_account.name,
+              value);
     }
 
-    pub fn handle_churn(&mut self, close_group: &Vec<XorName>,
-                        routing: &::vault::Routing, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, close_group: &Vec<XorName>, routing: &::vault::Routing, churn_node: &XorName) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {
                 let account = Account::new((*key).clone(), (*value).clone());
@@ -152,8 +159,10 @@ impl Database {
                 if let Ok(serialised_account) = serialise(&[account]) {
                     debug!("PmidManager sending refresh for account {:?}",
                            our_authority.get_name());
-                    routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                                 serialised_account, churn_node.clone());
+                    routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                 our_authority.clone(),
+                                                 serialised_account,
+                                                 churn_node.clone());
                 }
             }
         }
@@ -167,7 +176,8 @@ impl Database {
                       type_tag: &u64,
                       our_authority: &::routing::Authority,
                       churn_node: &XorName,
-                      routing: &::vault::Routing) -> Option<()> {
+                      routing: &::vault::Routing)
+                      -> Option<()> {
         if type_tag == &super::ACCOUNT_TAG {
             for (key, value) in self.storage.iter() {
                 if key == our_authority.get_name() {
@@ -175,8 +185,10 @@ impl Database {
                     if let Ok(serialised_account) = serialise(&[account]) {
                         debug!("PmidManager sending on_refresh for account {:?}",
                                our_authority.get_name());
-                        routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                                     serialised_account, churn_node.clone());
+                        routing.send_refresh_request(super::ACCOUNT_TAG,
+                                                     our_authority.clone(),
+                                                     serialised_account,
+                                                     churn_node.clone());
                     }
                 }
             }
@@ -225,8 +237,7 @@ mod test {
         db.put_data(&name, 1024);
         assert!(db.storage.contains_key(&name));
 
-        let account_value = AccountValue::new(::rand::random::<u64>(),
-                                              ::rand::random::<u64>());
+        let account_value = AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>());
         let account = Account::new(name.clone(), account_value.clone());
         db.handle_account_transfer(account);
         assert_eq!(db.storage[&name], account_value);
@@ -235,8 +246,7 @@ mod test {
     #[test]
     fn pmid_manager_account_serialisation() {
         let obj_before = Account::new(XorName([1u8; 64]),
-                                      AccountValue::new(::rand::random::<u64>(),
-                                                        ::rand::random::<u64>()));
+                                      AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
         evaluate_result!(e.encode(&[&obj_before]));

@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage, StructuredData};
 use vault::Routing;
 use xor_name::XorName;
 
@@ -31,7 +31,7 @@ impl PmidNode {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1189
-            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap()
+            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap(),
         }
     }
 
@@ -44,17 +44,20 @@ impl PmidNode {
         let data = self.chunk_store.get(data_name);
         if data.len() == 0 {
             warn!("Failed to GET data with name {:?}", data_name);
-            return
+            return;
         }
         let decoded = match deserialise::<ImmutableData>(&data) {
             Ok(data) => data,
             Err(_) => {
                 warn!("Failed to parse data with name {:?}", data_name);
-                return
+                return;
             }
         };
         let content = ResponseContent::GetSuccess(Data::ImmutableData(decoded));
-        debug!("As {:?} sending data {:?} to {:?}", request.dst, content, request.src);
+        debug!("As {:?} sending data {:?} to {:?}",
+               request.dst,
+               content,
+               request.src);
         let _ = routing.send_get_response(request.dst.clone(), request.src.clone(), content);
     }
 
@@ -64,41 +67,42 @@ impl PmidNode {
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
-        info!("pmid_node {:?} storing {:?}", request.dst.get_name(), data_name);
+        info!("pmid_node {:?} storing {:?}",
+              request.dst.get_name(),
+              data_name);
         let serialised_data = match serialise(&data) {
             Ok(data) => data,
-            Err(_) => return
+            Err(_) => return,
         };
         if self.chunk_store.has_disk_space(serialised_data.len()) {
             // the type_tag needs to be stored as well
             self.chunk_store.put(&data_name, serialised_data);
-            return
+            return;
         }
 
         // If we can't store the data and it's a Backup or Sacrificial copy, just notify PmidManager
         // to update the account - replication shall not be carried out for it.
         if *data.get_type_tag() != ImmutableDataType::Normal {
             // self.notify_managers_of_sacrifice(our_authority, data, response_token);
-            return
+            return;
         }
 
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
         // out Sacrificial chunks.
         let required_space = serialised_data.len() -
-                             (self.chunk_store.max_disk_usage() -
-                              self.chunk_store.current_disk_usage());
+                             (self.chunk_store.max_disk_usage() - self.chunk_store.current_disk_usage());
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = self.chunk_store.get(name);
             let parsed_data = match deserialise::<ImmutableData>(&fetched_data) {
-                    Ok(data) => data,
-                    Err(_) => {
-                        // remove corrupted data
-                        self.chunk_store.delete(name);
-                        continue
-                    }
-                };
+                Ok(data) => data,
+                Err(_) => {
+                    // remove corrupted data
+                    self.chunk_store.delete(name);
+                    continue;
+                }
+            };
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
@@ -109,7 +113,7 @@ impl PmidNode {
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
                         self.chunk_store.put(&data_name, serialised_data);
-                        return
+                        return;
                     }
                 }
                 _ => {}
@@ -117,14 +121,16 @@ impl PmidNode {
         }
 
         // We failed to make room for it - replication needs to be carried out.
-//        let error = ::routing::error::ResponseError::FailedRequestForData(original_data);
+        //        let error = ::routing::error::ResponseError::FailedRequestForData(original_data);
         let src = request.dst.clone();
         let dst = request.src.clone();
-        let content = ResponseContent::PutFailure{ request: request.clone(),
-                                                   external_error_indicator: vec![] };  // TODO - set proper error value
+        let content = ResponseContent::PutFailure {
+            request: request.clone(),
+            external_error_indicator: vec![],
+        };  // TODO - set proper error value
         debug!("As {:?} sending {:?} to {:?}", src, content, dst);
         let _ = routing.send_put_response(src, dst, content);
-  }
+    }
 
     // fn notify_managers_of_sacrifice(&self,
     //                                 our_authority: &::routing::Authority,
@@ -165,12 +171,14 @@ mod test {
         let from_authority = Authority::NodeManager(us.clone());
 
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data = ::routing::immutable_data::ImmutableData::new(
-                       ::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data =
+            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
         {
             assert_eq!(::utils::HANDLED,
-                pmid_node.handle_put(&our_authority, &from_authority,
-                                     &::routing::data::Data::ImmutableData(data.clone()), &None));
+                       pmid_node.handle_put(&our_authority,
+                                            &from_authority,
+                                            &::routing::data::Data::ImmutableData(data.clone()),
+                                            &None));
             assert_eq!(0, routing.put_requests_given().len());
             assert_eq!(0, routing.put_responses_given().len());
         }
@@ -178,8 +186,9 @@ mod test {
             let from = ::utils::random_name();
             let from_authority = ::data_manager::Authority(from.clone());
 
-            let request = ::routing::data::DataRequest::ImmutableData(data.name().clone(),
-                              ::routing::immutable_data::ImmutableDataType::Normal);
+            let request =
+                ::routing::data::DataRequest::ImmutableData(data.name().clone(),
+                                                            ::routing::immutable_data::ImmutableDataType::Normal);
 
             assert_eq!(::utils::HANDLED,
                        pmid_node.handle_get(&our_authority, &from_authority, &request, &None));
@@ -187,7 +196,8 @@ mod test {
             assert_eq!(get_responses.len(), 1);
             assert_eq!(get_responses[0].our_authority, our_authority);
             assert_eq!(get_responses[0].location, from_authority);
-            assert_eq!(get_responses[0].data, ::routing::data::Data::ImmutableData(data.clone()));
+            assert_eq!(get_responses[0].data,
+                       ::routing::data::Data::ImmutableData(data.clone()));
             assert_eq!(get_responses[0].data_request, request);
             assert_eq!(get_responses[0].response_token, None);
         }

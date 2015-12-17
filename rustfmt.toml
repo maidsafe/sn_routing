@@ -1,6 +1,6 @@
-max_width = 100
+max_width = 120
 ideal_width = 100
-leeway = 0
+leeway = 20
 tab_spaces = 4
 newline_style = "Unix"
 fn_brace_style = "PreferSameLine"

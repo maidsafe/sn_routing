@@ -28,15 +28,17 @@ mod test {
     }
 
     fn has_child_dir(parent: ::std::path::PathBuf, child_name: &str) -> bool {
-        ::std::fs::read_dir(&parent).ok().and_then(|mut dir_entries| {
-            dir_entries.find(|dir_entry| {
-                match dir_entry {
-                    &Ok(ref entry) => 
-                        entry.file_name().to_str() == Some(child_name),
-                    &Err(_) => false,
-                }
+        ::std::fs::read_dir(&parent)
+            .ok()
+            .and_then(|mut dir_entries| {
+                dir_entries.find(|dir_entry| {
+                    match dir_entry {
+                        &Ok(ref entry) => entry.file_name().to_str() == Some(child_name),
+                        &Err(_) => false,
+                    }
+                })
             })
-        }).is_some()
+            .is_some()
     }
 
     #[test]
