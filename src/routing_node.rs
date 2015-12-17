@@ -168,13 +168,19 @@ impl RoutingNode {
                             Action::NodeSendMessage { content, result_tx, } => {
                                 match self.send_message(content) {
                                     Err(RoutingError::Interface(err)) => {
-                                        let _ = result_tx.send(Err(err));
+                                        if result_tx.send(Err(err)).is_err() {
+                                            return;
+                                        }
                                     }
                                     Err(_err) => {
-                                        let _ = result_tx.send(Ok(()));
+                                        if result_tx.send(Ok(())).is_err() {
+                                            return;
+                                        }
                                     }
                                     Ok(()) => {
-                                        let _ = result_tx.send(Ok(()));
+                                        if result_tx.send(Ok(())).is_err() {
+                                            return;
+                                        }
                                     }
                                 }
                             }
@@ -189,13 +195,19 @@ impl RoutingNode {
                                     let routing_msg = RoutingMessage::Request(request_msg);
                                     match self.send_message(routing_msg) {
                                         Err(RoutingError::Interface(err)) => {
-                                            let _ = result_tx.send(Err(err));
+                                            if result_tx.send(Err(err)).is_err() {
+                                                return;
+                                            }
                                         }
                                         Err(_err) => {
-                                            let _ = result_tx.send(Ok(()));
+                                            if result_tx.send(Ok(())).is_err() {
+                                                return;
+                                            }
                                         }
                                         Ok(()) => {
-                                            let _ = result_tx.send(Ok(()));
+                                            if result_tx.send(Ok(())).is_err() {
+                                                return;
+                                            }
                                         }
                                     }
                                 }
