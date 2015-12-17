@@ -470,7 +470,7 @@ impl Client {
                                 return;
                             }
                         };
-                        let (key, value): (String, String) = match ::maidsafe_utilities::serialisation::deserialise(plain_data.value()) {
+                        let (key, value): (String, String) = match deserialise(plain_data.value()) {
                             Ok((key, value)) => (key, value),
                             Err(_) => {
                                 error!("Failed to decode get response.");
@@ -493,7 +493,7 @@ impl Client {
         let name = Client::calculate_key_name(&what);
 
         unwrap_result!(self.routing_client
-                           .send_get_request(Authority::ClientManager(name.clone()),
+                           .send_get_request(Authority::NaeManager(name.clone()),
                                              DataRequest::PlainData(name)));
     }
 

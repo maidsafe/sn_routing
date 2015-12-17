@@ -54,16 +54,16 @@ use docopt::Docopt;
 use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
-use routing::routing::Routing;
-use routing::routing_client::RoutingClient;
-use routing::authority::Authority;
-use routing::XorName;
-use routing::event::Event;
-use routing::data::{Data, DataRequest};
-use routing::plain_data::PlainData;
-use routing::utils::{encode, decode};
-use routing::{ExternalRequest, ExternalResponse, SignedRequest};
-use routing::id::FullId;
+use maidsafe_utilities::serialisation::{serialise, deserialise};
+use routing::Routing;
+use routing::RoutingClient;
+use routing::Authority;
+use routing::Event;
+use routing::{Data, DataRequest};
+use routing::PlainData;
+use routing::{RequestMessage, RequestContent, ResponseContent};
+use routing::FullId;
+use xor_name::XorName;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -103,7 +103,7 @@ struct Node {
 impl Node {
     fn new() -> Node {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let routing = Routing::new(sender);
+        let routing = unwrap_result!(Routing::new(sender));
 
         Node {
             routing  : routing,
@@ -125,86 +125,60 @@ impl Node {
             debug!("Node: Received event {:?}", event);
 
             match event {
-                Event::Request{request,
-                               our_authority,
-                               from_authority,
-                               signed_request} => {
-                    self.handle_request(request,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
-                },
-                Event::Churn(our_close_group) => {
-                    self.handle_churn(our_close_group);
-                }
+                Event::Request(msg) => self.handle_request(msg),
+                Event::Churn(our_close_group) => self.handle_churn(our_close_group),
                 _ => {}
             }
         }
     }
 
-    fn handle_request(&mut self, request        : ExternalRequest,
-                                 our_authority  : Authority,
-                                 from_authority : Authority,
-                                 signed_request : Option<SignedRequest>) {
-        match request {
-            ExternalRequest::Get(data_request, _) => {
-                self.handle_get_request(data_request,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
-            },
-            ExternalRequest::Put(data) => {
-                self.handle_put_request(data,
-                                        our_authority,
-                                        from_authority,
-                                        signed_request);
-            },
-            ExternalRequest::Post(_) => {
-                error!("Node: Post is not implemented, ignoring.");
-            },
-            ExternalRequest::Delete(_) => {
-                error!("Node: Delete is not implemented, ignoring.");
-            },
+    fn handle_request(&mut self, request_msg: RequestMessage) {
+        match request_msg.content {
+            RequestContent::Get(data_request) => {
+                self.handle_get_request(data_request, request_msg.src, request_msg.dst);
+            }
+            RequestContent::Put(data) => {
+                self.handle_put_request(data, request_msg.src, request_msg.dst);
+            }
+            _ => println!("Node: Request {:?} not handled, ignoring.", request_msg),
         }
     }
 
-    fn handle_get_request(&mut self, data_request: DataRequest,
-                                     our_authority: Authority,
-                                     from_authority: Authority,
-                                     signed_request: Option<SignedRequest>) {
+    fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
-            _ => { error!("Node: Only serving plain data in this example"); return; }
+            _ => {
+                println!("Node: Only serving plain data in this example");
+                return;
+            }
         };
 
         let data = match self.db.get(&name) {
             Some(data) => data.clone(),
             None => return,
         };
-        println!("GET {:?}", name);
-        self.routing.get_response(our_authority,
-                                  from_authority,
-                                  Data::PlainData(data),
-                                  data_request,
-                                  signed_request);
+
+        let response_content = ResponseContent::GetSuccess(Data::PlainData(data));
+
+        unwrap_result!(self.routing.send_get_response(dst, src, response_content))
     }
 
-    fn handle_put_request(&mut self, data            : Data,
-                                     our_authority   : Authority,
-                                     _from_authority : Authority,
-                                     _response_token : Option<SignedRequest>) {
-        let plain_data = match data {
+    fn handle_put_request(&mut self, data: Data, _src: Authority, dst: Authority) {
+        let plain_data = match data.clone() {
             Data::PlainData(plain_data) => plain_data,
-            _ => { error!("Node: Only storing plain data in this example"); return; }
+            _ => {
+                println!("Node: Only storing plain data in this example");
+                return;
+            }
         };
 
-        match our_authority {
+        match dst {
             Authority::NaeManager(_) => {
                 println!("PUT {:?}", plain_data.name());
                 let _ = self.db.insert(plain_data.name(), plain_data);
             },
             _ => {
-                error!("Node: Unexpected our_authority ({:?})", our_authority);
+                error!("Node: Unexpected our_authority ({:?})", dst);
                 assert!(false);
             }
         }
@@ -214,11 +188,11 @@ impl Node {
         info!("Handle churn for close group size {:?}", _our_close_group.len());
         for value in self.db.values() {
             println!("CHURN {:?}", value.name());
-            self.routing.put_request(::routing::authority::Authority::NaeManager(value.name()),
-                ::routing::authority::Authority::NaeManager(value.name()),
-                ::routing::data::Data::PlainData(value.clone()));
+            unwrap_result!(self.routing.send_put_request(
+                Authority::NaeManager(value.name()),
+                Authority::NaeManager(value.name()),
+                RequestContent::Put(Data::PlainData(value.clone()))));
         }
-        // self.db = BTreeMap::new();
     }
 }
 
@@ -265,7 +239,7 @@ impl Client {
 
         let full_id = FullId::new();
         info!("Client has set name {:?}", full_id.public_id());
-        let routing_client = RoutingClient::new(event_sender, Some(full_id));
+        let routing_client = unwrap_result!(RoutingClient::new(event_sender, Some(full_id)));
 
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
 
@@ -344,31 +318,30 @@ impl Client {
     fn handle_routing_event(&mut self, event : Event) {
         debug!("Client received routing event: {:?}", event);
         match event {
-            Event::Response{
-                response, our_authority : _our_authority,
-                from_authority : _from_authority} => {
-                match response {
-                    ExternalResponse::Get(data, _data_request, _opt_signed_token) => {
+            Event::Response(msg) => {
+                match msg.content {
+                    ResponseContent::GetSuccess(data) => {
                         let plain_data = match data {
                             Data::PlainData(plain_data) => plain_data,
                             _ => {
                                 error!("Node: Only storing plain data in this example");
-                                return; },
+                                return;
+                            }
                         };
-                        let (key, value) : (String, String) = match decode(plain_data.value()) {
+                        let (key, value): (String, String) = match deserialise(plain_data.value()) {
                             Ok((key, value)) => (key, value),
                             Err(_) => {
                                 error!("Failed to decode get response.");
-                                return; },
+                                return;
+                            }
                         };
                         println!("Got value {:?} on key {:?}", value, key);
-                    },
-                    ExternalResponse::Put(response_error, _opt_signed_token) => {
-                        error!("Failed to store: {:?}", response_error);
-                    },
-                    _ => error!("Received external response {:?}, but not handled in example",
-                        response),
-                };
+                    }
+                    ResponseContent::PutFailure { ..} => {
+                        error!("Failed to store");
+                    }
+                    _ => error!("Received response {:?}, but not handled in example", msg),
+                }
             },
             _ => {},
         };
@@ -377,16 +350,18 @@ impl Client {
     fn send_get_request(&mut self, what: String) {
         let name = Client::calculate_key_name(&what);
 
-        self.routing_client.get_request(Authority::NaeManager(name.clone()),
-            DataRequest::PlainData(name));
+        unwrap_result!(self.routing_client.send_get_request(
+            Authority::NaeManager(name.clone()),
+            DataRequest::PlainData(name)));
     }
 
     fn send_put_request(&self, put_where: String, put_what: String) {
         let name = Client::calculate_key_name(&put_where);
-        let data = unwrap_result!(encode(&(put_where, put_what)));
+        let data = unwrap_result!(serialise(&(put_where, put_what)));
 
-        self.routing_client.put_request(Authority::NaeManager(name.clone()),
-            Data::PlainData(PlainData::new(name, data)));
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::NaeManager(name.clone()),
+                                             Data::PlainData(PlainData::new(name, data))));
     }
 
     fn calculate_key_name(key: &String) -> XorName {
