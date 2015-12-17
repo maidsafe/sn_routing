@@ -15,55 +15,80 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// Tuple of source/target group, type tag, and name of node causing churn
-pub type Request = (::authority::Authority, u64, ::xor_name::XorName);
+use std::sync::mpsc;
+use lru_time_cache::LruCache;
+use message_filter::MessageFilter;
+use std::collections::BTreeMap;
+use time::Duration;
+use authority::Authority;
+use event::Event;
+use xor_name::XorName;
+
+//                     +-> Source and target group
+//                     |
+pub type Request = (Authority, u64, XorName);
 
 pub struct RefreshAccumulator {
-    // Map of refresh request and <map of sender and payload>
-    requests: ::lru_time_cache::LruCache<Request,
-                                           ::std::collections::HashMap<::xor_name::XorName, Vec<u8>>>,
+    //                                 +-> Who sent it
+    //                                 |
+    requests: LruCache<Request, BTreeMap<XorName, Vec<u8>>>,
+    /// Causes keeps a recent blocking history on whether the user has already been
+    /// asked to do a full refresh for a given cause.  When core initiates a generate_churn
+    /// in routing_node, the cause will be registered in the RefreshAccumulator here.
+    /// Consequently, if the RefreshAccumulator sees a RefreshMessage for a cause it has not
+    /// yet seen, then it can ask the user to perform an Event::DoRefresh for that account.
+    causes: MessageFilter<XorName>,
+    event_sender: mpsc::Sender<Event>,
 }
 
 impl RefreshAccumulator {
-    pub fn with_expiry_duration(duration: ::time::Duration) -> RefreshAccumulator {
+
+    pub fn with_expiry_duration(duration: Duration, event_sender: mpsc::Sender<Event>) -> RefreshAccumulator {
         RefreshAccumulator {
-            requests: ::lru_time_cache::LruCache::with_expiry_duration(duration.clone()),
+            requests: LruCache::with_expiry_duration(duration.clone()),
+            causes: MessageFilter::with_expiry_duration(duration),
+            event_sender: event_sender,
         }
     }
 
-    // The first return value is true if this represents the first instance of a new refresh
-    // request.  The second return value is `None` if we have accumulated < `threshold` instances of
-    // the request, otherwise it is the accumulated collection of messsages for the request.
     pub fn add_message(&mut self,
-                       threshold: usize,
+                       quorum: usize,
                        type_tag: u64,
                        messsage: Vec<u8>,
-                       cause: ::xor_name::XorName,
-                       // src_name: ::xor_name::XorName,
-                       dst: ::authority::Authority)
-                       -> (bool, Option<Vec<Vec<u8>>>) {
-        debug!("RefreshAccumulator for {:?} caused by {:?}", dst, cause);
-        let request = (dst, type_tag, cause);
-        // Is this is the first instance of a new refresh request.
+                       cause: XorName,
+                       sender_name: XorName,
+                       sender_group: Authority)
+                       -> Option<Vec<Vec<u8>>> {
+        debug!("RefreshAccumulator for {:?} caused by {:?}", sender_group, cause);
+        // If the cause was outside our close group.
+        let unknown_cause = !self.causes.contains(&cause);
+        let request = (sender_group, type_tag, cause);
         let first_request = !self.requests.contains_key(&request);
-        if threshold <= 1 {
-            return (first_request, Some(vec![messsage]));
+        if unknown_cause && first_request {
+            let _ = self.event_sender.send(Event::DoRefresh(request.1.clone(), request.0.clone(), request.2.clone()));
         }
-
-        let mut messsages = None;
         {
-            let map = self.requests
-                          .entry(request.clone())
-                          .or_insert_with(::std::collections::HashMap::new);
-            // let _ = map.insert(src_name, messsage);
-            if map.len() >= threshold {
-                messsages = Some(map.iter().map(|(_, msg)| msg.clone()).collect());
+            if quorum <= 1 {
+                return Some(vec![messsage]);
             }
-        }
-        if messsages.is_some() {
+
+            let map = self.requests.entry(request.clone()).or_insert_with(||BTreeMap::new());
+            let _ = map.insert(sender_name, messsage);
+
+            if map.len() < quorum {
+                return None;
+            }
+
+            Some(map.iter().map(|(_, msg)| msg.clone()).collect())
+
+        }.map(|messages| {
             let _ = self.requests.remove(&request);
-        }
-        (first_request, messsages)
+            messages
+        })
+    }
+
+    pub fn register_cause(&mut self, cause: &XorName) {
+        let _ = self.causes.insert(cause.clone());
     }
 }
 

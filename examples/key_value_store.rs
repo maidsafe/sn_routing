@@ -35,7 +35,7 @@
 
 #[macro_use]
 extern crate log;
-extern crate rand;
+// extern crate rand;
 #[macro_use]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
@@ -111,6 +111,7 @@ struct Node {
     db: BTreeMap<::xor_name::XorName, PlainData>,
     client_accounts: BTreeMap<::xor_name::XorName, u64>,
     connected: bool,
+    our_close_group: Vec<::xor_name::XorName>,
 }
 
 impl Node {
@@ -124,6 +125,7 @@ impl Node {
             db: BTreeMap::new(),
             client_accounts: BTreeMap::new(),
             connected: false,
+            our_close_group: vec![],
         }
     }
 
@@ -257,19 +259,35 @@ impl Node {
         // FIXME Cause needs to get removed from refresh as well
         // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
         // just so that interface requirements are met
-        let cause = rand::random::<XorName>();
+        // let cause = rand::random::<XorName>();
+
+
+        // Not having access to our close group on startup means refresh won't
+        // be called for the first node that goes offline.
+        if self.our_close_group.len() == 0 {
+            self.our_close_group = our_close_group.clone();
+            return
+        }
 
         for (client_name, stored) in self.client_accounts.iter() {
-            println!("REFRESH {:?} - {:?}", client_name, stored);
-            let request_content = RequestContent::Refresh {
-                type_tag: 1u64,
-                message: unwrap_result!(serialise(&stored)),
-                cause: cause,
-            };
-
-            unwrap_result!(self.routing.send_refresh_request(
-                Authority::ClientManager(client_name.clone()),
-                request_content));
+            let mut updated = false;
+            for close_node in self.our_close_group.iter() {
+                if !our_close_group.contains(&close_node) {
+                    println!("Refresh {:?} - {:?}", client_name, stored);
+                    let request_content = RequestContent::Refresh {
+                        type_tag: 1u64,
+                        message: unwrap_result!(serialise(&stored)),
+                        cause: close_node.clone(),
+                    };
+                    updated = true;
+                    unwrap_result!(self.routing.send_refresh_request(
+                        Authority::ClientManager(client_name.clone()),
+                        request_content));
+                }
+            }
+            if updated {
+                self.our_close_group = our_close_group.clone();
+            }
         }
     }
 
@@ -283,7 +301,7 @@ impl Node {
             }
         }
         let median = median(records.clone());
-        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
+        println!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
                src,
                median,
                records,
@@ -297,7 +315,7 @@ impl Node {
         if let Authority::ClientManager(client_name) = src {
             match self.client_accounts.get(&client_name) {
                 Some(stored) => {
-                    debug!("DoRefresh for client {:?} storing {:?} caused by {:?}", client_name, stored, cause);
+                    println!("DoRefresh for client {:?} storing {:?} caused by {:?}", client_name, stored, cause);
 
                     let request_content = RequestContent::Refresh {
                         type_tag: 1u64,

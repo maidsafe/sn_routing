@@ -47,7 +47,7 @@ pub fn main () {
 
     let mut rng = rand::thread_rng();
     let mut time = time::SteadyTime::now();
-    let minutes = rand::distributions::Range::new(1, 4);
+    let minutes = rand::distributions::Range::new(2, 5);
     let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
     let sample = rand::distributions::Range::new(0, 5);
     let mut node = routing::test_utils::node::Node::new();
