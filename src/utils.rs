@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 /// Indicates a "handle_xxx" function of a persona has dealt with the request (i.e. it was for that
 /// persona).  It doesn't indicate success or failure - only that the request has been handled.
 pub const HANDLED: Option<()> = Some(());
@@ -23,7 +25,6 @@ pub const HANDLED: Option<()> = Some(());
 /// for that persona).
 pub const NOT_HANDLED: Option<()> = None;
 
-static INITIALISE_LOGGER: ::std::sync::Once = ::std::sync::ONCE_INIT;
 static HANDLE_VERSION: ::std::sync::Once = ::std::sync::ONCE_INIT;
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
@@ -45,7 +46,7 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
-pub fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Option<T>
+pub fn merge<T>(from_group: XorName, payloads: Vec<Vec<u8>>) -> Option<T>
     where T: for<'a> ::types::Refreshable + 'static {
     let mut transfer_entries = Vec::<T>::new();
     for it in payloads.iter() {
@@ -65,54 +66,6 @@ pub fn merge<T>(from_group: ::routing::NameType, payloads: Vec<Vec<u8>>) -> Opti
     })
 }
 
-pub fn is_client_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::routing::Authority::Client(_, _) => true,
-        _ => false,
-    }
-}
-
-pub fn is_maid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::maid_manager::Authority(_) => true,
-        _ => false,
-    }
-}
-
-pub fn is_pmid_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::pmid_manager::Authority(_) => true,
-        _ => false,
-    }
-}
-
-pub fn is_pmid_node_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::pmid_node::Authority(_) => true,
-        _ => false,
-    }
-}
-
-pub fn is_sd_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::sd_manager::Authority(_) => true,
-        _ => false,
-    }
-}
-
-pub fn is_data_manager_authority_type(provided_authority: &::routing::Authority) -> bool {
-    match provided_authority {
-        &::data_manager::Authority(_) => true,
-        _ => false,
-    }
-}
-
-pub fn initialise_logger() {
-    INITIALISE_LOGGER.call_once(|| {
-        ::env_logger::init().unwrap_or_else(|err| println!("Error initialising logger: {}", err));
-    });
-}
-
 pub fn handle_version() {
     HANDLE_VERSION.call_once(|| {
         let name = ::crust::exe_file_stem().unwrap_or(::std::path::Path::new("").to_path_buf());
@@ -128,11 +81,11 @@ pub fn handle_version() {
 }
 
 #[cfg(test)]
-pub fn random_name() -> ::routing::NameType {
+pub fn random_name() -> XorName {
     // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
     // `NameType::generate_random()` this should be used here.  Issue reported at
     // https://github.com/maidsafe/routing/issues/674
-    ::routing::NameType(::routing::types::slice_as_u8_64_array(
+    XorName(::routing::types::slice_as_u8_64_array(
         &*::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
 }
 

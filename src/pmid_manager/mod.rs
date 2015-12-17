@@ -15,7 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub use routing::Authority::NodeManager as Authority;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, StructuredData};
+use vault::Routing;
+use xor_name::XorName;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
 
@@ -24,83 +28,71 @@ mod database;
 type Account = self::database::Account;
 
 pub struct PmidManager {
-    routing: ::vault::Routing,
     database: database::Database,
 }
 
 impl PmidManager {
-    pub fn new(routing: ::vault::Routing) -> PmidManager {
-        PmidManager { routing: routing, database: database::Database::new() }
+    pub fn new() -> PmidManager {
+        PmidManager { database: database::Database::new() }
     }
 
-    pub fn handle_put(&mut self,
-                      our_authority: &::routing::Authority,
-                      from_authority: &::routing::Authority,
-                      data: &::routing::data::Data)
-                      -> Option<()> {
-        // Check if this is for this persona.
-        if !::utils::is_pmid_manager_authority_type(our_authority) {
-            return ::utils::NOT_HANDLED;
-        }
-
-        // Validate from authority, and that the Data is ImmutableData.
-        if !::utils::is_data_manager_authority_type(from_authority) {
-            warn!("Invalid authority for PUT at PmidManager: {:?}", from_authority);
-            return ::utils::HANDLED;
-        }
-        let immutable_data = match data {
-            &::routing::data::Data::ImmutableData(ref immutable_data) => immutable_data,
-            _ => {
-                warn!("Invalid data type for PUT at PmidManager: {:?}", data);
-                return ::utils::HANDLED;
-            }
-        };
-
-        // Handle the request and send on.
-        let pmid_node = our_authority.get_location();
+    pub fn handle_put(&mut self, routing: &mut Routing, data: &ImmutableData, pmid_node_name: XorName) {
         // Put data always being allowed, i.e. no early alert
-        self.database.put_data(pmid_node, immutable_data.payload_size() as u64);
+        self.database.put_data(&pmid_node_name, data.payload_size() as u64);
 
-        let location = ::pmid_node::Authority(pmid_node.clone());
-        let content = ::routing::data::Data::ImmutableData(immutable_data.clone());
-        self.routing.put_request(our_authority.clone(), location, content);
-        ::utils::HANDLED
+        let src = Authority::NodeManager(pmid_node_name.clone());
+        let dst = Authority::ManagedNode(pmid_node_name);
+        let content = RequestContent::Put(Data::ImmutableData(data.clone()));
+        let _ = routing.send_put_request(src, dst, content);
     }
 
-    pub fn handle_put_response(&mut self,
-                               our_authority: &::routing::Authority,
-                               from_authority: &::routing::Authority,
-                               response: &::routing::error::ResponseError,
-                               response_token: &Option<::routing::SignedToken>)
-                               -> Option<()> {
-        // Check if this is for this persona.
-        let pmid_node_name = match our_authority {
-            &::pmid_node::Authority(name) => name.clone(),
-            _ => return ::utils::NOT_HANDLED,
-        };
-
-        match from_authority {
-            &::pmid_node::Authority(from_address) => {
-                self.handle_put_response_from_pmid_node(our_authority.clone(),
-                                                        from_address,
-                                                        response.clone(),
-                                                        response_token.clone());
+    pub fn handle_put_failure(&mut self, _response: ResponseMessage) {
+/*        match from_authority {
+            &Authority::ManagedNode(from_address) => {
+                // self.handle_put_response_from_pmid_node(our_authority.clone(),
+                //                                         from_address,
+                //                                         response.clone(),
+                //                                         response_token.clone());
+                match response {
+                    ::routing::error::ResponseError::FailedRequestForData(data) => {
+                        let payload_size = data.payload_size() as u64;
+                        match data {
+                            ::routing::data::Data::ImmutableData(immutable_data) => {
+                                self.database.delete_data(&from_address, payload_size);
+                                let location = ::data_manager::Authority(immutable_data.name());
+                                let response = ::routing::error::ResponseError::FailedRequestForData(
+                                    ::routing::data::Data::ImmutableData(immutable_data));
+                                self.routing
+                                    .put_response(our_authority, location, response, response_token);
+                            }
+                            _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
+                        }
+                    }
+                    ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
+                        self.database.delete_data(&from_address, data_size as u64);
+                        let location = ::data_manager::Authority(data_name.clone());
+                        let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
+                                                                                              data_size);
+                        self.routing.put_response(our_authority, location, response, response_token);
+                    }
+                    _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
+                }
             }
-            &::data_manager::Authority(_) => {
-                self.handle_put_response_from_data_manager(pmid_node_name, response.clone());
-            }
+            // &::data_manager::Authority(_) => {
+            //     self.handle_put_response_from_data_manager(pmid_node_name, response.clone());
+            // }
             _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
         }
         ::utils::HANDLED
-    }
+*/    }
 
     pub fn handle_refresh(&mut self,
                           type_tag: &u64,
-                          our_authority: &::routing::Authority,
+                          our_authority: &Authority,
                           payloads: &Vec<Vec<u8>>)
                           -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
-            if let &Authority(from_group) = our_authority {
+            if let &Authority::NodeManager(from_group) = our_authority {
                 if let Some(merged_account) = ::utils::merge::<Account>(from_group,
                                                                         payloads.clone()) {
                     self.database.handle_account_transfer(merged_account);
@@ -114,64 +106,36 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_churn(&mut self, close_group: &Vec<::routing::NameType>,
-                        churn_node: &::routing::NameType) {
-        self.database.handle_churn(close_group, &self.routing, churn_node);
+    pub fn handle_churn(&mut self,
+                        routing: &mut Routing,
+                        close_group: &Vec<XorName>,
+                        churn_node: &XorName) {
+        self.database.handle_churn(close_group, routing, churn_node);
     }
 
     pub fn do_refresh(&mut self,
+                      routing: &mut Routing,
                       type_tag: &u64,
-                      our_authority: &::routing::Authority,
-                      churn_node: &::routing::NameType) -> Option<()> {
-        self.database.do_refresh(type_tag, our_authority, churn_node, &self.routing)
+                      our_authority: &Authority,
+                      churn_node: &XorName) -> Option<()> {
+        self.database.do_refresh(type_tag, our_authority, churn_node, routing)
     }
 
-    pub fn reset(&mut self, routing: ::vault::Routing) {
-        self.routing = routing;
-        self.database.cleanup();
-    }
+    // pub fn reset(&mut self, routing: &Routing) {
+    //     self.routing = routing;
+    //     self.database.cleanup();
+    // }
 
-    fn handle_put_response_from_pmid_node(&mut self,
-                                          our_authority: ::routing::Authority,
-                                          from_address: ::routing::NameType,
-                                          response: ::routing::error::ResponseError,
-                                          response_token: Option<::routing::SignedToken>) {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                let payload_size = data.payload_size() as u64;
-                match data {
-                    ::routing::data::Data::ImmutableData(immutable_data) => {
-                        self.database.delete_data(&from_address, payload_size);
-                        let location = ::data_manager::Authority(immutable_data.name());
-                        let response = ::routing::error::ResponseError::FailedRequestForData(
-                            ::routing::data::Data::ImmutableData(immutable_data));
-                        self.routing
-                            .put_response(our_authority, location, response, response_token);
-                    }
-                    _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
-                }
-            }
-            ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
-                self.database.delete_data(&from_address, data_size as u64);
-                let location = ::data_manager::Authority(data_name.clone());
-                let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
-                                                                                      data_size);
-                self.routing.put_response(our_authority, location, response, response_token);
-            }
-            _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
-        }
-    }
-
-    fn handle_put_response_from_data_manager(&mut self,
-                                             pmid_node_name: ::routing::NameType,
-                                             response: ::routing::error::ResponseError) {
-        match response {
-            ::routing::error::ResponseError::FailedRequestForData(data) => {
-                self.database.delete_data(&pmid_node_name, data.payload_size() as u64);
-            }
-            _ => warn!("Invalid response type from DataManager for PUT RESPONSE at PmidManager"),
-        }
-    }
+    // fn handle_put_response_from_data_manager(&mut self,
+    //                                          pmid_node_name: XorName,
+    //                                          response: ::routing::error::ResponseError) {
+    //     match response {
+    //         ::routing::error::ResponseError::FailedRequestForData(data) => {
+    //             self.database.delete_data(&pmid_node_name, data.payload_size() as u64);
+    //         }
+    //         _ => warn!("Invalid response type from DataManager for PUT RESPONSE at PmidManager"),
+    //     }
+    // }
 }
 
 
@@ -204,7 +168,7 @@ mod test {
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].our_authority, our_authority);
         assert_eq!(put_requests[0].location,
-                   ::pmid_node::Authority(our_authority.get_location().clone()));
+                   Authority::ManagedNode(our_authority.get_name().clone()));
         assert_eq!(put_requests[0].data, ::routing::data::Data::ImmutableData(data));
     }
 
@@ -214,21 +178,21 @@ mod test {
         assert_eq!(::utils::HANDLED,
             pmid_manager.handle_put(&our_authority, &from_authority,
                                     &::routing::data::Data::ImmutableData(data.clone())));
-        let close_group = vec![::routing::NameType::new([1u8; 64]),
-                               ::routing::NameType::new([2u8; 64]),
-                               ::routing::NameType::new([3u8; 64]),
-                               ::routing::NameType::new([4u8; 64]),
-                               our_authority.get_location().clone(),
-                               ::routing::NameType::new([5u8; 64]),
-                               ::routing::NameType::new([6u8; 64]),
-                               ::routing::NameType::new([7u8; 64]),
-                               ::routing::NameType::new([8u8; 64])];
+        let close_group = vec![XorName::new([1u8; 64]),
+                               XorName::new([2u8; 64]),
+                               XorName::new([3u8; 64]),
+                               XorName::new([4u8; 64]),
+                               our_authority.get_name().clone(),
+                               XorName::new([5u8; 64]),
+                               XorName::new([6u8; 64]),
+                               XorName::new([7u8; 64]),
+                               XorName::new([8u8; 64])];
         let churn_node = ::utils::random_name();
         pmid_manager.handle_churn(&close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-        assert_eq!(refresh_requests[0].our_authority.get_location(), our_authority.get_location());
+        assert_eq!(refresh_requests[0].our_authority.get_name(), our_authority.get_name());
 
         let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {

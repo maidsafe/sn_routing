@@ -15,6 +15,27 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use routing::RoutingError;
+use std::io;
+
+#[derive(Debug)]
+pub enum Error {
+    Routing(RoutingError),
+    Io(io::Error),
+}
+
+impl From<RoutingError> for Error {
+    fn from(error: RoutingError) -> Error {
+        Error::Routing(error)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Error {
+        Error::Io(error)
+    }
+}
+
 #[derive(Debug)]
 pub enum ChunkStoreError {
     // Report Input/Output error.
@@ -24,13 +45,5 @@ pub enum ChunkStoreError {
 impl From<::std::io::Error> for ChunkStoreError {
     fn from(error: ::std::io::Error) -> ChunkStoreError {
         ChunkStoreError::Io(error)
-    }
-}
-
-impl ::std::fmt::Display for ChunkStoreError {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match self {
-            &ChunkStoreError::Io(ref error) => write!(formatter, "ChunkStoreError::Io: {}", error),
-        }
     }
 }

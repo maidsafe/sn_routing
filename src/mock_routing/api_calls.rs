@@ -183,14 +183,14 @@ pub struct RefreshRequest {
     pub type_tag: u64,
     pub our_authority: ::routing::Authority,
     pub content: Vec<u8>,
-    pub churn_node: ::routing::NameType,
+    pub churn_node: XorName,
 }
 
 impl RefreshRequest {
     pub fn new(type_tag: u64,
                our_authority: ::routing::Authority,
                content: Vec<u8>,
-               churn_node: ::routing::NameType) -> RefreshRequest {
+               churn_node: XorName) -> RefreshRequest {
         RefreshRequest { type_tag: type_tag, our_authority: our_authority,
                          content: content, churn_node: churn_node }
     }

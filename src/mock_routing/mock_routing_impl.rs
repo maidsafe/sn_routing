@@ -50,7 +50,7 @@ impl MockRoutingImpl {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&mut self,
-                      client_address: ::routing::NameType,
+                      client_address: XorName,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data_request: ::routing::data::DataRequest) {
         let (_name, our_authority) = match data_request {
@@ -72,7 +72,7 @@ impl MockRoutingImpl {
     }
 
     pub fn client_put(&mut self,
-                      client_address: ::routing::NameType,
+                      client_address: XorName,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data: ::routing::data::Data) {
         let delay_ms = self.network_delay_ms;
@@ -89,7 +89,7 @@ impl MockRoutingImpl {
     }
 
     pub fn client_post(&mut self,
-                       client_address: ::routing::NameType,
+                       client_address: XorName,
                        client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                        data: ::routing::data::Data) {
         let delay_ms = self.network_delay_ms;
@@ -105,8 +105,8 @@ impl MockRoutingImpl {
         });
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>,
-                       churn_node: ::routing::NameType) {
+    pub fn churn_event(&mut self, nodes: Vec<XorName>,
+                       churn_node: XorName) {
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
             let _ = cloned_sender.send(::routing::event::Event::Churn(nodes, churn_node));
@@ -179,7 +179,7 @@ impl MockRoutingImpl {
                         from_authority: our_authority,
                     });
                 }
-                ::routing::Authority::Client(_, _) => {
+                ::routing::Authority::Client{ .. } => {
                     let _ = cloned_client_sender.send(data);
                 }
                 _ => {}
@@ -232,7 +232,7 @@ impl MockRoutingImpl {
                            type_tag: u64,
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
-                           churn_node: ::routing::NameType) {
+                           churn_node: XorName) {
         self.refresh_requests_given.push(super::api_calls::RefreshRequest::new(
                 type_tag, our_authority.clone(), content.clone(), churn_node));
         // routing is expected to accumulate the refresh requests

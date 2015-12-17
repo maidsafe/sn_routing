@@ -15,76 +15,88 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use data_manager::DataManager;
+use error::Error;
+use maid_manager::MaidManager;
+use pmid_manager::PmidManager;
+use pmid_node::PmidNode;
+use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage};
+use sd_manager::StructuredDataManager;
+use std::sync::{Arc, atomic, mpsc};
+use std::sync::atomic::AtomicBool;
+use time::{Duration, SteadyTime};
+use xor_name::XorName;
+
 #[cfg(not(all(test, feature = "use-mock-routing")))]
-pub type Routing = ::routing::routing::Routing;
+pub type Routing = ::routing::Routing;
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 pub type Routing = ::mock_routing::MockRouting;
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
-    data_manager: ::data_manager::DataManager,
-    maid_manager: ::maid_manager::MaidManager,
-    pmid_manager: ::pmid_manager::PmidManager,
-    pmid_node: ::pmid_node::PmidNode,
-    sd_manager: ::sd_manager::StructuredDataManager,
-    receiver: ::std::sync::mpsc::Receiver<::routing::event::Event>,
-    churn_timestamp: ::time::SteadyTime,
-    id: ::routing::NameType,
-    app_event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
-    should_stop: Option<::std::sync::Arc<::std::sync::atomic::AtomicBool>>,
+    routing: Routing,
+    data_manager: DataManager,
+    maid_manager: MaidManager,
+    pmid_manager: PmidManager,
+    pmid_node: PmidNode,
+    sd_manager: StructuredDataManager,
+    receiver: mpsc::Receiver<Event>,
+    churn_timestamp: SteadyTime,
+    id: XorName,
+    app_event_sender: Option<mpsc::Sender<Event>>,
+    should_stop: Option<Arc<AtomicBool>>,
 }
 
 impl Vault {
     pub fn run() {
-        Vault::new(None, None).do_run();
+        // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
+        unwrap_result!(Vault::new(None, None)).do_run();
     }
 
-    fn new(app_event_sender: Option<::std::sync::mpsc::Sender<(::routing::event::Event)>>,
-           should_stop: Option<::std::sync::Arc<::std::sync::atomic::AtomicBool>>) -> Vault {
+    fn new(app_event_sender: Option<mpsc::Sender<Event>>,
+           should_stop: Option<Arc<AtomicBool>>)
+           -> Result<Vault, Error> {
         ::sodiumoxide::init();
-        let (sender, receiver) = ::std::sync::mpsc::channel();
-        let routing = Routing::new(sender);
-        Vault {
-            data_manager: ::data_manager::DataManager::new(routing.clone()),
-            maid_manager: ::maid_manager::MaidManager::new(routing.clone()),
-            pmid_manager: ::pmid_manager::PmidManager::new(routing.clone()),
-            pmid_node: ::pmid_node::PmidNode::new(routing.clone()),
-            sd_manager: ::sd_manager::StructuredDataManager::new(routing.clone()),
-            churn_timestamp: ::time::SteadyTime::now(),
+        let (sender, receiver) = mpsc::channel();
+        let routing = try!(Routing::new(sender));
+        Ok(Vault {
+            routing: routing,
+            data_manager: DataManager::new(),
+            maid_manager: MaidManager::new(),
+            pmid_manager: PmidManager::new(),
+            pmid_node: PmidNode::new(),
+            sd_manager: StructuredDataManager::new(),
+            churn_timestamp: SteadyTime::now(),
             receiver: receiver,
-            id: ::routing::NameType::new([0u8; 64]),
+            id: XorName::new([0u8; 64]),
             app_event_sender: app_event_sender,
             should_stop: should_stop,
-        }
+        })
     }
 
     fn do_run(&mut self) {
-        use routing::event::Event;
         loop {
             match self.receiver.try_recv() {
                 Err(_) => {}
                 Ok(event) => {
                     let _ = self.app_event_sender.clone().and_then(|sender| Some(sender.send(event.clone())));
-                    info!("Vault {} received an event from routing : {:?}", self.id, event);
+                    info!("Vault {} received an event from routing: {:?}", self.id, event);
                     match event {
-                        Event::Request{ request, our_authority, from_authority, response_token } =>
-                            self.on_request(request, our_authority, from_authority, response_token),
-                        Event::Response{ response, our_authority, from_authority } =>
-                            self.on_response(response, our_authority, from_authority),
-                        Event::Refresh(type_tag, our_authority, accounts) => self.on_refresh(type_tag,
-                                                                                             our_authority,
-                                                                                             accounts),
-                        Event::Churn(close_group, churn_node) => self.on_churn(close_group, churn_node),
-                        Event::DoRefresh(type_tag, our_authority, churn_node) =>
-                            self.on_do_refresh(type_tag, our_authority, churn_node),
-                        Event::Bootstrapped => self.on_bootstrapped(),
+                        Event::Request(request) => self.on_request(request),
+                        Event::Response(response) => self.on_response(response),
+                        Event::Refresh(type_tag, our_authority, accounts) => {
+                            self.on_refresh(type_tag, our_authority, accounts)
+                        }
+                        Event::Churn(close_group/*, churn_node*/) => {
+                            self.on_churn(close_group/*, churn_node*/)
+                        }
+                        Event::DoRefresh(type_tag, our_authority, churn_node) => {
+                            self.on_do_refresh(type_tag, our_authority, churn_node)
+                        }
                         Event::Connected => self.on_connected(),
                         Event::Disconnected => self.on_disconnected(),
-                        Event::FailedRequest{ request, our_authority, location, interface_error } =>
-                            self.on_failed_request(request, our_authority, location, interface_error),
-                        Event::FailedResponse{ response, our_authority, location, interface_error } =>
-                            self.on_failed_response(response, our_authority, location, interface_error),
                         Event::Terminated => break,
                     };
                 }
@@ -92,76 +104,110 @@ impl Vault {
 
             if let &Some(ref arc) = &self.should_stop {
                 let ref should_stop = &*arc;
-                if should_stop.load(::std::sync::atomic::Ordering::Relaxed) {
+                if should_stop.load(atomic::Ordering::Relaxed) {
                     // Just stop Routing and wait for the `Event::Terminated` message to break out
                     // of this event loop.
-                    self.pmid_node.routing().stop();
+                    self.routing.stop();
                 }
             }
-            let duration = ::std::time::Duration::from_millis(1);
-            ::std::thread::sleep(duration);
+            ::std::thread::sleep(::std::time::Duration::from_millis(1));
         }
     }
 
-    fn on_request(&mut self,
-                  request: ::routing::ExternalRequest,
-                  our_authority: ::routing::Authority,
-                  from_authority: ::routing::Authority,
-                  response_token: Option<::routing::SignedToken>) {
-        match request {
-            ::routing::ExternalRequest::Get(data_request, _) => {
-                self.handle_get(our_authority, from_authority, data_request, response_token);
+    fn on_request(&mut self, request: RequestMessage) {
+        match (&request.src, &request.dst, &request.content) {
+            // ================== Get ==================
+            (&Authority::Client{ .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
+                self.data_manager.handle_get(&mut self.routing, &request)
             }
-            ::routing::ExternalRequest::Put(data) => {
-                self.handle_put(our_authority, from_authority, data, response_token);
+            (&Authority::Client{ .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Get(DataRequest::StructuredData(_, _))) => {
+                self.sd_manager.handle_get(&mut self.routing, &request)
             }
-            ::routing::ExternalRequest::Post(data) => {
-                self.handle_post(our_authority, from_authority, data, response_token);
+            (&Authority::NaeManager(_),
+             &Authority::ManagedNode(_),
+             &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
+                self.pmid_node.handle_get(&mut self.routing, &request)
             }
-            ::routing::ExternalRequest::Delete(/*data*/_) => {
-                unimplemented!();
+            // ================== Put ==================
+            (&Authority::Client{ .. },
+             &Authority::ClientManager(_),
+             &RequestContent::Put(Data::ImmutableData(_))) |
+            (&Authority::Client{ .. },
+             &Authority::ClientManager(_),
+             &RequestContent::Put(Data::StructuredData(_)))=> {
+                self.maid_manager.handle_put(&mut self.routing, &request)
             }
+            (&Authority::ClientManager(_),
+             &Authority::NaeManager(_),
+             &RequestContent::Put(Data::ImmutableData(ref data))) => {
+                self.data_manager.handle_put(&mut self.routing, data)
+            }
+            (&Authority::ClientManager(_),
+             &Authority::NaeManager(_),
+             &RequestContent::Put(Data::StructuredData(ref data))) => {
+                self.sd_manager.handle_put(data)
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NodeManager(pmid_node_name),
+             &RequestContent::Put(Data::ImmutableData(ref data))) => {
+                self.pmid_manager.handle_put(&mut self.routing, data, pmid_node_name)
+            }
+            (&Authority::NodeManager(_),
+             &Authority::ManagedNode(_),
+             &RequestContent::Put(Data::ImmutableData(_))) => {
+                self.pmid_node.handle_put(&mut self.routing, &request)
+            }
+            // ================== Post ==================
+            (&Authority::Client{ .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Post(Data::StructuredData(_))) => {
+                self.sd_manager.handle_post(&request)
+            }
+            // ================== Delete ==================
+            (_, _, &RequestContent::Delete(_)) => unimplemented!(),
+            _ => error!("Unexpected request {:?}", request),
         }
     }
 
-    fn on_response(&mut self,
-                   response: ::routing::ExternalResponse,
-                   our_authority: ::routing::Authority,
-                   from_authority: ::routing::Authority) {
-        match response {
-            ::routing::ExternalResponse::Get(data, _, response_token) => {
-                self.handle_get_response(our_authority, from_authority, data, response_token);
+    fn on_response(&mut self, response: ResponseMessage) {
+        match (&response.src, &response.dst, &response.content) {
+            // ================== GetSuccess ==================
+            (&Authority::ManagedNode(_),
+             &Authority::NaeManager(_),
+             &ResponseContent::GetSuccess(Data::ImmutableData(_))) => {
+                self.data_manager.handle_get_success(&response)
             }
-            ::routing::ExternalResponse::Put(response_error, response_token) => {
-                self.handle_put_response(our_authority,
-                                         from_authority,
-                                         response_error,
-                                         response_token);
+            // ================== GetFailure ==================
+            (&Authority::ManagedNode(pmid_node_name),
+             &Authority::NaeManager(_),
+             &ResponseContent::GetFailure{ ref request, ref external_error_indicator }) => {
+                self.data_manager.handle_get_failure(pmid_node_name,
+                                                     request,
+                                                     external_error_indicator)
             }
-            ::routing::ExternalResponse::Post(/*response_error*/_, /*response_token*/_) => {
-                unimplemented!();
-            }
-            ::routing::ExternalResponse::Delete(/*response_error*/_, /*response_token*/_) => {
-                unimplemented!();
-            }
+            // ================== PutFailure ==================
+            // FIXME
+            // data_manager::Authority(_) => self.data_manager.handle_put_failure(response),
+            // pmid_manager::Authority(_) => self.pmid_manager.handle_put_failure(response),
+            _ => error!("Unexpected response {:?}", response),
         }
     }
 
-    fn on_refresh(&mut self,
-                  type_tag: u64,
-                  our_authority: ::routing::Authority,
-                  accounts: Vec<Vec<u8>>) {
+    fn on_refresh(&mut self, type_tag: u64, our_authority: Authority, accounts: Vec<Vec<u8>>) {
         self.handle_refresh(type_tag, our_authority, accounts);
     }
 
-    fn on_churn(&mut self, close_group: Vec<::routing::NameType>,
-                churn_node: ::routing::NameType) {
+    fn on_churn(&mut self, close_group: Vec<XorName>/*, churn_node: XorName*/) {
         self.id = close_group[0].clone();
         let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
-        let time_now = ::time::SteadyTime::now();
+        let time_now = SteadyTime::now();
         // During the process of joining network, the vault shall not refresh its just received info
-        if !(churn_up && (self.churn_timestamp + ::time::Duration::seconds(5) > time_now)) {
-            self.handle_churn(close_group, churn_node);
+        if !(churn_up && (self.churn_timestamp + Duration::seconds(5) > time_now)) {
+            self.handle_churn(close_group/*, churn_node*/);
         } else {
             self.data_manager.set_node_table(close_group);
         }
@@ -171,157 +217,50 @@ impl Vault {
         }
     }
 
-    fn on_do_refresh(&mut self, type_tag: u64, our_authority: ::routing::Authority,
-                     churn_node: ::routing::NameType) {
-        let _ = self.maid_manager.do_refresh(&type_tag, &our_authority, &churn_node)
-                .or_else(|| self.data_manager.do_refresh(&type_tag, &our_authority, &churn_node))
-                .or_else(|| self.sd_manager.do_refresh(&type_tag, &our_authority, &churn_node))
-                .or_else(|| self.pmid_manager.do_refresh(&type_tag, &our_authority, &churn_node));
-    }
-
-    fn on_bootstrapped(&self) {
-        debug!("vault bootstrapped having {:?} connections",
-               self.data_manager.nodes_in_table_len());
-        // assert_eq!(0, self.data_manager.nodes_in_table_len());
+    fn on_do_refresh(&mut self, type_tag: u64, our_authority: Authority, churn_node: XorName) {
+        let _ = self.maid_manager.do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node)
+                .or_else(|| self.data_manager.do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node))
+                .or_else(|| self.sd_manager.do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node))
+                .or_else(|| self.pmid_manager.do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node));
     }
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
         debug!("vault connected having {:?} connections",
                self.data_manager.nodes_in_table_len());
-        // assert_eq!(::routing::types::GROUP_SIZE, self.data_manager.nodes_in_table_len());
+        // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
     fn on_disconnected(&mut self) {
-        self.pmid_node.routing().stop();
+        self.routing.stop();
         if let &Some(ref arc) = &self.should_stop {
             let ref should_stop = &*arc;
-            if should_stop.load(::std::sync::atomic::Ordering::Relaxed) {
+            if should_stop.load(atomic::Ordering::Relaxed) {
                 return;
             }
         }
-        self.churn_timestamp = ::time::SteadyTime::now();
-        let (sender, receiver) = ::std::sync::mpsc::channel();
-        let routing = Routing::new(sender);
-        self.receiver = receiver;
+        // self.churn_timestamp = SteadyTime::now();
+        // let (sender, receiver) = mpsc::channel();
+        // // TODO - Keep retrying to construct new Routing until returns Ok() ?
+        // let routing = unwrap_result!(Routing::new(sender));
+        // self.receiver = receiver;
 
-        self.maid_manager.reset(routing.clone());
-        self.data_manager.reset(routing.clone());
-        self.pmid_manager.reset(routing.clone());
-        // TODO: https://github.com/maidsafe/safe_vault/issues/269
-        //   pmid_node and sd_manager shall discard the data when routing address changed
-        self.pmid_node.reset(routing.clone());
-        self.sd_manager.reset(routing.clone());
+        // self.maid_manager.reset(&self.routing);
+        // self.data_manager.reset(&self.routing);
+        // self.pmid_manager.reset(&self.routing);
+        // // TODO: https://github.com/maidsafe/safe_vault/issues/269
+        // //   pmid_node and sd_manager shall discard the data when routing address changed
+        // self.pmid_node.reset(&self.routing);
+        // self.sd_manager.reset(&self.routing);
     }
 
-    fn on_failed_request(&mut self,
-                         _request: ::routing::ExternalRequest,
-                         _our_authority: Option<::routing::Authority>,
-                         _location: ::routing::Authority,
-                         _error: ::routing::error::InterfaceError) {
-        unimplemented!();
-    }
-
-    fn on_failed_response(&mut self,
-                          _response: ::routing::ExternalResponse,
-                          _our_authority: Option<::routing::Authority>,
-                          _location: ::routing::Authority,
-                          _error: ::routing::error::InterfaceError) {
-        unimplemented!();
-    }
-
-    fn handle_get(&mut self,
-                  our_authority: ::routing::Authority,
-                  from_authority: ::routing::Authority,
-                  data_request: ::routing::data::DataRequest,
-                  response_token: Option<::routing::SignedToken>) {
-        let _ = self.data_manager
-                    .handle_get(&our_authority, &from_authority, &data_request, &response_token)
-                    .or_else(|| {
-                        self.sd_manager.handle_get(&our_authority,
-                                                   &from_authority,
-                                                   &data_request,
-                                                   &response_token)
-                    })
-                    .or_else(|| {
-                        self.pmid_node.handle_get(&our_authority,
-                                                  &from_authority,
-                                                  &data_request,
-                                                  &response_token)
-                    });
-    }
-
-    fn handle_put(&mut self,
-                  our_authority: ::routing::Authority,
-                  from_authority: ::routing::Authority,
-                  data: ::routing::data::Data,
-                  response_token: Option<::routing::SignedToken>) {
-        let _ = self.maid_manager
-                    .handle_put(&our_authority, &from_authority, &data, &response_token)
-                    .or_else(|| {
-                        self.data_manager.handle_put(&our_authority, &from_authority, &data)
-                    })
-                    .or_else(|| self.sd_manager.handle_put(&our_authority, &from_authority, &data))
-                    .or_else(|| {
-                        self.pmid_manager.handle_put(&our_authority, &from_authority, &data)
-                    })
-                    .or_else(|| {
-                        self.pmid_node
-                            .handle_put(&our_authority, &from_authority, &data, &response_token)
-                    });
-    }
-
-    // Post is only used to update the content or owners of a StructuredData
-    fn handle_post(&mut self,
-                   our_authority: ::routing::Authority,
-                   from_authority: ::routing::Authority,
-                   data: ::routing::data::Data,
-                   _response_token: Option<::routing::SignedToken>) {
-        let _ = self.sd_manager.handle_post(&our_authority, &from_authority, &data);
-    }
-
-    fn handle_get_response(&mut self,
-                           our_authority: ::routing::Authority,
-                           from_authority: ::routing::Authority,
-                           response: ::routing::data::Data,
-                           response_token: Option<::routing::SignedToken>) {
-        let _ = self.data_manager.handle_get_response(&our_authority,
-                                                      &from_authority,
-                                                      &response,
-                                                      &response_token);
-    }
-
-    // DataManager doesn't need to carry out replication in case of sacrificial copy
-    #[allow(dead_code)]
-    fn handle_put_response(&mut self,
-                           our_authority: ::routing::Authority,
-                           from_authority: ::routing::Authority,
-                           response: ::routing::error::ResponseError,
-                           response_token: Option<::routing::SignedToken>) {
-        let _ = self.data_manager
-                    .handle_put_response(&our_authority, &from_authority, &response)
-                    .or_else(|| {
-                        self.pmid_manager.handle_put_response(&our_authority,
-                                                              &from_authority,
-                                                              &response,
-                                                              &response_token)
-                    });
-    }
-
-    // https://maidsafe.atlassian.net/browse/MAID-1111 post_response is not required on vault
-    #[allow(dead_code)]
-    fn handle_post_response(&mut self,
-                            _: ::routing::Authority, // from_authority
-                            _: ::routing::error::ResponseError,
-                            _: Option<::routing::SignedToken>) {
-    }
-
-    fn handle_churn(&mut self, close_group: Vec<::routing::NameType>,
-                    churn_node: ::routing::NameType) {
-        self.maid_manager.handle_churn(&churn_node);
-        self.sd_manager.handle_churn(&churn_node);
-        self.pmid_manager.handle_churn(&close_group, &churn_node);
-        self.data_manager.handle_churn(close_group, &churn_node);
+    fn handle_churn(&mut self, close_group: Vec<XorName>/*,
+                    churn_node: XorName*/) {
+        let churn_node = XorName::new([0; 64]);  // FIXME
+        self.maid_manager.handle_churn(&mut self.routing, &churn_node);
+        self.sd_manager.handle_churn(&mut self.routing, &churn_node);
+        self.pmid_manager.handle_churn(&mut self.routing, &close_group, &churn_node);
+        self.data_manager.handle_churn(&mut self.routing, close_group, &churn_node);
     }
 
     fn handle_refresh(&mut self,
@@ -350,6 +289,7 @@ impl Vault {
 #[cfg(all(test, not(feature = "use-mock-routing")))]
 mod test {
     use super::*;
+    use maidsafe_utilities::log;
 
     struct VaultComms {
         notifier: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
@@ -386,7 +326,7 @@ mod test {
     struct Client {
         routing: ::routing::routing_client::RoutingClient,
         receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
-        name: ::routing::NameType,
+        name: XorName,
     }
 
     impl Client {
@@ -407,7 +347,7 @@ mod test {
                                 info!("as {:?} received response: {:?} from {:?}",
                                       our_authority, response, from_authority);
                                 match response {
-                                    ::routing::ExternalResponse::Get(data, _, _) => {
+                                    routing::Response::Get(data, _, _) => {
                                         let _ = client_sender.clone().send(data);
                                     },
                                     _ => panic!("not expected!")
@@ -431,7 +371,7 @@ mod test {
                                 // Send an empty data to indicate bootstrapped
                                 let _ = client_sender.clone().send(::routing::data::Data::PlainData(
                                     ::routing::plain_data::PlainData::new(
-                                        ::routing::NameType::new([0u8; 64]), vec![])));
+                                        XorName::new([0u8; 64]), vec![])));
                                 info!("client routing Bootstrapped");
                             }
                             Event::Terminated => {
@@ -470,7 +410,7 @@ mod test {
 
     impl Environment {
         fn new() -> Environment {
-            ::utils::initialise_logger();
+            log::init(true);
             Self::show_warning();
 
             remove_files();
@@ -497,7 +437,7 @@ mod test {
         }
 
         fn network_size() -> usize {
-            ::routing::types::GROUP_SIZE
+            kademlia_routing_table::GROUP_SIZE
         }
 
         fn consume_vaults_events(&self, time_limit: ::time::Duration) {
@@ -576,7 +516,7 @@ mod test {
                         debug!("as {:?} received response: {:?} from {:?}",
                                our_authority, response, from_authority);
                         match (expected_tag, response, our_authority, from_authority) {
-                            (30, ::routing::ExternalResponse::Put(_, _),
+                            (30, routing::Response::Put(_, _),
                              ::routing::Authority::NodeManager(_),
                              ::routing::Authority::NaeManager(_)) => hit_vaults.push(i),
                             _ => {}
@@ -704,7 +644,7 @@ mod test {
                                    ::routing::data::Data::StructuredData(sd.clone()));
         let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
                                                1,
-                                               ::routing::types::GROUP_SIZE,
+                                               kademlia_routing_table::GROUP_SIZE,
                                                ::time::Duration::minutes(3)));
 
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -721,7 +661,7 @@ mod test {
                                     ::routing::data::Data::StructuredData(sd_new.clone()));
         let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
                                                1,
-                                               ::routing::types::GROUP_SIZE,
+                                               kademlia_routing_table::GROUP_SIZE,
                                                ::time::Duration::minutes(3)));
 
         println!("Getting data");
@@ -750,7 +690,7 @@ mod test {
         // Waiting for the notifications happen
         let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
                                                30,
-                                               ::routing::types::GROUP_SIZE / 2 + 1,
+                                               kademlia_routing_table::GROUP_SIZE / 2 + 1,
                                                ::time::Duration::minutes(3)));
         env.consume_vaults_events(::time::Duration::seconds(10));
 
@@ -824,7 +764,7 @@ mod test {
                                        ::routing::data::Data::StructuredData(sd.clone()));
         let _ = evaluate_result!(wait_for_hits(&env.vaults_comms,
                                                1,
-                                               ::routing::types::GROUP_SIZE - 2,
+                                               kademlia_routing_table::GROUP_SIZE - 2,
                                                ::time::Duration::minutes(3)));
 
         println!("Starting new vault");

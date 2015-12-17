@@ -15,131 +15,76 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub use routing::Authority::NaeManager as Authority;
+use chunk_store::ChunkStore;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, StructuredData};
+use vault::Routing;
+use xor_name::XorName;
 
 pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
 
 pub struct StructuredDataManager {
-    routing: ::vault::Routing,
-    // ChunkStore has the ability of handling mutable(SDV) data, and put is overwritable
-    chunk_store: ::chunk_store::ChunkStore,
+    chunk_store: ChunkStore,
 }
 
 impl StructuredDataManager {
-    pub fn new(routing: ::vault::Routing) -> StructuredDataManager {
+    pub fn new() -> StructuredDataManager {
         StructuredDataManager {
-            routing: routing,
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1370
-            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap(),
+            chunk_store: ChunkStore::new(1073741824).unwrap(),
         }
     }
 
-    pub fn handle_get(&mut self,
-                      our_authority: &::routing::Authority,
-                      from_authority: &::routing::Authority,
-                      data_request: &::routing::data::DataRequest,
-                      response_token: &Option<::routing::SignedToken>)
-                      -> Option<()> {
-        // Check if this is for this persona, and that the Data is StructuredData.
-        if !::utils::is_sd_manager_authority_type(our_authority) {
-            return ::utils::NOT_HANDLED;
-        }
-        let structured_data_name = match data_request {
-            &::routing::data::DataRequest::StructuredData(_, _) => data_request.name(),
-            _ => return ::utils::NOT_HANDLED,
+    pub fn handle_get(&mut self, routing: &mut Routing, request: &RequestMessage) {
+        // TODO - handle type_tag from name too
+        let data_name = match &request.content {
+            &RequestContent::Get(DataRequest::StructuredData(ref name, _)) => name,
+            _ => unreachable!("Error in vault demuxing"),
         };
 
-        // Validate from authority.
-        if !::utils::is_client_authority_type(from_authority) {
-            warn!("Invalid authority for GET at StructuredDataManager: {:?}", from_authority);
-            return ::utils::HANDLED;
-        }
-
-        let data = self.chunk_store.get(&structured_data_name);
+        let data = self.chunk_store.get(data_name);
         if data.len() == 0 {
-            warn!("Failed to GET data with name {:?}", structured_data_name);
-            return ::utils::HANDLED;
+            warn!("Failed to GET data with name {:?}", data_name);
+            return
         }
-        let decoded: ::routing::structured_data::StructuredData =
-            match ::routing::utils::decode(&data) {
-                Ok(data) => data,
-                Err(_) => {
-                    warn!("Failed to parse data with name {:?}", structured_data_name);
-                    return ::utils::HANDLED;
-                }
-            };
-        debug!("As {:?} sending data {:?} to {:?} in response to the original request {:?}",
-               our_authority, ::routing::data::Data::StructuredData(decoded.clone()),
-               from_authority, data_request);
-        self.routing.get_response(our_authority.clone(),
-                                  from_authority.clone(),
-                                  ::routing::data::Data::StructuredData(decoded),
-                                  data_request.clone(),
-                                  response_token.clone());
-        ::utils::HANDLED
+        let decoded = match deserialise::<StructuredData>(&data) {
+            Ok(data) => data,
+            Err(_) => {
+                warn!("Failed to parse data with name {:?}", data_name);
+                return
+            }
+        };
+        let content = ResponseContent::GetSuccess(Data::StructuredData(decoded));
+        debug!("As {:?} sending data {:?} to {:?}", request.dst, content, request.src);
+        let _ = routing.send_get_response(request.dst.clone(), request.src.clone(), content);
     }
 
-    pub fn handle_put(&mut self,
-                      our_authority: &::routing::Authority,
-                      from_authority: &::routing::Authority,
-                      data: &::routing::data::Data)
-                      -> Option<()> {
-        // Check if this is for this persona, and that the Data is StructuredData.
-        if !::utils::is_sd_manager_authority_type(our_authority) {
-            return ::utils::NOT_HANDLED;
-        }
-        let structured_data = match data {
-            &::routing::data::Data::StructuredData(ref structured_data) => structured_data,
-            _ => return ::utils::NOT_HANDLED,
-        };
-
-        // Validate from authority.
-        if !::utils::is_maid_manager_authority_type(from_authority) {
-            warn!("Invalid authority for PUT at StructuredDataManager: {:?}", from_authority);
-            return ::utils::HANDLED;
-        }
-
+    pub fn handle_put(&mut self, data: &StructuredData) {
         // SD using PUT for the first copy so the request can pass through MaidManager,
         //    then POST to update and transfer in case of churn
         //       so if the data exists, then the put shall be rejected
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        if !self.chunk_store.has_chunk(&structured_data.name()) {
-            if let Ok(serialised_data) = ::routing::utils::encode(&structured_data) {
-                self.chunk_store.put(&structured_data.name(), serialised_data);
+        let data_name = data.name();
+        if !self.chunk_store.has_chunk(&data_name) {
+            if let Ok(serialised_data) = serialise(data) {
+                self.chunk_store.put(&data_name, serialised_data);
             } else {
-                debug!("Failed to serialise {:?}", structured_data);
+                debug!("Failed to serialise {:?}", data_name);
             }
         } else {
-            debug!("Already have SD {:?}", structured_data.name());
+            debug!("Already have SD {:?}", data_name);
         }
-        ::utils::HANDLED
     }
 
-    pub fn handle_post(&mut self,
-                       our_authority: &::routing::Authority,
-                       from_authority: &::routing::Authority,
-                       data: &::routing::data::Data)
-                       -> Option<()> {
-        // Check if this is for this persona.
-        if !::utils::is_sd_manager_authority_type(our_authority) {
-            return ::utils::NOT_HANDLED;
-        }
-
-        // Validate from authority, and that the Data is StructuredData.
-        if !::utils::is_client_authority_type(from_authority) {
-            warn!("Invalid authority for POST at StructuredDataManager: {:?}", from_authority);
-            return ::utils::HANDLED;
-        }
-        let new_data = match data {
-            &::routing::data::Data::StructuredData(ref structured_data) => structured_data,
-            _ => {
-                warn!("Invalid data type for POST at StructuredDataManager: {:?}", data);
-                return ::utils::HANDLED;
-            }
+    pub fn handle_post(&mut self, request: &RequestMessage) {
+        let new_data = match &request.content {
+            &RequestContent::Post(Data::StructuredData(ref structured_data)) => structured_data,
+            _ => unreachable!("Error in vault demuxing"),
         };
 
         // SD using PUT for the first copy so the request can pass through MaidManager,
@@ -150,30 +95,28 @@ impl StructuredDataManager {
         //       in addition to above, POST shall check the ownership
         let serialised_data = self.chunk_store.get(&new_data.name());
         if serialised_data.len() == 0 {
-            warn!("Don't currently hold data for POST at StructuredDataManager: {:?}", data);
-            return ::utils::HANDLED;
+            warn!("Don't currently hold data for POST at StructuredDataManager: {:?}", request);
+            return
         }
-        let _ = ::routing::utils::decode::<::routing::structured_data::StructuredData>(
+        let _ = deserialise::<StructuredData>(
                 &serialised_data).ok()
             .and_then(|mut existing_data| {
                 debug!("StructuredDataManager updating {:?} to {:?}", existing_data, new_data);
                 existing_data.replace_with_other(new_data.clone()).ok()
-                    .and_then(|()| ::routing::utils::encode(&existing_data).ok())
+                    .and_then(|()| serialise(&existing_data).ok())
                     .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), serialised)))
             });
-        ::utils::HANDLED
     }
 
     pub fn handle_refresh(&mut self,
                           type_tag: &u64,
-                          our_authority: &::routing::Authority,
+                          our_authority: &Authority,
                           payloads: &Vec<Vec<u8>>)
                           -> Option<()> {
         if *type_tag == ACCOUNT_TAG {
-            if let &Authority(from_group) = our_authority {
+            if let &Authority::NaeManager(from_group) = our_authority {
                 if let Some(merged_structured_data) =
-                        ::utils::merge::<::routing::structured_data::StructuredData>(
-                                from_group, payloads.clone()) {
+                        ::utils::merge::<StructuredData>(from_group, payloads.clone()) {
                     self.handle_account_transfer(merged_structured_data);
                 }
             } else {
@@ -186,13 +129,14 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_churn(&mut self, churn_node: &::routing::NameType) {
+    pub fn handle_churn(&mut self, routing: &mut Routing, churn_node: &XorName) {
         let names = self.chunk_store.names();
         for name in names {
             let data = self.chunk_store.get(&name);
-            debug!("SDManager sends out a refresh regarding data {:?}", name);
-            self.routing.refresh_request(ACCOUNT_TAG, Authority(name),
-                                         data, churn_node.clone());
+            let src = Authority::NaeManager(name);
+            debug!("SD Manager sending refresh for account {:?}", name);
+            routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
+
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
         // the uncontrollable order of events (churn/refresh/account_transfer)
@@ -201,17 +145,19 @@ impl StructuredDataManager {
     }
 
     pub fn do_refresh(&mut self,
+                      routing: &mut Routing,
                       type_tag: &u64,
-                      our_authority: &::routing::Authority,
-                      churn_node: &::routing::NameType) -> Option<()> {
+                      our_authority: &Authority,
+                      churn_node: &XorName) -> Option<()> {
         if type_tag == &ACCOUNT_TAG {
             let names = self.chunk_store.names();
             for name in names {
-                if *our_authority.get_location() == name {
+                if *our_authority.get_name() == name {
                     let data = self.chunk_store.get(&name);
-                    debug!("SDManager on-request sends out a refresh regarding data {:?}", name);
-                    self.routing.refresh_request(ACCOUNT_TAG, our_authority.clone(),
-                                                 data, churn_node.clone());
+                    debug!("SD Manager sending on_refresh for account {:?}",
+                           our_authority.get_name());
+                    routing.send_refresh_request(ACCOUNT_TAG, our_authority.clone(), data,
+                                                 churn_node.clone());
                 }
             }
             return ::utils::HANDLED;
@@ -219,16 +165,15 @@ impl StructuredDataManager {
         ::utils::NOT_HANDLED
     }
 
-    pub fn reset(&mut self, routing: ::vault::Routing) {
-        self.routing = routing;
-        match ::chunk_store::ChunkStore::new(1073741824) {
-            Ok(chunk_store) => self.chunk_store = chunk_store,
-            Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
-        };
-    }
+    // pub fn reset(&mut self, routing: &Routing) {
+    //     self.routing = routing;
+    //     match ::chunk_store::ChunkStore::new(1073741824) {
+    //         Ok(chunk_store) => self.chunk_store = chunk_store,
+    //         Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
+    //     };
+    // }
 
-    fn handle_account_transfer(&mut self,
-                               structured_data: ::routing::structured_data::StructuredData) {
+    fn handle_account_transfer(&mut self, structured_data: StructuredData) {
         use ::types::Refreshable;
         self.chunk_store.delete(&structured_data.name());
         self.chunk_store.put(&structured_data.name(), structured_data.serialised_contents());
@@ -240,12 +185,13 @@ impl StructuredDataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use maidsafe_utilities::log;
 
     pub struct Environment {
         pub routing: ::vault::Routing,
         pub sd_manager: StructuredDataManager,
-        pub data_name: ::routing::NameType,
-        pub identifier: ::routing::NameType,
+        pub data_name: XorName,
+        pub identifier: XorName,
         pub keys: (::sodiumoxide::crypto::sign::PublicKey, ::sodiumoxide::crypto::sign::SecretKey),
         pub structured_data: ::routing::structured_data::StructuredData,
         pub data: ::routing::data::Data,
@@ -256,7 +202,7 @@ mod test {
 
     impl Environment {
         pub fn new() -> Environment {
-            ::utils::initialise_logger();
+            log::init(true);
             let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
             let identifier = ::utils::random_name();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -281,13 +227,13 @@ mod test {
         }
 
         pub fn get_from_chunkstore(&self,
-                                   data_name: &::routing::NameType)
+                                   data_name: &XorName)
                                    -> Option<::routing::structured_data::StructuredData> {
             let data = self.sd_manager.chunk_store.get(data_name);
             if data.len() == 0 {
                 return None;
             }
-            ::routing::utils::decode::<::routing::structured_data::StructuredData>(&data).ok()
+            serialisation::parse::<::routing::structured_data::StructuredData>(&data).ok()
         }
     }
 

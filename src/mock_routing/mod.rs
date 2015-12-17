@@ -20,7 +20,6 @@
 mod api_calls;
 mod mock_routing_impl;
 
-#[derive(Clone)]
 pub struct MockRouting {
     pimpl: ::std::sync::Arc<::std::sync::Mutex<mock_routing_impl::MockRoutingImpl>>,
 }
@@ -39,28 +38,28 @@ impl MockRouting {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&mut self,
-                      client_address: ::routing::NameType,
+                      client_address: XorName,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data_request: ::routing::data::DataRequest) {
         evaluate_result!(self.pimpl.lock()).client_get(client_address, client_pub_key, data_request)
     }
 
     pub fn client_put(&mut self,
-                      client_address: ::routing::NameType,
+                      client_address: XorName,
                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                       data: ::routing::data::Data) {
         evaluate_result!(self.pimpl.lock()).client_put(client_address, client_pub_key, data)
     }
 
     pub fn client_post(&mut self,
-                       client_address: ::routing::NameType,
+                       client_address: XorName,
                        client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
                        data: ::routing::data::Data) {
         evaluate_result!(self.pimpl.lock()).client_post(client_address, client_pub_key, data)
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<::routing::NameType>,
-                       churn_node: ::routing::NameType) {
+    pub fn churn_event(&mut self, nodes: Vec<XorName>,
+                       churn_node: XorName) {
         evaluate_result!(self.pimpl.lock()).churn_event(nodes, churn_node)
     }
 
@@ -128,7 +127,7 @@ impl MockRouting {
                            type_tag: u64,
                            our_authority: ::routing::Authority,
                            content: Vec<u8>,
-                           churn_node: ::routing::NameType) {
+                           churn_node: XorName) {
         evaluate_result!(self.pimpl.lock()).refresh_request(type_tag, our_authority,
                                                    content, churn_node)
     }

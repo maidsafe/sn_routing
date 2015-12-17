@@ -33,13 +33,16 @@
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
+        unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations)]
+         missing_debug_implementations, variant_size_differences)]
+
+#![allow(unused)]
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate maidsafe_utilities;
 
 // Non-MaidSafe crates
 extern crate cbor;
@@ -52,8 +55,10 @@ extern crate rand;
 
 // MaidSafe crates
 extern crate crust;
+extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate routing;
+extern crate xor_name;
 
 #[macro_use]
 mod macros;
@@ -73,7 +78,7 @@ mod vault;
 
 /// Runs a SAFE Network vault.
 pub fn main() {
-    ::utils::initialise_logger();
-    ::utils::handle_version();
-    ::vault::Vault::run();
+    maidsafe_utilities::log::init(false);
+    utils::handle_version();
+    vault::Vault::run();
 }

@@ -68,7 +68,7 @@ fn start_vaults(num_of_nodes: u32) -> Vec<::std::process::Child> {
 
 #[cfg(not(feature = "use-mock-routing"))]
 fn start_client() -> (::routing::routing_client::RoutingClient,
-                      ::std::sync::mpsc::Receiver<(::routing::data::Data)>, ::routing::NameType) {
+                      ::std::sync::mpsc::Receiver<(::routing::data::Data)>, XorName) {
     let (sender, receiver) = ::std::sync::mpsc::channel();
     let (client_sender, client_receiver) = ::std::sync::mpsc::channel();
     let client_receiving = |receiver: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
@@ -206,7 +206,7 @@ fn executable_structured_data_churn_test() {
     let mut processes = start_vaults(4);
     let (mut client_routing, client_receiver, client_name) = start_client();
 
-    let name = ::routing::NameType(::routing::types::slice_as_u8_64_array(
+    let name = XorName(::routing::types::slice_as_u8_64_array(
         &*::routing::types::generate_random_vec_u8(64)));
     let value = ::routing::types::generate_random_vec_u8(1024);
     let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();

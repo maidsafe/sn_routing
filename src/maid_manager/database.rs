@@ -15,7 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-type MaidNodeName = ::routing::NameType;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, StructuredData};
+use xor_name::XorName;
+type MaidNodeName = XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -30,7 +34,7 @@ impl Account {
 }
 
 impl ::types::Refreshable for Account {
-    fn merge(from_group: ::routing::NameType, responses: Vec<Account>) -> Option<Account> {
+    fn merge(from_group: XorName, responses: Vec<Account>) -> Option<Account> {
         let mut data_stored: Vec<u64> = Vec::new();
         let mut space_available: Vec<u64> = Vec::new();
         for response in responses {
@@ -117,16 +121,15 @@ impl Database {
     }
 
     pub fn handle_churn(&mut self, routing: &::vault::Routing,
-                        churn_node: &::routing::NameType) {
+                        churn_node: &XorName) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());
-            let our_authority = super::Authority(account.name);
-            let mut encoder = ::cbor::Encoder::from_memory();
-            if encoder.encode(&[account]).is_ok() {
-                debug!("MaidManager sends out a refresh regarding account {:?}",
-                       our_authority.get_location());
-                routing.refresh_request(super::ACCOUNT_TAG, our_authority,
-                                        encoder.as_bytes().to_vec(), churn_node.clone());
+            let our_authority = Authority::ClientManager(account.name);
+            if let Ok(serialised_account) = serialise(&[account]) {
+                debug!("MaidManager sending refresh for account {:?}",
+                       our_authority.get_name());
+                routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                             serialised_account, churn_node.clone());
             }
         }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
@@ -138,18 +141,17 @@ impl Database {
     pub fn do_refresh(&mut self,
                       type_tag: &u64,
                       our_authority: &::routing::Authority,
-                      churn_node: &::routing::NameType,
+                      churn_node: &XorName,
                       routing: &::vault::Routing) -> Option<()> {
         if type_tag == &super::ACCOUNT_TAG {
             for (key, value) in self.storage.iter() {
-                if key == our_authority.get_location() {
+                if key == our_authority.get_name() {
                     let account = Account::new((*key).clone(), (*value).clone());
-                    let mut encoder = ::cbor::Encoder::from_memory();
-                    if encoder.encode(&[account]).is_ok() {
-                        debug!("MaidManager on-request sends out a refresh regarding account {:?}",
-                               our_authority.get_location());
-                        routing.refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
-                                                encoder.as_bytes().to_vec(), churn_node.clone());
+                    if let Ok(serialised_account) = serialise(&[account]) {
+                        debug!("MaidManager sending on_refresh for account {:?}",
+                               our_authority.get_name());
+                        routing.send_refresh_request(super::ACCOUNT_TAG, our_authority.clone(),
+                                                     serialised_account, churn_node.clone());
                     }
                 }
             }
@@ -240,7 +242,7 @@ mod test {
 
     #[test]
     fn maid_manager_account_serialisation() {
-        let obj_before = Account::new(::routing::NameType([1u8; 64]),
+        let obj_before = Account::new(XorName([1u8; 64]),
                                       AccountValue::new(::rand::random::<u64>(),
                                                         ::rand::random::<u64>()));
 

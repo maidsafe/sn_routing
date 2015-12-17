@@ -10,20 +10,19 @@ license = "GPL-3.0"
 homepage = "http://maidsafe.net"
 
 [dependencies]
-# ---- Non-MaidSafe -----
 cbor = "~0.3.16"
-log = "~0.3.3"
-env_logger = "~0.3.2"
+crust = "~0.7.0"
+kademlia_routing_table = "~0.0.4"
+log = "~0.3.4"
+lru_time_cache = "~0.2.5"
+maidsafe_utilities = "~0.1.5"
 rand = "~0.3.12"
+routing = "~0.5.1"
 rustc-serialize = "~0.3.16"
 sodiumoxide = "~0.0.9"
 tempdir = "~0.3.4"
 time = "~0.1.34"
-
-# ---- MaidSafe ------
-crust = "~0.5.1"
-lru_time_cache = "~0.2.4"
-routing = "~0.4.2"
+xor_name = "~0.0.1"
 
 [features]
 use-mock-routing = []

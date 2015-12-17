@@ -15,22 +15,26 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, StructuredData};
+use xor_name::XorName;
+
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.
 pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
     /// The serialised contents
     fn serialised_contents(&self) -> Vec<u8> {
-        ::routing::utils::encode(&self).unwrap_or(vec![])
+        serialise(&self).unwrap_or(vec![])
     }
 
     /// Merge multiple refreshable objects into one
-    fn merge(from_group: ::routing::NameType, responses: Vec<Self>) -> Option<Self>;
+    fn merge(from_group: XorName, responses: Vec<Self>) -> Option<Self>;
 }
 
-impl Refreshable for ::routing::structured_data::StructuredData {
-    fn merge(from_group: ::routing::NameType,
-             responses: Vec<::routing::structured_data::StructuredData>)
-             -> Option<::routing::structured_data::StructuredData> {
-        let mut sds = Vec::<(::routing::structured_data::StructuredData, u64)>::new();
+impl Refreshable for StructuredData {
+    fn merge(from_group: XorName, responses: Vec<StructuredData>) -> Option<StructuredData> {
+        let mut sds = Vec::<(StructuredData, u64)>::new();
         for response in responses {
             if response.name() == from_group {
                 let push_in_vec = match sds.iter_mut().find(|a| a.0 == response) {
@@ -47,7 +51,7 @@ impl Refreshable for ::routing::structured_data::StructuredData {
         }
         sds.sort_by(|a, b| b.1.cmp(&a.1));
         let (sd, count) = sds[0].clone();
-        if count >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
+        if count >= (kademlia_routing_table::GROUP_SIZE as u64 + 1) / 2 {
             return Some(sd);
         }
         None
