@@ -205,7 +205,7 @@ impl Routing {
     // trait and hence is RAII friendly
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    pub fn stop(&mut self) {
+    pub fn stop(&self) {
         let _ = self.action_sender.send(Action::Terminate);
     }
 
