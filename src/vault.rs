@@ -123,17 +123,17 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
-                self.data_manager.handle_get(&mut self.routing, &request)
+                self.data_manager.handle_get(&self.routing, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::StructuredData(_, _))) => {
-                self.sd_manager.handle_get(&mut self.routing, &request)
+                self.sd_manager.handle_get(&self.routing, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
-                self.pmid_node.handle_get(&mut self.routing, &request)
+                self.pmid_node.handle_get(&self.routing, &request)
             }
             // ================== Put ==================
             (&Authority::Client{ .. },
@@ -142,12 +142,12 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::StructuredData(_))) => {
-                self.maid_manager.handle_put(&mut self.routing, &request)
+                self.maid_manager.handle_put(&self.routing, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.data_manager.handle_put(&mut self.routing, data)
+                self.data_manager.handle_put(&self.routing, data)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
@@ -155,11 +155,11 @@ impl Vault {
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.pmid_manager.handle_put(&mut self.routing, data, pmid_node_name)
+                self.pmid_manager.handle_put(&self.routing, data, pmid_node_name)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::ImmutableData(_))) => self.pmid_node.handle_put(&mut self.routing, &request),
+             &RequestContent::Put(Data::ImmutableData(_))) => self.pmid_node.handle_put(&self.routing, &request),
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -213,18 +213,18 @@ impl Vault {
 
     fn on_do_refresh(&mut self, type_tag: u64, our_authority: Authority, churn_node: XorName) {
         let _ = self.maid_manager
-                    .do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node)
+                    .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
                     .or_else(|| {
                         self.data_manager
-                            .do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node)
+                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
                     })
                     .or_else(|| {
                         self.sd_manager
-                            .do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node)
+                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
                     })
                     .or_else(|| {
                         self.pmid_manager
-                            .do_refresh(&mut self.routing, &type_tag, &our_authority, &churn_node)
+                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
                     });
     }
 
@@ -262,10 +262,10 @@ impl Vault {
                     close_group: Vec<XorName> /* ,
                                                * churn_node: XorName */) {
         let churn_node = XorName::new([0; 64]);  // FIXME
-        self.maid_manager.handle_churn(&mut self.routing, &churn_node);
-        self.sd_manager.handle_churn(&mut self.routing, &churn_node);
-        self.pmid_manager.handle_churn(&mut self.routing, &close_group, &churn_node);
-        self.data_manager.handle_churn(&mut self.routing, close_group, &churn_node);
+        self.maid_manager.handle_churn(&self.routing, &churn_node);
+        self.sd_manager.handle_churn(&self.routing, &churn_node);
+        self.pmid_manager.handle_churn(&self.routing, &close_group, &churn_node);
+        self.data_manager.handle_churn(&self.routing, close_group, &churn_node);
     }
 
     fn handle_refresh(&mut self, type_tag: u64, our_authority: ::routing::Authority, payloads: Vec<Vec<u8>>) {
@@ -281,11 +281,12 @@ impl Vault {
 }
 
 
-
+/*
 #[cfg(all(test, not(feature = "use-mock-routing")))]
 mod test {
     use super::*;
     use maidsafe_utilities::log;
+    use ::xor_name::XorName;
 
     struct VaultComms {
         notifier: ::std::sync::mpsc::Receiver<(::routing::event::Event)>,
@@ -638,7 +639,7 @@ mod test {
         println!("\n======================= Put/Get test ====================================================");
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         env.client.routing.put_request(::maid_manager::Authority(env.client.name),
                                        ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -649,7 +650,7 @@ mod test {
         println!("Getting data");
         env.client.routing.get_request(::data_manager::Authority(im_data.name()),
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
+                ImmutableDataType::Normal));
         wait_for_client_get(&env.client.receiver,
                             ::routing::data::Data::ImmutableData(im_data),
                             ::time::Duration::minutes(1));
@@ -657,7 +658,7 @@ mod test {
 
         // ======================= Post test =======================================================
         println!("\n======================= Post test =======================================================");
-        let name = ::utils::random_name();
+        let name = random();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
@@ -702,7 +703,7 @@ mod test {
         println!("\n======================= Churn (node down) ImmutableData test ============================");
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         env.client.routing.put_request(::maid_manager::Authority(env.client.name),
                                        ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -724,7 +725,7 @@ mod test {
         println!("\n======================= Churn (node up) ImmutableData test ==============================");
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         env.client.routing.put_request(::maid_manager::Authority(env.client.name),
                                        ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -740,7 +741,7 @@ mod test {
         println!("Getting data");
         env.client.routing.get_request(::data_manager::Authority(im_data.name()),
                                        ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                ::routing::immutable_data::ImmutableDataType::Normal));
+                ImmutableDataType::Normal));
         wait_for_client_get(&env.client.receiver,
                             ::routing::data::Data::ImmutableData(im_data),
                             ::time::Duration::minutes(1));
@@ -750,7 +751,7 @@ mod test {
         println!("\n======================= Churn (two nodes down) ImmutableData test =======================");
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         env.client.routing.put_request(::maid_manager::Authority(env.client.name),
                                        ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -768,7 +769,7 @@ mod test {
 
         // ======================= Churn (node up) StructuredData test =============================
         println!("\n======================= Churn (node up) StructuredData test =============================");
-        let name = ::utils::random_name();
+        let name = random();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
@@ -831,9 +832,9 @@ mod mock_routing_test {
 
         let mut available_nodes = Vec::with_capacity(30);
         for _ in 0..30 {
-            available_nodes.push(::utils::random_name());
+            available_nodes.push(random());
         }
-        routing.churn_event(available_nodes, ::utils::random_name());
+        routing.churn_event(available_nodes, random());
         (routing,
          VaultComms {
             receiver: receiver,
@@ -846,11 +847,11 @@ mod mock_routing_test {
     fn put_get_flow() {
         let (mut routing, vault_comms) = mock_env_setup();
 
-        let client_name = ::utils::random_name();
+        let client_name = random();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let im_data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         routing.client_put(client_name,
                            sign_keys.0,
                            ::routing::data::Data::ImmutableData(im_data.clone()));
@@ -859,7 +860,7 @@ mod mock_routing_test {
 
         let data_request =
             ::routing::data::DataRequest::ImmutableData(im_data.name(),
-                                                        ::routing::immutable_data::ImmutableDataType::Normal);
+                                                        ImmutableDataType::Normal);
         routing.client_get(client_name, sign_keys.0, data_request);
         for it in vault_comms.receiver.iter() {
             assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
@@ -871,7 +872,7 @@ mod mock_routing_test {
     fn post_flow() {
         let (mut routing, vault_comms) = mock_env_setup();
 
-        let name = ::utils::random_name();
+        let name = random();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = evaluate_result!(::routing::structured_data::StructuredData::new(0,
@@ -882,7 +883,7 @@ mod mock_routing_test {
                                                                                   vec![],
                                                                                   Some(&sign_keys.1)));
 
-        let client_name = ::utils::random_name();
+        let client_name = random();
         routing.client_put(client_name,
                            sign_keys.0,
                            ::routing::data::Data::StructuredData(sd.clone()));
@@ -911,3 +912,4 @@ mod mock_routing_test {
         }
     }
 }
+*/

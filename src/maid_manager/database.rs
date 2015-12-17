@@ -194,11 +194,13 @@ impl Database {
 #[cfg(test)]
 mod test {
     use super::*;
+    use ::rand::random;
+    use xor_name::XorName;
 
     #[test]
     fn put_data() {
         let mut db = Database::new();
-        let name = ::utils::random_name();
+        let name = random();
         assert!(db.put_data(&name, 0));
         assert!(db.put_data(&name, 1));
         assert!(db.put_data(&name, 1073741823));
@@ -212,7 +214,7 @@ mod test {
     #[test]
     fn delete_data() {
         let mut db = Database::new();
-        let name = ::utils::random_name();
+        let name = random();
         db.delete_data(&name, 0);
         assert!(!db.storage.contains_key(&name));
         assert!(db.put_data(&name, 0));
@@ -233,7 +235,7 @@ mod test {
     #[test]
     fn handle_account_transfer() {
         let mut db = Database::new();
-        let name = ::utils::random_name();
+        let name = random();
         assert!(db.put_data(&name, 0));
         assert!(db.put_data(&name, 1073741823));
         assert!(!db.put_data(&name, 2));

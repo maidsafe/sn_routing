@@ -231,17 +231,19 @@ impl Database {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::random;
+    use routing::{ImmutableData, ImmutableDataType};
+    use xor_name::XorName;
 
     #[test]
     fn exist() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ::routing::ImmutableData::new(::routing::ImmutableDataType::Normal, value);
         let mut pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
-            pmid_nodes.push(::utils::random_name());
+            pmid_nodes.push(random());
         }
 
         let data_name = data.name();
@@ -254,13 +256,12 @@ mod test {
     fn put() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
-            pmid_nodes.push(::utils::random_name());
+            pmid_nodes.push(random());
         }
 
         let result = db.get_pmid_nodes(&data_name);
@@ -276,13 +277,12 @@ mod test {
     fn remove_pmid() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
-            pmid_nodes.push(::utils::random_name());
+            pmid_nodes.push(random());
         }
 
         db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -302,15 +302,14 @@ mod test {
     fn replace_pmids() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
         let mut new_pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
-            pmid_nodes.push(::utils::random_name());
-            new_pmid_nodes.push(::utils::random_name());
+            pmid_nodes.push(random());
+            new_pmid_nodes.push(random());
         }
 
         db.put_pmid_nodes(&data_name, pmid_nodes.clone());
@@ -332,13 +331,12 @@ mod test {
     fn handle_account_transfer() {
         let mut db = Database::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
         let data_name = data.name();
         let mut pmid_nodes: Vec<XorName> = vec![];
 
         for _ in 0..4 {
-            pmid_nodes.push(::utils::random_name());
+            pmid_nodes.push(random());
         }
         db.put_pmid_nodes(&data_name, pmid_nodes.clone());
         assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());

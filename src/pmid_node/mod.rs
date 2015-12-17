@@ -33,7 +33,7 @@ impl PmidNode {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &mut Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
         let data_name = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref name, _)) => name,
             _ => unreachable!("Error in vault demuxing"),
@@ -59,7 +59,7 @@ impl PmidNode {
         let _ = routing.send_get_response(request.dst.clone(), request.src.clone(), content);
     }
 
-    pub fn handle_put(&mut self, routing: &mut Routing, request: &RequestMessage) {
+    pub fn handle_put(&mut self, routing: &Routing, request: &RequestMessage) {
         let data = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data)) => data.clone(),
             _ => unreachable!("Error in vault demuxing"),
@@ -132,7 +132,7 @@ impl PmidNode {
 
     // fn notify_managers_of_sacrifice(&self,
     //                                 our_authority: &::routing::Authority,
-    //                                 data: ::routing::immutable_data::ImmutableData,
+    //                                 data: ImmutableData,
     //                                 response_token: &Option<::routing::SignedToken>) {
     //     let location = Authority::NodeManager(our_authority.get_name().clone());
     //     let error =
@@ -163,14 +163,14 @@ mod test {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let mut pmid_node = PmidNode::new(routing.clone());
 
-        let us = ::utils::random_name();
+        let us = random();
         let our_authority = Authority(us.clone());
 
         let from_authority = Authority::NodeManager(us.clone());
 
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         {
             assert_eq!(::utils::HANDLED,
                        pmid_node.handle_put(&our_authority,
@@ -181,12 +181,12 @@ mod test {
             assert_eq!(0, routing.put_responses_given().len());
         }
         {
-            let from = ::utils::random_name();
+            let from = random();
             let from_authority = ::data_manager::Authority(from.clone());
 
             let request =
                 ::routing::data::DataRequest::ImmutableData(data.name().clone(),
-                                                            ::routing::immutable_data::ImmutableDataType::Normal);
+                                                            ImmutableDataType::Normal);
 
             assert_eq!(::utils::HANDLED,
                        pmid_node.handle_get(&our_authority, &from_authority, &request, &None));

@@ -37,7 +37,7 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &mut Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
         // TODO - handle type_tag from name too
         let data_name = match &request.content {
             &RequestContent::Get(DataRequest::StructuredData(ref name, _)) => name,
@@ -130,7 +130,7 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_churn(&mut self, routing: &mut Routing, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &Routing, churn_node: &XorName) {
         let names = self.chunk_store.names();
         for name in names {
             let data = self.chunk_store.get(&name);
@@ -146,7 +146,7 @@ impl StructuredDataManager {
     }
 
     pub fn do_refresh(&mut self,
-                      routing: &mut Routing,
+                      routing: &Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
                       churn_node: &XorName)
@@ -207,7 +207,7 @@ mod test {
         pub fn new() -> Environment {
             log::init(true);
             let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-            let identifier = ::utils::random_name();
+            let identifier = random();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
             let structured_data = evaluate_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
                                      ::routing::types::generate_random_vec_u8(1024), vec![keys.0],
@@ -222,9 +222,9 @@ mod test {
                 structured_data: structured_data.clone(),
                 data: ::routing::data::Data::StructuredData(structured_data),
                 us: Authority(data_name),
-                client: ::routing::Authority::Client(::utils::random_name(),
+                client: ::routing::Authority::Client(random(),
                                                      ::sodiumoxide::crypto::sign::gen_keypair().0),
-                maid_manager: ::maid_manager::Authority(::utils::random_name()),
+                maid_manager: ::maid_manager::Authority(random()),
             }
         }
 
@@ -357,7 +357,7 @@ mod test {
     #[test]
     fn handle_churn_and_account_transfer() {
         let mut env = Environment::new();
-        let churn_node = ::utils::random_name();
+        let churn_node = random();
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
         env.sd_manager.handle_churn(&churn_node);

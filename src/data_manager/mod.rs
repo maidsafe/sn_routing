@@ -104,7 +104,7 @@ impl DataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &mut Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
         let data_name = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _)) => data_name.clone(),
             _ => unreachable!("Error in vault demuxing"),
@@ -168,7 +168,7 @@ impl DataManager {
         }
     }
 
-    pub fn handle_put(&mut self, routing: &mut Routing, data: &ImmutableData) {
+    pub fn handle_put(&mut self, routing: &Routing, data: &ImmutableData) {
         // If the data already exists, there's no more to do.
         let data_name = data.name();
         if self.database.exist(&data_name) {
@@ -307,7 +307,7 @@ impl DataManager {
         self.nodes_in_table = close_group;
     }
 
-    pub fn handle_churn(&mut self, routing: &mut Routing, close_group: Vec<XorName>, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &Routing, close_group: Vec<XorName>, churn_node: &XorName) {
         // If the churn_node exists in the previous DM's nodes_in_table,
         // but not in this reported close_group, it indicates such node is leaving the group.
         // However, it is not to say the node is offline, as it may still connected with other
@@ -350,7 +350,7 @@ impl DataManager {
     // }
 
     pub fn do_refresh(&mut self,
-                      routing: &mut Routing,
+                      routing: &Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
                       churn_node: &XorName)
@@ -406,7 +406,7 @@ impl DataManager {
     //     let data_name = immutable_data.name();
     //     self.database.remove_pmid_node(&data_name, pmid_node_name);
     //     match *immutable_data.get_type_tag() {
-    //         ::routing::immutable_data::ImmutableDataType::Normal => {
+    //         ImmutableDataType::Normal => {
     //             match self.replicate_to(&data_name) {
     //                 Some(pmid_node) => {
     //                     self.database.add_pmid_node(&data_name, pmid_node.clone());
@@ -443,13 +443,13 @@ mod test {
             ::vault::Routing,
             DataManager,
             ::routing::Authority,
-            ::routing::immutable_data::ImmutableData)
+            ImmutableData)
     {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let mut data_manager = DataManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         data_manager.nodes_in_table = vec![XorName::new([1u8; 64]),
                                            XorName::new([2u8; 64]),
                                            XorName::new([3u8; 64]),
@@ -461,7 +461,7 @@ mod test {
         (Authority(data.name().clone()),
          routing,
          data_manager,
-         ::maid_manager::Authority(::utils::random_name()),
+         ::maid_manager::Authority(random()),
          data)
     }
 
@@ -488,13 +488,13 @@ mod test {
             }
         }
         {
-            let from = ::utils::random_name();
+            let from = random();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
             let client = ::routing::Authority::Client(from, keys.0);
 
             let request =
                 ::routing::data::DataRequest::ImmutableData(data.name().clone(),
-                                                            ::routing::immutable_data::ImmutableDataType::Normal);
+                                                            ImmutableDataType::Normal);
 
             assert_eq!(::utils::HANDLED,
                        data_manager.handle_get(&our_authority, &client, &request, &None));
@@ -524,7 +524,7 @@ mod test {
                               .into_iter()
                               .chain(data_manager.nodes_in_table.clone().into_iter())
                               .collect();
-        let churn_node = ::utils::random_name();
+        let churn_node = random();
         data_manager.handle_churn(close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);

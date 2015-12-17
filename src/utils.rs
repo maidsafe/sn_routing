@@ -81,15 +81,6 @@ pub fn handle_version() {
 }
 
 #[cfg(test)]
-pub fn random_name() -> XorName {
-    // TODO - once Routing provides either a compile-time value for `NameType`'s length or exposes
-    // `NameType::generate_random()` this should be used here.  Issue reported at
-    // https://github.com/maidsafe/routing/issues/674
-    XorName(::routing::types::slice_as_u8_64_array(
-        &*::routing::types::generate_random_vec_u8(::routing::NAME_TYPE_LEN)))
-}
-
-#[cfg(test)]
 mod test {
     use super::*;
 

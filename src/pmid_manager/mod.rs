@@ -33,7 +33,7 @@ impl PmidManager {
         PmidManager { database: Database::new() }
     }
 
-    pub fn handle_put(&mut self, routing: &mut Routing, data: &ImmutableData, pmid_node_name: XorName) {
+    pub fn handle_put(&mut self, routing: &Routing, data: &ImmutableData, pmid_node_name: XorName) {
         // Put data always being allowed, i.e. no early alert
         self.database.put_data(&pmid_node_name, data.payload_size() as u64);
 
@@ -100,12 +100,12 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_churn(&mut self, routing: &mut Routing, close_group: &Vec<XorName>, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &Routing, close_group: &Vec<XorName>, churn_node: &XorName) {
         self.database.handle_churn(close_group, routing, churn_node);
     }
 
     pub fn do_refresh(&mut self,
-                      routing: &mut Routing,
+                      routing: &Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
                       churn_node: &XorName)
@@ -141,17 +141,17 @@ mod test {
             ::vault::Routing,
             PmidManager,
             ::routing::Authority,
-            ::routing::immutable_data::ImmutableData)
+            ImmutableData)
     {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let pmid_manager = PmidManager::new(routing.clone());
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
-        (Authority(::utils::random_name()),
+            ImmutableData::new(ImmutableDataType::Normal, value);
+        (Authority(random()),
          routing,
          pmid_manager,
-         ::data_manager::Authority(::utils::random_name()),
+         ::data_manager::Authority(random()),
          data)
     }
 
@@ -195,7 +195,7 @@ mod test {
                                XorName::new([6u8; 64]),
                                XorName::new([7u8; 64]),
                                XorName::new([8u8; 64])];
-        let churn_node = ::utils::random_name();
+        let churn_node = random();
         pmid_manager.handle_churn(&close_group, &churn_node);
         let refresh_requests = routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);

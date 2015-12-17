@@ -33,7 +33,7 @@ impl MaidManager {
         MaidManager { database: Database::new() }
     }
 
-    pub fn handle_put(&mut self, routing: &mut Routing, request: &RequestMessage) {
+    pub fn handle_put(&mut self, routing: &Routing, request: &RequestMessage) {
         // Handle the request by sending on to the DM or SDM, or replying with error to the client.
         let data = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data)) => Data::ImmutableData(data.clone()),
@@ -75,12 +75,12 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_churn(&mut self, routing: &mut Routing, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &Routing, churn_node: &XorName) {
         self.database.handle_churn(routing, churn_node);
     }
 
     pub fn do_refresh(&mut self,
-                      routing: &mut Routing,
+                      routing: &Routing,
                       type_tag: &u64,
                       our_authority: &Authority,
                       churn_node: &XorName)
@@ -105,15 +105,15 @@ mod test {
             ::vault::Routing,
             MaidManager,
             ::routing::Authority,
-            ::routing::immutable_data::ImmutableData)
+            ImmutableData)
     {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let maid_manager = MaidManager::new(routing.clone());
-        let from = ::utils::random_name();
+        let from = random();
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data =
-            ::routing::immutable_data::ImmutableData::new(::routing::immutable_data::ImmutableDataType::Normal, value);
+            ImmutableData::new(ImmutableDataType::Normal, value);
         (Authority(from.clone()),
          routing,
          maid_manager,
@@ -140,7 +140,7 @@ mod test {
 
     #[test]
     fn handle_churn_and_account_transfer() {
-        let churn_node = ::utils::random_name();
+        let churn_node = random();
         let (our_authority, routing, mut maid_manager, client, data) = env_setup();
         assert_eq!(::utils::HANDLED,
                    maid_manager.handle_put(&our_authority,
