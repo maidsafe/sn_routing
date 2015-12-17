@@ -15,9 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use self::database::{Account, Database};
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
+use std::cmp::{max, min, Ordering};
+use std::collections::BTreeSet;
+use time::{Duration, SteadyTime};
+use types::Refreshable;
+use utils::{median, merge, HANDLED, NOT_HANDLED};
 use vault::Routing;
 use xor_name::{XorName, closer_to_target};
 
@@ -29,7 +36,6 @@ pub const MIN_REPLICANTS: usize = 3;
 
 mod database;
 
-type Account = self::database::Account;
 type Address = XorName;
 type ChunkNameAndPmidNode = (XorName, XorName);
 
@@ -58,7 +64,7 @@ impl Stats {
     }
 }
 
-impl ::types::Refreshable for Stats {
+impl Refreshable for Stats {
     fn merge(from_group: XorName, responses: Vec<Stats>) -> Option<Stats> {
         let mut resource_indexes: Vec<u64> = Vec::new();
         for value in responses {
@@ -66,36 +72,35 @@ impl ::types::Refreshable for Stats {
                 resource_indexes.push(value.resource_index());
             }
         }
-        Some(Stats::new(XorName([0u8; 64]), ::utils::median(resource_indexes)))
+        Some(Stats::new(XorName([0u8; 64]), median(resource_indexes)))
     }
 }
 
 
 
 pub struct DataManager {
-    database: database::Database,
+    database: Database,
     id: XorName,
     nodes_in_table: Vec<XorName>,
-    request_cache: ::lru_time_cache::LruCache<(XorName, Authority), RequestMessage>,
+    request_cache: LruCache<(XorName, Authority), RequestMessage>,
     // the higher the index is, the slower the farming rate will be
     resource_index: u64,
     // key is pair of chunk_name and pmid_node, value is insertion time
-    ongoing_gets: ::lru_time_cache::LruCache<ChunkNameAndPmidNode, ::time::SteadyTime>,
+    ongoing_gets: LruCache<ChunkNameAndPmidNode, SteadyTime>,
     // key is chunk_name and value is failing pmid nodes
-    failed_pmids: ::lru_time_cache::LruCache<XorName, Vec<XorName>>,
+    failed_pmids: LruCache<XorName, Vec<XorName>>,
 }
 
 impl DataManager {
     pub fn new() -> DataManager {
         DataManager {
-            database: database::Database::new(),
+            database: Database::new(),
             id: XorName::new([0u8; 64]),
             nodes_in_table: vec![],
-            request_cache: ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(::time::Duration::minutes(5),
-                                                                                         LRU_CACHE_SIZE),
+            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
             resource_index: 1,
-            ongoing_gets: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
-            failed_pmids: ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE),
+            ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
+            failed_pmids: LruCache::with_capacity(LRU_CACHE_SIZE),
         }
     }
 
@@ -112,10 +117,10 @@ impl DataManager {
         // Before querying the records, first ensure all records are valid
         let ongoing_gets = self.ongoing_gets.retrieve_all();
         let mut failing_entries = Vec::new();
-        let mut fetching_list = ::std::collections::BTreeSet::new();
+        let mut fetching_list = BTreeSet::new();
         fetching_list.insert(data_name.clone());
         for ongoing_get in ongoing_gets {
-            if ongoing_get.1 + ::time::Duration::seconds(10) < ::time::SteadyTime::now() {
+            if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        self.id,
                        (ongoing_get.0).1,
@@ -158,8 +163,7 @@ impl DataManager {
                        dst);
                 let _ = routing.send_get_request(src, dst, content);
                 let _ = self.ongoing_gets
-                            .insert((fetch_name.clone(), pmid.clone()),
-                                    ::time::SteadyTime::now());
+                            .insert((fetch_name.clone(), pmid.clone()), SteadyTime::now());
             }
         }
     }
@@ -173,7 +177,7 @@ impl DataManager {
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         Self::sort_from_target(&mut self.nodes_in_table, &data_name);
-        let pmid_nodes_num = ::std::cmp::min(self.nodes_in_table.len(), REPLICANTS);
+        let pmid_nodes_num = min(self.nodes_in_table.len(), REPLICANTS);
         let mut dest_pmids: Vec<XorName> = vec![];
         for index in 0..pmid_nodes_num {
             dest_pmids.push(self.nodes_in_table[index].clone());
@@ -185,7 +189,7 @@ impl DataManager {
         self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
-                self.resource_index = ::std::cmp::min(1048576, self.resource_index + dest_pmids.len() as u64);
+                self.resource_index = min(1048576, self.resource_index + dest_pmids.len() as u64);
             }
             _ => {}
         }
@@ -270,7 +274,7 @@ impl DataManager {
         match type_tag {
             &ACCOUNT_TAG => {
                 if let &Authority::NaeManager(from_group) = our_authority {
-                    if let Some(merged_account) = ::utils::merge::<Account>(from_group, payloads.clone()) {
+                    if let Some(merged_account) = merge::<Account>(from_group, payloads.clone()) {
                         debug!("DataManager {:?} receiving refreshed account {:?}",
                                self.id,
                                merged_account);
@@ -280,11 +284,11 @@ impl DataManager {
                     warn!("Invalid authority for refresh account at DataManager: {:?}",
                           our_authority);
                 }
-                ::utils::HANDLED
+                HANDLED
             }
             &STATS_TAG => {
                 if let &Authority::NaeManager(from_group) = our_authority {
-                    if let Some(merged_stats) = ::utils::merge::<Stats>(from_group, payloads.clone()) {
+                    if let Some(merged_stats) = merge::<Stats>(from_group, payloads.clone()) {
                         // give priority to incoming stats
                         self.resource_index = merged_stats.resource_index();
                     }
@@ -292,9 +296,9 @@ impl DataManager {
                     warn!("Invalid authority for refresh stats at DataManager: {:?}",
                           our_authority);
                 }
-                ::utils::HANDLED
+                HANDLED
             }
-            _ => ::utils::NOT_HANDLED,
+            _ => NOT_HANDLED,
         }
     }
 
@@ -321,7 +325,7 @@ impl DataManager {
             }
             for pmid in entry.1.iter() {
                 let _ = self.ongoing_gets
-                            .insert((entry.0.clone(), pmid.clone()), ::time::SteadyTime::now());
+                            .insert((entry.0.clone(), pmid.clone()), SteadyTime::now());
             }
         }
         // close_group[0] is supposed to be the vault id
@@ -338,11 +342,10 @@ impl DataManager {
     // pub fn reset(&mut self, routing: &Routing) {
     //     self.routing = routing;
     //     self.nodes_in_table.clear();
-    //     self.request_cache = ::lru_time_cache::LruCache::with_expiry_duration_and_capacity(
-    //             ::time::Duration::minutes(5), 1000);
+    //     self.request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
     //     self.resource_index = 1;
-    //     self.ongoing_gets = ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE);
-    //     self.failed_pmids = ::lru_time_cache::LruCache::with_capacity(LRU_CACHE_SIZE);
+    //     self.ongoing_gets = LruCache::with_capacity(LRU_CACHE_SIZE);
+    //     self.failed_pmids = LruCache::with_capacity(LRU_CACHE_SIZE);
     //     self.database.cleanup();
     // }
 
@@ -380,8 +383,8 @@ impl DataManager {
     fn sort_from_target(names: &mut Vec<XorName>, target: &XorName) {
         names.sort_by(|a, b| {
             match closer_to_target(&a, &b, target) {
-                true => ::std::cmp::Ordering::Less,
-                false => ::std::cmp::Ordering::Greater,
+                true => Ordering::Less,
+                false => Ordering::Greater,
             }
         });
     }
@@ -424,7 +427,7 @@ impl DataManager {
     #[allow(unused)]
     fn handle_had_to_clear_sacrificial(&mut self, data_name: XorName, pmid_node_name: XorName) {
         // giving less weight when removing a sacrificial data
-        self.resource_index = ::std::cmp::max(1, self.resource_index - 1);
+        self.resource_index = max(1, self.resource_index - 1);
         self.database.remove_pmid_node(&data_name, pmid_node_name);
     }
 }

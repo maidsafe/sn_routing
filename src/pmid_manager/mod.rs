@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use self::database::{Account, Database};
 use routing::{Authority, Data, ImmutableData, RequestContent, ResponseMessage};
 use vault::Routing;
 use xor_name::XorName;
@@ -23,15 +24,13 @@ pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as 
 
 mod database;
 
-type Account = self::database::Account;
-
 pub struct PmidManager {
-    database: database::Database,
+    database: Database,
 }
 
 impl PmidManager {
     pub fn new() -> PmidManager {
-        PmidManager { database: database::Database::new() }
+        PmidManager { database: Database::new() }
     }
 
     pub fn handle_put(&mut self, routing: &mut Routing, data: &ImmutableData, pmid_node_name: XorName) {
