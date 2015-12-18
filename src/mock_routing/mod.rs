@@ -19,11 +19,10 @@
 
 mod mock_routing_impl;
 
-use mock_routing_impl::MockRoutingImpl;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::sign::PublicKey;
-use std::sync::{Arc, Mutex, mspc};
+use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
 
 pub struct MockRouting {
@@ -119,21 +118,21 @@ impl MockRouting {
         unwrap_result!(self.pimpl.lock()).send_put_request(src, dst, content)
     }
 
-    // pub fn send_post_request(&self,
-    //                          src: Authority,
-    //                          dst: Authority,
-    //                          content: RequestContent)
-    //                          -> Result<(), InterfaceError> {
-    //     unwrap_result!(self.pimpl.lock()).send_post_request(src, dst, content)
-    // }
+    pub fn send_post_request(&self,
+                             src: Authority,
+                             dst: Authority,
+                             content: RequestContent)
+                             -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_post_request(src, dst, content)
+    }
 
-    // pub fn send_delete_request(&self,
-    //                            src: Authority,
-    //                            dst: Authority,
-    //                            content: RequestContent)
-    //                            -> Result<(), InterfaceError> {
-    //     unwrap_result!(self.pimpl.lock()).send_delete_request(src, dst, content)
-    // }
+    pub fn send_delete_request(&self,
+                               src: Authority,
+                               dst: Authority,
+                               content: RequestContent)
+                               -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_delete_request(src, dst, content)
+    }
 
     pub fn send_get_response(&self,
                              src: Authority,
@@ -151,21 +150,21 @@ impl MockRouting {
         unwrap_result!(self.pimpl.lock()).send_put_response(src, dst, content)
     }
 
-    // pub fn send_post_response(&self,
-    //                           src: Authority,
-    //                           dst: Authority,
-    //                           content: ResponseContent)
-    //                           -> Result<(), InterfaceError> {
-    //     unwrap_result!(self.pimpl.lock()).send_post_response(src, dst, content)
-    // }
+    pub fn send_post_response(&self,
+                              src: Authority,
+                              dst: Authority,
+                              content: ResponseContent)
+                              -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_post_response(src, dst, content)
+    }
 
-    // pub fn send_delete_response(&self,
-    //                             src: Authority,
-    //                             dst: Authority,
-    //                             content: ResponseContent)
-    //                             -> Result<(), InterfaceError> {
-    //     unwrap_result!(self.pimpl.lock()).send_delete_response(src, dst, content)
-    // }
+    pub fn send_delete_response(&self,
+                                src: Authority,
+                                dst: Authority,
+                                content: ResponseContent)
+                                -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_delete_response(src, dst, content)
+    }
 
     pub fn send_refresh_request(&self,
                                 type_tag: u64,

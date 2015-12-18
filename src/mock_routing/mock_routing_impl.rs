@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
@@ -65,10 +65,10 @@ impl MockRoutingImpl {
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
+    pub fn client_get(&mut self, src: Authority, dst: Authority, data_request: DataRequest) {
         let (_name, our_authority) = match data_request {
-            DataRequest::ImmutableData(name, _) => (name.clone(), ::data_manager::Authority(name)),
-            DataRequest::StructuredData(name, _) => (name.clone(), ::sd_manager::Authority(name)),
+            DataRequest::ImmutableData(name, _) |
+            DataRequest::StructuredData(name, _) => (name.clone(), Authority::NaeManager(name)),
             _ => panic!("unexpected"),
         };
         let cloned_sender = self.sender.clone();
@@ -82,10 +82,7 @@ impl MockRoutingImpl {
         });
     }
 
-    pub fn client_put(&mut self,
-                      client_address: XorName,
-                      client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
-                      data: ::routing::data::Data) {
+    pub fn client_put(&mut self, src: Authority, dst: Authority, data: Data) {
         let simulated_latency = self.simulated_latency;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -99,10 +96,7 @@ impl MockRoutingImpl {
         });
     }
 
-    pub fn client_post(&mut self,
-                       client_address: XorName,
-                       client_pub_key: ::sodiumoxide::crypto::sign::PublicKey,
-                       data: ::routing::data::Data) {
+    pub fn client_post(&mut self, src: Authority, dst: Authority, data: Data) {
         let simulated_latency = self.simulated_latency;
         let cloned_sender = self.sender.clone();
         let _ = ::std::thread::spawn(move || {
@@ -114,6 +108,9 @@ impl MockRoutingImpl {
                 response_token: None,
             });
         });
+    }
+
+    pub fn client_delete(&mut self, src: Authority, dst: Authority, data: Data) {
     }
 
     pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
