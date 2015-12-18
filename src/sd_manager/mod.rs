@@ -39,12 +39,12 @@ impl StructuredDataManager {
 
     pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
         // TODO - handle type_tag from name too
-        let data_name = match &request.content {
-            &RequestContent::Get(DataRequest::StructuredData(ref name, _)) => name,
+        let data_name = match request.content {
+            RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _)) => data_request.name(),
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = self.chunk_store.get(data_name);
+        let data = self.chunk_store.get(&data_name);
         if data.len() == 0 {
             warn!("Failed to GET data with name {:?}", data_name);
             return;
