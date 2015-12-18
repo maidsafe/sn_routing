@@ -494,9 +494,7 @@ impl RoutingNode {
             // to each node in the sender group
             match routing_msg {
                 RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) => (),
-                RoutingMessage::Request(RequestMessage { content: RequestContent::Refresh { .. }, .. }) =>
-                    // A different accumulator is used for refresh requests.
-                    return self.handle_refresh(&routing_msg, &public_id),
+                RoutingMessage::Request(RequestMessage { content: RequestContent::Refresh { .. }, .. }) => (),
                 _ => {
                     if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                         let _ = self.grp_msg_filter.insert(output_msg.clone());
@@ -506,15 +504,15 @@ impl RoutingNode {
                 }
             }
         }
-        self.dispatch_request_response(routing_msg)
+        self.dispatch_request_response(routing_msg, public_id)
     }
 
-
     fn dispatch_request_response(&mut self,
-                                 routing_msg: RoutingMessage)
+                                 routing_msg: RoutingMessage,
+                                 public_id: PublicId)
                                  -> Result<(), RoutingError> {
         match routing_msg {
-            RoutingMessage::Request(msg) => self.handle_request_message(msg),
+            RoutingMessage::Request(msg) => self.handle_request_message(msg, public_id),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
         }
     }
@@ -537,7 +535,7 @@ impl RoutingNode {
         }
     }
 
-    fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
+    fn handle_request_message(&mut self, request_msg: RequestMessage, public_id: PublicId) -> Result<(), RoutingError> {
         match (request_msg.content.clone(),
                request_msg.src.clone(),
                request_msg.dst.clone()) {
@@ -591,14 +589,26 @@ impl RoutingNode {
                                                          src_name,
                                                          dst_name)
             }
+            (RequestContent::Refresh { raw_bytes, cause }, _, _) => {
+                if request_msg.src != request_msg.dst {
+                    return Err(RoutingError::InvalidDestination);
+                }
+
+                let event = Event::Refresh {
+                    dst: request_msg.dst,
+                    raw_bytes: raw_bytes,
+                    cause: cause,
+                    public_id: public_id
+                };
+                Ok(try!(self.event_sender.send(event)))
+            }
             (RequestContent::Get(_), _, _) |
             (RequestContent::Put(_), _, _) |
             (RequestContent::Post(_), _, _) |
             (RequestContent::Delete(_), _, _) => {
                 let event = Event::Request(request_msg);
-                let _ = self.event_sender.send(event);
-                Ok(())
-            },
+                Ok(try!(self.event_sender.send(event)))
+            }
             _ => {
                 warn!("Unhandled request - Message {:?}", request_msg);
                 Err(RoutingError::BadAuthority)
@@ -754,7 +764,9 @@ impl RoutingNode {
 
     fn handle_lost_connection(&mut self, connection: ::crust::Connection) {
         debug!("Lost connection on {:?}", connection);
-        self.dropped_routing_node_connection(&connection);
+        if self.state == State::Node {
+            self.dropped_routing_node_connection(&connection);
+        }
         self.dropped_client_connection(&connection);
         self.dropped_bootstrap_connection(&connection);
     }
@@ -961,24 +973,17 @@ impl RoutingNode {
                 }
             }
             DirectMessage::Churn { ref close_group } => {
-                try!(self.handle_churn(close_group));
-                Ok(())
+                self.handle_churn(close_group)
             }
         }
     }
 
     fn handle_churn(&mut self, close_group: &[XorName]) -> Result<(), RoutingError> {
         for close_node in close_group {
-            if self.connection_filter.contains(close_node) {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            let _ = self.connection_filter.insert(close_node.clone());
-
-            if !self.routing_table.want_to_add(close_node) {
-                return Ok(());
-            }
-
-            try!(self.send_connect_request(close_node))
+            if self.connection_filter.insert(close_node.clone()).is_none()
+               && self.routing_table.want_to_add(close_node) {
+                try!(self.send_connect_request(close_node));
+            }     
         }
         Ok(())
     }
@@ -1503,38 +1508,6 @@ impl RoutingNode {
 
     // ----- Message Handlers that return to the event channel ------------------------------------
 
-    fn handle_refresh(&mut self, routing_msg: &RoutingMessage, public_id: &PublicId) -> Result<(), RoutingError> {
-        match routing_msg {
-            &RoutingMessage::Request(RequestMessage { ref src, ref dst, ref content }) => {
-                match (src, dst, content) {
-                    (&Authority::ClientManager(src_name),
-                     &Authority::ClientManager(dst_name),
-                     &RequestContent::Refresh { ref type_tag, ref message, ref cause }) => {
-                        if src_name != dst_name {
-                            return Err(RoutingError::BadAuthority)
-                        }
-
-                        match self.refresh_accumulator.add_message(self.routing_table.dynamic_quorum_size(),
-                                                                   type_tag.clone(),
-                                                                   message.clone(),
-                                                                   cause.clone(),
-                                                                   public_id.name().clone(),
-                                                                   dst.clone()) {
-                            Some(messages) => {
-                                let _ = self.event_sender.send(Event::Refresh(type_tag.clone(), dst.clone(), messages));
-                                let _ = self.grp_msg_filter.insert(routing_msg.clone());
-                                Ok(())
-                            },
-                            None => Err(::error::RoutingError::NotEnoughSignatures),
-                        }
-                    }
-                    _ => return Err(RoutingError::RefreshNotFromGroup)
-                }
-            }
-            _ => Err(RoutingError::UnknownMessageType)
-        }
-    }
-
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
         match self.proxy_map.iter().next() {
             Some((ref _connection, ref bootstrap_pub_id)) => {
@@ -1592,9 +1565,7 @@ impl RoutingNode {
                             self.crust_service.send(connection.clone(), raw_bytes.clone());
                         }
                     }
-                    let _ = self.event_sender.send(Event::Churn(close_group));
-                    // let _ = self.refresh_causes.insert(node_name);
-                    self.refresh_accumulator.register_cause(&node_name);
+                    let _ = self.event_sender.send(Event::Churn(close_group, node_name));
                     break;
                 }
             }

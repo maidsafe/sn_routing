@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -177,11 +176,11 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
     pub fn send_refresh_request(&self,
-                                src: Authority,
+                                dst: Authority,
                                 content: RequestContent) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
-            src: src.clone(),
-            dst: src,
+            src: dst.clone(),
+            dst: dst,
             content: content,
         });
         self.send_action(routing_msg)

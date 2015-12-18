@@ -261,7 +261,6 @@ impl Node {
         // just so that interface requirements are met
         // let cause = rand::random::<XorName>();
 
-
         // Not having access to our close group on startup means refresh won't
         // be called for the first node that goes offline.
         if self.our_close_group.len() == 0 {

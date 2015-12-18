@@ -246,10 +246,8 @@ pub enum RequestContent {
     },
     /// Message from upper layers sending network state on any network churn event
     Refresh {
-        /// externally defined type identifier
-        type_tag: u64,
         /// externally defined message
-        message: Vec<u8>,
+        raw_bytes: Vec<u8>,
         /// The node that caused the churn event.
         /// Used here (passed up to upper layers in churn event) who must give it back in
         /// which allows filtering of different churn events (used as unique identifier)
