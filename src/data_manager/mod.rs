@@ -437,6 +437,18 @@ impl DataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use lru_time_cache::LruCache;
+    use maidsafe_utilities::serialisation::serialise;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage};
+    use std::cmp::{max, min, Ordering};
+    use std::collections::BTreeSet;
+    use time::{Duration, SteadyTime};
+    use types::Refreshable;
+    use utils::{median, merge, HANDLED, NOT_HANDLED};
+    use vault::Routing;
+    use xor_name::{XorName, closer_to_target};
 
     fn env_setup()
         -> (::routing::Authority,
@@ -458,10 +470,10 @@ mod test {
                                            XorName::new([6u8; 64]),
                                            XorName::new([7u8; 64]),
                                            XorName::new([8u8; 64])];
-        (Authority(data.name().clone()),
+        (Authority::NaeManager(data.name().clone()),
          routing,
          data_manager,
-         ::maid_manager::Authority(random()),
+         Authority::ClientManager(random()),
          data)
     }
 
@@ -518,8 +530,8 @@ mod test {
              data) = env_setup();
         assert_eq!(::utils::HANDLED,
                    data_manager.handle_put(&our_authority,
-                                           &request.src,
-                                           &::routing::data::Data::ImmutableData(data.clone())));
+                                           &from_authority,
+                                           &Data::ImmutableData(data.clone())));
         let close_group = vec![our_authority.get_name().clone()]
                               .into_iter()
                               .chain(data_manager.nodes_in_table.clone().into_iter())

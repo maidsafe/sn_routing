@@ -194,7 +194,7 @@ impl Database {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ::rand::random;
+    use rand::random;
     use xor_name::XorName;
 
     #[test]

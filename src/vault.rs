@@ -607,14 +607,15 @@ mod test {
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::ImmutableData(im_data.clone())));
+                                                           Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
                                              ::data_manager::REPLICANTS,
                                              ::time::Duration::minutes(3)));
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
-                                            DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal)));
+                                                           DataRequest::ImmutableData(im_data.name(),
+                                                                                      ImmutableDataType::Normal)));
         wait_for_client_get(&env.client.receiver,
                             Data::ImmutableData(im_data),
                             Duration::minutes(1));
@@ -634,7 +635,7 @@ mod test {
                                                     Some(&sign_keys.1)));
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::StructuredData(sd.clone())));
+                                                           Data::StructuredData(sd.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              1,
                                              GROUP_SIZE as usize,
@@ -650,7 +651,7 @@ mod test {
                                                         Some(&sign_keys.1)));
         println!("Posting data");
         unwrap_result!(env.client.routing.send_post_request(Authority::NaeManager(sd.name()),
-                                             Data::StructuredData(sd_new.clone())));
+                                                            Data::StructuredData(sd_new.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              1,
                                              GROUP_SIZE as usize,
@@ -658,7 +659,7 @@ mod test {
 
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
-                                            DataRequest::StructuredData(name, 0)));
+                                                           DataRequest::StructuredData(name, 0)));
         wait_for_client_get(&env.client.receiver,
                             Data::StructuredData(sd_new),
                             Duration::minutes(1));
@@ -669,7 +670,7 @@ mod test {
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::ImmutableData(im_data.clone())));
+                                                           Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
                                                       ::data_manager::REPLICANTS,
@@ -690,7 +691,7 @@ mod test {
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::ImmutableData(im_data.clone())));
+                                                           Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
                                              ::data_manager::REPLICANTS,
@@ -702,7 +703,8 @@ mod test {
 
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
-                                            DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal)));
+                                                           DataRequest::ImmutableData(im_data.name(),
+                                                                                      ImmutableDataType::Normal)));
         wait_for_client_get(&env.client.receiver,
                             Data::ImmutableData(im_data),
                             Duration::minutes(1));
@@ -714,7 +716,7 @@ mod test {
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::ImmutableData(im_data.clone())));
+                                                           Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
                                                       ::data_manager::REPLICANTS,
@@ -741,7 +743,7 @@ mod test {
                                                     Some(&sign_keys.1)));
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-                                            Data::StructuredData(sd.clone())));
+                                                           Data::StructuredData(sd.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              1,
                                              GROUP_SIZE as usize - 2,
@@ -753,122 +755,117 @@ mod test {
 
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
-                                            DataRequest::StructuredData(name, 0)));
+                                                           DataRequest::StructuredData(name, 0)));
         wait_for_client_get(&env.client.receiver,
                             Data::StructuredData(sd),
                             Duration::minutes(1));
     }
 }
 
-
 // #[cfg(all(test, feature = "use-mock-routing"))]
 // mod mock_routing_test {
-// use super::*;
-//
-// struct VaultComms {
-// receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
-// killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
-// join_handle: Option<::std::thread::JoinHandle<()>>,
+//     use super::*;
+
+//     struct VaultComms {
+//         receiver: ::std::sync::mpsc::Receiver<(::routing::data::Data)>,
+//         killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
+//         join_handle: Option<::std::thread::JoinHandle<()>>,
+//     }
+
+//     impl Drop for VaultComms {
+//         fn drop(&mut self) {
+//             self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
+//             if let Some(join_handle) = self.join_handle.take() {
+//                 unwrap_result!(join_handle.join());
+//             }
+//         }
+//     }
+
+
+//     fn mock_env_setup() -> (Routing, VaultComms) {
+//         ::utils::initialise_logger();
+//         let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
+//         let mut vault = Vault::new(None, Some(killer.clone()));
+//         let mut routing = vault.pmid_node.routing();
+//         let receiver = routing.get_client_receiver();
+//         let join_handle = Some(unwrap_result!(::std::thread::Builder::new().spawn(move || vault.do_run())));
+
+//         let mut available_nodes = Vec::with_capacity(30);
+//         for _ in 0..30 {
+//             available_nodes.push(random());
+//         }
+//         routing.churn_event(available_nodes, random());
+//         (routing,
+//          VaultComms {
+//             receiver: receiver,
+//             killer: killer,
+//             join_handle: join_handle,
+//         })
+//     }
+
+//     #[test]
+//     fn put_get_flow() {
+//         let (mut routing, vault_comms) = mock_env_setup();
+
+//         let client_name = random();
+//         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+//         let value = ::routing::types::generate_random_vec_u8(1024);
+//         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+//         routing.client_put(client_name,
+//                            sign_keys.0,
+//                            ::routing::data::Data::ImmutableData(im_data.clone()));
+//         let duration = ::std::time::Duration::from_millis(2000);
+//         ::std::thread::sleep(duration);
+
+//         let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal);
+//         routing.client_get(client_name, sign_keys.0, data_request);
+//         for it in vault_comms.receiver.iter() {
+//             assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
+//             break;
+//         }
+//     }
+
+//     #[test]
+//     fn post_flow() {
+//         let (mut routing, vault_comms) = mock_env_setup();
+
+//         let name = random();
+//         let value = ::routing::types::generate_random_vec_u8(1024);
+//         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+//         let sd = unwrap_result!(::routing::structured_data::StructuredData::new(0,
+//                                                                                 name,
+//                                                                                 0,
+//                                                                                 value.clone(),
+//                                                                                 vec![sign_keys.0],
+//                                                                                 vec![],
+//                                                                                 Some(&sign_keys.1)));
+
+//         let client_name = random();
+//         routing.client_put(client_name,
+//                            sign_keys.0,
+//                            ::routing::data::Data::StructuredData(sd.clone()));
+//         let duration = ::std::time::Duration::from_millis(2000);
+//         ::std::thread::sleep(duration);
+
+//         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+//         let sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
+//                                                                                     name,
+//                                                                                     1,
+//                                                                                     value.clone(),
+//                                                                                     vec![keys.0],
+//                                                                                     vec![sign_keys.0],
+//                                                                                     Some(&sign_keys.1)));
+//         routing.client_post(client_name,
+//                             sign_keys.0,
+//                             ::routing::data::Data::StructuredData(sd_new.clone()));
+//         let duration = ::std::time::Duration::from_millis(2000);
+//         ::std::thread::sleep(duration);
+
+//         let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
+//         routing.client_get(client_name, sign_keys.0, data_request);
+//         for it in vault_comms.receiver.iter() {
+//             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
+//             break;
+//         }
+//     }
 // }
-//
-// impl Drop for VaultComms {
-// fn drop(&mut self) {
-// self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
-// if let Some(join_handle) = self.join_handle.take() {
-// unwrap_result!(join_handle.join());
-// }
-// }
-// }
-//
-//
-// fn mock_env_setup() -> (Routing, VaultComms) {
-// ::utils::initialise_logger();
-// let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
-// let mut vault = Vault::new(None, Some(killer.clone()));
-// let mut routing = vault.pmid_node.routing();
-// let receiver = routing.get_client_receiver();
-// let join_handle = Some(unwrap_result!(::std::thread::Builder::new().spawn(move || vault.do_run())));
-//
-// let mut available_nodes = Vec::with_capacity(30);
-// for _ in 0..30 {
-// available_nodes.push(random());
-// }
-// routing.churn_event(available_nodes, random());
-// (routing,
-// VaultComms {
-// receiver: receiver,
-// killer: killer,
-// join_handle: join_handle,
-// })
-// }
-//
-// #[test]
-// fn put_get_flow() {
-// let (mut routing, vault_comms) = mock_env_setup();
-//
-// let client_name = random();
-// let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let value = ::routing::types::generate_random_vec_u8(1024);
-// let im_data =
-// ImmutableData::new(ImmutableDataType::Normal, value);
-// routing.client_put(client_name,
-// sign_keys.0,
-// ::routing::data::Data::ImmutableData(im_data.clone()));
-// let duration = ::std::time::Duration::from_millis(2000);
-// ::std::thread::sleep(duration);
-//
-// let data_request =
-// ::routing::data::DataRequest::ImmutableData(im_data.name(),
-// ImmutableDataType::Normal);
-// routing.client_get(client_name, sign_keys.0, data_request);
-// for it in vault_comms.receiver.iter() {
-// assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
-// break;
-// }
-// }
-//
-// #[test]
-// fn post_flow() {
-// let (mut routing, vault_comms) = mock_env_setup();
-//
-// let name = random();
-// let value = ::routing::types::generate_random_vec_u8(1024);
-// let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let sd = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// name,
-// 0,
-// value.clone(),
-// vec![sign_keys.0],
-// vec![],
-// Some(&sign_keys.1)));
-//
-// let client_name = random();
-// routing.client_put(client_name,
-// sign_keys.0,
-// ::routing::data::Data::StructuredData(sd.clone()));
-// let duration = ::std::time::Duration::from_millis(2000);
-// ::std::thread::sleep(duration);
-//
-// let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// name,
-// 1,
-// value.clone(),
-// vec![keys.0],
-// vec![sign_keys.0],
-// Some(&sign_keys.1)));
-// routing.client_post(client_name,
-// sign_keys.0,
-// ::routing::data::Data::StructuredData(sd_new.clone()));
-// let duration = ::std::time::Duration::from_millis(2000);
-// ::std::thread::sleep(duration);
-//
-// let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
-// routing.client_get(client_name, sign_keys.0, data_request);
-// for it in vault_comms.receiver.iter() {
-// assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
-// break;
-// }
-// }
-// }
-//

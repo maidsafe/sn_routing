@@ -135,6 +135,18 @@ impl PmidManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use lru_time_cache::LruCache;
+    use maidsafe_utilities::serialisation::serialise;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage};
+    use std::cmp::{max, min, Ordering};
+    use std::collections::BTreeSet;
+    use time::{Duration, SteadyTime};
+    use types::Refreshable;
+    use utils::{median, merge, HANDLED, NOT_HANDLED};
+    use vault::Routing;
+    use xor_name::{XorName, closer_to_target};
 
     fn env_setup()
         -> (::routing::Authority,
@@ -148,10 +160,10 @@ mod test {
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data =
             ImmutableData::new(ImmutableDataType::Normal, value);
-        (Authority(random()),
+        (Authority::NodeManager(random()),
          routing,
          pmid_manager,
-         ::data_manager::Authority(random()),
+         Authority::NaeManager(random()),
          data)
     }
 

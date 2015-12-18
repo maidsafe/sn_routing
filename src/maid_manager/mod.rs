@@ -99,6 +99,18 @@ impl MaidManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use lru_time_cache::LruCache;
+    use maidsafe_utilities::serialisation::serialise;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage};
+    use std::cmp::{Ordering, max, min};
+    use std::collections::BTreeSet;
+    use time::{Duration, SteadyTime};
+    use types::Refreshable;
+    use utils::{HANDLED, NOT_HANDLED, median, merge};
+    use vault::Routing;
+    use xor_name::{XorName, closer_to_target};
 
     fn env_setup()
         -> (::routing::Authority,
@@ -112,12 +124,11 @@ mod test {
         let from = random();
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
-        (Authority(from.clone()),
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
+        (Authority::ClientManager(from.clone()),
          routing,
          maid_manager,
-         ::routing::Authority::Client(from, keys.0),
+         Authority::Client(from, keys.0),
          data)
     }
 
@@ -132,10 +143,8 @@ mod test {
         let put_requests = routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].our_authority, our_authority);
-        assert_eq!(put_requests[0].location,
-                   ::data_manager::Authority(data.name()));
-        assert_eq!(put_requests[0].data,
-                   ::routing::data::Data::ImmutableData(data));
+        assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
+        assert_eq!(put_requests[0].data, Data::ImmutableData(data));
     }
 
     #[test]

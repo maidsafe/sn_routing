@@ -157,6 +157,18 @@ impl PmidNode {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use lru_time_cache::LruCache;
+    use maidsafe_utilities::serialisation::serialise;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage};
+    use std::cmp::{max, min, Ordering};
+    use std::collections::BTreeSet;
+    use time::{Duration, SteadyTime};
+    use types::Refreshable;
+    use utils::{median, merge, HANDLED, NOT_HANDLED};
+    use vault::Routing;
+    use xor_name::{XorName, closer_to_target};
 
     #[test]
     fn handle_put_get() {
@@ -164,7 +176,7 @@ mod test {
         let mut pmid_node = PmidNode::new(routing.clone());
 
         let us = random();
-        let our_authority = Authority(us.clone());
+        let our_authority = Authority::ManagedNode(us.clone());
 
         let from_authority = Authority::NodeManager(us.clone());
 
@@ -182,7 +194,7 @@ mod test {
         }
         {
             let from = random();
-            let from_authority = ::data_manager::Authority(from.clone());
+            let from_authority = Authority::NaeManager(from.clone());
 
             let request =
                 ::routing::data::DataRequest::ImmutableData(data.name().clone(),

@@ -187,7 +187,19 @@ impl StructuredDataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use lru_time_cache::LruCache;
     use maidsafe_utilities::log;
+    use maidsafe_utilities::serialisation::deserialise;
+    use rand::random;
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage, StructuredData};
+    use std::cmp::{max, min, Ordering};
+    use std::collections::BTreeSet;
+    use time::{Duration, SteadyTime};
+    use types::Refreshable;
+    use utils::{median, merge, HANDLED, NOT_HANDLED};
+    use vault::Routing;
+    use xor_name::{XorName, closer_to_target};
 
     pub struct Environment {
         pub routing: ::vault::Routing,
@@ -221,10 +233,10 @@ mod test {
                 keys: keys,
                 structured_data: structured_data.clone(),
                 data: ::routing::data::Data::StructuredData(structured_data),
-                us: Authority(data_name),
-                client: ::routing::Authority::Client(random(),
+                us: Authority::NaeManager(data_name),
+                client: Authority::Client(random(),
                                                      ::sodiumoxide::crypto::sign::gen_keypair().0),
-                maid_manager: ::maid_manager::Authority(random()),
+                maid_manager: Authority::ClientManager(random()),
             }
         }
 
@@ -233,7 +245,7 @@ mod test {
             if data.len() == 0 {
                 return None;
             }
-            serialisation::parse::<::routing::structured_data::StructuredData>(&data).ok()
+            deserialise::<StructuredData>(&data).ok()
         }
     }
 
@@ -270,8 +282,7 @@ mod test {
         assert_eq!(::utils::HANDLED,
                    env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
         assert_eq!(env.structured_data,
-                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
-                                    "Failed to get inital data"));
+                   unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get inital data"));
 
         // incorrect version
         let mut sd_new_bad = unwrap_result!(::routing::structured_data::StructuredData::new(0,
@@ -289,8 +300,7 @@ mod test {
                                               &env.client,
                                               &::routing::data::Data::StructuredData(sd_new_bad)));
         assert_eq!(env.structured_data,
-                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
-                                    "Failed to get original data."));
+                   unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get original data."));
 
         // correct version
         let mut sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
@@ -309,8 +319,7 @@ mod test {
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new.clone())));
         assert_eq!(sd_new,
-                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
-                                    "Failed to get updated data"));
+                   unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
 
         // update to a new owner, wrong signature
         let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -330,8 +339,7 @@ mod test {
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new_bad.clone())));
         assert_eq!(sd_new,
-                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
-                                    "Failed to get updated data"));
+                   unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
 
         // update to a new owner, correct signature
         sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
@@ -350,8 +358,7 @@ mod test {
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new.clone())));
         assert_eq!(sd_new,
-                   evaluate_option!(env.get_from_chunkstore(&env.data_name),
-                                    "Failed to get re-updated data"));
+                   unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get re-updated data"));
     }
 
     #[test]
