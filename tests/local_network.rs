@@ -25,235 +25,159 @@
 // //
 // // Start up nodes do the puts and gets.
 
-// #[macro_use]
-// extern crate log;
-// #[macro_use]
-// extern crate maidsafe_utilities;
-// extern crate rustc_serialize;
-// extern crate docopt;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate maidsafe_utilities;
+extern crate rand;
+extern crate rustc_serialize;
+extern crate docopt;
+extern crate sodiumoxide;
+extern crate routing;
+extern crate xor_name;
 
-// use docopt::Docopt;
+use rand::random;
+use std::string::String;
+use std::error::Error;
+use std::process::{Child, Command, Stdio};
+use docopt::Docopt;
+use sodiumoxide::crypto::hash;
+use maidsafe_utilities::serialisation::serialise;
+use routing::test_utils::client::Client;
+use routing::data::{Data, DataRequest};
+use routing::plain_data::PlainData;
+use xor_name::XorName;
 
-// // ==========================   Program Options   =================================
-// static USAGE: &'static str = "
-// Usage:
-//   local_network [options]
-//   local_network --help
 
-// Options:
-//   -n, --nodes  Number of network nodes to run.
-//   -r, --reqs   Number of put requests sent to the network.
-//   -h, --help   Display this help message.
+fn start_nodes(nodes: usize, churn_nodes: usize) -> Vec<Child> {
+    maidsafe_utilities::log::init(false);
+    let mut processes = Vec::new();
+    let (node_exe_path, churn_node_exe_path) = match std::env::current_exe() {
+        Ok(mut exe_path) => {
+            exe_path.pop();
+            (std::path::Path::new("./target")
+                .join(unwrap_option!(exe_path.iter().last(), ""))
+                .join("node"),
+             std::path::Path::new("./target")
+                .join(unwrap_option!(exe_path.iter().last(), ""))
+                .join("churn_node"))
+        }
+        Err(e) => panic!("Failed to get current integration test path: {}", e),
+    };
 
-//   Runs n nodes 20% long lived, 80% churn.
-//   Sends r 'put' requests.
-//   Sends an arbitrary number of 'get' requests.
-// ";
+    for i in 0..nodes {
+        processes.push(match Command::new(node_exe_path.to_path_buf())
+                                 .stderr(Stdio::piped())
+                                 .spawn() {
+            Err(e) => panic!("Failed to spawn process: {}", e.description()),
+            Ok(process) => {
+                println!("Starting Node {:05}", process.id());
+                process
+            }
+        });
+        let interval = ::std::time::Duration::from_millis(1000 + i as u64 * 1000);
+        ::std::thread::sleep(interval);
+    }
 
-// #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
-// struct Args {
-// 	nodes: usize,
-// 	requests: usize,
-// }
+    for i in 0..churn_nodes {
+        processes.push(match Command::new(churn_node_exe_path.to_path_buf())
+                                 .stderr(Stdio::piped())
+                                 .spawn() {
+            Err(e) => panic!("Failed to spawn process: {}", e.description()),
+            Ok(process) => {
+                println!("Starting ChurnNode {:05}", process.id());
+                process
+            }
+        });
+        let interval = ::std::time::Duration::from_millis(2000 + i as u64 * 1000);
+        ::std::thread::sleep(interval);
+    }
 
-// fn parse_user_command(cmd: String) -> Option<Args> {
-//     let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
-//                   .split(' ')
-//                   .collect::<Vec<_>>();
+    let interval = ::std::time::Duration::from_millis((nodes + churn_nodes) as u64 * 1000);
+    ::std::thread::sleep(interval);
+    processes
+}
 
-//     if cmds.is_empty() {
-//         return None;
-//     } else if cmds.len() == 4 && cmds[0] == "nodes" && cmds[2] == "reqs" {
-//     	let nodes: usize = match cmds[1].parse::<usize>() {
-//     		Ok(nodes) => nodes,
-//     		Err(err) => {
-//     			println!("Failed to parse nodes {} to usize.", cmds[1]);
-//     			return None
-//     		}
-//     	};
+fn stop_nodes(processes: &mut Vec<Child>) {
+    while let Some(mut process) = processes.pop() {
+        println!("Stopping process {:05}", process.id());
+        let _ = process.kill();
+    }
+}
 
-//     	let requests: usize = match cmds[3].parse::<usize>() {
-//     		Ok(requests) => requests,
-//     		Err(err) => {
-//     			println!("Failed to parse reqs {} to usize.", cmds[3]);
-//     			return None
-//     		}
-//     	};
+// ==========================   Program Options   =================================
+static USAGE: &'static str = "
+Usage:
+  local_network [options] <nodes> <requests>
 
-//         return Some(Args { nodes: nodes, requests: requests });
-//     }
+Options:
+  -h, --help   Display this help message.
 
-//     None
-// }
+  Run 'nodes' nodes sending 'requests' requests.
+";
 
-// // struct Client {
-// //     routing_client: RoutingClient,
-// //     event_receiver: Receiver<Event>,
-// //     command_receiver: Receiver<UserCommand>,
-// //     public_id: PublicId,
-// //     exit: bool,
-// // }
+#[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
+struct Args {
+	arg_nodes: Option<usize>,
+	arg_requests: Option<usize>,
+	flag_help: bool,
+}
 
-// // impl Client {
-// //     fn new() -> Client {
-// //         let (event_sender, event_receiver) = mpsc::channel::<Event>();
+fn main() {
+    maidsafe_utilities::log::init(false);
+    let args: Args = Docopt::new(USAGE).and_then(|docopt| docopt.decode())
+                         			   .unwrap_or_else(|error| error.exit());
+    // Default number of nodes to run is 10, 20% stable, 80% churn.
+    let mut nodes: usize = 2;
+    let mut churn_nodes: usize = 8;
+	// Default number of put requests to send is 100, extend to post, delete requests later.
+    let mut requests: usize = 100;
 
-// //         let full_id = FullId::new();
-// //         let public_id = full_id.public_id().clone();
-// //         println!("Client has set name {:?}", public_id);
-// //         let routing_client = unwrap_result!(RoutingClient::new(event_sender, Some(full_id)));
+    match args.arg_nodes {
+    	Some(number) => {
+    		nodes = (number as f32 * 0.2).floor() as usize;
+    		churn_nodes = number - nodes;
+    	}
+    	None => {}
+    }
+    match args.arg_requests {
+    	Some(number) => {
+    		requests = number;
+    	}
+    	None => {}
+    }
 
-// //         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
+    let mut processes = start_nodes(nodes, churn_nodes);
+    println!("Starting Client");
+    let mut client = Client::new();
 
-// //         let _ = thread!("Command reader", move || {
-// //             Client::read_user_commands(command_sender);
-// //         });
+    let interval = ::std::time::Duration::from_millis(10000);
+    ::std::thread::sleep(interval);
 
-// //         Client {
-// //             routing_client: routing_client,
-// //             event_receiver: event_receiver,
-// //             command_receiver: command_receiver,
-// //             public_id: public_id,
-// //             exit: false,
-// //         }
-// //     }
+    println!("Putting data");
+	let mut stored_data = Vec::with_capacity(requests);
+    for _ in 0..requests {
+	    let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
+	    let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
+	    let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
+	    let data = unwrap_result!(serialise(&(key, value)));
+	    let data = Data::PlainData(PlainData::new(name.clone(), data));
 
-// //     fn run(&mut self) {
-// //         // Need to do poll as Select is not yet stable in the current
-// //         // rust implementation.
-// //         loop {
-// //             while let Ok(command) = self.command_receiver.try_recv() {
-// //                 self.handle_user_command(command);
-// //             }
+	    client.put(data.clone());
+	    stored_data.push(data);
+	}
+    
+    let interval = ::std::time::Duration::from_millis(5000);
+    ::std::thread::sleep(interval);
 
-// //             if self.exit {
-// //                 break;
-// //             }
+    println!("Getting data");
+    for i in 0..requests {
+	   	let data = match client.get(DataRequest::PlainData(stored_data[i].name())) {
+	        Some(data) => data,
+	        None => panic!("Failed to recover stored data: {}.", stored_data[i].name()),
+	    };
+	    assert_eq!(data, stored_data[i]);
+	}
 
-// //             while let Ok(event) = self.event_receiver.try_recv() {
-// //                 self.handle_routing_event(event);
-// //             }
-
-// //             if self.exit {
-// //                 break;
-// //             }
-
-// //             let interval = ::std::time::Duration::from_millis(10);
-// //             ::std::thread::sleep(interval);
-// //         }
-
-// //         println!("Bye");
-// //     }
-
-// //     fn read_user_commands(command_sender: Sender<UserCommand>) {
-// //         loop {
-// //             let mut command = String::new();
-// //             let stdin = io::stdin();
-
-// //             print!("Enter command (exit | put <key> <value> | get <key>)\n> ");
-// //             let _ = io::stdout().flush();
-
-// //             let _ = stdin.read_line(&mut command);
-
-// //             match parse_user_command(command) {
-// //                 Some(cmd) => {
-// //                     let _ = command_sender.send(cmd.clone());
-// //                     if cmd == UserCommand::Exit {
-// //                         break;
-// //                     }
-// //                 }
-// //                 None => {
-// //                     println!("Unrecognised command");
-// //                     continue;
-// //                 }
-// //             }
-// //         }
-// //     }
-
-// //     fn handle_user_command(&mut self, cmd: UserCommand) {
-// //         match cmd {
-// //             UserCommand::Exit => {
-// //                 self.exit = true;
-// //             }
-// //             UserCommand::Get(what) => {
-// //                 self.send_get_request(what);
-// //             }
-// //             UserCommand::Put(put_where, put_what) => {
-// //                 self.send_put_request(put_where, put_what);
-// //             }
-// //         }
-// //     }
-
-// //     fn handle_routing_event(&mut self, event: Event) {
-// //         debug!("Client received routing event: {:?}", event);
-// //         match event {
-// //             Event::Response(msg) => {
-// //                 match msg.content {
-// //                     ResponseContent::GetSuccess(data) => {
-// //                         let plain_data = match data {
-// //                             Data::PlainData(plain_data) => plain_data,
-// //                             _ => {
-// //                                 error!("Node: Only storing plain data in this example");
-// //                                 return;
-// //                             }
-// //                         };
-// //                         let (key, value): (String, String) = match deserialise(plain_data.value()) {
-// //                             Ok((key, value)) => (key, value),
-// //                             Err(_) => {
-// //                                 error!("Failed to decode get response.");
-// //                                 return;
-// //                             }
-// //                         };
-// //                         println!("Got value {:?} on key {:?}", value, key);
-// //                     }
-// //                     ResponseContent::PutFailure { ..} => {
-// //                         error!("Failed to store");
-// //                     }
-// //                     _ => error!("Received response {:?}, but not handled in example", msg),
-// //                 }
-// //             }
-// //             _ => (),
-// //         }
-// //     }
-
-// //     fn send_get_request(&mut self, what: String) {
-// //         let name = Client::calculate_key_name(&what);
-
-// //         unwrap_result!(self.routing_client
-// //                            .send_get_request(Authority::NaeManager(name.clone()),
-// //                                              DataRequest::PlainData(name)));
-// //     }
-
-// //     fn send_put_request(&self, put_where: String, put_what: String) {
-// //         let name = Client::calculate_key_name(&put_where);
-// //         let data = unwrap_result!(serialise(&(put_where, put_what)));
-
-// //         unwrap_result!(self.routing_client
-// //                            .send_put_request(Authority::ClientManager(self.public_id
-// //                                                                           .name()
-// //                                                                           .clone()),
-// //                                              Data::PlainData(PlainData::new(name, data))));
-// //     }
-
-// //     fn calculate_key_name(key: &String) -> XorName {
-// //         XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
-// //     }
-// // }
-
-// fn main() {
-//     maidsafe_utilities::log::init(false);
-
-//     let args: Args = Docopt::new(USAGE).and_then(|docopt| docopt.decode())
-//                          			   .unwrap_or_else(|error| error.exit());
-//     println!("{:?}", args);
-
-//     // if args.flag_node {
-//     //     let mut node = Node::new();
-//     //     node.run();
-//     //     debug!("[key_value_store -> Node Example] Exiting main...");
-//     // } else {
-//     //     let mut client = Client::new();
-//     //     client.run();
-//     //     debug!("[key_value_store -> Client Example] Exiting main...");
-//     // }
-// }
+    stop_nodes(&mut processes);
+}

@@ -65,8 +65,6 @@ pub struct RoutingNode {
     connection_filter: ::message_filter::MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
-    refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
-    // refresh_causes: ::message_filter::MessageFilter<XorName>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
@@ -131,11 +129,6 @@ impl RoutingNode {
                 node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
                 message_accumulator: ::accumulator::Accumulator::with_duration(1,
                     ::time::Duration::minutes(5)),
-                refresh_accumulator:
-                    ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
-                        ::time::Duration::minutes(5), event_sender),
-            //    refresh_causes: ::message_filter::MessageFilter::with_expiry_duration(
-            //        ::time::Duration::minutes(5)),
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
             // cache_options: ::data_cache_options::DataCacheOptions::new(),
@@ -210,6 +203,12 @@ impl RoutingNode {
                                             }
                                         }
                                     }
+                                }
+                            }
+                            Action::DynamicQuorum => {
+                                if self.event_sender.send(
+                                        Event::DynamicQuorum(self.routing_table.dynamic_quorum_size())).is_err() {
+                                    return;
                                 }
                             }
                             Action::Terminate => {
@@ -598,7 +597,7 @@ impl RoutingNode {
                     dst: request_msg.dst,
                     raw_bytes: raw_bytes,
                     cause: cause,
-                    public_id: public_id
+                    sender: public_id.name().clone(),
                 };
                 Ok(try!(self.event_sender.send(event)))
             }
@@ -980,8 +979,8 @@ impl RoutingNode {
 
     fn handle_churn(&mut self, close_group: &[XorName]) -> Result<(), RoutingError> {
         for close_node in close_group {
-            if self.connection_filter.insert(close_node.clone()).is_none()
-               && self.routing_table.want_to_add(close_node) {
+            if self.connection_filter.insert(close_node.clone()).is_none() &&
+               self.routing_table.want_to_add(close_node) {
                 try!(self.send_connect_request(close_node));
             }     
         }
@@ -1551,10 +1550,11 @@ impl RoutingNode {
             for node in close_group_nodes.iter() {
                 if *node.name() == node_name {
                     let new_close_group_nodes = self.routing_table.our_close_group();
-                    let close_group = new_close_group_nodes.iter().map(|n| n.name()).cloned().collect::<Vec<XorName>>();
-                    let direct_message = DirectMessage::Churn { close_group: close_group.clone() };
-
-                    let message = Message::DirectMessage(direct_message);
+                    let close_group = new_close_group_nodes.iter()
+                                                           .map(|n| n.name())
+                                                           .cloned()
+                                                           .collect::<Vec<XorName>>();
+                    let message = Message::DirectMessage(DirectMessage::Churn { close_group: close_group.clone() });
                     let raw_bytes = match serialise(&message) {
                         Ok(raw_bytes) => raw_bytes,
                         Err(_) => return
@@ -1569,7 +1569,6 @@ impl RoutingNode {
                     break;
                 }
             }
-            // self.routing_table.drop_node(&node_name);
         }
     }
 

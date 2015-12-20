@@ -314,28 +314,28 @@ pub enum ResponseContent {
     GetFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
 }

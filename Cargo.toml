@@ -31,12 +31,6 @@ docopt = "~0.6.78"
 bit-vec = "~0.4.2"
 
 [[example]]
-name = "simple_key_value_store"
-path = "examples/simple_key_value_store.rs"
-test = true
-bench = false
-
-[[example]]
 name = "key_value_store"
 path = "examples/key_value_store.rs"
 test = true

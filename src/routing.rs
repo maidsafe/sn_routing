@@ -186,6 +186,11 @@ impl Routing {
         self.send_action(routing_msg)
     }
 
+    /// Access current quorum, sent on event channel, if required for handling requests.
+    pub fn get_dynamic_quorum(&self) {
+        let _ = self.action_sender.send(Action::DynamicQuorum);
+    }
+
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop
     // trait and hence is RAII friendly
     /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding

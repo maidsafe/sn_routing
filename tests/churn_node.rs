@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -32,61 +31,11 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#[macro_use]
-extern crate rand;
-extern crate time;
-
 extern crate maidsafe_utilities;
 extern crate routing;
 
-/// Run a routing node that generates churn.
+#[allow(missing_docs)]
 pub fn main () {
-    use rand::distributions::IndependentSample;
-
     maidsafe_utilities::log::init(true);
-
-    let mut rng = rand::thread_rng();
-    let mut time = time::SteadyTime::now();
-    let minutes = rand::distributions::Range::new(2, 5);
-    let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
-    let sample = rand::distributions::Range::new(0, 5);
-    let mut node = routing::test_utils::node::Node::new();
-    let mut sender = node.get_sender();
-
-    println!("Running node for {:?}", duration);
-    let _ = std::thread::spawn(move || node.run());
-    let mut running = true;
-
-    println!("Entering loop.");
-    loop {
-        if running {
-            println!("Node online.");
-            if time + duration < time::SteadyTime::now() {
-                println!("Reached run time.");
-                let state = sample.ind_sample(&mut rng);
-                if state == 0 {
-                    let _ = sender.send(routing::Event::Terminated);
-                    running = false;
-                    duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
-                    println!("Stopping node for {:?}", duration);
-                }
-                time = ::time::SteadyTime::now();
-            }
-        } else {
-            println!("Node offline.");
-            if time + duration < ::time::SteadyTime::now() {
-                println!("Reached stop time.");
-                node = routing::test_utils::node::Node::new();
-                sender = node.get_sender();
-                let _ = std::thread::spawn(move || node.run());
-                running = true;
-                duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
-                time = time::SteadyTime::now();
-                println!("Running node for {:?}", duration);
-            }
-        }
-
-        let interval = std::time::Duration::from_millis(10000);
-        std::thread::sleep(interval);
-    }
+    routing::test_utils::churn_node::ChurnNode::run();
 }

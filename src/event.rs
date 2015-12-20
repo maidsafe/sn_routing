@@ -18,7 +18,6 @@
 use xor_name::XorName;
 use authority::Authority;
 use messages::{RequestMessage, ResponseMessage};
-use id::PublicId;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -30,26 +29,24 @@ pub enum Event {
     /// Refresh reports to the user the collected accounts for a given refresh event,
     /// the arguments are type_tag:u64, authority: Authority, vector_of_bytes: Vec<Vec<u8>>
     Refresh {
+        /// Destination authority from message request, should be identical to source authority.
         dst: Authority,
-        /// externally defined message
+        /// externally defined value
         raw_bytes: Vec<u8>,
         /// The node that caused the churn event.
         /// Used here (passed up to upper layers in churn event) who must give it back in
         /// which allows filtering of different churn events (used as unique identifier)
         cause: XorName,
-        public_id: PublicId,
+        /// The name of the request sender.
+        sender: XorName,
     },
     /// Churn reports whenever our close group is changed, and provides our new close group
     /// as a Vec<XorName> and the name of the node that joined or left our close group
     /// as XorName.  Our close group is sorted from our name and always includes our own name
     /// as the first element.
     Churn(Vec<XorName>, XorName),
-    /// DoRefresh reports that a Refresh message is circulating the effective close group
-    /// of the given Authority, but that the user is outside of the close group of the churn
-    /// that initiated the call for refresh.  To ensure that the account of the current user is
-    /// also accumulated a DoRefresh indicates precisely one account routing will expect the
-    /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
-    DoRefresh(u64, Authority, XorName),
+    /// Current quorum size.
+    DynamicQuorum(usize),
     /// Connected.
     Connected,
     /// Disconnected.

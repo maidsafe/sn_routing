@@ -37,6 +37,7 @@ pub enum Action {
         dst: Authority,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
+    DynamicQuorum,
     Terminate,
 }
 
@@ -52,6 +53,7 @@ impl ::std::fmt::Debug for Action {
                        content,
                        dst)
             }
+            Action::DynamicQuorum => write!(f, "Action::DynamicQuorum"),
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }
