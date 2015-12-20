@@ -76,7 +76,6 @@ extern crate message_filter;
 extern crate kademlia_routing_table;
 
 mod id;
-mod data;
 mod utils;
 mod event;
 mod error;
@@ -85,18 +84,20 @@ mod routing;
 mod messages;
 mod authority;
 mod acceptors;
-mod plain_data;
 mod routing_node;
 mod immutable_data;
 mod routing_client;
 mod structured_data;
-mod refresh_accumulator;
 mod connection_management;
 
 /// TODO Remove this from public visibility
 pub mod test_utils;
 /// Types and functions used throughout the library.
 pub mod types;
+/// Data types.
+pub mod data;
+/// PlainData
+pub mod plain_data;
 
 pub use event::Event;
 pub use routing::Routing;

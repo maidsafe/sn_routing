@@ -16,33 +16,49 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use time::Duration;
+use std::sync::mpsc;
+use std::collections::BTreeMap;
+use sodiumoxide::crypto::hash;
+use routing::Routing;
 use xor_name::XorName;
 use authority::Authority;
+use authority::Authority::{NaeManager, ClientManager, Client};
 use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use maidsafe_utilities::serialisation::{serialise, deserialise};
+use accumulator::Accumulator;
+use data::{Data, DataRequest};
+use event::Event;
 
 /// Network Node.
 pub struct Node {
-    routing: ::routing::Routing,
-    receiver: ::std::sync::mpsc::Receiver<::event::Event>,
-    sender: ::std::sync::mpsc::Sender<::event::Event>,
-    db: ::std::collections::BTreeMap<XorName, ::data::Data>,
-    client_accounts: ::std::collections::BTreeMap<XorName, u64>,
+    routing: Routing,
+    receiver: mpsc::Receiver<Event>,
+    sender: mpsc::Sender<Event>,
+    db: BTreeMap<XorName, Data>,
+    client_accounts: BTreeMap<XorName, u64>,
     connected: bool,
+    our_close_group: Vec<XorName>,
+    refresh_accumulator: Accumulator<(Authority, XorName), (Vec<u8>, XorName)>,
+    dynamic_quorum: usize,
 }
 
 impl Node {
     /// Construct a new node.
     pub fn new() -> Node {
-        let (sender, receiver) = ::std::sync::mpsc::channel::<::event::Event>();
-        let routing = unwrap_result!(::routing::Routing::new(sender.clone()));
+        let (sender, receiver) = mpsc::channel::<Event>();
+        let routing = unwrap_result!(Routing::new(sender.clone()));
 
         Node {
             routing: routing,
             receiver: receiver,
             sender: sender,
-            db: ::std::collections::BTreeMap::new(),
-            client_accounts: ::std::collections::BTreeMap::new(),
+            db: BTreeMap::new(),
+            client_accounts: BTreeMap::new(),
             connected: false,
+            our_close_group: Vec::new(),
+            refresh_accumulator: Accumulator::with_duration(0, Duration::minutes(5)),
+            dynamic_quorum: 0
         }
     }
 
@@ -50,36 +66,28 @@ impl Node {
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
             match event {
-                ::event::Event::Request(msg) => self.handle_request(msg),
-                ::event::Event::Response(msg) => self.handle_response(msg),
-                ::event::Event::Refresh(type_tag, src, vec_of_bytes) => {
-                    debug!("Received refresh event");
-                    if type_tag != 1u64 {
-                        error!("Received refresh for tag {:?} from {:?}", type_tag, src);
-                        continue;
-                    };
-                    self.handle_refresh(src, vec_of_bytes);
+                Event::Request(msg) => self.handle_request(msg),
+                Event::Response(msg) => self.handle_response(msg),
+                Event::Refresh{ dst, raw_bytes, cause, sender } => {
+                    println!("Received refresh event");
+                    self.handle_refresh(dst, raw_bytes, cause, sender);
                 }
-                ::event::Event::DoRefresh(type_tag, src, cause) => {
-                    debug!("Received do refresh event");
-                    if type_tag != 1u64 {
-                        error!("Received DoRefresh for tag {:?} from {:?}", type_tag, src);
-                        continue;
-                    };
-                    self.handle_do_refresh(src, cause);
+                Event::Churn(close_group, cause) => {
+                    println!("Received churn event");
+                    self.handle_churn(close_group, cause)
                 }
-                ::event::Event::Churn(close_group) => {
-                    debug!("Received churn event");
-                    self.handle_churn(close_group)
+                Event::DynamicQuorum(dynamic_quorum) => {
+                    println!("Received DynamicQuorum event {:?}", dynamic_quorum);
+                    self.dynamic_quorum = dynamic_quorum;
+                    self.refresh_accumulator.set_quorum_size(dynamic_quorum)
                 }
-                // ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
-                ::event::Event::Connected => {
-                    debug!("Received connected event");
+                Event::Connected => {
+                    println!("Received connected event");
                     self.connected = true;
                 }
-                ::event::Event::Disconnected => debug!("Received disconnected event"),
-                ::event::Event::Terminated => {
-                    debug!("Received terminate event");
+                Event::Disconnected => println!("Received disconnected event"),
+                Event::Terminated => {
+                    println!("Received terminate event");
                     self.stop();
                     break;
                 }
@@ -88,13 +96,13 @@ impl Node {
     }
 
     /// Allows external tests to send events.
-    pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<::event::Event> {
+    pub fn get_sender(&self) -> mpsc::Sender<Event> {
         self.sender.clone()
     }
 
     /// Terminate event loop.
     pub fn stop(&mut self) {
-        debug!("Node terminating.");
+        println!("Node terminating.");
         self.routing.stop();
     }
 
@@ -107,124 +115,103 @@ impl Node {
                 self.handle_put_request(data, msg.src, msg.dst);
             }
             RequestContent::Post(_) => {
-                debug!("Node: Post unimplemented.");
+                println!("Node: Post unimplemented.");
             }
             RequestContent::Delete(_) => {
-                debug!("Node: Delete unimplemented.");
+                println!("Node: Delete unimplemented.");
             }
             _ => (),
         }
     }
 
-    fn handle_get_request(&mut self,
-                          data_request: ::data::DataRequest,
-                          src: Authority,
-                          dst: Authority) {
-        match self.db.get(&data_request.name()) {
-            Some(data) => {
-                unwrap_result!(self.routing
-                                   .send_get_response(src,
-                                                      dst,
-                                                      ResponseContent::GetSuccess(data.clone())))
-            }
-            None => {
-                debug!("GetDataRequest failed for {:?}.", data_request.name());
+    fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
+        let name = match data_request {
+            DataRequest::PlainData(name) => name,
+            _ => {
+                println!("Node: Only serving plain data in this example");
                 return;
             }
-        }
+        };
+
+        let data = match self.db.get(&name) {
+            Some(data) => data.clone(),
+            None => return,
+        };
+
+        let response_content = ResponseContent::GetSuccess(data);
+
+        unwrap_result!(self.routing.send_get_response(dst, src, response_content))
     }
 
-    fn handle_put_request(&mut self, data: ::data::Data, src: Authority, _dst: Authority) {
-        match src {
-            Authority::NaeManager(_) => {
-                debug!("Storing: key {:?}, value {:?}", data.name(), data);
+    fn handle_put_request(&mut self, data: Data, src: Authority, dst: Authority) {
+        match dst {
+            NaeManager(_) => {
+                println!("Storing: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
             }
-            Authority::ClientManager(_) => {
-                debug!("Sending: key {:?}, value {:?}", data.name(), data);
-                let dst = Authority::NaeManager(data.name());
-                let request_content = RequestContent::Put(data);
-                unwrap_result!(self.routing.send_put_request(src, dst, request_content));
+            ClientManager(_) => {
+                match src {
+                    Client { client_key, .. } => {
+                        let client_name = XorName::new(hash::sha512::hash(&client_key[..]).0);
+                        *self.client_accounts.entry(client_name).or_insert(0u64) += data.payload_size() as u64;
+                        println!("Client ({:?}) stored {:?} bytes",
+                                 client_name,
+                                 self.client_accounts.get(&client_name));
+                        println!("Sending: key {:?}, value {:?}", data.name(), data);
+                        let name = data.name();
+                        let request_content = RequestContent::Put(data);
+                        unwrap_result!(self.routing.send_put_request(dst, NaeManager(name), request_content));
+                    }
+                    _ => {
+                        println!("Node: Unexpected src ({:?})", src);
+                        assert!(false);
+                    }
+                }
             }
             _ => {
-                debug!("Node: Unexpected src ({:?})", src);
+                println!("Node: Unexpected dst ({:?})", dst);
                 assert!(false);
             }
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<XorName>) {
-        let mut exit = false;
-        if our_close_group.len() < ::kademlia_routing_table::group_size() {
-            if self.connected {
-                debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                       our_close_group.len(),
-                       ::kademlia_routing_table::group_size());
-                exit = true;
-            } else {
-                debug!("Ignoring churn as we are not yet connected.");
-                return;
-            }
-        }
+    fn handle_churn(&mut self, our_close_group: Vec<XorName>, cause: XorName) {
+        println!("Handle churn for cause {:?}", cause);
+        self.routing.get_dynamic_quorum();
+        self.our_close_group = our_close_group;
 
-        // FIXME Cause needs to get removed from refresh as well
-        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
-        // just so that interface requirements are met
-        let cause = ::rand::random::<XorName>();
+        for (client_name, stored) in self.client_accounts.iter() {
+            println!("Send refresh {:?} - {:?}", client_name, stored);
+            let request_content = RequestContent::Refresh {
+                raw_bytes: unwrap_result!(serialise(&stored)),
+                cause: cause,
+            };
 
-        debug!("Handle churn for close group size {:?}",
-               our_close_group.len());
-
-        for (client_name, stored) in &self.client_accounts {
-            debug!("REFRESH {:?} - {:?}", client_name, stored);
-            unwrap_result!(self.routing.send_refresh_request(
-                1u64,
-                Authority::ClientManager(client_name.clone()),
-                unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
-                cause));
-        }
-        if exit {
-            self.routing.stop();
+            unwrap_result!(self.routing.send_refresh_request(ClientManager(client_name.clone()), request_content));
         }
     }
 
-    fn handle_refresh(&mut self, src: Authority, vec_of_bytes: Vec<Vec<u8>>) {
-        let mut records: Vec<u64> = Vec::new();
-        let mut fail_parsing_count = 0usize;
-        for bytes in vec_of_bytes {
-            match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
-                Ok(record) => records.push(record),
-                Err(_) => fail_parsing_count += 1usize,
-            }
-        }
-        let median = median(records.clone());
-        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-               src,
-               median,
-               records,
-               fail_parsing_count);
-        if let Authority::ClientManager(client_name) = src {
-            let _ = self.client_accounts.insert(client_name, median);
-        }
-    }
-
-    fn handle_do_refresh(&self, src: Authority, cause: XorName) {
-        if let Authority::ClientManager(client_name) = src {
-            match self.client_accounts.get(&client_name) {
-                Some(stored) => {
-                    debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-                           client_name,
-                           stored,
-                           cause);
-                    unwrap_result!(
-                        self.routing.send_refresh_request(
-                            1u64,
-                            Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
-                            cause.clone()));
+    fn handle_refresh(&mut self, dst: Authority, raw_bytes: Vec<u8>, cause: XorName, sender: XorName) {
+        if let Some(values) = self.refresh_accumulator.add((dst.clone(), cause), (raw_bytes, sender)) {
+            let mut records: Vec<u64> = Vec::new();
+            let mut fail_parsing_count = 0usize;
+            for (raw_bytes, _) in values {
+                match deserialise(&raw_bytes) {
+                    Ok(record) => records.push(record),
+                    Err(_) => fail_parsing_count += 1usize,
                 }
-                None => (),
             }
+            let median = median(records.clone());
+            println!("Refresh for {:?}: median {:?} on quorum {:?} from {:?} (errs {:?})",
+                     dst,
+                     median,
+                     self.dynamic_quorum,
+                     records,
+                     fail_parsing_count);
+            if let ClientManager(client_name) = dst {
+                let _ = self.client_accounts.insert(client_name, median);
+            }
+            self.refresh_accumulator.delete(&(dst.clone(), cause));
         }
     }
 

@@ -37,6 +37,6 @@ extern crate routing;
 
 #[allow(missing_docs)]
 pub fn main () {
-    ::maidsafe_utilities::log::init(true);
-    ::routing::test_utils::node::Node::new().run();
+    maidsafe_utilities::log::init(true);
+    routing::test_utils::node::Node::new().run();
 }
