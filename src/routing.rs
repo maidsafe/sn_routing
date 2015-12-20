@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -21,7 +20,6 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 
 use action::Action;
 use event::Event;
-use xor_name::XorName;
 use routing_node::RoutingNode;
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
@@ -178,27 +176,19 @@ impl Routing {
     /// all the group members need to call this, otherwise it will not be resolved as a valid
     /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
     pub fn send_refresh_request(&self,
-                                _type_tag: u64,
-                                _src: Authority,
-                                _content: Vec<u8>,
-                                _cause: XorName)
-                                -> Result<(), InterfaceError> {
-        unimplemented!()
-        // if !src.is_group() {
-        // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-        // type_tag,
-        // src);
-        // return;
-        // };
-        // let _ =
-        // self.action_sender
-        // .send(Action::SendContent(src.clone(),
-        // src,
-        // Content::InternalRequest(InternalRequest::Refresh {
-        // type_tag: type_tag,
-        // message: content,
-        // cause: cause,
-        // })));
+                                dst: Authority,
+                                content: RequestContent) -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: dst.clone(),
+            dst: dst,
+            content: content,
+        });
+        self.send_action(routing_msg)
+    }
+
+    /// Access current quorum, sent on event channel, if required for handling requests.
+    pub fn get_dynamic_quorum(&self) {
+        let _ = self.action_sender.send(Action::DynamicQuorum);
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop

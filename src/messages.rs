@@ -246,10 +246,8 @@ pub enum RequestContent {
     },
     /// Message from upper layers sending network state on any network churn event
     Refresh {
-        /// externally defined type identifier
-        type_tag: u64,
         /// externally defined message
-        message: Vec<u8>,
+        raw_bytes: Vec<u8>,
         /// The node that caused the churn event.
         /// Used here (passed up to upper layers in churn event) who must give it back in
         /// which allows filtering of different churn events (used as unique identifier)
@@ -316,28 +314,28 @@ pub enum ResponseContent {
     GetFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
         /// Originators signed reuest
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
 }

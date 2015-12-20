@@ -19,11 +19,14 @@
 pub mod node;
 /// Simulate a client.
 pub mod client;
+/// Create a node that churns.
+pub mod churn_node;
 /// Various random values for types available to tests.
 pub mod messages_util;
 
 pub use self::node::*;
 pub use self::client::*;
+pub use self::churn_node::*;
 pub use self::messages_util::*;
 
 use xor_name::XorName;
