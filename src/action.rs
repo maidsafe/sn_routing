@@ -19,6 +19,7 @@ use authority::Authority;
 use error::InterfaceError;
 use std::sync::mpsc::Sender;
 use messages::{RoutingMessage, RequestContent};
+use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
 ///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
@@ -37,6 +38,7 @@ pub enum Action {
         dst: Authority,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
+    CloseGroupIncludingSelf { result_tx: Sender<Vec<XorName>>, },
     Terminate,
 }
 
@@ -52,6 +54,7 @@ impl ::std::fmt::Debug for Action {
                        content,
                        dst)
             }
+            Action::CloseGroupIncludingSelf { .. } => write!(f, "Action::CloseGroupIncludingSelf"),
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }
