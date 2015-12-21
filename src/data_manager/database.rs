@@ -148,6 +148,7 @@ impl Database {
               data_holders);
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self,
                         routing: &::vault::Routing,
                         churn_node: &XorName,

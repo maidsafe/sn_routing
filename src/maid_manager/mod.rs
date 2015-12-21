@@ -75,6 +75,7 @@ impl MaidManager {
         }
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing: &Routing, churn_node: &XorName) {
         self.database.handle_churn(routing, churn_node);
     }

@@ -151,6 +151,7 @@ impl Database {
               value);
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, close_group: &Vec<XorName>, routing: &::vault::Routing, churn_node: &XorName) {
         for (key, value) in self.storage.iter() {
             if close_group.iter().find(|a| **a == *key).is_some() {

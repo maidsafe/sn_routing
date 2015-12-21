@@ -100,6 +100,7 @@ impl PmidManager {
         }
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing: &Routing, close_group: &Vec<XorName>, churn_node: &XorName) {
         self.database.handle_churn(close_group, routing, churn_node);
     }

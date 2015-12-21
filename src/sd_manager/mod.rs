@@ -130,6 +130,7 @@ impl StructuredDataManager {
         }
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing: &Routing, churn_node: &XorName) {
         let names = self.chunk_store.names();
         for name in names {

@@ -24,7 +24,7 @@ use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessag
 use sd_manager::StructuredDataManager;
 use std::sync::{Arc, atomic, mpsc};
 use std::sync::atomic::AtomicBool;
-use time::{Duration, SteadyTime};
+use time::SteadyTime;
 use xor_name::XorName;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
@@ -33,6 +33,7 @@ pub type Routing = ::routing::Routing;
 #[cfg(all(test, feature = "use-mock-routing"))]
 pub type Routing = ::mock_routing::MockRouting;
 
+#[allow(unused)]
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     routing: Routing,
@@ -171,7 +172,9 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(Data::ImmutableData(_))) => self.data_manager.handle_get_success(&response),
+             &ResponseContent::GetSuccess(Data::ImmutableData(_))) => {
+                self.data_manager.handle_get_success(&self.routing, &response)
+            }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(pmid_node_name),
              &Authority::NaeManager(_),
@@ -191,20 +194,20 @@ impl Vault {
         self.handle_refresh(type_tag, our_authority, accounts);
     }
 
-    fn on_churn(&mut self, close_group: Vec<XorName> /* , churn_node: XorName */) {
-        self.id = close_group[0].clone();
-        let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
-        let time_now = SteadyTime::now();
-        // During the process of joining network, the vault shall not refresh its just received info
-        if !(churn_up && (self.churn_timestamp + Duration::seconds(5) > time_now)) {
-            self.handle_churn(close_group /* , churn_node */);
-        } else {
-            self.data_manager.set_node_table(close_group);
-        }
-        if churn_up {
-            info!("Vault added connected node");
-            self.churn_timestamp = time_now;
-        }
+    fn on_churn(&mut self, _close_group: Vec<XorName> /* , churn_node: XorName */) {
+        // self.id = close_group[0].clone();
+        // let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
+        // let time_now = SteadyTime::now();
+        // // During the process of joining network, the vault shall not refresh its just received info
+        // if !(churn_up && (self.churn_timestamp + Duration::seconds(5) > time_now)) {
+        //     self.handle_churn(close_group /* , churn_node */);
+        // } else {
+        //     self.data_manager.set_node_table(close_group);
+        // }
+        // if churn_up {
+        //     info!("Vault added connected node");
+        //     self.churn_timestamp = time_now;
+        // }
     }
 
     fn on_do_refresh(&mut self, type_tag: u64, our_authority: Authority, churn_node: XorName) {
@@ -226,8 +229,7 @@ impl Vault {
 
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
-        debug!("vault connected having {:?} connections",
-               self.data_manager.nodes_in_table_len());
+        debug!("Vault connected");
         // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
@@ -254,6 +256,7 @@ impl Vault {
         // self.sd_manager.reset(&self.routing);
     }
 
+    #[allow(unused)]
     fn handle_churn(&mut self,
                     close_group: Vec<XorName> /* ,
                                                * churn_node: XorName */) {

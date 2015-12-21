@@ -81,8 +81,10 @@ impl Refreshable for Stats {
 pub struct DataManager {
     database: Database,
     id: XorName,
-    nodes_in_table: Vec<XorName>,
-    request_cache: LruCache<(XorName, Authority), RequestMessage>,
+    // FIXME - this cache should include the requester auth in the key since repeated requests for
+    // the same chunk could end up never being removed.  However, we need to be able to search in
+    // the cache by chunk name only.
+    request_cache: LruCache<XorName, RequestMessage>,
     // the higher the index is, the slower the farming rate will be
     resource_index: u64,
     // key is pair of chunk_name and pmid_node, value is insertion time
@@ -96,7 +98,6 @@ impl DataManager {
         DataManager {
             database: Database::new(),
             id: XorName::new([0u8; 64]),
-            nodes_in_table: vec![],
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
             resource_index: 1,
             ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
@@ -112,7 +113,8 @@ impl DataManager {
 
         // Cache the request
         debug!("DataManager {:?} cached request {:?}", self.id, request);
-        let _ = self.request_cache.insert((data_name, request.src.clone()), request.clone());
+        // FIXME - should append to requests in the case of a pre-existing request for this chunk
+        let _ = self.request_cache.insert(data_name, request.clone());
 
         // Before querying the records, first ensure all records are valid
         let ongoing_gets = self.ongoing_gets.retrieve_all();
@@ -176,26 +178,23 @@ impl DataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        Self::sort_from_target(&mut self.nodes_in_table, &data_name);
-        let pmid_nodes_num = min(self.nodes_in_table.len(), REPLICANTS);
-        let mut dest_pmids: Vec<XorName> = vec![];
-        for index in 0..pmid_nodes_num {
-            dest_pmids.push(self.nodes_in_table[index].clone());
-        }
+        let mut target_pmids = routing.close_group_including_self();
+        Self::sort_from_target(&mut target_pmids, &data_name);
+        target_pmids.truncate(REPLICANTS);
         debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}",
                self.id,
-               dest_pmids,
+               target_pmids,
                data_name);
-        self.database.put_pmid_nodes(&data_name, dest_pmids.clone());
+        self.database.put_pmid_nodes(&data_name, target_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
-                self.resource_index = min(1048576, self.resource_index + dest_pmids.len() as u64);
+                self.resource_index = min(1048576, self.resource_index + target_pmids.len() as u64);
             }
             _ => {}
         }
 
         // Send the message on to the PmidNodes' managers.
-        for pmid in dest_pmids {
+        for pmid in target_pmids {
             let src = Authority::NaeManager(data_name);
             let dst = Authority::NodeManager(pmid);
             let content = RequestContent::Put(Data::ImmutableData(data.clone()));
@@ -203,28 +202,27 @@ impl DataManager {
         }
     }
 
-    pub fn handle_get_success(&mut self, response: &ResponseMessage) {
-        let data = match response.content {
-            ResponseContent::GetSuccess(Data::ImmutableData(ref data)) => data.clone(),
+    pub fn handle_get_success(&mut self, routing: &Routing, response: &ResponseMessage) {
+        let data: &ImmutableData = match response.content {
+            ResponseContent::GetSuccess(Data::ImmutableData(ref data)) => data,
             _ => unreachable!("Error in vault demuxing"),
         };
-        let _data_name = data.name();
+        let data_name = data.name();
 
-        // // Respond if there is a corresponding cached request.
-        // if self.request_cache.contains_key(&(data_name, *))) {
-        //     match self.request_cache.remove(&response.name()) {
-        //         Some(requests) => {
-        //             for request in requests {
-        //                 self.routing.send_get_response(response.dst.clone(),
-        //                                                request.0,
-        //                                                response.clone(),
-        //                                                request.1,
-        //                                                request.2);
-        //             }
-        //         }
-        //         None => debug!("Failed to find any requests for get response {:?}", response),
-        //     };
-        // }
+        // Respond if there is a corresponding cached request.
+        if self.request_cache.contains_key(&data_name) {
+            match self.request_cache.remove(&data_name) {
+                Some(request) => {
+//                    for request in requests {
+                        let src = response.dst.clone();
+                        let dst = request.src;
+                        let content = response.content.clone();
+                        let _ = routing.send_get_response(src, dst, content);
+//                    }
+                }
+                None => debug!("Failed to find any requests for get response {:?}", response),
+            };
+        }
 
         // let _ = self.ongoing_gets.remove(&(response.name(), request.src.get_name().clone()));
         // match self.failed_pmids.remove(&response.name()) {
@@ -302,16 +300,12 @@ impl DataManager {
         }
     }
 
-    pub fn set_node_table(&mut self, close_group: Vec<XorName>) {
-        self.id = close_group[0].clone();
-        self.nodes_in_table = close_group;
-    }
-
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing: &Routing, close_group: Vec<XorName>, churn_node: &XorName) {
         // If the churn_node exists in the previous DM's nodes_in_table,
         // but not in this reported close_group, it indicates such node is leaving the group.
         // However, it is not to say the node is offline, as it may still connected with other
-        let node_leaving = !close_group.contains(churn_node) && self.nodes_in_table.contains(churn_node);
+        let node_leaving = !close_group.contains(churn_node) /*&& self.nodes_in_table.contains(churn_node)*/;
         let on_going_gets = self.database.handle_churn(routing, churn_node, node_leaving);
 
         for entry in on_going_gets.iter() {
@@ -336,7 +330,6 @@ impl DataManager {
                                                  serialised_stats,
                                                  churn_node.clone());
         }
-        self.set_node_table(close_group);
     }
 
     // pub fn reset(&mut self, routing: &Routing) {
@@ -358,25 +351,22 @@ impl DataManager {
         self.database.do_refresh(type_tag, our_authority, churn_node, routing)
     }
 
-    pub fn nodes_in_table_len(&self) -> usize {
-        self.nodes_in_table.len()
-    }
-
     #[allow(unused)]
-    fn replicate_to(&mut self, name: &XorName) -> Option<XorName> {
-        let pmid_nodes = self.database.get_pmid_nodes(name);
-        if pmid_nodes.len() < MIN_REPLICANTS && pmid_nodes.len() > 0 {
-            Self::sort_from_target(&mut self.nodes_in_table, &name);
-            for close_grp_it in self.nodes_in_table.iter() {
-                if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
-                    debug!("node {:?} replicating chunk {:?} to a new node {:?}",
-                           self.id,
-                           name,
-                           close_grp_it);
-                    return Some(close_grp_it.clone());
-                }
-            }
-        }
+    fn replicate_to(&mut self, _name: &XorName) -> Option<XorName> {
+        // let pmid_nodes = self.database.get_pmid_nodes(name);
+        // if pmid_nodes.len() < MIN_REPLICANTS && pmid_nodes.len() > 0 {
+        //     let mut close_group = routing.close_group_including_self();
+        //     Self::sort_from_target(&mut close_group, &name);
+        //     for close_grp_it in close_group.iter() {
+        //         if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
+        //             debug!("node {:?} replicating chunk {:?} to a new node {:?}",
+        //                    self.id,
+        //                    name,
+        //                    close_grp_it);
+        //             return Some(close_grp_it.clone());
+        //         }
+        //     }
+        // }
         None
     }
 
@@ -441,7 +431,6 @@ mod test {
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
-    use xor_name::XorName;
 
     struct TestEnv {
         pub our_authority: Authority,
@@ -452,17 +441,9 @@ mod test {
 
     fn env_setup() -> TestEnv {
         let routing = unwrap_result!(::vault::Routing::new(mpsc::channel().0));
-        let mut data_manager = DataManager::new();
+        let data_manager = DataManager::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
-        data_manager.nodes_in_table = vec![XorName::new([1u8; 64]),
-                                           XorName::new([2u8; 64]),
-                                           XorName::new([3u8; 64]),
-                                           XorName::new([4u8; 64]),
-                                           XorName::new([5u8; 64]),
-                                           XorName::new([6u8; 64]),
-                                           XorName::new([7u8; 64]),
-                                           XorName::new([8u8; 64])];
         TestEnv {
             our_authority: Authority::NaeManager(data.name().clone()),
             routing: routing,
@@ -481,7 +462,7 @@ mod test {
             for i in 0..put_requests.len() {
                 assert_eq!(put_requests[i].src, env.our_authority);
                 assert_eq!(put_requests[i].dst,
-                           Authority::NodeManager(env.data_manager.nodes_in_table[i]));
+                           Authority::NodeManager(env.routing.close_group_including_self()[i]));
                 assert_eq!(put_requests[i].content,
                            RequestContent::Put(Data::ImmutableData(env.data.clone())));
             }
@@ -507,7 +488,7 @@ mod test {
             for i in 0..get_requests.len() {
                 assert_eq!(get_requests[i].src, env.our_authority);
                 assert_eq!(get_requests[i].dst,
-                           Authority::ManagedNode(env.data_manager.nodes_in_table[i]));
+                           Authority::ManagedNode(env.routing.close_group_including_self()[i]));
                 assert_eq!(get_requests[i].content, content);
             }
         }
@@ -519,7 +500,7 @@ mod test {
         env.data_manager.handle_put(&env.routing, &env.data);
         let close_group = vec![env.our_authority.get_name().clone()]
                               .into_iter()
-                              .chain(env.data_manager.nodes_in_table.clone().into_iter())
+                              .chain(env.routing.close_group_including_self().into_iter())
                               .collect();
         let churn_node = random();
         env.data_manager.handle_churn(&env.routing, close_group, &churn_node);

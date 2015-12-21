@@ -15,14 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::{group_size, optimal_table_size};
+use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
+use std::cmp::Ordering;
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
-use xor_name::XorName;
+use xor_name::{closer_to_target, XorName};
 
 pub struct MockRoutingImpl {
+    our_id: XorName,
+    peers: Vec<XorName>,
     sender: mpsc::Sender<Event>,
     client_sender: mpsc::Sender<Event>,
     simulated_latency: Duration,
@@ -40,8 +45,21 @@ pub struct MockRoutingImpl {
 impl MockRoutingImpl {
     pub fn new(sender: mpsc::Sender<Event>) -> MockRoutingImpl {
         let (client_sender, _) = mpsc::channel();
+        let our_id: XorName = random();
+        let mut peers = Vec::with_capacity(optimal_table_size());
+        for _ in 0..optimal_table_size() {
+            peers.push(random());
+        }
+        peers.sort_by(|a, b| {
+            match closer_to_target(&a, &b, &our_id) {
+                true => Ordering::Less,
+                false => Ordering::Greater,
+            }
+        });
 
         MockRoutingImpl {
+            our_id: our_id,
+            peers: peers,
             sender: sender,
             client_sender: client_sender,
             simulated_latency: Duration::from_millis(200),
@@ -233,6 +251,13 @@ impl MockRoutingImpl {
 
     pub fn stop(&mut self) {
         let _ = self.sender.send(Event::Terminated);
+    }
+
+    pub fn close_group_including_self(&self) -> Vec<XorName> {
+        let mut peers_and_us = Vec::with_capacity(group_size() + 1);
+        peers_and_us.push(self.our_id.clone());
+        peers_and_us.append(&mut self.peers.clone());
+        peers_and_us
     }
 
     fn send_request(&self,

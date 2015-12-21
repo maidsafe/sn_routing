@@ -131,6 +131,7 @@ impl Database {
               value);
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &XorName) {
         for (key, value) in self.storage.iter() {
             let account = Account::new((*key).clone(), (*value).clone());

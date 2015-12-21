@@ -42,27 +42,27 @@ impl MockRouting {
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
+    pub fn client_get(&self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
         let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
         unwrap_result!(self.pimpl.lock()).client_get(src, data_request)
     }
 
-    pub fn client_put(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
+    pub fn client_put(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
         let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
         unwrap_result!(self.pimpl.lock()).client_put(src, data)
     }
 
-    pub fn client_post(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
+    pub fn client_post(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
         let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
         unwrap_result!(self.pimpl.lock()).client_post(src, data)
     }
 
-    pub fn client_delete(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
+    pub fn client_delete(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
         let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
         unwrap_result!(self.pimpl.lock()).client_delete(src, data)
     }
 
-    pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
+    pub fn churn_event(&self, nodes: Vec<XorName>, churn_node: XorName) {
         unwrap_result!(self.pimpl.lock()).churn_event(nodes, churn_node)
     }
 
@@ -184,5 +184,9 @@ impl MockRouting {
 
     pub fn stop(&self) {
         unwrap_result!(self.pimpl.lock()).stop()
+    }
+
+    pub fn close_group_including_self(&self) -> Vec<XorName> {
+        unwrap_result!(self.pimpl.lock()).close_group_including_self()
     }
 }
