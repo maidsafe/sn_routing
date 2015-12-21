@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -32,62 +31,11 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#[macro_use]
-extern crate log;
-#[macro_use]
 extern crate maidsafe_utilities;
-extern crate rand;
-extern crate time;
 extern crate routing;
-
-use routing::Event;
 
 #[allow(missing_docs)]
 pub fn main () {
-    use rand::distributions::IndependentSample;
-
-    ::maidsafe_utilities::log::init(true);
-
-    let mut time = ::time::SteadyTime::now();
-    let runtime = ::time::Duration::minutes(5);
-    let stoptime = ::time::Duration::minutes(2);
-    let mut rng = ::rand::thread_rng();
-    let range = ::rand::distributions::Range::new(0, 20);
-    let mut node = ::routing::test_utils::node::Node::new();
-    let mut sender = node.get_sender();
-
-    debug!("Running node.");
-    let _ = thread!("Initial churn node", move || node.run());
-    let mut running = true;
-
-    debug!("Entering loop.");
-    loop {
-        if running {
-            debug!("Node online.");
-            if time + runtime < ::time::SteadyTime::now() {
-                debug!("Reached run time.");
-                let sample = range.ind_sample(&mut rng);
-                if sample == 0 {
-                    debug!("Stopping node.");
-                    let _ = sender.send(Event::Terminated);
-                    running = false;
-                }
-                time = ::time::SteadyTime::now();
-            }
-        } else {
-            debug!("Node offline.");
-            if time + stoptime < ::time::SteadyTime::now() {
-                debug!("Reached stop time.");
-                node = ::routing::test_utils::node::Node::new();
-                sender = node.get_sender();
-                debug!("Running node.");
-                let _ = thread!("Later churn node", move || node.run());
-                running = true;
-                time = ::time::SteadyTime::now();
-            }
-        }
-
-        let interval = ::std::time::Duration::from_millis(10000);
-        ::std::thread::sleep(interval);
-    }
+    maidsafe_utilities::log::init(true);
+    routing::test_utils::churn_node::ChurnNode::run();
 }
