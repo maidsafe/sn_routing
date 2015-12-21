@@ -63,7 +63,7 @@ impl Client {
                     match msg.content {
                         ResponseContent::GetSuccess(data) => return Some(data),
                         ResponseContent::GetFailure { .. } => return None,
-                        _ => println!("Received unexpected response {:?},", msg),
+                        _ => trace!("Received unexpected response {:?},", msg),
                     };
                 }
 

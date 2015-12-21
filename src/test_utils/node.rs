@@ -69,25 +69,25 @@ impl Node {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
                 Event::Refresh{ dst, raw_bytes, cause, sender } => {
-                    println!("Received refresh event");
+                    trace!("Received refresh event");
                     self.handle_refresh(dst, raw_bytes, cause, sender);
                 }
                 Event::Churn(close_group, cause) => {
-                    println!("Received churn event");
+                    trace!("Received churn event");
                     self.handle_churn(close_group, cause)
                 }
                 Event::DynamicQuorum(dynamic_quorum) => {
-                    println!("Received DynamicQuorum event {:?}", dynamic_quorum);
+                    trace!("Received DynamicQuorum event {:?}", dynamic_quorum);
                     self.dynamic_quorum = dynamic_quorum;
                     self.refresh_accumulator.set_quorum_size(dynamic_quorum)
                 }
                 Event::Connected => {
-                    println!("Received connected event");
+                    trace!("Received connected event");
                     self.connected = true;
                 }
-                Event::Disconnected => println!("Received disconnected event"),
+                Event::Disconnected => trace!("Received disconnected event"),
                 Event::Terminated => {
-                    println!("Received terminate event");
+                    trace!("Received terminate event");
                     self.stop();
                     break;
                 }
@@ -102,7 +102,7 @@ impl Node {
 
     /// Terminate event loop.
     pub fn stop(&mut self) {
-        println!("Node terminating.");
+        trace!("Node terminating.");
         self.routing.stop();
     }
 
@@ -115,10 +115,10 @@ impl Node {
                 self.handle_put_request(data, msg.src, msg.dst);
             }
             RequestContent::Post(_) => {
-                println!("Node: Post unimplemented.");
+                trace!("Node: Post unimplemented.");
             }
             RequestContent::Delete(_) => {
-                println!("Node: Delete unimplemented.");
+                trace!("Node: Delete unimplemented.");
             }
             _ => (),
         }
@@ -128,7 +128,7 @@ impl Node {
         let name = match data_request {
             DataRequest::PlainData(name) => name,
             _ => {
-                println!("Node: Only serving plain data in this example");
+                trace!("Node: Only serving plain data in this example");
                 return;
             }
         };
@@ -146,7 +146,7 @@ impl Node {
     fn handle_put_request(&mut self, data: Data, src: Authority, dst: Authority) {
         match dst {
             NaeManager(_) => {
-                println!("Storing: key {:?}, value {:?}", data.name(), data);
+                trace!("Storing: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
             }
             ClientManager(_) => {
@@ -154,34 +154,34 @@ impl Node {
                     Client { client_key, .. } => {
                         let client_name = XorName::new(hash::sha512::hash(&client_key[..]).0);
                         *self.client_accounts.entry(client_name).or_insert(0u64) += data.payload_size() as u64;
-                        println!("Client ({:?}) stored {:?} bytes",
+                        trace!("Client ({:?}) stored {:?} bytes",
                                  client_name,
                                  self.client_accounts.get(&client_name));
-                        println!("Sending: key {:?}, value {:?}", data.name(), data);
+                        trace!("Sending: key {:?}, value {:?}", data.name(), data);
                         let name = data.name();
                         let request_content = RequestContent::Put(data);
                         unwrap_result!(self.routing.send_put_request(dst, NaeManager(name), request_content));
                     }
                     _ => {
-                        println!("Node: Unexpected src ({:?})", src);
+                        trace!("Node: Unexpected src ({:?})", src);
                         assert!(false);
                     }
                 }
             }
             _ => {
-                println!("Node: Unexpected dst ({:?})", dst);
+                trace!("Node: Unexpected dst ({:?})", dst);
                 assert!(false);
             }
         }
     }
 
     fn handle_churn(&mut self, our_close_group: Vec<XorName>, cause: XorName) {
-        println!("Handle churn for cause {:?}", cause);
+        trace!("Handle churn for cause {:?}", cause);
         self.routing.get_dynamic_quorum();
         self.our_close_group = our_close_group;
 
         for (client_name, stored) in self.client_accounts.iter() {
-            println!("Send refresh {:?} - {:?}", client_name, stored);
+            trace!("Send refresh {:?} - {:?}", client_name, stored);
             let request_content = RequestContent::Refresh {
                 raw_bytes: unwrap_result!(serialise(&stored)),
                 cause: cause,
@@ -202,12 +202,12 @@ impl Node {
                 }
             }
             let median = median(records.clone());
-            println!("Refresh for {:?}: median {:?} on quorum {:?} from {:?} (errs {:?})",
-                     dst,
-                     median,
-                     self.dynamic_quorum,
-                     records,
-                     fail_parsing_count);
+            trace!("Refresh for {:?}: median {:?} on quorum {:?} from {:?} (errs {:?})",
+                   dst,
+                   median,
+                   self.dynamic_quorum,
+                   records,
+                   fail_parsing_count);
             if let ClientManager(client_name) = dst {
                 let _ = self.client_accounts.insert(client_name, median);
             }

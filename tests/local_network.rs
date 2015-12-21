@@ -15,16 +15,6 @@
 // // Please review the Licences for the specific language governing permissions and limitations
 // // relating to use of the SAFE Network Software.
 
-// // Executable test
-// // Two optional docopts args
-// // 		1. Number of nodes to run, or default 10.
-// //		2. Number of random messages to put and get, default 100, extend to post, delete later.
-// //      3. Maximum runtime, if empty run forever.
-// // We want 20% stable nodes, 80% churn nodes
-// // Minimum online time 2 mins upto max 20mins for churn nodes.
-// //
-// // Start up nodes do the puts and gets.
-
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -71,7 +61,7 @@ fn start_nodes(nodes: usize, churn_nodes: usize) -> Vec<Child> {
                                  .spawn() {
             Err(e) => panic!("Failed to spawn process: {}", e.description()),
             Ok(process) => {
-                println!("Starting Node {:05}", process.id());
+                trace!("Starting Node {:05}", process.id());
                 process
             }
         });
@@ -85,7 +75,7 @@ fn start_nodes(nodes: usize, churn_nodes: usize) -> Vec<Child> {
                                  .spawn() {
             Err(e) => panic!("Failed to spawn process: {}", e.description()),
             Ok(process) => {
-                println!("Starting ChurnNode {:05}", process.id());
+                trace!("Starting ChurnNode {:05}", process.id());
                 process
             }
         });
@@ -100,7 +90,7 @@ fn start_nodes(nodes: usize, churn_nodes: usize) -> Vec<Child> {
 
 fn stop_nodes(processes: &mut Vec<Child>) {
     while let Some(mut process) = processes.pop() {
-        println!("Stopping process {:05}", process.id());
+        trace!("Stopping process {:05}", process.id());
         let _ = process.kill();
     }
 }
@@ -135,8 +125,8 @@ fn main() {
 
     match args.arg_nodes {
     	Some(number) => {
-    		nodes = (number as f32 * 0.2).floor() as usize;
-    		churn_nodes = number - nodes;
+            churn_nodes = (number as f32 * 0.8).floor() as usize;
+            nodes = number - churn_nodes;
     	}
     	None => {}
     }
@@ -148,17 +138,17 @@ fn main() {
     }
 
     let mut processes = start_nodes(nodes, churn_nodes);
-    println!("Starting Client");
+    trace!("Starting Client");
     let mut client = Client::new();
 
     let interval = ::std::time::Duration::from_millis(10000);
     ::std::thread::sleep(interval);
 
-    println!("Putting data");
+    trace!("Putting data");
 	let mut stored_data = Vec::with_capacity(requests);
     for _ in 0..requests {
-	    let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
-	    let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
+        let key: String = (0..10).map(|_| random::<u8>() as char).collect();
+        let value: String = (0..10).map(|_| random::<u8>() as char).collect();
 	    let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
 	    let data = unwrap_result!(serialise(&(key, value)));
 	    let data = Data::PlainData(PlainData::new(name.clone(), data));
@@ -170,7 +160,7 @@ fn main() {
     let interval = ::std::time::Duration::from_millis(5000);
     ::std::thread::sleep(interval);
 
-    println!("Getting data");
+    trace!("Getting data");
     for i in 0..requests {
 	   	let data = match client.get(DataRequest::PlainData(stored_data[i].name())) {
 	        Some(data) => data,

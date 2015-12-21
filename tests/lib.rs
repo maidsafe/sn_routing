@@ -62,7 +62,7 @@ fn start_nodes(number_of_nodes: u32) -> Vec<Child> {
                                  .spawn() {
             Err(e) => panic!("Failed to spawn process: {}", e.description()),
             Ok(process) => {
-                println!("Starting Node {:05}", process.id());
+                trace!("Starting Node {:05}", process.id());
                 process
             }
         });
@@ -77,7 +77,7 @@ fn start_nodes(number_of_nodes: u32) -> Vec<Child> {
 
 fn stop_nodes(processes: &mut Vec<Child>) {
     while let Some(mut process) = processes.pop() {
-        println!("Stopping Node {:05}", process.id());
+        trace!("Stopping Node {:05}", process.id());
         let _ = process.kill();
     }
 }
@@ -97,11 +97,11 @@ fn local_network(nodes: usize, requests: usize) -> ExitStatus {
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
 
-    ::std::process::Command::new(exe_path.to_path_buf())
-                .arg(nodes.to_string())
-                .arg(requests.to_string())
-                .status()
-                .unwrap_or_else(|e| { panic!("Failed to execute process: {}", e) })
+    Command::new(exe_path.to_path_buf())
+        .arg(nodes.to_string())
+        .arg(requests.to_string())
+        .status()
+        .unwrap_or_else(|e| { panic!("Failed to execute process: {}", e) })
 }
 
 #[cfg(test)]
@@ -119,7 +119,7 @@ mod test {
     #[ignore]
     fn client_put_get() {
         let mut nodes = super::start_nodes(3u32);
-        println!("Starting Client");
+        trace!("Starting Client");
         let mut client = ::routing::test_utils::client::Client::new();
         let interval = ::std::time::Duration::from_millis(2000);
         ::std::thread::sleep(interval);
@@ -130,7 +130,7 @@ mod test {
         let data = unwrap_result!(::maidsafe_utilities::serialisation::serialise(&(key, value)));
         let data = Data::PlainData(PlainData::new(name.clone(), data));
 
-        println!("Putting data {:?}", data);
+        trace!("Putting data {:?}", data);
         client.put(data.clone());
 
         let interval = ::std::time::Duration::from_millis(5000);
@@ -141,13 +141,13 @@ mod test {
             None => panic!("Failed to recover stored data: {}.", name),
         };
 
-        println!("Recovered data {:?}", recovered_data);
+        trace!("Recovered data {:?}", recovered_data);
         super::stop_nodes(&mut nodes);
         assert_eq!(recovered_data, data);
     }
 
     #[test]
     fn local_network() {
-        assert!(super::local_network(10, 3).success());
+        assert!(super::local_network(6, 3).success());
     }
 }
