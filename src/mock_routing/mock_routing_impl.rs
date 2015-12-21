@@ -15,10 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
-use sodiumoxide::crypto::sign::PublicKey;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 use xor_name::XorName;
@@ -58,81 +57,61 @@ impl MockRoutingImpl {
         }
     }
 
-    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Data> {
+    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Event> {
         let (client_sender, client_receiver) = mpsc::channel();
         self.client_sender = client_sender;
         client_receiver
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, src: Authority, dst: Authority, data_request: DataRequest) {
-        let (_name, our_authority) = match data_request {
-            DataRequest::ImmutableData(name, _) |
-            DataRequest::StructuredData(name, _) => (name.clone(), Authority::NaeManager(name)),
-            _ => panic!("unexpected"),
-        };
-        let cloned_sender = self.sender.clone();
-        let _ = ::std::thread::spawn(move || {
-            let _ = cloned_sender.send(Event::Request {
-                request: ::routing::ExternalRequest::Get(data_request, 0),
-                our_authority: our_authority,
-                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                response_token: None,
-            });
-        });
+    pub fn client_get(&mut self, src: Authority, data_request: DataRequest) {
+        let _ = self.send_request(src,
+                                  Authority::NaeManager(data_request.name()),
+                                  RequestContent::Get(data_request),
+                                  "Mock Client Get Request");
     }
 
-    pub fn client_put(&mut self, src: Authority, dst: Authority, data: Data) {
-        let simulated_latency = self.simulated_latency;
-        let cloned_sender = self.sender.clone();
-        let _ = ::std::thread::spawn(move || {
-            sleep(simulated_latency);
-            let _ = cloned_sender.send(Event::Request {
-                request: ::routing::ExternalRequest::Put(data),
-                our_authority: ::maid_manager::Authority(client_address),
-                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                response_token: None,
-            });
-        });
+    pub fn client_put(&mut self, src: Authority, data: Data) {
+        let _ = self.send_request(src,
+                                  Authority::ClientManager(data.name()),
+                                  RequestContent::Put(data),
+                                  "Mock Client Put Request");
     }
 
-    pub fn client_post(&mut self, src: Authority, dst: Authority, data: Data) {
-        let simulated_latency = self.simulated_latency;
-        let cloned_sender = self.sender.clone();
-        let _ = ::std::thread::spawn(move || {
-            sleep(simulated_latency);
-            let _ = cloned_sender.send(Event::Request {
-                request: ::routing::ExternalRequest::Post(data.clone()),
-                our_authority: ::sd_manager::Authority(data.name()),
-                from_authority: ::routing::Authority::Client(client_address, client_pub_key),
-                response_token: None,
-            });
-        });
+    pub fn client_post(&mut self, src: Authority, data: Data) {
+        let _ = self.send_request(src,
+                                  Authority::NaeManager(data.name()),
+                                  RequestContent::Post(data),
+                                  "Mock Client Post Request");
     }
 
-    pub fn client_delete(&mut self, src: Authority, dst: Authority, data: Data) {
+    pub fn client_delete(&mut self, src: Authority, data: Data) {
+        let _ = self.send_request(src,
+                                  Authority::ClientManager(data.name()),
+                                  RequestContent::Delete(data),
+                                  "Mock Client Delete Request");
     }
 
     pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
         let cloned_sender = self.sender.clone();
-        let _ = ::std::thread::spawn(move || {
-            let _ = cloned_sender.send(Event::Churn(nodes, churn_node));
+        let _ = thread!("Mock Churn Event", move || {
+            let _ = cloned_sender.send(Event::Churn(nodes/*, churn_node*/));
         });
     }
 
-    pub fn get_requests_given(&self) -> Vec<ResponseMessage> {
+    pub fn get_requests_given(&self) -> Vec<RequestMessage> {
         self.get_requests_given.clone()
     }
 
-    pub fn put_requests_given(&self) -> Vec<ResponseMessage> {
+    pub fn put_requests_given(&self) -> Vec<RequestMessage> {
         self.put_requests_given.clone()
     }
 
-    pub fn post_requests_given(&self) -> Vec<ResponseMessage> {
+    pub fn post_requests_given(&self) -> Vec<RequestMessage> {
         self.post_requests_given.clone()
     }
 
-    pub fn delete_requests_given(&self) -> Vec<ResponseMessage> {
+    pub fn delete_requests_given(&self) -> Vec<RequestMessage> {
         self.delete_requests_given.clone()
     }
 
@@ -152,84 +131,84 @@ impl MockRoutingImpl {
         self.delete_responses_given.clone()
     }
 
-    pub fn refresh_requests_given(&self) -> Vec<super::api_calls::RefreshRequest> {
+    pub fn refresh_requests_given(&self) -> Vec<RequestMessage> {
         self.refresh_requests_given.clone()
     }
 
     // -----------  the following methods are expected to be API functions   ------------- //
-    pub fn send_get_request(&self,
+    pub fn send_get_request(&mut self,
                             src: Authority,
                             dst: Authority,
                             content: RequestContent)
                             -> Result<(), InterfaceError> {
         let message = self.send_request(src, dst, content, "Mock Get Request");
-        Ok(self.get_requests_given.push(message));
+        Ok(self.get_requests_given.push(message))
     }
 
-    pub fn send_put_request(&self,
+    pub fn send_put_request(&mut self,
                             src: Authority,
                             dst: Authority,
                             content: RequestContent)
                             -> Result<(), InterfaceError> {
         let message = self.send_request(src, dst, content, "Mock Put Request");
-        Ok(self.put_requests_given.push(message));
+        Ok(self.put_requests_given.push(message))
     }
 
-    pub fn send_post_request(&self,
+    pub fn send_post_request(&mut self,
                              src: Authority,
                              dst: Authority,
                              content: RequestContent)
                              -> Result<(), InterfaceError> {
         let message = self.send_request(src, dst, content, "Mock Post Request");
-        Ok(self.post_requests_given.push(message));
+        Ok(self.post_requests_given.push(message))
     }
 
-    pub fn send_delete_request(&self,
+    pub fn send_delete_request(&mut self,
                                src: Authority,
                                dst: Authority,
                                content: RequestContent)
                                -> Result<(), InterfaceError> {
         let message = self.send_request(src, dst, content, "Mock Delete Request");
-        Ok(self.delete_requests_given.push(message));
+        Ok(self.delete_requests_given.push(message))
     }
 
-    pub fn send_get_response(&self,
+    pub fn send_get_response(&mut self,
                              src: Authority,
                              dst: Authority,
                              content: ResponseContent)
                              -> Result<(), InterfaceError> {
         let message = self.send_response(src, dst, content, "Mock Get Response");
-        Ok(self.get_responses_given.push(message));
+        Ok(self.get_responses_given.push(message))
     }
 
-    pub fn send_put_response(&self,
+    pub fn send_put_response(&mut self,
                              src: Authority,
                              dst: Authority,
                              content: ResponseContent)
                              -> Result<(), InterfaceError> {
         let message = self.send_response(src, dst, content, "Mock Put Response");
-        Ok(self.put_responses_given.push(message));
+        Ok(self.put_responses_given.push(message))
     }
 
-    pub fn send_post_response(&self,
+    pub fn send_post_response(&mut self,
                               src: Authority,
                               dst: Authority,
                               content: ResponseContent)
                               -> Result<(), InterfaceError> {
         let message = self.send_response(src, dst, content, "Mock Post Response");
-        Ok(self.post_responses_given.push(message));
+        Ok(self.post_responses_given.push(message))
     }
 
-    pub fn send_delete_response(&self,
+    pub fn send_delete_response(&mut self,
                                 src: Authority,
                                 dst: Authority,
                                 content: ResponseContent)
                                 -> Result<(), InterfaceError> {
         let message = self.send_response(src, dst, content, "Mock Delete Response");
-        Ok(self.delete_responses_given.push(message));
+        Ok(self.delete_responses_given.push(message))
     }
 
-    pub fn send_refresh_request(&self,
+    pub fn send_refresh_request(&mut self,
                                 _type_tag: u64,
                                 _src: Authority,
                                 _content: Vec<u8>,
@@ -284,7 +263,7 @@ impl MockRoutingImpl {
                      thread_name: &str)
                      -> ResponseMessage {
         let sender = match &dst {
-            Authority::Client{ .. } => self.client_sender.clone(),
+            &Authority::Client{ .. } => self.client_sender.clone(),
             _ => self.sender.clone(),
         };
         let message = ResponseMessage {

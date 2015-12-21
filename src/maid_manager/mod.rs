@@ -95,7 +95,7 @@ impl MaidManager {
 }
 
 
-
+/*
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
@@ -173,3 +173,4 @@ mod test {
         assert_eq!(refresh_requests[0], refresh_requests[1]);
     }
 }
+*/

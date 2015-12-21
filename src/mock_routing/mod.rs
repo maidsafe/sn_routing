@@ -17,10 +17,13 @@
 
 #![cfg(all(test, feature = "use-mock-routing"))]
 
+#![allow(unused)]
+
 mod mock_routing_impl;
 
-use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use self::mock_routing_impl::MockRoutingImpl;
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage, RoutingError};
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
@@ -30,29 +33,33 @@ pub struct MockRouting {
 }
 
 impl MockRouting {
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<MockRouting, ()> {
+    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<MockRouting, RoutingError> {
         Ok(MockRouting { pimpl: Arc::new(Mutex::new(MockRoutingImpl::new(event_sender))) })
     }
 
-    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Data> {
+    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Event> {
         unwrap_result!(self.pimpl.lock()).get_client_receiver()
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&mut self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
-        unwrap_result!(self.pimpl.lock()).client_get(client_address, client_pub_key, data_request)
+        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        unwrap_result!(self.pimpl.lock()).client_get(src, data_request)
     }
 
     pub fn client_put(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_put(client_address, client_pub_key, data)
+        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        unwrap_result!(self.pimpl.lock()).client_put(src, data)
     }
 
     pub fn client_post(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_post(client_address, client_pub_key, data)
+        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        unwrap_result!(self.pimpl.lock()).client_post(src, data)
     }
 
     pub fn client_delete(&mut self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_delete(client_address, client_pub_key, data)
+        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        unwrap_result!(self.pimpl.lock()).client_delete(src, data)
     }
 
     pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
@@ -60,7 +67,7 @@ impl MockRouting {
     }
 
     #[allow(dead_code)]
-    pub fn get_requests_given(&self) -> Vec<ResponseMessage> {
+    pub fn get_requests_given(&self) -> Vec<RequestMessage> {
         unwrap_result!(self.pimpl.lock()).get_requests_given()
     }
 

@@ -18,7 +18,7 @@
 use maidsafe_utilities::serialisation::serialise;
 use routing::Authority;
 use xor_name::XorName;
-type MaidNodeName = XorName;
+pub type MaidNodeName = XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {

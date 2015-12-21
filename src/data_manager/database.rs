@@ -20,10 +20,9 @@ use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, DataRequest, ImmutableDataType, RequestContent};
 use xor_name::XorName;
 
-pub type DataName = XorName;
+pub type PmidNode = XorName;
 pub type PmidNodes = Vec<PmidNode>;
-
-type PmidNode = XorName;
+pub type DataName = XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -103,7 +102,7 @@ impl Database {
         Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
-    pub fn exist(&mut self, name: &DataName) -> bool {
+    pub fn exist(&self, name: &DataName) -> bool {
         self.storage.contains_key(name)
     }
 

@@ -20,11 +20,11 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
-use std::cmp::{max, min, Ordering};
+use std::cmp::{Ordering, max, min};
 use std::collections::BTreeSet;
 use time::{Duration, SteadyTime};
 use types::Refreshable;
-use utils::{median, merge, HANDLED, NOT_HANDLED};
+use utils::{HANDLED, NOT_HANDLED, median, merge};
 use vault::Routing;
 use xor_name::{XorName, closer_to_target};
 
@@ -437,31 +437,24 @@ impl DataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
-    use lru_time_cache::LruCache;
-    use maidsafe_utilities::serialisation::serialise;
     use rand::random;
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-                  ResponseContent, ResponseMessage};
-    use std::cmp::{max, min, Ordering};
-    use std::collections::BTreeSet;
-    use time::{Duration, SteadyTime};
-    use types::Refreshable;
-    use utils::{median, merge, HANDLED, NOT_HANDLED};
-    use vault::Routing;
-    use xor_name::{XorName, closer_to_target};
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
+    use sodiumoxide::crypto::sign;
+    use std::sync::mpsc;
+    use xor_name::XorName;
 
-    fn env_setup()
-        -> (::routing::Authority,
-            ::vault::Routing,
-            DataManager,
-            ::routing::Authority,
-            ImmutableData)
-    {
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut data_manager = DataManager::new(routing.clone());
+    struct TestEnv {
+        pub our_authority: Authority,
+        pub routing: ::vault::Routing,
+        pub data_manager: DataManager,
+        pub data: ImmutableData,
+    }
+
+    fn env_setup() -> TestEnv {
+        let routing = unwrap_result!(::vault::Routing::new(mpsc::channel().0));
+        let mut data_manager = DataManager::new();
         let value = ::routing::types::generate_random_vec_u8(1024);
-        let data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
+        let data = ImmutableData::new(ImmutableDataType::Normal, value);
         data_manager.nodes_in_table = vec![XorName::new([1u8; 64]),
                                            XorName::new([2u8; 64]),
                                            XorName::new([3u8; 64]),
@@ -470,81 +463,87 @@ mod test {
                                            XorName::new([6u8; 64]),
                                            XorName::new([7u8; 64]),
                                            XorName::new([8u8; 64])];
-        (Authority::NaeManager(data.name().clone()),
-         routing,
-         data_manager,
-         Authority::ClientManager(random()),
-         data)
+        TestEnv {
+            our_authority: Authority::NaeManager(data.name().clone()),
+            routing: routing,
+            data_manager: data_manager,
+            data: data,
+        }
     }
 
     #[test]
     fn handle_put_get() {
-        let (our_authority,
-             routing,
-             mut data_manager,
-             from_authority,
-             data) = env_setup();
+        let mut env = env_setup();
         {
-            assert_eq!(::utils::HANDLED,
-                       data_manager.handle_put(&our_authority,
-                                               &from_authority,
-                                               &::routing::data::Data::ImmutableData(data.clone())));
-            let put_requests = routing.put_requests_given();
+            env.data_manager.handle_put(&env.routing, &env.data);
+            let put_requests = env.routing.put_requests_given();
             assert_eq!(put_requests.len(), REPLICANTS);
             for i in 0..put_requests.len() {
-                assert_eq!(put_requests[i].our_authority, our_authority);
-                assert_eq!(put_requests[i].location,
-                           Authority::NodeManager(data_manager.nodes_in_table[i]));
-                assert_eq!(put_requests[i].data,
-                           ::routing::data::Data::ImmutableData(data.clone()));
+                assert_eq!(put_requests[i].src, env.our_authority);
+                assert_eq!(put_requests[i].dst,
+                           Authority::NodeManager(env.data_manager.nodes_in_table[i]));
+                assert_eq!(put_requests[i].content,
+                           RequestContent::Put(Data::ImmutableData(env.data.clone())));
             }
         }
         {
+            let keys = sign::gen_keypair();
             let from = random();
-            let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-            let client = ::routing::Authority::Client(from, keys.0);
+            let client = Authority::Client {
+                client_key: keys.0,
+                proxy_node_name: from,
+            };
 
-            let request =
-                ::routing::data::DataRequest::ImmutableData(data.name().clone(),
-                                                            ImmutableDataType::Normal);
-
-            assert_eq!(::utils::HANDLED,
-                       data_manager.handle_get(&our_authority, &client, &request, &None));
-            let get_requests = routing.get_requests_given();
+            let content = RequestContent::Get(DataRequest::ImmutableData(env.data.name().clone(),
+                                                                         ImmutableDataType::Normal));
+            let request = RequestMessage {
+                src: client.clone(),
+                dst: env.our_authority.clone(),
+                content: content.clone(),
+            };
+            env.data_manager.handle_get(&env.routing, &request);
+            let get_requests = env.routing.get_requests_given();
             assert_eq!(get_requests.len(), REPLICANTS);
             for i in 0..get_requests.len() {
-                assert_eq!(get_requests[i].our_authority, our_authority);
-                assert_eq!(get_requests[i].location,
-                           Authority::ManagedNode(data_manager.nodes_in_table[i]));
-                assert_eq!(get_requests[i].request_for, request);
+                assert_eq!(get_requests[i].src, env.our_authority);
+                assert_eq!(get_requests[i].dst,
+                           Authority::ManagedNode(env.data_manager.nodes_in_table[i]));
+                assert_eq!(get_requests[i].content, content);
             }
         }
     }
 
     #[test]
     fn handle_churn() {
-        let (our_authority,
-             routing,
-             mut data_manager,
-             from_authority,
-             data) = env_setup();
-        assert_eq!(::utils::HANDLED,
-                   data_manager.handle_put(&our_authority,
-                                           &from_authority,
-                                           &Data::ImmutableData(data.clone())));
-        let close_group = vec![our_authority.get_name().clone()]
+        let mut env = env_setup();
+        env.data_manager.handle_put(&env.routing, &env.data);
+        let close_group = vec![env.our_authority.get_name().clone()]
                               .into_iter()
-                              .chain(data_manager.nodes_in_table.clone().into_iter())
+                              .chain(env.data_manager.nodes_in_table.clone().into_iter())
                               .collect();
         let churn_node = random();
-        data_manager.handle_churn(close_group, &churn_node);
-        let refresh_requests = routing.refresh_requests_given();
+        env.data_manager.handle_churn(&env.routing, close_group, &churn_node);
+        let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
-        assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-        assert_eq!(refresh_requests[0].our_authority.get_name().clone(),
-                   data.name());
-        assert_eq!(refresh_requests[1].type_tag, STATS_TAG);
-        assert_eq!(refresh_requests[1].our_authority.get_name().clone(),
-                   churn_node);
+        {
+            // Account refresh
+            assert_eq!(refresh_requests[0].src.get_name().clone(), env.data.name());
+            let (type_tag, cause) = match refresh_requests[0].content {
+                RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
+                _ => panic!("Invalid content type"),
+            };
+            assert_eq!(type_tag, ACCOUNT_TAG);
+            assert_eq!(cause, churn_node);
+        }
+        {
+            // Stats refresh
+            assert_eq!(refresh_requests[1].src.get_name().clone(), churn_node);
+            let (type_tag, cause) = match refresh_requests[1].content {
+                RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
+                _ => panic!("Invalid content type"),
+            };
+            assert_eq!(type_tag, STATS_TAG);
+            assert_eq!(cause, churn_node);
+        }
     }
 }
