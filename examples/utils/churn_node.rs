@@ -55,6 +55,7 @@ impl ChurnNode {
         let mut time = SteadyTime::now();
         let minutes = rand::distributions::Range::new(2, 5);
         let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
+        let interval = ::std::time::Duration::from_millis(10000);
         let sample = rand::distributions::Range::new(0, 5);
         let mut node = Node::new();
         let mut sender = node.get_sender();
@@ -63,7 +64,6 @@ impl ChurnNode {
         let _ = thread::spawn(move || node.run());
         let mut running = true;
 
-        trace!("Entering loop.");
         loop {
             if running {
                 trace!("Node online.");
@@ -92,7 +92,6 @@ impl ChurnNode {
                 }
             }
 
-            let interval = ::std::time::Duration::from_millis(10000);
             thread::sleep(interval);
         }
     }
