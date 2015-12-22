@@ -15,10 +15,28 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use xor_name::XorName;
+
 // TODO(Spandan) This should not require documentation - infact the whole mod should be private
 #[doc(hidden)]
 pub type RoutingActionSender =
     ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
+
+/// Nonce for Churn Event
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ChurnEventId {
+    /// ID
+    pub id: XorName,
+}
+
+/// Value used by the refresh accumulator
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RefreshAccumulatorValue {
+    #[allow(missing_docs)]
+    pub src_name: XorName,
+    #[allow(missing_docs)]
+    pub content: Vec<u8>,
+}
 
 /// Convert u8 vector to a fixed 64 byte size array.
 ///

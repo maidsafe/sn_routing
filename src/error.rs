@@ -16,7 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use std::sync::mpsc::RecvError;
+use event::Event;
+use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 
 // TODO This will be in a crate common to only Vaults and Client
@@ -98,8 +99,6 @@ pub enum RoutingError {
     /// routing table did not add the node information,
     /// either because it was already added, or because it did not improve the routing table
     RefusedFromRoutingTable,
-    /// We received a refresh message but it did not contain group source address
-    RefreshNotFromGroup,
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// interface error
@@ -108,6 +107,8 @@ pub enum RoutingError {
     Io(::std::io::Error),
     /// serialisation error
     Cbor(::cbor::CborError),
+    /// Channel sending error
+    SendEventError(SendError<Event>),
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
@@ -136,7 +137,6 @@ impl From<::std::str::Utf8Error> for RoutingError {
     }
 }
 
-
 impl From<::cbor::CborError> for RoutingError {
     fn from(error: ::cbor::CborError) -> RoutingError {
         RoutingError::Cbor(error)
@@ -152,6 +152,12 @@ impl From<::std::io::Error> for RoutingError {
 impl From<InterfaceError> for RoutingError {
     fn from(error: InterfaceError) -> RoutingError {
         RoutingError::Interface(error)
+    }
+}
+
+impl From<SendError<Event>> for RoutingError {
+    fn from(error: SendError<Event>) -> RoutingError {
+        RoutingError::SendEventError(error)
     }
 }
 

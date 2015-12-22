@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
-use authority::Authority;
+use types::{ChurnEventId, RefreshAccumulatorValue};
 use messages::{RequestMessage, ResponseMessage};
+use sodiumoxide::crypto::hash;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -26,20 +27,12 @@ pub enum Event {
     Request(RequestMessage),
     /// Response.
     Response(ResponseMessage),
-    /// Refresh reports to the user the collected accounts for a given refresh event,
-    /// the arguments are type_tag:u64, authority: Authority, vector_of_bytes: Vec<Vec<u8>>
-    Refresh(u64, Authority, Vec<Vec<u8>>),
-    /// Churn reports whenever our close group is changed, and provides our new close group
-    /// as a Vec<XorName> and the name of the node that joined or left our close group
-    /// as XorName.  Our close group is sorted from our name and always includes our own name
-    /// as the first element.
-    Churn(Vec<XorName>),
-    /// DoRefresh reports that a Refresh message is circulating the effective close group
-    /// of the given Authority, but that the user is outside of the close group of the churn
-    /// that initiated the call for refresh.  To ensure that the account of the current user is
-    /// also accumulated a DoRefresh indicates precisely one account routing will expect the
-    /// user to do a ::routing::request_refresh for, if a matching account is held by the user.
-    DoRefresh(u64, Authority, XorName),
+    /// Refresh reports to the user the collected accounts for a given refresh event
+    Refresh(hash::sha512::Digest, Vec<RefreshAccumulatorValue>),
+    /// Churn reports a change in close group
+    Churn(ChurnEventId),
+    /// Event fired when all connections to a close group node is lost
+    LostCloseNode(XorName),
     /// Connected.
     Connected,
     /// Disconnected.
