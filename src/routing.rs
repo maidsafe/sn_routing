@@ -26,6 +26,7 @@ use routing_node::RoutingNode;
 use error::{RoutingError, InterfaceError};
 use authority::Authority;
 use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use sodiumoxide::crypto::hash;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -173,32 +174,21 @@ impl Routing {
         self.send_action(routing_msg)
     }
 
-    /// Refresh the content in the close group nodes of group address content::name.
+    /// Refresh the content in the close group nodes of group address in `src`.
     /// This method needs to be called when churn is triggered.
     /// all the group members need to call this, otherwise it will not be resolved as a valid
-    /// content. If the authority provided (src) is not a group, the request for refresh will be dropped.
+    /// content. The authority provided (`src`) should be a group.
     pub fn send_refresh_request(&self,
-                                _type_tag: u64,
-                                _src: Authority,
-                                _content: Vec<u8>,
-                                _cause: XorName)
+                                src: Authority,
+                                nonce: hash::sha512::Digest,
+                                content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        unimplemented!()
-        // if !src.is_group() {
-        // error!("refresh request (type_tag {:?}) can only be made as a group authority: {:?}",
-        // type_tag,
-        // src);
-        // return;
-        // };
-        // let _ =
-        // self.action_sender
-        // .send(Action::SendContent(src.clone(),
-        // src,
-        // Content::InternalRequest(InternalRequest::Refresh {
-        // type_tag: type_tag,
-        // message: content,
-        // cause: cause,
-        // })));
+        let routing_msg = RoutingMessage::Request(RequestMessage {
+            src: src.clone(),
+            dst: src,
+            content: RequestContent::Refresh{ nonce: nonce, content: content, },
+        });
+        self.send_action(routing_msg)
     }
 
     // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop
