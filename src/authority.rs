@@ -17,7 +17,7 @@
 
 use xor_name::XorName;
 use sodiumoxide::crypto::{sign, hash};
-use std::fmt::{Debug, Formatter, Error};
+use std::fmt::{Debug, Formatter};
 
 /// Persona types recognised by network.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]

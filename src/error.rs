@@ -16,8 +16,10 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-use std::sync::mpsc::RecvError;
+use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
+use maidsafe_utilities::serialisation::SerialisationError;
+use event::Event;
 
 // TODO This will be in a crate common to only Vaults and Client
 // #[deny(missing_docs)]
@@ -108,6 +110,8 @@ pub enum RoutingError {
     Io(::std::io::Error),
     /// serialisation error
     Cbor(::cbor::CborError),
+    /// channel send error
+    Channel(SendError<Event>),
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
@@ -156,7 +160,13 @@ impl From<InterfaceError> for RoutingError {
 }
 
 impl From<::maidsafe_utilities::serialisation::SerialisationError> for RoutingError {
-    fn from(error: ::maidsafe_utilities::serialisation::SerialisationError) -> RoutingError {
+    fn from(error: SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
+    }
+}
+
+impl From<SendError<Event>> for RoutingError {
+    fn from(error: SendError<Event>) -> RoutingError {
+        RoutingError::Channel(error)
     }
 }

@@ -25,16 +25,10 @@ sodiumoxide = "~0.0.9"
 time = "~0.1.34"
 xor_name ="~0.0.1"
 kademlia_routing_table = "~0.0.4"
+docopt = "~0.6.78"
 
 [dev-dependencies]
 bit-vec = "~0.4.2"
-docopt = "~0.6.78"
-
-#[[example]]
-#name = "simple_key_value_store"
-#path = "examples/simple_key_value_store.rs"
-#test = true
-#bench = false
 
 [[example]]
 name = "key_value_store"
@@ -42,14 +36,20 @@ path = "examples/key_value_store.rs"
 test = true
 bench = false
 
-[[bin]]
+[[example]]
 name = "node"
-path = "tests/node.rs"
-test = false
+path = "examples/node.rs"
+test = true
 bench = false
 
-[[bin]]
+[[example]]
 name = "churn_node"
-path = "tests/churn_node.rs"
-test = false
+path = "examples/churn_node.rs"
+test = true
+bench = false
+
+[[example]]
+name = "local_network"
+path = "examples/local_network.rs"
+test = true
 bench = false
