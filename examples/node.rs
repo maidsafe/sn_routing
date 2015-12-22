@@ -16,7 +16,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! Runs a test routing node.
+//! Run as a network node.
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
@@ -32,11 +32,15 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
+#[macro_use]
+extern crate log;
+#[macro_use]
 extern crate maidsafe_utilities;
-extern crate routing;
+
+mod utils;
 
 #[allow(missing_docs)]
 pub fn main () {
-    maidsafe_utilities::log::init(true);
-    routing::test_utils::node::Node::new().run();
+    maidsafe_utilities::log::init(true);;
+    utils::node::Node::new().run();
 }

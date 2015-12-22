@@ -35,7 +35,6 @@
 
 #[macro_use]
 extern crate log;
-// extern crate rand;
 #[macro_use]
 #[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
@@ -45,6 +44,8 @@ extern crate sodiumoxide;
 
 extern crate routing;
 extern crate xor_name;
+
+mod utils;
 
 use std::io;
 use std::sync::mpsc;
@@ -57,10 +58,9 @@ use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use routing::{Data, DataRequest};
-use routing::PlainData;
-use routing::test_utils::node::Node;
-use routing::test_utils::client::Client;
+use routing::{Data, DataRequest, PlainData};
+use utils::node::Node;
+use utils::client::Client;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -236,10 +236,8 @@ fn main() {
                                        .unwrap_or_else(|error| error.exit());
 
     if args.flag_node {
-        let mut node = Node::new();
-        node.run();
+        Node::new().run();
     } else {
-        let mut key_value_store = KeyValueStore::new();
-        key_value_store.run();
+        KeyValueStore::new().run();
     }
 }

@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -16,21 +15,30 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use time::Duration;
+extern crate log;
+extern crate time;
+extern crate routing;
+extern crate accumulator;
+extern crate sodiumoxide;
+extern crate xor_name;
+extern crate maidsafe_utilities;
+
 use std::sync::mpsc;
 use std::collections::BTreeMap;
-use sodiumoxide::crypto::hash;
-use routing::Routing;
-use xor_name::XorName;
-use authority::Authority;
-use authority::Authority::{NaeManager, ClientManager, Client};
-use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use self::time::Duration;
+use self::sodiumoxide::crypto::hash;
+use self::xor_name::XorName;
+use self::routing::Routing;
+use self::routing::authority::Authority;
+use self::routing::authority::Authority::{NaeManager, ClientManager, Client};
+use self::routing::messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use self::routing::data::{Data, DataRequest};
+use self::routing::event::Event;
+use self::accumulator::Accumulator;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use accumulator::Accumulator;
-use data::{Data, DataRequest};
-use event::Event;
 
 /// Network Node.
+#[allow(unused)]
 pub struct Node {
     routing: Routing,
     receiver: mpsc::Receiver<Event>,
@@ -43,11 +51,12 @@ pub struct Node {
     dynamic_quorum: usize,
 }
 
+#[allow(unused)]
 impl Node {
     /// Construct a new node.
     pub fn new() -> Node {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let routing = unwrap_result!(Routing::new(sender.clone()));
+        let routing = Routing::new(sender.clone()).unwrap();
 
         Node {
             routing: routing,
@@ -96,6 +105,7 @@ impl Node {
     }
 
     /// Allows external tests to send events.
+    #[allow(unused)]
     pub fn get_sender(&self) -> mpsc::Sender<Event> {
         self.sender.clone()
     }
@@ -140,7 +150,7 @@ impl Node {
 
         let response_content = ResponseContent::GetSuccess(data);
 
-        unwrap_result!(self.routing.send_get_response(dst, src, response_content))
+        unwrap_result!(self.routing.send_get_response(dst, src, response_content));
     }
 
     fn handle_put_request(&mut self, data: Data, src: Authority, dst: Authority) {
@@ -155,8 +165,8 @@ impl Node {
                         let client_name = XorName::new(hash::sha512::hash(&client_key[..]).0);
                         *self.client_accounts.entry(client_name).or_insert(0u64) += data.payload_size() as u64;
                         trace!("Client ({:?}) stored {:?} bytes",
-                                 client_name,
-                                 self.client_accounts.get(&client_name));
+                               client_name,
+                               self.client_accounts.get(&client_name));
                         trace!("Sending: key {:?}, value {:?}", data.name(), data);
                         let name = data.name();
                         let request_content = RequestContent::Put(data);
@@ -183,7 +193,7 @@ impl Node {
         for (client_name, stored) in self.client_accounts.iter() {
             trace!("Send refresh {:?} - {:?}", client_name, stored);
             let request_content = RequestContent::Refresh {
-                raw_bytes: unwrap_result!(serialise(&stored)),
+                raw_bytes: serialise(&stored).unwrap(),
                 cause: cause,
             };
 
@@ -222,6 +232,7 @@ impl Node {
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
+#[allow(unused)]
 pub fn median(mut values: Vec<u64>) -> u64 {
     match values.len() {
         0 => 0u64,

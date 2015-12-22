@@ -75,23 +75,26 @@ extern crate maidsafe_utilities;
 extern crate message_filter;
 extern crate kademlia_routing_table;
 
-mod id;
 mod utils;
-mod event;
 mod error;
 mod action;
 mod routing;
-mod messages;
-mod authority;
 mod acceptors;
 mod routing_node;
 mod immutable_data;
-mod routing_client;
 mod structured_data;
 mod connection_management;
 
-/// TODO Remove this from public visibility
-pub mod test_utils;
+/// Id
+pub mod id;
+/// Event
+pub mod event;
+/// Messages
+pub mod messages;
+/// Authority
+pub mod authority;
+/// RoutingClient
+pub mod routing_client;
 /// Types and functions used throughout the library.
 pub mod types;
 /// Data types.

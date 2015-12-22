@@ -36,20 +36,20 @@ path = "examples/key_value_store.rs"
 test = true
 bench = false
 
-[[bin]]
+[[example]]
 name = "node"
-path = "tests/node.rs"
-test = false
+path = "examples/node.rs"
+test = true
 bench = false
 
-[[bin]]
+[[example]]
 name = "churn_node"
-path = "tests/churn_node.rs"
-test = false
+path = "examples/churn_node.rs"
+test = true
 bench = false
 
-[[bin]]
+[[example]]
 name = "local_network"
-path = "tests/local_network.rs"
-test = false
+path = "examples/local_network.rs"
+test = true
 bench = false

@@ -16,25 +16,34 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+extern crate log;
+extern crate time;
+extern crate routing;
+extern crate xor_name;
+extern crate sodiumoxide;
+extern crate maidsafe_utilities;
+
 use std::sync::mpsc;
-use sodiumoxide::crypto;
-use time::{Duration, SteadyTime};
 use std::thread;
-use routing_client::RoutingClient;
-use authority::Authority::{NaeManager, ClientManager};
-use messages::ResponseContent;
-use xor_name::XorName;
-use id::FullId;
-use event::Event;
-use data::{Data, DataRequest};
+use self::sodiumoxide::crypto;
+use self::time::{Duration, SteadyTime};
+use self::routing::routing_client::RoutingClient;
+use self::routing::authority::Authority::{NaeManager, ClientManager};
+use self::routing::messages::ResponseContent;
+use self::xor_name::XorName;
+use self::routing::id::FullId;
+use self::routing::event::Event;
+use self::routing::data::{Data, DataRequest};
 
 /// Network Client.
+#[allow(unused)]
 pub struct Client {
     routing_client: RoutingClient,
     receiver: mpsc::Receiver<Event>,
     full_id: FullId,
 }
 
+#[allow(unused)]
 impl Client {
     /// Client constructor.
     pub fn new() -> Client {
@@ -42,7 +51,7 @@ impl Client {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap_result!(RoutingClient::new(sender, Some(full_id)));
+        let routing_client = RoutingClient::new(sender, Some(full_id)).unwrap();
 
         Client {
             routing_client: routing_client,
@@ -71,7 +80,7 @@ impl Client {
             }
 
             if time + timeout < SteadyTime::now() {
-                debug!("Timed out waiting for data");
+                trace!("Timed out waiting for data");
                 return None;
             }
 
@@ -86,11 +95,13 @@ impl Client {
     }
 
     /// Post data onto the network.
+    #[allow(unused)]
     pub fn post(&self) {
         unimplemented!()
     }
 
     /// Delete data from the network.
+    #[allow(unused)]
     pub fn delete(&self) {
         unimplemented!()
     }

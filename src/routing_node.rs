@@ -233,6 +233,7 @@ impl RoutingNode {
                             ::crust::Event::NewMessage(connection, bytes) => {
                                 match self.handle_new_message(connection, bytes) {
                                     Err(RoutingError::FilterCheckFailed) => (),
+                                    Err(RoutingError::NotEnoughSignatures) => (),
                                     Err(err) => error!("{:?} {:?}", self, err),
                                     Ok(_) => (),
                                 }

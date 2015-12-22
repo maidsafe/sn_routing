@@ -31,21 +31,28 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
+extern crate log;
+extern crate rand;
+extern crate time;
+extern crate routing;
+extern crate maidsafe_utilities;
+
 use std::thread;
-use rand::distributions::IndependentSample;
-use rand;
-use time;
-use test_utils::node::Node;
-use event::Event;
+use self::rand::distributions::IndependentSample;
+use self::time::SteadyTime;
+use utils::node::Node;
+use self::routing::event::Event;
 
 /// ChurnNode
+#[allow(unused)]
 pub struct ChurnNode;
 
 impl ChurnNode {
     /// Run a routing node that generates churn.
+    #[allow(unused)]
     pub fn run() {
         let mut rng = rand::thread_rng();
-        let mut time = time::SteadyTime::now();
+        let mut time = SteadyTime::now();
         let minutes = rand::distributions::Range::new(2, 5);
         let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
         let sample = rand::distributions::Range::new(0, 5);
@@ -60,7 +67,7 @@ impl ChurnNode {
         loop {
             if running {
                 trace!("Node online.");
-                if time + duration < time::SteadyTime::now() {
+                if time + duration < SteadyTime::now() {
                     trace!("Reached run time.");
                     let state = sample.ind_sample(&mut rng);
                     if state == 0 {
@@ -69,18 +76,18 @@ impl ChurnNode {
                         duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
                         trace!("Stopping node for {:?}", duration);
                     }
-                    time = ::time::SteadyTime::now();
+                    time = SteadyTime::now();
                 }
             } else {
                 trace!("Node offline.");
-                if time + duration < time::SteadyTime::now() {
+                if time + duration < SteadyTime::now() {
                     trace!("Reached stop time.");
                     node = Node::new();
                     sender = node.get_sender();
                     let _ = thread::spawn(move || node.run());
                     running = true;
                     duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
-                    time = time::SteadyTime::now();
+                    time = SteadyTime::now();
                     trace!("Running node for {:?}", duration);
                 }
             }
