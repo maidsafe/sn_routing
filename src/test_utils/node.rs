@@ -68,10 +68,11 @@ impl Node {
                     };
                     self.handle_do_refresh(src, cause);
                 }
-                ::event::Event::Churn(close_group) => {
+                ::event::Event::Churn(_close_group) => {
                     debug!("Received churn event");
-                    self.handle_churn(close_group)
+                    //self.handle_churn(close_group)
                 }
+                ::event::Event::LostCloseNode(name) => debug!("Received LostCloseNode {:?}", name),
                 // ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
                 ::event::Event::Connected => {
                     debug!("Received connected event");
@@ -153,7 +154,7 @@ impl Node {
         }
     }
 
-    fn handle_churn(&mut self, our_close_group: Vec<XorName>) {
+    fn _handle_churn(&mut self, our_close_group: Vec<XorName>) {
         let mut exit = false;
         if our_close_group.len() < ::kademlia_routing_table::group_size() {
             if self.connected {

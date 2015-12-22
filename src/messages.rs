@@ -59,14 +59,6 @@ pub enum DirectMessage {
         /// Signature of the originator of this message
         signature: sign::Signature,
     },
-    /// If  our close group changes, tell all our close group memebers of change
-    /// They may be interested in some id's for harvesting
-    /// Importantly this wil allow nodes to `see` nodes in their clsoe group vanish
-    /// even they do not have an actual connection (i.e. both behind symmetric NAT)
-    Churn {
-        /// Close group (to self) as calculated by a node.
-        close_group: Vec<XorName>,
-    },
 }
 
 /// A wrapper for all messages sent form node to node.

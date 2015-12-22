@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
+use types::ChurnEventId;
 use authority::Authority;
 use messages::{RequestMessage, ResponseMessage};
 
@@ -29,11 +30,10 @@ pub enum Event {
     /// Refresh reports to the user the collected accounts for a given refresh event,
     /// the arguments are type_tag:u64, authority: Authority, vector_of_bytes: Vec<Vec<u8>>
     Refresh(u64, Authority, Vec<Vec<u8>>),
-    /// Churn reports whenever our close group is changed, and provides our new close group
-    /// as a Vec<XorName> and the name of the node that joined or left our close group
-    /// as XorName.  Our close group is sorted from our name and always includes our own name
-    /// as the first element.
-    Churn(Vec<XorName>),
+    /// Churn reports a change in close group
+    Churn(ChurnEventId),
+    /// Event fired when all connections to a close group node is lost
+    LostCloseNode(XorName),
     /// DoRefresh reports that a Refresh message is circulating the effective close group
     /// of the given Authority, but that the user is outside of the close group of the churn
     /// that initiated the call for refresh.  To ensure that the account of the current user is

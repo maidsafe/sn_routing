@@ -24,6 +24,7 @@ use action::Action;
 use xor_name::XorName;
 use sodiumoxide::crypto::{box_, sign, hash};
 use id::{FullId, PublicId};
+use types::ChurnEventId;
 use lru_time_cache::LruCache;
 use error::RoutingError;
 use authority::Authority;
@@ -940,6 +941,29 @@ impl RoutingNode {
                             return Ok(());
                         }
                     } else {
+                        if self.routing_table.is_close(public_id.name()) {
+                            // send churn
+                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
+
+                            if let Err(err) = self.event_sender.send(event) {
+                                error!("Error sending event to routing user - {:?}", err);
+                            }
+
+                            // If the new node is going to displace a node from the close group then
+                            // inform the vaults about the node being moved out of close group
+                            if self.routing_table.len() >= ::kademlia_routing_table::group_size() {
+                                let close_grp_before = self.routing_table.our_close_group();
+                                if let Some(last_node) = close_grp_before.last() {
+                                    let event = Event::LostCloseNode(last_node.public_id
+                                                                              .name()
+                                                                              .clone());
+                                    if let Err(err) = self.event_sender.send(event) {
+                                        error!("Error sending event to routing user - {:?}", err);
+                                    }
+                                }
+                            }
+                        }
+
                         let (is_added, node_removed) = self.routing_table.add_node(node_info);
 
                         if !is_added {
@@ -970,28 +994,7 @@ impl RoutingNode {
                     return Ok(());
                 }
             }
-            DirectMessage::Churn { ref close_group } => {
-                // Message needs signature validation
-                try!(self.handle_churn(close_group));
-                Ok(())
-            }
         }
-    }
-
-    fn handle_churn(&mut self, close_group: &[XorName]) -> Result<(), RoutingError> {
-        for close_node in close_group {
-            if self.connection_filter.contains(close_node) {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            let _ = self.connection_filter.insert(close_node.clone());
-
-            if !self.routing_table.want_to_add(close_node) {
-                return Ok(());
-            }
-
-            try!(self.send_connect_request(close_node))
-        }
-        Ok(())
     }
 
     // Constructed by A; From A -> X
@@ -1586,12 +1589,20 @@ impl RoutingNode {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
-        if let Some(_node_name) = self.routing_table.drop_connection(connection) {
-            for _node in &self.routing_table.our_close_group() {
-                // trigger churn
-                // if close node
+        if let Some(node_name) = self.routing_table.drop_connection(connection) {
+            if self.routing_table.is_close(&node_name) {
+                // If the lost node was in our close grp send Churn Event
+                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("Error sending event to routing user - {:?}", err);
+                }
+                // If the lost node was in our close grp let the vaults know about the lost node
+                let event = Event::LostCloseNode(node_name);
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("Error sending event to routing user - {:?}", err);
+                }
             }
-            // self.routing_table.drop_node(&node_name);
         }
     }
 
