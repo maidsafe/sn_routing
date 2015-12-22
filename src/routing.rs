@@ -199,26 +199,18 @@ impl Routing {
         let _ = self.action_sender.send(Action::Terminate);
     }
 
-    /// Returns the names of the close group to this node along with this node's name.  The result
-    /// is sorted by closeness to this node.
-    pub fn close_group_including_self(&self) -> Vec<XorName> {
+    /// Returns the names of the close group to this node.
+    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        match self.action_sender.send(Action::CloseGroupIncludingSelf { result_tx: result_tx }) {
-            Ok(_) => (),
-            Err(error) => {
-                warn!("Failed to send CloseGroupIncludingSelf action via channel: {:?}",
-                      error);
-                return vec![];
-            }
-        }
-        match result_rx.recv() {
-            Ok(group) => group,
-            Err(error) => {
-                warn!("Failed to receive CloseGroupIncludingSelf result via channel: {:?}",
-                      error);
-                return vec![];
-            }
-        }
+        try!(self.action_sender.send(Action::CloseGroup { result_tx: result_tx }));
+        Ok(try!(result_rx.recv()))
+    }
+
+    /// Returns the name of this node.
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+        Ok(try!(result_rx.recv()))
     }
 
     fn send_action(&self, routing_msg: RoutingMessage) -> Result<(), InterfaceError> {

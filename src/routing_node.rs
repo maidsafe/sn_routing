@@ -210,9 +210,14 @@ impl RoutingNode {
                                     }
                                 }
                             }
-                            Action::CloseGroupIncludingSelf{ result_tx, } => {
-                                let close_group = self.close_group_including_self();
+                            Action::CloseGroup{ result_tx, } => {
+                                let close_group = self.close_group_names();
                                 if result_tx.send(close_group).is_err() {
+                                    return;
+                                }
+                            }
+                            Action::Name{ result_tx, } => {
+                                if result_tx.send(self.full_id.public_id().name().clone()).is_err() {
                                     return;
                                 }
                             }
@@ -1037,7 +1042,7 @@ impl RoutingNode {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_group = self.close_group_including_self();
+        let close_group = self.close_group_names();
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 
@@ -1600,14 +1605,11 @@ impl RoutingNode {
         self.routing_table.get(name).is_some() || self.routing_table.want_to_add(name)
     }
 
-    fn close_group_including_self(&self) -> Vec<XorName> {
-        let mut close_group = self.routing_table
-                          .our_close_group()
+    fn close_group_names(&self) -> Vec<XorName> {
+        self.routing_table.our_close_group()
                           .iter()
                           .map(|node_info| node_info.public_id.name().clone())
-                          .collect_vec();
-        close_group.insert(0, *self.full_id.public_id().name());
-        close_group
+                          .collect_vec()
     }
 }
 

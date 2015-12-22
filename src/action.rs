@@ -38,7 +38,8 @@ pub enum Action {
         dst: Authority,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    CloseGroupIncludingSelf { result_tx: Sender<Vec<XorName>>, },
+    CloseGroup { result_tx: Sender<Vec<XorName>>, },
+    Name { result_tx: Sender<XorName>, },
     Terminate,
 }
 
@@ -54,7 +55,8 @@ impl ::std::fmt::Debug for Action {
                        content,
                        dst)
             }
-            Action::CloseGroupIncludingSelf { .. } => write!(f, "Action::CloseGroupIncludingSelf"),
+            Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
+            Action::Name{ .. } => write!(f, "Action::Name"),
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }
