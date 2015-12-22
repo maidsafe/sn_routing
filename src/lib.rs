@@ -90,7 +90,6 @@ mod routing_node;
 mod immutable_data;
 mod routing_client;
 mod structured_data;
-mod refresh_accumulator;
 mod connection_management;
 
 /// TODO Remove this from public visibility
