@@ -27,13 +27,13 @@
 //!
 //! 2.  Confirmed from authority
 //!
-//! 3.  Confirmed your authhority
+//! 3.  Confirmed your authority
 //!
-//! 4.  Exaclty 1 copy of each message
+//! 4.  Exactly 1 copy of each message
 //!
 //! This should allow relatively easy set up many decentralised services. Setting rules for
-//! data types and what can be done wiht such types at differnt personas will allow a fairly complex
-//! network to be configured wiht relative ease.
+//! data types and what can be done with such types at different personas will allow a fairly
+//! complex network to be configured with relative ease.
 //!
 //! The data types are encoded with Concise Binary Object Representation (CBOR).
 //!

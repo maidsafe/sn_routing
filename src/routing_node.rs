@@ -24,6 +24,7 @@ use action::Action;
 use xor_name::XorName;
 use sodiumoxide::crypto::{box_, sign, hash};
 use id::{FullId, PublicId};
+use types::{ChurnEventId, RefreshAccumulatorValue};
 use lru_time_cache::LruCache;
 use error::RoutingError;
 use authority::Authority;
@@ -65,8 +66,8 @@ pub struct RoutingNode {
     connection_filter: ::message_filter::MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
-    // refresh_accumulator: ::refresh_accumulator::RefreshAccumulator,
-    // refresh_causes: ::message_filter::MessageFilter<XorName>,
+    refresh_accumulator: ::accumulator::Accumulator<hash::sha512::Digest,
+                                                      RefreshAccumulatorValue>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
     // cache_options: ::data_cache_options::DataCacheOptions,
@@ -131,11 +132,8 @@ impl RoutingNode {
                 node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
                 message_accumulator: ::accumulator::Accumulator::with_duration(1,
                     ::time::Duration::minutes(5)),
-            // refresh_accumulator:
-            //     ::refresh_accumulator::RefreshAccumulator::with_expiry_duration(
-            //         ::time::Duration::minutes(5)),
-            // refresh_causes: ::message_filter::MessageFilter::with_expiry_duration(
-            //     ::time::Duration::minutes(5)),
+                refresh_accumulator:
+                    ::accumulator::Accumulator::with_duration(1, ::time::Duration::minutes(10)),
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
             // cache_options: ::data_cache_options::DataCacheOptions::new(),
@@ -368,12 +366,12 @@ impl RoutingNode {
             try!(self.signed_msg_security_check(&signed_msg));
 
             if signed_msg.content().dst().is_group() {
-                try!(self.send(signed_msg.clone())); // Swarm
+                try!(self.send(signed_msg.clone()));  // Swarm
             } else if self.full_id.public_id().name() != signed_msg.content().dst().get_name() {
                 // TODO See if this puts caching into disadvantage
                 // Incoming msg is in our range and not for a group and also not for us, thus
                 // sending on and bailing out
-                return self.send(signed_msg.clone());
+                return self.send(signed_msg.clone());  // Swarm
             } else if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
                 return self.relay_to_client(signed_msg.clone(), client_key);
             }
@@ -490,13 +488,16 @@ impl RoutingNode {
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
         trace!("{:?} Rxd {:?}", self, routing_msg);
-
-        if self.grp_msg_filter.contains(&routing_msg) {
-            return Err(RoutingError::FilterCheckFailed);
+        if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Refresh { ref nonce, ref content }, .. }) = &routing_msg {
+            if self.state == State::Node {
+                return self.handle_refresh(nonce.clone(), content.clone(), public_id)
+            }
         }
-
         if routing_msg.src().is_group() {
-            // Dont accumulate GetCloseGroupResponse as close_group info received is unique
+            if self.grp_msg_filter.contains(&routing_msg) {
+                return Err(RoutingError::FilterCheckFailed);
+            }
+            // Don't accumulate GetCloseGroupResponse as close_group info received is unique
             // to each node in the sender group
             match routing_msg {
                 RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) => (),
@@ -946,6 +947,29 @@ impl RoutingNode {
                             return Ok(());
                         }
                     } else {
+                        if self.routing_table.is_close(public_id.name()) {
+                            // send churn
+                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
+
+                            if let Err(err) = self.event_sender.send(event) {
+                                error!("Error sending event to routing user - {:?}", err);
+                            }
+
+                            // If the new node is going to displace a node from the close group then
+                            // inform the vaults about the node being moved out of close group
+                            if self.routing_table.len() >= ::kademlia_routing_table::group_size() {
+                                let close_grp_before = self.routing_table.our_close_group();
+                                if let Some(last_node) = close_grp_before.last() {
+                                    let event = Event::LostCloseNode(last_node.public_id
+                                                                              .name()
+                                                                              .clone());
+                                    if let Err(err) = self.event_sender.send(event) {
+                                        error!("Error sending event to routing user - {:?}", err);
+                                    }
+                                }
+                            }
+                        }
+
                         let (is_added, node_removed) = self.routing_table.add_node(node_info);
 
                         if !is_added {
@@ -976,28 +1000,7 @@ impl RoutingNode {
                     return Ok(());
                 }
             }
-            DirectMessage::Churn { ref close_group } => {
-                // Message needs signature validation
-                try!(self.handle_churn(close_group));
-                Ok(())
-            }
         }
-    }
-
-    fn handle_churn(&mut self, close_group: &[XorName]) -> Result<(), RoutingError> {
-        for close_node in close_group {
-            if self.connection_filter.contains(close_node) {
-                return Err(RoutingError::FilterCheckFailed);
-            }
-            let _ = self.connection_filter.insert(close_node.clone());
-
-            if !self.routing_table.want_to_add(close_node) {
-                return Ok(());
-            }
-
-            try!(self.send_connect_request(close_node))
-        }
-        Ok(())
     }
 
     // Constructed by A; From A -> X
@@ -1516,36 +1519,24 @@ impl RoutingNode {
 
     #[allow(unused)]
     fn handle_refresh(&mut self,
-                      _type_tag: u64,
-                      _sender: XorName,
-                      _payload: Vec<u8>,
-                      _our_authority: Authority,
-                      _cause: XorName)
+                      nonce: hash::sha512::Digest,
+                      content: Vec<u8>,
+                      public_id: PublicId)
                       -> Result<(), RoutingError> {
+        if !self.routing_table.is_close(public_id.name()) {
+            return Err(RoutingError::InvalidSource);
+        }
+
+        self.refresh_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
+        if let Some(result) = self.refresh_accumulator.add(nonce,
+                                                           RefreshAccumulatorValue {
+                                                               src_name: public_id.name().clone(),
+                                                               content: content,
+                                                           }) {
+            let event = Event::Refresh(nonce, result);
+            try!(self.event_sender.send(event))
+        }
         Ok(())
-        // debug_assert!(our_authority.is_group());
-        // let threshold = self.routing_table.dynamic_quorum_size();
-        // let unknown_cause = !self.refresh_causes.check(&cause);
-        // let (is_new_request, payloads) = self.refresh_accumulator
-        // .add_message(threshold,
-        // type_tag.clone(),
-        // sender,
-        // our_authority.clone(),
-        // payload,
-        // cause);
-        // If this is a new refresh instance, notify user to perform refresh.
-        // if unknown_cause && is_new_request {
-        // let _ = self.event_sender.send(::event::Event::DoRefresh(type_tag,
-        // our_authority.clone(),
-        // cause.clone()));
-        // }
-        // match payloads {
-        // Some(payloads) => {
-        // let _ = self.event_sender.send(Event::Refresh(type_tag, our_authority, payloads));
-        // Ok(())
-        // }
-        // None => Err(::error::RoutingError::NotEnoughSignatures),
-        // }
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
@@ -1586,12 +1577,20 @@ impl RoutingNode {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
-        if let Some(_node_name) = self.routing_table.drop_connection(connection) {
-            for _node in &self.routing_table.our_close_group() {
-                // trigger churn
-                // if close node
+        if let Some(node_name) = self.routing_table.drop_connection(connection) {
+            if self.routing_table.is_close(&node_name) {
+                // If the lost node was in our close grp send Churn Event
+                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("Error sending event to routing user - {:?}", err);
+                }
+                // If the lost node was in our close grp let the vaults know about the lost node
+                let event = Event::LostCloseNode(node_name);
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("Error sending event to routing user - {:?}", err);
+                }
             }
-            // self.routing_table.drop_node(&node_name);
         }
     }
 

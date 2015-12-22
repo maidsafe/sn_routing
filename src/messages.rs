@@ -59,14 +59,6 @@ pub enum DirectMessage {
         /// Signature of the originator of this message
         signature: sign::Signature,
     },
-    /// If  our close group changes, tell all our close group memebers of change
-    /// They may be interested in some id's for harvesting
-    /// Importantly this wil allow nodes to `see` nodes in their clsoe group vanish
-    /// even they do not have an actual connection (i.e. both behind symmetric NAT)
-    Churn {
-        /// Close group (to self) as calculated by a node.
-        close_group: Vec<XorName>,
-    },
 }
 
 /// A wrapper for all messages sent form node to node.
@@ -247,13 +239,9 @@ pub enum RequestContent {
     /// Message from upper layers sending network state on any network churn event
     Refresh {
         /// externally defined type identifier
-        type_tag: u64,
+        nonce: hash::sha512::Digest,
         /// externally defined message
-        message: Vec<u8>,
-        /// The node that caused the churn event.
-        /// Used here (passed up to upper layers in churn event) who must give it back in
-        /// which allows filtering of different churn events (used as unique identifier)
-        cause: XorName,
+        content: Vec<u8>,
     },
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
