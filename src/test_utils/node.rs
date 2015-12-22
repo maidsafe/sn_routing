@@ -19,6 +19,8 @@
 use xor_name::XorName;
 use authority::Authority;
 use messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use sodiumoxide::crypto::hash;
+use types::{ChurnEventId, RefreshAccumulatorValue};
 
 /// Network Node.
 pub struct Node {
@@ -26,7 +28,7 @@ pub struct Node {
     receiver: ::std::sync::mpsc::Receiver<::event::Event>,
     sender: ::std::sync::mpsc::Sender<::event::Event>,
     db: ::std::collections::BTreeMap<XorName, ::data::Data>,
-    client_accounts: ::std::collections::BTreeMap<XorName, u64>,
+    _client_accounts: ::std::collections::BTreeMap<XorName, u64>,
     connected: bool,
 }
 
@@ -41,7 +43,7 @@ impl Node {
             receiver: receiver,
             sender: sender,
             db: ::std::collections::BTreeMap::new(),
-            client_accounts: ::std::collections::BTreeMap::new(),
+            _client_accounts: ::std::collections::BTreeMap::new(),
             connected: false,
         }
     }
@@ -52,25 +54,13 @@ impl Node {
             match event {
                 ::event::Event::Request(msg) => self.handle_request(msg),
                 ::event::Event::Response(msg) => self.handle_response(msg),
-                ::event::Event::Refresh(type_tag, src, vec_of_bytes) => {
+                ::event::Event::Refresh(nonce, values) => {
                     debug!("Received refresh event");
-                    if type_tag != 1u64 {
-                        error!("Received refresh for tag {:?} from {:?}", type_tag, src);
-                        continue;
-                    };
-                    self.handle_refresh(src, vec_of_bytes);
+                    self.handle_refresh(nonce, values);
                 }
-                ::event::Event::DoRefresh(type_tag, src, cause) => {
-                    debug!("Received do refresh event");
-                    if type_tag != 1u64 {
-                        error!("Received DoRefresh for tag {:?} from {:?}", type_tag, src);
-                        continue;
-                    };
-                    self.handle_do_refresh(src, cause);
-                }
-                ::event::Event::Churn(_close_group) => {
-                    debug!("Received churn event");
-                    //self.handle_churn(close_group)
+                ::event::Event::Churn(churn_id) => {
+                    debug!("Received churn event {:?}", churn_id);
+                    self.handle_churn(churn_id)
                 }
                 ::event::Event::LostCloseNode(name) => debug!("Received LostCloseNode {:?}", name),
                 // ::event::Event::Bootstrapped => debug!("Received bootstraped event"),
@@ -154,79 +144,61 @@ impl Node {
         }
     }
 
-    fn _handle_churn(&mut self, our_close_group: Vec<XorName>) {
-        let mut exit = false;
-        if our_close_group.len() < ::kademlia_routing_table::group_size() {
-            if self.connected {
-                debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
-                       our_close_group.len(),
-                       ::kademlia_routing_table::group_size());
-                exit = true;
-            } else {
-                debug!("Ignoring churn as we are not yet connected.");
-                return;
-            }
-        }
+    fn handle_churn(&mut self, _churn_id: ChurnEventId) {
+        // let mut exit = false;
+        // if our_close_group.len() < ::kademlia_routing_table::group_size() {
+        //     if self.connected {
+        //         debug!("Close group ({:?}) has fallen below group size {:?}, terminating node",
+        //                our_close_group.len(),
+        //                ::kademlia_routing_table::group_size());
+        //         exit = true;
+        //     } else {
+        //         debug!("Ignoring churn as we are not yet connected.");
+        //         return;
+        //     }
+        // }
 
-        // FIXME Cause needs to get removed from refresh as well
-        // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
-        // just so that interface requirements are met
-        let cause = ::rand::random::<XorName>();
+        // // FIXME Cause needs to get removed from refresh as well
+        // // TODO(Fraser) Trying to remove cause but Refresh requires one so creating a random one
+        // // just so that interface requirements are met
+        // let cause = ::rand::random::<XorName>();
 
-        debug!("Handle churn for close group size {:?}",
-               our_close_group.len());
+        // debug!("Handle churn for close group size {:?}",
+        //        our_close_group.len());
 
-        for (client_name, stored) in &self.client_accounts {
-            debug!("REFRESH {:?} - {:?}", client_name, stored);
-            unwrap_result!(self.routing.send_refresh_request(
-                1u64,
-                Authority::ClientManager(client_name.clone()),
-                unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
-                cause));
-        }
-        if exit {
-            self.routing.stop();
-        }
+        // for (client_name, stored) in &self.client_accounts {
+        //     debug!("REFRESH {:?} - {:?}", client_name, stored);
+        //     unwrap_result!(self.routing.send_refresh_request(
+        //         1u64,
+        //         Authority::ClientManager(client_name.clone()),
+        //         unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
+        //         cause));
+        // }
+        // if exit {
+        //     self.routing.stop();
+        // }
     }
 
-    fn handle_refresh(&mut self, src: Authority, vec_of_bytes: Vec<Vec<u8>>) {
-        let mut records: Vec<u64> = Vec::new();
-        let mut fail_parsing_count = 0usize;
-        for bytes in vec_of_bytes {
-            match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
-                Ok(record) => records.push(record),
-                Err(_) => fail_parsing_count += 1usize,
-            }
-        }
-        let median = median(records.clone());
-        debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-               src,
-               median,
-               records,
-               fail_parsing_count);
-        if let Authority::ClientManager(client_name) = src {
-            let _ = self.client_accounts.insert(client_name, median);
-        }
-    }
-
-    fn handle_do_refresh(&self, src: Authority, cause: XorName) {
-        if let Authority::ClientManager(client_name) = src {
-            match self.client_accounts.get(&client_name) {
-                Some(stored) => {
-                    debug!("DoRefresh for client {:?} storing {:?} caused by {:?}",
-                           client_name,
-                           stored,
-                           cause);
-                    unwrap_result!(
-                        self.routing.send_refresh_request(
-                            1u64,
-                            Authority::ClientManager(client_name.clone()),
-                            unwrap_result!(::maidsafe_utilities::serialisation::serialise(&stored)),
-                            cause.clone()));
-                }
-                None => (),
-            }
-        }
+    fn handle_refresh(&mut self,
+                      _nonce: hash::sha512::Digest,
+                      _values: Vec<RefreshAccumulatorValue>) {
+        // let mut records: Vec<u64> = Vec::new();
+        // let mut fail_parsing_count = 0usize;
+        // for bytes in vec_of_bytes {
+        //     match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
+        //         Ok(record) => records.push(record),
+        //         Err(_) => fail_parsing_count += 1usize,
+        //     }
+        // }
+        // let median = median(records.clone());
+        // debug!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
+        //        src,
+        //        median,
+        //        records,
+        //        fail_parsing_count);
+        // if let Authority::ClientManager(client_name) = src {
+        //     let _ = self.client_accounts.insert(client_name, median);
+        // }
     }
 
     fn handle_response(&mut self, _msg: ResponseMessage) {

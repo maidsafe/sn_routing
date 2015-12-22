@@ -29,6 +29,15 @@ pub struct ChurnEventId {
     pub id: XorName,
 }
 
+/// Value used by the refresh accumulator
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RefreshAccumulatorValue {
+    #[allow(missing_docs)]
+    pub src_name: XorName,
+    #[allow(missing_docs)]
+    pub content: Vec<u8>,
+}
+
 /// Convert u8 vector to a fixed 64 byte size array.
 ///
 /// # Panics
