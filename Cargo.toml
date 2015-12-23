@@ -45,11 +45,11 @@ bench = false
 [[example]]
 name = "churn_node"
 path = "examples/churn_node.rs"
-test = false
+test = true
 bench = false
 
 [[example]]
 name = "local_network"
 path = "examples/local_network.rs"
-test = false
+test = true
 bench = false
