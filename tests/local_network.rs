@@ -58,6 +58,7 @@ fn local_network(nodes: usize, requests: usize) -> ExitStatus {
 #[cfg(test)]
 mod test {
     #[test]
+    #[ignore]
     fn local_network() {
         assert!(super::local_network(6, 3).success());
     }
