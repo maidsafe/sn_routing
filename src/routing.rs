@@ -186,7 +186,10 @@ impl Routing {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src.clone(),
             dst: src,
-            content: RequestContent::Refresh{ nonce: nonce, content: content, },
+            content: RequestContent::Refresh {
+                nonce: nonce,
+                content: content,
+            },
         });
         self.send_action(routing_msg)
     }

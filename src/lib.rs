@@ -92,8 +92,6 @@ mod routing_client;
 mod structured_data;
 mod connection_management;
 
-/// TODO Remove this from public visibility
-pub mod test_utils;
 /// Types and functions used throughout the library.
 pub mod types;
 
