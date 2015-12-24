@@ -36,7 +36,8 @@ pub enum HolePunchingState {
 
 #[cfg(test)]
 mod test {
-    use rand;
+    extern crate rand;
+
     use xor_name::XorName;
 
     #[test]

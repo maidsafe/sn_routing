@@ -27,13 +27,8 @@ use std::sync::mpsc;
 use std::thread;
 use self::sodiumoxide::crypto;
 use self::time::{Duration, SteadyTime};
-use self::routing::routing_client::RoutingClient;
-use self::routing::authority::Authority::{NaeManager, ClientManager};
-use self::routing::messages::ResponseContent;
 use self::xor_name::XorName;
-use self::routing::id::FullId;
-use self::routing::event::Event;
-use self::routing::data::{Data, DataRequest};
+use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, RoutingClient};
 
 /// Network Client.
 #[allow(unused)]
@@ -62,7 +57,9 @@ impl Client {
 
     /// Get from network.
     pub fn get(&mut self, request: DataRequest) -> Option<Data> {
-        unwrap_result!(self.routing_client.send_get_request(NaeManager(request.name()), request.clone()));
+        unwrap_result!(self.routing_client
+                           .send_get_request(Authority::NaeManager(request.name()),
+                                             request.clone()));
         let timeout = Duration::milliseconds(10000);
         let time = SteadyTime::now();
 
@@ -91,7 +88,8 @@ impl Client {
 
     /// Put to network.
     pub fn put(&self, data: Data) {
-        unwrap_result!(self.routing_client.send_put_request(ClientManager(*self.name()), data));
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     /// Post data onto the network.

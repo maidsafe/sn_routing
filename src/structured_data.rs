@@ -278,7 +278,8 @@ impl ::std::fmt::Debug for StructuredData {
 
 #[cfg(test)]
 mod test {
-    use rand;
+    extern crate rand;
+
     use xor_name::XorName;
 
     #[test]

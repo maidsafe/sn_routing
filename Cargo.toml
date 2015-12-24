@@ -1,13 +1,13 @@
 [package]
-name = "routing"
-version = "0.5.2"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "A secured storage DHT"
 documentation = "http://maidsafe.net/routing/latest"
-repository = "https://github.com/maidsafe/routing"
-readme = "README.md"
-license = "GPL-3.0"
 homepage = "http://maidsafe.net"
+license = "GPL-3.0"
+name = "routing"
+readme = "README.md"
+repository = "https://github.com/maidsafe/routing"
+version = "0.5.2"
 
 [dependencies]
 accumulator = "~0.1.3"
@@ -15,41 +15,41 @@ cbor = "~0.3.16"
 crust = "~0.7.0"
 ip = "~1.0.0"
 itertools = "~0.4.3"
+kademlia_routing_table = "~0.0.4"
 log = "~0.3.4"
 lru_time_cache = "~0.2.5"
 maidsafe_utilities = "~0.1.5"
 message_filter = "~0.2.0"
-rand = "~0.3.12"
 rustc-serialize = "~0.3.16"
 sodiumoxide = "~0.0.9"
 time = "~0.1.34"
-xor_name ="~0.0.1"
-kademlia_routing_table = "~0.0.4"
+xor_name = "~0.0.1"
 
 [dev-dependencies]
 bit-vec = "~0.4.2"
 docopt = "~0.6.78"
+rand = "~0.3.12"
 
 [[example]]
+bench = false
 name = "key_value_store"
 path = "examples/key_value_store.rs"
 test = true
-bench = false
 
 [[example]]
+bench = false
 name = "node"
 path = "examples/node.rs"
 test = true
-bench = false
 
 [[example]]
+bench = false
 name = "churn_node"
 path = "examples/churn_node.rs"
 test = true
-bench = false
 
 [[example]]
+bench = false
 name = "local_network"
 path = "examples/local_network.rs"
 test = true
-bench = false

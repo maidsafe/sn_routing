@@ -68,7 +68,8 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
 
 #[cfg(test)]
 mod test {
-    use rand;
+    extern crate rand;
+
     use xor_name::XorName;
 
 
