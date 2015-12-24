@@ -217,7 +217,8 @@ impl RoutingNode {
                                 }
                             }
                             Action::Name{ result_tx, } => {
-                                if result_tx.send(self.full_id.public_id().name().clone()).is_err() {
+                                if result_tx.send(self.full_id.public_id().name().clone())
+                                            .is_err() {
                                     return;
                                 }
                             }
@@ -1606,10 +1607,11 @@ impl RoutingNode {
     }
 
     fn close_group_names(&self) -> Vec<XorName> {
-        self.routing_table.our_close_group()
-                          .iter()
-                          .map(|node_info| node_info.public_id.name().clone())
-                          .collect_vec()
+        self.routing_table
+            .our_close_group()
+            .iter()
+            .map(|node_info| node_info.public_id.name().clone())
+            .collect_vec()
     }
 }
 

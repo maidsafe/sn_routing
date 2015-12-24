@@ -17,22 +17,11 @@
 
 /// Simulate a vault.
 pub mod node;
+/// Simulate a churning vault.
+pub mod churn_node;
 /// Simulate a client.
 pub mod client;
-/// Various random values for types available to tests.
-pub mod messages_util;
 
-pub use self::node::*;
-pub use self::client::*;
-pub use self::messages_util::*;
-
-use xor_name::XorName;
-
-/// Return XOR of two XorName's.
-pub fn xor(lhs: &XorName, rhs: &XorName) -> XorName {
-    let mut result = XorName::new([0u8; 64]);
-    for i in 0..lhs.0.len() {
-        result.0[i] = lhs.0[i] ^ rhs.0[i];
-    }
-    result
-}
+pub use self::node::Node;
+pub use self::churn_node::ChurnNode;
+pub use self::client::Client;

@@ -38,8 +38,12 @@ pub enum Action {
         dst: Authority,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
-    CloseGroup { result_tx: Sender<Vec<XorName>>, },
-    Name { result_tx: Sender<XorName>, },
+    CloseGroup {
+        result_tx: Sender<Vec<XorName>>,
+    },
+    Name {
+        result_tx: Sender<XorName>,
+    },
     Terminate,
 }
 
