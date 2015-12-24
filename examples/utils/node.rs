@@ -28,7 +28,8 @@ use self::routing::{RequestMessage, ResponseMessage, RequestContent, ResponseCon
                     ChurnEventId, RefreshAccumulatorValue, Authority, Routing, Event, Data,
                     DataRequest};
 use self::sodiumoxide::crypto::hash::sha512;
-use self::maidsafe_utilities::serialisation::serialise;
+use self::maidsafe_utilities::serialisation::{serialise, deserialise};
+use std::collections::{BTreeMap, HashMap};
 
 /// Network Node.
 #[allow(unused)]
@@ -36,8 +37,9 @@ pub struct Node {
     routing: Routing,
     receiver: ::std::sync::mpsc::Receiver<Event>,
     sender: ::std::sync::mpsc::Sender<Event>,
-    db: ::std::collections::BTreeMap<XorName, Data>,
-    client_accounts: ::std::collections::BTreeMap<XorName, u64>,
+    db: BTreeMap<XorName, Data>,
+    db_immut_data: BTreeMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
+    client_accounts: BTreeMap<XorName, u64>,
     connected: bool,
 }
 
@@ -52,8 +54,9 @@ impl Node {
             routing: routing,
             receiver: receiver,
             sender: sender,
-            db: ::std::collections::BTreeMap::new(),
-            client_accounts: ::std::collections::BTreeMap::new(),
+            db: BTreeMap::new(),
+            db_immut_data: BTreeMap::new(),
+            client_accounts: BTreeMap::new(),
             connected: false,
         }
     }
@@ -153,23 +156,67 @@ impl Node {
 
     fn handle_churn(&mut self, churn_id: ChurnEventId) {
         for (client_name, stored) in self.client_accounts.iter() {
-            let persona_bytes = "ClientManager".to_owned().into_bytes();
             let to_hash = churn_id.id
                                   .0
                                   .iter()
-                                  .chain(client_name.0.iter().chain(persona_bytes.iter()))
+                                  .chain(client_name.0.iter())
                                   .cloned()
                                   .collect::<Vec<_>>();
-            let nonce = sha512::hash(&to_hash[..]);
+            let nonce = mux(sha512::hash(&to_hash), RefreshNonceHandler::ClientManager);
             let content = unwrap_result!(serialise(&stored));
 
             unwrap_result!(self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()),
                                                              nonce,
                                                              content));
         }
+
+        for (data_name, managed_nodes) in self.db_immut_data.iter() {
+            let to_hash = churn_id.id
+                                  .0
+                                  .iter()
+                                  .chain(data_name.0.iter())
+                                  .cloned()
+                                  .collect::<Vec<_>>();
+            let nonce = mux(sha512::hash(&to_hash), RefreshNonceHandler::NaeManager);
+            let content = unwrap_result!(serialise(&managed_nodes));
+
+            unwrap_result!(self.routing
+                               .send_refresh_request(Authority::NaeManager(data_name.clone()),
+                                                     nonce,
+                                                     content));
+        }
     }
 
-    fn handle_refresh(&mut self, _nonce: sha512::Digest, _values: Vec<RefreshAccumulatorValue>) {
+    fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
+        match demux(nonce) {
+            RefreshNonceHandler::ClientManager => {
+                ;
+            }
+            RefreshNonceHandler::NaeManager => {
+                let mut container = HashMap::<XorName, HashMap<XorName, u8>>::with_capacity(100);
+                for refresh_acc_val in values {
+                    let managed_nodes: Vec<XorName> =
+                        unwrap_result!(deserialise(&refresh_acc_val.content));
+                    for node in managed_nodes {
+                        *container.entry(refresh_acc_val.src_name)
+                                  .or_insert(HashMap::with_capacity(20))
+                                  .entry(node)
+                                  .or_insert(0) += 1;
+                    }
+                }
+
+                self.db_immut_data = BTreeMap::new();
+                for (key, value) in container {
+                    let mut vec: Vec<(XorName, u8)> = Vec::with_capacity(value.len());
+                    for (managed_node, freq) in value {
+                        vec.push((managed_node, freq));
+                    }
+                    vec.sort_by(|&(_, ref freq_lhs), &(_, ref freq_rhs)| freq_rhs.cmp(freq_lhs));
+
+                    let _ = self.db_immut_data.insert(key, vec![vec[0].0, vec[1].0]);
+                }
+            }
+        }
         // let mut records: Vec<u64> = Vec::new();
         // let mut fail_parsing_count = 0usize;
         // for bytes in vec_of_bytes {
@@ -194,22 +241,46 @@ impl Node {
     }
 }
 
-/// Returns the median (rounded down to the nearest integral value) of `values` which can be
-/// unsorted.  If `values` is empty, returns `0`.
 #[allow(unused)]
-pub fn median(mut values: Vec<u64>) -> u64 {
-    match values.len() {
-        0 => 0u64,
-        1 => values[0],
-        len if len % 2 == 0 => {
-            values.sort();
-            let lower_value = values[(len / 2) - 1];
-            let upper_value = values[len / 2];
-            (lower_value + upper_value) / 2
-        }
-        len => {
-            values.sort();
-            values[len / 2]
-        }
+enum RefreshNonceHandler {
+    ClientManager,
+    NaeManager,
+}
+
+#[allow(unused)]
+fn mux(mut nonce: sha512::Digest, nonce_handler: RefreshNonceHandler) -> sha512::Digest {
+    match nonce_handler {
+        RefreshNonceHandler::ClientManager => nonce.0[0] = 0,
+        RefreshNonceHandler::NaeManager => nonce.0[0] = 1,
+    }
+
+    nonce
+}
+
+#[allow(unused)]
+fn demux(nonce: sha512::Digest) -> RefreshNonceHandler {
+    match nonce.0[0] {
+        0 => RefreshNonceHandler::ClientManager,
+        1 => RefreshNonceHandler::NaeManager,
+        _ => unreachable!("Unknown Symbol for demultiplexing!"),
     }
 }
+
+// Returns the median (rounded down to the nearest integral value) of `values` which can be
+// unsorted.  If `values` is empty, returns `0`.
+// fn median(mut values: Vec<u64>) -> u64 {
+//     match values.len() {
+//         0 => 0u64,
+//         1 => values[0],
+//         len if len % 2 == 0 => {
+//             values.sort();
+//             let lower_value = values[(len / 2) - 1];
+//             let upper_value = values[len / 2];
+//             (lower_value + upper_value) / 2
+//         }
+//         len => {
+//             values.sort();
+//             values[len / 2]
+//         }
+//     }
+// }
