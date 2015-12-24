@@ -17,11 +17,13 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, ResponseContent, StructuredData};
+use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage, ResponseContent, StructuredData};
+use sodiumoxide::crypto::hash::sha512;
+use transfer_tag::TransferTag;
+use utils::{merge, quorum_size};
 use vault::Routing;
-use xor_name::XorName;
 
-pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::StructuredDataManagerAccount as u64;
+pub const ACCOUNT_TAG: u8 = TransferTag::StructuredDataManagerAccount as u8;
 
 pub struct StructuredDataManager {
     chunk_store: ChunkStore,
@@ -114,66 +116,34 @@ impl StructuredDataManager {
                     });
     }
 
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
-        if *type_tag == ACCOUNT_TAG {
-            if let &Authority::NaeManager(from_group) = our_authority {
-                if let Some(merged_structured_data) = ::utils::merge::<StructuredData>(from_group, payloads.clone()) {
-                    self.handle_account_transfer(merged_structured_data);
-                }
-            } else {
-                warn!("Invalid authority for refresh at StructuredDataManager: {:?}",
-                      our_authority);
-            }
-            ::utils::HANDLED
-        } else {
-            ::utils::NOT_HANDLED
-        }
+    pub fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+        merge::<StructuredData>(values, quorum_size()).and_then(|merged_structured_data| {
+            self.handle_account_transfer(merged_structured_data.value);
+            Some(nonce)
+        })
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing: &Routing, churn_node: &XorName) {
-        let names = self.chunk_store.names();
-        for name in names {
-            let data = self.chunk_store.get(&name);
-            let src = Authority::NaeManager(name);
-            debug!("SD Manager sending refresh for account {:?}", name);
-            let _ = routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
+    pub fn handle_churn(&mut self, _routing: &Routing, _churn_event_id: &ChurnEventId) {
+        // let names = self.chunk_store.names();
+        // for name in names {
+        //     let data = self.chunk_store.get(&name);
+        //     let src = Authority::NaeManager(name);
+        //     debug!("SD Manager sending refresh for account {:?}", name);
+        //     let _ = routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
 
-        }
+        // }
         // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
         // the uncontrollable order of events (churn/refresh/account_transfer)
         // forcing the node have to keep its current records to avoid losing record
         // self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
     }
 
-    pub fn do_refresh(&mut self,
-                      routing: &Routing,
-                      type_tag: &u64,
-                      our_authority: &Authority,
-                      churn_node: &XorName)
-                      -> Option<()> {
-        if type_tag == &ACCOUNT_TAG {
-            let names = self.chunk_store.names();
-            for name in names {
-                if *our_authority.get_name() == name {
-                    let data = self.chunk_store.get(&name);
-                    debug!("SD Manager sending on_refresh for account {:?}",
-                           our_authority.get_name());
-                    let _ = routing.send_refresh_request(ACCOUNT_TAG, our_authority.clone(), data, churn_node.clone());
-                }
-            }
-            return ::utils::HANDLED;
-        }
-        ::utils::NOT_HANDLED
+    pub fn reset(&mut self) {
+        match ::chunk_store::ChunkStore::new(1073741824) {
+            Ok(chunk_store) => self.chunk_store = chunk_store,
+            Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
+        };
     }
-
-    // pub fn reset(&mut self, routing: &Routing) {
-    //     self.routing = routing;
-    //     match ::chunk_store::ChunkStore::new(1073741824) {
-    //         Ok(chunk_store) => self.chunk_store = chunk_store,
-    //         Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
-    //     };
-    // }
 
     fn handle_account_transfer(&mut self, structured_data: StructuredData) {
         use types::Refreshable;
@@ -223,7 +193,7 @@ mod test {
             let identifier = random();
             let keys = ::sodiumoxide::crypto::sign::gen_keypair();
             let structured_data = unwrap_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
-                                     ::routing::types::generate_random_vec_u8(1024), vec![keys.0],
+                                     generate_random_vec_u8(1024), vec![keys.0],
                                      vec![], Some(&keys.1)));
             let data_name = structured_data.name();
             Environment {

@@ -15,6 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// The tag will be used to tell which type of account is being transferred.  It will be set in the
+// `TAG_INDEX` byte of the refresh nonce.
+pub const TAG_INDEX: usize = 33;
+
 pub enum TransferTag {
     MaidManagerAccount = 1,
     DataManagerAccount = 2,

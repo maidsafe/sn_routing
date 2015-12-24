@@ -15,10 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table;
 use maidsafe_utilities::serialisation::serialise;
 use routing::StructuredData;
 use xor_name::XorName;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MergedValue<T> {
+    pub name: XorName,
+    pub value: T,
+}
 
 /// This trait is required for any type (normally an account) which is refreshed on a churn event.
 pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
@@ -28,30 +33,28 @@ pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decoda
     }
 
     /// Merge multiple refreshable objects into one
-    fn merge(from_group: XorName, responses: Vec<Self>) -> Option<Self>;
+    fn merge(name: XorName, values: Vec<Self>, quorum_size: usize) -> Option<MergedValue<Self>>;
 }
 
 impl Refreshable for StructuredData {
-    fn merge(from_group: XorName, responses: Vec<StructuredData>) -> Option<StructuredData> {
+    fn merge(name: XorName, values: Vec<StructuredData>, quorum_size: usize) -> Option<MergedValue<StructuredData>> {
         let mut sds = Vec::<(StructuredData, u64)>::new();
-        for response in responses {
-            if response.name() == from_group {
-                let push_in_vec = match sds.iter_mut().find(|a| a.0 == response) {
-                    Some(find_res) => {
-                        find_res.1 += 1;
-                        false
-                    }
-                    None => true,
-                };
-                if push_in_vec {
-                    sds.push((response.clone(), 1));
+        for value in values {
+            let push_in_vec = match sds.iter_mut().find(|a| a.0 == value) {
+                Some(find_res) => {
+                    find_res.1 += 1;
+                    false
                 }
+                None => true,
+            };
+            if push_in_vec {
+                sds.push((value.clone(), 1));
             }
         }
         sds.sort_by(|a, b| b.1.cmp(&a.1));
         let (sd, count) = sds[0].clone();
-        if count >= (kademlia_routing_table::GROUP_SIZE as u64 + 1) / 2 {
-            return Some(sd);
+        if count >= quorum_size as u64 {
+            return Some(MergedValue{name: name, value: sd, })
         }
         None
     }

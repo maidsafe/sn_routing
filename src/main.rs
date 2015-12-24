@@ -43,7 +43,6 @@ extern crate log;
 extern crate maidsafe_utilities;
 
 // Non-MaidSafe crates
-extern crate cbor;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate tempdir;
@@ -55,6 +54,7 @@ extern crate rand;
 extern crate crust;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
+extern crate message_filter;
 extern crate routing;
 extern crate xor_name;
 

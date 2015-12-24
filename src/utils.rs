@@ -15,15 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use xor_name::XorName;
-
-/// Indicates a "handle_xxx" function of a persona has dealt with the request (i.e. it was for that
-/// persona).  It doesn't indicate success or failure - only that the request has been handled.
-pub const HANDLED: Option<()> = Some(());
-
-/// Indicates a "handle_xxx" function of a persona has NOT dealt with the request (i.e. it was not
-/// for that persona).
-pub const NOT_HANDLED: Option<()> = None;
+use kademlia_routing_table::group_size;
+use maidsafe_utilities::serialisation::deserialise;
+use routing::RefreshAccumulatorValue;
+use std::collections::HashMap;
+use types::{MergedValue, Refreshable};
 
 static HANDLE_VERSION: ::std::sync::Once = ::std::sync::ONCE_INIT;
 
@@ -46,24 +42,32 @@ pub fn median(mut values: Vec<u64>) -> u64 {
     }
 }
 
-pub fn merge<T>(from_group: XorName, payloads: Vec<Vec<u8>>) -> Option<T>
-    where T: for<'a> ::types::Refreshable + 'static {
-    let mut transfer_entries = Vec::<T>::new();
-    for it in payloads.iter() {
-        let mut decoder = ::cbor::Decoder::from_bytes(&it[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            transfer_entries.push(parsed_entry);
+// TODO - this function should be removed in favour of using the dynamic quorum size from Routing
+pub fn quorum_size() -> usize {
+    group_size() / 2
+}
+
+pub fn merge<T>(values: Vec<RefreshAccumulatorValue>, quorum_size: usize) -> Option<MergedValue<T>>
+    where T: for<'a> Refreshable + 'static {
+    // Turn the `values` into a `HashMap<src_name, Vec<contents>>`.  Normally all values will have
+    // the same `src_name` and so this HashMap len should be 1, but this lets us filter out any
+    // stray entries which have a different `src_name` to all others.
+    let names_and_contents =
+        values.into_iter().fold(HashMap::<_, Vec<_>>::new(), |mut accumulator, value| {
+            accumulator.entry(value.src_name).or_insert(vec![]).push(value.content);
+            accumulator
+        });
+
+    // If any entry in the HashMap has at least quorum values in its corresponding vector of
+    // contents, use that to try and merge.
+    if let Some(quorum_entry) = names_and_contents.iter().find(|elt| elt.1.len() >= quorum_size) {
+        // Convert the vector of serialised contents to a vector of parsed entries
+        let parsed_entries = quorum_entry.1.iter().filter_map(|elt| deserialise(elt).ok()).collect::<Vec<_>>();
+        if parsed_entries.len() >= quorum_size {
+            return T::merge(*quorum_entry.0, parsed_entries, quorum_size)
         }
     }
-    T::merge(from_group, transfer_entries).and_then(|result| {
-        let mut decoder = ::cbor::Decoder::from_bytes(&result.serialised_contents()[..]);
-        if let Some(parsed_entry) = decoder.decode().next().and_then(|result| result.ok()) {
-            let parsed: T = parsed_entry;
-            Some(parsed)
-        } else {
-            None
-        }
-    })
+    None
 }
 
 pub fn handle_version() {
@@ -83,6 +87,13 @@ pub fn handle_version() {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rand::random;
+
+    pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
+        let mut vec: Vec<u8> = Vec::with_capacity(size);
+        for _ in 0..size { vec.push(random::<u8>()); }
+        vec
+    }
 
     #[test]
     fn get_median() {

@@ -16,63 +16,46 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use routing::Authority;
+use routing::{Authority, ChurnEventId, Routing};
+use sodiumoxide::crypto::hash::sha512;
+use transfer_tag::TAG_INDEX;
+use types::{MergedValue, Refreshable};
+use utils::median;
 use xor_name::XorName;
 pub type MaidNodeName = XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
-    name: MaidNodeName,
-    value: AccountValue,
-}
-
-impl Account {
-    fn new(name: MaidNodeName, value: AccountValue) -> Account {
-        Account {
-            name: name,
-            value: value,
-        }
-    }
-}
-
-impl ::types::Refreshable for Account {
-    fn merge(from_group: XorName, responses: Vec<Account>) -> Option<Account> {
-        let mut data_stored: Vec<u64> = Vec::new();
-        let mut space_available: Vec<u64> = Vec::new();
-        for response in responses {
-            if response.name == from_group {
-                data_stored.push(response.value.data_stored);
-                space_available.push(response.value.space_available);
-            }
-        }
-        Some(Account::new(from_group,
-                          AccountValue::new(::utils::median(data_stored),
-                                            ::utils::median(space_available))))
-    }
-}
-
-
-
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
-pub struct AccountValue {
     data_stored: u64,
     space_available: u64,
 }
 
-impl Default for AccountValue {
+impl Default for Account {
     // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
     //   To bypass the the process for a simple network, allowance is granted by default
-    fn default() -> AccountValue {
-        AccountValue {
+    fn default() -> Account {
+        Account {
             data_stored: 0,
             space_available: 1073741824,
         }
     }
 }
 
-impl AccountValue {
-    fn new(data_stored: u64, space_available: u64) -> AccountValue {
-        AccountValue {
+impl Refreshable for Account {
+    fn merge(name: XorName, values: Vec<Account>, _quorum_size: usize) -> Option<MergedValue<Account>> {
+        let mut data_stored: Vec<u64> = Vec::new();
+        let mut space_available: Vec<u64> = Vec::new();
+        for value in values {
+            data_stored.push(value.data_stored);
+            space_available.push(value.space_available);
+        }
+        Some(MergedValue{ name: name, value: Account::new(median(data_stored), median(space_available)), })
+    }
+}
+
+impl Account {
+    fn new(data_stored: u64, space_available: u64) -> Account {
+        Account {
             data_stored: data_stored,
             space_available: space_available,
         }
@@ -102,7 +85,7 @@ impl AccountValue {
 
 
 pub struct Database {
-    storage: ::std::collections::HashMap<MaidNodeName, AccountValue>,
+    storage: ::std::collections::HashMap<MaidNodeName, Account>,
 }
 
 impl Database {
@@ -112,71 +95,34 @@ impl Database {
 
     #[allow(unused)]
     pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
-        let default: AccountValue = Default::default();
+        let default: Account = Default::default();
         self.storage.entry(name.clone()).or_insert(default).space_available
     }
 
     pub fn put_data(&mut self, name: &MaidNodeName, size: u64) -> bool {
-        let default: AccountValue = Default::default();
+        let default: Account = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
         entry.put_data(size)
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: Account) {
-        let _ = self.storage.remove(&merged_account.name);
-        let value = merged_account.value.clone();
-        let _ = self.storage.insert(merged_account.name, merged_account.value);
-        info!("MaidManager updated account {:?} to {:?}",
-              merged_account.name,
-              value);
+    pub fn handle_account_transfer(&mut self, merged: MergedValue<Account>) {
+        info!("MaidManager updating account {:?} to {:?}", merged.name, merged.value);
+        let _ = self.storage.insert(merged.name, merged.value);
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing: &::vault::Routing, churn_node: &XorName) {
+    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
         for (key, value) in self.storage.iter() {
-            let account = Account::new((*key).clone(), (*value).clone());
-            let our_authority = Authority::ClientManager(account.name);
-            if let Ok(serialised_account) = serialise(&[account]) {
-                debug!("MaidManager sending refresh for account {:?}",
-                       our_authority.get_name());
-                let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                     our_authority.clone(),
-                                                     serialised_account,
-                                                     churn_node.clone());
+            let src = Authority::ClientManager(key.clone());
+            let to_hash = churn_event_id.id.0.iter().chain(key.0.iter()).cloned().collect::<Vec<_>>();
+            let mut nonce = sha512::hash(&to_hash);
+            nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
+            if let Ok(serialised_account) = serialise(value) {
+                debug!("MaidManager sending refresh for account {:?}", src.get_name());
+                let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }
-        // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
-        // the uncontrollable order of events (churn/refresh/account_transfer)
-        // forcing the node have to keep its current records to avoid losing record
-        // self.cleanup();
     }
 
-    pub fn do_refresh(&mut self,
-                      type_tag: &u64,
-                      our_authority: &::routing::Authority,
-                      churn_node: &XorName,
-                      routing: &::vault::Routing)
-                      -> Option<()> {
-        if type_tag == &super::ACCOUNT_TAG {
-            for (key, value) in self.storage.iter() {
-                if key == our_authority.get_name() {
-                    let account = Account::new((*key).clone(), (*value).clone());
-                    if let Ok(serialised_account) = serialise(&[account]) {
-                        debug!("MaidManager sending on_refresh for account {:?}",
-                               our_authority.get_name());
-                        let _ = routing.send_refresh_request(super::ACCOUNT_TAG,
-                                                             our_authority.clone(),
-                                                             serialised_account,
-                                                             churn_node.clone());
-                    }
-                }
-            }
-            return ::utils::HANDLED;
-        }
-        ::utils::NOT_HANDLED
-    }
-
-    #[allow(unused)]
     pub fn cleanup(&mut self) {
         self.storage.clear();
     }
@@ -241,7 +187,7 @@ mod test {
         assert!(db.put_data(&name, 1073741823));
         assert!(!db.put_data(&name, 2));
 
-        let mut account_value: AccountValue = Default::default();
+        let mut account_value: Account = Default::default();
         account_value.put_data(1073741822);
         {
             let account = Account::new(name.clone(), account_value.clone());
@@ -262,7 +208,7 @@ mod test {
     #[test]
     fn maid_manager_account_serialisation() {
         let obj_before = Account::new(XorName([1u8; 64]),
-                                      AccountValue::new(::rand::random::<u64>(), ::rand::random::<u64>()));
+                                      Account::new(::rand::random::<u64>(), ::rand::random::<u64>()));
 
         let mut e = ::cbor::Encoder::from_memory();
         unwrap_result!(e.encode(&[&obj_before]));

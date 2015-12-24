@@ -19,6 +19,7 @@ use kademlia_routing_table::{group_size, optimal_table_size};
 use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
+use sodiumoxide::crypto::hash;
 use std::cmp::Ordering;
 use std::sync::mpsc;
 use std::thread::sleep;
@@ -227,26 +228,13 @@ impl MockRoutingImpl {
     }
 
     pub fn send_refresh_request(&mut self,
-                                _type_tag: u64,
-                                _src: Authority,
-                                _content: Vec<u8>,
-                                _cause: XorName)
+                                src: Authority,
+                                nonce: hash::sha512::Digest,
+                                content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        unimplemented!()
-        // self.refresh_requests_given
-        //     .push(super::api_calls::RefreshRequest::new(type_tag, our_authority.clone(), content.clone(), churn_node));
-        // // routing is expected to accumulate the refresh requests
-        // // for the same group into one event request to vault
-        // let simulated_latency = self.simulated_latency;
-        // let cloned_sender = self.sender.clone();
-        // let _ = ::std::thread::spawn(move || {
-        //     sleep(simulated_latency);
-        //     let mut refresh_contents = vec![content.clone()];
-        //     for _ in 2..::data_manager::REPLICANTS {
-        //         refresh_contents.push(content.clone());
-        //     }
-        //     let _ = cloned_sender.send(Event::Refresh(type_tag, our_authority, refresh_contents));
-        // });
+        let request_content = RequestContent::Refresh{ nonce: nonce, content: content, };
+        let message = self.send_request(src.clone(), src, request_content, "Mock Refresh Request");
+        Ok(self.refresh_requests_given.push(message))
     }
 
     pub fn stop(&mut self) {

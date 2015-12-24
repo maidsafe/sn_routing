@@ -162,7 +162,7 @@
 //     let mut processes = start_vaults(4);
 //     let (mut client_routing, client_receiver, client_name) = start_client();
 
-//     let value = ::routing::types::generate_random_vec_u8(1024);
+//     let value = generate_random_vec_u8(1024);
 //     let im_data = ImmutableData::new(
 //         ImmutableDataType::Normal, value);
 //     client_routing.put_request(::routing::Authority::ClientManager(client_name),
@@ -207,9 +207,8 @@
 //     let mut processes = start_vaults(4);
 //     let (mut client_routing, client_receiver, client_name) = start_client();
 
-//     let name = XorName(::routing::types::slice_as_u8_64_array(
-//         &*::routing::types::generate_random_vec_u8(64)));
-//     let value = ::routing::types::generate_random_vec_u8(1024);
+//     let name = XorName(slice_as_u8_64_array(&*generate_random_vec_u8(64)));
+//     let value = generate_random_vec_u8(1024);
 //     let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 //     let sd = ::routing::structured_data::StructuredData::new(0,
 //                                                              name,

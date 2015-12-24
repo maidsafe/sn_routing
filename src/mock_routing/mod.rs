@@ -24,6 +24,7 @@ mod mock_routing_impl;
 use self::mock_routing_impl::MockRoutingImpl;
 use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage, RoutingError};
+use sodiumoxide::crypto::hash;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
@@ -174,12 +175,11 @@ impl MockRouting {
     }
 
     pub fn send_refresh_request(&self,
-                                type_tag: u64,
                                 src: Authority,
-                                content: Vec<u8>,
-                                cause: XorName)
+                                nonce: hash::sha512::Digest,
+                                content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_refresh_request(type_tag, src, content, cause)
+        unwrap_result!(self.pimpl.lock()).send_refresh_request(src, nonce, content)
     }
 
     pub fn stop(&self) {

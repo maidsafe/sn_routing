@@ -143,13 +143,12 @@ impl PmidNode {
     //     self.routing.put_response(our_authority.clone(), location, error, response_token.clone());
     // }
 
-    // pub fn reset(&mut self, routing: &Routing) {
-    //     self.routing = routing;
-    //     match ::chunk_store::ChunkStore::new(1073741824) {
-    //         Ok(chunk_store) => self.chunk_store = chunk_store,
-    //         Err(err) => { debug!("Failed to reset pmid_node chunk store {:?}", err); },
-    //     };
-    // }
+    pub fn reset(&mut self) {
+        match ::chunk_store::ChunkStore::new(1073741824) {
+            Ok(chunk_store) => self.chunk_store = chunk_store,
+            Err(err) => { debug!("Failed to reset pmid_node chunk store {:?}", err); },
+        };
+    }
 }
 
 
@@ -180,7 +179,7 @@ mod test {
 
         let from_authority = Authority::NodeManager(us.clone());
 
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let data =
             ImmutableData::new(ImmutableDataType::Normal, value);
         {

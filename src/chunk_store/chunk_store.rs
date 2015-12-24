@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use xor_name::XorName;
+use xor_name::{slice_as_u8_64_array, XorName};
 
 /// ChunkStore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.
@@ -121,7 +121,7 @@ impl ChunkStore {
                     dir_entry.ok()
                              .and_then(|entry| entry.file_name().into_string().ok())
                              .and_then(|hex_name| hex_name.from_hex().ok())
-                             .and_then(|bytes| Some(XorName::new(::routing::types::slice_as_u8_64_array(&*bytes))))
+                             .and_then(|bytes| Some(XorName::new(slice_as_u8_64_array(&*bytes))))
                 };
                 Ok(dir_entries.filter_map(dir_entry_to_routing_name).collect())
             })

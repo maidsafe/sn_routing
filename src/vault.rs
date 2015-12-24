@@ -18,13 +18,16 @@
 use data_manager::DataManager;
 use error::Error;
 use maid_manager::MaidManager;
+use message_filter::MessageFilter;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
-use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use routing::{Authority, ChurnEventId, Data, DataRequest, Event, RefreshAccumulatorValue, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use sd_manager::StructuredDataManager;
+use sodiumoxide::crypto::hash::sha512;
 use std::sync::{Arc, atomic, mpsc};
 use std::sync::atomic::AtomicBool;
-use time::SteadyTime;
+use transfer_tag::TAG_INDEX;
+use time::{Duration, SteadyTime};
 use xor_name::XorName;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
@@ -42,9 +45,9 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     sd_manager: StructuredDataManager,
-    receiver: mpsc::Receiver<Event>,
+    handled_refreshes: MessageFilter<sha512::Digest>,
     churn_timestamp: SteadyTime,
-    id: XorName,
+    receiver: mpsc::Receiver<Event>,
     app_event_sender: Option<mpsc::Sender<Event>>,
     should_stop: Option<Arc<AtomicBool>>,
 }
@@ -68,9 +71,9 @@ impl Vault {
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
             sd_manager: StructuredDataManager::new(),
+            handled_refreshes: MessageFilter::<sha512::Digest>::with_expiry_duration(Duration::minutes(5)),
             churn_timestamp: SteadyTime::now(),
             receiver: receiver,
-            id: XorName::new([0u8; 64]),
             app_event_sender: app_event_sender,
             should_stop: should_stop,
         })
@@ -85,20 +88,14 @@ impl Vault {
                                 .clone()
                                 .and_then(|sender| Some(sender.send(event.clone())));
                     info!("Vault {} received an event from routing: {:?}",
-                          self.id,
+                          unwrap_result!(self.routing.name()),
                           event);
                     match event {
                         Event::Request(request) => self.on_request(request),
                         Event::Response(response) => self.on_response(response),
-                        Event::Refresh(type_tag, our_authority, accounts) => {
-                            self.on_refresh(type_tag, our_authority, accounts)
-                        }
-                        Event::Churn(close_group /* , churn_node */) => {
-                            self.on_churn(close_group /* , churn_node */)
-                        }
-                        Event::DoRefresh(type_tag, our_authority, churn_node) => {
-                            self.on_do_refresh(type_tag, our_authority, churn_node)
-                        }
+                        Event::Refresh(nonce, values) => self.on_refresh(nonce, values),
+                        Event::Churn(churn_event_id) => self.on_churn(&churn_event_id),
+                        Event::LostCloseNode(lost_node) => self.on_lost_close_node(lost_node),
                         Event::Connected => self.on_connected(),
                         Event::Disconnected => self.on_disconnected(),
                         Event::Terminated => break,
@@ -190,11 +187,28 @@ impl Vault {
         }
     }
 
-    fn on_refresh(&mut self, type_tag: u64, our_authority: Authority, accounts: Vec<Vec<u8>>) {
-        self.handle_refresh(type_tag, our_authority, accounts);
+    fn on_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
+        if !self.handled_refreshes.contains(&nonce) {
+            let handled_nonce = match nonce.0[TAG_INDEX] {
+                ::maid_manager::ACCOUNT_TAG => self.maid_manager.handle_refresh(nonce, values),
+                ::data_manager::ACCOUNT_TAG => self.data_manager.handle_account_refresh(nonce, values),
+                ::data_manager::STATS_TAG => self.data_manager.handle_stats_refresh(nonce, values),
+                ::sd_manager::ACCOUNT_TAG => self.sd_manager.handle_refresh(nonce, values),
+                ::pmid_manager::ACCOUNT_TAG => self.pmid_manager.handle_refresh(nonce, values),
+                _ => unreachable!(),
+            };
+            if let Some(nonce) = handled_nonce {
+                let _ = self.handled_refreshes.insert(nonce);
+            }
+        }
     }
 
-    fn on_churn(&mut self, _close_group: Vec<XorName> /* , churn_node: XorName */) {
+    fn on_churn(&mut self, churn_event_id: &ChurnEventId) {
+        self.maid_manager.handle_churn(&self.routing, churn_event_id);
+        self.data_manager.handle_churn(&self.routing, churn_event_id);
+        self.sd_manager.handle_churn(&self.routing, churn_event_id);
+        self.pmid_manager.handle_churn(&self.routing, churn_event_id);
+
         // self.id = close_group[0].clone();
         // let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
         // let time_now = SteadyTime::now();
@@ -210,21 +224,8 @@ impl Vault {
         // }
     }
 
-    fn on_do_refresh(&mut self, type_tag: u64, our_authority: Authority, churn_node: XorName) {
-        let _ = self.maid_manager
-                    .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
-                    .or_else(|| {
-                        self.data_manager
-                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
-                    })
-                    .or_else(|| {
-                        self.sd_manager
-                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
-                    })
-                    .or_else(|| {
-                        self.pmid_manager
-                            .do_refresh(&self.routing, &type_tag, &our_authority, &churn_node)
-                    });
+    fn on_lost_close_node(&mut self, lost_node: XorName) {
+        self.data_manager.handle_lost_close_node(&self.routing, lost_node)
     }
 
     fn on_connected(&self) {
@@ -241,41 +242,19 @@ impl Vault {
                 return;
             }
         }
-        // self.churn_timestamp = SteadyTime::now();
-        // let (sender, receiver) = mpsc::channel();
-        // // TODO - Keep retrying to construct new Routing until returns Ok() ?
-        // let routing = unwrap_result!(Routing::new(sender));
-        // self.receiver = receiver;
+        self.churn_timestamp = SteadyTime::now();
+        let (sender, receiver) = mpsc::channel();
+        // TODO - Keep retrying to construct new Routing until returns Ok() ?
+        self.routing = unwrap_result!(Routing::new(sender));
+        self.receiver = receiver;
 
-        // self.maid_manager.reset(&self.routing);
-        // self.data_manager.reset(&self.routing);
-        // self.pmid_manager.reset(&self.routing);
-        // // TODO: https://github.com/maidsafe/safe_vault/issues/269
-        // //   pmid_node and sd_manager shall discard the data when routing address changed
-        // self.pmid_node.reset(&self.routing);
-        // self.sd_manager.reset(&self.routing);
-    }
-
-    #[allow(unused)]
-    fn handle_churn(&mut self,
-                    close_group: Vec<XorName> /* ,
-                                               * churn_node: XorName */) {
-        let churn_node = XorName::new([0; 64]);  // FIXME
-        self.maid_manager.handle_churn(&self.routing, &churn_node);
-        self.sd_manager.handle_churn(&self.routing, &churn_node);
-        self.pmid_manager.handle_churn(&self.routing, &close_group, &churn_node);
-        self.data_manager.handle_churn(&self.routing, close_group, &churn_node);
-    }
-
-    fn handle_refresh(&mut self, type_tag: u64, our_authority: ::routing::Authority, payloads: Vec<Vec<u8>>) {
-        // The incoming payloads is a vector of serialised account entries,
-        // collected from the close group nodes regarding `from_group`
-        debug!("refresh tag {:?} & authority {:?}", type_tag, our_authority);
-        let _ = self.maid_manager
-                    .handle_refresh(&type_tag, &our_authority, &payloads)
-                    .or_else(|| self.data_manager.handle_refresh(&type_tag, &our_authority, &payloads))
-                    .or_else(|| self.pmid_manager.handle_refresh(&type_tag, &our_authority, &payloads))
-                    .or_else(|| self.sd_manager.handle_refresh(&type_tag, &our_authority, &payloads));
+        self.maid_manager.reset();
+        self.data_manager.reset();
+        self.pmid_manager.reset();
+        // TODO: https://github.com/maidsafe/safe_vault/issues/269
+        //   pmid_node and sd_manager shall discard the data when routing address changed
+        self.pmid_node.reset();
+        self.sd_manager.reset();
     }
 }
 
@@ -291,6 +270,7 @@ mod test {
                   RequestMessage, ResponseContent, ResponseMessage, RoutingClient, StructuredData};
     use std::sync::mpsc;
     use time::{Duration, SteadyTime};
+    use utils::test::generate_random_vec_u8;
     use xor_name::XorName;
 
     struct VaultComms {
@@ -353,9 +333,9 @@ mod test {
                                     _ => panic!("not expected!"),
                                 }
                             }
-                            Event::Refresh(_, _, _) => info!("client received a refresh"),
+                            Event::Refresh(_, _) => info!("client received a refresh"),
                             Event::Churn(_) => info!("client received a churn"),
-                            Event::DoRefresh(_, _, _) => info!("client received a do_refresh"),
+                            Event::LostCloseNode(_) => info!("client received a LostCloseNode"),
                             Event::Connected => unwrap_result!(network_event_sender.send(Event::Connected)),
                             Event::Disconnected => info!("client disconnected"),
                             Event::Terminated => {
@@ -606,7 +586,7 @@ mod test {
 
         // ======================= Put/Get test ====================================================
         println!("\n======================= Put/Get test ====================================================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
@@ -627,7 +607,7 @@ mod test {
         // ======================= Post test =======================================================
         println!("\n======================= Post test =======================================================");
         let name = random();
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = unwrap_result!(StructuredData::new(0,
                                                     name,
@@ -669,7 +649,7 @@ mod test {
 
         // ======================= Churn (node down) ImmutableData test ============================
         println!("\n======================= Churn (node down) ImmutableData test ============================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
@@ -690,7 +670,7 @@ mod test {
 
         // ======================= Churn (node up) ImmutableData test ==============================
         println!("\n======================= Churn (node up) ImmutableData test ==============================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
@@ -715,7 +695,7 @@ mod test {
 
         // ======================= Churn (two nodes down) ImmutableData test =======================
         println!("\n======================= Churn (two nodes down) ImmutableData test =======================");
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
         println!("Putting data");
         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
@@ -735,7 +715,7 @@ mod test {
         // ======================= Churn (node up) StructuredData test =============================
         println!("\n======================= Churn (node up) StructuredData test =============================");
         let name = random();
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let sd = unwrap_result!(StructuredData::new(0,
                                                     name,
@@ -812,7 +792,7 @@ mod test {
 
 //         let client_name = random();
 //         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-//         let value = ::routing::types::generate_random_vec_u8(1024);
+//         let value = generate_random_vec_u8(1024);
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         routing.client_put(client_name,
 //                            sign_keys.0,
@@ -833,7 +813,7 @@ mod test {
 //         let (mut routing, vault_comms) = mock_env_setup();
 
 //         let name = random();
-//         let value = ::routing::types::generate_random_vec_u8(1024);
+//         let value = generate_random_vec_u8(1024);
 //         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
 //         let sd = unwrap_result!(::routing::structured_data::StructuredData::new(0,
 //                                                                                 name,

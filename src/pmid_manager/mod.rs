@@ -16,11 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use self::database::{Account, Database};
-use routing::{Authority, Data, ImmutableData, RequestContent, ResponseMessage};
+use routing::{Authority, ChurnEventId, Data, ImmutableData, RefreshAccumulatorValue, RequestContent, ResponseMessage};
+use sodiumoxide::crypto::hash::sha512;
+use transfer_tag::TransferTag;
+use utils::{merge, quorum_size};
 use vault::Routing;
 use xor_name::XorName;
 
-pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::PmidManagerAccount as u64;
+pub const ACCOUNT_TAG: u8 = TransferTag::PmidManagerAccount as u8;
 
 mod database;
 
@@ -84,40 +87,20 @@ impl PmidManager {
         ::utils::HANDLED
 */    }
 
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
-        if *type_tag == ACCOUNT_TAG {
-            if let &Authority::NodeManager(from_group) = our_authority {
-                if let Some(merged_account) = ::utils::merge::<Account>(from_group, payloads.clone()) {
-                    self.database.handle_account_transfer(merged_account);
-                }
-            } else {
-                warn!("Invalid authority for refresh at PmidManager: {:?}",
-                      our_authority);
-            }
-            ::utils::HANDLED
-        } else {
-            ::utils::NOT_HANDLED
-        }
+    pub fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+        merge::<Account>(values, quorum_size()).and_then(|merged_account| {
+            self.database.handle_account_transfer(merged_account);
+            Some(nonce)
+        })
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing: &Routing, close_group: &Vec<XorName>, churn_node: &XorName) {
-        self.database.handle_churn(close_group, routing, churn_node);
+    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
+        self.database.handle_churn(routing, churn_event_id)
     }
 
-    pub fn do_refresh(&mut self,
-                      routing: &Routing,
-                      type_tag: &u64,
-                      our_authority: &Authority,
-                      churn_node: &XorName)
-                      -> Option<()> {
-        self.database.do_refresh(type_tag, our_authority, churn_node, routing)
+    pub fn reset(&mut self) {
+        self.database.cleanup();
     }
-
-    // pub fn reset(&mut self, routing: &Routing) {
-    //     self.routing = routing;
-    //     self.database.cleanup();
-    // }
 
     // fn handle_put_response_from_data_manager(&mut self,
     //                                          pmid_node_name: XorName,
@@ -158,7 +141,7 @@ mod test {
     {
         let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
         let pmid_manager = PmidManager::new(routing.clone());
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let data =
             ImmutableData::new(ImmutableDataType::Normal, value);
         (Authority::NodeManager(random()),

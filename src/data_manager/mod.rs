@@ -15,24 +15,28 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// TODO remove this
+#![allow(unused)]
+
 use self::database::{Account, Database};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+use routing::{Authority, ChurnEventId, Data, DataRequest, ImmutableData, ImmutableDataType, RefreshAccumulatorValue, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
+use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, max, min};
 use std::collections::BTreeSet;
 use time::{Duration, SteadyTime};
-use types::Refreshable;
-use utils::{HANDLED, NOT_HANDLED, median, merge};
+use transfer_tag::{TAG_INDEX, TransferTag};
+use types::{MergedValue, Refreshable};
+use utils::{median, merge, quorum_size};
 use vault::Routing;
 use xor_name::{XorName, closer_to_target};
 
-pub const ACCOUNT_TAG: u64 = ::transfer_tag::TransferTag::DataManagerAccount as u64;
-pub const STATS_TAG: u64 = ::transfer_tag::TransferTag::DataManagerStats as u64;
-pub const REPLICANTS: usize = 4;
-#[allow(unused)]
-pub const MIN_REPLICANTS: usize = 3;
+pub const ACCOUNT_TAG: u8 = TransferTag::DataManagerAccount as u8;
+pub const STATS_TAG: u8 = TransferTag::DataManagerStats as u8;
+pub const REPLICANTS: usize = 2;
+pub const MIN_REPLICANTS: usize = 2;
 
 mod database;
 
@@ -43,20 +47,14 @@ const LRU_CACHE_SIZE: usize = 1000;
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct Stats {
-    name: XorName,
     resource_index: u64,
 }
 
 impl Stats {
-    pub fn new(name: XorName, resource_index: u64) -> Stats {
+    pub fn new(resource_index: u64) -> Stats {
         Stats {
-            name: name,
             resource_index: resource_index,
         }
-    }
-
-    pub fn name(&self) -> &XorName {
-        &self.name
     }
 
     pub fn resource_index(&self) -> u64 {
@@ -65,14 +63,12 @@ impl Stats {
 }
 
 impl Refreshable for Stats {
-    fn merge(from_group: XorName, responses: Vec<Stats>) -> Option<Stats> {
-        let mut resource_indexes: Vec<u64> = Vec::new();
-        for value in responses {
-            if *value.name() == from_group {
-                resource_indexes.push(value.resource_index());
-            }
+    fn merge(name: XorName, values: Vec<Stats>, _quorum_size: usize) -> Option<MergedValue<Stats>> {
+        let mut resource_indices: Vec<u64> = Vec::new();
+        for value in values {
+            resource_indices.push(value.resource_index());
         }
-        Some(Stats::new(XorName([0u8; 64]), median(resource_indexes)))
+        Some(MergedValue{ name: name, value: Stats::new(median(resource_indices)), })
     }
 }
 
@@ -80,7 +76,6 @@ impl Refreshable for Stats {
 
 pub struct DataManager {
     database: Database,
-    id: XorName,
     // FIXME - this cache should include the requester auth in the key since repeated requests for
     // the same chunk could end up never being removed.  However, we need to be able to search in
     // the cache by chunk name only.
@@ -97,7 +92,6 @@ impl DataManager {
     pub fn new() -> DataManager {
         DataManager {
             database: Database::new(),
-            id: XorName::new([0u8; 64]),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
             resource_index: 1,
             ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
@@ -112,7 +106,7 @@ impl DataManager {
         };
 
         // Cache the request
-        debug!("DataManager {:?} cached request {:?}", self.id, request);
+        debug!("DataManager {:?} cached request {:?}", routing.name(), request);
         // FIXME - should append to requests in the case of a pre-existing request for this chunk
         let _ = self.request_cache.insert(data_name, request.clone());
 
@@ -124,7 +118,7 @@ impl DataManager {
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
-                       self.id,
+                       routing.name(),
                        (ongoing_get.0).1,
                        (ongoing_get.0).0);
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
@@ -151,7 +145,7 @@ impl DataManager {
         }
         for fetch_name in fetching_list.iter() {
             debug!("DataManager {:?} having {:?} records for chunk {:?}",
-                   self.id,
+                   routing.name(),
                    self.database.exist(&fetch_name),
                    fetch_name);
             for pmid in self.database.get_pmid_nodes(fetch_name) {
@@ -160,7 +154,7 @@ impl DataManager {
                 let content = RequestContent::Get(DataRequest::ImmutableData(fetch_name.clone(),
                                                                              ImmutableDataType::Normal));
                 debug!("DataManager {:?} sending get {:?} to {:?}",
-                       self.id,
+                       routing.name(),
                        fetch_name,
                        dst);
                 let _ = routing.send_get_request(src, dst, content);
@@ -178,13 +172,18 @@ impl DataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let mut target_pmids = routing.close_group_including_self();
+        let mut target_pmids = match routing.close_group() {
+            Ok(pmids) => pmids,
+            Err(_) => return,
+        };
+        let own_name = match routing.name() {
+            Ok(name) => name,
+            Err(_) => return,
+        };
+        target_pmids.push(own_name.clone());
         Self::sort_from_target(&mut target_pmids, &data_name);
         target_pmids.truncate(REPLICANTS);
-        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}",
-               self.id,
-               target_pmids,
-               data_name);
+        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}", own_name, target_pmids, data_name);
         self.database.put_pmid_nodes(&data_name, target_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
@@ -230,7 +229,7 @@ impl DataManager {
         //         for failed_pmid in failed_pmids {
         //             // utilise put_response as get_response doesn't take ResponseError
         //             debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
-        //                    self.id, failed_pmid, response.name());
+        //                    routing.name(), failed_pmid, response.name());
         //             let location = Authority::NodeManager(failed_pmid);
         //             self.routing.put_response(our_authority.clone(), location,
         //                 ::routing::error::ResponseError::FailedRequestForData(response.clone()),
@@ -242,7 +241,7 @@ impl DataManager {
 
         // if let Some(pmid_node) = self.replicate_to(&response.name()) {
         //     debug!("DataManager {:?} replicate chunk {:?} to a new pmid_node {:?}",
-        //            self.id, response.name(), pmid_node);
+        //            routing.name(), response.name(), pmid_node);
         //     self.database.add_pmid_node(&response.name(), pmid_node.clone());
         //     let location = Authority::ManagedNode(pmid_node);
         //     self.routing.put_request(our_authority.clone(), location, response.clone());
@@ -268,87 +267,63 @@ impl DataManager {
         // }
     }
 
-    pub fn handle_refresh(&mut self, type_tag: &u64, our_authority: &Authority, payloads: &Vec<Vec<u8>>) -> Option<()> {
-        match type_tag {
-            &ACCOUNT_TAG => {
-                if let &Authority::NaeManager(from_group) = our_authority {
-                    if let Some(merged_account) = merge::<Account>(from_group, payloads.clone()) {
-                        debug!("DataManager {:?} receiving refreshed account {:?}",
-                               self.id,
-                               merged_account);
-                        self.database.handle_account_transfer(merged_account);
-                    }
-                } else {
-                    warn!("Invalid authority for refresh account at DataManager: {:?}",
-                          our_authority);
-                }
-                HANDLED
-            }
-            &STATS_TAG => {
-                if let &Authority::NaeManager(from_group) = our_authority {
-                    if let Some(merged_stats) = merge::<Stats>(from_group, payloads.clone()) {
-                        // give priority to incoming stats
-                        self.resource_index = merged_stats.resource_index();
-                    }
-                } else {
-                    warn!("Invalid authority for refresh stats at DataManager: {:?}",
-                          our_authority);
-                }
-                HANDLED
-            }
-            _ => NOT_HANDLED,
-        }
+    pub fn handle_account_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+        merge::<Account>(values, quorum_size()).and_then(|merged_account| {
+            self.database.handle_account_transfer(merged_account);
+            Some(nonce)
+        })
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing: &Routing, close_group: Vec<XorName>, churn_node: &XorName) {
-        // If the churn_node exists in the previous DM's nodes_in_table,
-        // but not in this reported close_group, it indicates such node is leaving the group.
-        // However, it is not to say the node is offline, as it may still connected with other
-        let node_leaving = !close_group.contains(churn_node) /*&& self.nodes_in_table.contains(churn_node)*/;
-        let on_going_gets = self.database.handle_churn(routing, churn_node, node_leaving);
-
-        for entry in on_going_gets.iter() {
-            if self.failed_pmids.contains_key(&entry.0) {
-                match self.failed_pmids.get_mut(&entry.0) {
-                    Some(ref mut pmids) => pmids.push(churn_node.clone()),
-                    None => error!("Failed to insert failed_pmid in the cache."),
-                };
-            } else {
-                let _ = self.failed_pmids.insert(entry.0.clone(), vec![churn_node.clone()]);
-            }
-            for pmid in entry.1.iter() {
-                let _ = self.ongoing_gets
-                            .insert((entry.0.clone(), pmid.clone()), SteadyTime::now());
-            }
-        }
-        // close_group[0] is supposed to be the vault id
-        let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
-        if let Ok(serialised_stats) = serialise(&[data_manager_stats.clone()]) {
-            let _ = routing.send_refresh_request(STATS_TAG,
-                                                 Authority::NaeManager(churn_node.clone()),
-                                                 serialised_stats,
-                                                 churn_node.clone());
-        }
+    pub fn handle_stats_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+        merge::<Stats>(values, quorum_size()).and_then(|merged_stats| {
+            self.resource_index = merged_stats.value.resource_index();
+            Some(nonce)
+        })
     }
 
-    // pub fn reset(&mut self, routing: &Routing) {
-    //     self.routing = routing;
-    //     self.nodes_in_table.clear();
-    //     self.request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
-    //     self.resource_index = 1;
-    //     self.ongoing_gets = LruCache::with_capacity(LRU_CACHE_SIZE);
-    //     self.failed_pmids = LruCache::with_capacity(LRU_CACHE_SIZE);
-    //     self.database.cleanup();
-    // }
+    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
+        // self.database.handle_churn(routing, churn_node);
 
-    pub fn do_refresh(&mut self,
-                      routing: &Routing,
-                      type_tag: &u64,
-                      our_authority: &Authority,
-                      churn_node: &XorName)
-                      -> Option<()> {
-        self.database.do_refresh(type_tag, our_authority, churn_node, routing)
+        // // If the churn_node exists in the previous DM's nodes_in_table,
+        // // but not in this reported close_group, it indicates such node is leaving the group.
+        // // However, it is not to say the node is offline, as it may still connected with other
+        // let node_leaving = !close_group.contains(churn_node) /*&& self.nodes_in_table.contains(churn_node)*/;
+        // let on_going_gets = self.database.handle_churn(routing, churn_node, node_leaving);
+
+        // for entry in on_going_gets.iter() {
+        //     if self.failed_pmids.contains_key(&entry.0) {
+        //         match self.failed_pmids.get_mut(&entry.0) {
+        //             Some(ref mut pmids) => pmids.push(churn_node.clone()),
+        //             None => error!("Failed to insert failed_pmid in the cache."),
+        //         };
+        //     } else {
+        //         let _ = self.failed_pmids.insert(entry.0.clone(), vec![churn_node.clone()]);
+        //     }
+        //     for pmid in entry.1.iter() {
+        //         let _ = self.ongoing_gets
+        //                     .insert((entry.0.clone(), pmid.clone()), SteadyTime::now());
+        //     }
+        // }
+        // // close_group[0] is supposed to be the vault id
+        // let data_manager_stats = Stats::new(close_group[0].clone(), self.resource_index);
+        // if let Ok(serialised_stats) = serialise(&[data_manager_stats.clone()]) {
+        //     let _ = routing.send_refresh_request(STATS_TAG,
+        //                                          Authority::NaeManager(churn_node.clone()),
+        //                                          serialised_stats,
+        //                                          churn_node.clone());
+        // }
+    }
+
+    pub fn reset(&mut self) {
+        self.request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
+        self.resource_index = 1;
+        self.ongoing_gets = LruCache::with_capacity(LRU_CACHE_SIZE);
+        self.failed_pmids = LruCache::with_capacity(LRU_CACHE_SIZE);
+        self.database.cleanup();
+    }
+
+    pub fn handle_lost_close_node(&mut self, routing: &Routing, lost_node: XorName) {
+        unimplemented!();
     }
 
     #[allow(unused)]
@@ -360,7 +335,7 @@ impl DataManager {
         //     for close_grp_it in close_group.iter() {
         //         if pmid_nodes.iter().find(|a| **a == *close_grp_it).is_none() {
         //             debug!("node {:?} replicating chunk {:?} to a new node {:?}",
-        //                    self.id,
+        //                    routing.name(),
         //                    name,
         //                    close_grp_it);
         //             return Some(close_grp_it.clone());
@@ -442,7 +417,7 @@ mod test {
     fn env_setup() -> TestEnv {
         let routing = unwrap_result!(::vault::Routing::new(mpsc::channel().0));
         let data_manager = DataManager::new();
-        let value = ::routing::types::generate_random_vec_u8(1024);
+        let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
         TestEnv {
             our_authority: Authority::NaeManager(data.name().clone()),
