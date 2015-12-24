@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.5.3]
+ - Getting examples updated
+ - Updating the API to expose the routing node name and close group
+
 ## [0.5.2]
  - Bug fix - Blocking InterfaceError not returning
  - Changing mutable to immutable for stop() function in routing.rs
