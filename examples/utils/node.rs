@@ -24,15 +24,11 @@ extern crate xor_name;
 extern crate maidsafe_utilities;
 
 use self::xor_name::XorName;
-use self::routing::authority::Authority;
-use self::routing::authority::Authority::{NaeManager, ClientManager};
-use self::routing::messages::{RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use self::routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent,
+                    ChurnEventId, RefreshAccumulatorValue, Authority, Routing, Event, Data,
+                    DataRequest};
 use self::sodiumoxide::crypto::hash::sha512;
-use self::routing::types::{ChurnEventId, RefreshAccumulatorValue};
-use self::routing::Routing;
-use self::routing::event::Event;
-use self::routing::data::{Data, DataRequest};
-use maidsafe_utilities::serialisation::serialise;
+use self::maidsafe_utilities::serialisation::serialise;
 
 /// Network Node.
 #[allow(unused)]
@@ -121,10 +117,7 @@ impl Node {
         }
     }
 
-    fn handle_get_request(&mut self,
-                          data_request: DataRequest,
-                          src: Authority,
-                          dst: Authority) {
+    fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
         match self.db.get(&data_request.name()) {
             Some(data) => {
                 unwrap_result!(self.routing
@@ -141,13 +134,13 @@ impl Node {
 
     fn handle_put_request(&mut self, data: Data, src: Authority, _dst: Authority) {
         match src {
-            NaeManager(_) => {
+            Authority::NaeManager(_) => {
                 trace!("Storing: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
             }
-            ClientManager(_) => {
+            Authority::ClientManager(_) => {
                 trace!("Sending: key {:?}, value {:?}", data.name(), data);
-                let dst = NaeManager(data.name());
+                let dst = Authority::NaeManager(data.name());
                 let request_content = RequestContent::Put(data);
                 unwrap_result!(self.routing.send_put_request(src, dst, request_content));
             }
@@ -170,7 +163,7 @@ impl Node {
             let nonce = sha512::hash(&to_hash[..]);
             let content = unwrap_result!(serialise(&stored));
 
-            unwrap_result!(self.routing.send_refresh_request(ClientManager(client_name.clone()),
+            unwrap_result!(self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()),
                                                              nonce,
                                                              content));
         }

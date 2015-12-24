@@ -17,8 +17,6 @@
 
 use xor_name::XorName;
 
-// TODO(Spandan) This should not require documentation - infact the whole mod should be private
-#[doc(hidden)]
 pub type RoutingActionSender =
     ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
 
@@ -36,61 +34,4 @@ pub struct RefreshAccumulatorValue {
     pub src_name: XorName,
     #[allow(missing_docs)]
     pub content: Vec<u8>,
-}
-
-/// Convert u8 vector to a fixed 64 byte size array.
-///
-/// # Panics
-///
-/// Panics if the slice is not 64 bytes in length.
-pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
-    assert!(slice.len() == 64);
-    let mut arr = [0u8; 64];
-    // TODO (canndrew): This should use copy_memory when it's stable
-    for i in 0..64 {
-        arr[i] = slice[i];
-    }
-    arr
-}
-
-/// Convert u8 slice to a fixed 32 byte size array.
-///
-/// # Panics
-///
-/// Panics if the slice is not 32 bytes in length
-pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
-    assert!(slice.len() == 32);
-    let mut arr = [0u8; 32];
-    // TODO (canndrew): This should use copy_memory when it's stable
-    for i in 0..32 {
-        arr[i] = slice[i];
-    }
-    arr
-}
-
-/// Return a random vector of bytes of the given size.
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(::rand::random::<u8>());
-    }
-    vec
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn check_conversions() {
-        let bytes = super::generate_random_vec_u8(64);
-        let array = super::slice_as_u8_64_array(&bytes[..]);
-
-        assert_eq!(64, array.len());
-        assert_eq!(&bytes[..], &array[..]);
-
-        let bytes = super::generate_random_vec_u8(32);
-        let array = super::slice_as_u8_32_array(&bytes[..]);
-
-        assert_eq!(32, array.len());
-        assert_eq!(&bytes[..], &array[..]);
-    }
 }

@@ -41,7 +41,7 @@ use std::thread;
 use self::rand::distributions::IndependentSample;
 use self::time::SteadyTime;
 use utils::node::Node;
-use self::routing::event::Event;
+use self::routing::Event;
 
 /// ChurnNode
 #[allow(unused)]

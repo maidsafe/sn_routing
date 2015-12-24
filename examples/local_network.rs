@@ -52,8 +52,7 @@ use docopt::Docopt;
 use sodiumoxide::crypto::hash;
 use maidsafe_utilities::serialisation::serialise;
 use utils::client::Client;
-use routing::data::{Data, DataRequest};
-use routing::plain_data::PlainData;
+use routing::{Data, DataRequest, PlainData};
 use xor_name::XorName;
 
 
@@ -114,40 +113,43 @@ Usage:
   local_network [options] <nodes> <requests>
 
 Options:
-  -h, --help   Display this help message.
+  \
+                              -h, --help   Display this help message.
 
-  Run 'nodes' nodes sending 'requests' requests.
+  Run 'nodes' nodes \
+                              sending 'requests' requests.
 ";
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
-	arg_nodes: Option<usize>,
-	arg_requests: Option<usize>,
-	flag_help: bool,
+    arg_nodes: Option<usize>,
+    arg_requests: Option<usize>,
+    flag_help: bool,
 }
 
 fn main() {
     maidsafe_utilities::log::init(false);
-    let args: Args = Docopt::new(USAGE).and_then(|docopt| docopt.decode())
-                         			   .unwrap_or_else(|error| error.exit());
+    let args: Args = Docopt::new(USAGE)
+                         .and_then(|docopt| docopt.decode())
+                         .unwrap_or_else(|error| error.exit());
     // Default number of nodes to run is 10, 20% stable, 80% churn.
     let mut nodes: usize = 2;
     let mut churn_nodes: usize = 8;
-	// Default number of put requests to send is 100, extend to post, delete requests later.
+    // Default number of put requests to send is 100, extend to post, delete requests later.
     let mut requests: usize = 100;
 
     match args.arg_nodes {
-    	Some(number) => {
+        Some(number) => {
             churn_nodes = (number as f32 * 0.8).floor() as usize;
             nodes = number - churn_nodes;
-    	}
-    	None => {}
+        }
+        None => {}
     }
     match args.arg_requests {
-    	Some(number) => {
-    		requests = number;
-    	}
-    	None => {}
+        Some(number) => {
+            requests = number;
+        }
+        None => {}
     }
 
     let mut processes = start_nodes(nodes, churn_nodes);
@@ -158,29 +160,29 @@ fn main() {
     ::std::thread::sleep(interval);
 
     trace!("Putting data");
-	let mut stored_data = Vec::with_capacity(requests);
+    let mut stored_data = Vec::with_capacity(requests);
     for _ in 0..requests {
         let key: String = (0..10).map(|_| random::<u8>() as char).collect();
         let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-	    let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
-	    let data = unwrap_result!(serialise(&(key, value)));
-	    let data = Data::PlainData(PlainData::new(name.clone(), data));
+        let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
+        let data = unwrap_result!(serialise(&(key, value)));
+        let data = Data::PlainData(PlainData::new(name.clone(), data));
 
-	    client.put(data.clone());
-	    stored_data.push(data);
-	}
-    
+        client.put(data.clone());
+        stored_data.push(data);
+    }
+
     let interval = ::std::time::Duration::from_millis(5000);
     ::std::thread::sleep(interval);
 
     trace!("Getting data");
     for i in 0..requests {
-	   	let data = match client.get(DataRequest::PlainData(stored_data[i].name())) {
-	        Some(data) => data,
-	        None => panic!("Failed to recover stored data: {}.", stored_data[i].name()),
-	    };
-	    assert_eq!(data, stored_data[i]);
-	}
+        let data = match client.get(DataRequest::PlainData(stored_data[i].name())) {
+            Some(data) => data,
+            None => panic!("Failed to recover stored data: {}.", stored_data[i].name()),
+        };
+        assert_eq!(data, stored_data[i]);
+    }
 
     stop_nodes(&mut processes);
 }

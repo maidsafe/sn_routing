@@ -60,7 +60,6 @@
 #[macro_use]
 extern crate log;
 extern crate cbor;
-extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
@@ -85,22 +84,14 @@ mod immutable_data;
 mod structured_data;
 mod connection_management;
 
-/// Id
-pub mod id;
-/// Event
-pub mod event;
-/// Messages
-pub mod messages;
-/// Authority
-pub mod authority;
-/// RoutingClient
-pub mod routing_client;
-/// Types and functions used throughout the library.
-pub mod types;
-/// Data types.
-pub mod data;
-/// PlainData
-pub mod plain_data;
+mod id;
+mod event;
+mod messages;
+mod authority;
+mod routing_client;
+mod types;
+mod data;
+mod plain_data;
 
 pub use event::Event;
 pub use routing::Routing;
@@ -109,8 +100,9 @@ pub use plain_data::PlainData;
 pub use id::{FullId, PublicId};
 pub use data::{Data, DataRequest};
 pub use routing_client::RoutingClient;
-pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use error::{RoutingError, InterfaceError};
+pub use types::{ChurnEventId, RefreshAccumulatorValue};
+pub use immutable_data::{ImmutableData, ImmutableDataType};
 pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
 pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent,
                    ResponseContent};
