@@ -190,7 +190,23 @@ impl Node {
     fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
         match demux(nonce) {
             RefreshNonceHandler::ClientManager => {
-                ;
+                // let mut records: Vec<u64> = Vec::new();
+                // let mut fail_parsing_count = 0usize;
+                // for bytes in vec_of_bytes {
+                //     match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
+                //         Ok(record) => records.push(record),
+                //         Err(_) => fail_parsing_count += 1usize,
+                //     }
+                // }
+                // let median = median(records.clone());
+                // trace!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
+                //        src,
+                //        median,
+                //        records,
+                //        fail_parsing_count);
+                // if let ClientManager(client_name) = src {
+                //     let _ = self.client_accounts.insert(client_name, median);
+                // }
             }
             RefreshNonceHandler::NaeManager => {
                 let mut container = HashMap::<XorName, HashMap<XorName, u8>>::with_capacity(100);
@@ -217,23 +233,6 @@ impl Node {
                 }
             }
         }
-        // let mut records: Vec<u64> = Vec::new();
-        // let mut fail_parsing_count = 0usize;
-        // for bytes in vec_of_bytes {
-        //     match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
-        //         Ok(record) => records.push(record),
-        //         Err(_) => fail_parsing_count += 1usize,
-        //     }
-        // }
-        // let median = median(records.clone());
-        // trace!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-        //        src,
-        //        median,
-        //        records,
-        //        fail_parsing_count);
-        // if let ClientManager(client_name) = src {
-        //     let _ = self.client_accounts.insert(client_name, median);
-        // }
     }
 
     fn handle_response(&mut self, _msg: ResponseMessage) {
