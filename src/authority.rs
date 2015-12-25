@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
-use sodiumoxide::crypto::{sign, hash};
+use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{Debug, Formatter};
 
 /// Persona types recognised by network.

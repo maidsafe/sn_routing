@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use action::Action;
 use authority::Authority;
 use core::Core;
 use data::{Data, DataRequest};
-use error::{RoutingError, InterfaceError};
+use error::{InterfaceError, RoutingError};
 use event::Event;
-use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
+use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
 use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
 
@@ -74,11 +74,7 @@ impl Node {
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self,
-                            src: Authority,
-                            dst: Authority,
-                            data: Data)
-                            -> Result<(), InterfaceError> {
+    pub fn send_put_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -88,11 +84,7 @@ impl Node {
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self,
-                             src: Authority,
-                             dst: Authority,
-                             data: Data)
-                             -> Result<(), InterfaceError> {
+    pub fn send_post_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -102,11 +94,7 @@ impl Node {
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self,
-                               src: Authority,
-                               dst: Authority,
-                               data: Data)
-                               -> Result<(), InterfaceError> {
+    pub fn send_delete_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -116,11 +104,7 @@ impl Node {
     }
 
     /// Respond to a get_request indicating success
-    pub fn send_get_success(&self,
-                            src: Authority,
-                            dst: Authority,
-                            data: Data)
-                            -> Result<(), InterfaceError> {
+    pub fn send_get_success(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -139,7 +123,10 @@ impl Node {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetFailure{ request: request, external_error_indicator: external_error_indicator, },
+            content: ResponseContent::GetFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }
@@ -168,7 +155,10 @@ impl Node {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutFailure{ request: request, external_error_indicator: external_error_indicator, },
+            content: ResponseContent::PutFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }
@@ -197,7 +187,10 @@ impl Node {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostFailure{ request: request, external_error_indicator: external_error_indicator, },
+            content: ResponseContent::PostFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }
@@ -226,7 +219,10 @@ impl Node {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteFailure{ request: request, external_error_indicator: external_error_indicator, },
+            content: ResponseContent::DeleteFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }

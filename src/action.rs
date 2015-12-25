@@ -18,7 +18,7 @@
 use authority::Authority;
 use error::InterfaceError;
 use std::sync::mpsc::Sender;
-use messages::{RoutingMessage, RequestContent};
+use messages::{RequestContent, RoutingMessage};
 use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.

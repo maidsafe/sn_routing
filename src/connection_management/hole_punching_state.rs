@@ -90,15 +90,9 @@ mod test {
                           is_rendezvous_connecting: bool) {
         match state {
             ::connection_management::HolePunchingState::Mapping(_) => assert!(is_mapping),
-            ::connection_management::HolePunchingState::Connecting(_, _, _) => {
-                assert!(is_connecting)
-            }
-            ::connection_management::HolePunchingState::Punching(_, _, _, _) => {
-                assert!(is_punching)
-            }
-            ::connection_management::HolePunchingState::RendezvousConnecting(_, _) => {
-                assert!(is_rendezvous_connecting)
-            }
+            ::connection_management::HolePunchingState::Connecting(_, _, _) => assert!(is_connecting),
+            ::connection_management::HolePunchingState::Punching(_, _, _, _) => assert!(is_punching),
+            ::connection_management::HolePunchingState::RendezvousConnecting(_, _) => assert!(is_rendezvous_connecting),
         }
     }
 }

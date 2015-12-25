@@ -17,8 +17,7 @@
 
 use xor_name::XorName;
 
-pub type RoutingActionSender =
-    ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
+pub type RoutingActionSender = ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
 
 /// Nonce for Churn Event
 #[derive(Debug, Clone, Eq, PartialEq)]

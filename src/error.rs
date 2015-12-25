@@ -18,7 +18,7 @@
 use action::Action;
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
-use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
+use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 
 #[derive(Debug)]
 /// InterfaceError.

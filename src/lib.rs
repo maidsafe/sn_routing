@@ -95,13 +95,12 @@ mod utils;
 pub use authority::Authority;
 pub use client::Client;
 pub use data::{Data, DataRequest};
-pub use error::{RoutingError, InterfaceError};
+pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use immutable_data::{ImmutableData, ImmutableDataType};
-pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent,
-                   ResponseContent};
+pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 pub use node::Node;
 pub use plain_data::PlainData;
-pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
+pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::{ChurnEventId, RefreshAccumulatorValue};

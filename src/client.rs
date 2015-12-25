@@ -16,14 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use id::FullId;
 use action::Action;
 use event::Event;
 use core::Core;
 use data::{Data, DataRequest};
-use error::{RoutingError, InterfaceError};
+use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::RequestContent;
 
@@ -44,9 +44,7 @@ impl Client {
     /// achieve full routing node status.
     /// If the client is started with a relocated id (ie the name has been reassigned),
     /// the core will instantly instantiate termination of the client.
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>)
-               -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
@@ -63,10 +61,7 @@ impl Client {
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn send_get_request(&mut self,
-                            dst: Authority,
-                            data_request: DataRequest)
-                            -> Result<(), InterfaceError> {
+    pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) -> Result<(), InterfaceError> {
         self.send_action(RequestContent::Get(data_request), dst)
     }
 

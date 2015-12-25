@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use data::{Data, DataRequest};
-use id::{PublicId, FullId};
+use id::{FullId, PublicId};
 use xor_name::XorName;
 use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign};
@@ -77,10 +77,7 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap a signed message for transmission to next hop.
-    pub fn new(content: SignedMessage,
-               name: XorName,
-               sign_key: &sign::SecretKey)
-               -> Result<HopMessage, RoutingError> {
+    pub fn new(content: SignedMessage, name: XorName, sign_key: &sign::SecretKey) -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, &name)));
         Ok(HopMessage {
             content: content,
