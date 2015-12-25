@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -17,43 +16,42 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide;
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use action::Action;
-use event::Event;
-use xor_name::XorName;
-use routing_node::RoutingNode;
-use error::{RoutingError, InterfaceError};
 use authority::Authority;
-use messages::{RoutingMessage, RequestMessage, ResponseMessage, RequestContent, ResponseContent};
-use sodiumoxide::crypto::hash;
+use core::Core;
+use data::{Data, DataRequest};
+use error::{InterfaceError, RoutingError};
+use event::Event;
+use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
+use sodiumoxide::crypto::hash::sha512;
+use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;
 
-/// Routing provides an actionable interface to RoutingNode.
-/// On constructing a new Routing object a RoutingNode will also be started.
-/// Routing objects are clonable for multithreading, or a Routing object can be
-/// cloned with a new set of keys while preserving a single RoutingNode.
-pub struct Routing {
+/// Node provides an actionable interface to Core.  On constructing a new Node object a
+/// Core will also be started.
+pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: ::types::RoutingActionSender,
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
-impl Routing {
-    /// Starts a new RoutingIdentity, which will also start a new RoutingNode.
-    /// The RoutingNode will attempt to achieve full routing node status.
-    /// The intial Routing object will have newly generated keys
-    pub fn new(event_sender: Sender<Event>) -> Result<Routing, RoutingError> {
+impl Node {
+    /// Starts a new RoutingIdentity, which will also start a new Core.
+    /// The Core will attempt to achieve full routing node status.
+    /// The intial Node object will have newly generated keys
+    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, raii_joiner) = try!(RoutingNode::new(event_sender, false, None));
+        let (action_sender, raii_joiner) = try!(Core::new(event_sender, false, None));
 
         let (tx, rx) = channel();
 
-        Ok(Routing {
+        Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
@@ -65,111 +63,166 @@ impl Routing {
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
-                            content: RequestContent)
+                            data_request: DataRequest)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: RequestContent::Get(data_request),
         });
         self.send_action(routing_msg)
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self,
-                            src: Authority,
-                            dst: Authority,
-                            content: RequestContent)
-                            -> Result<(), InterfaceError> {
+    pub fn send_put_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: RequestContent::Put(data),
         });
         self.send_action(routing_msg)
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self,
-                             src: Authority,
-                             dst: Authority,
-                             content: RequestContent)
-                             -> Result<(), InterfaceError> {
+    pub fn send_post_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: RequestContent::Post(data),
         });
         self.send_action(routing_msg)
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self,
-                               src: Authority,
-                               dst: Authority,
-                               content: RequestContent)
-                               -> Result<(), InterfaceError> {
+    pub fn send_delete_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: RequestContent::Delete(data),
         });
         self.send_action(routing_msg)
     }
 
-    /// Respond to a get_request (no error can be sent)
-    /// If we received the request from a group, we'll not get the signed_request.
-    pub fn send_get_response(&self,
+    /// Respond to a get_request indicating success
+    pub fn send_get_success(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::GetSuccess(data),
+        });
+        self.send_action(routing_msg)
+    }
+
+    /// Respond to a get_request indicating failure
+    pub fn send_get_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request: RequestMessage,
+                            external_error_indicator: Vec<u8>)
+                            -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::GetFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
+        });
+        self.send_action(routing_msg)
+    }
+
+    /// Respond to a put_request indicating success
+    pub fn send_put_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request_hash: sha512::Digest)
+                            -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::PutSuccess(request_hash),
+        });
+        self.send_action(routing_msg)
+    }
+
+    /// Respond to a put_request indicating failure
+    pub fn send_put_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request: RequestMessage,
+                            external_error_indicator: Vec<u8>)
+                            -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage::Response(ResponseMessage {
+            src: src,
+            dst: dst,
+            content: ResponseContent::PutFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
+        });
+        self.send_action(routing_msg)
+    }
+
+    /// Respond to a post_request indicating success
+    pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent)
+                             request_hash: sha512::Digest)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: ResponseContent::PostSuccess(request_hash),
         });
         self.send_action(routing_msg)
     }
 
-    /// response error to a put request
-    pub fn send_put_response(&self,
+    /// Respond to a post_request indicating failure
+    pub fn send_post_failure(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent)
+                             request: RequestMessage,
+                             external_error_indicator: Vec<u8>)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: ResponseContent::PostFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }
 
-    /// Response error to a post request
-    pub fn send_post_response(&self,
-                              src: Authority,
-                              dst: Authority,
-                              content: ResponseContent)
-                              -> Result<(), InterfaceError> {
+    /// Respond to a delete_request indicating success
+    pub fn send_delete_success(&self,
+                               src: Authority,
+                               dst: Authority,
+                               request_hash: sha512::Digest)
+                               -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: ResponseContent::DeleteSuccess(request_hash),
         });
         self.send_action(routing_msg)
     }
 
-    /// response error to a delete respons
-    pub fn send_delete_response(&self,
-                                src: Authority,
-                                dst: Authority,
-                                content: ResponseContent)
-                                -> Result<(), InterfaceError> {
+    /// Respond to a delete_request indicating failure
+    pub fn send_delete_failure(&self,
+                               src: Authority,
+                               dst: Authority,
+                               request: RequestMessage,
+                               external_error_indicator: Vec<u8>)
+                               -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: content,
+            content: ResponseContent::DeleteFailure {
+                request: request,
+                external_error_indicator: external_error_indicator,
+            },
         });
         self.send_action(routing_msg)
     }
@@ -180,7 +233,7 @@ impl Routing {
     /// content. The authority provided (`src`) should be a group.
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                nonce: hash::sha512::Digest,
+                                nonce: sha512::Digest,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
@@ -194,9 +247,9 @@ impl Routing {
         self.send_action(routing_msg)
     }
 
-    // TODO(Spandan) Ask vaults if this can be removed as Routing is now made to implement drop
+    // TODO(Spandan) Ask vaults if this can be removed as Node is now made to implement drop
     // trait and hence is RAII friendly
-    /// Signal to RoutingNode that it needs to refuse new messages and handle all outstanding
+    /// Signal to Core that it needs to refuse new messages and handle all outstanding
     /// messages.  After handling all messages it will send an Event::Terminated to the user.
     pub fn stop(&self) {
         let _ = self.action_sender.send(Action::Terminate);
@@ -226,10 +279,10 @@ impl Routing {
     }
 }
 
-impl Drop for Routing {
+impl Drop for Node {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
-            error!("Error {:?} sending event RoutingNode", err);
+            error!("Error {:?} sending event Core", err);
         }
     }
 }

@@ -40,7 +40,7 @@ extern crate maidsafe_utilities;
 use std::thread;
 use self::rand::distributions::IndependentSample;
 use self::time::SteadyTime;
-use utils::node::Node;
+use utils::example_node::ExampleNode;
 use self::routing::Event;
 
 /// ChurnNode
@@ -56,7 +56,7 @@ impl ChurnNode {
         let minutes = rand::distributions::Range::new(2, 5);
         let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
         let sample = rand::distributions::Range::new(0, 5);
-        let mut node = Node::new();
+        let mut node = ExampleNode::new();
         let mut sender = node.get_sender();
 
         trace!("Running node for {:?}", duration);
@@ -66,7 +66,7 @@ impl ChurnNode {
         trace!("Entering loop.");
         loop {
             if running {
-                trace!("Node online.");
+                trace!("ExampleNode online.");
                 if time + duration < SteadyTime::now() {
                     trace!("Reached run time.");
                     let state = sample.ind_sample(&mut rng);
@@ -79,10 +79,10 @@ impl ChurnNode {
                     time = SteadyTime::now();
                 }
             } else {
-                trace!("Node offline.");
+                trace!("ExampleNode offline.");
                 if time + duration < SteadyTime::now() {
                     trace!("Reached stop time.");
-                    node = Node::new();
+                    node = ExampleNode::new();
                     sender = node.get_sender();
                     let _ = thread::spawn(move || node.run());
                     running = true;

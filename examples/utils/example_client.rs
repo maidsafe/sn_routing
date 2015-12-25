@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -28,27 +27,27 @@ use std::thread;
 use self::sodiumoxide::crypto;
 use self::time::{Duration, SteadyTime};
 use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, RoutingClient};
+use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, Client};
 
 /// Network Client.
 #[allow(unused)]
-pub struct Client {
-    routing_client: RoutingClient,
+pub struct ExampleClient {
+    routing_client: Client,
     receiver: mpsc::Receiver<Event>,
     full_id: FullId,
 }
 
 #[allow(unused)]
-impl Client {
+impl ExampleClient {
     /// Client constructor.
-    pub fn new() -> Client {
+    pub fn new() -> ExampleClient {
         let (sender, receiver) = mpsc::channel::<Event>();
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = RoutingClient::new(sender, Some(full_id)).unwrap();
+        let routing_client = Client::new(sender, Some(full_id)).unwrap();
 
-        Client {
+        ExampleClient {
             routing_client: routing_client,
             receiver: receiver,
             full_id: FullId::with_keys(encrypt_keys, sign_keys),

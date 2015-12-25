@@ -51,7 +51,7 @@ use std::process::{Child, Command, Stdio};
 use docopt::Docopt;
 use sodiumoxide::crypto::hash;
 use maidsafe_utilities::serialisation::serialise;
-use utils::client::Client;
+use utils::example_client::ExampleClient;
 use routing::{Data, DataRequest, PlainData};
 use xor_name::XorName;
 
@@ -154,7 +154,7 @@ fn main() {
 
     let mut processes = start_nodes(nodes, churn_nodes);
     trace!("Starting Client");
-    let mut client = Client::new();
+    let mut example_client = ExampleClient::new();
 
     let interval = ::std::time::Duration::from_millis(10000);
     ::std::thread::sleep(interval);
@@ -168,7 +168,7 @@ fn main() {
         let data = unwrap_result!(serialise(&(key, value)));
         let data = Data::PlainData(PlainData::new(name.clone(), data));
 
-        client.put(data.clone());
+        example_client.put(data.clone());
         stored_data.push(data);
     }
 
@@ -177,7 +177,7 @@ fn main() {
 
     trace!("Getting data");
     for i in 0..requests {
-        let data = match client.get(DataRequest::PlainData(stored_data[i].name())) {
+        let data = match example_client.get(DataRequest::PlainData(stored_data[i].name())) {
             Some(data) => data,
             None => panic!("Failed to recover stored data: {}.", stored_data[i].name()),
         };

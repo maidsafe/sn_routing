@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{Debug, Formatter, Error};
+use std::fmt::{Debug, Error, Formatter};
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::XorName;
@@ -110,27 +110,23 @@ mod test {
         // Normal
         let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
-        let expected_immutable_data_name = "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faac\
-                                            dda4d59abc713445c8c853e1842d7c2c2311650df1ee2410737193\
-                                            5b6be88a10cbf4cd2f8f";
+        let expected_immutable_data_name = "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faacdda4d59abc713445c8c8\
+                                            53e1842d7c2c2311650df1ee24107371935b6be88a10cbf4cd2f8f";
         assert_eq!(&expected_immutable_data_name, &immutable_data_name);
         // Backup
-        let immutable_data_backup = ImmutableData::new(ImmutableDataType::Backup,
-                                                       immutable_data.value().clone());
+        let immutable_data_backup = ImmutableData::new(ImmutableDataType::Backup, immutable_data.value().clone());
         let immutable_data_backup_name = immutable_data_backup.name().0.as_ref().to_hex();
-        let expected_immutable_data_backup_name = "8c6377c848321dd3c6886a53b1a2bc28a5bc8ce35ac85d1\
-                                                   0d75467a5df9434abaee19ce2c710507533d306302b165b\
-                                                   4387458b752579fc15e520daaf984a2e38";
+        let expected_immutable_data_backup_name = "8c6377c848321dd3c6886a53b1a2bc28a5bc8ce35ac85d10d75467a5df9434abaee\
+                                                   19ce2c710507533d306302b165b4387458b752579fc15e520daaf984a2e38";
         assert_eq!(&expected_immutable_data_backup_name,
                    &immutable_data_backup_name);
         // Sacrificial
         let immutable_data_sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
                                                             immutable_data.value().clone());
         let immutable_data_sacrificial_name = immutable_data_sacrificial.name().0.as_ref().to_hex();
-        let expected_immutable_data_sacrificial_name = "ecb6c761c35d4da33b25057fbf6161e68711f9e0c1\
-                                                        1122732e62661340e630d3c59f7c165f4862d51db5\
-                                                        254a38ab9b15a9b8af431e8500a4eb558b9136bd41\
-                                                        35";
+        let expected_immutable_data_sacrificial_name = "ecb6c761c35d4da33b25057fbf6161e68711f9e0c11122732e62661340e630\
+                                                        d3c59f7c165f4862d51db5254a38ab9b15a9b8af431e8500a4eb558b9136bd\
+                                                        4135";
         assert_eq!(&expected_immutable_data_sacrificial_name,
                    &immutable_data_sacrificial_name);
     }
