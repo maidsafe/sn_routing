@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -91,15 +90,9 @@ mod test {
                           is_rendezvous_connecting: bool) {
         match state {
             ::connection_management::HolePunchingState::Mapping(_) => assert!(is_mapping),
-            ::connection_management::HolePunchingState::Connecting(_, _, _) => {
-                assert!(is_connecting)
-            }
-            ::connection_management::HolePunchingState::Punching(_, _, _, _) => {
-                assert!(is_punching)
-            }
-            ::connection_management::HolePunchingState::RendezvousConnecting(_, _) => {
-                assert!(is_rendezvous_connecting)
-            }
+            ::connection_management::HolePunchingState::Connecting(_, _, _) => assert!(is_connecting),
+            ::connection_management::HolePunchingState::Punching(_, _, _, _) => assert!(is_punching),
+            ::connection_management::HolePunchingState::RendezvousConnecting(_, _) => assert!(is_rendezvous_connecting),
         }
     }
 }

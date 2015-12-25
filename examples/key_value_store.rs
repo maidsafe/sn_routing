@@ -36,7 +36,6 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-#[allow(unused_extern_crates)]
 extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
@@ -59,8 +58,8 @@ use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use routing::{Data, DataRequest, PlainData};
-use utils::node::Node;
-use utils::client::Client;
+use utils::example_node::ExampleNode;
+use utils::example_client::ExampleClient;
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
@@ -115,21 +114,21 @@ fn parse_user_command(cmd: String) -> Option<UserCommand> {
 }
 
 struct KeyValueStore {
-    client: Client,
+    example_client: ExampleClient,
     command_receiver: Receiver<UserCommand>,
     exit: bool,
 }
 
 impl KeyValueStore {
     fn new() -> KeyValueStore {
-        let client = Client::new();
+        let example_client = ExampleClient::new();
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
         let _ = thread!("Command reader", move || {
             KeyValueStore::read_user_commands(command_sender);
         });
 
         KeyValueStore {
-            client: client,
+            example_client: example_client,
             command_receiver: command_receiver,
             exit: false,
         }
@@ -193,7 +192,7 @@ impl KeyValueStore {
     /// Get data from the network.
     pub fn get(&mut self, what: String) {
         let name = KeyValueStore::calculate_key_name(&what);
-        let data = self.client.get(DataRequest::PlainData(name));
+        let data = self.example_client.get(DataRequest::PlainData(name));
         match data {
             Some(data) => {
                 let plain_data = match data {
@@ -220,7 +219,7 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap_result!(serialise(&(put_where, put_what)));
-        self.client.put(Data::PlainData(PlainData::new(name, data)));
+        self.example_client.put(Data::PlainData(PlainData::new(name, data)));
     }
 
     fn calculate_key_name(key: &String) -> XorName {
@@ -236,7 +235,7 @@ fn main() {
                                        .unwrap_or_else(|error| error.exit());
 
     if args.flag_node {
-        Node::new().run();
+        ExampleNode::new().run();
     } else {
         KeyValueStore::new().run();
     }

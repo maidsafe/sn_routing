@@ -37,6 +37,6 @@ pub enum Event {
     Connected,
     /// Disconnected.
     Disconnected,
-    /// Event::Terminated is called after RoutingNode::stop() has terminated internal processes
+    /// Event::Terminated is called after Core::stop() has terminated internal processes
     Terminated,
 }
