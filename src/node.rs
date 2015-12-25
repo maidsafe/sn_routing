@@ -247,12 +247,11 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    // TODO(Spandan) Ask vaults if this can be removed as Node is now made to implement drop
-    // trait and hence is RAII friendly
-    /// Signal to Core that it needs to refuse new messages and handle all outstanding
-    /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    pub fn stop(&self) {
-        let _ = self.action_sender.send(Action::Terminate);
+    /// Returns the name of this node.
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+        Ok(try!(result_rx.recv()))
     }
 
     /// Returns the names of the close group to this node.
@@ -262,11 +261,19 @@ impl Node {
         Ok(try!(result_rx.recv()))
     }
 
-    /// Returns the name of this node.
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
+    /// Returns the quorum size required to achieve consensus for group messages.
+    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+        try!(self.action_sender.send(Action::DynamicQuorumSize { result_tx: result_tx }));
         Ok(try!(result_rx.recv()))
+    }
+
+    // TODO(Spandan) Ask vaults if this can be removed as Node is now made to implement drop
+    // trait and hence is RAII friendly
+    /// Signal to Core that it needs to refuse new messages and handle all outstanding
+    /// messages.  After handling all messages it will send an Event::Terminated to the user.
+    pub fn stop(&self) {
+        let _ = self.action_sender.send(Action::Terminate);
     }
 
     fn send_action(&self, routing_msg: RoutingMessage) -> Result<(), InterfaceError> {

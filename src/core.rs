@@ -202,14 +202,19 @@ impl Core {
                                     }
                                 }
                             }
-                            Action::CloseGroup{ result_tx, } => {
-                                let close_group = self.close_group_names();
-                                if result_tx.send(close_group).is_err() {
+                            Action::Name{ result_tx, } => {
+                                if result_tx.send(self.full_id.public_id().name().clone())
+                                            .is_err() {
                                     return;
                                 }
                             }
-                            Action::Name{ result_tx, } => {
-                                if result_tx.send(self.full_id.public_id().name().clone())
+                            Action::CloseGroup{ result_tx, } => {
+                                if result_tx.send(self.close_group_names()).is_err() {
+                                    return;
+                                }
+                            }
+                            Action::DynamicQuorumSize{ result_tx, } => {
+                                if result_tx.send(self.routing_table.dynamic_quorum_size())
                                             .is_err() {
                                     return;
                                 }
