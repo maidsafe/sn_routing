@@ -15,19 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-extern crate log;
-extern crate time;
-extern crate routing;
-extern crate sodiumoxide;
-extern crate xor_name;
-extern crate maidsafe_utilities;
-
-use self::xor_name::XorName;
-use self::routing::{RequestMessage, ResponseMessage, RequestContent, ChurnEventId,
-                    RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
-use self::sodiumoxide::crypto::hash::sha512;
-use self::maidsafe_utilities::serialisation::{serialise, deserialise};
+use xor_name::XorName;
+use routing::{RequestMessage, ResponseMessage, RequestContent, ChurnEventId,
+              RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
+use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{BTreeMap, HashMap};
+use rustc_serialize::{Encoder, Decoder};
 
 /// Network ExampleNode.
 #[allow(unused)]
@@ -36,7 +29,7 @@ pub struct ExampleNode {
     receiver: ::std::sync::mpsc::Receiver<Event>,
     sender: ::std::sync::mpsc::Sender<Event>,
     db: BTreeMap<XorName, Data>,
-    db_immut_data: BTreeMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
+    dm_accounts: BTreeMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
     client_accounts: BTreeMap<XorName, u64>,
     connected: bool,
 }
@@ -53,7 +46,7 @@ impl ExampleNode {
             receiver: receiver,
             sender: sender,
             db: BTreeMap::new(),
-            db_immut_data: BTreeMap::new(),
+            dm_accounts: BTreeMap::new(),
             client_accounts: BTreeMap::new(),
             connected: false,
         }
@@ -148,80 +141,63 @@ impl ExampleNode {
 
     fn handle_churn(&mut self, churn_id: ChurnEventId) {
         for (client_name, stored) in self.client_accounts.iter() {
-            let to_hash = churn_id.id
-                                  .0
-                                  .iter()
-                                  .chain(client_name.0.iter())
-                                  .cloned()
-                                  .collect::<Vec<_>>();
-            let nonce = mux(sha512::hash(&to_hash), RefreshNonceHandler::ClientManager);
+            let refresh_nonce = RefreshNonce::ForMaidManager {
+                churn_id: churn_id.clone(),
+                client_name: client_name.clone(),
+            };
+
+            let nonce = unwrap_result!(serialise(&refresh_nonce));
             let content = unwrap_result!(serialise(&stored));
 
-            unwrap_result!(self.node.send_refresh_request(Authority::ClientManager(client_name.clone()),
-                                                             nonce,
-                                                             content));
+            unwrap_result!(self.node
+                               .send_refresh_request(Authority::ClientManager(client_name.clone()),
+                                                     nonce,
+                                                     content));
         }
 
-        for (data_name, managed_nodes) in self.db_immut_data.iter() {
-            let to_hash = churn_id.id
-                                  .0
-                                  .iter()
-                                  .chain(data_name.0.iter())
-                                  .cloned()
-                                  .collect::<Vec<_>>();
-            let nonce = mux(sha512::hash(&to_hash), RefreshNonceHandler::NaeManager);
+        for (data_name, managed_nodes) in self.dm_accounts.iter() {
+            let refresh_nonce = RefreshNonce::ForDataManager {
+                churn_id: churn_id.clone(),
+                data_name: data_name.clone(),
+            };
+
+            let nonce = unwrap_result!(serialise(&refresh_nonce));
             let content = unwrap_result!(serialise(&managed_nodes));
 
-            unwrap_result!(self.routing
+            unwrap_result!(self.node
                                .send_refresh_request(Authority::NaeManager(data_name.clone()),
                                                      nonce,
                                                      content));
         }
     }
 
-    fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
-        match demux(nonce) {
-            RefreshNonceHandler::ClientManager => {
-                // let mut records: Vec<u64> = Vec::new();
-                // let mut fail_parsing_count = 0usize;
-                // for bytes in vec_of_bytes {
-                //     match ::maidsafe_utilities::serialisation::deserialise(&bytes) {
-                //         Ok(record) => records.push(record),
-                //         Err(_) => fail_parsing_count += 1usize,
-                //     }
-                // }
-                // let median = median(records.clone());
-                // trace!("Refresh for {:?}: median {:?} from {:?} (errs {:?})",
-                //        src,
-                //        median,
-                //        records,
-                //        fail_parsing_count);
-                // if let ClientManager(client_name) = src {
-                //     let _ = self.client_accounts.insert(client_name, median);
-                // }
-            }
-            RefreshNonceHandler::NaeManager => {
-                let mut container = HashMap::<XorName, HashMap<XorName, u8>>::with_capacity(100);
+    fn handle_refresh(&mut self, nonce: Vec<u8>, values: Vec<RefreshAccumulatorValue>) {
+        match unwrap_result!(deserialise(&nonce)) {
+            RefreshNonce::ForMaidManager { client_name, .. } => {
+                let mut records = Vec::<u64>::with_capacity(values.len());
                 for refresh_acc_val in values {
-                    let managed_nodes: Vec<XorName> =
+                    let record = unwrap_result!(deserialise(&refresh_acc_val.content));
+                    records.push(record)
+                }
+                let median = median(records.clone());
+                let _ = self.client_accounts.insert(client_name, median);
+            }
+            RefreshNonce::ForDataManager { data_name, .. } => {
+                let mut hash_container = HashMap::<Vec<XorName>, usize>::with_capacity(100);
+                for refresh_acc_val in values {
+                    let mut managed_nodes: Vec<XorName> =
                         unwrap_result!(deserialise(&refresh_acc_val.content));
-                    for node in managed_nodes {
-                        *container.entry(refresh_acc_val.src_name)
-                                  .or_insert(HashMap::with_capacity(20))
-                                  .entry(node)
-                                  .or_insert(0) += 1;
-                    }
+                    *hash_container.entry(managed_nodes).or_insert(0) += 1;
                 }
 
-                self.db_immut_data = BTreeMap::new();
-                for (key, value) in container {
-                    let mut vec: Vec<(XorName, u8)> = Vec::with_capacity(value.len());
-                    for (managed_node, freq) in value {
-                        vec.push((managed_node, freq));
-                    }
-                    vec.sort_by(|&(_, ref freq_lhs), &(_, ref freq_rhs)| freq_rhs.cmp(freq_lhs));
+                let mut vec_container: Vec<(Vec<XorName>, usize)> = hash_container.into_iter()
+                                                                                  .collect();
+                vec_container.sort_by(|&(_, ref freq_lhs), &(_, ref freq_rhs)| {
+                    freq_rhs.cmp(freq_lhs)
+                });
 
-                    let _ = self.db_immut_data.insert(key, vec![vec[0].0, vec[1].0]);
+                if vec_container[0].1 >= unwrap_result!(self.node.quorum_size()) {
+                    let _ = self.dm_accounts.insert(data_name, vec_container[0].0.clone());
                 }
             }
         }
@@ -232,46 +208,35 @@ impl ExampleNode {
     }
 }
 
+/// This can get defined for each of the personas in other crates
 #[allow(unused)]
-enum RefreshNonceHandler {
-    ClientManager,
-    NaeManager,
+#[derive(RustcEncodable, RustcDecodable)]
+enum RefreshNonce {
+    ForMaidManager {
+        churn_id: ChurnEventId,
+        client_name: XorName,
+    },
+    ForDataManager {
+        churn_id: ChurnEventId,
+        data_name: XorName,
+    },
 }
 
-#[allow(unused)]
-fn mux(mut nonce: sha512::Digest, nonce_handler: RefreshNonceHandler) -> sha512::Digest {
-    match nonce_handler {
-        RefreshNonceHandler::ClientManager => nonce.0[0] = 0,
-        RefreshNonceHandler::NaeManager => nonce.0[0] = 1,
+/// Returns the median (rounded down to the nearest integral value) of `values` which can be
+/// unsorted.  If `values` is empty, returns `0`.
+fn median(mut values: Vec<u64>) -> u64 {
+    match values.len() {
+        0 => 0u64,
+        1 => values[0],
+        len if len % 2 == 0 => {
+            values.sort();
+            let lower_value = values[(len / 2) - 1];
+            let upper_value = values[len / 2];
+            (lower_value + upper_value) / 2
+        }
+        len => {
+            values.sort();
+            values[len / 2]
+        }
     }
-
-    nonce
 }
-
-#[allow(unused)]
-fn demux(nonce: sha512::Digest) -> RefreshNonceHandler {
-    match nonce.0[0] {
-        0 => RefreshNonceHandler::ClientManager,
-        1 => RefreshNonceHandler::NaeManager,
-        _ => unreachable!("Unknown Symbol for demultiplexing!"),
-    }
-}
-
-// Returns the median (rounded down to the nearest integral value) of `values` which can be
-// unsorted.  If `values` is empty, returns `0`.
-// fn median(mut values: Vec<u64>) -> u64 {
-//     match values.len() {
-//         0 => 0u64,
-//         1 => values[0],
-//         len if len % 2 == 0 => {
-//             values.sort();
-//             let lower_value = values[(len / 2) - 1];
-//             let upper_value = values[len / 2];
-//             (lower_value + upper_value) / 2
-//         }
-//         len => {
-//             values.sort();
-//             values[len / 2]
-//         }
-//     }
-// }

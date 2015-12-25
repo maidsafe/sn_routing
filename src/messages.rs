@@ -77,7 +77,10 @@ pub struct HopMessage {
 
 impl HopMessage {
     /// Wrap a signed message for transmission to next hop.
-    pub fn new(content: SignedMessage, name: XorName, sign_key: &sign::SecretKey) -> Result<HopMessage, RoutingError> {
+    pub fn new(content: SignedMessage,
+               name: XorName,
+               sign_key: &sign::SecretKey)
+               -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, &name)));
         Ok(HopMessage {
             content: content,
@@ -237,7 +240,7 @@ pub enum RequestContent {
     /// Message from upper layers sending network state on any network churn event
     Refresh {
         /// externally defined type identifier
-        nonce: sha512::Digest,
+        nonce: Vec<u8>,
         /// externally defined message
         content: Vec<u8>,
     },

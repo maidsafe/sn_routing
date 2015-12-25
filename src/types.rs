@@ -16,11 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
+use rustc_serialize::{Encoder, Decoder};
+use maidsafe_utilities::event_sender::MaidSafeObserver;
 
-pub type RoutingActionSender = ::maidsafe_utilities::event_sender::MaidSafeObserver<::action::Action>;
+pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 
 /// Nonce for Churn Event
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct ChurnEventId {
     /// ID
     pub id: XorName,
@@ -29,8 +31,9 @@ pub struct ChurnEventId {
 /// Value used by the refresh accumulator
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RefreshAccumulatorValue {
-    #[allow(missing_docs)]
-    pub src_name: XorName,
-    #[allow(missing_docs)]
+    // TODO confirm if this is actually needed
+    /// Name of the node sending the refresh msg
+    pub src_node_name: XorName,
+    /// Serialised content interpreted by Vaults
     pub content: Vec<u8>,
 }
