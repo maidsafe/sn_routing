@@ -20,30 +20,6 @@ use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{MaidSafeEventCategory, EventSenderError};
 
-// TODO This will be in a crate common to only Vaults and Client
-// #[deny(missing_docs)]
-// #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, RustcEncodable, RustcDecodable)]
-// /// Represents response errors.
-// pub enum ResponseError {
-//     /// Abort is for user to indicate that the state can be dropped;
-//     /// if received by routing, it will drop the state.
-//     Abort,
-//     /// On low balance or no account registered
-//     LowBalance(::data::Data, u32),
-//     /// invalid request
-//     InvalidRequest(::data::Data),
-//     /// failure to complete request for data
-//     FailedRequestForData(::data::Data),
-//     /// had to clear Sacrificial Data in order to complete request
-//     HadToClearSacrificial(::XorName, u32),
-// }
-//
-// impl From<::cbor::CborError> for ResponseError {
-//     fn from(_error: ::cbor::CborError) -> ResponseError {
-//         ResponseError::Abort
-//     }
-// }
-
 #[derive(Debug)]
 /// InterfaceError.
 pub enum InterfaceError {
@@ -67,8 +43,6 @@ impl From<RecvError> for InterfaceError {
     }
 }
 
-// ------------------------------------------------------------------------------
-#[allow(variant_size_differences)]
 #[derive(Debug)]
 /// RoutingError.
 pub enum RoutingError {
@@ -94,7 +68,7 @@ pub enum RoutingError {
     FailedToBootstrap,
     /// unexpected empty routing table
     RoutingTableEmpty,
-    /// public id rejected because of unallowed relocated status
+    /// public id rejected because of disallowed relocated status
     RejectedPublicId,
     /// routing table did not add the node information,
     /// either because it was already added, or because it did not improve the routing table

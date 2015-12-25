@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -25,15 +24,15 @@ extern crate maidsafe_utilities;
 
 use self::xor_name::XorName;
 use self::routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent,
-                    ChurnEventId, RefreshAccumulatorValue, Authority, Routing, Event, Data,
+                    ChurnEventId, RefreshAccumulatorValue, Authority, Node, Event, Data,
                     DataRequest};
 use self::sodiumoxide::crypto::hash::sha512;
 use self::maidsafe_utilities::serialisation::serialise;
 
-/// Network Node.
+/// Network ExampleNode.
 #[allow(unused)]
-pub struct Node {
-    routing: Routing,
+pub struct ExampleNode {
+    node: Node,
     receiver: ::std::sync::mpsc::Receiver<Event>,
     sender: ::std::sync::mpsc::Sender<Event>,
     db: ::std::collections::BTreeMap<XorName, Data>,
@@ -42,14 +41,14 @@ pub struct Node {
 }
 
 #[allow(unused)]
-impl Node {
+impl ExampleNode {
     /// Construct a new node.
-    pub fn new() -> Node {
+    pub fn new() -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let routing = unwrap_result!(Routing::new(sender.clone()));
+        let node = unwrap_result!(Node::new(sender.clone()));
 
-        Node {
-            routing: routing,
+        ExampleNode {
+            node: node,
             receiver: receiver,
             sender: sender,
             db: ::std::collections::BTreeMap::new(),
@@ -95,8 +94,8 @@ impl Node {
 
     /// Terminate event loop.
     pub fn stop(&mut self) {
-        trace!("Node terminating.");
-        self.routing.stop();
+        trace!("ExampleNode terminating.");
+        self.node.stop();
     }
 
     fn handle_request(&mut self, msg: RequestMessage) {
@@ -108,10 +107,10 @@ impl Node {
                 self.handle_put_request(data, msg.src, msg.dst);
             }
             RequestContent::Post(_) => {
-                trace!("Node: Post unimplemented.");
+                trace!("ExampleNode: Post unimplemented.");
             }
             RequestContent::Delete(_) => {
-                trace!("Node: Delete unimplemented.");
+                trace!("ExampleNode: Delete unimplemented.");
             }
             _ => (),
         }
@@ -120,7 +119,7 @@ impl Node {
     fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
         match self.db.get(&data_request.name()) {
             Some(data) => {
-                unwrap_result!(self.routing
+                unwrap_result!(self.node
                                    .send_get_response(src,
                                                       dst,
                                                       ResponseContent::GetSuccess(data.clone())))
@@ -142,10 +141,10 @@ impl Node {
                 trace!("Sending: key {:?}, value {:?}", data.name(), data);
                 let dst = Authority::NaeManager(data.name());
                 let request_content = RequestContent::Put(data);
-                unwrap_result!(self.routing.send_put_request(src, dst, request_content));
+                unwrap_result!(self.node.send_put_request(src, dst, request_content));
             }
             _ => {
-                trace!("Node: Unexpected src ({:?})", src);
+                trace!("ExampleNode: Unexpected src ({:?})", src);
                 assert!(false);
             }
         }
@@ -163,7 +162,7 @@ impl Node {
             let nonce = sha512::hash(&to_hash[..]);
             let content = unwrap_result!(serialise(&stored));
 
-            unwrap_result!(self.routing.send_refresh_request(Authority::ClientManager(client_name.clone()),
+            unwrap_result!(self.node.send_refresh_request(Authority::ClientManager(client_name.clone()),
                                                              nonce,
                                                              content));
         }

@@ -22,11 +22,11 @@ use messages::{RoutingMessage, RequestContent};
 use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
-///    1. Action::SendMessage hands a fully formed SignedMessage over to RoutingNode
+///    1. Action::SendMessage hands a fully formed SignedMessage over to Core
 ///       for it to be sent on across the network.
-///    2. Terminate indicates to RoutingNode that no new actions should be taken and all
+///    2. Terminate indicates to Core that no new actions should be taken and all
 ///       pending events should be handled.
-///       After completion RoutingNode will send Event::Terminated.
+///       After completion Core will send Event::Terminated.
 #[derive(Clone)]
 pub enum Action {
     NodeSendMessage {

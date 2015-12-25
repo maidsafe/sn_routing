@@ -59,50 +59,49 @@
 
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate maidsafe_utilities;
+extern crate accumulator;
 extern crate cbor;
+extern crate crust;
+extern crate ip;
+extern crate itertools;
+extern crate lru_time_cache;
+extern crate kademlia_routing_table;
+extern crate message_filter;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
-extern crate itertools;
-extern crate ip;
-extern crate accumulator;
 extern crate xor_name;
-extern crate crust;
-extern crate lru_time_cache;
-#[macro_use]
-extern crate maidsafe_utilities;
-extern crate message_filter;
-extern crate kademlia_routing_table;
 
-mod utils;
-mod error;
-mod action;
-mod routing;
 mod acceptors;
-mod routing_node;
-mod immutable_data;
-mod structured_data;
-mod connection_management;
-
-mod id;
-mod event;
-mod messages;
+mod action;
 mod authority;
-mod routing_client;
-mod types;
+mod client;
+mod connection_management;
+mod core;
 mod data;
+mod error;
+mod event;
+mod id;
+mod immutable_data;
+mod messages;
+mod node;
 mod plain_data;
+mod structured_data;
+mod types;
+mod utils;
 
-pub use event::Event;
-pub use routing::Routing;
 pub use authority::Authority;
-pub use plain_data::PlainData;
-pub use id::{FullId, PublicId};
+pub use client::Client;
 pub use data::{Data, DataRequest};
-pub use routing_client::RoutingClient;
 pub use error::{RoutingError, InterfaceError};
-pub use types::{ChurnEventId, RefreshAccumulatorValue};
+pub use event::Event;
+pub use id::{FullId, PublicId};
 pub use immutable_data::{ImmutableData, ImmutableDataType};
-pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
 pub use messages::{SignedMessage, RoutingMessage, RequestMessage, ResponseMessage, RequestContent,
                    ResponseContent};
+pub use node::Node;
+pub use plain_data::PlainData;
+pub use structured_data::{StructuredData, MAX_STRUCTURED_DATA_SIZE_IN_BYTES};
+pub use types::{ChurnEventId, RefreshAccumulatorValue};

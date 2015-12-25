@@ -52,11 +52,11 @@ enum State {
     Node,
 }
 
-pub struct RoutingNode {
+pub struct Core {
     // for CRUST
     crust_service: ::crust::Service,
     acceptors: Acceptors,
-    // for RoutingNode
+    // for Core
     client_restriction: bool,
     is_listening: bool,
     crust_rx: ::std::sync::mpsc::Receiver<::crust::Event>,
@@ -81,7 +81,7 @@ pub struct RoutingNode {
     data_cache: LruCache<XorName, Data>,
 }
 
-impl RoutingNode {
+impl Core {
     pub fn new(event_sender: ::std::sync::mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
@@ -116,7 +116,7 @@ impl RoutingNode {
         let our_name = *full_id.public_id().name();
 
         let joiner = thread!(ROUTING_NODE_THREAD_NAME, move || {
-            let mut routing_node = RoutingNode {
+            let mut core = Core {
                 crust_service: crust_service,
                 acceptors: Acceptors::new(),
                 client_restriction: client_restriction,
@@ -145,7 +145,7 @@ impl RoutingNode {
                 data_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             };
 
-            routing_node.run(category_rx);
+            core.run(category_rx);
 
             debug!("Exiting thread {:?}", ROUTING_NODE_THREAD_NAME);
         });
@@ -889,7 +889,7 @@ impl RoutingNode {
             }
             DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
 
-                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id,
+                let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                            signature) {
                     Ok(public_id) => public_id,
                     Err(_) => {
@@ -921,7 +921,7 @@ impl RoutingNode {
                 Ok(())
             }
             DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
-                let public_id = match RoutingNode::verify_signed_public_id(serialised_public_id,
+                let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                            signature) {
                     Ok(public_id) => public_id,
                     Err(_) => {
@@ -1522,8 +1522,6 @@ impl RoutingNode {
     }
 
     // ----- Message Handlers that return to the event channel ------------------------------------
-
-    #[allow(unused)]
     fn handle_refresh(&mut self,
                       nonce: hash::sha512::Digest,
                       content: Vec<u8>,
@@ -1615,7 +1613,7 @@ impl RoutingNode {
     }
 }
 
-impl Debug for RoutingNode {
+impl Debug for Core {
     fn fmt(&self, f: &mut Formatter) -> ::std::fmt::Result {
         write!(f,
                "{:?}({:?}) - ",

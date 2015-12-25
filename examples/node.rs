@@ -1,6 +1,5 @@
 // Copyright 2015 MaidSafe.net limited.
 //
-//
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
 // licence you accepted on initial access to the Software (the "Licences").
@@ -42,5 +41,5 @@ mod utils;
 #[allow(missing_docs)]
 pub fn main () {
     maidsafe_utilities::log::init(true);;
-    utils::node::Node::new().run();
+    utils::example_node::ExampleNode::new().run();
 }
