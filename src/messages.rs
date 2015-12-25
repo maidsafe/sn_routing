@@ -19,7 +19,8 @@ use data::{Data, DataRequest};
 use id::{PublicId, FullId};
 use xor_name::XorName;
 use error::RoutingError;
-use sodiumoxide::crypto::{box_, sign, hash};
+use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::hash::sha512;
 use authority::Authority;
 use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
@@ -239,7 +240,7 @@ pub enum RequestContent {
     /// Message from upper layers sending network state on any network churn event
     Refresh {
         /// externally defined type identifier
-        nonce: hash::sha512::Digest,
+        nonce: sha512::Digest,
         /// externally defined message
         content: Vec<u8>,
     },
@@ -295,35 +296,35 @@ pub enum ResponseContent {
     /// ManagedNode -> NaeManagers
     GetSuccess(Data),
     /// Success token for Put (may be ignored)
-    PutSuccess(hash::sha512::Digest),
+    PutSuccess(sha512::Digest),
     /// Success token for Post  (may be ignored)
-    PostSuccess(hash::sha512::Digest),
+    PostSuccess(sha512::Digest),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(hash::sha512::Digest),
+    DeleteSuccess(sha512::Digest),
     /// Error for Get, includes signed request to prevent injection attacks
     GetFailure {
-        /// Originators signed reuest
+        /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
-        /// Originators signed reuest
+        /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
-        /// Originators signed reuest
+        /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
-        /// Originators signed reuest
+        /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
         external_error_indicator: Vec<u8>,

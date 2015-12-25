@@ -23,9 +23,8 @@ extern crate xor_name;
 extern crate maidsafe_utilities;
 
 use self::xor_name::XorName;
-use self::routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent,
-                    ChurnEventId, RefreshAccumulatorValue, Authority, Node, Event, Data,
-                    DataRequest};
+use self::routing::{RequestMessage, ResponseMessage, RequestContent, ChurnEventId,
+                    RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
 use self::sodiumoxide::crypto::hash::sha512;
 use self::maidsafe_utilities::serialisation::serialise;
 
@@ -118,12 +117,7 @@ impl ExampleNode {
 
     fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
         match self.db.get(&data_request.name()) {
-            Some(data) => {
-                unwrap_result!(self.node
-                                   .send_get_response(src,
-                                                      dst,
-                                                      ResponseContent::GetSuccess(data.clone())))
-            }
+            Some(data) => unwrap_result!(self.node.send_get_success(src, dst, data.clone())),
             None => {
                 trace!("GetDataRequest failed for {:?}.", data_request.name());
                 return;
@@ -140,8 +134,7 @@ impl ExampleNode {
             Authority::ClientManager(_) => {
                 trace!("Sending: key {:?}, value {:?}", data.name(), data);
                 let dst = Authority::NaeManager(data.name());
-                let request_content = RequestContent::Put(data);
-                unwrap_result!(self.node.send_put_request(src, dst, request_content));
+                unwrap_result!(self.node.send_put_request(src, dst, data));
             }
             _ => {
                 trace!("ExampleNode: Unexpected src ({:?})", src);
