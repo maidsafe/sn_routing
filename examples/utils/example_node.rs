@@ -15,12 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use xor_name::XorName;
+use xor_name::{XorName, closer_to_target};
 use routing::{RequestMessage, ResponseMessage, RequestContent, ChurnEventId,
               RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
+
+#[allow(unused)]
+const STORE_REDUNDANCY: usize = 2;
 
 /// Network ExampleNode.
 #[allow(unused)]
@@ -28,9 +31,9 @@ pub struct ExampleNode {
     node: Node,
     receiver: ::std::sync::mpsc::Receiver<Event>,
     sender: ::std::sync::mpsc::Sender<Event>,
-    db: BTreeMap<XorName, Data>,
-    dm_accounts: BTreeMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
-    client_accounts: BTreeMap<XorName, u64>,
+    db: HashMap<XorName, Data>,
+    dm_accounts: HashMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
+    client_accounts: HashMap<XorName, u64>,
     connected: bool,
 }
 
@@ -45,9 +48,9 @@ impl ExampleNode {
             node: node,
             receiver: receiver,
             sender: sender,
-            db: BTreeMap::new(),
-            dm_accounts: BTreeMap::new(),
-            client_accounts: BTreeMap::new(),
+            db: HashMap::new(),
+            dm_accounts: HashMap::new(),
+            client_accounts: HashMap::new(),
             connected: false,
         }
     }
@@ -121,21 +124,41 @@ impl ExampleNode {
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, src: Authority, _dst: Authority) {
-        match src {
+    fn handle_put_request(&mut self, data: Data, src: Authority, dst: Authority) {
+        match dst {
             Authority::NaeManager(_) => {
                 trace!("Storing: key {:?}, value {:?}", data.name(), data);
-                let _ = self.db.insert(data.name(), data);
+                let mut close_grp = unwrap_result!(self.node.close_group());
+                close_grp.push(unwrap_result!(self.node.name()));
+
+                close_grp.sort_by(|lhs, rhs| {
+                    if closer_to_target(lhs, rhs, &data.name()) {
+                        ::std::cmp::Ordering::Less
+                    } else {
+                        ::std::cmp::Ordering::Greater
+                    }
+                });
+
+                close_grp.truncate(STORE_REDUNDANCY);
+
+                let src = dst;
+                for i in 0..STORE_REDUNDANCY {
+                    let dst = Authority::ManagedNode(close_grp[i].clone());
+                    unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone()));
+                }
+
+                let _ = self.dm_accounts.insert(data.name(), close_grp);
             }
             Authority::ClientManager(_) => {
                 trace!("Sending: key {:?}, value {:?}", data.name(), data);
+                let src = dst;
                 let dst = Authority::NaeManager(data.name());
                 unwrap_result!(self.node.send_put_request(src, dst, data));
             }
-            _ => {
-                trace!("ExampleNode: Unexpected src ({:?})", src);
-                assert!(false);
+            Authority::ManagedNode(_) => {
+                let _ = self.db.insert(data.name(), data);
             }
+            _ => unreachable!("ExampleNode: Unexpected src ({:?})", src),
         }
     }
 
