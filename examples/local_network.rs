@@ -41,6 +41,8 @@ extern crate docopt;
 extern crate sodiumoxide;
 extern crate routing;
 extern crate xor_name;
+extern crate lru_time_cache;
+extern crate time;
 
 mod utils;
 

@@ -40,9 +40,11 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
+extern crate time;
 
 extern crate routing;
 extern crate xor_name;
+extern crate lru_time_cache;
 
 mod utils;
 

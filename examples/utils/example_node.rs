@@ -15,12 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use lru_time_cache::LruCache;
 use xor_name::{XorName, closer_to_target};
-use routing::{RequestMessage, ResponseMessage, RequestContent, ChurnEventId,
+use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, ChurnEventId,
               RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
+use time;
 
 #[allow(unused)]
 const STORE_REDUNDANCY: usize = 2;
@@ -35,6 +37,8 @@ pub struct ExampleNode {
     dm_accounts: HashMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
     client_accounts: HashMap<XorName, u64>,
     connected: bool,
+    client_request_cache: LruCache<XorName, Vec<Authority>>, /* DataName vs List of ClientAuth asking for data */
+    lost_node_cache: LruCache<XorName, XorName>, // DataName vs LostNode
 }
 
 #[allow(unused)]
@@ -52,6 +56,8 @@ impl ExampleNode {
             dm_accounts: HashMap::new(),
             client_accounts: HashMap::new(),
             connected: false,
+            client_request_cache: LruCache::with_expiry_duration(time::Duration::minutes(10)),
+            lost_node_cache: LruCache::with_expiry_duration(time::Duration::minutes(10)),
         }
     }
 
@@ -69,7 +75,10 @@ impl ExampleNode {
                     trace!("Received churn event {:?}", churn_id);
                     self.handle_churn(churn_id)
                 }
-                Event::LostCloseNode(name) => trace!("Received LostCloseNode {:?}", name),
+                Event::LostCloseNode(name) => {
+                    trace!("Received LostCloseNode {:?}", name);
+                    self.handle_lost_close_node(name);
+                }
                 // Event::Bootstrapped => trace!("Received bootstraped event"),
                 Event::Connected => {
                     trace!("Received connected event");
@@ -102,7 +111,7 @@ impl ExampleNode {
                 self.handle_get_request(data_request, msg.src, msg.dst);
             }
             RequestContent::Put(data) => {
-                self.handle_put_request(data, msg.src, msg.dst);
+                self.handle_put_request(data, msg.dst);
             }
             RequestContent::Post(_) => {
                 trace!("ExampleNode: Post unimplemented.");
@@ -115,16 +124,37 @@ impl ExampleNode {
     }
 
     fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
-        match self.db.get(&data_request.name()) {
-            Some(data) => unwrap_result!(self.node.send_get_success(src, dst, data.clone())),
-            None => {
-                trace!("GetDataRequest failed for {:?}.", data_request.name());
-                return;
+        match dst {
+            Authority::NaeManager(_) => {
+                if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
+                    let _ = self.client_request_cache
+                                .entry(data_request.name())
+                                .or_insert(Vec::new())
+                                .push(src);
+                    unwrap_result!(self.node
+                                       .send_get_request(dst,
+                                                         Authority::ManagedNode(managed_nodes[0]
+                                                                                    .clone()),
+                                                         data_request));
+                }
+                // TODO Send GetFailure back to Client
             }
+            Authority::ManagedNode(_) => {
+                match self.db.get(&data_request.name()) {
+                    Some(data) => {
+                        unwrap_result!(self.node.send_get_success(dst, src, data.clone()))
+                    }
+                    None => {
+                        trace!("GetDataRequest failed for {:?}.", data_request.name());
+                        return;
+                    }
+                }
+            }
+            _ => unreachable!("Wrong Destination Authority {:?}", dst),
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, src: Authority, dst: Authority) {
+    fn handle_put_request(&mut self, data: Data, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
                 trace!("Storing: key {:?}, value {:?}", data.name(), data);
@@ -146,7 +176,8 @@ impl ExampleNode {
                     let dst = Authority::ManagedNode(close_grp[i].clone());
                     unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone()));
                 }
-
+                // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
+                // confirm the same
                 let _ = self.dm_accounts.insert(data.name(), close_grp);
             }
             Authority::ClientManager(_) => {
@@ -158,7 +189,7 @@ impl ExampleNode {
             Authority::ManagedNode(_) => {
                 let _ = self.db.insert(data.name(), data);
             }
-            _ => unreachable!("ExampleNode: Unexpected src ({:?})", src),
+            _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }
     }
 
@@ -206,7 +237,7 @@ impl ExampleNode {
                 let _ = self.client_accounts.insert(client_name, median);
             }
             RefreshNonce::ForDataManager { data_name, .. } => {
-                let mut hash_container = HashMap::<Vec<XorName>, usize>::with_capacity(100);
+                let mut hash_container = HashMap::<Vec<XorName>, usize>::with_capacity(20);
                 for refresh_acc_val in values {
                     let mut managed_nodes: Vec<XorName> =
                         unwrap_result!(deserialise(&refresh_acc_val.content));
@@ -226,8 +257,77 @@ impl ExampleNode {
         }
     }
 
-    fn handle_response(&mut self, _msg: ResponseMessage) {
-        unimplemented!()
+    fn handle_lost_close_node(&mut self, lost_node: XorName) {
+        let mut vec_lost_chunks = Vec::<usize>::with_capacity(self.dm_accounts.len());
+        for dm_account in self.dm_accounts.iter_mut() {
+            if let Some(lost_node_pos) = dm_account.1.iter().position(|elt| *elt == lost_node) {
+                let _ = self.lost_node_cache.insert(dm_account.0.clone(), lost_node.clone());
+                let _ = dm_account.1.remove(lost_node_pos);
+                if dm_account.1.is_empty() {
+                    error!("Chunk lost - No valid nodes left to retrieve chunk");
+                    continue;
+                }
+
+                let src = Authority::NaeManager(dm_account.0.clone());
+                let dst = Authority::ManagedNode(dm_account.1[0].clone());
+                if let Err(err) =
+                       self.node
+                           .send_get_request(src, dst, DataRequest::PlainData(dm_account.0.clone())) {
+                    error!("Failed to send get request to retrieve chunk - {:?}", err);
+                }
+            }
+        }
+    }
+
+    fn handle_response(&mut self, msg: ResponseMessage) {
+        match (msg.content, msg.dst.clone()) {
+            (ResponseContent::GetSuccess(data), Authority::NaeManager(_)) => {
+                self.handle_get_success(data, msg.dst);
+            }
+            (ResponseContent::GetFailure { .. }, Authority::NaeManager(_)) => {
+                unreachable!("Handle this - Repeat get request from different managed node and \
+                              start the chunk relocation process");
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn handle_get_success(&mut self, data: Data, dst: Authority) {
+        if let Some(client_auths) = self.client_request_cache.remove(&data.name()) {
+            let src = dst;
+            for client_auth in client_auths {
+                let _ = self.node.send_get_success(src.clone(), client_auth, data.clone());
+            }
+            return;
+        }
+
+        if self.lost_node_cache.remove(&data.name()).is_some() {
+            let mut close_grp = unwrap_result!(self.node.close_group());
+            close_grp.push(unwrap_result!(self.node.name()));
+
+            close_grp.sort_by(|lhs, rhs| {
+                if closer_to_target(lhs, rhs, &data.name()) {
+                    ::std::cmp::Ordering::Less
+                } else {
+                    ::std::cmp::Ordering::Greater
+                }
+            });
+
+            if let Some(node) = close_grp.into_iter().find(|outer| {
+                !unwrap_option!(self.dm_accounts.get(&data.name()), "")
+                     .iter()
+                     .any(|inner| *inner == *outer)
+            }) {
+                let src = dst;
+                let dst = Authority::ManagedNode(node.clone());
+                unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone()));
+
+                // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
+                // confirm the same
+                unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
+            }
+
+        }
     }
 }
 
