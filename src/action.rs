@@ -38,11 +38,14 @@ pub enum Action {
         dst: Authority,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
+    Name {
+        result_tx: Sender<XorName>,
+    },
     CloseGroup {
         result_tx: Sender<Vec<XorName>>,
     },
-    Name {
-        result_tx: Sender<XorName>,
+    DynamicQuorumSize {
+        result_tx: Sender<usize>,
     },
     Terminate,
 }
@@ -59,8 +62,9 @@ impl ::std::fmt::Debug for Action {
                        content,
                        dst)
             }
-            Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
             Action::Name{ .. } => write!(f, "Action::Name"),
+            Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
+            Action::DynamicQuorumSize{ .. } => write!(f, "Action::DynamicQuorumSize"),
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }
