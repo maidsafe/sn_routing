@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, Routing};
+use routing::{Authority, ChurnEventId, Node};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TAG_INDEX;
 use types::{MergedValue, Refreshable};
@@ -137,10 +137,10 @@ impl Database {
               value);
     }
 
-    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &ChurnEventId) {
         for (key, value) in self.storage.iter() {
             // Only refresh accounts for PmidNodes which are still in our close group
-            let close_group = match routing.close_group() {
+            let close_group = match routing_node.close_group() {
                 Ok(group) => group,
                 Err(error) => {
                     error!("Failed to get close group from Routing: {:?}", error);
@@ -158,7 +158,7 @@ impl Database {
             if let Ok(serialised_account) = serialise(value) {
                 debug!("PmidManager sending refresh for account {:?}",
                        src.get_name());
-                let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
+                let _ = routing_node.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }
     }

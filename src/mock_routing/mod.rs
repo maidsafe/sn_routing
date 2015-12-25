@@ -21,7 +21,7 @@
 
 mod mock_routing_impl;
 
-use self::mock_routing_impl::MockRoutingImpl;
+use self::mock_routing_impl::MockRoutingNodeImpl;
 use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage, RoutingError};
 use sodiumoxide::crypto::hash;
@@ -29,13 +29,13 @@ use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
 
-pub struct MockRouting {
-    pimpl: Arc<Mutex<MockRoutingImpl>>,
+pub struct MockRoutingNode {
+    pimpl: Arc<Mutex<MockRoutingNodeImpl>>,
 }
 
-impl MockRouting {
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<MockRouting, RoutingError> {
-        Ok(MockRouting { pimpl: Arc::new(Mutex::new(MockRoutingImpl::new(event_sender))) })
+impl MockRoutingNode {
+    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<MockRoutingNode, RoutingError> {
+        Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
     pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Event> {
@@ -194,11 +194,19 @@ impl MockRouting {
         unwrap_result!(self.pimpl.lock()).send_refresh_request(src, nonce, content)
     }
 
-    pub fn stop(&self) {
-        unwrap_result!(self.pimpl.lock()).stop()
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).name()
     }
 
-    pub fn close_group_including_self(&self) -> Vec<XorName> {
-        unwrap_result!(self.pimpl.lock()).close_group_including_self()
+    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).close_group()
+    }
+
+    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).dynamic_quorum_size()
+    }
+
+    pub fn stop(&self) {
+        unwrap_result!(self.pimpl.lock()).stop()
     }
 }

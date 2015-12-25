@@ -20,13 +20,13 @@ use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage};
 use sodiumoxide::crypto::hash;
-use std::cmp::Ordering;
+use std::cmp::{Ordering, min};
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
 use xor_name::{XorName, closer_to_target};
 
-pub struct MockRoutingImpl {
+pub struct MockRoutingNodeImpl {
     our_id: XorName,
     peers: Vec<XorName>,
     sender: mpsc::Sender<Event>,
@@ -43,8 +43,8 @@ pub struct MockRoutingImpl {
     refresh_requests_given: Vec<RequestMessage>,
 }
 
-impl MockRoutingImpl {
-    pub fn new(sender: mpsc::Sender<Event>) -> MockRoutingImpl {
+impl MockRoutingNodeImpl {
+    pub fn new(sender: mpsc::Sender<Event>) -> MockRoutingNodeImpl {
         let (client_sender, _) = mpsc::channel();
         let our_id: XorName = random();
         let mut peers = Vec::with_capacity(optimal_table_size());
@@ -58,7 +58,7 @@ impl MockRoutingImpl {
             }
         });
 
-        MockRoutingImpl {
+        MockRoutingNodeImpl {
             our_id: our_id,
             peers: peers,
             sender: sender,
@@ -240,15 +240,22 @@ impl MockRoutingImpl {
         Ok(self.refresh_requests_given.push(message))
     }
 
-    pub fn stop(&mut self) {
-        let _ = self.sender.send(Event::Terminated);
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        Ok(self.our_id.clone())
     }
 
-    pub fn close_group_including_self(&self) -> Vec<XorName> {
-        let mut peers_and_us = Vec::with_capacity(group_size() + 1);
-        peers_and_us.push(self.our_id.clone());
-        peers_and_us.append(&mut self.peers.clone());
-        peers_and_us
+    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
+        Ok(self.peers.iter().take(group_size()).cloned().collect())
+    }
+
+    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
+        let quorum_size = 5f32;  // TODO - use actual value from RT crate
+        let factor: f32 = quorum_size as f32 / group_size() as f32;
+        Ok(min((self.peers.len() as f32 * factor) as usize, quorum_size))
+    }
+
+    pub fn stop(&mut self) {
+        let _ = self.sender.send(Event::Terminated);
     }
 
     fn send_request(&self,

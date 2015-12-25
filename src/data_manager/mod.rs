@@ -29,8 +29,8 @@ use std::collections::BTreeSet;
 use time::{Duration, SteadyTime};
 use transfer_tag::{TAG_INDEX, TransferTag};
 use types::{MergedValue, Refreshable};
-use utils::{median, merge, quorum_size};
-use vault::Routing;
+use utils::{median, merge};
+use vault::RoutingNode;
 use xor_name::{XorName, closer_to_target};
 
 pub const ACCOUNT_TAG: u8 = TransferTag::DataManagerAccount as u8;
@@ -100,7 +100,7 @@ impl DataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         let data_name = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _)) => data_name.clone(),
             _ => unreachable!("Error in vault demuxing"),
@@ -108,7 +108,7 @@ impl DataManager {
 
         // Cache the request
         debug!("DataManager {:?} cached request {:?}",
-               routing.name(),
+               routing_node.name(),
                request);
         // FIXME - should append to requests in the case of a pre-existing request for this chunk
         let _ = self.request_cache.insert(data_name, request.clone());
@@ -121,7 +121,7 @@ impl DataManager {
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
                 debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
-                       routing.name(),
+                       routing_node.name(),
                        (ongoing_get.0).1,
                        (ongoing_get.0).0);
                 self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
@@ -148,26 +148,25 @@ impl DataManager {
         }
         for fetch_name in fetching_list.iter() {
             debug!("DataManager {:?} having {:?} records for chunk {:?}",
-                   routing.name(),
+                   routing_node.name(),
                    self.database.exist(&fetch_name),
                    fetch_name);
             for pmid in self.database.get_pmid_nodes(fetch_name) {
                 let src = Authority::NaeManager(fetch_name.clone());
                 let dst = Authority::ManagedNode(pmid.clone());
-                let content = RequestContent::Get(DataRequest::ImmutableData(fetch_name.clone(),
-                                                                             ImmutableDataType::Normal));
+                let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
                 debug!("DataManager {:?} sending get {:?} to {:?}",
-                       routing.name(),
+                       routing_node.name(),
                        fetch_name,
                        dst);
-                let _ = routing.send_get_request(src, dst, content);
+                let _ = routing_node.send_get_request(src, dst, data_request);
                 let _ = self.ongoing_gets
                             .insert((fetch_name.clone(), pmid.clone()), SteadyTime::now());
             }
         }
     }
 
-    pub fn handle_put(&mut self, routing: &Routing, data: &ImmutableData) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData) {
         // If the data already exists, there's no more to do.
         let data_name = data.name();
         if self.database.exist(&data_name) {
@@ -175,12 +174,12 @@ impl DataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let mut target_pmids = match routing.close_group() {
-            Ok(pmids) => pmids,
+        let own_name = match routing_node.name() {
+            Ok(name) => name,
             Err(_) => return,
         };
-        let own_name = match routing.name() {
-            Ok(name) => name,
+        let mut target_pmids = match routing_node.close_group() {
+            Ok(pmids) => pmids,
             Err(_) => return,
         };
         target_pmids.push(own_name.clone());
@@ -202,12 +201,11 @@ impl DataManager {
         for pmid in target_pmids {
             let src = Authority::NaeManager(data_name);
             let dst = Authority::NodeManager(pmid);
-            let content = RequestContent::Put(Data::ImmutableData(data.clone()));
-            let _ = routing.send_put_request(src, dst, content);
+            let _ = routing_node.send_put_request(src, dst, Data::ImmutableData(data.clone()));
         }
     }
 
-    pub fn handle_get_success(&mut self, routing: &Routing, response: &ResponseMessage) {
+    pub fn handle_get_success(&mut self, routing_node: &RoutingNode, response: &ResponseMessage) {
         let data: &ImmutableData = match response.content {
             ResponseContent::GetSuccess(Data::ImmutableData(ref data)) => data,
             _ => unreachable!("Error in vault demuxing"),
@@ -221,8 +219,7 @@ impl DataManager {
                     // for request in requests {
                     let src = response.dst.clone();
                     let dst = request.src;
-                    let content = response.content.clone();
-                    let _ = routing.send_get_response(src, dst, content);
+                    let _ = routing_node.send_get_success(src, dst, Data::ImmutableData(data.clone()));
                     // }
                 }
                 None => {
@@ -278,9 +275,10 @@ impl DataManager {
 
     pub fn handle_account_refresh(&mut self,
                                   nonce: sha512::Digest,
-                                  values: Vec<RefreshAccumulatorValue>)
+                                  values: Vec<RefreshAccumulatorValue>,
+                                  quorum_size: usize)
                                   -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size()).and_then(|merged_account| {
+        merge::<Account>(values, quorum_size).and_then(|merged_account| {
             self.database.handle_account_transfer(merged_account);
             Some(nonce)
         })
@@ -288,15 +286,16 @@ impl DataManager {
 
     pub fn handle_stats_refresh(&mut self,
                                 nonce: sha512::Digest,
-                                values: Vec<RefreshAccumulatorValue>)
+                                values: Vec<RefreshAccumulatorValue>,
+                                quorum_size: usize)
                                 -> Option<sha512::Digest> {
-        merge::<Stats>(values, quorum_size()).and_then(|merged_stats| {
+        merge::<Stats>(values, quorum_size).and_then(|merged_stats| {
             self.resource_index = merged_stats.value.resource_index();
             Some(nonce)
         })
     }
 
-    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
         // self.database.handle_churn(routing, churn_node);
 
         // // If the churn_node exists in the previous DM's nodes_in_table,
@@ -337,7 +336,7 @@ impl DataManager {
         self.database.cleanup();
     }
 
-    pub fn handle_lost_close_node(&mut self, routing: &Routing, lost_node: XorName) {
+    pub fn handle_lost_close_node(&mut self, routing_node: &RoutingNode, lost_node: XorName) {
         unimplemented!();
     }
 

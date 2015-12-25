@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage, ResponseContent};
-use vault::Routing;
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
+use vault::RoutingNode;
 
 pub struct PmidNode {
     chunk_store: ::chunk_store::ChunkStore,
@@ -33,7 +33,7 @@ impl PmidNode {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         let data_name = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref name, _)) => name,
             _ => unreachable!("Error in vault demuxing"),
@@ -51,15 +51,16 @@ impl PmidNode {
                 return;
             }
         };
-        let content = ResponseContent::GetSuccess(Data::ImmutableData(decoded));
         debug!("As {:?} sending data {:?} to {:?}",
                request.dst,
-               content,
+               Data::ImmutableData(decoded.clone()),
                request.src);
-        let _ = routing.send_get_response(request.dst.clone(), request.src.clone(), content);
+        let _ = routing_node.send_get_success(request.dst.clone(),
+                                              request.src.clone(),
+                                              Data::ImmutableData(decoded));
     }
 
-    pub fn handle_put(&mut self, routing: &Routing, request: &RequestMessage) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         let data = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data)) => data.clone(),
             _ => unreachable!("Error in vault demuxing"),
@@ -122,12 +123,8 @@ impl PmidNode {
         //        let error = ::routing::error::ResponseError::FailedRequestForData(original_data);
         let src = request.dst.clone();
         let dst = request.src.clone();
-        let content = ResponseContent::PutFailure {
-            request: request.clone(),
-            external_error_indicator: vec![],
-        };  // TODO - set proper error value
-        debug!("As {:?} sending {:?} to {:?}", src, content, dst);
-        let _ = routing.send_put_response(src, dst, content);
+        debug!("As {:?} sending Put failure to {:?}", src, dst);
+        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![]);  // TODO - set proper error value
     }
 
     // fn notify_managers_of_sacrifice(&self,

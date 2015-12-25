@@ -17,7 +17,7 @@
 
 use kademlia_routing_table;
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, DataRequest, ImmutableDataType, RequestContent, Routing};
+use routing::{Authority, ChurnEventId, DataRequest, ImmutableDataType, Node, RequestContent};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TAG_INDEX;
 use types::{MergedValue, Refreshable};
@@ -148,7 +148,7 @@ impl Database {
         let _ = self.storage.insert(merged.name, merged.value.data_holders);
     }
 
-    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: ChurnEventId) {
         for (key, value) in self.storage.iter() {
             let account = Account::new(value.clone());
             let src = Authority::NaeManager(key.clone());
@@ -159,7 +159,7 @@ impl Database {
             if let Ok(serialised_account) = serialise(&account) {
                 debug!("DataManager sending refresh for account {:?}",
                        src.get_name());
-                let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
+                let _ = routing_node.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }
     }

@@ -16,11 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use self::database::{Account, Database};
-use routing::{Authority, ChurnEventId, Data, ImmutableData, RefreshAccumulatorValue, RequestContent, ResponseMessage};
+use routing::{Authority, ChurnEventId, Data, ImmutableData, RefreshAccumulatorValue, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TransferTag;
-use utils::{merge, quorum_size};
-use vault::Routing;
+use utils::merge;
+use vault::RoutingNode;
 use xor_name::XorName;
 
 pub const ACCOUNT_TAG: u8 = TransferTag::PmidManagerAccount as u8;
@@ -36,14 +36,13 @@ impl PmidManager {
         PmidManager { database: Database::new() }
     }
 
-    pub fn handle_put(&mut self, routing: &Routing, data: &ImmutableData, pmid_node_name: XorName) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData, pmid_node_name: XorName) {
         // Put data always being allowed, i.e. no early alert
         self.database.put_data(&pmid_node_name, data.payload_size() as u64);
 
         let src = Authority::NodeManager(pmid_node_name.clone());
         let dst = Authority::ManagedNode(pmid_node_name);
-        let content = RequestContent::Put(Data::ImmutableData(data.clone()));
-        let _ = routing.send_put_request(src, dst, content);
+        let _ = routing_node.send_put_request(src, dst, Data::ImmutableData(data.clone()));
     }
 
     #[allow(unused)]
@@ -89,16 +88,16 @@ impl PmidManager {
 
     pub fn handle_refresh(&mut self,
                           nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>)
+                          values: Vec<RefreshAccumulatorValue>, quorum_size: usize)
                           -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size()).and_then(|merged_account| {
+        merge::<Account>(values, quorum_size).and_then(|merged_account| {
             self.database.handle_account_transfer(merged_account);
             Some(nonce)
         })
     }
 
-    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
-        self.database.handle_churn(routing, churn_event_id)
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
+        self.database.handle_churn(routing_node, churn_event_id)
     }
 
     pub fn reset(&mut self) {

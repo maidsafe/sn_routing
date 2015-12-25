@@ -32,15 +32,15 @@ use time::{Duration, SteadyTime};
 use xor_name::XorName;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
-pub type Routing = ::routing::Routing;
+pub type RoutingNode = ::routing::Node;
 
 #[cfg(all(test, feature = "use-mock-routing"))]
-pub type Routing = ::mock_routing::MockRouting;
+pub type RoutingNode = ::mock_routing::MockRoutingNode;
 
 #[allow(unused)]
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
-    routing: Routing,
+    routing_node: RoutingNode,
     data_manager: DataManager,
     maid_manager: MaidManager,
     pmid_manager: PmidManager,
@@ -64,9 +64,9 @@ impl Vault {
            -> Result<Vault, Error> {
         ::sodiumoxide::init();
         let (sender, receiver) = mpsc::channel();
-        let routing = try!(Routing::new(sender));
+        let routing_node = try!(RoutingNode::new(sender));
         Ok(Vault {
-            routing: routing,
+            routing_node: routing_node,
             data_manager: DataManager::new(),
             maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(),
@@ -89,7 +89,7 @@ impl Vault {
                                 .clone()
                                 .and_then(|sender| Some(sender.send(event.clone())));
                     info!("Vault {} received an event from routing: {:?}",
-                          unwrap_result!(self.routing.name()),
+                          unwrap_result!(self.routing_node.name()),
                           event);
                     match event {
                         Event::Request(request) => self.on_request(request),
@@ -109,7 +109,7 @@ impl Vault {
                 if should_stop.load(atomic::Ordering::Relaxed) {
                     // Just stop Routing and wait for the `Event::Terminated` message to break out
                     // of this event loop.
-                    self.routing.stop();
+                    self.routing_node.stop();
                 }
             }
             ::std::thread::sleep(::std::time::Duration::from_millis(1));
@@ -122,17 +122,17 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
-                self.data_manager.handle_get(&self.routing, &request)
+                self.data_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::StructuredData(_, _))) => {
-                self.sd_manager.handle_get(&self.routing, &request)
+                self.sd_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
-                self.pmid_node.handle_get(&self.routing, &request)
+                self.pmid_node.handle_get(&self.routing_node, &request)
             }
             // ================== Put ==================
             (&Authority::Client{ .. },
@@ -140,21 +140,25 @@ impl Vault {
              &RequestContent::Put(Data::ImmutableData(_))) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_))) => self.maid_manager.handle_put(&self.routing, &request),
+             &RequestContent::Put(Data::StructuredData(_))) => {
+                self.maid_manager.handle_put(&self.routing_node, &request)
+            }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::ImmutableData(ref data))) => self.data_manager.handle_put(&self.routing, data),
+             &RequestContent::Put(Data::ImmutableData(ref data))) => {
+                self.data_manager.handle_put(&self.routing_node, data)
+            }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::StructuredData(ref data))) => self.sd_manager.handle_put(data),
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.pmid_manager.handle_put(&self.routing, data, pmid_node_name)
+                self.pmid_manager.handle_put(&self.routing_node, data, pmid_node_name)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::ImmutableData(_))) => self.pmid_node.handle_put(&self.routing, &request),
+             &RequestContent::Put(Data::ImmutableData(_))) => self.pmid_node.handle_put(&self.routing_node, &request),
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -171,7 +175,7 @@ impl Vault {
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::ImmutableData(_))) => {
-                self.data_manager.handle_get_success(&self.routing, &response)
+                self.data_manager.handle_get_success(&self.routing_node, &response)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(pmid_node_name),
@@ -189,13 +193,17 @@ impl Vault {
     }
 
     fn on_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
+        let quorum_size = match self.routing_node.dynamic_quorum_size() {
+            Ok(size) => size,
+            Err(_) => return,
+        };
         if !self.handled_refreshes.contains(&nonce) {
             let handled_nonce = match nonce.0[TAG_INDEX] {
-                ::maid_manager::ACCOUNT_TAG => self.maid_manager.handle_refresh(nonce, values),
-                ::data_manager::ACCOUNT_TAG => self.data_manager.handle_account_refresh(nonce, values),
-                ::data_manager::STATS_TAG => self.data_manager.handle_stats_refresh(nonce, values),
-                ::sd_manager::ACCOUNT_TAG => self.sd_manager.handle_refresh(nonce, values),
-                ::pmid_manager::ACCOUNT_TAG => self.pmid_manager.handle_refresh(nonce, values),
+                ::maid_manager::ACCOUNT_TAG => self.maid_manager.handle_refresh(nonce, values, quorum_size),
+                ::data_manager::ACCOUNT_TAG => self.data_manager.handle_account_refresh(nonce, values, quorum_size),
+                ::data_manager::STATS_TAG => self.data_manager.handle_stats_refresh(nonce, values, quorum_size),
+                ::sd_manager::ACCOUNT_TAG => self.sd_manager.handle_refresh(nonce, values, quorum_size),
+                ::pmid_manager::ACCOUNT_TAG => self.pmid_manager.handle_refresh(nonce, values, quorum_size),
                 _ => unreachable!(),
             };
             if let Some(nonce) = handled_nonce {
@@ -205,10 +213,10 @@ impl Vault {
     }
 
     fn on_churn(&mut self, churn_event_id: &ChurnEventId) {
-        self.maid_manager.handle_churn(&self.routing, churn_event_id);
-        self.data_manager.handle_churn(&self.routing, churn_event_id);
-        self.sd_manager.handle_churn(&self.routing, churn_event_id);
-        self.pmid_manager.handle_churn(&self.routing, churn_event_id);
+        self.maid_manager.handle_churn(&self.routing_node, churn_event_id);
+        self.data_manager.handle_churn(&self.routing_node, churn_event_id);
+        self.sd_manager.handle_churn(&self.routing_node, churn_event_id);
+        self.pmid_manager.handle_churn(&self.routing_node, churn_event_id);
 
         // self.id = close_group[0].clone();
         // let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
@@ -226,7 +234,7 @@ impl Vault {
     }
 
     fn on_lost_close_node(&mut self, lost_node: XorName) {
-        self.data_manager.handle_lost_close_node(&self.routing, lost_node)
+        self.data_manager.handle_lost_close_node(&self.routing_node, lost_node)
     }
 
     fn on_connected(&self) {
@@ -236,7 +244,7 @@ impl Vault {
     }
 
     fn on_disconnected(&mut self) {
-        self.routing.stop();
+        self.routing_node.stop();
         if let &Some(ref arc) = &self.should_stop {
             let ref should_stop = &*arc;
             if should_stop.load(atomic::Ordering::Relaxed) {
@@ -246,7 +254,7 @@ impl Vault {
         self.churn_timestamp = SteadyTime::now();
         let (sender, receiver) = mpsc::channel();
         // TODO - Keep retrying to construct new Routing until returns Ok() ?
-        self.routing = unwrap_result!(Routing::new(sender));
+        self.routing_node = unwrap_result!(RoutingNode::new(sender));
         self.receiver = receiver;
 
         self.maid_manager.reset();

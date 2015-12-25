@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::group_size;
 use maidsafe_utilities::serialisation::deserialise;
 use routing::RefreshAccumulatorValue;
 use std::collections::HashMap;
@@ -40,11 +39,6 @@ pub fn median(mut values: Vec<u64>) -> u64 {
             values[len / 2]
         }
     }
-}
-
-// TODO - this function should be removed in favour of using the dynamic quorum size from Routing
-pub fn quorum_size() -> usize {
-    group_size() / 2
 }
 
 pub fn merge<T>(values: Vec<RefreshAccumulatorValue>, quorum_size: usize) -> Option<MergedValue<T>>

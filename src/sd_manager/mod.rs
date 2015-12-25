@@ -17,12 +17,11 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage,
-              ResponseContent, StructuredData};
+use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage, StructuredData};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TransferTag;
-use utils::{merge, quorum_size};
-use vault::Routing;
+use utils::merge;
+use vault::RoutingNode;
 
 pub const ACCOUNT_TAG: u8 = TransferTag::StructuredDataManagerAccount as u8;
 
@@ -40,7 +39,7 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing: &Routing, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         // TODO - handle type_tag from name too
         let data_name = match request.content {
             RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _)) => data_request.name(),
@@ -59,12 +58,13 @@ impl StructuredDataManager {
                 return;
             }
         };
-        let content = ResponseContent::GetSuccess(Data::StructuredData(decoded));
         debug!("As {:?} sending data {:?} to {:?}",
                request.dst,
-               content,
+               Data::StructuredData(decoded.clone()),
                request.src);
-        let _ = routing.send_get_response(request.dst.clone(), request.src.clone(), content);
+        let _ = routing_node.send_get_success(request.dst.clone(),
+                                              request.src.clone(),
+                                              Data::StructuredData(decoded));
     }
 
     pub fn handle_put(&mut self, data: &StructuredData) {
@@ -119,15 +119,16 @@ impl StructuredDataManager {
 
     pub fn handle_refresh(&mut self,
                           nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>)
+                          values: Vec<RefreshAccumulatorValue>,
+                          quorum_size: usize)
                           -> Option<sha512::Digest> {
-        merge::<StructuredData>(values, quorum_size()).and_then(|merged_structured_data| {
+        merge::<StructuredData>(values, quorum_size).and_then(|merged_structured_data| {
             self.handle_account_transfer(merged_structured_data.value);
             Some(nonce)
         })
     }
 
-    pub fn handle_churn(&mut self, _routing: &Routing, _churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, _routing_node: &RoutingNode, _churn_event_id: &ChurnEventId) {
         // let names = self.chunk_store.names();
         // for name in names {
         //     let data = self.chunk_store.get(&name);

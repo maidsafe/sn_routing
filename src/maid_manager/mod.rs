@@ -16,11 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use self::database::{Account, Database};
-use routing::{Authority, ChurnEventId, Data, RefreshAccumulatorValue, RequestContent, RequestMessage, ResponseContent};
+use routing::{Authority, ChurnEventId, Data, RefreshAccumulatorValue, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TransferTag;
-use utils::{merge, quorum_size};
-use vault::Routing;
+use utils::merge;
+use vault::RoutingNode;
 
 pub const ACCOUNT_TAG: u8 = TransferTag::MaidManagerAccount as u8;
 
@@ -35,7 +35,7 @@ impl MaidManager {
         MaidManager { database: Database::new() }
     }
 
-    pub fn handle_put(&mut self, routing: &Routing, request: &RequestMessage) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         // Handle the request by sending on to the DM or SDM, or replying with error to the client.
         let data = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data)) => Data::ImmutableData(data.clone()),
@@ -47,32 +47,28 @@ impl MaidManager {
             // let error = ::routing::error::ResponseError::LowBalance(data.clone(),
             let src = request.dst.clone();
             let dst = request.src.clone();
-            let content = ResponseContent::PutFailure {
-                request: request.clone(),
-                external_error_indicator: vec![],
-            };  // TODO - set proper error value
-            debug!("As {:?} sending {:?} to {:?}", src, content, dst);
-            let _ = routing.send_put_response(src, dst, content);
+            debug!("As {:?} sending Put failure message to {:?}", src, dst);
+            let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![]);  // TODO - set proper error value
             return;
         }
 
         let dst = Authority::NaeManager(data.name());
-        let content = RequestContent::Put(data);
-        let _ = routing.send_put_request(request.dst.clone(), dst, content);
+        let _ = routing_node.send_put_request(request.dst.clone(), dst, data);
     }
 
     pub fn handle_refresh(&mut self,
                           nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>)
+                          values: Vec<RefreshAccumulatorValue>,
+                          quorum_size: usize)
                           -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size()).and_then(|merged_account| {
+        merge::<Account>(values, quorum_size).and_then(|merged_account| {
             self.database.handle_account_transfer(merged_account);
             Some(nonce)
         })
     }
 
-    pub fn handle_churn(&mut self, routing: &Routing, churn_event_id: &ChurnEventId) {
-        self.database.handle_churn(routing, churn_event_id)
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
+        self.database.handle_churn(routing_node, churn_event_id)
     }
 
     pub fn reset(&mut self) {
