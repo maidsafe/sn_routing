@@ -224,6 +224,7 @@ enum RefreshNonce {
 
 /// Returns the median (rounded down to the nearest integral value) of `values` which can be
 /// unsorted.  If `values` is empty, returns `0`.
+#[allow(unused)]
 fn median(mut values: Vec<u64>) -> u64 {
     match values.len() {
         0 => 0u64,

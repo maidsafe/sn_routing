@@ -38,14 +38,14 @@ test = true
 [[example]]
 bench = false
 name = "node"
-test = false
+test = true
 
 [[example]]
 bench = false
 name = "churn_node"
-test = false
+test = true
 
 [[example]]
 bench = false
 name = "local_network"
-test = false
+test = true

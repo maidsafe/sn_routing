@@ -35,11 +35,14 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+extern crate routing;
+extern crate xor_name;
+extern crate rustc_serialize;
 
 mod utils;
 
 #[allow(missing_docs)]
-pub fn main () {
+pub fn main() {
     maidsafe_utilities::log::init(true);
     utils::churn_node::ChurnNode::run();
 }
