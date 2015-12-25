@@ -17,14 +17,14 @@
 
 use kademlia_routing_table::{group_size, optimal_table_size};
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use routing::{Authority, Data, DataRequest, Event, InterfaceError, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage};
 use sodiumoxide::crypto::hash;
 use std::cmp::Ordering;
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
-use xor_name::{closer_to_target, XorName};
+use xor_name::{XorName, closer_to_target};
 
 pub struct MockRoutingImpl {
     our_id: XorName,
@@ -114,7 +114,7 @@ impl MockRoutingImpl {
     pub fn churn_event(&mut self, nodes: Vec<XorName>, churn_node: XorName) {
         let cloned_sender = self.sender.clone();
         let _ = thread!("Mock Churn Event", move || {
-            let _ = cloned_sender.send(Event::Churn(nodes/*, churn_node*/));
+            let _ = cloned_sender.send(Event::Churn(nodes /* , churn_node */));
         });
     }
 
@@ -232,7 +232,10 @@ impl MockRoutingImpl {
                                 nonce: hash::sha512::Digest,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        let request_content = RequestContent::Refresh{ nonce: nonce, content: content, };
+        let request_content = RequestContent::Refresh {
+            nonce: nonce,
+            content: content,
+        };
         let message = self.send_request(src.clone(), src, request_content, "Mock Refresh Request");
         Ok(self.refresh_requests_given.push(message))
     }

@@ -21,7 +21,8 @@ use maid_manager::MaidManager;
 use message_filter::MessageFilter;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
-use routing::{Authority, ChurnEventId, Data, DataRequest, Event, RefreshAccumulatorValue, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use routing::{Authority, ChurnEventId, Data, DataRequest, Event, RefreshAccumulatorValue, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage};
 use sd_manager::StructuredDataManager;
 use sodiumoxide::crypto::hash::sha512;
 use std::sync::{Arc, atomic, mpsc};

@@ -54,7 +54,10 @@ impl Refreshable for StructuredData {
         sds.sort_by(|a, b| b.1.cmp(&a.1));
         let (sd, count) = sds[0].clone();
         if count >= quorum_size as u64 {
-            return Some(MergedValue{name: name, value: sd, })
+            return Some(MergedValue {
+                name: name,
+                value: sd,
+            });
         }
         None
     }

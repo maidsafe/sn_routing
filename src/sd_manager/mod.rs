@@ -17,7 +17,8 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage, ResponseContent, StructuredData};
+use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage,
+              ResponseContent, StructuredData};
 use sodiumoxide::crypto::hash::sha512;
 use transfer_tag::TransferTag;
 use utils::{merge, quorum_size};
@@ -116,7 +117,10 @@ impl StructuredDataManager {
                     });
     }
 
-    pub fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+    pub fn handle_refresh(&mut self,
+                          nonce: sha512::Digest,
+                          values: Vec<RefreshAccumulatorValue>)
+                          -> Option<sha512::Digest> {
         merge::<StructuredData>(values, quorum_size()).and_then(|merged_structured_data| {
             self.handle_account_transfer(merged_structured_data.value);
             Some(nonce)
@@ -141,7 +145,9 @@ impl StructuredDataManager {
     pub fn reset(&mut self) {
         match ::chunk_store::ChunkStore::new(1073741824) {
             Ok(chunk_store) => self.chunk_store = chunk_store,
-            Err(err) => { debug!("Failed to reset sd_manager chunk store {:?}", err); },
+            Err(err) => {
+                debug!("Failed to reset sd_manager chunk store {:?}", err);
+            }
         };
     }
 

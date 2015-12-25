@@ -49,7 +49,10 @@ impl Refreshable for Account {
             stored_total_size.push(value.stored_total_size);
             lost_total_size.push(value.lost_total_size);
         }
-        Some(MergedValue{ name: name, value: Account::new(median(stored_total_size), median(lost_total_size)), })
+        Some(MergedValue {
+            name: name,
+            value: Account::new(median(stored_total_size), median(lost_total_size)),
+        })
     }
 }
 
@@ -141,11 +144,11 @@ impl Database {
                 Ok(group) => group,
                 Err(error) => {
                     error!("Failed to get close group from Routing: {:?}", error);
-                    return
+                    return;
                 }
             };
             if !close_group.iter().any(|&elt| elt == *key) {
-                continue
+                continue;
             }
 
             let src = Authority::NodeManager(key.clone());
@@ -153,7 +156,8 @@ impl Database {
             let mut nonce = sha512::hash(&to_hash);
             nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
             if let Ok(serialised_account) = serialise(value) {
-                debug!("PmidManager sending refresh for account {:?}", src.get_name());
+                debug!("PmidManager sending refresh for account {:?}",
+                       src.get_name());
                 let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }
@@ -167,7 +171,7 @@ impl Database {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ::rand::random;
+    use rand::random;
     use xor_name::XorName;
 
     #[test]

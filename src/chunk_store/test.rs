@@ -17,7 +17,7 @@
 
 #[cfg(test)]
 mod test {
-    use ::rand::random;
+    use rand::random;
     use xor_name::XorName;
 
     fn get_random_non_empty_string(length: usize) -> String {

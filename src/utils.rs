@@ -52,11 +52,10 @@ pub fn merge<T>(values: Vec<RefreshAccumulatorValue>, quorum_size: usize) -> Opt
     // Turn the `values` into a `HashMap<src_name, Vec<contents>>`.  Normally all values will have
     // the same `src_name` and so this HashMap len should be 1, but this lets us filter out any
     // stray entries which have a different `src_name` to all others.
-    let names_and_contents =
-        values.into_iter().fold(HashMap::<_, Vec<_>>::new(), |mut accumulator, value| {
-            accumulator.entry(value.src_name).or_insert(vec![]).push(value.content);
-            accumulator
-        });
+    let names_and_contents = values.into_iter().fold(HashMap::<_, Vec<_>>::new(), |mut accumulator, value| {
+        accumulator.entry(value.src_name).or_insert(vec![]).push(value.content);
+        accumulator
+    });
 
     // If any entry in the HashMap has at least quorum values in its corresponding vector of
     // contents, use that to try and merge.
@@ -64,7 +63,7 @@ pub fn merge<T>(values: Vec<RefreshAccumulatorValue>, quorum_size: usize) -> Opt
         // Convert the vector of serialised contents to a vector of parsed entries
         let parsed_entries = quorum_entry.1.iter().filter_map(|elt| deserialise(elt).ok()).collect::<Vec<_>>();
         if parsed_entries.len() >= quorum_size {
-            return T::merge(*quorum_entry.0, parsed_entries, quorum_size)
+            return T::merge(*quorum_entry.0, parsed_entries, quorum_size);
         }
     }
     None
@@ -91,7 +90,9 @@ mod test {
 
     pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
         let mut vec: Vec<u8> = Vec::with_capacity(size);
-        for _ in 0..size { vec.push(random::<u8>()); }
+        for _ in 0..size {
+            vec.push(random::<u8>());
+        }
         vec
     }
 

@@ -146,7 +146,9 @@ impl PmidNode {
     pub fn reset(&mut self) {
         match ::chunk_store::ChunkStore::new(1073741824) {
             Ok(chunk_store) => self.chunk_store = chunk_store,
-            Err(err) => { debug!("Failed to reset pmid_node chunk store {:?}", err); },
+            Err(err) => {
+                debug!("Failed to reset pmid_node chunk store {:?}", err);
+            }
         };
     }
 }

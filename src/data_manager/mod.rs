@@ -21,8 +21,8 @@
 use self::database::{Account, Database};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, Data, DataRequest, ImmutableData, ImmutableDataType, RefreshAccumulatorValue, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use routing::{Authority, ChurnEventId, Data, DataRequest, ImmutableData, ImmutableDataType, RefreshAccumulatorValue,
+              RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, max, min};
 use std::collections::BTreeSet;
@@ -52,9 +52,7 @@ pub struct Stats {
 
 impl Stats {
     pub fn new(resource_index: u64) -> Stats {
-        Stats {
-            resource_index: resource_index,
-        }
+        Stats { resource_index: resource_index }
     }
 
     pub fn resource_index(&self) -> u64 {
@@ -68,7 +66,10 @@ impl Refreshable for Stats {
         for value in values {
             resource_indices.push(value.resource_index());
         }
-        Some(MergedValue{ name: name, value: Stats::new(median(resource_indices)), })
+        Some(MergedValue {
+            name: name,
+            value: Stats::new(median(resource_indices)),
+        })
     }
 }
 
@@ -106,7 +107,9 @@ impl DataManager {
         };
 
         // Cache the request
-        debug!("DataManager {:?} cached request {:?}", routing.name(), request);
+        debug!("DataManager {:?} cached request {:?}",
+               routing.name(),
+               request);
         // FIXME - should append to requests in the case of a pre-existing request for this chunk
         let _ = self.request_cache.insert(data_name, request.clone());
 
@@ -183,7 +186,10 @@ impl DataManager {
         target_pmids.push(own_name.clone());
         Self::sort_from_target(&mut target_pmids, &data_name);
         target_pmids.truncate(REPLICANTS);
-        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}", own_name, target_pmids, data_name);
+        debug!("DataManager {:?} chosen {:?} as pmid_nodes for chunk {:?}",
+               own_name,
+               target_pmids,
+               data_name);
         self.database.put_pmid_nodes(&data_name, target_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
@@ -212,14 +218,17 @@ impl DataManager {
         if self.request_cache.contains_key(&data_name) {
             match self.request_cache.remove(&data_name) {
                 Some(request) => {
-//                    for request in requests {
-                        let src = response.dst.clone();
-                        let dst = request.src;
-                        let content = response.content.clone();
-                        let _ = routing.send_get_response(src, dst, content);
-//                    }
+                    // for request in requests {
+                    let src = response.dst.clone();
+                    let dst = request.src;
+                    let content = response.content.clone();
+                    let _ = routing.send_get_response(src, dst, content);
+                    // }
                 }
-                None => debug!("Failed to find any requests for get response {:?}", response),
+                None => {
+                    debug!("Failed to find any requests for get response {:?}",
+                           response)
+                }
             };
         }
 
@@ -267,14 +276,20 @@ impl DataManager {
         // }
     }
 
-    pub fn handle_account_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+    pub fn handle_account_refresh(&mut self,
+                                  nonce: sha512::Digest,
+                                  values: Vec<RefreshAccumulatorValue>)
+                                  -> Option<sha512::Digest> {
         merge::<Account>(values, quorum_size()).and_then(|merged_account| {
             self.database.handle_account_transfer(merged_account);
             Some(nonce)
         })
     }
 
-    pub fn handle_stats_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+    pub fn handle_stats_refresh(&mut self,
+                                nonce: sha512::Digest,
+                                values: Vec<RefreshAccumulatorValue>)
+                                -> Option<sha512::Digest> {
         merge::<Stats>(values, quorum_size()).and_then(|merged_stats| {
             self.resource_index = merged_stats.value.resource_index();
             Some(nonce)

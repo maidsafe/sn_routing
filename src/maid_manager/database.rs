@@ -49,7 +49,10 @@ impl Refreshable for Account {
             data_stored.push(value.data_stored);
             space_available.push(value.space_available);
         }
-        Some(MergedValue{ name: name, value: Account::new(median(data_stored), median(space_available)), })
+        Some(MergedValue {
+            name: name,
+            value: Account::new(median(data_stored), median(space_available)),
+        })
     }
 }
 
@@ -106,7 +109,9 @@ impl Database {
     }
 
     pub fn handle_account_transfer(&mut self, merged: MergedValue<Account>) {
-        info!("MaidManager updating account {:?} to {:?}", merged.name, merged.value);
+        info!("MaidManager updating account {:?} to {:?}",
+              merged.name,
+              merged.value);
         let _ = self.storage.insert(merged.name, merged.value);
     }
 
@@ -117,7 +122,8 @@ impl Database {
             let mut nonce = sha512::hash(&to_hash);
             nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
             if let Ok(serialised_account) = serialise(value) {
-                debug!("MaidManager sending refresh for account {:?}", src.get_name());
+                debug!("MaidManager sending refresh for account {:?}",
+                       src.get_name());
                 let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use xor_name::{slice_as_u8_64_array, XorName};
+use xor_name::{XorName, slice_as_u8_64_array};
 
 /// ChunkStore is a collection for holding all data chunks.
 /// Implements a maximum disk usage to restrict storage.

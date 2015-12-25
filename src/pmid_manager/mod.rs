@@ -87,7 +87,10 @@ impl PmidManager {
         ::utils::HANDLED
 */    }
 
-    pub fn handle_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) -> Option<sha512::Digest> {
+    pub fn handle_refresh(&mut self,
+                          nonce: sha512::Digest,
+                          values: Vec<RefreshAccumulatorValue>)
+                          -> Option<sha512::Digest> {
         merge::<Account>(values, quorum_size()).and_then(|merged_account| {
             self.database.handle_account_transfer(merged_account);
             Some(nonce)

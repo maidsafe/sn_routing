@@ -22,8 +22,8 @@
 mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingImpl;
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage, RoutingError};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage, RoutingError};
 use sodiumoxide::crypto::hash;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
@@ -44,22 +44,34 @@ impl MockRouting {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
-        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        let src = Authority::Client {
+            client_key: client_pub_key,
+            proxy_node_name: client_address,
+        };
         unwrap_result!(self.pimpl.lock()).client_get(src, data_request)
     }
 
     pub fn client_put(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        let src = Authority::Client {
+            client_key: client_pub_key,
+            proxy_node_name: client_address,
+        };
         unwrap_result!(self.pimpl.lock()).client_put(src, data)
     }
 
     pub fn client_post(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        let src = Authority::Client {
+            client_key: client_pub_key,
+            proxy_node_name: client_address,
+        };
         unwrap_result!(self.pimpl.lock()).client_post(src, data)
     }
 
     pub fn client_delete(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client{client_key: client_pub_key, proxy_node_name: client_address};
+        let src = Authority::Client {
+            client_key: client_pub_key,
+            proxy_node_name: client_address,
+        };
         unwrap_result!(self.pimpl.lock()).client_delete(src, data)
     }
 

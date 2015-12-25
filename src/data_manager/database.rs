@@ -69,11 +69,16 @@ impl Refreshable for Account {
                 pmids.push(stats[i].0.clone());
             }
         }
-        debug!("DataManager merged chunk {:?} stored on nodes {:?}", name, pmids);
+        debug!("DataManager merged chunk {:?} stored on nodes {:?}",
+               name,
+               pmids);
         if pmids.len() == 0 {
             None
         } else {
-            Some(MergedValue{ name: name, value: Account::new(pmids), })
+            Some(MergedValue {
+                name: name,
+                value: Account::new(pmids),
+            })
         }
     }
 }
@@ -137,7 +142,9 @@ impl Database {
 
 
     pub fn handle_account_transfer(&mut self, merged: MergedValue<Account>) {
-        info!("DataManager updating account {:?} to {:?}", merged.name, merged.value);
+        info!("DataManager updating account {:?} to {:?}",
+              merged.name,
+              merged.value);
         let _ = self.storage.insert(merged.name, merged.value.data_holders);
     }
 
@@ -150,7 +157,8 @@ impl Database {
             nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
 
             if let Ok(serialised_account) = serialise(&account) {
-                debug!("DataManager sending refresh for account {:?}", src.get_name());
+                debug!("DataManager sending refresh for account {:?}",
+                       src.get_name());
                 let _ = routing.send_refresh_request(src.clone(), nonce, serialised_account);
             }
         }
