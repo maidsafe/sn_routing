@@ -74,7 +74,11 @@ impl Node {
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+    pub fn send_put_request(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data: Data)
+                            -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -84,7 +88,11 @@ impl Node {
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+    pub fn send_post_request(&self,
+                             src: Authority,
+                             dst: Authority,
+                             data: Data)
+                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -94,7 +102,11 @@ impl Node {
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+    pub fn send_delete_request(&self,
+                               src: Authority,
+                               dst: Authority,
+                               data: Data)
+                               -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
@@ -104,7 +116,11 @@ impl Node {
     }
 
     /// Respond to a get_request indicating success
-    pub fn send_get_success(&self, src: Authority, dst: Authority, data: Data) -> Result<(), InterfaceError> {
+    pub fn send_get_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data: Data)
+                            -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
@@ -233,7 +249,7 @@ impl Node {
     /// content. The authority provided (`src`) should be a group.
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                nonce: sha512::Digest,
+                                nonce: Vec<u8>,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
@@ -259,6 +275,13 @@ impl Node {
     pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::CloseGroup { result_tx: result_tx }));
+        Ok(try!(result_rx.recv()))
+    }
+
+    /// Returns the names of the close group to this node.
+    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::DynamicQuorumSize { result_tx: result_tx }));
         Ok(try!(result_rx.recv()))
     }
 

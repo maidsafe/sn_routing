@@ -18,7 +18,6 @@
 use xor_name::XorName;
 use types::{ChurnEventId, RefreshAccumulatorValue};
 use messages::{RequestMessage, ResponseMessage};
-use sodiumoxide::crypto::hash;
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -28,7 +27,7 @@ pub enum Event {
     /// Response.
     Response(ResponseMessage),
     /// Refresh reports to the user the collected accounts for a given refresh event
-    Refresh(hash::sha512::Digest, Vec<RefreshAccumulatorValue>),
+    Refresh(Vec<u8>, Vec<RefreshAccumulatorValue>),
     /// Churn reports a change in close group
     Churn(ChurnEventId),
     /// Event fired when all connections to a close group node is lost

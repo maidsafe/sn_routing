@@ -33,23 +33,19 @@ rand = "~0.3.12"
 [[example]]
 bench = false
 name = "key_value_store"
-path = "examples/key_value_store.rs"
 test = true
 
 [[example]]
 bench = false
 name = "node"
-path = "examples/node.rs"
 test = true
 
 [[example]]
 bench = false
 name = "churn_node"
-path = "examples/churn_node.rs"
 test = true
 
 [[example]]
 bench = false
 name = "local_network"
-path = "examples/local_network.rs"
 test = true

@@ -40,9 +40,11 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
+extern crate time;
 
 extern crate routing;
 extern crate xor_name;
+extern crate lru_time_cache;
 
 mod utils;
 
@@ -66,20 +68,29 @@ static USAGE: &'static str = "
 Usage:
   key_value_store
   key_value_store --node
-  key_value_store --help
+  \
+                              key_value_store --help
 
 Options:
-  -n, --node   Run as a non-interactive routing node in the network.
-  -h, --help   Display this help message.
+  -n, --node   Run as a \
+                              non-interactive routing node in the network.
+  -h, --help   Display \
+                              this help message.
 
-  Running without the --node option will start an interactive node.
-  Such a node can be used to send requests such as 'put' and 'get' to the network.
+  Running without the --node option will start \
+                              an interactive node.
+  Such a node can be used to send requests \
+                              such as 'put' and 'get' to the network.
 
-  A passive node is one that simply reacts on received requests. Such nodes are
-  the workers; they route messages and store and provide data.
+  A passive node is one \
+                              that simply reacts on received requests. Such nodes are
+  the \
+                              workers; they route messages and store and provide data.
 
-  The crust configuration file can be used to provide information on what
-  network discovery patterns to use, or which seed nodes to use.
+  The \
+                              crust configuration file can be used to provide information on what
+  \
+                              network discovery patterns to use, or which seed nodes to use.
 ";
 
 #[derive(RustcDecodable, Debug)]
@@ -210,7 +221,7 @@ impl KeyValueStore {
                     }
                 };
                 println!("Got value {:?} on key {:?}", value, key);
-            },
+            }
             None => println!("Failed to get {:?}", what),
         }
     }
@@ -231,8 +242,9 @@ impl KeyValueStore {
 fn main() {
     maidsafe_utilities::log::init(false);
 
-    let args: Args = Docopt::new(USAGE).and_then(|docopt| docopt.decode())
-                                       .unwrap_or_else(|error| error.exit());
+    let args: Args = Docopt::new(USAGE)
+                         .and_then(|docopt| docopt.decode())
+                         .unwrap_or_else(|error| error.exit());
 
     if args.flag_node {
         ExampleNode::new().run();
