@@ -279,9 +279,9 @@ impl Node {
     }
 
     /// Returns the names of the close group to this node.
-    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::QuorumSize { result_tx: result_tx }));
+        try!(self.action_sender.send(Action::DynamicQuorumSize { result_tx: result_tx }));
         Ok(try!(result_rx.recv()))
     }
 

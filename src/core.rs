@@ -214,7 +214,7 @@ impl Core {
                                     return;
                                 }
                             }
-                            Action::QuorumSize { result_tx, } => {
+                            Action::DynamicQuorumSize { result_tx, } => {
                                 if result_tx.send(self.routing_table.dynamic_quorum_size())
                                             .is_err() {
                                     return;
@@ -1045,7 +1045,8 @@ impl Core {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_group = self.close_group_names();
+        let mut close_group = self.close_group_names();
+        close_group.push(self.full_id.public_id().name().clone());
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 

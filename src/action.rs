@@ -41,7 +41,7 @@ pub enum Action {
     CloseGroup {
         result_tx: Sender<Vec<XorName>>,
     },
-    QuorumSize {
+    DynamicQuorumSize {
         result_tx: Sender<usize>,
     },
     Name {
@@ -63,7 +63,7 @@ impl ::std::fmt::Debug for Action {
                        dst)
             }
             Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
-            Action::QuorumSize { .. } => write!(f, "Action::QuorumSize"),
+            Action::DynamicQuorumSize { .. } => write!(f, "Action::QuorumSize"),
             Action::Name{ .. } => write!(f, "Action::Name"),
             Action::Terminate => write!(f, "Action::Terminate"),
         }

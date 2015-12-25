@@ -250,7 +250,7 @@ impl ExampleNode {
                     freq_rhs.cmp(freq_lhs)
                 });
 
-                if vec_container[0].1 >= unwrap_result!(self.node.quorum_size()) {
+                if vec_container[0].1 >= unwrap_result!(self.node.dynamic_quorum_size()) {
                     let _ = self.dm_accounts.insert(data_name, vec_container[0].0.clone());
                 }
             }
