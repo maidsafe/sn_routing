@@ -22,6 +22,7 @@ use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
+use sodiumoxide::crypto::box_;
 use time;
 
 #[allow(unused)]
@@ -107,26 +108,27 @@ impl ExampleNode {
 
     fn handle_request(&mut self, msg: RequestMessage) {
         match msg.content {
-            RequestContent::Get(data_request) => {
-                self.handle_get_request(data_request, msg.src, msg.dst);
+            RequestContent::Get(data_request, nonce_bytes) => {
+                self.handle_get_request(data_request, nonce_bytes, msg.src, msg.dst);
             }
-            RequestContent::Put(data) => {
-                self.handle_put_request(data, msg.dst);
+            RequestContent::Put(data, nonce_bytes) => {
+                self.handle_put_request(data, nonce_bytes, msg.dst);
             }
-            RequestContent::Post(_) => {
+            RequestContent::Post(..) => {
                 trace!("ExampleNode: Post unimplemented.");
             }
-            RequestContent::Delete(_) => {
+            RequestContent::Delete(..) => {
                 trace!("ExampleNode: Delete unimplemented.");
             }
             _ => (),
         }
     }
 
-    fn handle_get_request(&mut self, data_request: DataRequest, src: Authority, dst: Authority) {
+    fn handle_get_request(&mut self, data_request: DataRequest, nonce_bytes: [u8; box_::NONCEBYTES], src: Authority, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
                 if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
+                    trace!("Handle get request for NaeManager: data {:?} from {:?}", data_request.name(), managed_nodes[0]);
                     let _ = self.client_request_cache
                                 .entry(data_request.name())
                                 .or_insert(Vec::new())
@@ -135,14 +137,16 @@ impl ExampleNode {
                                        .send_get_request(dst,
                                                          Authority::ManagedNode(managed_nodes[0]
                                                                                     .clone()),
-                                                         data_request));
+                                                         data_request,
+                                                         nonce_bytes));
                 }
                 // TODO Send GetFailure back to Client
             }
             Authority::ManagedNode(_) => {
+                trace!("Handle get request for ManagedNode: data {:?}", data_request.name());
                 match self.db.get(&data_request.name()) {
                     Some(data) => {
-                        unwrap_result!(self.node.send_get_success(dst, src, data.clone()))
+                        unwrap_result!(self.node.send_get_success(dst, src, data.clone(), nonce_bytes))
                     }
                     None => {
                         trace!("GetDataRequest failed for {:?}.", data_request.name());
@@ -154,10 +158,9 @@ impl ExampleNode {
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, dst: Authority) {
+    fn handle_put_request(&mut self, data: Data, nonce_bytes: [u8; box_::NONCEBYTES], dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                trace!("Storing: key {:?}, value {:?}", data.name(), data);
                 let mut close_grp = unwrap_result!(self.node.close_group());
                 close_grp.push(unwrap_result!(self.node.name()));
 
@@ -174,20 +177,23 @@ impl ExampleNode {
                 let src = dst;
                 for i in 0..STORE_REDUNDANCY {
                     let dst = Authority::ManagedNode(close_grp[i].clone());
-                    unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone()));
+                    unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone(), nonce_bytes));
                 }
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
-                let _ = self.dm_accounts.insert(data.name(), close_grp);
+                let _ = self.dm_accounts.insert(data.name(), close_grp.clone());
+                trace!("Put Request: Updating NaeManager: data {:?}, nodes {:?}", data.name(), close_grp);
             }
             Authority::ClientManager(_) => {
-                trace!("Sending: key {:?}, value {:?}", data.name(), data);
+                trace!("Put Request: Updating ClientManager: key {:?}, value {:?}", data.name(), data);
                 let src = dst;
                 let dst = Authority::NaeManager(data.name());
-                unwrap_result!(self.node.send_put_request(src, dst, data));
+                unwrap_result!(self.node.send_put_request(src, dst, data, nonce_bytes));
             }
             Authority::ManagedNode(_) => {
+                trace!("Storing as ManagedNode: key {:?}, value {:?}", data.name(), data);
                 let _ = self.db.insert(data.name(), data);
+                // TODO Send PutSuccess here ??
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }
@@ -228,6 +234,7 @@ impl ExampleNode {
     fn handle_refresh(&mut self, nonce: Vec<u8>, values: Vec<RefreshAccumulatorValue>) {
         match unwrap_result!(deserialise(&nonce)) {
             RefreshNonce::ForMaidManager { client_name, .. } => {
+                trace!("handle_refresh for MaidManager. client - {:?}", client_name);
                 let mut records = Vec::<u64>::with_capacity(values.len());
                 for refresh_acc_val in values {
                     let record = unwrap_result!(deserialise(&refresh_acc_val.content));
@@ -251,7 +258,8 @@ impl ExampleNode {
                 });
 
                 if vec_container[0].1 >= unwrap_result!(self.node.dynamic_quorum_size()) {
-                    let _ = self.dm_accounts.insert(data_name, vec_container[0].0.clone());
+                    let old_val = self.dm_accounts.insert(data_name, vec_container[0].0.clone());
+                    trace!("DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}", data_name, old_val, vec_container[0].0);
                 }
             }
         }
@@ -270,10 +278,18 @@ impl ExampleNode {
 
                 let src = Authority::NaeManager(dm_account.0.clone());
                 let dst = Authority::ManagedNode(dm_account.1[0].clone());
-                if let Err(err) =
-                       self.node
-                           .send_get_request(src, dst, DataRequest::PlainData(dm_account.0.clone())) {
-                    error!("Failed to send get request to retrieve chunk - {:?}", err);
+
+                trace!("Example - handle_lost_close_node. recovering data - {:?}", dm_account.0.clone());
+
+                // FIXME - Generate nonce from lost_node properly so group members will use the same nonce
+                // to make the following get request and the corresponding put to relocate chunk
+                let (temp_nonce, _) = lost_node.0.split_at(box_::NONCEBYTES);
+                if let Some(nonce) = box_::Nonce::from_slice(temp_nonce) {
+                    if let Err(err) =
+                           self.node
+                               .send_get_request(src, dst, DataRequest::PlainData(dm_account.0.clone()), nonce.0) {
+                        error!("Failed to send get request to retrieve chunk - {:?}", err);
+                    }
                 }
             }
         }
@@ -281,8 +297,8 @@ impl ExampleNode {
 
     fn handle_response(&mut self, msg: ResponseMessage) {
         match (msg.content, msg.dst.clone()) {
-            (ResponseContent::GetSuccess(data), Authority::NaeManager(_)) => {
-                self.handle_get_success(data, msg.dst);
+            (ResponseContent::GetSuccess(data, nonce_bytes), Authority::NaeManager(_)) => {
+                self.handle_get_success(data, nonce_bytes, msg.dst);
             }
             (ResponseContent::GetFailure { .. }, Authority::NaeManager(_)) => {
                 unreachable!("Handle this - Repeat get request from different managed node and \
@@ -292,11 +308,11 @@ impl ExampleNode {
         }
     }
 
-    fn handle_get_success(&mut self, data: Data, dst: Authority) {
+    fn handle_get_success(&mut self, data: Data, nonce_bytes: [u8; box_::NONCEBYTES], dst: Authority) {
         if let Some(client_auths) = self.client_request_cache.remove(&data.name()) {
             let src = dst;
             for client_auth in client_auths {
-                let _ = self.node.send_get_success(src.clone(), client_auth, data.clone());
+                let _ = self.node.send_get_success(src.clone(), client_auth, data.clone(), nonce_bytes);
             }
             return;
         }
@@ -320,11 +336,12 @@ impl ExampleNode {
             }) {
                 let src = dst;
                 let dst = Authority::ManagedNode(node.clone());
-                unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone()));
+                unwrap_result!(self.node.send_put_request(src.clone(), dst, data.clone(), nonce_bytes));
 
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
                 unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
+                trace!("Replicating chunk {:?} to {:?}", data.name(), unwrap_option!(self.dm_accounts.get(&data.name()), ""));
             }
 
         }

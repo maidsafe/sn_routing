@@ -26,6 +26,7 @@ use data::{Data, DataRequest};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::RequestContent;
+use sodiumoxide::crypto::box_;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -62,22 +63,22 @@ impl Client {
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
     pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request), dst)
+        self.send_action(RequestContent::Get(data_request, box_::gen_nonce().0), dst)
     }
 
     /// Add something to the network
     pub fn send_put_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Put(data), dst)
+        self.send_action(RequestContent::Put(data, box_::gen_nonce().0), dst)
     }
 
     /// Change something already on the network
     pub fn send_post_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Post(data), dst)
+        self.send_action(RequestContent::Post(data, box_::gen_nonce().0), dst)
     }
 
     /// Remove something from the network
     pub fn send_delete_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Delete(data), dst)
+        self.send_action(RequestContent::Delete(data, box_::gen_nonce().0), dst)
     }
 
     fn send_action(&self, content: RequestContent, dst: Authority) -> Result<(), InterfaceError> {
