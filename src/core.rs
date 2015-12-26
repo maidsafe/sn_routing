@@ -475,7 +475,9 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<(Data, [u8; box_::NONCEBYTES])> {
+    fn get_from_cache(&mut self,
+                      routing_msg: &RoutingMessage)
+                      -> Option<(Data, [u8; box_::NONCEBYTES])> {
         match *routing_msg {
             RoutingMessage::Request(RequestMessage {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), nonce),

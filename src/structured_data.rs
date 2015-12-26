@@ -80,7 +80,9 @@ impl StructuredData {
     /// This is done this way to allow types to be created and previous_owner_signatures added one by one
     /// To transfer ownership the current owner signs over the data, the previous owners field
     /// must have the previous owners of version - 1 as the current owners of that last version.
-    pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), ::error::RoutingError> {
+    pub fn replace_with_other(&mut self,
+                              other: StructuredData)
+                              -> Result<(), ::error::RoutingError> {
         try!(self.validate_self_against_successor(&other));
 
         self.type_tag = other.type_tag;
@@ -99,7 +101,9 @@ impl StructuredData {
     }
 
     /// Validate...
-    pub fn validate_self_against_successor(&self, other: &StructuredData) -> Result<(), ::error::RoutingError> {
+    pub fn validate_self_against_successor(&self,
+                                           other: &StructuredData)
+                                           -> Result<(), ::error::RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
@@ -108,7 +112,8 @@ impl StructuredData {
 
         // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
         if other.type_tag != self.type_tag || other.identifier != self.identifier ||
-           other.version != self.version + 1 || *owner_keys_to_match != self.current_owner_keys {
+           other.version != self.version + 1 ||
+           *owner_keys_to_match != self.current_owner_keys {
             return Err(::error::RoutingError::UnknownMessageType);
         }
         other.verify_previous_owner_signatures(owner_keys_to_match)
@@ -138,7 +143,9 @@ impl StructuredData {
 
         let check_all_keys = |&sig| {
             owner_keys.iter()
-                      .any(|ref pub_key| ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key))
+                      .any(|ref pub_key| {
+                          ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
+                      })
         };
 
         if self.previous_owner_signatures
@@ -179,7 +186,8 @@ impl StructuredData {
     }
 
     /// Overwrite any existing signatures with the new signatures provided
-    pub fn replace_signatures(&mut self, new_signatures: Vec<::sodiumoxide::crypto::sign::Signature>) {
+    pub fn replace_signatures(&mut self,
+                              new_signatures: Vec<::sodiumoxide::crypto::sign::Signature>) {
         self.previous_owner_signatures = new_signatures;
     }
 
@@ -255,7 +263,9 @@ impl ::std::fmt::Debug for StructuredData {
 
         let prev_owner_signatures: Vec<String> = self.previous_owner_signatures
                                                      .iter()
-                                                     .map(|signature| ::utils::get_debug_id(&signature.0[..]))
+                                                     .map(|signature| {
+                                                         ::utils::get_debug_id(&signature.0[..])
+                                                     })
                                                      .collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
         for itr in &prev_owner_signatures {

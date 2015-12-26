@@ -62,7 +62,10 @@ impl Client {
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
-    pub fn send_get_request(&mut self, dst: Authority, data_request: DataRequest) -> Result<(), InterfaceError> {
+    pub fn send_get_request(&mut self,
+                            dst: Authority,
+                            data_request: DataRequest)
+                            -> Result<(), InterfaceError> {
         self.send_action(RequestContent::Get(data_request, box_::gen_nonce().0), dst)
     }
 

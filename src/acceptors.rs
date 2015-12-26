@@ -67,13 +67,15 @@ impl Acceptors {
             Endpoint::Tcp(socket_addr) => {
                 if let Some(ref port) = self.tcp_accepting_port {
                     let _ = self.endpoints
-                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr), port.clone()));
+                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
+                                                      port.clone()));
                 }
             }
             Endpoint::Utp(socket_addr) => {
                 if let Some(ref port) = self.utp_accepting_port {
                     let _ = self.endpoints
-                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr), port.clone()));
+                                .insert(Endpoint::new(Self::ip_from_socketaddr(socket_addr),
+                                                      port.clone()));
                 }
             }
         }
