@@ -246,13 +246,13 @@ pub enum RequestContent {
     },
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
-    Get(DataRequest),
+    Get(DataRequest, [u8; box_::NONCEBYTES]),
     /// Put data to network. Provide actual data as parameter
-    Put(Data),
+    Put(Data, [u8; box_::NONCEBYTES]),
     /// Post data to network. Provide actual data as parameter
-    Post(Data),
+    Post(Data, [u8; box_::NONCEBYTES]),
     /// Delete data from network. Provide actual data as parameter
-    Delete(Data),
+    Delete(Data, [u8; box_::NONCEBYTES]),
 }
 
 /// Types of respnses to exepect on the network.
@@ -294,15 +294,17 @@ pub enum ResponseContent {
     /// Should not be ignored. The data requested sent back
     /// (ManagedNode (cache) | NaeManagers) -> client
     /// ManagedNode -> NaeManagers
-    GetSuccess(Data),
+    GetSuccess(Data, [u8; box_::NONCEBYTES]),
     /// Success token for Put (may be ignored)
-    PutSuccess(sha512::Digest),
+    PutSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
     /// Success token for Post  (may be ignored)
-    PostSuccess(sha512::Digest),
+    PostSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(sha512::Digest),
+    DeleteSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
     /// Error for Get, includes signed request to prevent injection attacks
     GetFailure {
+        /// Unique response identifier
+        nonce_bytes: [u8; box_::NONCEBYTES],
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -310,6 +312,8 @@ pub enum ResponseContent {
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
+        /// Unique response identifier
+        nonce_bytes: [u8; box_::NONCEBYTES],
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -317,6 +321,8 @@ pub enum ResponseContent {
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
+        /// Unique response identifier
+        nonce_bytes: [u8; box_::NONCEBYTES],
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -324,6 +330,8 @@ pub enum ResponseContent {
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
+        /// Unique response identifier
+        nonce_bytes: [u8; box_::NONCEBYTES],
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers

@@ -101,7 +101,9 @@ mod test {
 
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_string().into_bytes();
-        let immutable_data = ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal, value);
+        let immutable_data =
+            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
+                                                 value);
         assert_eq!(immutable_data.name(),
                    ::data::Data::ImmutableData(immutable_data).name());
 
@@ -133,7 +135,9 @@ mod test {
 
         // payload_size() resolves correctly for ImmutableData
         let value = "immutable data value".to_string().into_bytes();
-        let immutable_data = ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal, value);
+        let immutable_data =
+            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
+                                                 value);
         assert_eq!(immutable_data.payload_size(),
                    ::data::Data::ImmutableData(immutable_data).payload_size());
 
@@ -154,7 +158,9 @@ mod test {
                    ::data::DataRequest::StructuredData(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = ::data::DataRequest::ImmutableData(name, ::immutable_data::ImmutableDataType::Normal).name();
+        let actual_name =
+            ::data::DataRequest::ImmutableData(name, ::immutable_data::ImmutableDataType::Normal)
+                .name();
         assert_eq!(name.clone(), actual_name);
 
         // name() resolves correctly for PlainData

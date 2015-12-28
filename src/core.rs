@@ -155,6 +155,7 @@ impl Core {
 
     pub fn run(&mut self,
                category_rx: ::std::sync::mpsc::Receiver<::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
+        let mut cur_routing_table_size = 0;
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         for it in category_rx.iter() {
             match it {
@@ -270,7 +271,8 @@ impl Core {
                 }
             } // Category Match
 
-            if self.state == State::Node {
+            if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
+                cur_routing_table_size = self.routing_table.len();
                 trace!(" -----------------------------------");
                 trace!("| Routing Table size updated to: {}",
                        self.routing_table.len());
@@ -401,8 +403,8 @@ impl Core {
         }
 
         // Cache handling
-        if let Some(data) = self.get_from_cache(signed_msg.content()).cloned() {
-            let content = ResponseContent::GetSuccess(data);
+        if let Some((data, nonce)) = self.get_from_cache(signed_msg.content()) {
+            let content = ResponseContent::GetSuccess(data, nonce);
 
             let response_msg = ResponseMessage {
                 src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
@@ -473,19 +475,26 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<&Data> {
+    fn get_from_cache(&mut self,
+                      routing_msg: &RoutingMessage)
+                      -> Option<(Data, [u8; box_::NONCEBYTES])> {
         match *routing_msg {
             RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _)),
+                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), nonce),
                     ..
-                }) => self.data_cache.get(&name),
+                }) => {
+                match self.data_cache.get(&name) {
+                    Some(data) => Some((data.clone(), nonce)),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
 
     fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
         if let RoutingMessage::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(ref data @ Data::ImmutableData(_)),
+                    content: ResponseContent::GetSuccess(ref data @ Data::ImmutableData(_), _),
                     ..
                 }) = *routing_msg {
             let _ = self.data_cache.insert(data.name().clone(), data.clone());
@@ -497,7 +506,6 @@ impl Core {
                               routing_msg: RoutingMessage,
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
-        trace!("{:?} Rxd {:?}", self, routing_msg);
         if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Refresh { ref nonce, ref content }, .. }) = &routing_msg {
             if self.state == State::Node {
                 return self.handle_refresh(nonce.clone(), content.clone(), public_id)
@@ -527,6 +535,7 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
+        trace!("{:?} - Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
@@ -605,10 +614,10 @@ impl Core {
                                                          src_name,
                                                          dst_name)
             }
-            (RequestContent::Get(_), _, _) |
-            (RequestContent::Put(_), _, _) |
-            (RequestContent::Post(_), _, _) |
-            (RequestContent::Delete(_), _, _) => {
+            (RequestContent::Get(..), _, _) |
+            (RequestContent::Put(..), _, _) |
+            (RequestContent::Post(..), _, _) |
+            (RequestContent::Delete(..), _, _) => {
                 let event = Event::Request(request_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
@@ -659,10 +668,10 @@ impl Core {
              Authority::Client { client_key, proxy_node_name, }) => {
                 self.handle_get_close_group_response(close_group_ids, client_key, proxy_node_name)
             }
-            (ResponseContent::GetSuccess(_), _, _) |
-            (ResponseContent::PutSuccess(_), _, _) |
-            (ResponseContent::PostSuccess(_), _, _) |
-            (ResponseContent::DeleteSuccess(_), _, _) |
+            (ResponseContent::GetSuccess(..), _, _) |
+            (ResponseContent::PutSuccess(..), _, _) |
+            (ResponseContent::PostSuccess(..), _, _) |
+            (ResponseContent::DeleteSuccess(..), _, _) |
             (ResponseContent::GetFailure{..}, _, _) |
             (ResponseContent::PutFailure{..}, _, _) |
             (ResponseContent::PostFailure{..}, _, _) |
@@ -956,12 +965,8 @@ impl Core {
                         }
                     } else {
                         if self.routing_table.is_close(public_id.name()) {
-                            // send churn
-                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
-
-                            if let Err(err) = self.event_sender.send(event) {
-                                error!("Error sending event to routing user - {:?}", err);
-                            }
+                            // NOTE: Send LostCloseNode event before Churn
+                            // as this will prevent invalid data from getting refreshed due to churn
 
                             // If the new node is going to displace a node from the close group then
                             // inform the vaults about the node being moved out of close group
@@ -975,6 +980,13 @@ impl Core {
                                         error!("Error sending event to routing user - {:?}", err);
                                     }
                                 }
+                            }
+
+                            // send churn
+                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
+
+                            if let Err(err) = self.event_sender.send(event) {
+                                error!("Error sending event to routing user - {:?}", err);
                             }
                         }
 
@@ -1587,14 +1599,18 @@ impl Core {
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
             if self.routing_table.is_close(&node_name) {
-                // If the lost node was in our close grp send Churn Event
-                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+                // NOTE: Send LostCloseNode event before Churn
+                // as this will prevent invalid data from getting refreshed due to churn
 
+                // If the lost node was in our close grp let the vaults know about the lost node
+                let event = Event::LostCloseNode(node_name);
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
                 }
-                // If the lost node was in our close grp let the vaults know about the lost node
-                let event = Event::LostCloseNode(node_name);
+
+                // If the lost node was in our close grp send Churn Event
+                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
                 }

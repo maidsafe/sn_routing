@@ -37,6 +37,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate routing;
 extern crate xor_name;
+extern crate sodiumoxide;
 extern crate rustc_serialize;
 extern crate lru_time_cache;
 extern crate time;

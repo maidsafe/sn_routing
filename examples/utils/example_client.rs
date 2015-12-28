@@ -66,7 +66,7 @@ impl ExampleClient {
             while let Ok(event) = self.receiver.try_recv() {
                 if let Event::Response(msg) = event {
                     match msg.content {
-                        ResponseContent::GetSuccess(data) => return Some(data),
+                        ResponseContent::GetSuccess(data, _) => return Some(data),
                         ResponseContent::GetFailure { .. } => return None,
                         _ => trace!("Received unexpected response {:?},", msg),
                     };

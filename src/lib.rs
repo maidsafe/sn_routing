@@ -99,7 +99,8 @@ pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use immutable_data::{ImmutableData, ImmutableDataType};
-pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
+pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
+                   RoutingMessage, SignedMessage};
 pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
