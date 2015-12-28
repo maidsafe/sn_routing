@@ -17,6 +17,7 @@
 
 use data::{Data, DataRequest};
 use id::{FullId, PublicId};
+use types::MessageId;
 use xor_name::XorName;
 use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign};
@@ -246,13 +247,13 @@ pub enum RequestContent {
     },
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
-    Get(DataRequest, [u8; box_::NONCEBYTES]),
+    Get(DataRequest, MessageId),
     /// Put data to network. Provide actual data as parameter
-    Put(Data, [u8; box_::NONCEBYTES]),
+    Put(Data, MessageId),
     /// Post data to network. Provide actual data as parameter
-    Post(Data, [u8; box_::NONCEBYTES]),
+    Post(Data, MessageId),
     /// Delete data from network. Provide actual data as parameter
-    Delete(Data, [u8; box_::NONCEBYTES]),
+    Delete(Data, MessageId),
 }
 
 /// Types of respnses to exepect on the network.
@@ -294,17 +295,17 @@ pub enum ResponseContent {
     /// Should not be ignored. The data requested sent back
     /// (ManagedNode (cache) | NaeManagers) -> client
     /// ManagedNode -> NaeManagers
-    GetSuccess(Data, [u8; box_::NONCEBYTES]),
+    GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
-    PutSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
+    PutSuccess(sha512::Digest, MessageId),
     /// Success token for Post  (may be ignored)
-    PostSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
+    PostSuccess(sha512::Digest, MessageId),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(sha512::Digest, [u8; box_::NONCEBYTES]),
+    DeleteSuccess(sha512::Digest, MessageId),
     /// Error for Get, includes signed request to prevent injection attacks
     GetFailure {
-        /// Unique response identifier
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        /// Unique message identifier
+        id: MessageId,
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -312,8 +313,8 @@ pub enum ResponseContent {
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
-        /// Unique response identifier
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        /// Unique message identifier
+        id: MessageId,
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -321,8 +322,8 @@ pub enum ResponseContent {
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
-        /// Unique response identifier
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        /// Unique message identifier
+        id: MessageId,
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers
@@ -330,8 +331,8 @@ pub enum ResponseContent {
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
-        /// Unique response identifier
-        nonce_bytes: [u8; box_::NONCEBYTES],
+        /// Unique message identifier
+        id: MessageId,
         /// Originators signed request
         request: RequestMessage,
         /// Error type sent back, may be injected form upper layers

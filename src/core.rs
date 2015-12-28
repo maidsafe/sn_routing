@@ -24,7 +24,7 @@ use action::Action;
 use xor_name::XorName;
 use sodiumoxide::crypto::{box_, hash, sign};
 use id::{FullId, PublicId};
-use types::{ChurnEventId, RefreshAccumulatorValue};
+use types::{MessageId, RefreshAccumulatorValue};
 use lru_time_cache::LruCache;
 use error::RoutingError;
 use authority::Authority;
@@ -403,8 +403,8 @@ impl Core {
         }
 
         // Cache handling
-        if let Some((data, nonce)) = self.get_from_cache(signed_msg.content()) {
-            let content = ResponseContent::GetSuccess(data, nonce);
+        if let Some((data, id)) = self.get_from_cache(signed_msg.content()) {
+            let content = ResponseContent::GetSuccess(data, id);
 
             let response_msg = ResponseMessage {
                 src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
@@ -475,16 +475,14 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self,
-                      routing_msg: &RoutingMessage)
-                      -> Option<(Data, [u8; box_::NONCEBYTES])> {
+    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<(Data, MessageId)> {
         match *routing_msg {
             RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), nonce),
+                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref id),
                     ..
                 }) => {
                 match self.data_cache.get(&name) {
-                    Some(data) => Some((data.clone(), nonce)),
+                    Some(data) => Some((data.clone(), id.clone())),
                     _ => None,
                 }
             }
@@ -983,7 +981,8 @@ impl Core {
                             }
 
                             // send churn
-                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
+                            let event = Event::Churn(MessageId::from_xor_name(public_id.name()
+                                                                                       .clone()));
 
                             if let Err(err) = self.event_sender.send(event) {
                                 error!("Error sending event to routing user - {:?}", err);
@@ -1603,13 +1602,13 @@ impl Core {
                 // as this will prevent invalid data from getting refreshed due to churn
 
                 // If the lost node was in our close grp let the vaults know about the lost node
-                let event = Event::LostCloseNode(node_name);
+                let event = Event::LostCloseNode(node_name.clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
                 }
 
                 // If the lost node was in our close grp send Churn Event
-                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+                let event = Event::Churn(MessageId::from_xor_name(node_name));
 
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);

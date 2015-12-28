@@ -16,16 +16,28 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
+use sodiumoxide::crypto::box_;
 use rustc_serialize::{Encoder, Decoder};
 use maidsafe_utilities::event_sender::MaidSafeObserver;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 
-/// Nonce for Churn Event
-#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
-pub struct ChurnEventId {
-    /// ID
-    pub id: XorName,
+/// Unique ID for messages
+#[derive(Ord, PartialOrd, Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
+pub struct MessageId([u8; box_::NONCEBYTES]);
+
+impl MessageId {
+    /// Generate a new MessageId with random content
+    pub fn new() -> MessageId {
+        MessageId(box_::gen_nonce().0)
+    }
+
+    /// Generate a new MessageId with contents extracted from given XorName
+    pub fn from_xor_name(name: XorName) -> MessageId {
+        MessageId(unwrap_option!(box_::Nonce::from_slice(&name.0[..box_::NONCEBYTES]),
+                                 "Failed generating MessageId from XorName")
+                      .0)
+    }
 }
 
 /// Value used by the refresh accumulator
