@@ -38,7 +38,7 @@ pub struct ExampleNode {
     client_accounts: HashMap<XorName, u64>,
     connected: bool,
     client_request_cache: LruCache<XorName, Vec<Authority>>, /* DataName vs List of ClientAuth asking for data */
-    lost_node_cache: LruCache<XorName, XorName>, // DataName vs LostNode
+    lost_node_cache: LruCache<XorName, (XorName, MessageId)>, // DataName vs (LostNode, Churn MessageId)
 }
 
 #[allow(unused)]
@@ -71,13 +71,9 @@ impl ExampleNode {
                     trace!("Received refresh event");
                     self.handle_refresh(nonce, values);
                 }
-                Event::Churn(churn_id) => {
-                    trace!("Received churn event {:?}", churn_id);
-                    self.handle_churn(churn_id)
-                }
-                Event::LostCloseNode(name) => {
-                    trace!("Received LostCloseNode {:?}", name);
-                    self.handle_lost_close_node(name);
+                Event::Churn { id, lost_close_node } => {
+                    trace!("Received churn event {:?}", id);
+                    self.handle_churn(id, lost_close_node)
                 }
                 // Event::Bootstrapped => trace!("Received bootstraped event"),
                 Event::Connected => {
@@ -215,7 +211,7 @@ impl ExampleNode {
         }
     }
 
-    fn handle_churn(&mut self, id: MessageId) {
+    fn handle_churn(&mut self, id: MessageId, lost_close_node: Option<XorName>) {
         for (client_name, stored) in self.client_accounts.iter() {
             let refresh_nonce = RefreshNonce::ForMaidManager {
                 id: id.clone(),
@@ -231,19 +227,24 @@ impl ExampleNode {
                                                      content));
         }
 
-        for (data_name, managed_nodes) in self.dm_accounts.iter() {
-            let refresh_nonce = RefreshNonce::ForDataManager {
-                id: id.clone(),
-                data_name: data_name.clone(),
-            };
+        if let Some(lost_close_node) = lost_close_node {
+            self.handle_lost_close_node(lost_close_node, id);
+        } else {
+            for (data_name, managed_nodes) in self.dm_accounts.iter() {
+                let refresh_nonce = RefreshNonce::ForDataManager {
+                    id: id.clone(),
+                    data_name: data_name.clone(),
+                    pmid_nodes: managed_nodes.clone(),
+                };
 
-            let nonce = unwrap_result!(serialise(&refresh_nonce));
-            let content = unwrap_result!(serialise(&managed_nodes));
+                let nonce = unwrap_result!(serialise(&refresh_nonce));
+                let content = unwrap_result!(serialise(&managed_nodes));
 
-            unwrap_result!(self.node
-                               .send_refresh_request(Authority::NaeManager(data_name.clone()),
-                                                     nonce,
-                                                     content));
+                unwrap_result!(self.node
+                                   .send_refresh_request(Authority::NaeManager(data_name.clone()),
+                                                         nonce,
+                                                         content));
+            }
         }
     }
 
@@ -284,11 +285,12 @@ impl ExampleNode {
         }
     }
 
-    fn handle_lost_close_node(&mut self, lost_node: XorName) {
+    fn handle_lost_close_node(&mut self, lost_node: XorName, id: MessageId) {
         let mut vec_lost_chunks = Vec::<usize>::with_capacity(self.dm_accounts.len());
         for dm_account in self.dm_accounts.iter_mut() {
             if let Some(lost_node_pos) = dm_account.1.iter().position(|elt| *elt == lost_node) {
-                let _ = self.lost_node_cache.insert(dm_account.0.clone(), lost_node.clone());
+                let _ = self.lost_node_cache
+                            .insert(dm_account.0.clone(), (lost_node.clone(), id.clone()));
                 let _ = dm_account.1.remove(lost_node_pos);
                 if dm_account.1.is_empty() {
                     error!("Chunk lost - No valid nodes left to retrieve chunk");
@@ -337,7 +339,7 @@ impl ExampleNode {
             return;
         }
 
-        if self.lost_node_cache.remove(&data.name()).is_some() {
+        if let Some((_, churn_id)) = self.lost_node_cache.remove(&data.name()) {
             let mut close_grp = unwrap_result!(self.node.close_group());
             close_grp.push(unwrap_result!(self.node.name()));
 
@@ -365,8 +367,24 @@ impl ExampleNode {
                 trace!("Replicating chunk {:?} to {:?}",
                        data.name(),
                        unwrap_option!(self.dm_accounts.get(&data.name()), ""));
-            }
 
+                // Send Refresh message with updated storage locations in DataManager
+                for (data_name, managed_nodes) in self.dm_accounts.iter() {
+                    let refresh_nonce = RefreshNonce::ForDataManager {
+                        id: churn_id.clone(),
+                        data_name: data_name.clone(),
+                        pmid_nodes: managed_nodes.clone(),
+                    };
+
+                    let nonce = unwrap_result!(serialise(&refresh_nonce));
+                    let content = unwrap_result!(serialise(&managed_nodes));
+
+                    unwrap_result!(self.node
+                                       .send_refresh_request(Authority::NaeManager(data_name.clone()),
+                                                             nonce,
+                                                             content));
+                }
+            }
         }
     }
 }
@@ -382,6 +400,7 @@ enum RefreshNonce {
     ForDataManager {
         id: MessageId,
         data_name: XorName,
+        pmid_nodes: Vec<XorName>,
     },
 }
 

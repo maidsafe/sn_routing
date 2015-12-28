@@ -963,26 +963,26 @@ impl Core {
                         }
                     } else {
                         if self.routing_table.is_close(public_id.name()) {
-                            // NOTE: Send LostCloseNode event before Churn
-                            // as this will prevent invalid data from getting refreshed due to churn
-
                             // If the new node is going to displace a node from the close group then
                             // inform the vaults about the node being moved out of close group
-                            if self.routing_table.len() >= ::kademlia_routing_table::group_size() {
-                                let close_grp_before = self.routing_table.our_close_group();
-                                if let Some(last_node) = close_grp_before.last() {
-                                    let event = Event::LostCloseNode(last_node.public_id
-                                                                              .name()
-                                                                              .clone());
-                                    if let Err(err) = self.event_sender.send(event) {
-                                        error!("Error sending event to routing user - {:?}", err);
-                                    }
+                            let lost_close_node = if self.routing_table.len() >=
+                                                     ::kademlia_routing_table::group_size() {
+                                if let Some(last_close_node) = self.routing_table
+                                                                   .our_close_group()
+                                                                   .last() {
+                                    Some(last_close_node.public_id.name().clone())
+                                } else {
+                                    None
                                 }
-                            }
+                            } else {
+                                None
+                            };
 
                             // send churn
-                            let event = Event::Churn(MessageId::from_xor_name(public_id.name()
-                                                                                       .clone()));
+                            let event = Event::Churn {
+                                id: MessageId::from_xor_name(public_id.name().clone()),
+                                lost_close_node: lost_close_node,
+                            };
 
                             if let Err(err) = self.event_sender.send(event) {
                                 error!("Error sending event to routing user - {:?}", err);
@@ -1598,17 +1598,11 @@ impl Core {
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
             if self.routing_table.is_close(&node_name) {
-                // NOTE: Send LostCloseNode event before Churn
-                // as this will prevent invalid data from getting refreshed due to churn
-
-                // If the lost node was in our close grp let the vaults know about the lost node
-                let event = Event::LostCloseNode(node_name.clone());
-                if let Err(err) = self.event_sender.send(event) {
-                    error!("Error sending event to routing user - {:?}", err);
-                }
-
                 // If the lost node was in our close grp send Churn Event
-                let event = Event::Churn(MessageId::from_xor_name(node_name));
+                let event = Event::Churn {
+                    id: MessageId::from_xor_name(node_name.clone()),
+                    lost_close_node: Some(node_name),
+                };
 
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
