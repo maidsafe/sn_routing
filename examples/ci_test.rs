@@ -84,7 +84,7 @@ impl Drop for NodeProcess {
 }
 
 fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
-    trace!("--------- Starting #{} nodes -----------", count);
+    println!("--------- Starting #{} nodes -----------", count);
 
     let mut nodes = Vec::with_capacity(count);
     let current_exe_path = unwrap_result!(env::current_exe());
@@ -92,8 +92,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     let mut arg;
     for i in 0..count {
         arg = match i {
-            0 => "--node --delete-bootstrap-cache".to_owned(),
-            _ => "--node".to_owned(),
+            0 => "-nd".to_owned(),
+            _ => "-n".to_owned(),
         };
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone()).arg(arg).spawn())));
@@ -109,10 +109,11 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  local_network [options] [<nodes> <num_of_requests>]
+  local_network [(<nodes> <requests>) | ([-nhd] | [-ch])]
 
 Options:
   -n, --node                    Run individual CI node.
+  -c, --client                  Run individual CI client.
   -d, --delete-bootstrap-cache  Delete existing bootstrap-cache.
   -h, --help                    Display this help message.
 ";
@@ -121,7 +122,10 @@ Options:
 struct Args {
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
-    flag_help: bool,
+    flag_node: Option<bool>,
+    flag_delete_bootstrap_cache: Option<bool>,
+    flag_client: Option<bool>,
+    flag_help: Option<bool>,
 }
 
 fn main() {
@@ -129,10 +133,13 @@ fn main() {
 
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|error| error.exit());
+                         .unwrap_or_else(|e| e.exit());
 
-    // TODO Get this from Docopt
-    let run_network_test = true;
+    println!("{:?}", args);
+
+    let run_network_test = !(args.flag_node.is_some() ||
+                             args.flag_delete_bootstrap_cache.is_some() ||
+                             args.flag_client.is_some());
 
     if run_network_test {
         let node_count = match args.arg_nodes {
@@ -189,8 +196,13 @@ fn main() {
         }
 
         stop_flg.store(true, Ordering::SeqCst);
-    } else {
-        utils::example_node::ExampleNode::run();
+    } else if let Some(true) = args.flag_node {
+        trace!("--------- Running Individual Node ----------");
+        utils::example_node::ExampleNode::new().run();
+    } else if let Some(true) = args.flag_client {
+        trace!("--------- Running Individual Client ----------");
+        // TODO
+        let _ = ExampleClient::new();
     }
 }
 

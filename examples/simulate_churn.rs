@@ -63,11 +63,12 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     };
 
     if kill_node {
-        let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng); // Never kill the bootstrap (0th) node
+        // Never kill the bootstrap (0th) node
+        let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
         let _ = nodes.remove(kill_at_index);
     } else {
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
-                                        .arg("--node")
+                                        .arg("-n")
                                         .spawn())));
         trace!("Started Node #{} with Process ID #{}",
                nodes.len() - 1,
