@@ -53,13 +53,14 @@ impl ChurnNode {
     pub fn run() {
         let mut rng = rand::thread_rng();
         let mut time = SteadyTime::now();
-        let minutes = rand::distributions::Range::new(2, 5);
+        let minutes = rand::distributions::Range::new(1, 3);
         let mut duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
         let sample = rand::distributions::Range::new(0, 5);
         let mut node = ExampleNode::new();
         let mut sender = node.get_sender();
 
         trace!("Running node for {:?}", duration);
+        println!("Running node for {:?}", duration);
         let _ = thread::spawn(move || node.run());
         let mut running = true;
 
@@ -67,6 +68,7 @@ impl ChurnNode {
         loop {
             if running {
                 trace!("ExampleNode online.");
+                println!("ExampleNode online.");
                 if time + duration < SteadyTime::now() {
                     trace!("Reached run time.");
                     let state = sample.ind_sample(&mut rng);
@@ -75,6 +77,8 @@ impl ChurnNode {
                         running = false;
                         duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
                         trace!("Stopping node for {:?}", duration);
+                        println!(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Stopping node for {:?}",
+                                 duration);
                     }
                     time = SteadyTime::now();
                 }
@@ -89,6 +93,7 @@ impl ChurnNode {
                     duration = time::Duration::minutes(minutes.ind_sample(&mut rng));
                     time = SteadyTime::now();
                     trace!("Running node for {:?}", duration);
+                    println!("Running node for {:?}", duration);
                 }
             }
 

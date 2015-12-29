@@ -46,6 +46,6 @@ mod utils;
 
 #[allow(missing_docs)]
 pub fn main() {
-    maidsafe_utilities::log::init(true);;
+    maidsafe_utilities::log::init(true);
     utils::example_node::ExampleNode::new().run();
 }

@@ -371,4 +371,3 @@ enum RefreshContent {
         pmid_nodes: Vec<XorName>,
     },
 }
-

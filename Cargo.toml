@@ -42,10 +42,5 @@ test = true
 
 [[example]]
 bench = false
-name = "churn_node"
-test = true
-
-[[example]]
-bench = false
-name = "local_network"
+name = "ci_test"
 test = true
