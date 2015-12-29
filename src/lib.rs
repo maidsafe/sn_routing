@@ -104,4 +104,4 @@ pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMess
 pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
-pub use types::{RefreshAccumulatorValue, MessageId};
+pub use types::MessageId;

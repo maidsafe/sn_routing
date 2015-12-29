@@ -18,7 +18,7 @@
 use lru_time_cache::LruCache;
 use xor_name::{XorName, closer_to_target};
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              RefreshAccumulatorValue, Authority, Node, Event, Data, DataRequest};
+              Authority, Node, Event, Data, DataRequest};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
@@ -67,10 +67,6 @@ impl ExampleNode {
             match event {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
-                Event::Refresh(nonce, values) => {
-                    trace!("Received refresh event");
-                    self.handle_refresh(nonce, values);
-                }
                 Event::Churn { id, lost_close_node } => {
                     trace!("Received churn event {:?}", id);
                     self.handle_churn(id, lost_close_node)
@@ -114,6 +110,9 @@ impl ExampleNode {
             }
             RequestContent::Delete(..) => {
                 trace!("ExampleNode: Delete unimplemented.");
+            }
+            RequestContent::Refresh(content) => {
+                self.handle_refresh(content);
             }
             _ => (),
         }
@@ -274,17 +273,16 @@ impl ExampleNode {
     // send the corresponding refresh messages out to our close group.
     fn handle_churn(&mut self, id: MessageId, lost_close_node: Option<XorName>) {
         for (client_name, stored) in self.client_accounts.iter() {
-            let refresh_nonce = RefreshNonce::ForMaidManager {
+            let refresh_content = RefreshContent::ForMaidManager {
                 id: id.clone(),
                 client_name: client_name.clone(),
+                data: stored.clone(),
             };
 
-            let nonce = unwrap_result!(serialise(&refresh_nonce));
-            let content = unwrap_result!(serialise(&stored));
+            let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
                                .send_refresh_request(Authority::ClientManager(client_name.clone()),
-                                                     nonce,
                                                      content));
         }
 
@@ -327,55 +325,32 @@ impl ExampleNode {
 
     fn send_data_manager_refresh_messages(&mut self, id: MessageId) {
         for (data_name, managed_nodes) in self.dm_accounts.iter() {
-            let refresh_nonce = RefreshNonce::ForDataManager {
+            let refresh_content = RefreshContent::ForDataManager {
                 id: id.clone(),
                 data_name: data_name.clone(),
                 pmid_nodes: managed_nodes.clone(),
             };
 
-            let nonce = unwrap_result!(serialise(&refresh_nonce));
-            let content = unwrap_result!(serialise(&managed_nodes));
+            let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
                                .send_refresh_request(Authority::NaeManager(data_name.clone()),
-                                                     nonce,
                                                      content));
         }
     }
 
-    fn handle_refresh(&mut self, nonce: Vec<u8>, values: Vec<RefreshAccumulatorValue>) {
-        match unwrap_result!(deserialise(&nonce)) {
-            RefreshNonce::ForMaidManager { client_name, .. } => {
+    fn handle_refresh(&mut self, content: Vec<u8>) {
+        match unwrap_result!(deserialise(&content)) {
+            RefreshContent::ForMaidManager { client_name, data, .. } => {
                 trace!("handle_refresh for MaidManager. client - {:?}", client_name);
-                let mut records = Vec::<u64>::with_capacity(values.len());
-                for refresh_acc_val in values {
-                    let record = unwrap_result!(deserialise(&refresh_acc_val.content));
-                    records.push(record)
-                }
-                let median = median(records.clone());
-                let _ = self.client_accounts.insert(client_name, median);
+                let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshNonce::ForDataManager { data_name, .. } => {
-                let mut hash_container = HashMap::<Vec<XorName>, usize>::with_capacity(20);
-                for refresh_acc_val in values {
-                    let mut managed_nodes: Vec<XorName> =
-                        unwrap_result!(deserialise(&refresh_acc_val.content));
-                    *hash_container.entry(managed_nodes).or_insert(0) += 1;
-                }
-
-                let mut vec_container: Vec<(Vec<XorName>, usize)> = hash_container.into_iter()
-                                                                                  .collect();
-                vec_container.sort_by(|&(_, ref freq_lhs), &(_, ref freq_rhs)| {
-                    freq_rhs.cmp(freq_lhs)
-                });
-
-                if vec_container[0].1 >= unwrap_result!(self.node.dynamic_quorum_size()) {
-                    let old_val = self.dm_accounts.insert(data_name, vec_container[0].0.clone());
-                    trace!("DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}",
-                           data_name,
-                           old_val,
-                           vec_container[0].0);
-                }
+            RefreshContent::ForDataManager { data_name, pmid_nodes, .. } => {
+                let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
+                trace!("DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}",
+                       data_name,
+                       old_val,
+                       pmid_nodes);
             }
         }
     }
@@ -384,10 +359,11 @@ impl ExampleNode {
 /// This can get defined for each of the personas in other crates
 #[allow(unused)]
 #[derive(RustcEncodable, RustcDecodable)]
-enum RefreshNonce {
+enum RefreshContent {
     ForMaidManager {
         id: MessageId,
         client_name: XorName,
+        data: u64,
     },
     ForDataManager {
         id: MessageId,
@@ -396,22 +372,3 @@ enum RefreshNonce {
     },
 }
 
-/// Returns the median (rounded down to the nearest integral value) of `values` which can be
-/// unsorted.  If `values` is empty, returns `0`.
-#[allow(unused)]
-fn median(mut values: Vec<u64>) -> u64 {
-    match values.len() {
-        0 => 0u64,
-        1 => values[0],
-        len if len % 2 == 0 => {
-            values.sort();
-            let lower_value = values[(len / 2) - 1];
-            let upper_value = values[len / 2];
-            (lower_value + upper_value) / 2
-        }
-        len => {
-            values.sort();
-            values[len / 2]
-        }
-    }
-}

@@ -39,13 +39,3 @@ impl MessageId {
                       .0)
     }
 }
-
-/// Value used by the refresh accumulator
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RefreshAccumulatorValue {
-    // TODO confirm if this is actually needed
-    /// Name of the node sending the refresh msg
-    pub src_node_name: XorName,
-    /// Serialised content interpreted by Vaults
-    pub content: Vec<u8>,
-}

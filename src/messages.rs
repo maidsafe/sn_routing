@@ -239,12 +239,7 @@ pub enum RequestContent {
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Message from upper layers sending network state on any network churn event
-    Refresh {
-        /// externally defined type identifier
-        nonce: Vec<u8>,
-        /// externally defined message
-        content: Vec<u8>,
-    },
+    Refresh(Vec<u8>),
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
     Get(DataRequest, MessageId),
