@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
-use types::{ChurnEventId, RefreshAccumulatorValue};
+use types::MessageId;
 use messages::{RequestMessage, ResponseMessage};
 
 /// An Event is received at the effective close group of B of a message flow < A | B >
@@ -26,12 +26,14 @@ pub enum Event {
     Request(RequestMessage),
     /// Response.
     Response(ResponseMessage),
-    /// Refresh reports to the user the collected accounts for a given refresh event
-    Refresh(Vec<u8>, Vec<RefreshAccumulatorValue>),
-    /// Churn reports a change in close group
-    Churn(ChurnEventId),
-    /// Event fired when all connections to a close group node is lost
-    LostCloseNode(XorName),
+    /// Churn reports a change in close group and optionally a node that is no longer a part of
+    /// close group
+    Churn {
+        /// Churn Id
+        id: MessageId,
+        /// If any close node was lost during this churn event
+        lost_close_node: Option<XorName>,
+    },
     /// Connected.
     Connected,
     /// Disconnected.

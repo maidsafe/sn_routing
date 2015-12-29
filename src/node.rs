@@ -26,8 +26,8 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
 use sodiumoxide::crypto::hash::sha512;
-use sodiumoxide::crypto::box_;
 use xor_name::XorName;
+use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -64,12 +64,12 @@ impl Node {
                             src: Authority,
                             dst: Authority,
                             data_request: DataRequest,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Get(data_request, nonce_bytes),
+            content: RequestContent::Get(data_request, id),
         });
         self.send_action(routing_msg)
     }
@@ -79,12 +79,12 @@ impl Node {
                             src: Authority,
                             dst: Authority,
                             data: Data,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Put(data, nonce_bytes),
+            content: RequestContent::Put(data, id),
         });
         self.send_action(routing_msg)
     }
@@ -94,12 +94,12 @@ impl Node {
                              src: Authority,
                              dst: Authority,
                              data: Data,
-                             nonce_bytes: [u8; box_::NONCEBYTES])
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Post(data, nonce_bytes),
+            content: RequestContent::Post(data, id),
         });
         self.send_action(routing_msg)
     }
@@ -109,12 +109,12 @@ impl Node {
                                src: Authority,
                                dst: Authority,
                                data: Data,
-                               nonce_bytes: [u8; box_::NONCEBYTES])
+                               id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Delete(data, nonce_bytes),
+            content: RequestContent::Delete(data, id),
         });
         self.send_action(routing_msg)
     }
@@ -124,12 +124,12 @@ impl Node {
                             src: Authority,
                             dst: Authority,
                             data: Data,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetSuccess(data, nonce_bytes),
+            content: ResponseContent::GetSuccess(data, id),
         });
         self.send_action(routing_msg)
     }
@@ -140,13 +140,13 @@ impl Node {
                             dst: Authority,
                             request: RequestMessage,
                             external_error_indicator: Vec<u8>,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
             content: ResponseContent::GetFailure {
-                nonce_bytes: nonce_bytes,
+                id: id,
                 request: request,
                 external_error_indicator: external_error_indicator,
             },
@@ -159,12 +159,12 @@ impl Node {
                             src: Authority,
                             dst: Authority,
                             request_hash: sha512::Digest,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutSuccess(request_hash, nonce_bytes),
+            content: ResponseContent::PutSuccess(request_hash, id),
         });
         self.send_action(routing_msg)
     }
@@ -175,13 +175,13 @@ impl Node {
                             dst: Authority,
                             request: RequestMessage,
                             external_error_indicator: Vec<u8>,
-                            nonce_bytes: [u8; box_::NONCEBYTES])
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
             content: ResponseContent::PutFailure {
-                nonce_bytes: nonce_bytes,
+                id: id,
                 request: request,
                 external_error_indicator: external_error_indicator,
             },
@@ -194,12 +194,12 @@ impl Node {
                              src: Authority,
                              dst: Authority,
                              request_hash: sha512::Digest,
-                             nonce_bytes: [u8; box_::NONCEBYTES])
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostSuccess(request_hash, nonce_bytes),
+            content: ResponseContent::PostSuccess(request_hash, id),
         });
         self.send_action(routing_msg)
     }
@@ -210,13 +210,13 @@ impl Node {
                              dst: Authority,
                              request: RequestMessage,
                              external_error_indicator: Vec<u8>,
-                             nonce_bytes: [u8; box_::NONCEBYTES])
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
             content: ResponseContent::PostFailure {
-                nonce_bytes: nonce_bytes,
+                id: id,
                 request: request,
                 external_error_indicator: external_error_indicator,
             },
@@ -229,12 +229,12 @@ impl Node {
                                src: Authority,
                                dst: Authority,
                                request_hash: sha512::Digest,
-                               nonce_bytes: [u8; box_::NONCEBYTES])
+                               id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteSuccess(request_hash, nonce_bytes),
+            content: ResponseContent::DeleteSuccess(request_hash, id),
         });
         self.send_action(routing_msg)
     }
@@ -245,13 +245,13 @@ impl Node {
                                dst: Authority,
                                request: RequestMessage,
                                external_error_indicator: Vec<u8>,
-                               nonce_bytes: [u8; box_::NONCEBYTES])
+                               id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
             content: ResponseContent::DeleteFailure {
-                nonce_bytes: nonce_bytes,
+                id: id,
                 request: request,
                 external_error_indicator: external_error_indicator,
             },
@@ -265,16 +265,12 @@ impl Node {
     /// content. The authority provided (`src`) should be a group.
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                nonce: Vec<u8>,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
             src: src.clone(),
             dst: src,
-            content: RequestContent::Refresh {
-                nonce: nonce,
-                content: content,
-            },
+            content: RequestContent::Refresh(content),
         });
         self.send_action(routing_msg)
     }
@@ -291,13 +287,6 @@ impl Node {
     pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::CloseGroup { result_tx: result_tx }));
-        Ok(try!(result_rx.recv()))
-    }
-
-    /// Returns the names of the close group to this node.
-    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
-        let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::DynamicQuorumSize { result_tx: result_tx }));
         Ok(try!(result_rx.recv()))
     }
 

@@ -24,7 +24,7 @@ use action::Action;
 use xor_name::XorName;
 use sodiumoxide::crypto::{box_, hash, sign};
 use id::{FullId, PublicId};
-use types::{ChurnEventId, RefreshAccumulatorValue};
+use types::MessageId;
 use lru_time_cache::LruCache;
 use error::RoutingError;
 use authority::Authority;
@@ -66,10 +66,8 @@ pub struct Core {
     connection_filter: ::message_filter::MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
-    refresh_accumulator: ::accumulator::Accumulator<Vec<u8>, RefreshAccumulatorValue>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
-    // cache_options: ::data_cache_options::DataCacheOptions,
     full_id: FullId,
     state: State,
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
@@ -131,11 +129,8 @@ impl Core {
                 node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
                 message_accumulator: ::accumulator::Accumulator::with_duration(1,
                     ::time::Duration::minutes(5)),
-                refresh_accumulator:
-                    ::accumulator::Accumulator::with_duration(1, ::time::Duration::minutes(10)),
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
-            // cache_options: ::data_cache_options::DataCacheOptions::new(),
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
@@ -212,12 +207,6 @@ impl Core {
                             Action::CloseGroup{ result_tx, } => {
                                 let close_group = self.close_group_names();
                                 if result_tx.send(close_group).is_err() {
-                                    return;
-                                }
-                            }
-                            Action::DynamicQuorumSize { result_tx, } => {
-                                if result_tx.send(self.routing_table.dynamic_quorum_size())
-                                            .is_err() {
                                     return;
                                 }
                             }
@@ -403,8 +392,8 @@ impl Core {
         }
 
         // Cache handling
-        if let Some((data, nonce)) = self.get_from_cache(signed_msg.content()) {
-            let content = ResponseContent::GetSuccess(data, nonce);
+        if let Some((data, id)) = self.get_from_cache(signed_msg.content()) {
+            let content = ResponseContent::GetSuccess(data, id);
 
             let response_msg = ResponseMessage {
                 src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
@@ -454,9 +443,9 @@ impl Core {
 
             Ok(())
         } else {
-            match (signed_msg.content().dst(), signed_msg.content().src()) {
-                (&Authority::NodeManager(_manager_name),
-                 &Authority::ManagedNode(_node_name)) => {
+            match (signed_msg.content().src(), signed_msg.content().dst()) {
+                (&Authority::ManagedNode(_node_name),
+                 &Authority::NodeManager(_manager_name)) => {
                     // TODO confirm sender is in our routing table
                     Ok(())
                 }
@@ -475,16 +464,14 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self,
-                      routing_msg: &RoutingMessage)
-                      -> Option<(Data, [u8; box_::NONCEBYTES])> {
+    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<(Data, MessageId)> {
         match *routing_msg {
             RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), nonce),
+                    content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref id),
                     ..
                 }) => {
                 match self.data_cache.get(&name) {
-                    Some(data) => Some((data.clone(), nonce)),
+                    Some(data) => Some((data.clone(), id.clone())),
                     _ => None,
                 }
             }
@@ -506,11 +493,6 @@ impl Core {
                               routing_msg: RoutingMessage,
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
-        if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Refresh { ref nonce, ref content }, .. }) = &routing_msg {
-            if self.state == State::Node {
-                return self.handle_refresh(nonce.clone(), content.clone(), public_id)
-            }
-        }
         if routing_msg.src().is_group() {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
@@ -617,7 +599,8 @@ impl Core {
             (RequestContent::Get(..), _, _) |
             (RequestContent::Put(..), _, _) |
             (RequestContent::Post(..), _, _) |
-            (RequestContent::Delete(..), _, _) => {
+            (RequestContent::Delete(..), _, _) |
+            (RequestContent::Refresh(_), _, _) => {
                 let event = Event::Request(request_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
@@ -626,19 +609,6 @@ impl Core {
                 warn!("Unhandled request - Message {:?}", request_msg);
                 Err(RoutingError::BadAuthority)
             }
-            // RequestContent::Refresh { type_tag, message, cause, } => {
-            //     if accumulated_message.source_authority.is_group() {
-            //         self.handle_refresh(type_tag,
-            //                             accumulated_message.source_authority
-            //                                                .get_location()
-            //                                                .clone(),
-            //                             message,
-            //                             accumulated_message.destination_authority,
-            //                             cause)
-            //     } else {
-            //         return Err(RoutingError::BadAuthority);
-            //     }
-            // }
         }
     }
 
@@ -965,25 +935,26 @@ impl Core {
                         }
                     } else {
                         if self.routing_table.is_close(public_id.name()) {
-                            // NOTE: Send LostCloseNode event before Churn
-                            // as this will prevent invalid data from getting refreshed due to churn
-
                             // If the new node is going to displace a node from the close group then
                             // inform the vaults about the node being moved out of close group
-                            if self.routing_table.len() >= ::kademlia_routing_table::group_size() {
-                                let close_grp_before = self.routing_table.our_close_group();
-                                if let Some(last_node) = close_grp_before.last() {
-                                    let event = Event::LostCloseNode(last_node.public_id
-                                                                              .name()
-                                                                              .clone());
-                                    if let Err(err) = self.event_sender.send(event) {
-                                        error!("Error sending event to routing user - {:?}", err);
-                                    }
+                            let lost_close_node = if self.routing_table.len() >=
+                                                     ::kademlia_routing_table::group_size() {
+                                if let Some(last_close_node) = self.routing_table
+                                                                   .our_close_group()
+                                                                   .last() {
+                                    Some(last_close_node.public_id.name().clone())
+                                } else {
+                                    None
                                 }
-                            }
+                            } else {
+                                None
+                            };
 
                             // send churn
-                            let event = Event::Churn(ChurnEventId { id: public_id.name().clone() });
+                            let event = Event::Churn {
+                                id: MessageId::from_xor_name(public_id.name().clone()),
+                                lost_close_node: lost_close_node,
+                            };
 
                             if let Err(err) = self.event_sender.send(event) {
                                 error!("Error sending event to routing user - {:?}", err);
@@ -1536,29 +1507,6 @@ impl Core {
         Ok(())
     }
 
-    // ----- Message Handlers that return to the event channel ------------------------------------
-    fn handle_refresh(&mut self,
-                      nonce: Vec<u8>,
-                      content: Vec<u8>,
-                      public_id: PublicId)
-                      -> Result<(), RoutingError> {
-        if !self.routing_table.is_close(public_id.name()) {
-            return Err(RoutingError::InvalidSource);
-        }
-
-        self.refresh_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
-        if let Some(result) = self.refresh_accumulator.add(nonce.clone(),
-                                                           RefreshAccumulatorValue {
-                                                               src_node_name: public_id.name()
-                                                                                       .clone(),
-                                                               content: content,
-                                                           }) {
-            let event = Event::Refresh(nonce, result);
-            try!(self.event_sender.send(event))
-        }
-        Ok(())
-    }
-
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
         match self.proxy_map.iter().next() {
             Some((ref _connection, ref bootstrap_pub_id)) => {
@@ -1599,17 +1547,11 @@ impl Core {
     fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
             if self.routing_table.is_close(&node_name) {
-                // NOTE: Send LostCloseNode event before Churn
-                // as this will prevent invalid data from getting refreshed due to churn
-
-                // If the lost node was in our close grp let the vaults know about the lost node
-                let event = Event::LostCloseNode(node_name);
-                if let Err(err) = self.event_sender.send(event) {
-                    error!("Error sending event to routing user - {:?}", err);
-                }
-
                 // If the lost node was in our close grp send Churn Event
-                let event = Event::Churn(ChurnEventId { id: node_name.clone() });
+                let event = Event::Churn {
+                    id: MessageId::from_xor_name(node_name.clone()),
+                    lost_close_node: Some(node_name),
+                };
 
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
