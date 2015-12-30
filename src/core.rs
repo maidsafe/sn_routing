@@ -453,7 +453,7 @@ impl Core {
                 // source authority matches the signed message's public_id. This prevents cases
                 // where attacker can provide a fake SignedMessage wrapper over somebody else's
                 // (Client's) RoutingMessage.
-                (_, &Authority::Client { ref client_key, .. }) => {
+                (&Authority::Client { ref client_key, .. }, _) => {
                     if client_key != signed_msg.public_id().signing_public_key() {
                         return Err(RoutingError::FailedSignature);
                     };

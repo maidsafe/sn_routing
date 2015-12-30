@@ -49,7 +49,6 @@ mod simulate_churn;
 
 use rand::random;
 use std::string::String;
-use std::error::Error;
 use std::io;
 use std::env;
 use std::thread;
@@ -61,8 +60,11 @@ use maidsafe_utilities::serialisation::serialise;
 use utils::example_client::ExampleClient;
 use routing::{Data, DataRequest, PlainData};
 use xor_name::XorName;
-use std::sync::Arc;
-use std::sync::atomic::{Ordering, AtomicBool};
+use std::sync::{Arc, Mutex, Condvar};
+use std::fs::File;
+use std::process::Stdio;
+use std::os::unix::io::FromRawFd;
+use std::os::unix::io::IntoRawFd;
 
 const GROUP_SIZE: usize = 8;
 const DEFAULT_REQUESTS: usize = 30;
@@ -73,16 +75,17 @@ pub struct NodeProcess(Child);
 impl Drop for NodeProcess {
     fn drop(&mut self) {
         match self.0.kill() {
-            Ok(()) => trace!("Killed Node with Process ID #{}", self.0.id()),
+            Ok(()) => println!("Killed Node with Process ID #{}", self.0.id()),
             Err(err) => {
-                error!("Error killing Node with Process ID #{} - {:?}",
-                       self.0.id(),
-                       err)
+                println!("Error killing Node with Process ID #{} - {:?}",
+                         self.0.id(),
+                         err)
             }
         }
     }
 }
 
+#[allow(unsafe_code)]
 fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     println!("--------- Starting #{} nodes -----------", count);
 
@@ -96,10 +99,25 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
             _ => "-n".to_owned(),
         };
 
-        nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone()).arg(arg).spawn())));
-        trace!("Started Node #{} with Process ID #{}", i, nodes[0].0.id());
+        let mut path_to_log = current_exe_path.clone();
+        path_to_log.set_file_name(format!("Node_{}.log", i + 1));
+
+        let log_file = unwrap_result!(File::create(path_to_log));
+        let raw_fd = log_file.into_raw_fd();
+
+        unsafe {
+            nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
+                                            .arg(arg)
+                                            .stdout(Stdio::from_raw_fd(raw_fd))
+                                            .stderr(Stdio::from_raw_fd(raw_fd))
+                                            .spawn())));
+        }
+
+        println!("Started Node #{} with Process ID #{}",
+                 i + 1,
+                 nodes[i].0.id());
         // Let Routing properly stabilise and populate its routing-table
-        thread::sleep(Duration::from_secs(1 + i as u64));
+        thread::sleep(Duration::from_secs(3 + i as u64));
     }
 
     Ok(nodes)
@@ -109,7 +127,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  local_network [(<nodes> <requests>) | ([-nhd] | [-ch])]
+  local_network [(<nodes> <requests>) | (-n | -nd | -h | -c)]
 
 Options:
   -n, --node                    Run individual CI node.
@@ -135,8 +153,6 @@ fn main() {
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|e| e.exit());
 
-    println!("{:?}", args);
-
     let run_network_test = !(args.flag_node.is_some() ||
                              args.flag_delete_bootstrap_cache.is_some() ||
                              args.flag_client.is_some());
@@ -158,19 +174,19 @@ fn main() {
 
         let nodes = unwrap_result!(start_nodes(node_count));
 
-        let stop_flg = Arc::new(AtomicBool::new(false));
+        let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn::simulate_churn(nodes, node_count, stop_flg.clone());
 
         // TODO (Spandan) Done till above
         // /////////////////////////////////
 
-        trace!("Starting Client");
+        println!("--------- Starting Client -----------");
         let mut example_client = ExampleClient::new();
 
-        let interval = ::std::time::Duration::from_millis(10000);
+        let interval = ::std::time::Duration::from_secs(10);
         thread::sleep(interval);
 
-        trace!("Putting data");
+        println!("--------- Putting Data -----------");
         let mut stored_data = Vec::with_capacity(requests);
         for i in 0..requests {
             let key: String = (0..10).map(|_| random::<u8>() as char).collect();
@@ -180,27 +196,36 @@ fn main() {
             let data = Data::PlainData(PlainData::new(name.clone(), data));
 
             example_client.put(data.clone());
-            println!("Putting Data: count #{}", i);
-            ::std::thread::sleep(::std::time::Duration::from_secs(5));
+            println!("Putting Data: count #{} - Data {:?}", i + 1, name);
+            thread::sleep(::std::time::Duration::from_secs(5));
             stored_data.push(data);
         }
 
-        trace!("Getting data");
+        ::std::thread::sleep(::std::time::Duration::from_secs(30));
+        println!("--------- Getting Data -----------");
         for i in 0..requests {
-            trace!("Get attempt #{}", i);
+            println!("Get attempt #{} - Data {:?}", i + 1, stored_data[i].name());
             let data = match example_client.get(DataRequest::PlainData(stored_data[i].name())) {
                 Some(data) => data,
-                None => panic!("Failed to recover stored data: {}.", stored_data[i].name()),
+                None => {
+                    println!("Failed to recover stored data: {}.", stored_data[i].name());
+                    break;
+                }
             };
             assert_eq!(data, stored_data[i]);
         }
 
-        stop_flg.store(true, Ordering::SeqCst);
+        // Graceful exit
+        {
+            let &(ref lock, ref cvar) = &*stop_flg;
+            *unwrap_result!(lock.lock()) = true;
+            cvar.notify_one();
+        }
     } else if let Some(true) = args.flag_node {
-        trace!("--------- Running Individual Node ----------");
+        // println!("--------- Running Individual Node ----------");
         utils::example_node::ExampleNode::new().run();
     } else if let Some(true) = args.flag_client {
-        trace!("--------- Running Individual Client ----------");
+        // println!("--------- Running Individual Client ----------");
         // TODO
         let _ = ExampleClient::new();
     }
