@@ -15,13 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// Simulate a churning vault.
-pub mod churn_node;
-/// Simulate a client.
-pub mod example_client;
-/// Simulate a vault.
-pub mod example_node;
+mod example_node;
+mod example_client;
 
-pub use self::churn_node::ChurnNode;
-pub use self::example_client::ExampleClient;
 pub use self::example_node::ExampleNode;
+pub use self::example_client::ExampleClient;

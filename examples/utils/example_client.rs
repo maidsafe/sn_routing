@@ -59,7 +59,7 @@ impl ExampleClient {
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
                                              request.clone()));
-        let timeout = Duration::milliseconds(60000);
+        let timeout = Duration::minutes(1);
         let time = SteadyTime::now();
 
         loop {

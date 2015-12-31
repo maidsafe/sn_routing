@@ -33,6 +33,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate log4rs;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
@@ -45,33 +46,41 @@ extern crate lru_time_cache;
 extern crate time;
 
 mod utils;
-mod simulate_churn;
 
-use rand::random;
-use std::string::String;
-use std::io;
-use std::env;
-use std::thread;
-use std::time::Duration;
-use std::process::{Child, Command};
-use docopt::Docopt;
-use sodiumoxide::crypto::hash;
-use maidsafe_utilities::serialisation::serialise;
-use utils::example_client::ExampleClient;
-use routing::{Data, DataRequest, PlainData};
-use xor_name::XorName;
-use std::sync::{Arc, Mutex, Condvar};
 use std::fs::File;
-use std::process::Stdio;
-use std::os::unix::io::FromRawFd;
-use std::os::unix::io::IntoRawFd;
+use std::time::Duration;
+use std::{io, env, thread};
+use std::sync::{Arc, Mutex, Condvar};
+use std::process::{Child, Command};
+
+use docopt::Docopt;
+use xor_name::XorName;
+use sodiumoxide::crypto::hash;
+use utils::{ExampleNode, ExampleClient};
+use routing::{Data, DataRequest, PlainData};
+
+use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::thread::RaiiThreadJoiner;
+
+use rand::{thread_rng, random, ThreadRng};
+use rand::distributions::{IndependentSample, Range};
+
+use log::LogLevelFilter;
+use log4rs::init_config;
+use log4rs::appender::FileAppender;
+use log4rs::pattern::PatternLayout;
+use log4rs::config::{Config, Logger, Root, Appender};
 
 const GROUP_SIZE: usize = 8;
+// TODO This is a current limitation but once responses are coded this can ideally be close to 0
+const CHURN_MIN_WAIT_SEC: u64 = 30;
+const CHURN_MAX_WAIT_SEC: u64 = 60;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 
-/// RAII wrapper for child processes
-pub struct NodeProcess(Child);
+const LOG_PATTERN: &'static str = "%l [%T] %f:%L - %m";
+
+struct NodeProcess(Child);
 impl Drop for NodeProcess {
     fn drop(&mut self) {
         match self.0.kill() {
@@ -92,26 +101,15 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     let mut nodes = Vec::with_capacity(count);
     let current_exe_path = unwrap_result!(env::current_exe());
 
-    let mut arg;
     for i in 0..count {
-        arg = match i {
-            0 => "-nd".to_owned(),
-            _ => "-n".to_owned(),
-        };
-
-        let mut path_to_log = current_exe_path.clone();
-        path_to_log.set_file_name(format!("Node_{}.log", i + 1));
-
-        let log_file = unwrap_result!(File::create(path_to_log));
-        let raw_fd = log_file.into_raw_fd();
-
-        unsafe {
-            nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
-                                            .arg(arg)
-                                            .stdout(Stdio::from_raw_fd(raw_fd))
-                                            .stderr(Stdio::from_raw_fd(raw_fd))
-                                            .spawn())));
+        let mut args = vec![format!("--node=Node_{}.log", i + 1)];
+        if i == 0 {
+            args.push("-d".to_owned());
         }
+
+        nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
+                                        .args(&args)
+                                        .spawn())));
 
         println!("Started Node #{} with Process ID #{}",
                  i + 1,
@@ -123,39 +121,137 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     Ok(nodes)
 }
 
+fn simulate_churn(mut nodes: Vec<NodeProcess>,
+                  network_size: usize,
+                  stop_flg: Arc<(Mutex<bool>, Condvar)>)
+                  -> RaiiThreadJoiner {
+    let joiner = thread!("ChurnSimulationThread", move || {
+        let mut rng = thread_rng();
+        let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
+
+        let mut log_file_number = nodes.len() + 1;
+        loop {
+            {
+                let &(ref lock, ref cvar) = &*stop_flg;
+
+                let mut stop_condition = unwrap_result!(lock.lock());
+                let mut wait_timed_out = false;
+                let wait_for = wait_range.ind_sample(&mut rng);
+
+                while !*stop_condition && !wait_timed_out {
+                    let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
+                                                         Duration::from_secs(wait_for)));
+                    stop_condition = wake_up_result.0;
+                    wait_timed_out = wake_up_result.1.timed_out();
+                }
+
+                if *stop_condition {
+                    break;
+                }
+            }
+
+            if let Err(err) = simulate_churn_impl(&mut nodes,
+                                                  &mut rng,
+                                                  &mut log_file_number,
+                                                  network_size) {
+                println!("{:?}", err);
+                break;
+            }
+        }
+    });
+
+    RaiiThreadJoiner::new(joiner)
+}
+
+fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
+                       rng: &mut ThreadRng,
+                       log_file_number: &mut usize,
+                       network_size: usize)
+                       -> Result<(), io::Error> {
+    println!("About to churn on #{} active nodes...", nodes.len());
+
+    let kill_node = match nodes.len() {
+        size if size == GROUP_SIZE => false,
+        size if size == network_size => true,
+        _ => random(),
+    };
+
+    if kill_node {
+        // Never kill the bootstrap (0th) node
+        let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
+        println!("Killing Node #{}", kill_at_index + 1);
+        let _ = nodes.remove(kill_at_index);
+    } else {
+        let arg = format!("--node=Node_{}.log", log_file_number);
+        *log_file_number += 1;
+
+        nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
+                                        .arg(arg)
+                                        .spawn())));
+        println!("Started Node #{} with Process ID #{}",
+                 nodes.len(),
+                 nodes[nodes.len() - 1].0.id());
+    }
+
+    Ok(())
+}
+
 // ==========================   Program Options   =================================
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  local_network [(<nodes> <requests>) | (-n | -nd | -h | -c)]
+  local_network [(<nodes> <requests>) | (--node=<log_file> | --node=<log_file> -d | -h)]
 
 Options:
-  -n, --node                    Run individual CI node.
-  -c, --client                  Run individual CI client.
+  --node=<log_file>             Run individual CI node.
   -d, --delete-bootstrap-cache  Delete existing bootstrap-cache.
   -h, --help                    Display this help message.
 ";
+// ================================================================================
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
-    flag_node: Option<bool>,
+    flag_node: Option<String>,
     flag_delete_bootstrap_cache: Option<bool>,
-    flag_client: Option<bool>,
     flag_help: Option<bool>,
 }
 
-fn main() {
-    maidsafe_utilities::log::init(true);
+fn init_logging(file_name: String) {
+    let mut log_path = unwrap_result!(env::current_exe());
+    log_path.set_file_name(file_name);
 
+    // Trucate the file if existent
+    let _ = unwrap_result!(File::create(log_path.clone()));
+
+    let appender = Appender::builder("file".to_owned(),
+                                     Box::new(unwrap_result!(FileAppender::builder(log_path)
+                     .pattern(unwrap_result!(PatternLayout::new(LOG_PATTERN)))
+                     .build())))
+                       .build();
+
+    let logger = Logger::builder("utils".to_owned(), LogLevelFilter::Trace).build();
+
+    let root = Root::builder(LogLevelFilter::Error)
+                   .appender("file".to_owned())
+                   .build();
+
+    let config = unwrap_result!(Config::builder(root)
+                                    .appender(appender)
+                                    .logger(logger)
+                                    .build());
+
+    unwrap_result!(init_config(config));
+}
+
+fn main() {
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|e| e.exit());
 
     let run_network_test = !(args.flag_node.is_some() ||
-                             args.flag_delete_bootstrap_cache.is_some() ||
-                             args.flag_client.is_some());
+                             args.flag_delete_bootstrap_cache.is_some());
 
     if run_network_test {
         let node_count = match args.arg_nodes {
@@ -175,10 +271,7 @@ fn main() {
         let nodes = unwrap_result!(start_nodes(node_count));
 
         let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
-        let _raii_joiner = simulate_churn::simulate_churn(nodes, node_count, stop_flg.clone());
-
-        // TODO (Spandan) Done till above
-        // /////////////////////////////////
+        let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
 
         println!("--------- Starting Client -----------");
         let mut example_client = ExampleClient::new();
@@ -221,21 +314,13 @@ fn main() {
             *unwrap_result!(lock.lock()) = true;
             cvar.notify_one();
         }
-    } else if let Some(true) = args.flag_node {
-        // println!("--------- Running Individual Node ----------");
-        utils::example_node::ExampleNode::new().run();
-    } else if let Some(true) = args.flag_client {
-        // println!("--------- Running Individual Client ----------");
-        // TODO
-        let _ = ExampleClient::new();
+    } else if let Some(log_file) = args.flag_node {
+        init_logging(log_file);
+
+        if let Some(true) = args.flag_delete_bootstrap_cache {
+            // TODO Remove bootstrap cache file
+        }
+
+        ExampleNode::new().run();
     }
 }
-
-// /// //////////////////////////////////////
-// /// 0) spawn N > close_group number of nodes
-// /// 1) do not churn till this
-// /// 2) after this run a random churn event which either kills a node or adds a node
-// ///    a) the killing of the node is to be ignored if number of nodes has come down to close_group
-// ///       size (same as 0 and 1)
-// ///    b) bootstrap node should never get killed
-// ///    c) the adding of the node is to be ignored if number of nodes has gone up to N

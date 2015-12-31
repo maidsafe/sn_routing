@@ -28,16 +28,12 @@ xor_name = "~0.0.1"
 [dev-dependencies]
 bit-vec = "~0.4.2"
 docopt = "~0.6.78"
+log4rs = "~0.3.3"
 rand = "~0.3.12"
 
 [[example]]
 bench = false
 name = "key_value_store"
-test = true
-
-[[example]]
-bench = false
-name = "node"
 test = true
 
 [[example]]
