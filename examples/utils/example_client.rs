@@ -47,6 +47,19 @@ impl ExampleClient {
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let routing_client = Client::new(sender, Some(full_id)).unwrap();
 
+
+        // Wait for Connected event from Routing
+        loop {
+            if let Ok(event) = receiver.try_recv() {
+                if let Event::Connected = event {
+                    println!("Client Connected to network");
+                    break;
+                }
+            }
+
+            thread::sleep(::std::time::Duration::from_secs(1));
+        }
+
         ExampleClient {
             routing_client: routing_client,
             receiver: receiver,

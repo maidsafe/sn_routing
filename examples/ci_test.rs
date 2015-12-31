@@ -66,7 +66,7 @@ use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
 use log::LogLevelFilter;
-use log4rs::init_config;
+// use log4rs::init_config;
 use log4rs::appender::FileAppender;
 use log4rs::pattern::PatternLayout;
 use log4rs::config::{Config, Logger, Root, Appender};
@@ -117,6 +117,9 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
         // Let Routing properly stabilise and populate its routing-table
         thread::sleep(Duration::from_secs(3 + i as u64));
     }
+
+    println!("Waiting 10 seconds to let the network stabilise");
+    thread::sleep(Duration::from_secs(10));
 
     Ok(nodes)
 }
@@ -231,18 +234,20 @@ fn init_logging(file_name: String) {
                      .build())))
                        .build();
 
-    let logger = Logger::builder("utils".to_owned(), LogLevelFilter::Trace).build();
+    let logger = Logger::builder("ci_test::utils::example_node".to_owned(),
+                                 LogLevelFilter::Trace)
+                     .build();
 
     let root = Root::builder(LogLevelFilter::Error)
                    .appender("file".to_owned())
                    .build();
 
-    let config = unwrap_result!(Config::builder(root)
-                                    .appender(appender)
-                                    .logger(logger)
-                                    .build());
+    let _config = unwrap_result!(Config::builder(root)
+                                     .appender(appender)
+                                     .logger(logger)
+                                     .build());
 
-    unwrap_result!(init_config(config));
+    // unwrap_result!(init_config(config));
 }
 
 fn main() {
@@ -275,9 +280,6 @@ fn main() {
 
         println!("--------- Starting Client -----------");
         let mut example_client = ExampleClient::new();
-
-        let interval = ::std::time::Duration::from_secs(10);
-        thread::sleep(interval);
 
         println!("--------- Putting Data -----------");
         let mut stored_data = Vec::with_capacity(requests);

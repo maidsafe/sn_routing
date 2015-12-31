@@ -26,7 +26,7 @@ use sodiumoxide::crypto::{box_, hash, sign};
 use id::{FullId, PublicId};
 use types::MessageId;
 use lru_time_cache::LruCache;
-use error::RoutingError;
+use error::{RoutingError, InterfaceError};
 use authority::Authority;
 use kademlia_routing_table::{NodeInfo, RoutingTable};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -201,6 +201,10 @@ impl Core {
                                                 return;
                                             }
                                         }
+                                    }
+                                } else {
+                                    if result_tx.send(Err(InterfaceError::NotConnected)).is_err() {
+                                        return;
                                     }
                                 }
                             }
@@ -861,7 +865,6 @@ impl Core {
                 self.state = State::Client;
                 self.message_accumulator.set_quorum_size(current_quorum_size);
 
-                // Only if we started as a client but eventually want to be a node
                 if self.client_restriction {
                     let _ = self.event_sender.send(Event::Connected);
                 } else {

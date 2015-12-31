@@ -60,8 +60,7 @@ use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use routing::{Data, DataRequest, PlainData};
-use utils::example_node::ExampleNode;
-use utils::example_client::ExampleClient;
+use utils::{ExampleNode, ExampleClient};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
