@@ -47,6 +47,19 @@ impl ExampleClient {
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let routing_client = Client::new(sender, Some(full_id)).unwrap();
 
+
+        // Wait for Connected event from Routing
+        loop {
+            if let Ok(event) = receiver.try_recv() {
+                if let Event::Connected = event {
+                    println!("Client Connected to network");
+                    break;
+                }
+            }
+
+            thread::sleep(::std::time::Duration::from_secs(1));
+        }
+
         ExampleClient {
             routing_client: routing_client,
             receiver: receiver,
@@ -59,7 +72,7 @@ impl ExampleClient {
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
                                              request.clone()));
-        let timeout = Duration::milliseconds(10000);
+        let timeout = Duration::minutes(1);
         let time = SteadyTime::now();
 
         loop {

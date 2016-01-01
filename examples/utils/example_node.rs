@@ -64,21 +64,23 @@ impl ExampleNode {
     /// Run event loop.
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
+            trace!("Received event: {:?}", event);
+
             match event {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
                 Event::Churn { id, lost_close_node } => {
-                    trace!("Received churn event {:?}", id);
+                    trace!("{:?} Received churn event {:?}", self, id);
                     self.handle_churn(id, lost_close_node)
                 }
                 // Event::Bootstrapped => trace!("Received bootstraped event"),
                 Event::Connected => {
-                    trace!("Received connected event");
+                    trace!("{:?} Received connected event", self);
                     self.connected = true;
                 }
-                Event::Disconnected => trace!("Received disconnected event"),
+                Event::Disconnected => trace!("{:?} Received disconnected event", self),
                 Event::Terminated => {
-                    trace!("Received terminate event");
+                    trace!("{:?} Received terminate event", self);
                     self.stop();
                     break;
                 }
@@ -93,7 +95,7 @@ impl ExampleNode {
 
     /// Terminate event loop.
     pub fn stop(&mut self) {
-        trace!("ExampleNode terminating.");
+        trace!("{:?} ExampleNode terminating.", self);
         self.node.stop();
     }
 
@@ -106,10 +108,10 @@ impl ExampleNode {
                 self.handle_put_request(data, id, msg.dst);
             }
             RequestContent::Post(..) => {
-                trace!("ExampleNode: Post unimplemented.");
+                trace!("{:?} ExampleNode: Post unimplemented.", self);
             }
             RequestContent::Delete(..) => {
-                trace!("ExampleNode: Delete unimplemented.");
+                trace!("{:?} ExampleNode: Delete unimplemented.", self);
             }
             RequestContent::Refresh(content) => {
                 self.handle_refresh(content);
@@ -140,24 +142,33 @@ impl ExampleNode {
         match dst {
             Authority::NaeManager(_) => {
                 if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
-                    trace!("Handle get request for NaeManager: data {:?} from {:?}",
-                           data_request.name(),
-                           managed_nodes[0]);
                     let _ = self.client_request_cache
                                 .entry(data_request.name())
                                 .or_insert(Vec::new())
                                 .push(src);
-                    unwrap_result!(self.node
-                                       .send_get_request(dst,
-                                                         Authority::ManagedNode(managed_nodes[0]
-                                                                                    .clone()),
-                                                         data_request,
-                                                         id));
+
+                    for it in managed_nodes.iter() {
+                        trace!("{:?} Handle get request for NaeManager: data {:?} from {:?}",
+                               self,
+                               data_request.name(),
+                               it);
+                        unwrap_result!(self.node
+                                           .send_get_request(dst.clone(),
+                                                             Authority::ManagedNode(it.clone()),
+                                                             data_request.clone(),
+                                                             id.clone()));
+                    }
+                } else {
+                    // TODO Send GetFailure back to Client
+                    error!("{:?} Data name {:?} not found in NaeManager. Current Dm Account: {:?}",
+                           self,
+                           data_request.name(),
+                           self.dm_accounts);
                 }
-                // TODO Send GetFailure back to Client
             }
             Authority::ManagedNode(_) => {
-                trace!("Handle get request for ManagedNode: data {:?}",
+                trace!("{:?} Handle get request for ManagedNode: data {:?}",
+                       self,
                        data_request.name());
                 match self.db.get(&data_request.name()) {
                     Some(data) => {
@@ -165,7 +176,9 @@ impl ExampleNode {
                                            .send_get_success(dst, src, data.clone(), id))
                     }
                     None => {
-                        trace!("GetDataRequest failed for {:?}.", data_request.name());
+                        trace!("{:?} GetDataRequest failed for {:?}.",
+                               self,
+                               data_request.name());
                         return;
                     }
                 }
@@ -201,12 +214,14 @@ impl ExampleNode {
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
                 let _ = self.dm_accounts.insert(data.name(), close_grp.clone());
-                trace!("Put Request: Updating NaeManager: data {:?}, nodes {:?}",
+                trace!("{:?} Put Request: Updating NaeManager: data {:?}, nodes {:?}",
+                       self,
                        data.name(),
                        close_grp);
             }
             Authority::ClientManager(_) => {
-                trace!("Put Request: Updating ClientManager: key {:?}, value {:?}",
+                trace!("{:?} Put Request: Updating ClientManager: key {:?}, value {:?}",
+                       self,
                        data.name(),
                        data);
                 let src = dst;
@@ -214,7 +229,8 @@ impl ExampleNode {
                 unwrap_result!(self.node.send_put_request(src, dst, data, id));
             }
             Authority::ManagedNode(_) => {
-                trace!("Storing as ManagedNode: key {:?}, value {:?}",
+                trace!("{:?} Storing as ManagedNode: key {:?}, value {:?}",
+                       self,
                        data.name(),
                        data);
                 let _ = self.db.insert(data.name(), data);
@@ -259,7 +275,8 @@ impl ExampleNode {
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
                 unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
-                trace!("Replicating chunk {:?} to {:?}",
+                trace!("{:?} Replicating chunk {:?} to {:?}",
+                       self,
                        data.name(),
                        unwrap_option!(self.dm_accounts.get(&data.name()), ""));
 
@@ -308,7 +325,8 @@ impl ExampleNode {
                 let src = Authority::NaeManager(dm_account.0.clone());
                 let dst = Authority::ManagedNode(dm_account.1[0].clone());
 
-                trace!("Example - process_lost_close_node. recovering data - {:?}",
+                trace!("{:?} Example - process_lost_close_node. recovering data - {:?}",
+                       format!("Node({:?}", unwrap_result!(self.node.name())),
                        dm_account.0.clone());
 
                 if let Err(err) =
@@ -342,17 +360,26 @@ impl ExampleNode {
     fn handle_refresh(&mut self, content: Vec<u8>) {
         match unwrap_result!(deserialise(&content)) {
             RefreshContent::ForMaidManager { client_name, data, .. } => {
-                trace!("handle_refresh for MaidManager. client - {:?}", client_name);
+                trace!("{:?} handle_refresh for MaidManager. client - {:?}",
+                       self,
+                       client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
             RefreshContent::ForDataManager { data_name, pmid_nodes, .. } => {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
-                trace!("DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}",
+                trace!("{:?} DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}",
+                       self,
                        data_name,
                        old_val,
                        pmid_nodes);
             }
         }
+    }
+}
+
+impl ::std::fmt::Debug for ExampleNode {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "Node({:?}) - ", unwrap_result!(self.node.name()))
     }
 }
 
@@ -371,4 +398,3 @@ enum RefreshContent {
         pmid_nodes: Vec<XorName>,
     },
 }
-
