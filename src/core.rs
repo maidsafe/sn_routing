@@ -335,7 +335,7 @@ impl Core {
         if self.state == State::Node {
             // Since endpoint request / GetCloseGroup response messages while relocating are sent
             // to a client we still need to accept these msgs sent to us even if we have become a node.
-            if let &Authority::Client { ref client_key, .. } = signed_msg.content().dst() {
+            if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
                 if client_key == self.full_id.public_id().signing_public_key() {
                     if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
                            signed_msg.content() {
@@ -383,7 +383,7 @@ impl Core {
         } else {
             // If message is coming from a client who we are the proxy node for
             // send the message on to the network
-            if let &Authority::Client { ref proxy_node_name, .. } = signed_msg.content().src() {
+            if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if proxy_node_name == self.full_id.public_id().name() {
                     return self.send(signed_msg.clone());
                 }
@@ -846,7 +846,7 @@ impl Core {
                     warn!("Incoming Connection not validated as a proper node - dropping");
                     self.crust_service.drop_node(connection);
 
-                    // Probably look for other bootstrap connections
+                // Probably look for other bootstrap connections
                     return Ok(());
                 }
 
@@ -1500,11 +1500,10 @@ impl Core {
         });
 
         // If we need to handle this message, handle it.
-        if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
-            if self.signed_message_filter.insert(signed_msg.clone()).is_none() {
-                let hop_name = self.full_id.public_id().name().clone();
-                return self.handle_signed_message_for_node(&signed_msg, &hop_name);
-            }
+        if self.routing_table.is_close(signed_msg.content().dst().get_name()) &&
+           self.signed_message_filter.insert(signed_msg.clone()).is_none() {
+            let hop_name = self.full_id.public_id().name().clone();
+            return self.handle_signed_message_for_node(&signed_msg, &hop_name);
         }
 
         Ok(())
