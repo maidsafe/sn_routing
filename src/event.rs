@@ -36,8 +36,4 @@ pub enum Event {
     },
     /// Connected.
     Connected,
-    /// Disconnected.
-    Disconnected,
-    /// Event::Terminated is called after Core::stop() has terminated internal processes
-    Terminated,
 }

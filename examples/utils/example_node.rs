@@ -78,12 +78,6 @@ impl ExampleNode {
                     trace!("{:?} Received connected event", self);
                     self.connected = true;
                 }
-                Event::Disconnected => trace!("{:?} Received disconnected event", self),
-                Event::Terminated => {
-                    trace!("{:?} Received terminate event", self);
-                    self.stop();
-                    break;
-                }
             }
         }
     }
@@ -91,12 +85,6 @@ impl ExampleNode {
     /// Allows external tests to send events.
     pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<Event> {
         self.sender.clone()
-    }
-
-    /// Terminate event loop.
-    pub fn stop(&mut self) {
-        trace!("{:?} ExampleNode terminating.", self);
-        self.node.stop();
     }
 
     fn handle_request(&mut self, msg: RequestMessage) {
