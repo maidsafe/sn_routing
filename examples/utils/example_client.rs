@@ -25,9 +25,9 @@ extern crate maidsafe_utilities;
 use std::sync::mpsc;
 use std::thread;
 use self::sodiumoxide::crypto;
-use self::time::{Duration, SteadyTime};
 use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, Client};
+use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
+                    Client};
 
 /// Network Client.
 #[allow(unused)]
@@ -46,7 +46,6 @@ impl ExampleClient {
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let routing_client = Client::new(sender, Some(full_id)).unwrap();
-
 
         // Wait for Connected event from Routing
         loop {
@@ -72,36 +71,42 @@ impl ExampleClient {
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
                                              request.clone()));
-        let timeout = Duration::minutes(1);
-        let time = SteadyTime::now();
 
+        // Wait for Get success event from Routing
         loop {
-            while let Ok(event) = self.receiver.try_recv() {
-                if let Event::Response(msg) = event {
-                    match msg.content {
-                        ResponseContent::GetSuccess(data, _) => return Some(data),
-                        ResponseContent::GetFailure { .. } => return None,
-                        _ => trace!("Received unexpected response {:?},", msg),
-                    };
+            if let Ok(event) = self.receiver.try_recv() {
+                match event {
+                    Event::Response(ResponseMessage{ content: ResponseContent::GetSuccess(data, _), .. }) => {
+                        return Some(data)
+                    }
+                    Event::Response(ResponseMessage{ content: ResponseContent::GetFailure{ external_error_indicator, .. }, .. }) => {
+                        error!("Failed to Get {:?}: {:?}", request.name(), unwrap_result!(String::from_utf8(external_error_indicator)));
+                        return None
+                    }
+                    _ => (),
                 }
-
-                break;
             }
 
-            if time + timeout < SteadyTime::now() {
-                trace!("Timed out waiting for data");
-                return None;
-            }
-
-            let interval = ::std::time::Duration::from_millis(10);
-            thread::sleep(interval);
+            thread::sleep(::std::time::Duration::from_secs(1));
         }
     }
 
     /// Put to network.
     pub fn put(&self, data: Data) {
+        let data_name = data.name();
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
+        // Wait for Put success event from Routing
+        loop {
+            if let Ok(event) = self.receiver.try_recv() {
+                if let Event::Response(ResponseMessage{ content: ResponseContent::PutSuccess(..), .. }) = event {
+                    println!("Successfully stored {:?}", data_name);
+                    break;
+                }
+            }
+
+            thread::sleep(::std::time::Duration::from_secs(1));
+        }
     }
 
     /// Post data onto the network.

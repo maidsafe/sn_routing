@@ -275,14 +275,6 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    // TODO(Spandan) Ask vaults if this can be removed as Node is now made to implement drop
-    // trait and hence is RAII friendly
-    /// Signal to Core that it needs to refuse new messages and handle all outstanding
-    /// messages.  After handling all messages it will send an Event::Terminated to the user.
-    pub fn stop(&self) {
-        let _ = self.action_sender.send(Action::Terminate);
-    }
-
     /// Returns the names of the close group to this node.
     pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
         let (result_tx, result_rx) = channel();

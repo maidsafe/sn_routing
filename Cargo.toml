@@ -28,7 +28,7 @@ xor_name = "~0.0.1"
 [dev-dependencies]
 bit-vec = "~0.4.2"
 docopt = "~0.6.78"
-log4rs = "~0.3.3"
+env_logger = "~0.3.2"
 rand = "~0.3.12"
 
 [[example]]

@@ -20,12 +20,12 @@ use xor_name::{XorName, closer_to_target};
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
               Authority, Node, Event, Data, DataRequest};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
+use sodiumoxide::crypto::hash::sha512::hash;
 use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
 use time;
 
-#[allow(unused)]
-const STORE_REDUNDANCY: usize = 2;
+const STORE_REDUNDANCY: usize = 4;
 
 /// Network ExampleNode.
 #[allow(unused)]
@@ -73,16 +73,10 @@ impl ExampleNode {
                     trace!("{:?} Received churn event {:?}", self, id);
                     self.handle_churn(id, lost_close_node)
                 }
-                // Event::Bootstrapped => trace!("Received bootstraped event"),
+                // Event::Bootstrapped => trace!("Received bootstrapped event"),
                 Event::Connected => {
                     trace!("{:?} Received connected event", self);
                     self.connected = true;
-                }
-                Event::Disconnected => trace!("{:?} Received disconnected event", self),
-                Event::Terminated => {
-                    trace!("{:?} Received terminate event", self);
-                    self.stop();
-                    break;
                 }
             }
         }
@@ -93,19 +87,13 @@ impl ExampleNode {
         self.sender.clone()
     }
 
-    /// Terminate event loop.
-    pub fn stop(&mut self) {
-        trace!("{:?} ExampleNode terminating.", self);
-        self.node.stop();
-    }
-
     fn handle_request(&mut self, msg: RequestMessage) {
         match msg.content {
             RequestContent::Get(data_request, id) => {
                 self.handle_get_request(data_request, id, msg.src, msg.dst);
             }
             RequestContent::Put(data, id) => {
-                self.handle_put_request(data, id, msg.dst);
+                self.handle_put_request(data, id, msg.src, msg.dst);
             }
             RequestContent::Post(..) => {
                 trace!("{:?} ExampleNode: Post unimplemented.", self);
@@ -130,7 +118,7 @@ impl ExampleNode {
                 unreachable!("Handle this - Repeat get request from different managed node and \
                               start the chunk relocation process");
             }
-            _ => unimplemented!(),
+            _ => unreachable!(),
         }
     }
 
@@ -159,11 +147,18 @@ impl ExampleNode {
                                                              id.clone()));
                     }
                 } else {
-                    // TODO Send GetFailure back to Client
                     error!("{:?} Data name {:?} not found in NaeManager. Current Dm Account: {:?}",
                            self,
                            data_request.name(),
                            self.dm_accounts);
+                    unwrap_result!(self.node
+                                       .send_get_failure(dst.clone(),
+                                                         src.clone(),
+                                                         RequestMessage{ src: src,
+                                                                         dst: dst,
+                                                                         content: RequestContent::Get(data_request, id.clone()) },
+                                                         "Data not found".to_owned().into_bytes(),
+                                                         id));
                 }
             }
             Authority::ManagedNode(_) => {
@@ -187,7 +182,7 @@ impl ExampleNode {
         }
     }
 
-    fn handle_put_request(&mut self, data: Data, id: MessageId, dst: Authority) {
+    fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
                 let mut close_grp = unwrap_result!(self.node.close_group());
@@ -203,13 +198,13 @@ impl ExampleNode {
 
                 close_grp.truncate(STORE_REDUNDANCY);
 
-                let src = dst;
                 for i in 0..STORE_REDUNDANCY {
-                    let dst = Authority::ManagedNode(close_grp[i].clone());
-                    unwrap_result!(self.node.send_put_request(src.clone(),
-                                                              dst,
-                                                              data.clone(),
-                                                              id.clone()));
+                    unwrap_result!(self.node
+                                       .send_put_request(dst.clone(),
+                                                         Authority::ManagedNode(close_grp[i]
+                                                                                    .clone()),
+                                                         data.clone(),
+                                                         id.clone()));
                 }
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
@@ -224,9 +219,18 @@ impl ExampleNode {
                        self,
                        data.name(),
                        data);
-                let src = dst;
-                let dst = Authority::NaeManager(data.name());
-                unwrap_result!(self.node.send_put_request(src, dst, data, id));
+                {
+                    let src = dst.clone();
+                    let dst = Authority::NaeManager(data.name());
+                    unwrap_result!(self.node.send_put_request(src, dst, data.clone(), id.clone()));
+                }
+                let request_message = RequestMessage {
+                    src: src.clone(),
+                    dst: dst.clone(),
+                    content: RequestContent::Put(data, id.clone()),
+                };
+                let encoded = unwrap_result!(serialise(&request_message));
+                unwrap_result!(self.node.send_put_success(dst, src, hash(&encoded[..]), id));
             }
             Authority::ManagedNode(_) => {
                 trace!("{:?} Storing as ManagedNode: key {:?}, value {:?}",

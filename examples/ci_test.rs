@@ -33,7 +33,7 @@
 
 #[macro_use]
 extern crate log;
-extern crate log4rs;
+extern crate env_logger;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
@@ -47,11 +47,14 @@ extern crate time;
 
 mod utils;
 
-use std::fs::File;
+use log::LogRecord;
+
+use std::fs::OpenOptions;
 use std::time::Duration;
 use std::{io, env, thread};
+use std::io::Write;
 use std::sync::{Arc, Mutex, Condvar};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
 use xor_name::XorName;
@@ -65,20 +68,14 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
-use log::LogLevelFilter;
-// use log4rs::init_config;
-use log4rs::appender::FileAppender;
-use log4rs::pattern::PatternLayout;
-use log4rs::config::{Config, Logger, Root, Appender};
-
 const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
-const CHURN_MIN_WAIT_SEC: u64 = 30;
-const CHURN_MAX_WAIT_SEC: u64 = 60;
+const CHURN_MIN_WAIT_SEC: u64 = 2;
+const CHURN_MAX_WAIT_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 
-const LOG_PATTERN: &'static str = "%l [%T] %f:%L - %m";
+// const LOG_PATTERN: &'static str = "%l [%T] %f:%L - %m";
 
 struct NodeProcess(Child);
 impl Drop for NodeProcess {
@@ -94,9 +91,8 @@ impl Drop for NodeProcess {
     }
 }
 
-#[allow(unsafe_code)]
 fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
-    println!("--------- Starting #{} nodes -----------", count);
+    println!("--------- Starting {} nodes -----------", count);
 
     let mut nodes = Vec::with_capacity(count);
     let current_exe_path = unwrap_result!(env::current_exe());
@@ -109,9 +105,11 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
                                         .args(&args)
+                                        .stdout(Stdio::null())
+                                        .stderr(Stdio::null())
                                         .spawn())));
 
-        println!("Started Node #{} with Process ID #{}",
+        println!("Started Node #{} with Process ID {}",
                  i + 1,
                  nodes[i].0.id());
         // Let Routing properly stabilise and populate its routing-table
@@ -190,6 +188,8 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
 
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
                                         .arg(arg)
+                                        .stdout(Stdio::null())
+                                        .stderr(Stdio::null())
                                         .spawn())));
         println!("Started Node #{} with Process ID #{}",
                  nodes.len(),
@@ -221,33 +221,32 @@ struct Args {
     flag_help: Option<bool>,
 }
 
-fn init_logging(file_name: String) {
+fn init(file_name: String) {
     let mut log_path = unwrap_result!(env::current_exe());
-    log_path.set_file_name(file_name);
+    log_path.set_file_name(file_name.clone());
 
-    // Trucate the file if existent
-    let _ = unwrap_result!(File::create(log_path.clone()));
+    let format = move |record: &LogRecord| {
+        let log_message = format!("[{}:{}] {}\n",
+                                  record.location().file(),
+                                  record.location().line(),
+                                  record.args());
+        let mut logfile = unwrap_result!(OpenOptions::new()
+                                             .write(true)
+                                             .create(true)
+                                             .append(true)
+                                             .open(log_path.clone()));
+        unwrap_result!(logfile.write_all(&log_message.clone().into_bytes()[..]));
+        log_message
+    };
 
-    let appender = Appender::builder("file".to_owned(),
-                                     Box::new(unwrap_result!(FileAppender::builder(log_path)
-                     .pattern(unwrap_result!(PatternLayout::new(LOG_PATTERN)))
-                     .build())))
-                       .build();
+    let mut builder = ::env_logger::LogBuilder::new();
+    let _ = builder.format(format);
 
-    let logger = Logger::builder("ci_test::utils::example_node".to_owned(),
-                                 LogLevelFilter::Trace)
-                     .build();
+    if let Ok(rust_log) = ::std::env::var("RUST_LOG") {
+        let _ = builder.parse(&rust_log);
+    }
 
-    let root = Root::builder(LogLevelFilter::Error)
-                   .appender("file".to_owned())
-                   .build();
-
-    let _config = unwrap_result!(Config::builder(root)
-                                     .appender(appender)
-                                     .logger(logger)
-                                     .build());
-
-    // unwrap_result!(init_config(config));
+    builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
 }
 
 fn main() {
@@ -290,13 +289,11 @@ fn main() {
             let data = unwrap_result!(serialise(&(key, value)));
             let data = Data::PlainData(PlainData::new(name.clone(), data));
 
-            example_client.put(data.clone());
             println!("Putting Data: count #{} - Data {:?}", i + 1, name);
-            thread::sleep(::std::time::Duration::from_secs(5));
+            example_client.put(data.clone());
             stored_data.push(data);
         }
 
-        ::std::thread::sleep(::std::time::Duration::from_secs(30));
         println!("--------- Getting Data -----------");
         for i in 0..requests {
             println!("Get attempt #{} - Data {:?}", i + 1, stored_data[i].name());
@@ -317,7 +314,7 @@ fn main() {
             cvar.notify_one();
         }
     } else if let Some(log_file) = args.flag_node {
-        init_logging(log_file);
+        init(log_file);
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file

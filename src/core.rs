@@ -36,7 +36,6 @@ use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessag
 use utils;
 use acceptors::Acceptors;
 
-const ROUTING_NODE_THREAD_NAME: &'static str = "RoutingNodeThread";
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
 // const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
@@ -112,7 +111,7 @@ impl Core {
         };
         let our_name = *full_id.public_id().name();
 
-        let joiner = thread!(ROUTING_NODE_THREAD_NAME, move || {
+        let joiner = thread!("RoutingThread", move || {
             let mut core = Core {
                 crust_service: crust_service,
                 acceptors: Acceptors::new(),
@@ -140,8 +139,6 @@ impl Core {
             };
 
             core.run(category_rx);
-
-            debug!("Exiting thread {:?}", ROUTING_NODE_THREAD_NAME);
         });
 
         Ok((action_sender,
@@ -221,8 +218,6 @@ impl Core {
                                 }
                             }
                             Action::Terminate => {
-                                let _ = self.event_sender.send(Event::Terminated);
-                                self.crust_service.stop();
                                 break;
                             }
                         }
@@ -509,7 +504,7 @@ impl Core {
                     if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                         let _ = self.grp_msg_filter.insert(output_msg.clone());
                     } else {
-                        return Err(::error::RoutingError::NotEnoughSignatures);
+                        return Ok(())
                     }
                 }
             }
