@@ -49,12 +49,12 @@ mod utils;
 
 use log::LogRecord;
 
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::time::Duration;
 use std::{io, env, thread};
 use std::io::Write;
 use std::sync::{Arc, Mutex, Condvar};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
 use xor_name::XorName;
@@ -67,12 +67,6 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
-
-// use log::LogLevelFilter;
-// use log4rs::init_config;
-// use log4rs::appender::FileAppender;
-// use log4rs::pattern::PatternLayout;
-// use log4rs::config::{Config, Logger, Root, Appender};
 
 const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
@@ -111,6 +105,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
                                         .args(&args)
+                                        .stdout(Stdio::null())
+                                        .stderr(Stdio::null())
                                         .spawn())));
 
         println!("Started Node #{} with Process ID {}",
@@ -192,6 +188,8 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
 
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
                                         .arg(arg)
+                                        .stdout(Stdio::null())
+                                        .stderr(Stdio::null())
                                         .spawn())));
         println!("Started Node #{} with Process ID #{}",
                  nodes.len(),
@@ -227,15 +225,16 @@ fn init(file_name: String) {
     let mut log_path = unwrap_result!(env::current_exe());
     log_path.set_file_name(file_name.clone());
 
-    // Truncate the file if existent
-    let _ = unwrap_result!(File::create(log_path.clone()));
-
     let format = move |record: &LogRecord| {
         let log_message = format!("[{}:{}] {}\n",
-            record.location().file(),
-            record.location().line(),
-            record.args());
-        let mut logfile = unwrap_result!(OpenOptions::new().write(true).append(true).open(file_name.clone()));
+                                  record.location().file(),
+                                  record.location().line(),
+                                  record.args());
+        let mut logfile = unwrap_result!(OpenOptions::new()
+                                             .write(true)
+                                             .create(true)
+                                             .append(true)
+                                             .open(log_path.clone()));
         unwrap_result!(logfile.write_all(&log_message.clone().into_bytes()[..]));
         log_message
     };
@@ -249,35 +248,6 @@ fn init(file_name: String) {
 
     builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
 }
-
-// fn init_logging(file_name: String) {
-//     let mut log_path = unwrap_result!(env::current_exe());
-//     log_path.set_file_name(file_name);
-
-//     // Truncate the file if existent
-//     let _ = unwrap_result!(File::create(log_path.clone()));
-
-//     let appender = Appender::builder("file".to_owned(),
-//                                      Box::new(unwrap_result!(FileAppender::builder(log_path)
-//                      .pattern(unwrap_result!(PatternLayout::new(LOG_PATTERN)))
-//                      .build())))
-//                        .build();
-
-//     let logger = Logger::builder("ci_test::utils::example_node".to_owned(),
-//                                  LogLevelFilter::Trace)
-//                      .build();
-
-//     let root = Root::builder(LogLevelFilter::Error)
-//                    .appender("file".to_owned())
-//                    .build();
-
-//     let config = unwrap_result!(Config::builder(root)
-//                                      .appender(appender)
-//                                      .logger(logger)
-//                                      .build());
-
-//     unwrap_result!(init_config(config));
-// }
 
 fn main() {
     let args: Args = Docopt::new(USAGE)

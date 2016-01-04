@@ -26,7 +26,8 @@ use std::sync::mpsc;
 use std::thread;
 use self::sodiumoxide::crypto;
 use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage, Client};
+use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
+                    Client};
 
 /// Network Client.
 #[allow(unused)]
@@ -82,7 +83,7 @@ impl ExampleClient {
                         error!("Failed to Get {:?}: {:?}", request.name(), unwrap_result!(String::from_utf8(external_error_indicator)));
                         return None
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
 
