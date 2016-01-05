@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use rustc_serialize::{Encoder, Decoder};
 use time;
 
-const STORE_REDUNDANCY: usize = 4;
+const STORE_REDUNDANCY: usize = 2;
 
 /// Network ExampleNode.
 #[allow(unused)]
@@ -246,15 +246,21 @@ impl ExampleNode {
 
     fn handle_get_success(&mut self, data: Data, id: MessageId, dst: Authority) {
         if let Some(client_auths) = self.client_request_cache.remove(&data.name()) {
-            let src = dst;
+            trace!("{:?} Sending GetSuccess to Client for data {:?}",
+                   self,
+                   data.name());
+            let src = dst.clone();
             for client_auth in client_auths {
                 let _ = self.node
                             .send_get_success(src.clone(), client_auth, data.clone(), id.clone());
             }
-            return;
         }
 
-        if let Some((_, churn_id)) = self.lost_node_cache.remove(&data.name()) {
+        if let Some((lost_node, churn_id)) = self.lost_node_cache.remove(&data.name()) {
+            trace!("{:?} GetSuccess received for lost node {:?} for data {:?}",
+                   self,
+                   lost_node,
+                   data.name());
             let mut close_grp = unwrap_result!(self.node.close_group());
             close_grp.push(unwrap_result!(self.node.name()));
 
@@ -326,23 +332,27 @@ impl ExampleNode {
                     continue;
                 }
 
-                let src = Authority::NaeManager(dm_account.0.clone());
-                let dst = Authority::ManagedNode(dm_account.1[0].clone());
-
-                trace!("{:?} Example - process_lost_close_node. recovering data - {:?}",
-                       format!("Node({:?}", unwrap_result!(self.node.name())),
+                trace!("Node({:?}) Example - process_lost_close_node: {:?}. recovering data - \
+                        {:?}",
+                       unwrap_result!(self.node.name()),
+                       lost_node.clone(),
                        dm_account.0.clone());
-
-                if let Err(err) =
-                       self.node
-                           .send_get_request(src,
-                                             dst,
-                                             DataRequest::PlainData(dm_account.0.clone()),
-                                             MessageId::from_xor_name(lost_node)) {
-                    error!("Failed to send get request to retrieve chunk - {:?}", err);
+                let src = Authority::NaeManager(dm_account.0.clone());
+                for it in dm_account.1.iter() {
+                    if let Err(err) =
+                           self.node
+                               .send_get_request(src.clone(),
+                                                 Authority::ManagedNode(it.clone()),
+                                                 DataRequest::PlainData(dm_account.0.clone()),
+                                                 MessageId::from_xor_name(lost_node.clone())) {
+                        error!("Failed to send get request to retrieve chunk - {:?}", err);
+                    }
                 }
             }
         }
+
+        // TODO: Probably better doing this on a per account held basis
+        self.send_data_manager_refresh_messages(id.from_reverse());
     }
 
     fn send_data_manager_refresh_messages(&mut self, id: MessageId) {
