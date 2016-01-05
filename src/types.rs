@@ -38,4 +38,13 @@ impl MessageId {
                                  "Failed generating MessageId from XorName")
                       .0)
     }
+
+    /// Generate a new MessageId after reversing self
+    pub fn from_reverse(&self) -> MessageId {
+        let mut name_mut = self.0;
+        name_mut.reverse();
+        MessageId(unwrap_option!(box_::Nonce::from_slice(&name_mut),
+                                 "Failed generating MessageId from XorName")
+                      .0)
+    }
 }

@@ -362,7 +362,6 @@ impl Core {
         }
 
         if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
-            // TODO
             try!(self.signed_msg_security_check(&signed_msg));
 
             if signed_msg.content().dst().is_group() {
@@ -516,7 +515,7 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
-        trace!("{:?} - Handling - {:?}", self, routing_msg);
+        trace!("{:?} Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
