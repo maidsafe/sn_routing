@@ -927,10 +927,9 @@ impl Core {
                     let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(),
                                                                             vec![connection]);
                     if let Some(_) = self.routing_table.get(public_id.name()) {
-                        if !self.routing_table.add_connection(public_id.name(), connection) {
-                            // We already sent an identify down this connection
+                            // Don't add multiple connections for a peer
+                            let _ = self.node_id_cache.remove(public_id.name());
                             return Ok(());
-                        }
                     } else {
                         if self.routing_table.is_close(public_id.name()) {
                             // If the new node is going to displace a node from the close group then
