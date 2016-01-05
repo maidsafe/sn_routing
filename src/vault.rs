@@ -264,10 +264,11 @@ mod test {
     use maidsafe_utilities::log;
     use rand::random;
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
-                  RequestMessage, ResponseContent, ResponseMessage, RoutingClient, StructuredData};
+                  RequestMessage, ResponseContent, ResponseMessage, StructuredData};
+    use routing::Client as RoutingClient;
     use std::sync::mpsc;
     use time::{Duration, SteadyTime};
-    use utils::test::generate_random_vec_u8;
+    use utils::generate_random_vec_u8;
     use xor_name::XorName;
 
     struct VaultComms {
@@ -324,21 +325,14 @@ mod test {
                             Event::Response(response) => {
                                 info!("Received {:?}", response);
                                 match response {
-                                    ResponseMessage{ content: ResponseContent::GetSuccess(data), .. } => {
+                                    ResponseMessage{ content: ResponseContent::GetSuccess(data, _), .. } => {
                                         let _ = client_sender.send(data);
                                     }
                                     _ => panic!("not expected!"),
                                 }
                             }
-                            Event::Refresh(_, _) => info!("client received a refresh"),
-                            Event::Churn(_) => info!("client received a churn"),
-                            Event::LostCloseNode(_) => info!("client received a LostCloseNode"),
+                            Event::Churn{ .. } => info!("client received a churn"),
                             Event::Connected => unwrap_result!(network_event_sender.send(Event::Connected)),
-                            Event::Disconnected => info!("client disconnected"),
-                            Event::Terminated => {
-                                info!("client routing listening terminated");
-                                break;
-                            }
                         };
                     }
                 });
@@ -468,19 +462,7 @@ mod test {
                                src);
                         match (expected_tag, dst, content) {
                             (1, Authority::NaeManager(_), _) => hit_vaults.push(i),
-                            (3, Authority::ManagedNode(_), RequestContent::Put(_)) => hit_vaults.push(i),
-                            _ => {}
-                        }
-                    }
-                    Ok(Event::Churn(_ /* , _ */)) => {
-                        if expected_tag == 10 {
-                            hit_vaults.push(i);
-                        }
-                    }
-                    Ok(Event::Refresh(type_tag, _, _)) => {
-                        match (expected_tag, type_tag) {
-                            (20, 2) => hit_vaults.push(i),
-                            (21, 5) => hit_vaults.push(i),
+                            (3, Authority::ManagedNode(_), RequestContent::Put(_, _)) => hit_vaults.push(i),
                             _ => {}
                         }
                     }
@@ -495,6 +477,11 @@ mod test {
                              Authority::NodeManager(_),
                              Authority::NaeManager(_)) => hit_vaults.push(i),
                             _ => {}
+                        }
+                    }
+                    Ok(Event::Churn{ .. }) => {
+                        if expected_tag == 10 {
+                            hit_vaults.push(i);
                         }
                     }
                     Ok(_) => {}

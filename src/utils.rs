@@ -32,14 +32,11 @@ pub fn handle_version() {
 }
 
 #[cfg(test)]
-mod test {
+pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     use rand::random;
-
-    pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-        let mut vec: Vec<u8> = Vec::with_capacity(size);
-        for _ in 0..size {
-            vec.push(random::<u8>());
-        }
-        vec
+    let mut vec: Vec<u8> = Vec::with_capacity(size);
+    for _ in 0..size {
+        vec.push(random::<u8>());
     }
+    vec
 }

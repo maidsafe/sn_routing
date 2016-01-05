@@ -119,7 +119,6 @@ impl Database {
 mod test {
     use super::*;
     use rand::random;
-    use xor_name::XorName;
 
     #[test]
     fn put_data() {
@@ -158,42 +157,6 @@ mod test {
 
     #[test]
     fn handle_account_transfer() {
-        let mut db = Database::new();
-        let name = random();
-        assert!(db.put_data(&name, 0));
-        assert!(db.put_data(&name, 1073741823));
-        assert!(!db.put_data(&name, 2));
-
-        let mut account_value: Account = Default::default();
-        account_value.put_data(1073741822);
-        {
-            let account = Account::new(name.clone(), account_value.clone());
-            db.handle_account_transfer(account);
-        }
-        assert!(!db.put_data(&name, 3));
-        assert!(db.put_data(&name, 2));
-
-        account_value.delete_data(1073741822);
-        {
-            let account = Account::new(name.clone(), account_value.clone());
-            db.handle_account_transfer(account);
-        }
-        assert!(!db.put_data(&name, 1073741825));
-        assert!(db.put_data(&name, 1073741824));
+        unimplemented!();
     }
-
-    #[test]
-    fn maid_manager_account_serialisation() {
-        let obj_before = Account::new(XorName([1u8; 64]),
-                                      Account::new(::rand::random::<u64>(), ::rand::random::<u64>()));
-
-        let mut e = ::cbor::Encoder::from_memory();
-        unwrap_result!(e.encode(&[&obj_before]));
-
-        let mut d = ::cbor::Decoder::from_bytes(e.into_bytes());
-        let obj_after: Account = unwrap_result!(unwrap_option!(d.decode().next(), ""));
-
-        assert_eq!(obj_before, obj_after);
-    }
-
 }

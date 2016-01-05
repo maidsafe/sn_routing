@@ -132,7 +132,7 @@ mod test {
     use super::*;
     use rand::random;
     use routing::{ImmutableData, ImmutableDataType};
-    use utils::test::generate_random_vec_u8;
+    use utils::generate_random_vec_u8;
     use xor_name::XorName;
 
     #[test]
@@ -241,7 +241,7 @@ mod test {
         db.put_pmid_nodes(&data_name, pmid_nodes.clone());
         assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
 
-        db.handle_account_transfer(Account::new(data_name.clone(), vec![]));
+        db.handle_account_transfer(data_name.clone(), Account::new(vec![]));
         assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
     }
 }

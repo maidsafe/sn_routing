@@ -141,7 +141,6 @@ impl Database {
 mod test {
     use super::*;
     use rand::random;
-    use xor_name::XorName;
 
     #[test]
     fn exist() {
@@ -169,29 +168,6 @@ mod test {
 
     #[test]
     fn handle_account_transfer() {
-        let mut db = Database::new();
-        let name = random();
-        db.put_data(&name, 1024);
-        assert!(db.storage.contains_key(&name));
-
-        let account_value = Account::new(::rand::random::<u64>(), ::rand::random::<u64>());
-        let account = Account::new(name.clone(), account_value.clone());
-        db.handle_account_transfer(account);
-        assert_eq!(db.storage[&name], account_value);
+        unimplemented!();
     }
-
-    #[test]
-    fn pmid_manager_account_serialisation() {
-        let obj_before = Account::new(XorName([1u8; 64]),
-                                      Account::new(::rand::random::<u64>(), ::rand::random::<u64>()));
-
-        let mut e = ::cbor::Encoder::from_memory();
-        unwrap_result!(e.encode(&[&obj_before]));
-
-        let mut d = ::cbor::Decoder::from_bytes(e.as_bytes());
-        let obj_after: Account = unwrap_result!(unwrap_option!(d.decode().next(), ""));
-
-        assert_eq!(obj_before, obj_after);
-    }
-
 }
