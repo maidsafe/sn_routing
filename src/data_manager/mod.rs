@@ -18,23 +18,19 @@
 // TODO remove this
 #![allow(unused)]
 
-use self::database::{Account, Database};
+pub use self::database::Account;
+use self::database::Database;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, Data, DataRequest, ImmutableData, ImmutableDataType, RefreshAccumulatorValue,
-              RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, max, min};
 use std::collections::BTreeSet;
 use time::{Duration, SteadyTime};
-use transfer_tag::{TAG_INDEX, TransferTag};
-use types::{MergedValue, Refreshable};
-use utils::{median, merge};
 use vault::RoutingNode;
 use xor_name::{XorName, closer_to_target};
 
-pub const ACCOUNT_TAG: u8 = TransferTag::DataManagerAccount as u8;
-pub const STATS_TAG: u8 = TransferTag::DataManagerStats as u8;
 pub const REPLICANTS: usize = 2;
 pub const MIN_REPLICANTS: usize = 2;
 
@@ -47,30 +43,7 @@ const LRU_CACHE_SIZE: usize = 1000;
 
 #[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
 pub struct Stats {
-    resource_index: u64,
-}
-
-impl Stats {
-    pub fn new(resource_index: u64) -> Stats {
-        Stats { resource_index: resource_index }
-    }
-
-    pub fn resource_index(&self) -> u64 {
-        self.resource_index
-    }
-}
-
-impl Refreshable for Stats {
-    fn merge(name: XorName, values: Vec<Stats>, _quorum_size: usize) -> Option<MergedValue<Stats>> {
-        let mut resource_indices: Vec<u64> = Vec::new();
-        for value in values {
-            resource_indices.push(value.resource_index());
-        }
-        Some(MergedValue {
-            name: name,
-            value: Stats::new(median(resource_indices)),
-        })
-    }
+    pub resource_index: u64,
 }
 
 
@@ -81,8 +54,8 @@ pub struct DataManager {
     // the same chunk could end up never being removed.  However, we need to be able to search in
     // the cache by chunk name only.
     request_cache: LruCache<XorName, RequestMessage>,
-    // the higher the index is, the slower the farming rate will be
-    resource_index: u64,
+    // the higher the resource_index is, the slower the farming rate will be
+    stats: Stats,
     // key is pair of chunk_name and pmid_node, value is insertion time
     ongoing_gets: LruCache<ChunkNameAndPmidNode, SteadyTime>,
     // key is chunk_name and value is failing pmid nodes
@@ -94,15 +67,17 @@ impl DataManager {
         DataManager {
             database: Database::new(),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
-            resource_index: 1,
+            stats: Stats { resource_index: 1 },
             ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
             failed_pmids: LruCache::with_capacity(LRU_CACHE_SIZE),
         }
     }
 
     pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        let data_name = match &request.content {
-            &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _)) => data_name.clone(),
+        let (data_name, message_id) = match &request.content {
+            &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _), ref message_id) => {
+                (data_name.clone(), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -159,14 +134,14 @@ impl DataManager {
                        routing_node.name(),
                        fetch_name,
                        dst);
-                let _ = routing_node.send_get_request(src, dst, data_request);
+                let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
                 let _ = self.ongoing_gets
                             .insert((fetch_name.clone(), pmid.clone()), SteadyTime::now());
             }
         }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData, message_id: &MessageId) {
         // If the data already exists, there's no more to do.
         let data_name = data.name();
         if self.database.exist(&data_name) {
@@ -192,7 +167,8 @@ impl DataManager {
         self.database.put_pmid_nodes(&data_name, target_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
-                self.resource_index = min(1048576, self.resource_index + target_pmids.len() as u64);
+                self.stats.resource_index = min(1048576,
+                                                self.stats.resource_index + target_pmids.len() as u64);
             }
             _ => {}
         }
@@ -201,13 +177,16 @@ impl DataManager {
         for pmid in target_pmids {
             let src = Authority::NaeManager(data_name);
             let dst = Authority::NodeManager(pmid);
-            let _ = routing_node.send_put_request(src, dst, Data::ImmutableData(data.clone()));
+            let _ = routing_node.send_put_request(src,
+                                                  dst,
+                                                  Data::ImmutableData(data.clone()),
+                                                  message_id.clone());
         }
     }
 
     pub fn handle_get_success(&mut self, routing_node: &RoutingNode, response: &ResponseMessage) {
-        let data: &ImmutableData = match response.content {
-            ResponseContent::GetSuccess(Data::ImmutableData(ref data)) => data,
+        let (data, message_id): (&ImmutableData, &MessageId) = match response.content {
+            ResponseContent::GetSuccess(Data::ImmutableData(ref data), ref message_id) => (data, message_id),
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
@@ -219,7 +198,10 @@ impl DataManager {
                     // for request in requests {
                     let src = response.dst.clone();
                     let dst = request.src;
-                    let _ = routing_node.send_get_success(src, dst, Data::ImmutableData(data.clone()));
+                    let _ = routing_node.send_get_success(src,
+                                                          dst,
+                                                          Data::ImmutableData(data.clone()),
+                                                          message_id.clone());
                     // }
                 }
                 None => {
@@ -256,6 +238,7 @@ impl DataManager {
 
     pub fn handle_get_failure(&mut self,
                               _pmid_node_name: XorName,
+                              _message_id: &MessageId,
                               _request: &RequestMessage,
                               _external_error_indicator: &Vec<u8>) {
     }
@@ -273,29 +256,18 @@ impl DataManager {
         // }
     }
 
-    pub fn handle_account_refresh(&mut self,
-                                  nonce: sha512::Digest,
-                                  values: Vec<RefreshAccumulatorValue>,
-                                  quorum_size: usize)
-                                  -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size).and_then(|merged_account| {
-            self.database.handle_account_transfer(merged_account);
-            Some(nonce)
-        })
+    pub fn handle_account_refresh(&mut self, name: XorName, account: Account) {
+        self.database.handle_account_transfer(name, account)
     }
 
-    pub fn handle_stats_refresh(&mut self,
-                                nonce: sha512::Digest,
-                                values: Vec<RefreshAccumulatorValue>,
-                                quorum_size: usize)
-                                -> Option<sha512::Digest> {
-        merge::<Stats>(values, quorum_size).and_then(|merged_stats| {
-            self.resource_index = merged_stats.value.resource_index();
-            Some(nonce)
-        })
+    pub fn handle_stats_refresh(&mut self, stats: Stats) {
+        self.stats = stats;
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self,
+                        routing_node: &RoutingNode,
+                        churn_event_id: &MessageId,
+                        lost_close_node: Option<XorName>) {
         // self.database.handle_churn(routing, churn_node);
 
         // // If the churn_node exists in the previous DM's nodes_in_table,
@@ -330,14 +302,10 @@ impl DataManager {
 
     pub fn reset(&mut self) {
         self.request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
-        self.resource_index = 1;
+        self.stats.resource_index = 1;
         self.ongoing_gets = LruCache::with_capacity(LRU_CACHE_SIZE);
         self.failed_pmids = LruCache::with_capacity(LRU_CACHE_SIZE);
         self.database.cleanup();
-    }
-
-    pub fn handle_lost_close_node(&mut self, routing_node: &RoutingNode, lost_node: XorName) {
-        unimplemented!();
     }
 
     #[allow(unused)]
@@ -406,7 +374,7 @@ impl DataManager {
     #[allow(unused)]
     fn handle_had_to_clear_sacrificial(&mut self, data_name: XorName, pmid_node_name: XorName) {
         // giving less weight when removing a sacrificial data
-        self.resource_index = max(1, self.resource_index - 1);
+        self.stats.resource_index = max(1, self.stats.resource_index - 1);
         self.database.remove_pmid_node(&data_name, pmid_node_name);
     }
 }

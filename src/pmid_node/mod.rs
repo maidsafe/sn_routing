@@ -34,8 +34,8 @@ impl PmidNode {
     }
 
     pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        let data_name = match &request.content {
-            &RequestContent::Get(DataRequest::ImmutableData(ref name, _)) => name,
+        let (data_name, message_id) = match &request.content {
+            &RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref message_id) => (name, message_id),
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -57,12 +57,13 @@ impl PmidNode {
                request.src);
         let _ = routing_node.send_get_success(request.dst.clone(),
                                               request.src.clone(),
-                                              Data::ImmutableData(decoded));
+                                              Data::ImmutableData(decoded),
+                                              message_id.clone());
     }
 
     pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        let data = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data)) => data.clone(),
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
@@ -124,7 +125,7 @@ impl PmidNode {
         let src = request.dst.clone();
         let dst = request.src.clone();
         debug!("As {:?} sending Put failure to {:?}", src, dst);
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![]);  // TODO - set proper error value
+        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
     }
 
     // fn notify_managers_of_sacrifice(&self,
@@ -139,15 +140,6 @@ impl PmidNode {
     //            data.name(), data.payload_size(), location);
     //     self.routing.put_response(our_authority.clone(), location, error, response_token.clone());
     // }
-
-    pub fn reset(&mut self) {
-        match ::chunk_store::ChunkStore::new(1073741824) {
-            Ok(chunk_store) => self.chunk_store = chunk_store,
-            Err(err) => {
-                debug!("Failed to reset pmid_node chunk store {:?}", err);
-            }
-        };
-    }
 }
 
 

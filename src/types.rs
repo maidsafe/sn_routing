@@ -15,50 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::serialise;
-use routing::StructuredData;
+// use maidsafe_utilities::serialisation::serialise;
+use routing::{MessageId, StructuredData};
 use xor_name::XorName;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct MergedValue<T> {
+#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+pub struct Refresh {
+    pub id: MessageId,
     pub name: XorName,
-    pub value: T,
+    pub value: RefreshValue,
 }
 
-/// This trait is required for any type (normally an account) which is refreshed on a churn event.
-pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
-    /// The serialised contents
-    fn serialised_contents(&self) -> Vec<u8> {
-        serialise(&self).unwrap_or(vec![])
-    }
-
-    /// Merge multiple refreshable objects into one
-    fn merge(name: XorName, values: Vec<Self>, quorum_size: usize) -> Option<MergedValue<Self>>;
-}
-
-impl Refreshable for StructuredData {
-    fn merge(name: XorName, values: Vec<StructuredData>, quorum_size: usize) -> Option<MergedValue<StructuredData>> {
-        let mut sds = Vec::<(StructuredData, u64)>::new();
-        for value in values {
-            let push_in_vec = match sds.iter_mut().find(|a| a.0 == value) {
-                Some(find_res) => {
-                    find_res.1 += 1;
-                    false
-                }
-                None => true,
-            };
-            if push_in_vec {
-                sds.push((value.clone(), 1));
-            }
-        }
-        sds.sort_by(|a, b| b.1.cmp(&a.1));
-        let (sd, count) = sds[0].clone();
-        if count >= quorum_size as u64 {
-            return Some(MergedValue {
-                name: name,
-                value: sd,
-            });
-        }
-        None
-    }
+#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+pub enum RefreshValue {
+    MaidManager(::maid_manager::Account),
+    DataManager(::data_manager::Account),
+    Stats(::data_manager::Stats),
+    StructuredDataManager(StructuredData),
+    PmidManager(::pmid_manager::Account),
 }

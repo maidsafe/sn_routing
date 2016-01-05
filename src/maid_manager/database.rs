@@ -16,11 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, Node};
-use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TAG_INDEX;
-use types::{MergedValue, Refreshable};
-use utils::median;
+use routing::{Authority, MessageId, Node};
+use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 pub type MaidNodeName = XorName;
 
@@ -41,29 +38,7 @@ impl Default for Account {
     }
 }
 
-impl Refreshable for Account {
-    fn merge(name: XorName, values: Vec<Account>, _quorum_size: usize) -> Option<MergedValue<Account>> {
-        let mut data_stored: Vec<u64> = Vec::new();
-        let mut space_available: Vec<u64> = Vec::new();
-        for value in values {
-            data_stored.push(value.data_stored);
-            space_available.push(value.space_available);
-        }
-        Some(MergedValue {
-            name: name,
-            value: Account::new(median(data_stored), median(space_available)),
-        })
-    }
-}
-
 impl Account {
-    fn new(data_stored: u64, space_available: u64) -> Account {
-        Account {
-            data_stored: data_stored,
-            space_available: space_available,
-        }
-    }
-
     fn put_data(&mut self, size: u64) -> bool {
         if size > self.space_available {
             return false;
@@ -108,29 +83,25 @@ impl Database {
         entry.put_data(size)
     }
 
-    pub fn handle_account_transfer(&mut self, merged: MergedValue<Account>) {
-        info!("MaidManager updating account {:?} to {:?}",
-              merged.name,
-              merged.value);
-        let _ = self.storage.insert(merged.name, merged.value);
+    pub fn handle_account_transfer(&mut self, name: MaidNodeName, account: Account) {
+        info!("MaidManager updating account {:?} to {:?}", name, account);
+        let _ = self.storage.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &MessageId) {
         for (key, value) in self.storage.iter() {
             let src = Authority::ClientManager(key.clone());
-            let to_hash = churn_event_id.id.0.iter().chain(key.0.iter()).cloned().collect::<Vec<_>>();
-            let mut nonce = sha512::hash(&to_hash);
-            nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
-            if let Ok(serialised_account) = serialise(value) {
+            let refresh = Refresh {
+                id: churn_event_id.clone(),
+                name: key.clone(),
+                value: RefreshValue::MaidManager(value.clone()),
+            };
+            if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("MaidManager sending refresh for account {:?}",
                        src.get_name());
-                let _ = routing_node.send_refresh_request(src.clone(), nonce, serialised_account);
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
-    }
-
-    pub fn cleanup(&mut self) {
-        self.storage.clear();
     }
 
     #[allow(dead_code)]

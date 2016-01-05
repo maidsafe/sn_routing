@@ -16,11 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, Node};
-use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TAG_INDEX;
-use types::{MergedValue, Refreshable};
-use utils::median;
+use routing::{Authority, MessageId, Node};
+use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 pub type PmidNodeName = XorName;
 
@@ -41,29 +38,7 @@ impl Default for Account {
     }
 }
 
-impl Refreshable for Account {
-    fn merge(name: XorName, values: Vec<Account>, _quorum_size: usize) -> Option<MergedValue<Account>> {
-        let mut stored_total_size: Vec<u64> = Vec::new();
-        let mut lost_total_size: Vec<u64> = Vec::new();
-        for value in values {
-            stored_total_size.push(value.stored_total_size);
-            lost_total_size.push(value.lost_total_size);
-        }
-        Some(MergedValue {
-            name: name,
-            value: Account::new(median(stored_total_size), median(lost_total_size)),
-        })
-    }
-}
-
 impl Account {
-    fn new(stored_total_size: u64, lost_total_size: u64) -> Account {
-        Account {
-            stored_total_size: stored_total_size,
-            lost_total_size: lost_total_size,
-        }
-    }
-
     // Always return true to allow pmid_node carry out removal of Sacrificial copies
     // Otherwise Account need to remember storage info of Primary, Backup and Sacrificial
     // copies separately to trigger an early alert
@@ -128,16 +103,12 @@ impl Database {
         entry.delete_data(size)
     }
 
-    pub fn handle_account_transfer(&mut self, merged_account: MergedValue<Account>) {
-        let _ = self.storage.remove(&merged_account.name);
-        let value = merged_account.value.clone();
-        let _ = self.storage.insert(merged_account.name, merged_account.value);
-        info!("PmidManager updated account {:?} to {:?}",
-              merged_account.name,
-              value);
+    pub fn handle_account_transfer(&mut self, name: PmidNodeName, account: Account) {
+        info!("PmidManager updating account {:?} to {:?}", name, account);
+        let _ = self.storage.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &MessageId) {
         for (key, value) in self.storage.iter() {
             // Only refresh accounts for PmidNodes which are still in our close group
             let close_group = match routing_node.close_group() {
@@ -152,19 +123,17 @@ impl Database {
             }
 
             let src = Authority::NodeManager(key.clone());
-            let to_hash = churn_event_id.id.0.iter().chain(key.0.iter()).cloned().collect::<Vec<_>>();
-            let mut nonce = sha512::hash(&to_hash);
-            nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
-            if let Ok(serialised_account) = serialise(value) {
+            let refresh = Refresh {
+                id: churn_event_id.clone(),
+                name: key.clone(),
+                value: RefreshValue::PmidManager(value.clone()),
+            };
+            if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("PmidManager sending refresh for account {:?}",
                        src.get_name());
-                let _ = routing_node.send_refresh_request(src.clone(), nonce, serialised_account);
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
-    }
-
-    pub fn cleanup(&mut self) {
-        self.storage.clear();
     }
 }
 

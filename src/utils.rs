@@ -15,53 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::deserialise;
-use routing::RefreshAccumulatorValue;
-use std::collections::HashMap;
-use types::{MergedValue, Refreshable};
-
 static HANDLE_VERSION: ::std::sync::Once = ::std::sync::ONCE_INIT;
-
-/// Returns the median (rounded down to the nearest integral value) of `values` which can be
-/// unsorted.  If `values` is empty, returns `0`.
-pub fn median(mut values: Vec<u64>) -> u64 {
-    match values.len() {
-        0 => 0u64,
-        1 => values[0],
-        len if len % 2 == 0 => {
-            values.sort();
-            let lower_value = values[(len / 2) - 1];
-            let upper_value = values[len / 2];
-            (lower_value + upper_value) / 2
-        }
-        len => {
-            values.sort();
-            values[len / 2]
-        }
-    }
-}
-
-pub fn merge<T>(values: Vec<RefreshAccumulatorValue>, quorum_size: usize) -> Option<MergedValue<T>>
-    where T: for<'a> Refreshable + 'static {
-    // Turn the `values` into a `HashMap<src_name, Vec<contents>>`.  Normally all values will have
-    // the same `src_name` and so this HashMap len should be 1, but this lets us filter out any
-    // stray entries which have a different `src_name` to all others.
-    let names_and_contents = values.into_iter().fold(HashMap::<_, Vec<_>>::new(), |mut accumulator, value| {
-        accumulator.entry(value.src_name).or_insert(vec![]).push(value.content);
-        accumulator
-    });
-
-    // If any entry in the HashMap has at least quorum values in its corresponding vector of
-    // contents, use that to try and merge.
-    if let Some(quorum_entry) = names_and_contents.iter().find(|elt| elt.1.len() >= quorum_size) {
-        // Convert the vector of serialised contents to a vector of parsed entries
-        let parsed_entries = quorum_entry.1.iter().filter_map(|elt| deserialise(elt).ok()).collect::<Vec<_>>();
-        if parsed_entries.len() >= quorum_size {
-            return T::merge(*quorum_entry.0, parsed_entries, quorum_size);
-        }
-    }
-    None
-}
 
 pub fn handle_version() {
     HANDLE_VERSION.call_once(|| {
@@ -79,7 +33,6 @@ pub fn handle_version() {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use rand::random;
 
     pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
@@ -88,17 +41,5 @@ mod test {
             vec.push(random::<u8>());
         }
         vec
-    }
-
-    #[test]
-    fn get_median() {
-        assert_eq!(0, median(vec![0u64; 0]));
-        assert_eq!(9, median(vec![9]));
-        assert_eq!(0, median(vec![1, 0]));
-        assert_eq!(1, median(vec![1, 0, 9]));
-        assert_eq!(5, median(vec![1, 0, 9, 10]));
-        assert_eq!(5, median(vec![20, 1, 0, 9]));
-        assert_eq!(5, median(vec![20, 1, 0, 10]));
-        assert_eq!(6, median(vec![20, 1, 0, 11]));
     }
 }

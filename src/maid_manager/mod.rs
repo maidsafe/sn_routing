@@ -15,14 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use self::database::{Account, Database};
-use routing::{Authority, ChurnEventId, Data, RefreshAccumulatorValue, RequestContent, RequestMessage};
-use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TransferTag;
-use utils::merge;
+pub use self::database::Account;
+use self::database::Database;
+use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use vault::RoutingNode;
-
-pub const ACCOUNT_TAG: u8 = TransferTag::MaidManagerAccount as u8;
+use xor_name::XorName;
 
 mod database;
 
@@ -37,9 +34,13 @@ impl MaidManager {
 
     pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         // Handle the request by sending on to the DM or SDM, or replying with error to the client.
-        let data = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data)) => Data::ImmutableData(data.clone()),
-            RequestContent::Put(Data::StructuredData(ref data)) => Data::StructuredData(data.clone()),
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
+                (Data::ImmutableData(data.clone()), message_id.clone())
+            }
+            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
+                (Data::StructuredData(data.clone()), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -48,31 +49,20 @@ impl MaidManager {
             let src = request.dst.clone();
             let dst = request.src.clone();
             debug!("As {:?} sending Put failure message to {:?}", src, dst);
-            let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![]);  // TODO - set proper error value
+            let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
             return;
         }
 
         let dst = Authority::NaeManager(data.name());
-        let _ = routing_node.send_put_request(request.dst.clone(), dst, data);
+        let _ = routing_node.send_put_request(request.dst.clone(), dst, data, message_id);
     }
 
-    pub fn handle_refresh(&mut self,
-                          nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>,
-                          quorum_size: usize)
-                          -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size).and_then(|merged_account| {
-            self.database.handle_account_transfer(merged_account);
-            Some(nonce)
-        })
+    pub fn handle_refresh(&mut self, name: XorName, account: Account) {
+        self.database.handle_account_transfer(name, account)
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         self.database.handle_churn(routing_node, churn_event_id)
-    }
-
-    pub fn reset(&mut self) {
-        self.database.cleanup();
     }
 }
 

@@ -17,10 +17,9 @@
 
 use kademlia_routing_table;
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, ChurnEventId, DataRequest, ImmutableDataType, Node, RequestContent};
+use routing::{Authority, DataRequest, ImmutableDataType, MessageId, Node, RequestContent};
 use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TAG_INDEX;
-use types::{MergedValue, Refreshable};
+use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 
 pub type PmidNode = XorName;
@@ -34,61 +33,20 @@ pub struct Account {
     has_preserialised_content: bool,
 }
 
-impl Refreshable for Account {
-    fn serialised_contents(&self) -> Vec<u8> {
-        if self.has_preserialised_content {
-            self.preserialised_content.clone()
-        } else {
-            serialise(&self).unwrap_or(vec![])
-        }
-    }
-
-    fn merge(name: XorName, values: Vec<Account>, quorum_size: usize) -> Option<MergedValue<Account>> {
-        let mut candidates = vec![];
-        let mut stats = Vec::<(PmidNode, u64)>::new();
-        for value in values {
-            debug!("DataManager merging one value of chunk {:?} stored on nodes {:?}",
-                   name,
-                   value.data_holders);
-            for holder in value.data_holders.iter() {
-                if candidates.contains(holder) {
-                    match stats.iter_mut().find(|a| a.0 == *holder) {
-                        Some(find_res) => find_res.1 += 1,
-                        None => {}
-                    };
-                } else {
-                    stats.push((holder.clone(), 1));
-                    candidates.push(holder.clone());
-                }
-            }
-        }
-        stats.sort_by(|a, b| b.1.cmp(&a.1));
-        let mut pmids = vec![];
-        for i in 0..stats.len() {
-            if stats[i].1 >= quorum_size as u64 {
-                pmids.push(stats[i].0.clone());
-            }
-        }
-        debug!("DataManager merged chunk {:?} stored on nodes {:?}",
-               name,
-               pmids);
-        if pmids.len() == 0 {
-            None
-        } else {
-            Some(MergedValue {
-                name: name,
-                value: Account::new(pmids),
-            })
-        }
-    }
-}
-
 impl Account {
     fn new(data_holders: PmidNodes) -> Account {
         Account {
             data_holders: data_holders,
             preserialised_content: Vec::new(),
             has_preserialised_content: false,
+        }
+    }
+
+    fn serialised_contents(&self) -> Vec<u8> {
+        if self.has_preserialised_content {
+            self.preserialised_content.clone()
+        } else {
+            serialise(&self).unwrap_or(vec![])
         }
     }
 }
@@ -140,26 +98,24 @@ impl Database {
         }
     }
 
-
-    pub fn handle_account_transfer(&mut self, merged: MergedValue<Account>) {
-        info!("DataManager updating account {:?} to {:?}",
-              merged.name,
-              merged.value);
-        let _ = self.storage.insert(merged.name, merged.value.data_holders);
+    pub fn handle_account_transfer(&mut self, name: DataName, account: Account) {
+        info!("DataManager updating account {:?} to {:?}", name, account);
+        let _ = self.storage.insert(name, account.data_holders);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &MessageId) {
         for (key, value) in self.storage.iter() {
             let account = Account::new(value.clone());
             let src = Authority::NaeManager(key.clone());
-            let to_hash = churn_event_id.id.0.iter().chain(key.0.iter()).cloned().collect::<Vec<_>>();
-            let mut nonce = sha512::hash(&to_hash);
-            nonce.0[TAG_INDEX] = super::ACCOUNT_TAG;
-
-            if let Ok(serialised_account) = serialise(&account) {
+            let refresh = Refresh {
+                id: churn_event_id.clone(),
+                name: key.clone(),
+                value: RefreshValue::DataManager(account),
+            };
+            if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("DataManager sending refresh for account {:?}",
                        src.get_name());
-                let _ = routing_node.send_refresh_request(src.clone(), nonce, serialised_account);
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
     }

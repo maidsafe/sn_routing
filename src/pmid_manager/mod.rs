@@ -15,15 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use self::database::{Account, Database};
-use routing::{Authority, ChurnEventId, Data, ImmutableData, RefreshAccumulatorValue, ResponseMessage};
-use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TransferTag;
-use utils::merge;
+pub use self::database::Account;
+use self::database::Database;
+use routing::{Authority, Data, ImmutableData, MessageId, ResponseMessage};
 use vault::RoutingNode;
 use xor_name::XorName;
-
-pub const ACCOUNT_TAG: u8 = TransferTag::PmidManagerAccount as u8;
 
 mod database;
 
@@ -36,13 +32,20 @@ impl PmidManager {
         PmidManager { database: Database::new() }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData, pmid_node_name: XorName) {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      data: &ImmutableData,
+                      message_id: &MessageId,
+                      pmid_node_name: XorName) {
         // Put data always being allowed, i.e. no early alert
         self.database.put_data(&pmid_node_name, data.payload_size() as u64);
 
         let src = Authority::NodeManager(pmid_node_name.clone());
         let dst = Authority::ManagedNode(pmid_node_name);
-        let _ = routing_node.send_put_request(src, dst, Data::ImmutableData(data.clone()));
+        let _ = routing_node.send_put_request(src,
+                                              dst,
+                                              Data::ImmutableData(data.clone()),
+                                              message_id.clone());
     }
 
     #[allow(unused)]
@@ -86,22 +89,12 @@ impl PmidManager {
         ::utils::HANDLED
 */    }
 
-    pub fn handle_refresh(&mut self,
-                          nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>, quorum_size: usize)
-                          -> Option<sha512::Digest> {
-        merge::<Account>(values, quorum_size).and_then(|merged_account| {
-            self.database.handle_account_transfer(merged_account);
-            Some(nonce)
-        })
+    pub fn handle_refresh(&mut self, name: XorName, account: Account) {
+        self.database.handle_account_transfer(name, account)
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         self.database.handle_churn(routing_node, churn_event_id)
-    }
-
-    pub fn reset(&mut self) {
-        self.database.cleanup();
     }
 
     // fn handle_put_response_from_data_manager(&mut self,

@@ -17,13 +17,8 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{ChurnEventId, Data, DataRequest, RefreshAccumulatorValue, RequestContent, RequestMessage, StructuredData};
-use sodiumoxide::crypto::hash::sha512;
-use transfer_tag::TransferTag;
-use utils::merge;
+use routing::{Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
 use vault::RoutingNode;
-
-pub const ACCOUNT_TAG: u8 = TransferTag::StructuredDataManagerAccount as u8;
 
 pub struct StructuredDataManager {
     chunk_store: ChunkStore,
@@ -41,8 +36,10 @@ impl StructuredDataManager {
 
     pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
         // TODO - handle type_tag from name too
-        let data_name = match request.content {
-            RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _)) => data_request.name(),
+        let (data_name, message_id) = match request.content {
+            RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _), ref message_id) => {
+                (data_request.name(), message_id)
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -64,7 +61,8 @@ impl StructuredDataManager {
                request.src);
         let _ = routing_node.send_get_success(request.dst.clone(),
                                               request.src.clone(),
-                                              Data::StructuredData(decoded));
+                                              Data::StructuredData(decoded),
+                                              message_id.clone());
     }
 
     pub fn handle_put(&mut self, data: &StructuredData) {
@@ -88,7 +86,7 @@ impl StructuredDataManager {
 
     pub fn handle_post(&mut self, request: &RequestMessage) {
         let new_data = match &request.content {
-            &RequestContent::Post(Data::StructuredData(ref structured_data)) => structured_data,
+            &RequestContent::Post(Data::StructuredData(ref structured_data), _) => structured_data,
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -117,18 +115,13 @@ impl StructuredDataManager {
                     });
     }
 
-    pub fn handle_refresh(&mut self,
-                          nonce: sha512::Digest,
-                          values: Vec<RefreshAccumulatorValue>,
-                          quorum_size: usize)
-                          -> Option<sha512::Digest> {
-        merge::<StructuredData>(values, quorum_size).and_then(|merged_structured_data| {
-            self.handle_account_transfer(merged_structured_data.value);
-            Some(nonce)
-        })
+    pub fn handle_refresh(&mut self, structured_data: StructuredData) {
+        self.chunk_store.delete(&structured_data.name());
+        self.chunk_store.put(&structured_data.name(),
+                             serialise(&structured_data).unwrap_or(vec![]));
     }
 
-    pub fn handle_churn(&mut self, _routing_node: &RoutingNode, _churn_event_id: &ChurnEventId) {
+    pub fn handle_churn(&mut self, _routing_node: &RoutingNode, _churn_event_id: &MessageId) {
         // let names = self.chunk_store.names();
         // for name in names {
         //     let data = self.chunk_store.get(&name);
@@ -141,22 +134,6 @@ impl StructuredDataManager {
         // the uncontrollable order of events (churn/refresh/account_transfer)
         // forcing the node have to keep its current records to avoid losing record
         // self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
-    }
-
-    pub fn reset(&mut self) {
-        match ::chunk_store::ChunkStore::new(1073741824) {
-            Ok(chunk_store) => self.chunk_store = chunk_store,
-            Err(err) => {
-                debug!("Failed to reset sd_manager chunk store {:?}", err);
-            }
-        };
-    }
-
-    fn handle_account_transfer(&mut self, structured_data: StructuredData) {
-        use types::Refreshable;
-        self.chunk_store.delete(&structured_data.name());
-        self.chunk_store.put(&structured_data.name(),
-                             structured_data.serialised_contents());
     }
 }
 

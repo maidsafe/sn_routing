@@ -18,17 +18,17 @@
 use data_manager::DataManager;
 use error::Error;
 use maid_manager::MaidManager;
+use maidsafe_utilities::serialisation::deserialise;
 use message_filter::MessageFilter;
 use pmid_manager::PmidManager;
 use pmid_node::PmidNode;
-use routing::{Authority, ChurnEventId, Data, DataRequest, Event, RefreshAccumulatorValue, RequestContent,
-              RequestMessage, ResponseContent, ResponseMessage};
+use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage};
 use sd_manager::StructuredDataManager;
-use sodiumoxide::crypto::hash::sha512;
 use std::sync::{Arc, atomic, mpsc};
 use std::sync::atomic::AtomicBool;
-use transfer_tag::TAG_INDEX;
 use time::{Duration, SteadyTime};
+use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
@@ -46,7 +46,7 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     sd_manager: StructuredDataManager,
-    handled_refreshes: MessageFilter<sha512::Digest>,
+    handled_refreshes: MessageFilter<MessageId>,
     churn_timestamp: SteadyTime,
     receiver: mpsc::Receiver<Event>,
     app_event_sender: Option<mpsc::Sender<Event>>,
@@ -72,7 +72,7 @@ impl Vault {
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
             sd_manager: StructuredDataManager::new(),
-            handled_refreshes: MessageFilter::<sha512::Digest>::with_expiry_duration(Duration::minutes(5)),
+            handled_refreshes: MessageFilter::<MessageId>::with_expiry_duration(Duration::minutes(5)),
             churn_timestamp: SteadyTime::now(),
             receiver: receiver,
             app_event_sender: app_event_sender,
@@ -94,12 +94,8 @@ impl Vault {
                     match event {
                         Event::Request(request) => self.on_request(request),
                         Event::Response(response) => self.on_response(response),
-                        Event::Refresh(nonce, values) => self.on_refresh(nonce, values),
-                        Event::Churn(churn_event_id) => self.on_churn(&churn_event_id),
-                        Event::LostCloseNode(lost_node) => self.on_lost_close_node(lost_node),
+                        Event::Churn{ id, lost_close_node } => self.on_churn(id, lost_close_node),
                         Event::Connected => self.on_connected(),
-                        Event::Disconnected => self.on_disconnected(),
-                        Event::Terminated => break,
                     };
                 }
             }
@@ -107,9 +103,7 @@ impl Vault {
             if let &Some(ref arc) = &self.should_stop {
                 let ref should_stop = &*arc;
                 if should_stop.load(atomic::Ordering::Relaxed) {
-                    // Just stop Routing and wait for the `Event::Terminated` message to break out
-                    // of this event loop.
-                    self.routing_node.stop();
+                    break;
                 }
             }
             ::std::thread::sleep(::std::time::Duration::from_millis(1));
@@ -121,50 +115,57 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
+             &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
                 self.data_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::StructuredData(_, _))) => {
+             &RequestContent::Get(DataRequest::StructuredData(_, _), _)) => {
                 self.sd_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Get(DataRequest::ImmutableData(_, _))) => {
+             &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
                 self.pmid_node.handle_get(&self.routing_node, &request)
             }
             // ================== Put ==================
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::ImmutableData(_))) |
+             &RequestContent::Put(Data::ImmutableData(_), _)) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_))) => {
+             &RequestContent::Put(Data::StructuredData(_), _)) => {
                 self.maid_manager.handle_put(&self.routing_node, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.data_manager.handle_put(&self.routing_node, data)
+             &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
+                self.data_manager.handle_put(&self.routing_node, data, message_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::StructuredData(ref data))) => self.sd_manager.handle_put(data),
+             &RequestContent::Put(Data::StructuredData(ref data), _)) => self.sd_manager.handle_put(data),
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
-             &RequestContent::Put(Data::ImmutableData(ref data))) => {
-                self.pmid_manager.handle_put(&self.routing_node, data, pmid_node_name)
+             &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
+                self.pmid_manager.handle_put(&self.routing_node, data, message_id, pmid_node_name)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::ImmutableData(_))) => self.pmid_node.handle_put(&self.routing_node, &request),
+             &RequestContent::Put(Data::ImmutableData(_), _)) => {
+                self.pmid_node.handle_put(&self.routing_node, &request)
+            }
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::StructuredData(_))) => self.sd_manager.handle_post(&request),
+             &RequestContent::Post(Data::StructuredData(_), _)) => self.sd_manager.handle_post(&request),
             // ================== Delete ==================
-            (_, _, &RequestContent::Delete(_)) => unimplemented!(),
+            (_, _, &RequestContent::Delete(_, _)) => unimplemented!(),
+            // ================== Refresh ==================
+            (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
+                self.on_refresh(src, dst, serialised_refresh)
+            }
+            // ================== Invalid Request ==================
             _ => error!("Unexpected request {:?}", request),
         }
     }
@@ -174,49 +175,31 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(Data::ImmutableData(_))) => {
+             &ResponseContent::GetSuccess(Data::ImmutableData(_), _)) => {
                 self.data_manager.handle_get_success(&self.routing_node, &response)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(pmid_node_name),
              &Authority::NaeManager(_),
-             &ResponseContent::GetFailure{ ref request, ref external_error_indicator }) => {
+             &ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator }) => {
                 self.data_manager
-                    .handle_get_failure(pmid_node_name, request, external_error_indicator)
+                    .handle_get_failure(pmid_node_name, id, request, external_error_indicator)
             }
             // ================== PutFailure ==================
             // FIXME
             // data_manager::Authority(_) => self.data_manager.handle_put_failure(response),
             // pmid_manager::Authority(_) => self.pmid_manager.handle_put_failure(response),
+
+            // ================== Invalid Response ==================
             _ => error!("Unexpected response {:?}", response),
         }
     }
 
-    fn on_refresh(&mut self, nonce: sha512::Digest, values: Vec<RefreshAccumulatorValue>) {
-        let quorum_size = match self.routing_node.dynamic_quorum_size() {
-            Ok(size) => size,
-            Err(_) => return,
-        };
-        if !self.handled_refreshes.contains(&nonce) {
-            let handled_nonce = match nonce.0[TAG_INDEX] {
-                ::maid_manager::ACCOUNT_TAG => self.maid_manager.handle_refresh(nonce, values, quorum_size),
-                ::data_manager::ACCOUNT_TAG => self.data_manager.handle_account_refresh(nonce, values, quorum_size),
-                ::data_manager::STATS_TAG => self.data_manager.handle_stats_refresh(nonce, values, quorum_size),
-                ::sd_manager::ACCOUNT_TAG => self.sd_manager.handle_refresh(nonce, values, quorum_size),
-                ::pmid_manager::ACCOUNT_TAG => self.pmid_manager.handle_refresh(nonce, values, quorum_size),
-                _ => unreachable!(),
-            };
-            if let Some(nonce) = handled_nonce {
-                let _ = self.handled_refreshes.insert(nonce);
-            }
-        }
-    }
-
-    fn on_churn(&mut self, churn_event_id: &ChurnEventId) {
-        self.maid_manager.handle_churn(&self.routing_node, churn_event_id);
-        self.data_manager.handle_churn(&self.routing_node, churn_event_id);
-        self.sd_manager.handle_churn(&self.routing_node, churn_event_id);
-        self.pmid_manager.handle_churn(&self.routing_node, churn_event_id);
+    fn on_churn(&mut self, churn_event_id: MessageId, lost_close_node: Option<XorName>) {
+        self.maid_manager.handle_churn(&self.routing_node, &churn_event_id);
+        self.data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
+        self.sd_manager.handle_churn(&self.routing_node, &churn_event_id);
+        self.pmid_manager.handle_churn(&self.routing_node, &churn_event_id);
 
         // self.id = close_group[0].clone();
         // let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
@@ -233,37 +216,42 @@ impl Vault {
         // }
     }
 
-    fn on_lost_close_node(&mut self, lost_node: XorName) {
-        self.data_manager.handle_lost_close_node(&self.routing_node, lost_node)
-    }
-
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
         // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.data_manager.nodes_in_table_len());
     }
 
-    fn on_disconnected(&mut self) {
-        self.routing_node.stop();
-        if let &Some(ref arc) = &self.should_stop {
-            let ref should_stop = &*arc;
-            if should_stop.load(atomic::Ordering::Relaxed) {
+    fn on_refresh(&mut self, src: &Authority, dst: &Authority, serialised_refresh: &Vec<u8>) {
+        let refresh = match deserialise::<Refresh>(serialised_refresh) {
+            Ok(content) => content,
+            Err(error) => {
+                debug!("Failed to parse refresh request: {:?}", error);
                 return;
             }
+        };
+        if self.handled_refreshes.contains(&refresh.id) {
+            return;
         }
-        self.churn_timestamp = SteadyTime::now();
-        let (sender, receiver) = mpsc::channel();
-        // TODO - Keep retrying to construct new Routing until returns Ok() ?
-        self.routing_node = unwrap_result!(RoutingNode::new(sender));
-        self.receiver = receiver;
-
-        self.maid_manager.reset();
-        self.data_manager.reset();
-        self.pmid_manager.reset();
-        // TODO: https://github.com/maidsafe/safe_vault/issues/269
-        //   pmid_node and sd_manager shall discard the data when routing address changed
-        self.pmid_node.reset();
-        self.sd_manager.reset();
+        match (src, dst, refresh.value) {
+            (&Authority::ClientManager(_),
+             &Authority::ClientManager(_),
+             RefreshValue::MaidManager(account)) => self.maid_manager.handle_refresh(refresh.name, account),
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             RefreshValue::DataManager(account)) => self.data_manager.handle_account_refresh(refresh.name, account),
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             RefreshValue::Stats(stats)) => self.data_manager.handle_stats_refresh(stats),
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             RefreshValue::StructuredDataManager(structured_data)) => self.sd_manager.handle_refresh(structured_data),
+            (&Authority::NodeManager(_),
+             &Authority::NodeManager(_),
+             RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
+            _ => error!("Unexpected refresh from {:?} to {:?}", src, dst),
+        }
+        let _ = self.handled_refreshes.insert(refresh.id);
     }
 }
 
