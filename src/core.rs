@@ -503,7 +503,7 @@ impl Core {
                     if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                         let _ = self.grp_msg_filter.insert(output_msg.clone());
                     } else {
-                        return Ok(())
+                        return Ok(());
                     }
                 }
             }
@@ -1486,11 +1486,10 @@ impl Core {
 
         // Query routing table to send it out parallel or to our close group (ourselves excluded)
         let targets = self.routing_table.target_nodes(signed_msg.content().dst().get_name());
-        targets.iter().all(|node_info| {
-            node_info.connections.iter().all(|connection| {
+        targets.iter().foreach(|node_info| {
+            if let Some(connection) = node_info.connections.iter().next() {
                 self.crust_service.send(connection.clone(), raw_bytes.clone());
-                true
-            })
+            }
         });
 
         // If we need to handle this message, handle it.
