@@ -294,7 +294,7 @@ impl ExampleNode {
     // send the corresponding refresh messages out to our close group.
     fn handle_churn(&mut self, id: MessageId, lost_close_node: Option<XorName>) {
         for (client_name, stored) in self.client_accounts.iter() {
-            let refresh_content = RefreshContent::ForMaidManager {
+            let refresh_content = RefreshContent::ForClientManager {
                 id: id.clone(),
                 client_name: client_name.clone(),
                 data: stored.clone(),
@@ -347,7 +347,7 @@ impl ExampleNode {
 
     fn send_data_manager_refresh_messages(&mut self, id: MessageId) {
         for (data_name, managed_nodes) in self.dm_accounts.iter() {
-            let refresh_content = RefreshContent::ForDataManager {
+            let refresh_content = RefreshContent::ForNaeManager {
                 id: id.clone(),
                 data_name: data_name.clone(),
                 pmid_nodes: managed_nodes.clone(),
@@ -363,13 +363,13 @@ impl ExampleNode {
 
     fn handle_refresh(&mut self, content: Vec<u8>) {
         match unwrap_result!(deserialise(&content)) {
-            RefreshContent::ForMaidManager { client_name, data, .. } => {
+            RefreshContent::ForClientManager { client_name, data, .. } => {
                 trace!("{:?} handle_refresh for MaidManager. client - {:?}",
                        self,
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::ForDataManager { data_name, pmid_nodes, .. } => {
+            RefreshContent::ForNaeManager { data_name, pmid_nodes, .. } => {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
                 trace!("{:?} DataManager Refreshed. data_name - {:?} From - {:?} To - {:?}",
                        self,
@@ -391,12 +391,12 @@ impl ::std::fmt::Debug for ExampleNode {
 #[allow(unused)]
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
-    ForMaidManager {
+    ForClientManager {
         id: MessageId,
         client_name: XorName,
         data: u64,
     },
-    ForDataManager {
+    ForNaeManager {
         id: MessageId,
         data_name: XorName,
         pmid_nodes: Vec<XorName>,
