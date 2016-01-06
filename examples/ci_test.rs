@@ -70,12 +70,11 @@ use rand::distributions::{IndependentSample, Range};
 
 const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
-const CHURN_MIN_WAIT_SEC: u64 = 2;
-const CHURN_MAX_WAIT_SEC: u64 = 20;
+const CHURN_MIN_WAIT_SEC: u64 = 30;
+const CHURN_MAX_WAIT_SEC: u64 = 35;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 
-// const LOG_PATTERN: &'static str = "%l [%T] %f:%L - %m";
 
 struct NodeProcess(Child);
 impl Drop for NodeProcess {

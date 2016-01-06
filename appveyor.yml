@@ -31,4 +31,7 @@ build_script:
   - ps: . ".\Build.ps1"
 
 test_script:
-  - ps: . ".\Run Tests.ps1"
+  - ps: |
+        .\Run Tests.ps1
+        cd $env:APPVEYOR_BUILD_FOLDER
+        cargo run --release --example ci_test
