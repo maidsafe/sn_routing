@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.6.0]
+ - Further updates to examples
+ - Moved CI scripts to use Stable Rust
+
 ## [0.5.3]
  - Getting examples updated
  - Updating the API to expose the routing node name and close group
