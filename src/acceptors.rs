@@ -54,7 +54,7 @@ impl Acceptors {
         }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn set_utp_accepting_port(&mut self, accepting_port: Port) {
         match accepting_port {
             Port::Utp(port) => self.utp_accepting_port = Some(Port::Utp(port)),

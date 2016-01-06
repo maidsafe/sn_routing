@@ -23,7 +23,6 @@ extern crate sodiumoxide;
 extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
-use std::thread;
 use self::sodiumoxide::crypto;
 use self::xor_name::XorName;
 use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
@@ -47,16 +46,11 @@ impl ExampleClient {
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let routing_client = Client::new(sender, Some(full_id)).unwrap();
 
-        // Wait for Connected event from Routing
-        loop {
-            if let Ok(event) = receiver.try_recv() {
-                if let Event::Connected = event {
-                    println!("Client Connected to network");
-                    break;
-                }
+        for it in receiver.iter() {
+            if let Event::Connected = it {
+                println!("Client Connected to network");
+                break;
             }
-
-            thread::sleep(::std::time::Duration::from_secs(1));
         }
 
         ExampleClient {
@@ -73,22 +67,24 @@ impl ExampleClient {
                                              request.clone()));
 
         // Wait for Get success event from Routing
-        loop {
-            if let Ok(event) = self.receiver.try_recv() {
-                match event {
-                    Event::Response(ResponseMessage{ content: ResponseContent::GetSuccess(data, _), .. }) => {
-                        return Some(data)
+        for it in self.receiver.iter() {
+            match it {
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::GetSuccess(data, _), .. }) => return Some(data),
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::GetFailure { external_error_indicator, .. }, .. }) => {
+                    {
+                        error!("Failed to Get {:?}: {:?}",
+                               request.name(),
+                               unwrap_result!(String::from_utf8(external_error_indicator)));
+                        return None;
                     }
-                    Event::Response(ResponseMessage{ content: ResponseContent::GetFailure{ external_error_indicator, .. }, .. }) => {
-                        error!("Failed to Get {:?}: {:?}", request.name(), unwrap_result!(String::from_utf8(external_error_indicator)));
-                        return None
-                    }
-                    _ => (),
                 }
+                _ => (),
             }
-
-            thread::sleep(::std::time::Duration::from_secs(1));
         }
+
+        None
     }
 
     /// Put to network.
@@ -96,16 +92,14 @@ impl ExampleClient {
         let data_name = data.name();
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
-        // Wait for Put success event from Routing
-        loop {
-            if let Ok(event) = self.receiver.try_recv() {
-                if let Event::Response(ResponseMessage{ content: ResponseContent::PutSuccess(..), .. }) = event {
-                    println!("Successfully stored {:?}", data_name);
-                    break;
-                }
-            }
 
-            thread::sleep(::std::time::Duration::from_secs(1));
+        // Wait for Put success event from Routing
+        for it in self.receiver.iter() {
+            if let Event::Response(ResponseMessage {
+                content: ResponseContent::PutSuccess(..), .. }) = it {
+                println!("Successfully stored {:?}", data_name);
+                break;
+            }
         }
     }
 

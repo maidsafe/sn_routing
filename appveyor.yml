@@ -2,9 +2,7 @@ environment:
   global:
     RUST_BACKTRACE: 1
   matrix:
-#    - RUST_VERSION: stable
-#    - RUST_VERSION: beta
-    - RUST_VERSION: nightly
+    - RUST_VERSION: stable
 branches:
   only:
     - master
