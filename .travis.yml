@@ -7,9 +7,7 @@ os:
   - osx
 language: rust
 rust:
-  - nightly
-#  - beta
-#  - stable
+  - stable
 sudo: false
 branches:
   only:
