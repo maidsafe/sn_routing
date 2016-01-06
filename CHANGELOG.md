@@ -1,6 +1,8 @@
 # Routing - Change Log
 
 ## [0.6.0]
+ - Update core to send on only first connection
+## [0.6.0]
  - Further updates to examples
  - Moved CI scripts to use Stable Rust
 
