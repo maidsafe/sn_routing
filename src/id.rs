@@ -18,6 +18,7 @@
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
+#[derive(Clone)]
 pub struct FullId {
     public_id: ::PublicId,
     private_encrypt_key: ::sodiumoxide::crypto::box_::SecretKey,
