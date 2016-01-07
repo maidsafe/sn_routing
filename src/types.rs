@@ -15,36 +15,42 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use rand::random;
 use xor_name::XorName;
-use sodiumoxide::crypto::box_;
 use rustc_serialize::{Encoder, Decoder};
 use maidsafe_utilities::event_sender::MaidSafeObserver;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 
+const L_AS_ASCII: u8 = 76;
+const A_AS_ASCII: u8 = 65;
+
 /// Unique ID for messages
 #[derive(Ord, PartialOrd, Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
-pub struct MessageId([u8; box_::NONCEBYTES]);
+pub struct MessageId(XorName);
 
 impl MessageId {
     /// Generate a new MessageId with random content
     pub fn new() -> MessageId {
-        MessageId(box_::gen_nonce().0)
+        MessageId(random::<XorName>())
     }
 
-    /// Generate a new MessageId with contents extracted from given XorName
-    pub fn from_xor_name(name: XorName) -> MessageId {
-        MessageId(unwrap_option!(box_::Nonce::from_slice(&name.0[..box_::NONCEBYTES]),
-                                 "Failed generating MessageId from XorName")
-                      .0)
+    /// Generate a new MessageId with contents extracted from lost node
+    pub fn from_lost_node(mut name: XorName) -> MessageId {
+        name.0[0] = L_AS_ASCII;
+        MessageId(name)
+    }
+
+    /// Generate a new MessageId with contents extracted from new node
+    pub fn from_added_node(mut name: XorName) -> MessageId {
+        name.0[0] = A_AS_ASCII;
+        MessageId(name)
     }
 
     /// Generate a new MessageId after reversing self
-    pub fn from_reverse(&self) -> MessageId {
-        let mut name_mut = self.0;
+    pub fn from_reverse(name: &MessageId) -> MessageId {
+        let MessageId(XorName(mut name_mut)) = *name;
         name_mut.reverse();
-        MessageId(unwrap_option!(box_::Nonce::from_slice(&name_mut),
-                                 "Failed generating MessageId from XorName")
-                      .0)
+        MessageId(XorName(name_mut))
     }
 }

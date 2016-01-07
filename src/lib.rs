@@ -69,6 +69,7 @@ extern crate itertools;
 extern crate lru_time_cache;
 extern crate kademlia_routing_table;
 extern crate message_filter;
+extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate time;
