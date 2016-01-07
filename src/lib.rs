@@ -17,9 +17,12 @@
 
 //! Client and node implementations for a resilient decentralised network.
 //!
-//! The network is based on the Kademlia-like routing table and uses the XOR metric to define the
-//! "distance" between two `XorName`s. `XorName`s are used as addresses of nodes, clients as well
-//! as data.
+//! The network is based on the [kademlia_routing_table][1] and uses the XOR metric to define the
+//! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
+//! well as data.
+//!
+//! [1]: ../kademlia_routing_table/index.html
+//! [2]: ../xor_name/struct.XorName.html
 //!
 //! Messages are exchanged between _authorities_, where an `Authority` can be an
 //! individual client or node, or a group of nodes. In both cases, messages are cryptographically
