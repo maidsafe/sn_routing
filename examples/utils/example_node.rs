@@ -38,7 +38,7 @@ pub struct ExampleNode {
     client_accounts: HashMap<XorName, u64>,
     connected: bool,
     client_request_cache: LruCache<XorName, Vec<Authority>>, /* DataName vs List of ClientAuth asking for data */
-    lost_node_cache: LruCache<XorName, (XorName, MessageId)>, // DataName vs (LostNode, Churn MessageId)
+    lost_node_cache: LruCache<XorName, XorName>, // DataName vs LostNode
 }
 
 #[allow(unused)]
@@ -249,7 +249,7 @@ impl ExampleNode {
             }
         }
 
-        if let Some((lost_node, churn_id)) = self.lost_node_cache.remove(&data.name()) {
+        if let Some(lost_node) = self.lost_node_cache.remove(&data.name()) {
             trace!("{:?} GetSuccess received for lost node {:?} for data {:?}",
                    self,
                    lost_node,
@@ -263,7 +263,7 @@ impl ExampleNode {
                 let src = dst;
                 let dst = Authority::ManagedNode(node.clone());
                 unwrap_result!(self.node
-                                   .send_put_request(src.clone(), dst, data.clone(), id));
+                                   .send_put_request(src.clone(), dst, data.clone(), id.clone()));
 
                 // TODO currently we assume these msgs are saved by managed nodes we should wait for put success to
                 // confirm the same
@@ -274,7 +274,7 @@ impl ExampleNode {
                        unwrap_option!(self.dm_accounts.get(&data.name()), ""));
 
                 // Send Refresh message with updated storage locations in DataManager
-                self.send_data_manager_refresh_messages(churn_id);
+                self.send_data_manager_refresh_messages(id);
             }
         }
     }
@@ -311,7 +311,11 @@ impl ExampleNode {
         }
 
         if let Some(lost_close_node) = lost_close_node {
-            self.process_lost_close_node(lost_close_node, id);
+            self.process_lost_close_node(lost_close_node, id.clone());
+
+            // Send current dm_accounts here after removal of lost_close_node with id reversed
+            // will also get sent after chunk relocation with id
+            self.send_data_manager_refresh_messages(MessageId::from_reverse(&id));
         } else {
             self.send_data_manager_refresh_messages(id);
         }
@@ -322,7 +326,7 @@ impl ExampleNode {
         for dm_account in self.dm_accounts.iter_mut() {
             if let Some(lost_node_pos) = dm_account.1.iter().position(|elt| *elt == lost_node) {
                 let _ = self.lost_node_cache
-                            .insert(dm_account.0.clone(), (lost_node.clone(), id.clone()));
+                            .insert(dm_account.0.clone(), lost_node.clone());
                 let _ = dm_account.1.remove(lost_node_pos);
                 if dm_account.1.is_empty() {
                     error!("Chunk lost - No valid nodes left to retrieve chunk");
@@ -341,15 +345,12 @@ impl ExampleNode {
                                .send_get_request(src.clone(),
                                                  Authority::ManagedNode(it.clone()),
                                                  DataRequest::PlainData(dm_account.0.clone()),
-                                                 MessageId::from_xor_name(lost_node.clone())) {
+                                                 id.clone()) {
                         error!("Failed to send get request to retrieve chunk - {:?}", err);
                     }
                 }
             }
         }
-
-        // TODO: Probably better doing this on a per account held basis
-        self.send_data_manager_refresh_messages(id.from_reverse());
     }
 
     fn send_data_manager_refresh_messages(&mut self, id: MessageId) {

@@ -949,7 +949,7 @@ impl Core {
 
                             // send churn
                             let event = Event::Churn {
-                                id: MessageId::from_xor_name(public_id.name().clone()),
+                                id: MessageId::from_added_node(public_id.name().clone()),
                                 lost_close_node: lost_close_node,
                             };
 
@@ -1544,7 +1544,7 @@ impl Core {
             if self.routing_table.is_close(&node_name) {
                 // If the lost node was in our close grp send Churn Event
                 let event = Event::Churn {
-                    id: MessageId::from_xor_name(node_name.clone()),
+                    id: MessageId::from_lost_node(node_name.clone()),
                     lost_close_node: Some(node_name),
                 };
 
