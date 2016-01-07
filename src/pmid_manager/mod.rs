@@ -48,7 +48,7 @@ impl PmidManager {
                                               message_id.clone());
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn handle_put_failure(&mut self, _response: ResponseMessage) {
 /*        match from_authority {
             &Authority::ManagedNode(from_address) => {

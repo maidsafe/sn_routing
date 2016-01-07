@@ -71,7 +71,7 @@ impl Database {
         Database { storage: ::std::collections::HashMap::with_capacity(10000) }
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn get_balance(&mut self, name: &MaidNodeName) -> u64 {
         let default: Account = Default::default();
         self.storage.entry(name.clone()).or_insert(default).space_available
