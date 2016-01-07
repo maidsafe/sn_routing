@@ -42,24 +42,18 @@ extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
 
-// Non-MaidSafe crates
-extern crate rustc_serialize;
-extern crate sodiumoxide;
-extern crate tempdir;
-extern crate time;
-#[cfg(test)]
-extern crate rand;
-
-// MaidSafe crates
 extern crate crust;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate message_filter;
+#[cfg(test)]
+extern crate rand;
 extern crate routing;
+extern crate rustc_serialize;
+extern crate sodiumoxide;
+extern crate tempdir;
+extern crate time;
 extern crate xor_name;
-
-#[macro_use]
-mod macros;
 
 mod chunk_store;
 mod data_manager;

@@ -22,8 +22,8 @@
 mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingNodeImpl;
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, MessageId, RequestContent,
-              RequestMessage, ResponseContent, ResponseMessage, RoutingError};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, MessageId,
+              RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingError};
 use sodiumoxide::crypto::hash::sha512;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
@@ -44,7 +44,8 @@ impl MockRoutingNode {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
-        unwrap_result!(self.pimpl.lock()).client_get(Self::client_authority(client_address, client_pub_key), data_request)
+        unwrap_result!(self.pimpl.lock()).client_get(Self::client_authority(client_address, client_pub_key),
+                                                     data_request)
     }
 
     pub fn client_put(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
@@ -230,10 +231,7 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).send_delete_failure(src, dst, request, external_error_indicator, id)
     }
 
-    pub fn send_refresh_request(&self,
-                                src: Authority,
-                                content: Vec<u8>)
-                                -> Result<(), InterfaceError> {
+    pub fn send_refresh_request(&self, src: Authority, content: Vec<u8>) -> Result<(), InterfaceError> {
         unwrap_result!(self.pimpl.lock()).send_refresh_request(src, content)
     }
 

@@ -50,7 +50,7 @@ mod test {
         {
             let mut staled_dir = ::std::env::temp_dir();
             staled_dir.push(staled_dir_name);
-            ignore_result!(::std::fs::create_dir(&staled_dir));
+            let _ = ::std::fs::create_dir(&staled_dir);
         }
         assert!(has_child_dir(::std::env::temp_dir(), &staled_dir_name));
         let _ = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));

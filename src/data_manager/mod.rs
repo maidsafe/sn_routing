@@ -154,7 +154,9 @@ impl DataManager {
             Ok(pmids) => pmids,
             Err(_) => return,
         };
-        debug!("DataManager chosen {:?} as pmid_nodes for chunk {:?}", target_pmids, data_name);
+        debug!("DataManager chosen {:?} as pmid_nodes for chunk {:?}",
+               target_pmids,
+               data_name);
         self.database.put_pmid_nodes(&data_name, target_pmids.clone());
         match *data.get_type_tag() {
             ImmutableDataType::Sacrificial => {
@@ -385,7 +387,8 @@ impl DataManager {
 mod test {
     use super::*;
     use rand::random;
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage};
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+                  RequestMessage};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;

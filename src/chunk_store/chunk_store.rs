@@ -33,7 +33,7 @@ impl ChunkStore {
         let folder_name = format!("safe_vault-{}/", Self::get_own_pid());
         let mut path = ::std::env::temp_dir();
         path.push(folder_name);
-        ignore_result!(::std::fs::create_dir(&path));
+        let _ = ::std::fs::create_dir(&path);
 
         let tempdir = try!(::tempdir::TempDir::new_in(path, "chunk_store"));
         Ok(ChunkStore {
@@ -168,7 +168,7 @@ impl ChunkStore {
                                         if v.len() > 1 && !safe_vault_pids.contains(&String::from(v[1])) {
                                             // As the dir itself is not atomic, there is chance other vault
                                             // has cleaned up the directory, no need to panic here
-                                            ignore_result!(::std::fs::remove_dir_all(entry.path()));
+                                            let _ = ::std::fs::remove_dir_all(entry.path());
                                         }
                                     }
                                     (true, true) => return true,
