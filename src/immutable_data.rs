@@ -22,18 +22,20 @@ use xor_name::XorName;
 use sodiumoxide::crypto;
 
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
-/// ImmutableDataType.
+/// The type of an individual copy of immutable data.
 pub enum ImmutableDataType {
-    /// Normal.
+    /// Used in normal operation.
     Normal,
-    /// Backup.
+    /// Used only when no normal copies are left, or if copies need to be relocated.
     Backup,
-    /// Sacrificial.
+    /// Only kept if there is unused space left. If storage space becomes scarce, this copy will be
+    /// sacrificed.
     Sacrificial,
 }
 
-/// ImmutableData
-/// hash == SHA512
+/// An immutable chunk of data.
+///
+/// Its name is the SHA512 hash of its content.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct ImmutableData {
     type_tag: ImmutableDataType,

@@ -31,8 +31,10 @@ use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
-/// Node provides an actionable interface to Core.  On constructing a new Node object a
-/// Core will also be started.
+/// Interface for sending and receiving messages to and from other nodes, in the role of a full
+/// routing node.
+///
+/// A node is a part of the network that can route messages and be member of a group authority.
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
@@ -41,9 +43,12 @@ pub struct Node {
 }
 
 impl Node {
-    /// Starts a new RoutingIdentity, which will also start a new Core.
-    /// The Core will attempt to achieve full routing node status.
-    /// The intial Node object will have newly generated keys
+    /// Create a new `Node`.
+    ///
+    /// It will automatically connect to the network in the same way a client does, but then
+    /// request a new name and integrate itself into the network using the new name.
+    ///
+    /// The intial `Node` object will have newly generated keys.
     pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 

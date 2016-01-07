@@ -19,10 +19,12 @@ use xor_name::XorName;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{Debug, Formatter};
 
-/// Persona types recognised by network.
+/// An entity that can act as a source or destination of a message.
+///
+/// An `Authority` can be an individual client or node, or a group of nodes.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority {
-    /// Manager of Client.  XorName is the hash of the Client's `client_key`.
+    /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(XorName),
     /// Manager of a network-addressable element.  XorName is the name of the element in question.
     NaeManager(XorName),

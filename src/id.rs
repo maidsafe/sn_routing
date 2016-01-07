@@ -26,7 +26,7 @@ pub struct FullId {
 }
 
 impl FullId {
-    /// Construct new FullId.
+    /// Construct a FullId with newly generated keys.
     pub fn new() -> FullId {
         let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
@@ -74,7 +74,7 @@ impl FullId {
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-/// PublicId.
+/// Network identity component containing name and public keys.
 pub struct PublicId {
     public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
     public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,

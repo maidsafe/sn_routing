@@ -20,7 +20,10 @@ pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
 use xor_name::XorName;
 
-/// StructuredData
+/// Mutable structured data.
+///
+/// The name is computed from the type tag and identifier.
+///
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates though require a signature to validate
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
@@ -62,8 +65,8 @@ impl StructuredData {
         Ok(structured_data)
     }
 
-    /// This is a static function required for computing a name give the tag-type and identifier to
-    /// be use by GETs
+    /// This is a static function required for computing a name given the type tag and identifier to
+    /// be used by GETs
     pub fn compute_name(type_tag: u64, identifier: &XorName) -> XorName {
         let type_tag_as_string = type_tag.to_string();
 

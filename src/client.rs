@@ -30,8 +30,11 @@ use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
-/// Client provides an actionable interface to Core.  On constructing a new Client object a
-/// Core will also be started.
+/// Interface for sending and receiving messages to and from a network of nodes in the role of a
+/// client.
+///
+/// A client is connected to the network via one or more nodes. Messages are never routed via a
+/// client, and a client cannot be part of a group authority.
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
@@ -40,10 +43,12 @@ pub struct Client {
 }
 
 impl Client {
-    /// Starts a new RoutingIdentity, which will also start a new Core.
-    /// The Core will only bootstrap to the network and not attempt to
-    /// achieve full routing node status.
-    /// If the client is started with a relocated id (ie the name has been reassigned),
+    /// Create a new `Client`.
+    ///
+    /// It will automatically connect to the network, but not attempt to achieve full routing node
+    /// status. The name of the client will be the name of the `PublicId` of the `keys`.
+    ///
+    /// If the client is started with a relocated ID (ie the name has been reassigned),
     /// the core will instantly instantiate termination of the client.
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
