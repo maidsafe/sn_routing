@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::Error;
 use xor_name::{XorName, slice_as_u8_64_array};
 
 /// ChunkStore is a collection for holding all data chunks.
@@ -27,7 +28,7 @@ pub struct ChunkStore {
 
 impl ChunkStore {
     /// Create new chunkstore with `max_disk_usage` allowed disk usage.
-    pub fn new(max_disk_usage: usize) -> Result<ChunkStore, ::error::ChunkStoreError> {
+    pub fn new(max_disk_usage: usize) -> Result<ChunkStore, Error> {
         Self::cleanup();
         let folder_name = format!("safe_vault-{}/", Self::get_own_pid());
         let mut path = ::std::env::temp_dir();

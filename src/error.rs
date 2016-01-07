@@ -42,15 +42,3 @@ impl From<io::Error> for Error {
         Error::Io(error)
     }
 }
-
-#[derive(Debug)]
-pub enum ChunkStoreError {
-    // Report Input/Output error.
-    Io(::std::io::Error),
-}
-
-impl From<::std::io::Error> for ChunkStoreError {
-    fn from(error: ::std::io::Error) -> ChunkStoreError {
-        ChunkStoreError::Io(error)
-    }
-}
