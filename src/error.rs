@@ -15,18 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::RoutingError;
+use routing::{InterfaceError, RoutingError};
 use std::io;
 
 #[derive(Debug)]
 pub enum Error {
-    Routing(RoutingError),
+    Routing(InterfaceError),
+    RoutingInternal(RoutingError),
     Io(io::Error),
+}
+
+impl From<InterfaceError> for Error {
+    fn from(error: InterfaceError) -> Error {
+        Error::Routing(error)
+    }
 }
 
 impl From<RoutingError> for Error {
     fn from(error: RoutingError) -> Error {
-        Error::Routing(error)
+        Error::RoutingInternal(error)
     }
 }
 

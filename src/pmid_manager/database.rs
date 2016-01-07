@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use routing::{Authority, MessageId, Node};
+use routing::{Authority, MessageId};
 use types::{Refresh, RefreshValue};
+use vault::RoutingNode;
 use xor_name::XorName;
 pub type PmidNodeName = XorName;
 
@@ -108,7 +109,7 @@ impl Database {
         let _ = self.storage.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &MessageId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         for (key, value) in self.storage.iter() {
             // Only refresh accounts for PmidNodes which are still in our close group
             let close_group = match routing_node.close_group() {

@@ -22,9 +22,9 @@
 mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingNodeImpl;
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, RequestContent,
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage, RoutingError};
-use sodiumoxide::crypto::hash;
+use sodiumoxide::crypto::hash::sha512;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
@@ -44,42 +44,25 @@ impl MockRoutingNode {
 
     // -----------  the following methods are for testing purpose only   ------------- //
     pub fn client_get(&self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
-        let src = Authority::Client {
-            client_key: client_pub_key,
-            proxy_node_name: client_address,
-        };
-        unwrap_result!(self.pimpl.lock()).client_get(src, data_request)
+        unwrap_result!(self.pimpl.lock()).client_get(Self::client_authority(client_address, client_pub_key), data_request)
     }
 
     pub fn client_put(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client {
-            client_key: client_pub_key,
-            proxy_node_name: client_address,
-        };
-        unwrap_result!(self.pimpl.lock()).client_put(src, data)
+        unwrap_result!(self.pimpl.lock()).client_put(Self::client_authority(client_address, client_pub_key), data)
     }
 
     pub fn client_post(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client {
-            client_key: client_pub_key,
-            proxy_node_name: client_address,
-        };
-        unwrap_result!(self.pimpl.lock()).client_post(src, data)
+        unwrap_result!(self.pimpl.lock()).client_post(Self::client_authority(client_address, client_pub_key), data)
     }
 
     pub fn client_delete(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        let src = Authority::Client {
-            client_key: client_pub_key,
-            proxy_node_name: client_address,
-        };
-        unwrap_result!(self.pimpl.lock()).client_delete(src, data)
+        unwrap_result!(self.pimpl.lock()).client_delete(Self::client_authority(client_address, client_pub_key), data)
     }
 
-    pub fn churn_event(&self, nodes: Vec<XorName>, churn_node: XorName) {
-        unwrap_result!(self.pimpl.lock()).churn_event(nodes, churn_node)
+    pub fn churn_event(&self, event_id: MessageId, lost_close_node: Option<XorName>) {
+        unwrap_result!(self.pimpl.lock()).churn_event(event_id, lost_close_node)
     }
 
-    #[allow(dead_code)]
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
         unwrap_result!(self.pimpl.lock()).get_requests_given()
     }
@@ -96,25 +79,38 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).delete_requests_given()
     }
 
-    #[allow(dead_code)]
-    pub fn get_responses_given(&self) -> Vec<ResponseMessage> {
-        unwrap_result!(self.pimpl.lock()).get_responses_given()
+    pub fn get_successes_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).get_successes_given()
     }
 
-    #[allow(dead_code)]
-    pub fn put_responses_given(&self) -> Vec<ResponseMessage> {
-        unwrap_result!(self.pimpl.lock()).put_responses_given()
+    pub fn get_failures_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).get_failures_given()
     }
 
-    pub fn post_responses_given(&self) -> Vec<ResponseMessage> {
-        unwrap_result!(self.pimpl.lock()).post_responses_given()
+    pub fn put_successes_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).put_successes_given()
     }
 
-    pub fn delete_responses_given(&self) -> Vec<ResponseMessage> {
-        unwrap_result!(self.pimpl.lock()).delete_responses_given()
+    pub fn put_failures_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).put_failures_given()
     }
 
-    #[allow(dead_code)]
+    pub fn post_successes_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).post_successes_given()
+    }
+
+    pub fn post_failures_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).post_failures_given()
+    }
+
+    pub fn delete_successes_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).delete_successes_given()
+    }
+
+    pub fn delete_failures_given(&self) -> Vec<ResponseMessage> {
+        unwrap_result!(self.pimpl.lock()).delete_failures_given()
+    }
+
     pub fn refresh_requests_given(&self) -> Vec<RequestMessage> {
         unwrap_result!(self.pimpl.lock()).refresh_requests_given()
     }
@@ -125,73 +121,120 @@ impl MockRoutingNode {
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
-                            content: RequestContent)
+                            data_request: DataRequest,
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_get_request(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_get_request(src, dst, data_request, id)
     }
 
     pub fn send_put_request(&self,
                             src: Authority,
                             dst: Authority,
-                            content: RequestContent)
+                            data: Data,
+                            id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_request(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_put_request(src, dst, data, id)
     }
 
     pub fn send_post_request(&self,
                              src: Authority,
                              dst: Authority,
-                             content: RequestContent)
+                             data: Data,
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_request(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_post_request(src, dst, data, id)
     }
 
     pub fn send_delete_request(&self,
                                src: Authority,
                                dst: Authority,
-                               content: RequestContent)
+                               data: Data,
+                               id: MessageId)
                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_request(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_delete_request(src, dst, data, id)
     }
 
-    pub fn send_get_response(&self,
+    pub fn send_get_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data: Data,
+                            id: MessageId)
+                            -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_get_success(src, dst, data, id)
+    }
+
+    pub fn send_get_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request: RequestMessage,
+                            external_error_indicator: Vec<u8>,
+                            id: MessageId)
+                            -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_get_failure(src, dst, request, external_error_indicator, id)
+    }
+
+    pub fn send_put_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request_hash: sha512::Digest,
+                            id: MessageId)
+                            -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, request_hash, id)
+    }
+
+    pub fn send_put_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            request: RequestMessage,
+                            external_error_indicator: Vec<u8>,
+                            id: MessageId)
+                            -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_put_failure(src, dst, request, external_error_indicator, id)
+    }
+
+    pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent)
+                             request_hash: sha512::Digest,
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_get_response(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, request_hash, id)
     }
 
-    pub fn send_put_response(&self,
+    pub fn send_post_failure(&self,
                              src: Authority,
                              dst: Authority,
-                             content: ResponseContent)
+                             request: RequestMessage,
+                             external_error_indicator: Vec<u8>,
+                             id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_response(src, dst, content)
+        unwrap_result!(self.pimpl.lock()).send_post_failure(src, dst, request, external_error_indicator, id)
     }
 
-    pub fn send_post_response(&self,
-                              src: Authority,
-                              dst: Authority,
-                              content: ResponseContent)
-                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_response(src, dst, content)
+    pub fn send_delete_success(&self,
+                               src: Authority,
+                               dst: Authority,
+                               request_hash: sha512::Digest,
+                               id: MessageId)
+                               -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, request_hash, id)
     }
 
-    pub fn send_delete_response(&self,
-                                src: Authority,
-                                dst: Authority,
-                                content: ResponseContent)
-                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_response(src, dst, content)
+    pub fn send_delete_failure(&self,
+                               src: Authority,
+                               dst: Authority,
+                               request: RequestMessage,
+                               external_error_indicator: Vec<u8>,
+                               id: MessageId)
+                               -> Result<(), InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).send_delete_failure(src, dst, request, external_error_indicator, id)
     }
 
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                nonce: hash::sha512::Digest,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_refresh_request(src, nonce, content)
+        unwrap_result!(self.pimpl.lock()).send_refresh_request(src, content)
     }
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
@@ -202,11 +245,10 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).close_group()
     }
 
-    pub fn dynamic_quorum_size(&self) -> Result<usize, InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).dynamic_quorum_size()
-    }
-
-    pub fn stop(&self) {
-        unwrap_result!(self.pimpl.lock()).stop()
+    fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {
+        Authority::Client {
+            client_key: client_pub_key,
+            proxy_node_name: client_address,
+        }
     }
 }
