@@ -15,15 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-static HANDLE_VERSION: ::std::sync::Once = ::std::sync::ONCE_INIT;
+use crust::exe_file_stem;
+use std::{env, process, sync};
+use std::path::Path;
+
+static HANDLE_VERSION: sync::Once = sync::ONCE_INIT;
 
 pub fn handle_version() {
     HANDLE_VERSION.call_once(|| {
-        let name = ::crust::exe_file_stem().unwrap_or(::std::path::Path::new("").to_path_buf());
+        let name = exe_file_stem().unwrap_or(Path::new("").to_path_buf());
         let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
-        if ::std::env::args().any(|arg| arg == "--version") {
+        if env::args().any(|arg| arg == "--version") {
             println!("{}", name_and_version);
-            ::std::process::exit(0);
+            process::exit(0);
         }
         let message = String::from("Running ") + &name_and_version;
         let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();

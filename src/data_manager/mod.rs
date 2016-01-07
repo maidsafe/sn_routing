@@ -18,7 +18,6 @@
 // TODO remove this
 #![allow(unused)]
 
-pub use self::database::Account;
 use error::Error;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
@@ -37,6 +36,7 @@ pub const MIN_REPLICANTS: usize = 2;
 
 mod database;
 
+pub type Account = Vec<XorName>;
 type Address = XorName;
 type ChunkNameAndPmidNode = (XorName, XorName);
 
@@ -250,7 +250,7 @@ impl DataManager {
     }
 
     pub fn handle_account_refresh(&mut self, name: XorName, account: Account) {
-        self.database.handle_account_transfer(name, account)
+        self.database.put_pmid_nodes(&name, account)
     }
 
     pub fn handle_stats_refresh(&mut self, stats: Stats) {

@@ -19,70 +19,40 @@ use kademlia_routing_table;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, DataRequest, ImmutableDataType, MessageId, Node, RequestContent};
 use sodiumoxide::crypto::hash::sha512;
+use std::collections::HashMap;
 use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 
-pub type PmidNode = XorName;
-pub type PmidNodes = Vec<PmidNode>;
-pub type DataName = XorName;
-
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
-pub struct Account {
-    data_holders: PmidNodes,
-    preserialised_content: Vec<u8>,
-    has_preserialised_content: bool,
-}
-
-impl Account {
-    fn new(data_holders: PmidNodes) -> Account {
-        Account {
-            data_holders: data_holders,
-            preserialised_content: Vec::new(),
-            has_preserialised_content: false,
-        }
-    }
-
-    fn serialised_contents(&self) -> Vec<u8> {
-        if self.has_preserialised_content {
-            self.preserialised_content.clone()
-        } else {
-            serialise(&self).unwrap_or(vec![])
-        }
-    }
-}
-
-
-
 pub struct Database {
-    storage: ::std::collections::HashMap<DataName, PmidNodes>,
+    storage: HashMap<XorName, Vec<XorName>>,  // <Data name, PmidNodes>
 }
 
 impl Database {
     pub fn new() -> Database {
-        Database { storage: ::std::collections::HashMap::with_capacity(10000) }
+        Database { storage: HashMap::new(), }
     }
 
-    pub fn exist(&self, name: &DataName) -> bool {
-        self.storage.contains_key(name)
+    pub fn exist(&self, data_name: &XorName) -> bool {
+        self.storage.contains_key(data_name)
     }
 
-    pub fn put_pmid_nodes(&mut self, name: &DataName, pmid_nodes: PmidNodes) {
-        let _ = self.storage.entry(name.clone()).or_insert(pmid_nodes.clone());
+    pub fn put_pmid_nodes(&mut self, data_name: &XorName, pmid_nodes: Vec<XorName>) {
+        let _ = self.storage.insert(data_name.clone(), pmid_nodes);
     }
 
     #[allow(unused)]
-    pub fn add_pmid_node(&mut self, name: &DataName, pmid_node: PmidNode) {
-        let nodes = self.storage.entry(name.clone()).or_insert(vec![pmid_node.clone()]);
+    pub fn add_pmid_node(&mut self, data_name: &XorName, pmid_node: XorName) {
+        let nodes = self.storage.entry(data_name.clone()).or_insert(vec![pmid_node.clone()]);
         if !nodes.contains(&pmid_node) {
             nodes.push(pmid_node);
         }
     }
 
-    pub fn remove_pmid_node(&mut self, name: &DataName, pmid_node: PmidNode) {
-        if !self.storage.contains_key(name) {
+    pub fn remove_pmid_node(&mut self, data_name: &XorName, pmid_node: XorName) {
+        if !self.storage.contains_key(data_name) {
             return;
         }
-        let nodes = self.storage.entry(name.clone()).or_insert(vec![]);
+        let nodes = self.storage.entry(data_name.clone()).or_insert(vec![]);
         for i in 0..nodes.len() {
             if nodes[i] == pmid_node {
                 let _ = nodes.remove(i);
@@ -91,26 +61,20 @@ impl Database {
         }
     }
 
-    pub fn get_pmid_nodes(&mut self, name: &DataName) -> PmidNodes {
-        match self.storage.get(&name) {
+    pub fn get_pmid_nodes(&mut self, data_name: &XorName) -> Vec<XorName> {
+        match self.storage.get(&data_name) {
             Some(entry) => entry.clone(),
-            None => Vec::<PmidNode>::new(),
+            None => Vec::<XorName>::new(),
         }
-    }
-
-    pub fn handle_account_transfer(&mut self, name: DataName, account: Account) {
-        info!("DataManager updating account {:?} to {:?}", name, account);
-        let _ = self.storage.insert(name, account.data_holders);
     }
 
     pub fn handle_churn(&mut self, routing_node: &Node, churn_event_id: &MessageId) {
         for (key, value) in self.storage.iter() {
-            let account = Account::new(value.clone());
             let src = Authority::NaeManager(key.clone());
             let refresh = Refresh {
                 id: churn_event_id.clone(),
                 name: key.clone(),
-                value: RefreshValue::DataManager(account),
+                value: RefreshValue::DataManager(value.clone()),
             };
             if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("DataManager sending refresh for account {:?}",
@@ -225,23 +189,5 @@ mod test {
         let result = db.get_pmid_nodes(&data_name);
         assert_eq!(result, new_pmid_nodes);
         assert!(result != pmid_nodes);
-    }
-
-    #[test]
-    fn handle_account_transfer() {
-        let mut db = Database::new();
-        let value = generate_random_vec_u8(1024);
-        let data = ImmutableData::new(ImmutableDataType::Normal, value);
-        let data_name = data.name();
-        let mut pmid_nodes: Vec<XorName> = vec![];
-
-        for _ in 0..4 {
-            pmid_nodes.push(random());
-        }
-        db.put_pmid_nodes(&data_name, pmid_nodes.clone());
-        assert_eq!(db.get_pmid_nodes(&data_name).len(), pmid_nodes.len());
-
-        db.handle_account_transfer(data_name.clone(), Account::new(vec![]));
-        assert_eq!(db.get_pmid_nodes(&data_name).len(), 0);
     }
 }
