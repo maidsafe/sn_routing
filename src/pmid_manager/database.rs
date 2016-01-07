@@ -96,7 +96,7 @@ impl Database {
         entry.put_data(size)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub fn delete_data(&mut self, name: &PmidNodeName, size: u64) {
         let default: Account = Default::default();
         let entry = self.storage.entry(name.clone()).or_insert(default);
