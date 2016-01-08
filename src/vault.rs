@@ -15,16 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use data_manager::DataManager;
 use error::Error;
-use maid_manager::MaidManager;
 use maidsafe_utilities::serialisation::deserialise;
 use message_filter::MessageFilter;
-use pmid_manager::PmidManager;
-use pmid_node::PmidNode;
+use personas::data_manager::DataManager;
+use personas::maid_manager::MaidManager;
+use personas::pmid_manager::PmidManager;
+use personas::pmid_node::PmidNode;
+use personas::structured_data_manager::StructuredDataManager;
 use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage};
-use sd_manager::StructuredDataManager;
 use std::sync::{Arc, atomic, mpsc};
 use std::sync::atomic::AtomicBool;
 use time::{Duration, SteadyTime};
@@ -45,7 +45,7 @@ pub struct Vault {
     maid_manager: MaidManager,
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
-    sd_manager: StructuredDataManager,
+    structured_data_manager: StructuredDataManager,
     handled_refreshes: MessageFilter<MessageId>,
     churn_timestamp: SteadyTime,
     receiver: mpsc::Receiver<Event>,
@@ -71,7 +71,7 @@ impl Vault {
             maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
-            sd_manager: StructuredDataManager::new(),
+            structured_data_manager: StructuredDataManager::new(),
             handled_refreshes: MessageFilter::<MessageId>::with_expiry_duration(Duration::minutes(5)),
             churn_timestamp: SteadyTime::now(),
             receiver: receiver,
@@ -121,7 +121,7 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::StructuredData(_, _), _)) => {
-                self.sd_manager.handle_get(&self.routing_node, &request)
+                self.structured_data_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
@@ -144,7 +144,7 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::StructuredData(ref data), _)) => self.sd_manager.handle_put(data),
+             &RequestContent::Put(Data::StructuredData(ref data), _)) => self.structured_data_manager.handle_put(data),
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
@@ -158,7 +158,7 @@ impl Vault {
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::StructuredData(_), _)) => self.sd_manager.handle_post(&request),
+             &RequestContent::Post(Data::StructuredData(_), _)) => self.structured_data_manager.handle_post(&request),
             // ================== Delete ==================
             (_, _, &RequestContent::Delete(_, _)) => unimplemented!(),
             // ================== Refresh ==================
@@ -198,7 +198,7 @@ impl Vault {
     fn on_churn(&mut self, churn_event_id: MessageId, lost_close_node: Option<XorName>) {
         self.maid_manager.handle_churn(&self.routing_node, &churn_event_id);
         self.data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
-        self.sd_manager.handle_churn(&self.routing_node, &churn_event_id);
+        self.structured_data_manager.handle_churn(&self.routing_node, &churn_event_id);
         self.pmid_manager.handle_churn(&self.routing_node, &churn_event_id);
 
         // self.id = close_group[0].clone();
@@ -245,7 +245,7 @@ impl Vault {
              RefreshValue::Stats(stats)) => self.data_manager.handle_stats_refresh(stats),
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::StructuredDataManager(structured_data)) => self.sd_manager.handle_refresh(structured_data),
+             RefreshValue::StructuredDataManager(structured_data)) => self.structured_data_manager.handle_refresh(structured_data),
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),
              RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
@@ -262,6 +262,7 @@ mod test {
     use super::*;
     use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::log;
+    use personas::data_manager;
     use rand::random;
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
                   RequestMessage, ResponseContent, ResponseMessage, StructuredData};
@@ -577,7 +578,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
-                                             ::data_manager::REPLICANTS,
+                                             data_manager::REPLICANTS,
                                              ::time::Duration::minutes(3)));
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
@@ -640,7 +641,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
-                                                      ::data_manager::REPLICANTS,
+                                                      data_manager::REPLICANTS,
                                                       Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);
@@ -661,7 +662,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
-                                             ::data_manager::REPLICANTS,
+                                             data_manager::REPLICANTS,
                                              Duration::minutes(3)));
 
         println!("Starting new vault");
@@ -686,7 +687,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
-                                                      ::data_manager::REPLICANTS,
+                                                      data_manager::REPLICANTS,
                                                       Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);

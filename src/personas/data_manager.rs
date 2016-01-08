@@ -23,20 +23,18 @@ use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
-use self::database::Database;
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, max, min};
-use std::collections::BTreeSet;
+use std::collections::{HashSet, HashMap};
 use time::{Duration, SteadyTime};
+use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::{XorName, closer_to_target};
 
 pub const REPLICANTS: usize = 2;
 pub const MIN_REPLICANTS: usize = 2;
 
-mod database;
-
-pub type Account = Vec<XorName>;
+pub type Account = HashSet<XorName>;  // Collection of PmidNodes holding a copy of the chunk
 type Address = XorName;
 type ChunkNameAndPmidNode = (XorName, XorName);
 
@@ -50,7 +48,8 @@ pub struct Stats {
 
 
 pub struct DataManager {
-    database: Database,
+    // <Data name, PmidNodes holding a copy of the data>
+    accounts: HashMap<XorName, Account>,
     // FIXME - this cache should include the requester auth in the key since repeated requests for
     // the same chunk could end up never being removed.  However, we need to be able to search in
     // the cache by chunk name only.
@@ -60,17 +59,17 @@ pub struct DataManager {
     // key is pair of chunk_name and pmid_node, value is insertion time
     ongoing_gets: LruCache<ChunkNameAndPmidNode, SteadyTime>,
     // key is chunk_name and value is failing pmid nodes
-    failed_pmids: LruCache<XorName, Vec<XorName>>,
+    failed_pmid_nodes: LruCache<XorName, Vec<XorName>>,
 }
 
 impl DataManager {
     pub fn new() -> DataManager {
         DataManager {
-            database: Database::new(),
+            accounts: HashMap::new(),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
             stats: Stats { resource_index: 1 },
             ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
-            failed_pmids: LruCache::with_capacity(LRU_CACHE_SIZE),
+            failed_pmid_nodes: LruCache::with_capacity(LRU_CACHE_SIZE),
         }
     }
 
@@ -92,7 +91,7 @@ impl DataManager {
         // Before querying the records, first ensure all records are valid
         let ongoing_gets = self.ongoing_gets.retrieve_all();
         let mut failing_entries = Vec::new();
-        let mut fetching_list = BTreeSet::new();
+        let mut fetching_list = HashSet::new();
         fetching_list.insert(data_name.clone());
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
@@ -100,7 +99,7 @@ impl DataManager {
                        routing_node.name(),
                        (ongoing_get.0).1,
                        (ongoing_get.0).0);
-                self.database.remove_pmid_node(&(ongoing_get.0).0, (ongoing_get.0).1.clone());
+                self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
                 // Starts fetching immediately no matter how many alive pmid_nodes left over
                 // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
                 // of account status not synchronized among the DataManagers
@@ -108,13 +107,13 @@ impl DataManager {
                 //                 fetching_list.insert((ongoing_get.0).0.clone()));
                 fetching_list.insert((ongoing_get.0).0.clone());
                 failing_entries.push(ongoing_get.0.clone());
-                if self.failed_pmids.contains_key(&(ongoing_get.0).0) {
-                    match self.failed_pmids.get_mut(&(ongoing_get.0).0) {
-                        Some(ref mut pmids) => pmids.push((ongoing_get.0).1.clone()),
-                        None => error!("Failed to insert failed_pmid in the cache."),
+                if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
+                    match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
+                        Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
+                        None => error!("Failed to insert failed_pmid_node in the cache."),
                     };
                 } else {
-                    let _ = self.failed_pmids
+                    let _ = self.failed_pmid_nodes
                                 .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
                 }
             }
@@ -125,19 +124,21 @@ impl DataManager {
         for fetch_name in fetching_list.iter() {
             debug!("DataManager {:?} having {:?} records for chunk {:?}",
                    routing_node.name(),
-                   self.database.exist(&fetch_name),
+                   self.accounts.contains_key(&fetch_name),
                    fetch_name);
-            for pmid in self.database.get_pmid_nodes(fetch_name) {
-                let src = Authority::NaeManager(fetch_name.clone());
-                let dst = Authority::ManagedNode(pmid.clone());
-                let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
-                debug!("DataManager {:?} sending get {:?} to {:?}",
-                       routing_node.name(),
-                       fetch_name,
-                       dst);
-                let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
-                let _ = self.ongoing_gets
-                            .insert((fetch_name.clone(), pmid.clone()), SteadyTime::now());
+            if let Some(account) = self.accounts.get(&data_name) {
+                for pmid_node in account.iter() {
+                    let src = Authority::NaeManager(fetch_name.clone());
+                    let dst = Authority::ManagedNode(pmid_node.clone());
+                    let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
+                    debug!("DataManager {:?} sending get {:?} to {:?}",
+                           routing_node.name(),
+                           fetch_name,
+                           dst);
+                    let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
+                    let _ = self.ongoing_gets
+                                .insert((fetch_name.clone(), pmid_node.clone()), SteadyTime::now());
+                }
             }
         }
     }
@@ -145,31 +146,28 @@ impl DataManager {
     pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData, message_id: &MessageId) {
         // If the data already exists, there's no more to do.
         let data_name = data.name();
-        if self.database.exist(&data_name) {
+        if self.accounts.contains_key(&data_name) {
             return;
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let target_pmids = match Self::choose_target_pmids(routing_node, &data_name) {
-            Ok(pmids) => pmids,
+        let target_pmid_nodes = match Self::choose_target_pmid_nodes(routing_node, &data_name) {
+            Ok(pmid_nodes) => pmid_nodes,
             Err(_) => return,
         };
         debug!("DataManager chosen {:?} as pmid_nodes for chunk {:?}",
-               target_pmids,
+               target_pmid_nodes,
                data_name);
-        self.database.put_pmid_nodes(&data_name, target_pmids.clone());
-        match *data.get_type_tag() {
-            ImmutableDataType::Sacrificial => {
-                self.stats.resource_index = min(1048576,
-                                                self.stats.resource_index + target_pmids.len() as u64);
-            }
-            _ => {}
+        if let ImmutableDataType::Sacrificial = *data.get_type_tag() {
+            self.stats.resource_index = min(1048576,
+                                            self.stats.resource_index + target_pmid_nodes.len() as u64);
         }
+        let _ = self.accounts.insert(data_name, target_pmid_nodes.clone());
 
         // Send the message on to the PmidNodes' managers.
-        for pmid in target_pmids {
+        for pmid_node in target_pmid_nodes {
             let src = Authority::NaeManager(data_name);
-            let dst = Authority::NodeManager(pmid);
+            let dst = Authority::NodeManager(pmid_node);
             let _ = routing_node.send_put_request(src,
                                                   dst,
                                                   Data::ImmutableData(data.clone()),
@@ -205,13 +203,13 @@ impl DataManager {
         }
 
         // let _ = self.ongoing_gets.remove(&(response.name(), request.src.get_name().clone()));
-        // match self.failed_pmids.remove(&response.name()) {
-        //     Some(failed_pmids) => {
-        //         for failed_pmid in failed_pmids {
+        // match self.failed_pmid_nodes.remove(&response.name()) {
+        //     Some(failed_pmid_nodes) => {
+        //         for failed_pmid_node in failed_pmid_nodes {
         //             // utilise put_response as get_response doesn't take ResponseError
         //             debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
-        //                    routing.name(), failed_pmid, response.name());
-        //             let location = Authority::NodeManager(failed_pmid);
+        //                    routing.name(), failed_pmid_node, response.name());
+        //             let location = Authority::NodeManager(failed_pmid_node);
         //             self.routing.put_response(our_authority.clone(), location,
         //                 ::routing::error::ResponseError::FailedRequestForData(response.clone()),
         //                 response_token.clone());
@@ -230,7 +228,7 @@ impl DataManager {
     }
 
     pub fn handle_get_failure(&mut self,
-                              _pmid_node_name: XorName,
+                              _pmid_node: XorName,
                               _message_id: &MessageId,
                               _request: &RequestMessage,
                               _external_error_indicator: &Vec<u8>) {
@@ -240,17 +238,17 @@ impl DataManager {
     pub fn handle_put_failure(&mut self, response: ResponseMessage) {
         // match response {
         //     ::routing::error::ResponseError::FailedRequestForData(data) => {
-        //         self.handle_failed_request_for_data(data, pmid_node_name, our_authority.clone());
+        //         self.handle_failed_request_for_data(data, pmid_node, our_authority.clone());
         //     }
         //     ::routing::error::ResponseError::HadToClearSacrificial(data_name, _) => {
-        //         self.handle_had_to_clear_sacrificial(data_name, pmid_node_name);
+        //         self.handle_had_to_clear_sacrificial(data_name, pmid_node);
         //     }
         //     _ => warn!("Invalid response type for PUT response at DataManager: {:?}", response),
         // }
     }
 
-    pub fn handle_account_refresh(&mut self, name: XorName, account: Account) {
-        self.database.put_pmid_nodes(&name, account)
+    pub fn handle_account_refresh(&mut self, data_name: XorName, account: Account) {
+        let _ = self.accounts.insert(data_name, account);
     }
 
     pub fn handle_stats_refresh(&mut self, stats: Stats) {
@@ -261,7 +259,19 @@ impl DataManager {
                         routing_node: &RoutingNode,
                         churn_event_id: &MessageId,
                         lost_close_node: Option<XorName>) {
-        // self.database.handle_churn(routing, churn_node);
+        for (data_name, pmid_nodes) in self.accounts.iter() {
+            let src = Authority::NaeManager(data_name.clone());
+            let refresh = Refresh {
+                id: churn_event_id.clone(),
+                name: data_name.clone(),
+                value: RefreshValue::DataManager(pmid_nodes.clone()),
+            };
+            if let Ok(serialised_refresh) = serialise(&refresh) {
+                debug!("DataManager sending refresh for account {:?}",
+                       src.get_name());
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            }
+        }
 
         // // If the churn_node exists in the previous DM's nodes_in_table,
         // // but not in this reported close_group, it indicates such node is leaving the group.
@@ -270,17 +280,17 @@ impl DataManager {
         // let on_going_gets = self.database.handle_churn(routing, churn_node, node_leaving);
 
         // for entry in on_going_gets.iter() {
-        //     if self.failed_pmids.contains_key(&entry.0) {
-        //         match self.failed_pmids.get_mut(&entry.0) {
-        //             Some(ref mut pmids) => pmids.push(churn_node.clone()),
-        //             None => error!("Failed to insert failed_pmid in the cache."),
+        //     if self.failed_pmid_nodes.contains_key(&entry.0) {
+        //         match self.failed_pmid_nodes.get_mut(&entry.0) {
+        //             Some(ref mut pmid_nodes) => pmid_nodes.push(churn_node.clone()),
+        //             None => error!("Failed to insert failed_pmid_node in the cache."),
         //         };
         //     } else {
-        //         let _ = self.failed_pmids.insert(entry.0.clone(), vec![churn_node.clone()]);
+        //         let _ = self.failed_pmid_nodes.insert(entry.0.clone(), vec![churn_node.clone()]);
         //     }
-        //     for pmid in entry.1.iter() {
+        //     for pmid_node in entry.1.iter() {
         //         let _ = self.ongoing_gets
-        //                     .insert((entry.0.clone(), pmid.clone()), SteadyTime::now());
+        //                     .insert((entry.0.clone(), pmid_node.clone()), SteadyTime::now());
         //     }
         // }
         // // close_group[0] is supposed to be the vault id
@@ -293,21 +303,13 @@ impl DataManager {
         // }
     }
 
-    pub fn reset(&mut self) {
-        self.request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
-        self.stats.resource_index = 1;
-        self.ongoing_gets = LruCache::with_capacity(LRU_CACHE_SIZE);
-        self.failed_pmids = LruCache::with_capacity(LRU_CACHE_SIZE);
-        self.database.cleanup();
-    }
-
-    fn choose_target_pmids(routing_node: &RoutingNode, data_name: &XorName) -> Result<Vec<XorName>, Error> {
+    fn choose_target_pmid_nodes(routing_node: &RoutingNode, data_name: &XorName) -> Result<HashSet<XorName>, Error> {
         let own_name = try!(routing_node.name());
-        let mut target_pmids = try!(routing_node.close_group());
-        target_pmids.push(own_name.clone());
-        Self::sort_from_target(&mut target_pmids, data_name);
-        target_pmids.truncate(REPLICANTS);
-        Ok(target_pmids)
+        let mut target_pmid_nodes = try!(routing_node.close_group());
+        target_pmid_nodes.push(own_name.clone());
+        Self::sort_from_target(&mut target_pmid_nodes, data_name);
+        target_pmid_nodes.truncate(REPLICANTS);
+        Ok(target_pmid_nodes.into_iter().collect::<HashSet<XorName>>())
     }
 
     #[allow(unused)]
@@ -338,9 +340,15 @@ impl DataManager {
         });
     }
 
+    fn remove_pmid_node_from_account(&mut self, data_name: &XorName, pmid_node: &XorName) {
+        if let Some(account) = self.accounts.get_mut(data_name) {
+            let _ = account.remove(pmid_node);
+        }
+    }
+
     // fn handle_failed_request_for_data(&mut self,
     //                                   data: ::routing::data::Data,
-    //                                   pmid_node_name: XorName,
+    //                                   pmid_node: XorName,
     //                                   our_authority: Authority) {
     //     // Validate that the Data is ImmutableData.
     //     let immutable_data = match data {
@@ -353,7 +361,7 @@ impl DataManager {
     //     self.resource_index = ::std::cmp::max(1, self.resource_index - 4);
 
     //     let data_name = immutable_data.name();
-    //     self.database.remove_pmid_node(&data_name, pmid_node_name);
+    //     self.database.remove_pmid_node(&data_name, pmid_node);
     //     match *immutable_data.get_type_tag() {
     //         ImmutableDataType::Normal => {
     //             match self.replicate_to(&data_name) {
@@ -374,10 +382,10 @@ impl DataManager {
     // }
 
     #[allow(unused)]
-    fn handle_had_to_clear_sacrificial(&mut self, data_name: XorName, pmid_node_name: XorName) {
+    fn handle_had_to_clear_sacrificial(&mut self, data_name: &XorName, pmid_node: &XorName) {
         // giving less weight when removing a sacrificial data
         self.stats.resource_index = max(1, self.stats.resource_index - 1);
-        self.database.remove_pmid_node(&data_name, pmid_node_name);
+        self.remove_pmid_node_from_account(data_name, pmid_node);
     }
 }
 

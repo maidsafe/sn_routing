@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,22 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use personas::{data_manager, maid_manager, pmid_manager};
-use routing::{MessageId, StructuredData};
-use xor_name::XorName;
-
-#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
-pub struct Refresh {
-    pub id: MessageId,
-    pub name: XorName,
-    pub value: RefreshValue,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
-pub enum RefreshValue {
-    MaidManager(maid_manager::Account),
-    DataManager(data_manager::Account),
-    Stats(data_manager::Stats),
-    StructuredDataManager(StructuredData),
-    PmidManager(pmid_manager::Account),
-}
+pub mod data_manager;
+pub mod maid_manager;
+pub mod pmid_manager;
+pub mod pmid_node;
+pub mod structured_data_manager;

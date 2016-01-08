@@ -43,6 +43,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 
 extern crate crust;
+#[cfg(test)]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate message_filter;
@@ -56,13 +57,9 @@ extern crate time;
 extern crate xor_name;
 
 mod chunk_store;
-mod data_manager;
 mod error;
-mod maid_manager;
 mod mock_routing;
-mod pmid_manager;
-mod pmid_node;
-mod sd_manager;
+mod personas;
 mod types;
 mod utils;
 mod vault;

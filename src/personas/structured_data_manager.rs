@@ -158,7 +158,7 @@ mod test {
 
     pub struct Environment {
         pub routing: ::vault::Routing,
-        pub sd_manager: StructuredDataManager,
+        pub structured_data_manager: StructuredDataManager,
         pub data_name: XorName,
         pub identifier: XorName,
         pub keys: (::sodiumoxide::crypto::sign::PublicKey,
@@ -182,7 +182,7 @@ mod test {
             let data_name = structured_data.name();
             Environment {
                 routing: routing.clone(),
-                sd_manager: StructuredDataManager::new(routing),
+                structured_data_manager: StructuredDataManager::new(routing),
                 data_name: data_name.clone(),
                 identifier: identifier,
                 keys: keys,
@@ -196,7 +196,7 @@ mod test {
         }
 
         pub fn get_from_chunkstore(&self, data_name: &XorName) -> Option<::routing::structured_data::StructuredData> {
-            let data = self.sd_manager.chunk_store.get(data_name);
+            let data = self.structured_data_manager.chunk_store.get(data_name);
             if data.len() == 0 {
                 return None;
             }
@@ -209,13 +209,13 @@ mod test {
     fn handle_put_get() {
         let mut env = Environment::new();
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
+                   env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
         assert_eq!(0, env.routing.put_requests_given().len());
         assert_eq!(0, env.routing.put_responses_given().len());
 
         let request = ::routing::data::DataRequest::StructuredData(env.identifier.clone(), 0);
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_get(&env.us, &env.client, &request, &None));
+                   env.structured_data_manager.handle_get(&env.us, &env.client, &request, &None));
         let get_responses = env.routing.get_responses_given();
         assert_eq!(get_responses.len(), 1);
         assert_eq!(get_responses[0].our_authority, env.us);
@@ -230,12 +230,12 @@ mod test {
         let mut env = Environment::new();
         // posting to non-existent data
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_post(&env.us, &env.client, &env.data));
+                   env.structured_data_manager.handle_post(&env.us, &env.client, &env.data));
         assert_eq!(None, env.get_from_chunkstore(&env.data_name));
 
         // PUT the data
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
+                   env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
         assert_eq!(env.structured_data,
                    unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get inital data"));
 
@@ -251,7 +251,7 @@ mod test {
                                                                                               vec![],
                                                                                               Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_post(&env.us,
+                   env.structured_data_manager.handle_post(&env.us,
                                               &env.client,
                                               &::routing::data::Data::StructuredData(sd_new_bad)));
         assert_eq!(env.structured_data,
@@ -269,7 +269,7 @@ mod test {
                                                                                           vec![],
                                                                                           Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager
+                   env.structured_data_manager
                       .handle_post(&env.us,
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new.clone())));
@@ -289,7 +289,7 @@ mod test {
                                                                                       vec![env.keys.0],
                                                                                       Some(&keys2.1)));
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager
+                   env.structured_data_manager
                       .handle_post(&env.us,
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new_bad.clone())));
@@ -308,7 +308,7 @@ mod test {
                                                                                   vec![env.keys.0],
                                                                                   Some(&env.keys.1)));
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager
+                   env.structured_data_manager
                       .handle_post(&env.us,
                                    &env.client,
                                    &::routing::data::Data::StructuredData(sd_new.clone())));
@@ -321,8 +321,8 @@ mod test {
         let mut env = Environment::new();
         let churn_node = random();
         assert_eq!(::utils::HANDLED,
-                   env.sd_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-        env.sd_manager.handle_churn(&churn_node);
+                   env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
+        env.structured_data_manager.handle_churn(&churn_node);
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
@@ -330,10 +330,10 @@ mod test {
 
         let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
         if let Some(sd_account) = d.decode().next().and_then(|result| result.ok()) {
-            env.sd_manager.handle_account_transfer(sd_account);
+            env.structured_data_manager.handle_account_transfer(sd_account);
         }
 
-        env.sd_manager.handle_churn(&churn_node);
+        env.structured_data_manager.handle_churn(&churn_node);
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0], refresh_requests[1]);
