@@ -40,17 +40,72 @@ const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
 // const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
 
+/// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 enum State {
+    /// Not connected to any node.
     Disconnected,
-    // Transition state while validating proxy node
+    /// Transition state while validating proxy node.
     Bootstrapping,
-    // We are Bootstrapped
+    /// We are bootstrapped and connected to a valid proxy node.
     Client,
-    // We have been Relocated and now a node
+    /// We have been Relocated and now a node.
     Node,
 }
 
+/// An interface for clients and nodes that handles routing and connecting to the network.
+///
+///
+/// # The bootstrap process
+///
+///
+/// ## Bootstrapping a client
+///
+/// A newly created `Core`, A, starts in `Disconnected` state and tries to establish a connection to
+/// any node B of the network via Crust. When successful, i. e. when receiving an `OnConnect` event,
+/// it moves to the `Bootstrapping` state.
+///
+/// A now sends a `ClientIdentify` message to B, containing A's signed public ID. B verifies the
+/// signature and responds with a `BootstrapIdentify`, containing B's public ID and the current
+/// quorum size. Once it receives that, A goes into the `Client` state and uses B as its proxy to
+/// the network.
+///
+/// A can now exchange messages with any `Authority`. This completes the bootstrap process for
+/// clients.
+///
+///
+/// ## Becoming a node
+///
+/// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
+/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
+/// table and get added to their routing tables.
+///
+///
+/// ### Getting a new network name from the `NaeManager`
+///
+/// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
+/// of A's current name. X computes a new name and sends it in its response to A.
+///
+/// It also sends an `ExpectCloseNode` request to the `NodeManager` Y of A's new name to inform Y
+/// about the new node. Each member of Y caches A's public ID.
+///
+///
+/// ### Connecting to the close group
+///
+/// A now sends a `GetCloseGroup` request to Y. Each member of Y sends its own public ID and those
+/// of its close group in its response to A. Those messages don't necessarily agree, as not every
+/// member of Y has the same close group!
+///
+/// To the `ManagedNode` for each public ID it receives from members of Y, A sends its `Endpoints`.
+/// It also caches the ID.
+///
+/// For each `Endpoints` that a node Z receives from A, it decides whether it wants A in its routing
+/// table. If yes, and if A's ID is in its ID cache, Z sends its own `Endpoints` back to A and also
+/// attempts to connect to A via Crust. A does the same, once it receives the `Endpoints`.
+///
+/// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
+/// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
+/// receives its first `NodeIdentify`, it finally moves to the `Node` state.
 pub struct Core {
     // for CRUST
     crust_service: ::crust::Service,
