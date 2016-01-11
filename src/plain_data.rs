@@ -19,6 +19,9 @@ use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::XorName;
 
 /// Plain data with a name and a value.
+///
+/// Its name is independent of its value and no restrictions on name or value are enforced. These
+/// are left to the implementation.
 #[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct PlainData {
     name: XorName,
