@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use kademlia_routing_table::{group_size, optimal_table_size};
+use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage};
@@ -45,6 +46,7 @@ pub struct MockRoutingNodeImpl {
     delete_successes_given: Vec<ResponseMessage>,
     delete_failures_given: Vec<ResponseMessage>,
     refresh_requests_given: Vec<RequestMessage>,
+    thread_joiners: Vec<RaiiThreadJoiner>,
 }
 
 impl MockRoutingNodeImpl {
@@ -81,6 +83,7 @@ impl MockRoutingNodeImpl {
             delete_successes_given: vec![],
             delete_failures_given: vec![],
             refresh_requests_given: vec![],
+            thread_joiners: vec![],
         }
     }
 
@@ -121,12 +124,12 @@ impl MockRoutingNodeImpl {
 
     pub fn churn_event(&mut self, event_id: MessageId, lost_close_node: Option<XorName>) {
         let cloned_sender = self.sender.clone();
-        let _ = thread!("Mock Churn Event", move || {
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock Churn Event", move || {
             let _ = cloned_sender.send(Event::Churn {
                 id: event_id,
                 lost_close_node: lost_close_node,
             });
-        });
+        })));
     }
 
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
@@ -348,7 +351,7 @@ impl MockRoutingNodeImpl {
         Ok(self.peers.iter().take(group_size()).cloned().collect())
     }
 
-    fn send_request(&self,
+    fn send_request(&mut self,
                     src: Authority,
                     dst: Authority,
                     content: RequestContent,
@@ -362,14 +365,14 @@ impl MockRoutingNodeImpl {
         let cloned_message = message.clone();
         let simulated_latency = self.simulated_latency.clone();
         let sender = self.sender.clone();
-        let _ = thread!(thread_name, move || {
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!(thread_name, move || {
             sleep(simulated_latency);
-            let _ = unwrap_result!(sender.send(Event::Request(cloned_message)));
-        });
+            let _ = sender.send(Event::Request(cloned_message));
+        })));
         message
     }
 
-    fn send_response(&self,
+    fn send_response(&mut self,
                      src: Authority,
                      dst: Authority,
                      content: ResponseContent,
@@ -386,10 +389,10 @@ impl MockRoutingNodeImpl {
         };
         let cloned_message = message.clone();
         let simulated_latency = self.simulated_latency.clone();
-        let _ = thread!(thread_name, move || {
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!(thread_name, move || {
             sleep(simulated_latency);
-            let _ = unwrap_result!(sender.send(Event::Response(cloned_message)));
-        });
+            let _ = sender.send(Event::Response(cloned_message));
+        })));
         message
     }
 }
