@@ -175,7 +175,6 @@ mod acceptors;
 mod action;
 mod authority;
 mod client;
-mod connection_management;
 mod core;
 mod data;
 mod error;
