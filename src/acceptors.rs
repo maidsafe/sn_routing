@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use ip::IpAddr;
 
+/// Holds the endpoints crust informs us were accepting on.
 pub struct Acceptors {
     endpoints: HashSet<::crust::Endpoint>,
     bootstrap_ip: Option<IpAddr>,
@@ -37,10 +38,12 @@ impl Acceptors {
         }
     }
 
+    /// If disconnected on our first call to connect, set our bootstrap nodes' ip from the returned endpoint.
     pub fn set_bootstrap_ip(&mut self, bootstrap_endpoint: Endpoint) {
         self.bootstrap_ip = Some(Self::ip_from_socketaddr(bootstrap_endpoint.get_address()));
     }
 
+    /// The tcp port from the endpoint returned by crust on a call to start_accepting with our default tcp port.
     pub fn set_tcp_accepting_port(&mut self, accepting_port: Port) {
         match accepting_port {
             Port::Tcp(port) => {
@@ -55,6 +58,7 @@ impl Acceptors {
     }
 
     #[allow(dead_code)]
+    /// The utp port from the endpoint returned by crust on a call to start_accepting with our default utp port.
     pub fn set_utp_accepting_port(&mut self, accepting_port: Port) {
         match accepting_port {
             Port::Utp(port) => self.utp_accepting_port = Some(Port::Utp(port)),
@@ -62,6 +66,7 @@ impl Acceptors {
         }
     }
 
+    /// If `our_endpoint` port matches our accepting port add the endpoint if not already present.
     pub fn add(&mut self, our_endpoint: Endpoint) {
         match our_endpoint {
             Endpoint::Tcp(socket_addr) => {
@@ -81,6 +86,7 @@ impl Acceptors {
         }
     }
 
+    /// Return the list of endpoints were accepting on.
     pub fn endpoints(&self) -> Vec<Endpoint> {
         self.endpoints.iter().cloned().collect()
     }
