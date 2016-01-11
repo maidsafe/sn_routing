@@ -46,7 +46,6 @@ extern crate crust;
 #[cfg(test)]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
-extern crate message_filter;
 #[cfg(test)]
 extern crate rand;
 extern crate routing;

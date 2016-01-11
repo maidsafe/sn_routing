@@ -17,7 +17,6 @@
 
 use error::Error;
 use maidsafe_utilities::serialisation::deserialise;
-use message_filter::MessageFilter;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
 use personas::pmid_manager::PmidManager;
@@ -27,7 +26,6 @@ use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, Re
               ResponseMessage};
 use std::sync::{Arc, atomic, mpsc};
 use std::sync::atomic::AtomicBool;
-use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use xor_name::XorName;
 
@@ -46,8 +44,6 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
-    handled_refreshes: MessageFilter<MessageId>,
-    churn_timestamp: SteadyTime,
     receiver: mpsc::Receiver<Event>,
     app_event_sender: Option<mpsc::Sender<Event>>,
     should_stop: Option<Arc<AtomicBool>>,
@@ -72,8 +68,6 @@ impl Vault {
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
             structured_data_manager: StructuredDataManager::new(),
-            handled_refreshes: MessageFilter::<MessageId>::with_expiry_duration(Duration::minutes(5)),
-            churn_timestamp: SteadyTime::now(),
             receiver: receiver,
             app_event_sender: app_event_sender,
             should_stop: should_stop,
@@ -200,20 +194,6 @@ impl Vault {
         self.immutable_data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
         self.structured_data_manager.handle_churn(&self.routing_node, &churn_event_id);
         self.pmid_manager.handle_churn(&self.routing_node, &churn_event_id);
-
-        // self.id = close_group[0].clone();
-        // let churn_up = close_group.len() > self.immutable_data_manager.nodes_in_table_len();
-        // let time_now = SteadyTime::now();
-        // // During the process of joining network, the vault shall not refresh its just received info
-        // if !(churn_up && (self.churn_timestamp + Duration::seconds(5) > time_now)) {
-        //     self.handle_churn(close_group /* , churn_node */);
-        // } else {
-        //     self.immutable_data_manager.set_node_table(close_group);
-        // }
-        // if churn_up {
-        //     info!("Vault added connected node");
-        //     self.churn_timestamp = time_now;
-        // }
     }
 
     fn on_connected(&self) {
@@ -230,9 +210,6 @@ impl Vault {
                 return;
             }
         };
-        if self.handled_refreshes.contains(&refresh.id) {
-            return;
-        }
         match (src, dst, refresh.value) {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
@@ -252,7 +229,6 @@ impl Vault {
              RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
             _ => error!("Unexpected refresh from {:?} to {:?}", src, dst),
         }
-        let _ = self.handled_refreshes.insert(refresh.id);
     }
 }
 
