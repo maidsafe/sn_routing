@@ -357,6 +357,7 @@ impl Core {
                 try!(hop_msg.verify(public_id.signing_public_key()));
             } else if let Some((ref pub_key, _)) = self.client_map
                                                 .iter()
+                                                .chain(self.joining_nodes_map.iter())
                                                 .find(|ref elt| &connection == elt.1) {
                 try!(hop_msg.verify(pub_key));
             } else {
@@ -972,7 +973,7 @@ impl Core {
                     }
                 } else {
                     if self.joining_nodes_map.len() == MAX_JOINING_NODES {
-                        debug!("No additional joining nodes allowed.");
+                        trace!("No additional joining nodes allowed.");
                         return self.bootstrap_deny(connection);
                     }
                     let _ = self.joining_nodes_map.insert(public_id.signing_public_key().clone(),
@@ -1536,16 +1537,20 @@ impl Core {
                        signed_msg: SignedMessage,
                        client_key: &sign::PublicKey)
                        -> Result<(), RoutingError> {
-        let connection = try!(self.client_map
-                                  .get(client_key)
-                                  .ok_or(RoutingError::ClientConnectionNotFound));
-        let hop_msg = try!(HopMessage::new(signed_msg,
-                                           self.full_id.public_id().name().clone(),
-                                           self.full_id.signing_private_key()));
-        let message = Message::HopMessage(hop_msg);
-        let raw_bytes = try!(serialise(&message));
+        if let Some(connection) = self.client_map
+                                      .get(client_key)
+                                      .or(self.joining_nodes_map
+                                      .get(client_key)) {
+            let hop_msg = try!(HopMessage::new(signed_msg,
+                                               self.full_id.public_id().name().clone(),
+                                               self.full_id.signing_private_key()));
+            let message = Message::HopMessage(hop_msg);
+            let raw_bytes = try!(serialise(&message));
 
-        Ok(self.crust_service.send(connection.clone(), raw_bytes))
+            return Ok(self.crust_service.send(connection.clone(), raw_bytes))
+        }
+
+        Err(RoutingError::ClientConnectionNotFound)
     }
 
     fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
