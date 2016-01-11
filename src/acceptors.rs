@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use ip::IpAddr;
 
-/// Holds the endpoints crust informs us were accepting on.
+/// Holds the endpoints crust informs us we're accepting on.
 pub struct Acceptors {
     endpoints: HashSet<::crust::Endpoint>,
     bootstrap_ip: Option<IpAddr>,
@@ -86,7 +86,7 @@ impl Acceptors {
         }
     }
 
-    /// Return the list of endpoints were accepting on.
+    /// Return the list of endpoints we're accepting on.
     pub fn endpoints(&self) -> Vec<Endpoint> {
         self.endpoints.iter().cloned().collect()
     }
