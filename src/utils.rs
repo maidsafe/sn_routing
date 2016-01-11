@@ -17,8 +17,12 @@
 
 use xor_name::XorName;
 
-/// Formatted string from a vector of bytes.
-pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
+/// Format a vector of bytes as a hexadecimal number, ellipsizing all but the first and last three.
+///
+/// For three bytes with values 1, 2, 3, the output will be "BYTES:010203". For more than six
+/// bytes, e. g. for fifteen bytes with values 1, 2, ..., 15, the output will be
+/// "BYTES:010203..0D0E0F".
+pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> String {
     use std::fmt::Write;
     let input_ref = input.as_ref();
     if input_ref.len() <= 6 {
@@ -38,9 +42,21 @@ pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> ::std::string::String {
 }
 
 
-/// relocated_name = Hash(original_name + 1st closest node id + 2nd closest node id)
-/// In case of only one close node provided (in initial network setup scenario),
-/// relocated_name = Hash(original_name + 1st closest node id)
+/// Compute the relocated name of a client with the given original name.
+///
+/// This is used by each member of the client's `ClientManager` group to choose a new name for the
+/// client. On the one hand, sufficiently many of them need to agree on the new name to reach quorum
+/// size, on the other hand, the client shall not be able to predict it so that it cannot choose
+/// who will be its new `NodeManager` after relocation.
+///
+/// To meet these requirements, the relocated name is computed from the two closest nodes and the
+/// client's original name: It is the SHA512 hash of:
+///
+/// [original_name, 1st closest node id, 2nd closest node id]
+///
+/// In case of only one close node provided (in initial network setup scenario):
+///
+/// [original_name, 1st closest node id]
 pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
                                 original_name: &XorName)
                                 -> Result<XorName, ::error::RoutingError> {

@@ -34,7 +34,11 @@ type RoutingResult = Result<(), RoutingError>;
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
 /// routing node.
 ///
-/// A node is a part of the network that can route messages and be member of a group authority.
+/// A node is a part of the network that can route messages and be member of a group authority. Its
+/// methods can be used to send requests and responses as either an individual `ManagedNode` or as
+/// a part of a group authority. Their `src` argument indicates that role, so it must always either
+/// be the `ManagedNode` with this node's name, or the `ClientManager` or `NodeManager` or
+/// `NaeManager` with the address of a client, node or data element that this node is close to.
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
@@ -64,7 +68,7 @@ impl Node {
         })
     }
 
-    /// Send a Get message with a DataRequest to an Authority, signed with given keys.
+    /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
@@ -79,7 +83,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Add something to the network
+    /// Send a `Put` request to `dst` to store data on the network.
     pub fn send_put_request(&self,
                             src: Authority,
                             dst: Authority,
@@ -94,7 +98,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Change something already on the network
+    /// Send a `Post` request to `dst` to modify data on the network.
     pub fn send_post_request(&self,
                              src: Authority,
                              dst: Authority,
@@ -109,7 +113,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Remove something from the network
+    /// Send a `Delete` request to `dst` to remove data from the network.
     pub fn send_delete_request(&self,
                                src: Authority,
                                dst: Authority,
@@ -124,7 +128,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a get_request indicating success
+    /// Respond to a `Get` request indicating success and sending the requested data.
     pub fn send_get_success(&self,
                             src: Authority,
                             dst: Authority,
@@ -139,7 +143,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a get_request indicating failure
+    /// Respond to a `Get` request indicating failure.
     pub fn send_get_failure(&self,
                             src: Authority,
                             dst: Authority,
@@ -159,7 +163,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a put_request indicating success
+    /// Respond to a `Put` request indicating success.
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
@@ -174,7 +178,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a put_request indicating failure
+    /// Respond to a `Put` request indicating failure.
     pub fn send_put_failure(&self,
                             src: Authority,
                             dst: Authority,
@@ -194,7 +198,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a post_request indicating success
+    /// Respond to a `Post` request indicating success.
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
@@ -209,7 +213,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a post_request indicating failure
+    /// Respond to a `Post` request indicating failure.
     pub fn send_post_failure(&self,
                              src: Authority,
                              dst: Authority,
@@ -229,7 +233,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a delete_request indicating success
+    /// Respond to a `Delete` request indicating success.
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
@@ -244,7 +248,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Respond to a delete_request indicating failure
+    /// Respond to a `Delete` request indicating failure.
     pub fn send_delete_failure(&self,
                                src: Authority,
                                dst: Authority,
@@ -264,10 +268,11 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Refresh the content in the close group nodes of group address in `src`.
-    /// This method needs to be called when churn is triggered.
-    /// all the group members need to call this, otherwise it will not be resolved as a valid
-    /// content. The authority provided (`src`) should be a group.
+    /// Send a `Refresh` request from `src` to `src` to trigger churn.
+    ///
+    /// This is intended to be sent from a group authority (`src`) to itself whenever a node joins
+    /// or leaves the group. If the quorum is reached, i. e. enough members agree that a change has
+    /// happened, the churn mechanism is triggered to adapt to the change.
     pub fn send_refresh_request(&self,
                                 src: Authority,
                                 content: Vec<u8>)
@@ -280,7 +285,7 @@ impl Node {
         self.send_action(routing_msg)
     }
 
-    /// Returns the names of the close group to this node.
+    /// Returns the names of the nodes in the routing table which are closest to this one.
     pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::CloseGroup { result_tx: result_tx }));
