@@ -40,13 +40,6 @@ type ChunkNameAndPmidNode = (XorName, XorName);
 
 const LRU_CACHE_SIZE: usize = 1000;
 
-#[derive(RustcEncodable, RustcDecodable, Clone, PartialEq, Eq, Debug)]
-pub struct Stats {
-    pub resource_index: u64,
-}
-
-
-
 pub struct ImmutableDataManager {
     // <Data name, PmidNodes holding a copy of the data>
     accounts: HashMap<XorName, Account>,
@@ -54,8 +47,6 @@ pub struct ImmutableDataManager {
     // the same chunk could end up never being removed.  However, we need to be able to search in
     // the cache by chunk name only.
     request_cache: LruCache<XorName, RequestMessage>,
-    // the higher the resource_index is, the slower the farming rate will be
-    stats: Stats,
     // key is pair of chunk_name and pmid_node, value is insertion time
     ongoing_gets: LruCache<ChunkNameAndPmidNode, SteadyTime>,
     // key is chunk_name and value is failing pmid nodes
@@ -67,7 +58,6 @@ impl ImmutableDataManager {
         ImmutableDataManager {
             accounts: HashMap::new(),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
-            stats: Stats { resource_index: 1 },
             ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
             failed_pmid_nodes: LruCache::with_capacity(LRU_CACHE_SIZE),
         }
@@ -158,10 +148,6 @@ impl ImmutableDataManager {
         debug!("ImmutableDataManager chosen {:?} as pmid_nodes for chunk {:?}",
                target_pmid_nodes,
                data_name);
-        if let ImmutableDataType::Sacrificial = *data.get_type_tag() {
-            self.stats.resource_index = min(1048576,
-                                            self.stats.resource_index + target_pmid_nodes.len() as u64);
-        }
         let _ = self.accounts.insert(data_name, target_pmid_nodes.clone());
 
         // Send the message on to the PmidNodes' managers.
@@ -247,12 +233,8 @@ impl ImmutableDataManager {
         // }
     }
 
-    pub fn handle_account_refresh(&mut self, data_name: XorName, account: Account) {
+    pub fn handle_refresh(&mut self, data_name: XorName, account: Account) {
         let _ = self.accounts.insert(data_name, account);
-    }
-
-    pub fn handle_stats_refresh(&mut self, stats: Stats) {
-        self.stats = stats;
     }
 
     pub fn handle_churn(&mut self,
@@ -383,8 +365,6 @@ impl ImmutableDataManager {
 
     #[allow(unused)]
     fn handle_had_to_clear_sacrificial(&mut self, data_name: &XorName, pmid_node: &XorName) {
-        // giving less weight when removing a sacrificial data
-        self.stats.resource_index = max(1, self.stats.resource_index - 1);
         self.remove_pmid_node_from_account(data_name, pmid_node);
     }
 }

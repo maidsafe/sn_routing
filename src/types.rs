@@ -30,7 +30,6 @@ pub struct Refresh {
 pub enum RefreshValue {
     MaidManager(maid_manager::Account),
     ImmutableDataManager(immutable_data_manager::Account),
-    Stats(immutable_data_manager::Stats),
     StructuredDataManager(StructuredData),
     PmidManager(pmid_manager::Account),
 }

@@ -240,11 +240,8 @@ impl Vault {
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              RefreshValue::ImmutableDataManager(account)) => {
-                self.immutable_data_manager.handle_account_refresh(refresh.name, account)
+                self.immutable_data_manager.handle_refresh(refresh.name, account)
             }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             RefreshValue::Stats(stats)) => self.immutable_data_manager.handle_stats_refresh(stats),
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              RefreshValue::StructuredDataManager(structured_data)) => {
