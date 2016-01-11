@@ -17,6 +17,7 @@
 
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
+use sodiumoxide::crypto::hash::sha512;
 use std::collections::HashMap;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -73,7 +74,15 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        // Handle the request by sending on to the DM or SDM, or replying with error to the client.
+        // Take a hash of the message anticipating sending this as a success response to the client.
+        let message_hash = match serialise(request) {
+            Ok(encoded) => sha512::hash(&encoded[..]),
+            Err(error) => {
+                error!("Failed to serialise Put request: {:?}", error);
+                return;
+            }
+        };
+
         let (data, message_id) = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
                 (Data::ImmutableData(data.clone()), message_id.clone())
@@ -84,6 +93,7 @@ impl MaidManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
+        // Try to add the data to the account
         if !self.accounts
                 .entry(request.src.get_name().clone())
                 .or_insert(Account::default())
@@ -96,8 +106,16 @@ impl MaidManager {
             return;
         }
 
-        let dst = Authority::NaeManager(data.name());
-        let _ = routing_node.send_put_request(request.dst.clone(), dst, data, message_id);
+        {  // Send data on to NAE Manager
+            let src = request.dst.clone();
+            let dst = Authority::NaeManager(data.name());
+            let _ = routing_node.send_put_request(src, dst, data, message_id.clone());
+        }
+
+        // Send success response back to client
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
     }
 
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
