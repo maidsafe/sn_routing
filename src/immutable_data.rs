@@ -24,18 +24,20 @@ use sodiumoxide::crypto;
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
 /// The type of an individual copy of immutable data.
 pub enum ImmutableDataType {
-    /// Used in normal operation.
+    /// Used in normal operation. The name of the data is the SHA512 hash of its value.
     Normal,
-    /// Used only when no normal copies are left, or if copies need to be relocated.
+    /// Used only when no normal copies are left, or if copies need to be relocated. Its name is
+    /// `hash(hash(value))`.
     Backup,
     /// Only kept if there is unused space left. If storage space becomes scarce, this copy will be
-    /// sacrificed.
+    /// sacrificed. Its name is `hash(hash(hash(value)))`.
     Sacrificial,
 }
 
 /// An immutable chunk of data.
 ///
-/// Its name is the SHA512 hash of its content.
+/// Its name is computed from its content by applying the SHA512 hash up to three times, depending
+/// on the `ImmutableDataType`.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct ImmutableData {
     type_tag: ImmutableDataType,

@@ -65,8 +65,9 @@ impl StructuredData {
         Ok(structured_data)
     }
 
-    /// This is a static function required for computing a name given the type tag and identifier to
-    /// be used by GETs
+    /// This is a static function that computes the name of a `StructuredData` given its type tag
+    /// and identifier. To request the data with that type tag and identifier, a `Get` request
+    /// needs to be sent to that name's `NaeManager`.
     pub fn compute_name(type_tag: u64, identifier: &XorName) -> XorName {
         let type_tag_as_string = type_tag.to_string();
 

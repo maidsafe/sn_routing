@@ -21,7 +21,8 @@ use std::fmt::{Debug, Formatter};
 
 /// An entity that can act as a source or destination of a message.
 ///
-/// An `Authority` can be an individual client or node, or a group of nodes.
+/// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
+/// `NodeManager`, `ClientManager` or `NaeManager`.
 #[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
 pub enum Authority {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.

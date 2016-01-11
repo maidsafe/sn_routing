@@ -46,10 +46,13 @@ impl Client {
     /// Create a new `Client`.
     ///
     /// It will automatically connect to the network, but not attempt to achieve full routing node
-    /// status. The name of the client will be the name of the `PublicId` of the `keys`.
+    /// status. The name of the client will be the name of the `PublicId` of the `keys` and must
+    /// equal the SHA512 hash of its public signing key, otherwise the client will be instantly
+    /// terminated.
     ///
-    /// If the client is started with a relocated ID (ie the name has been reassigned),
-    /// the core will instantly instantiate termination of the client.
+    /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
+    /// cryptographically secure and uses group consensus. The restriction for the client name
+    /// exists to ensure that the client cannot choose its `ClientAuthority`.
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
