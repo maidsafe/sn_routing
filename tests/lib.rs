@@ -186,9 +186,9 @@
 //         let s = String::from_utf8(result).unwrap();
 //         let mm_v: Vec<&str> = s.split("MaidManager updated account").collect();
 //         assert_eq!(2, mm_v.len());
-//         let dm_v: Vec<&str> = s.split("DataManager updated account").collect();
+//         let dm_v: Vec<&str> = s.split("ImmutableDataManager updated account").collect();
 //         assert_eq!(2, dm_v.len());
-//         let pm_v: Vec<&str> = s.split("DataManager updated account").collect();
+//         let pm_v: Vec<&str> = s.split("ImmutableDataManager updated account").collect();
 //         assert_eq!(2, pm_v.len());
 //         println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n", s);
 //     };

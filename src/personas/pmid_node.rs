@@ -108,7 +108,7 @@ impl PmidNode {
                     emptied_space += fetched_data.len();
                     self.chunk_store.delete(name);
                     // For sacrificed data, just notify PmidManager to update the account and
-                    // DataManager need to adjust its farming rate, replication shall not be carried
+                    // ImmutableDataManager need to adjust its farming rate, replication shall not be carried
                     // out for it.
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {

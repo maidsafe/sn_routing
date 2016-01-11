@@ -18,7 +18,7 @@
 use error::Error;
 use maidsafe_utilities::serialisation::deserialise;
 use message_filter::MessageFilter;
-use personas::data_manager::DataManager;
+use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
 use personas::pmid_manager::PmidManager;
 use personas::pmid_node::PmidNode;
@@ -41,7 +41,7 @@ pub type RoutingNode = ::mock_routing::MockRoutingNode;
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     routing_node: RoutingNode,
-    data_manager: DataManager,
+    immutable_data_manager: ImmutableDataManager,
     maid_manager: MaidManager,
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
@@ -67,7 +67,7 @@ impl Vault {
         let routing_node = try!(RoutingNode::new(sender));
         Ok(Vault {
             routing_node: routing_node,
-            data_manager: DataManager::new(),
+            immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
@@ -116,7 +116,7 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
-                self.data_manager.handle_get(&self.routing_node, &request)
+                self.immutable_data_manager.handle_get(&self.routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -140,7 +140,7 @@ impl Vault {
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
-                self.data_manager.handle_put(&self.routing_node, data, message_id)
+                self.immutable_data_manager.handle_put(&self.routing_node, data, message_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
@@ -176,18 +176,18 @@ impl Vault {
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::ImmutableData(_), _)) => {
-                self.data_manager.handle_get_success(&self.routing_node, &response)
+                self.immutable_data_manager.handle_get_success(&self.routing_node, &response)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(pmid_node_name),
              &Authority::NaeManager(_),
              &ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator }) => {
-                self.data_manager
+                self.immutable_data_manager
                     .handle_get_failure(pmid_node_name, id, request, external_error_indicator)
             }
             // ================== PutFailure ==================
             // FIXME
-            // data_manager::Authority(_) => self.data_manager.handle_put_failure(response),
+            // immutable_data_manager::Authority(_) => self.immutable_data_manager.handle_put_failure(response),
             // pmid_manager::Authority(_) => self.pmid_manager.handle_put_failure(response),
 
             // ================== Invalid Response ==================
@@ -197,18 +197,18 @@ impl Vault {
 
     fn on_churn(&mut self, churn_event_id: MessageId, lost_close_node: Option<XorName>) {
         self.maid_manager.handle_churn(&self.routing_node, &churn_event_id);
-        self.data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
+        self.immutable_data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
         self.structured_data_manager.handle_churn(&self.routing_node, &churn_event_id);
         self.pmid_manager.handle_churn(&self.routing_node, &churn_event_id);
 
         // self.id = close_group[0].clone();
-        // let churn_up = close_group.len() > self.data_manager.nodes_in_table_len();
+        // let churn_up = close_group.len() > self.immutable_data_manager.nodes_in_table_len();
         // let time_now = SteadyTime::now();
         // // During the process of joining network, the vault shall not refresh its just received info
         // if !(churn_up && (self.churn_timestamp + Duration::seconds(5) > time_now)) {
         //     self.handle_churn(close_group /* , churn_node */);
         // } else {
-        //     self.data_manager.set_node_table(close_group);
+        //     self.immutable_data_manager.set_node_table(close_group);
         // }
         // if churn_up {
         //     info!("Vault added connected node");
@@ -219,7 +219,7 @@ impl Vault {
     fn on_connected(&self) {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
-        // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.data_manager.nodes_in_table_len());
+        // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.immutable_data_manager.nodes_in_table_len());
     }
 
     fn on_refresh(&mut self, src: &Authority, dst: &Authority, serialised_refresh: &Vec<u8>) {
@@ -239,13 +239,17 @@ impl Vault {
              RefreshValue::MaidManager(account)) => self.maid_manager.handle_refresh(refresh.name, account),
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::DataManager(account)) => self.data_manager.handle_account_refresh(refresh.name, account),
+             RefreshValue::ImmutableDataManager(account)) => {
+                self.immutable_data_manager.handle_account_refresh(refresh.name, account)
+            }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::Stats(stats)) => self.data_manager.handle_stats_refresh(stats),
+             RefreshValue::Stats(stats)) => self.immutable_data_manager.handle_stats_refresh(stats),
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::StructuredDataManager(structured_data)) => self.structured_data_manager.handle_refresh(structured_data),
+             RefreshValue::StructuredDataManager(structured_data)) => {
+                self.structured_data_manager.handle_refresh(structured_data)
+            }
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),
              RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
@@ -262,7 +266,7 @@ mod test {
     use super::*;
     use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::log;
-    use personas::data_manager;
+    use personas::immutable_data_manager;
     use rand::random;
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
                   RequestMessage, ResponseContent, ResponseMessage, StructuredData};
@@ -578,7 +582,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
-                                             data_manager::REPLICANTS,
+                                             immutable_data_manager::REPLICANTS,
                                              ::time::Duration::minutes(3)));
         println!("Getting data");
         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
@@ -641,7 +645,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
-                                                      data_manager::REPLICANTS,
+                                                      immutable_data_manager::REPLICANTS,
                                                       Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);
@@ -662,7 +666,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                              3,
-                                             data_manager::REPLICANTS,
+                                             immutable_data_manager::REPLICANTS,
                                              Duration::minutes(3)));
 
         println!("Starting new vault");
@@ -687,7 +691,7 @@ mod test {
                                                            Data::ImmutableData(im_data.clone())));
         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
                                                       3,
-                                                      data_manager::REPLICANTS,
+                                                      immutable_data_manager::REPLICANTS,
                                                       Duration::minutes(3)));
 
         println!("Stopping vault {}", pmid_nodes[0]);

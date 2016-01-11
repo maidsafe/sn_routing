@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use personas::{data_manager, maid_manager, pmid_manager};
+use personas::{immutable_data_manager, maid_manager, pmid_manager};
 use routing::{MessageId, StructuredData};
 use xor_name::XorName;
 
@@ -29,8 +29,8 @@ pub struct Refresh {
 #[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum RefreshValue {
     MaidManager(maid_manager::Account),
-    DataManager(data_manager::Account),
-    Stats(data_manager::Stats),
+    ImmutableDataManager(immutable_data_manager::Account),
+    Stats(immutable_data_manager::Stats),
     StructuredDataManager(StructuredData),
     PmidManager(pmid_manager::Account),
 }

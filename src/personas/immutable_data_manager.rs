@@ -25,7 +25,7 @@ use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, Me
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, max, min};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -47,7 +47,7 @@ pub struct Stats {
 
 
 
-pub struct DataManager {
+pub struct ImmutableDataManager {
     // <Data name, PmidNodes holding a copy of the data>
     accounts: HashMap<XorName, Account>,
     // FIXME - this cache should include the requester auth in the key since repeated requests for
@@ -62,9 +62,9 @@ pub struct DataManager {
     failed_pmid_nodes: LruCache<XorName, Vec<XorName>>,
 }
 
-impl DataManager {
-    pub fn new() -> DataManager {
-        DataManager {
+impl ImmutableDataManager {
+    pub fn new() -> ImmutableDataManager {
+        ImmutableDataManager {
             accounts: HashMap::new(),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
             stats: Stats { resource_index: 1 },
@@ -82,7 +82,7 @@ impl DataManager {
         };
 
         // Cache the request
-        debug!("DataManager {:?} cached request {:?}",
+        debug!("ImmutableDataManager {:?} cached request {:?}",
                routing_node.name(),
                request);
         // FIXME - should append to requests in the case of a pre-existing request for this chunk
@@ -95,7 +95,7 @@ impl DataManager {
         fetching_list.insert(data_name.clone());
         for ongoing_get in ongoing_gets {
             if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
-                debug!("DataManager {:?} removing pmid_node {:?} for chunk {:?}",
+                debug!("ImmutableDataManager {:?} removing pmid_node {:?} for chunk {:?}",
                        routing_node.name(),
                        (ongoing_get.0).1,
                        (ongoing_get.0).0);
@@ -122,7 +122,7 @@ impl DataManager {
             let _ = self.ongoing_gets.remove(&failed_entry);
         }
         for fetch_name in fetching_list.iter() {
-            debug!("DataManager {:?} having {:?} records for chunk {:?}",
+            debug!("ImmutableDataManager {:?} having {:?} records for chunk {:?}",
                    routing_node.name(),
                    self.accounts.contains_key(&fetch_name),
                    fetch_name);
@@ -131,7 +131,7 @@ impl DataManager {
                     let src = Authority::NaeManager(fetch_name.clone());
                     let dst = Authority::ManagedNode(pmid_node.clone());
                     let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
-                    debug!("DataManager {:?} sending get {:?} to {:?}",
+                    debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
                            routing_node.name(),
                            fetch_name,
                            dst);
@@ -155,7 +155,7 @@ impl DataManager {
             Ok(pmid_nodes) => pmid_nodes,
             Err(_) => return,
         };
-        debug!("DataManager chosen {:?} as pmid_nodes for chunk {:?}",
+        debug!("ImmutableDataManager chosen {:?} as pmid_nodes for chunk {:?}",
                target_pmid_nodes,
                data_name);
         if let ImmutableDataType::Sacrificial = *data.get_type_tag() {
@@ -207,7 +207,7 @@ impl DataManager {
         //     Some(failed_pmid_nodes) => {
         //         for failed_pmid_node in failed_pmid_nodes {
         //             // utilise put_response as get_response doesn't take ResponseError
-        //             debug!("DataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
+        //             debug!("ImmutableDataManager {:?} notifying a failed pmid_node {:?} regarding chunk {:?}",
         //                    routing.name(), failed_pmid_node, response.name());
         //             let location = Authority::NodeManager(failed_pmid_node);
         //             self.routing.put_response(our_authority.clone(), location,
@@ -219,7 +219,7 @@ impl DataManager {
         // }
 
         // if let Some(pmid_node) = self.replicate_to(&response.name()) {
-        //     debug!("DataManager {:?} replicate chunk {:?} to a new pmid_node {:?}",
+        //     debug!("ImmutableDataManager {:?} replicate chunk {:?} to a new pmid_node {:?}",
         //            routing.name(), response.name(), pmid_node);
         //     self.database.add_pmid_node(&response.name(), pmid_node.clone());
         //     let location = Authority::ManagedNode(pmid_node);
@@ -243,7 +243,7 @@ impl DataManager {
         //     ::routing::error::ResponseError::HadToClearSacrificial(data_name, _) => {
         //         self.handle_had_to_clear_sacrificial(data_name, pmid_node);
         //     }
-        //     _ => warn!("Invalid response type for PUT response at DataManager: {:?}", response),
+        //     _ => warn!("Invalid response type for PUT response at ImmutableDataManager: {:?}", response),
         // }
     }
 
@@ -264,10 +264,10 @@ impl DataManager {
             let refresh = Refresh {
                 id: churn_event_id.clone(),
                 name: data_name.clone(),
-                value: RefreshValue::DataManager(pmid_nodes.clone()),
+                value: RefreshValue::ImmutableDataManager(pmid_nodes.clone()),
             };
             if let Ok(serialised_refresh) = serialise(&refresh) {
-                debug!("DataManager sending refresh for account {:?}",
+                debug!("ImmutableDataManager sending refresh for account {:?}",
                        src.get_name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
@@ -404,19 +404,19 @@ mod test {
     struct TestEnv {
         pub our_authority: Authority,
         pub routing: ::vault::RoutingNode,
-        pub data_manager: DataManager,
+        pub immutable_data_manager: ImmutableDataManager,
         pub data: ImmutableData,
     }
 
     fn env_setup() -> TestEnv {
         let routing = unwrap_result!(::vault::RoutingNode::new(mpsc::channel().0));
-        let data_manager = DataManager::new();
+        let immutable_data_manager = ImmutableDataManager::new();
         let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
         TestEnv {
             our_authority: Authority::NaeManager(data.name().clone()),
             routing: routing,
-            data_manager: data_manager,
+            immutable_data_manager: immutable_data_manager,
             data: data,
         }
     }
@@ -426,7 +426,7 @@ mod test {
         let mut env = env_setup();
         {
             let message_id = MessageId::new();
-            env.data_manager.handle_put(&env.routing, &env.data, &message_id);
+            env.immutable_data_manager.handle_put(&env.routing, &env.data, &message_id);
             let put_requests = env.routing.put_requests_given();
             assert_eq!(put_requests.len(), REPLICANTS);
             for i in 0..put_requests.len() {
@@ -452,7 +452,7 @@ mod test {
                 dst: env.our_authority.clone(),
                 content: content.clone(),
             };
-            env.data_manager.handle_get(&env.routing, &request);
+            env.immutable_data_manager.handle_get(&env.routing, &request);
             let get_requests = env.routing.get_requests_given();
             assert_eq!(get_requests.len(), REPLICANTS);
             for i in 0..get_requests.len() {
@@ -465,13 +465,13 @@ mod test {
     #[test]
     fn handle_churn() {
         // let mut env = env_setup();
-        // env.data_manager.handle_put(&env.routing, &env.data);
+        // env.immutable_data_manager.handle_put(&env.routing, &env.data);
         // let close_group = vec![env.our_authority.get_name().clone()]
         //                       .into_iter()
         //                       .chain(env.routing.close_group_including_self().into_iter())
         //                       .collect();
         // let churn_node = random();
-        // env.data_manager.handle_churn(&env.routing, close_group, &churn_node);
+        // env.immutable_data_manager.handle_churn(&env.routing, close_group, &churn_node);
         // let refresh_requests = env.routing.refresh_requests_given();
         // assert_eq!(refresh_requests.len(), 2);
         // {

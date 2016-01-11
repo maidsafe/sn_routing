@@ -121,7 +121,7 @@ impl PmidManager {
         // match data {
         // ::routing::data::Data::ImmutableData(immutable_data) => {
         // self.database.delete_data(&from_address, payload_size);
-        // let location = ::data_manager::Authority(immutable_data.name());
+        // let location = ::immutable_data_manager::Authority(immutable_data.name());
         // let response = ::routing::error::ResponseError::FailedRequestForData(
         // ::routing::data::Data::ImmutableData(immutable_data));
         // self.routing
@@ -132,7 +132,7 @@ impl PmidManager {
         // }
         // ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
         // self.database.delete_data(&from_address, data_size as u64);
-        // let location = ::data_manager::Authority(data_name.clone());
+        // let location = ::immutable_data_manager::Authority(data_name.clone());
         // let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
         // data_size);
         // self.routing.put_response(our_authority, location, response, response_token);
@@ -140,7 +140,7 @@ impl PmidManager {
         // _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
         // }
         // }
-        // &::data_manager::Authority(_) => {
+        // &::immutable_data_manager::Authority(_) => {
         //     self.handle_put_response_from_data_manager(pmid_node, response.clone());
         // }
         // _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
@@ -188,7 +188,7 @@ impl PmidManager {
     //         ::routing::error::ResponseError::FailedRequestForData(data) => {
     //             self.database.delete_data(&pmid_node, data.payload_size() as u64);
     //         }
-    //         _ => warn!("Invalid response type from DataManager for PUT RESPONSE at PmidManager"),
+    //         _ => warn!("Invalid response type from ImmutableDataManager for PUT RESPONSE at PmidManager"),
     //     }
     // }
 }
