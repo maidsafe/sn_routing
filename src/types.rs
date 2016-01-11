@@ -26,28 +26,32 @@ const L_AS_ASCII: u8 = 76;
 const A_AS_ASCII: u8 = 65;
 
 /// Unique ID for messages
+///
+/// This is used for deduplication: Since the network sends messages redundantly along different
+/// routes, the same message will usually arrive more than once at any given node. A message with
+/// an ID that is already in the cache will be ignored.
 #[derive(Ord, PartialOrd, Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
 pub struct MessageId(XorName);
 
 impl MessageId {
-    /// Generate a new MessageId with random content
+    /// Generate a new `MessageId` with random content.
     pub fn new() -> MessageId {
         MessageId(random::<XorName>())
     }
 
-    /// Generate a new MessageId with contents extracted from lost node
+    /// Generate a new `MessageId` with contents extracted from lost node.
     pub fn from_lost_node(mut name: XorName) -> MessageId {
         name.0[0] = L_AS_ASCII;
         MessageId(name)
     }
 
-    /// Generate a new MessageId with contents extracted from new node
+    /// Generate a new `MessageId` with contents extracted from new node.
     pub fn from_added_node(mut name: XorName) -> MessageId {
         name.0[0] = A_AS_ASCII;
         MessageId(name)
     }
 
-    /// Generate a new MessageId after reversing self
+    /// Generate the reverse of the given `MessageId`.
     pub fn from_reverse(name: &MessageId) -> MessageId {
         let MessageId(XorName(mut name_mut)) = *name;
         name_mut.reverse();

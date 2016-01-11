@@ -29,7 +29,7 @@ pub struct PlainData {
 }
 
 impl PlainData {
-    /// Creates a new instance of PlainData
+    /// Creates a new instance of `PlainData`.
     pub fn new(name: XorName, value: Vec<u8>) -> PlainData {
         PlainData {
             name: name,
@@ -37,18 +37,18 @@ impl PlainData {
         }
     }
 
-    /// Returns the value
+    /// Returns the value.
     pub fn value(&self) -> &Vec<u8> {
         &self.value
     }
 
 
-    /// Returns name ensuring invariant
+    /// Returns the name.
     pub fn name(&self) -> XorName {
         self.name.clone()
     }
 
-    /// Return size of contained data.
+    /// Returns the size of the contained data. Equivalent to `value().len()`.
     pub fn payload_size(&self) -> usize {
         self.value.len()
     }

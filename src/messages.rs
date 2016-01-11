@@ -27,34 +27,37 @@ use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
 
 /// Wrapper of all messages.
-/// This is the only type allowed to be sent / received on the network
+///
+/// This is the only type allowed to be sent / received on the network.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum Message {
-    /// A message sent between w nodes directly
+    /// A message sent between two nodes directly
     DirectMessage(DirectMessage),
-    /// A message ent across the network (in transit)
+    /// A message sent across the network (in transit)
     HopMessage(HopMessage),
 }
 
-/// Messages sent direct to a node
-/// Allows routing to directly send specific messages between nodes
+/// Messages sent via a direct connection.
+///
+/// Allows routing to directly send specific messages between nodes.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum DirectMessage {
-    /// Sent from bootstrap node to client
+    /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
-        /// keys and clamed name
+        /// The bootstrape node's keys and name.
         public_id: ::id::PublicId,
         /// quorum size, dynamically calculated
         current_quorum_size: usize,
     },
-    /// Sent form client -> bootstrap node
+    /// Sent from a newly connected client to the bootstrap node to inform it about the client's
+    /// public ID.
     ClientIdentify {
-        /// keys and claimed name. Serialised outside routing
+        /// Serialised keys and claimed name.
         serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message
+        /// Signature of the client.
         signature: sign::Signature,
     },
-    /// Sent form a node to a node
+    /// Sent from a node to a node.
     NodeIdentify {
         /// keys and claimed name, serialised outside routing
         serialised_public_id: Vec<u8>,
