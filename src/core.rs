@@ -40,6 +40,10 @@ const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
 // const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
 
+/// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
+/// the same time.
+const MAX_JOINING_NODES: usize = 1;
+
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 enum State {
@@ -129,6 +133,8 @@ pub struct Core {
     proxy_map: ::std::collections::HashMap<::crust::Connection, PublicId>,
     // any clients we have proxying through us
     client_map: ::std::collections::HashMap<sign::PublicKey, ::crust::Connection>,
+    // all prospective nodes trying to join the network through us
+    joining_nodes_map: ::std::collections::HashMap<sign::PublicKey, ::crust::Connection>,
     data_cache: LruCache<XorName, Data>,
 }
 
@@ -190,6 +196,7 @@ impl Core {
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
                 client_map: ::std::collections::HashMap::new(),
+                joining_nodes_map: ::std::collections::HashMap::new(),
                 data_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             };
 
@@ -830,6 +837,12 @@ impl Core {
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
+    fn bootstrap_deny(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
+        let message = Message::DirectMessage(DirectMessage::BootstrapDeny);
+        let raw_bytes = try!(serialise(&message));
+        Ok(self.crust_service.send(connection, raw_bytes))
+    }
+
     fn client_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
         let serialised_public_id =
             try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
@@ -840,6 +853,7 @@ impl Core {
         let direct_message = DirectMessage::ClientIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
+            client_restriction: self.client_restriction,
         };
 
         let message = Message::DirectMessage(direct_message);
@@ -921,7 +935,13 @@ impl Core {
                 };
                 Ok(())
             }
-            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
+            DirectMessage::BootstrapDeny => {
+                warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
+                self.crust_service.drop_node(connection);
+                let _ = self.proxy_map.remove(&connection);
+                Ok(())
+            }
+            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
 
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                     signature) {
@@ -942,12 +962,21 @@ impl Core {
                     return Ok(());
                 }
 
-                if let Some(prev_conn) = self.client_map
-                                             .insert(public_id.signing_public_key().clone(),
-                                                     connection) {
-                    debug!("Found previous connection against client key - Dropping {:?}",
-                           prev_conn);
-                    self.crust_service.drop_node(prev_conn);
+                if client_restriction {
+                    if let Some(prev_conn) = self.client_map
+                                                 .insert(public_id.signing_public_key().clone(),
+                                                         connection) {
+                        debug!("Found previous connection against client key - Dropping {:?}",
+                               prev_conn);
+                        self.crust_service.drop_node(prev_conn);
+                    }
+                } else {
+                    if self.joining_nodes_map.len() == MAX_JOINING_NODES {
+                        debug!("No additional joining nodes allowed.");
+                        return self.bootstrap_deny(connection);
+                    }
+                    let _ = self.joining_nodes_map.insert(public_id.signing_public_key().clone(),
+                                                          connection);
                 }
 
                 let _ = self.bootstrap_identify(connection);
@@ -1020,6 +1049,12 @@ impl Core {
                             let _ = self.node_id_cache.remove(public_id.name());
 
                             return Ok(());
+                        }
+
+                        if self.routing_table.len() == ::kademlia_routing_table::group_size() {
+                            self.proxy_map.keys()
+                                .foreach(|&connection| self.crust_service.drop_node(connection));
+                            self.proxy_map.clear();
                         }
 
                         self.state = State::Node;
@@ -1583,10 +1618,13 @@ impl Core {
     fn dropped_client_connection(&mut self, connection: &::crust::Connection) {
         let public_key = self.client_map
                              .iter()
+                             .chain(self.joining_nodes_map.iter())
                              .find(|&(_, client)| client == connection)
                              .map(|entry| entry.0.clone());
         if let Some(public_key) = public_key {
-            let _ = self.client_map.remove(&public_key);
+            if self.client_map.remove(&public_key).is_none() {
+                let _ = self.joining_nodes_map.remove(&public_key);
+            }
         }
     }
 
