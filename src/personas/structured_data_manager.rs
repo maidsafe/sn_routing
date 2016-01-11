@@ -17,7 +17,8 @@
 
 use chunk_store::ChunkStore;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
+use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 
 pub struct StructuredDataManager {
@@ -121,19 +122,26 @@ impl StructuredDataManager {
                              serialise(&structured_data).unwrap_or(vec![]));
     }
 
-    pub fn handle_churn(&mut self, _routing_node: &RoutingNode, _churn_event_id: &MessageId) {
-        // let names = self.chunk_store.names();
-        // for name in names {
-        //     let data = self.chunk_store.get(&name);
-        //     let src = Authority::NaeManager(name);
-        //     debug!("SD Manager sending refresh for account {:?}", name);
-        //     let _ = routing.send_refresh_request(ACCOUNT_TAG, src, data, churn_node.clone());
-
-        // }
-        // As pointed out in https://github.com/maidsafe/safe_vault/issues/250
-        // the uncontrollable order of events (churn/refresh/account_transfer)
-        // forcing the node have to keep its current records to avoid losing record
-        // self.chunk_store = ::chunk_store::ChunkStore::new(1073741824);
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
+        let data_names = self.chunk_store.names();
+        for data_name in data_names {
+            let serialised_data = self.chunk_store.get(&data_name);
+            let structured_data = match deserialise::<StructuredData>(&serialised_data) {
+                Ok(parsed_data) => parsed_data,
+                Err(_) => continue,
+            };
+            let src = Authority::NaeManager(data_name.clone());
+            let refresh = Refresh {
+                id: churn_event_id.clone(),
+                name: data_name.clone(),
+                value: RefreshValue::StructuredDataManager(structured_data),
+            };
+            if let Ok(serialised_refresh) = serialise(&refresh) {
+                debug!("SD Manager sending refresh for account {:?}",
+                       src.get_name());
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            }
+        }
     }
 }
 
