@@ -393,15 +393,15 @@ impl Core {
 
         // Either swarm or Direction check
         if self.state == State::Node {
-            // Refuse to relay a GetNetworkName from a client that is not in the joining_nodes_map.
-            if let Authority::Client {..} = *signed_msg.content().src() {
-                if let &RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::GetNetworkName { ref current_id }, ..
-                }) = signed_msg.content() {
-                    if !self.joining_nodes_map.contains_key(current_id.signing_public_key()) {
-                        trace!("Illegitimate GetNetworkName request. Refusing to relay.");
-                        return Err(RoutingError::ClientConnectionNotFound)
-                    }
+            // Refuse to relay a GetNetworkName from a client that is in the client_map.
+            if let &RoutingMessage::Request(RequestMessage {
+                content: RequestContent::GetNetworkName { .. },
+                src: Authority::Client { ref client_key, .. },
+                ..
+            }) = signed_msg.content() {
+                if self.client_map.contains_key(client_key) {
+                    trace!("Illegitimate GetNetworkName request. Refusing to relay.");
+                    return Err(RoutingError::ClientConnectionNotFound)
                 }
             }
             // Since endpoint request / GetCloseGroup response messages while relocating are sent
@@ -461,7 +461,9 @@ impl Core {
             if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                              &hop_name,
                                              signed_msg.content().dst().get_name()) {
-                return Err(RoutingError::DirectionCheckFailed);
+                trace!("Direction check failed.");
+                // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
+                // return Err(RoutingError::DirectionCheckFailed);
             }
         }
 
