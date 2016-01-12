@@ -393,6 +393,16 @@ impl Core {
 
         // Either swarm or Direction check
         if self.state == State::Node {
+            // Refuse to relay a GetNetworkName from a client that is not in the joining_nodes_map.
+            if let Authority::Client {..} = *signed_msg.content().src() {
+                if let &RoutingMessage::Request(RequestMessage {
+                    content: RequestContent::GetNetworkName { ref current_id }, ..
+                }) = signed_msg.content() {
+                    if !self.joining_nodes_map.contains_key(current_id.signing_public_key()) {
+                        return Err(RoutingError::ClientConnectionNotFound)
+                    }
+                }
+            }
             // Since endpoint request / GetCloseGroup response messages while relocating are sent
             // to a client we still need to accept these msgs sent to us even if we have become a node.
             if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
@@ -941,8 +951,7 @@ impl Core {
             }
             DirectMessage::BootstrapDeny => {
                 warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
-                self.crust_service.drop_node(connection);
-                let _ = self.proxy_map.remove(&connection);
+                self.retry_bootstrap();
                 Ok(())
             }
             DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
@@ -1084,6 +1093,16 @@ impl Core {
                 }
             }
         }
+    }
+
+    fn retry_bootstrap(&mut self) {
+        self.crust_service.stop_bootstrap();
+        self.state = State::Disconnected;
+        for &connection in self.proxy_map.keys() {
+            self.crust_service.drop_node(connection);
+        }
+        self.proxy_map.clear();
+        self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
     }
 
     // Constructed by A; From A -> X
