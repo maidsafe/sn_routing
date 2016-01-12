@@ -126,6 +126,7 @@ pub struct Core {
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
+    current_quorum_size: usize,
     full_id: FullId,
     state: State,
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
@@ -192,6 +193,7 @@ impl Core {
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
                 full_id: full_id,
+                current_quorum_size: 0,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
@@ -928,6 +930,7 @@ impl Core {
 
                 self.state = State::Client;
                 self.message_accumulator.set_quorum_size(current_quorum_size);
+                self.current_quorum_size = current_quorum_size;
 
                 if self.client_restriction {
                     let _ = self.event_sender.send(Event::Connected);
@@ -1052,7 +1055,8 @@ impl Core {
                             return Ok(());
                         }
 
-                        if self.routing_table.len() == ::kademlia_routing_table::group_size() {
+                        if self.routing_table.len() >= ::std::cmp::max(1, self.current_quorum_size) {
+                            trace!("Routing table reached quorum size. Dropping proxy.");
                             self.proxy_map.keys()
                                 .foreach(|&connection| self.crust_service.drop_node(connection));
                             self.proxy_map.clear();
