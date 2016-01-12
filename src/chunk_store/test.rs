@@ -17,6 +17,8 @@
 
 #[cfg(test)]
 mod test {
+    use rand::random;
+    use xor_name::XorName;
 
     fn get_random_non_empty_string(length: usize) -> String {
         use rand::Rng;
@@ -28,15 +30,17 @@ mod test {
     }
 
     fn has_child_dir(parent: ::std::path::PathBuf, child_name: &str) -> bool {
-        ::std::fs::read_dir(&parent).ok().and_then(|mut dir_entries| {
-            dir_entries.find(|dir_entry| {
-                match dir_entry {
-                    &Ok(ref entry) => 
-                        entry.file_name().to_str() == Some(child_name),
-                    &Err(_) => false,
-                }
+        ::std::fs::read_dir(&parent)
+            .ok()
+            .and_then(|mut dir_entries| {
+                dir_entries.find(|dir_entry| {
+                    match dir_entry {
+                        &Ok(ref entry) => entry.file_name().to_str() == Some(child_name),
+                        &Err(_) => false,
+                    }
+                })
             })
-        }).is_some()
+            .is_some()
     }
 
     #[test]
@@ -46,23 +50,23 @@ mod test {
         {
             let mut staled_dir = ::std::env::temp_dir();
             staled_dir.push(staled_dir_name);
-            ignore_result!(::std::fs::create_dir(&staled_dir));
+            let _ = ::std::fs::create_dir(&staled_dir);
         }
         assert!(has_child_dir(::std::env::temp_dir(), &staled_dir_name));
-        let _ = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        let _ = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));
         assert!(!has_child_dir(::std::env::temp_dir(), &staled_dir_name));
     }
 
     #[test]
     fn successful_store() {
         let k_disk_size: usize = 116;
-        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        let mut chunk_store = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut names = vec![];
 
         {
             let mut put = |size| {
-                let name = ::utils::random_name();
+                let name = random();
                 let data = get_random_non_empty_string(size);
                 let size_before_insert = chunk_store.current_disk_usage();
                 assert!(!chunk_store.has_chunk(&name));
@@ -85,10 +89,10 @@ mod test {
     fn remove_from_disk_store() {
         let k_size: usize = 1;
         let k_disk_size: usize = 116;
-        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        let mut chunk_store = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut put_and_delete = |size| {
-            let name = ::utils::random_name();
+            let name = random();
             let data = get_random_non_empty_string(size);
 
             chunk_store.put(&name, data.into_bytes());
@@ -105,9 +109,9 @@ mod test {
     fn put_and_get_value_should_be_same() {
         let data_size = 50;
         let k_disk_size: usize = 116;
-        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        let mut chunk_store = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
-        let name = ::utils::random_name();
+        let name = random();
         let data = get_random_non_empty_string(data_size).into_bytes();
         chunk_store.put(&name, data.clone());
         let recovered = chunk_store.get(&name);
@@ -118,7 +122,7 @@ mod test {
     #[test]
     fn repeatedly_storing_same_name() {
         let k_disk_size: usize = 116;
-        let mut chunk_store = evaluate_result!(::chunk_store::ChunkStore::new(k_disk_size));
+        let mut chunk_store = unwrap_result!(::chunk_store::ChunkStore::new(k_disk_size));
 
         let mut put = |name, size| {
             let data = get_random_non_empty_string(size);
@@ -126,7 +130,7 @@ mod test {
             chunk_store.current_disk_usage()
         };
 
-        let name = ::utils::random_name();
+        let name = random::<XorName>();
         assert_eq!(put(name.clone(), 1usize), 1usize);
         assert_eq!(put(name.clone(), 100usize), 100usize);
         assert_eq!(put(name.clone(), 10usize), 10usize);

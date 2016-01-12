@@ -33,47 +33,39 @@
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
 #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results, variant_size_differences)]
+        unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations)]
+         missing_debug_implementations, variant_size_differences)]
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
+#[macro_use]
+extern crate maidsafe_utilities;
 
-// Non-MaidSafe crates
-extern crate cbor;
+extern crate crust;
+#[cfg(test)]
+extern crate kademlia_routing_table;
+extern crate lru_time_cache;
+#[cfg(test)]
+extern crate rand;
+extern crate routing;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate tempdir;
 extern crate time;
-#[cfg(test)]
-extern crate rand;
-
-// MaidSafe crates
-extern crate crust;
-extern crate lru_time_cache;
-extern crate routing;
-
-#[macro_use]
-mod macros;
+extern crate xor_name;
 
 mod chunk_store;
-mod data_manager;
 mod error;
-mod maid_manager;
 mod mock_routing;
-mod pmid_manager;
-mod pmid_node;
-mod sd_manager;
-mod transfer_tag;
+mod personas;
 mod types;
 mod utils;
 mod vault;
 
 /// Runs a SAFE Network vault.
 pub fn main() {
-    ::utils::initialise_logger();
-    ::utils::handle_version();
-    ::vault::Vault::run();
+    maidsafe_utilities::log::init(false);
+    utils::handle_version();
+    vault::Vault::run();
 }

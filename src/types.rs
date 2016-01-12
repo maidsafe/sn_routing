@@ -15,41 +15,21 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// This trait is required for any type (normally an account) which is refreshed on a churn event.
-pub trait Refreshable : ::rustc_serialize::Encodable + ::rustc_serialize::Decodable {
-    /// The serialised contents
-    fn serialised_contents(&self) -> Vec<u8> {
-        ::routing::utils::encode(&self).unwrap_or(vec![])
-    }
+use personas::{immutable_data_manager, maid_manager, pmid_manager};
+use routing::{MessageId, StructuredData};
+use xor_name::XorName;
 
-    /// Merge multiple refreshable objects into one
-    fn merge(from_group: ::routing::NameType, responses: Vec<Self>) -> Option<Self>;
+#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+pub struct Refresh {
+    pub id: MessageId,
+    pub name: XorName,
+    pub value: RefreshValue,
 }
 
-impl Refreshable for ::routing::structured_data::StructuredData {
-    fn merge(from_group: ::routing::NameType,
-             responses: Vec<::routing::structured_data::StructuredData>)
-             -> Option<::routing::structured_data::StructuredData> {
-        let mut sds = Vec::<(::routing::structured_data::StructuredData, u64)>::new();
-        for response in responses {
-            if response.name() == from_group {
-                let push_in_vec = match sds.iter_mut().find(|a| a.0 == response) {
-                    Some(find_res) => {
-                        find_res.1 += 1;
-                        false
-                    }
-                    None => true,
-                };
-                if push_in_vec {
-                    sds.push((response.clone(), 1));
-                }
-            }
-        }
-        sds.sort_by(|a, b| b.1.cmp(&a.1));
-        let (sd, count) = sds[0].clone();
-        if count >= (::routing::types::GROUP_SIZE as u64 + 1) / 2 {
-            return Some(sd);
-        }
-        None
-    }
+#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+pub enum RefreshValue {
+    MaidManager(maid_manager::Account),
+    ImmutableDataManager(immutable_data_manager::Account),
+    StructuredDataManager(StructuredData),
+    PmidManager(pmid_manager::Account),
 }

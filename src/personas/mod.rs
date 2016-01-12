@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,10 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub enum TransferTag {
-    MaidManagerAccount = 1,
-    DataManagerAccount = 2,
-    DataManagerStats = 3,
-    PmidManagerAccount = 4,
-    StructuredDataManagerAccount = 5,
-}
+pub mod immutable_data_manager;
+pub mod maid_manager;
+pub mod pmid_manager;
+pub mod pmid_node;
+pub mod structured_data_manager;

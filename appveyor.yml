@@ -3,9 +3,7 @@ environment:
     RUST_BACKTRACE: 1
     Features: "use-mock-routing"
   matrix:
-#    - RUST_VERSION: stable
-#    - RUST_VERSION: beta
-    - RUST_VERSION: nightly
+    - RUST_VERSION: stable
 branches:
   only:
     - master
