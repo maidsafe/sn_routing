@@ -50,11 +50,11 @@ pub enum RoutingError {
     NotBootstrapped,
     /// Invalid State
     Terminated,
-    /// invalid requester or handler authorities
+    /// Invalid requester or handler authorities
     BadAuthority,
-    /// failure to connect to an already connected node
+    /// Failure to connect to an already connected node
     AlreadyConnected,
-    /// received message having unknown type
+    /// Received message having unknown type
     UnknownMessageType,
     /// Failed signature check
     FailedSignature,
@@ -62,24 +62,24 @@ pub enum RoutingError {
     NotEnoughSignatures,
     /// Duplicate signatures
     DuplicateSignatures,
-    /// duplicate request received
+    /// Duplicate request received
     FilterCheckFailed,
-    /// failure to bootstrap off the provided endpoints
+    /// Failure to bootstrap off the provided endpoints
     FailedToBootstrap,
-    /// unexpected empty routing table
+    /// Unexpected empty routing table
     RoutingTableEmpty,
-    /// public id rejected because of disallowed relocated status
+    /// Public id rejected because of disallowed relocated status
     RejectedPublicId,
-    /// routing table did not add the node information,
+    /// Routing table did not add the node information,
     /// either because it was already added, or because it did not improve the routing table
     RefusedFromRoutingTable,
     /// String errors
     Utf8(::std::str::Utf8Error),
-    /// interface error
+    /// Interface error
     Interface(InterfaceError),
     /// i/o error
     Io(::std::io::Error),
-    /// serialisation error
+    /// Serialisation error
     Cbor(::cbor::CborError),
     /// Channel sending error
     SendEventError(SendError<Event>),

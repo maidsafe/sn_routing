@@ -139,6 +139,8 @@ pub struct Core {
 }
 
 impl Core {
+    /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
+    /// in.
     pub fn new(event_sender: ::std::sync::mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
@@ -207,6 +209,7 @@ impl Core {
             ::maidsafe_utilities::thread::RaiiThreadJoiner::new(joiner)))
     }
 
+    /// Run the event loop for sending and receiving messages.
     pub fn run(&mut self,
                category_rx: ::std::sync::mpsc::Receiver<::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
         let mut cur_routing_table_size = 0;
