@@ -399,6 +399,7 @@ impl Core {
                     content: RequestContent::GetNetworkName { ref current_id }, ..
                 }) = signed_msg.content() {
                     if !self.joining_nodes_map.contains_key(current_id.signing_public_key()) {
+                        trace!("Illegitimate GetNetworkName request. Refusing to relay.");
                         return Err(RoutingError::ClientConnectionNotFound)
                     }
                 }
@@ -951,6 +952,7 @@ impl Core {
             }
             DirectMessage::BootstrapDeny => {
                 warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
+                self.crust_service.drop_node(connection);
                 self.retry_bootstrap();
                 Ok(())
             }
@@ -1064,7 +1066,8 @@ impl Core {
                             return Ok(());
                         }
 
-                        if self.routing_table.len() >= ::std::cmp::max(1, self.current_quorum_size) {
+                        if self.routing_table.len() >= ::std::cmp::max(1, self.current_quorum_size)
+                                && !self.proxy_map.is_empty() {
                             trace!("Routing table reached quorum size. Dropping proxy.");
                             self.proxy_map.keys()
                                 .foreach(|&connection| self.crust_service.drop_node(connection));
