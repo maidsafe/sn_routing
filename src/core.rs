@@ -19,6 +19,7 @@ use std::io;
 use itertools::Itertools;
 use crust;
 use std::fmt::{Debug, Formatter};
+use std::thread;
 use event::Event;
 use action::Action;
 use xor_name::XorName;
@@ -954,8 +955,7 @@ impl Core {
             }
             DirectMessage::BootstrapDeny => {
                 warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
-                self.crust_service.drop_node(connection);
-                self.retry_bootstrap();
+                self.retry_bootstrap_with_blacklist(connection);
                 Ok(())
             }
             DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
@@ -1100,14 +1100,18 @@ impl Core {
         }
     }
 
-    fn retry_bootstrap(&mut self) {
+    fn retry_bootstrap_with_blacklist(&mut self, connection: crust::Connection) {
+        let endpoint = connection.peer_endpoint();
+        self.crust_service.drop_node(connection);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
         for &connection in self.proxy_map.keys() {
             self.crust_service.drop_node(connection);
         }
         self.proxy_map.clear();
-        self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
+        thread::sleep(::std::time::Duration::from_secs(5));
+        self.crust_service
+            .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
     }
 
     // Constructed by A; From A -> X
