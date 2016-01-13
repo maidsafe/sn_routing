@@ -109,7 +109,7 @@ impl StructuredData {
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
     ///
     /// An update is valid if it doesn't change type tag or identifier (these are immutable),
-    /// increases the version by 1 and is signed by (at least 50% of) the owners.
+    /// increases the version by 1 and is signed by (more than 50% of) the owners.
     ///
     /// In case of an ownership transfer, the `previous_owner_keys` in `other` must match the
     /// `current_owner_keys` in `self`.
@@ -131,7 +131,7 @@ impl StructuredData {
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
-    /// Confirms *unique and valid* owner_signatures are at least 50% of total owners.
+    /// Confirms *unique and valid* owner_signatures are more than 50% of total owners.
     fn verify_previous_owner_signatures(&self,
                                         owner_keys: &[::sodiumoxide::crypto::sign::PublicKey])
                                         -> Result<(), ::error::RoutingError> {
@@ -183,8 +183,8 @@ impl StructuredData {
     }
 
     /// Adds a signature with the given `secret_key` to the `previous_owner_signatures` and returns
-    /// the number of signatures that are still required. If at least 50% of the previous owners
-    /// has signed, 0 is returned and validation is complete.
+    /// the number of signatures that are still required. If more than 50% of the previous owners
+    /// have signed, 0 is returned and validation is complete.
     pub fn add_signature(&mut self,
                          secret_key: &::sodiumoxide::crypto::sign::SecretKey)
                          -> Result<usize, ::error::RoutingError> {
@@ -196,7 +196,7 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len())
+        Ok(((owner_keys.len() / 2) + 1).saturating_sub(self.previous_owner_signatures.len()))
     }
 
     /// Overwrite any existing signatures with the new signatures provided.
@@ -396,13 +396,48 @@ mod test {
                                          vec![],
                                          owner_keys.clone(),
                                          vec![],
+                                         None) {
+            Ok(mut structured_data) => {
+                // After one signature, one more is required to reach majority.
+                assert_eq!(structured_data.add_signature(&keys1.1).unwrap(), 1);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_err());
+                // Two out of three is enough.
+                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Three out of three is also fine.
+                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+            }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn four_owners() {
+        let keys1 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys4 = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
+
+        match super::StructuredData::new(0,
+                                         rand::random(),
+                                         0,
+                                         vec![],
+                                         owner_keys.clone(),
+                                         vec![],
                                          Some(&keys1.1)) {
             Ok(mut structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           None);
-                assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()));
+                // Two signatures are not enough because they don't have a strict majority.
+                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 1);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Three out of four is enough.
+                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Four out of four is also fine.
+                assert_eq!(structured_data.add_signature(&keys4.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
