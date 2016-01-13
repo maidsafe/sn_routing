@@ -15,7 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub use self::chunk_store::ChunkStore;
+//! Default parameters for ChunkStore.
 
-mod chunk_store;
-mod test;
+use chunk_store::{ChunkStore, Error};
+
+const PREFIX : &'static str = "safe-vault";
+const SIZE : usize = 1073741824;
+
+/// Construct a new ChunkStore initialized with the default parameters.
+pub fn new() -> Result<ChunkStore, Error> {
+  ChunkStore::new(PREFIX, SIZE)
+}

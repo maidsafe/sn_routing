@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store::ChunkStore;
+use default_chunk_store;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
 use types::{Refresh, RefreshValue};
@@ -31,7 +32,7 @@ impl StructuredDataManager {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1370
-            chunk_store: ChunkStore::new(1073741824).unwrap(),
+            chunk_store: default_chunk_store::new().unwrap(),
         }
     }
 
@@ -44,11 +45,14 @@ impl StructuredDataManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = self.chunk_store.get(&data_name);
-        if data.len() == 0 {
-            warn!("Failed to GET data with name {:?}", data_name);
-            return;
-        }
+        let data = match self.chunk_store.get(&data_name) {
+            Ok(data) => data,
+            _ => {
+                warn!("Failed to GET data with name {:?}", data_name);
+                return;
+            }
+        };
+
         let decoded = match deserialise::<StructuredData>(&data) {
             Ok(data) => data,
             Err(_) => {
@@ -76,7 +80,8 @@ impl StructuredDataManager {
         let data_name = data.name();
         if !self.chunk_store.has_chunk(&data_name) {
             if let Ok(serialised_data) = serialise(data) {
-                self.chunk_store.put(&data_name, serialised_data);
+                // TODO: error handling
+                let _ = self.chunk_store.put(&data_name, &serialised_data);
             } else {
                 debug!("Failed to serialise {:?}", data_name);
             }
@@ -97,12 +102,14 @@ impl StructuredDataManager {
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        let serialised_data = self.chunk_store.get(&new_data.name());
-        if serialised_data.len() == 0 {
-            warn!("Don't currently hold data for POST at StructuredDataManager: {:?}",
-                  request);
-            return;
-        }
+        let serialised_data = match self.chunk_store.get(&new_data.name()) {
+            Ok(data) => data,
+            _ => {
+                warn!("Don't currently hold data for POST at StructuredDataManager: {:?}", request);
+                return;
+            }
+        };
+
         let _ = deserialise::<StructuredData>(&serialised_data)
                     .ok()
                     .and_then(|mut existing_data| {
@@ -112,24 +119,30 @@ impl StructuredDataManager {
                         existing_data.replace_with_other(new_data.clone())
                                      .ok()
                                      .and_then(|()| serialise(&existing_data).ok())
-                                     .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), serialised)))
+                                     .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), &serialised)))
                     });
     }
 
     pub fn handle_refresh(&mut self, structured_data: StructuredData) {
-        self.chunk_store.delete(&structured_data.name());
-        self.chunk_store.put(&structured_data.name(),
-                             serialise(&structured_data).unwrap_or(vec![]));
+        // TODO: error handling
+        let _ = self.chunk_store.delete(&structured_data.name());
+        let _ = self.chunk_store.put(&structured_data.name(),
+                                     &serialise(&structured_data).unwrap_or(vec![]));
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         let data_names = self.chunk_store.names();
         for data_name in data_names {
-            let serialised_data = self.chunk_store.get(&data_name);
+            let serialised_data = match self.chunk_store.get(&data_name) {
+                Ok(data) => data,
+                _ => continue,
+            };
+
             let structured_data = match deserialise::<StructuredData>(&serialised_data) {
                 Ok(parsed_data) => parsed_data,
                 Err(_) => continue,
             };
+
             let src = Authority::NaeManager(data_name.clone());
             let refresh = Refresh {
                 id: churn_event_id.clone(),

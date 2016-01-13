@@ -15,12 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use chunk_store::ChunkStore;
+use default_chunk_store;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
 use vault::RoutingNode;
 
 pub struct PmidNode {
-    chunk_store: ::chunk_store::ChunkStore,
+    chunk_store: ChunkStore,
 }
 
 impl PmidNode {
@@ -29,7 +31,7 @@ impl PmidNode {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1189
-            chunk_store: ::chunk_store::ChunkStore::new(1073741824).unwrap(),
+            chunk_store: default_chunk_store::new().unwrap(),
         }
     }
 
@@ -39,11 +41,14 @@ impl PmidNode {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = self.chunk_store.get(data_name);
-        if data.len() == 0 {
-            warn!("Failed to GET data with name {:?}", data_name);
-            return;
-        }
+        let data = match self.chunk_store.get(data_name) {
+            Ok(data) => data,
+            _ => {
+                warn!("Failed to GET data with name {:?}", data_name);
+                return;
+            }
+        };
+
         let decoded = match deserialise::<ImmutableData>(&data) {
             Ok(data) => data,
             Err(_) => {
@@ -74,9 +79,10 @@ impl PmidNode {
             Ok(data) => data,
             Err(_) => return,
         };
-        if self.chunk_store.has_disk_space(serialised_data.len()) {
+        if self.chunk_store.has_space(serialised_data.len()) {
             // the type_tag needs to be stored as well
-            self.chunk_store.put(&data_name, serialised_data);
+            // TODO: error handling
+            let _ = self.chunk_store.put(&data_name, &serialised_data);
             return;
         }
 
@@ -90,29 +96,37 @@ impl PmidNode {
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
         // out Sacrificial chunks.
         let required_space = serialised_data.len() -
-                             (self.chunk_store.max_disk_usage() - self.chunk_store.current_disk_usage());
+                             (self.chunk_store.max_space() - self.chunk_store.used_space());
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
-            let fetched_data = self.chunk_store.get(name);
+            let fetched_data = match self.chunk_store.get(name) {
+                Ok(data) => data,
+                _ => continue
+            };
+
             let parsed_data = match deserialise::<ImmutableData>(&fetched_data) {
                 Ok(data) => data,
                 Err(_) => {
                     // remove corrupted data
-                    self.chunk_store.delete(name);
+                    // TODO: error handling
+                    let _ = self.chunk_store.delete(name);
                     continue;
                 }
             };
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
-                    self.chunk_store.delete(name);
+                    // TODO: error handling
+                    let _ = self.chunk_store.delete(name);
+
                     // For sacrificed data, just notify PmidManager to update the account and
                     // ImmutableDataManager need to adjust its farming rate, replication shall not be carried
                     // out for it.
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
-                        self.chunk_store.put(&data_name, serialised_data);
+                        // TODO: error handling
+                        let _ = self.chunk_store.put(&data_name, &serialised_data);
                         return;
                     }
                 }

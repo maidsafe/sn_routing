@@ -41,7 +41,7 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-
+extern crate chunk_store;
 extern crate crust;
 #[cfg(test)]
 extern crate kademlia_routing_table;
@@ -51,11 +51,10 @@ extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
-extern crate tempdir;
 extern crate time;
 extern crate xor_name;
 
-mod chunk_store;
+mod default_chunk_store;
 mod error;
 mod mock_routing;
 mod personas;
