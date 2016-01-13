@@ -22,9 +22,6 @@ use maidsafe_utilities::event_sender::MaidSafeObserver;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 
-const L_AS_ASCII: u8 = 76;
-const A_AS_ASCII: u8 = 65;
-
 /// Unique ID for messages
 ///
 /// This is used for deduplication: Since the network sends messages redundantly along different
@@ -41,13 +38,13 @@ impl MessageId {
 
     /// Generate a new `MessageId` with contents extracted from lost node.
     pub fn from_lost_node(mut name: XorName) -> MessageId {
-        name.0[0] = L_AS_ASCII;
+        name.0[0] = 'L' as u8;
         MessageId(name)
     }
 
     /// Generate a new `MessageId` with contents extracted from new node.
     pub fn from_added_node(mut name: XorName) -> MessageId {
-        name.0[0] = A_AS_ASCII;
+        name.0[0] = 'A' as u8;
         MessageId(name)
     }
 
