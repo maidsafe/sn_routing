@@ -127,7 +127,6 @@ pub struct Core {
     message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
-    current_quorum_size: usize,
     full_id: FullId,
     state: State,
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
@@ -194,7 +193,6 @@ impl Core {
                 grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
                     ::time::Duration::minutes(20)),
                 full_id: full_id,
-                current_quorum_size: 0,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
@@ -944,7 +942,6 @@ impl Core {
 
                 self.state = State::Client;
                 self.message_accumulator.set_quorum_size(current_quorum_size);
-                self.current_quorum_size = current_quorum_size;
 
                 if self.client_restriction {
                     let _ = self.event_sender.send(Event::Connected);
@@ -988,7 +985,13 @@ impl Core {
                         self.crust_service.drop_node(prev_conn);
                     }
                 } else {
-                    if self.joining_nodes_map.len() == MAX_JOINING_NODES {
+                    let group_size = ::kademlia_routing_table::group_size();
+                    // Restrict the number of simultaneously joining nodes. If the network is still
+                    // small, we need to accept `group_size` nodes, so that they can fill their
+                    // routing tables and drop the proxy connection.
+                    if self.joining_nodes_map.len() >= MAX_JOINING_NODES
+                            && !(self.routing_table.len() < group_size
+                                 && self.joining_nodes_map.len() < group_size) {
                         trace!("No additional joining nodes allowed.");
                         return self.bootstrap_deny(connection);
                     }
@@ -1068,7 +1071,7 @@ impl Core {
                             return Ok(());
                         }
 
-                        if self.routing_table.len() >= ::std::cmp::max(1, self.current_quorum_size)
+                        if self.routing_table.len() >= ::kademlia_routing_table::group_size()
                                 && !self.proxy_map.is_empty() {
                             trace!("Routing table reached quorum size. Dropping proxy.");
                             self.proxy_map.keys()
@@ -1101,7 +1104,7 @@ impl Core {
     }
 
     fn retry_bootstrap_with_blacklist(&mut self, connection: crust::Connection) {
-        let endpoint = connection.peer_endpoint();
+        let _endpoint = connection.peer_endpoint();
         self.crust_service.drop_node(connection);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
@@ -1110,8 +1113,11 @@ impl Core {
         }
         self.proxy_map.clear();
         thread::sleep(::std::time::Duration::from_secs(5));
-        self.crust_service
-            .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
+        self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
+        //TODO(andreas): Enable blacklisting once a solution for ci_test is found.
+        //               Currently, ci_test's nodes all connect via the same beacon.
+        //self.crust_service
+        //    .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
     }
 
     // Constructed by A; From A -> X
@@ -1661,6 +1667,7 @@ impl Core {
         if let Some(public_key) = public_key {
             if self.client_map.remove(&public_key).is_none() {
                 let _ = self.joining_nodes_map.remove(&public_key);
+                trace!("Joining node dropped. {} remaining.", self.joining_nodes_map.len());
             }
         }
     }
