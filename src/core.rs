@@ -1073,7 +1073,7 @@ impl Core {
 
                         if self.routing_table.len() >= ::kademlia_routing_table::group_size()
                                 && !self.proxy_map.is_empty() {
-                            trace!("Routing table reached quorum size. Dropping proxy.");
+                            trace!("Routing table reached group size. Dropping proxy.");
                             self.proxy_map.keys()
                                 .foreach(|&connection| self.crust_service.drop_node(connection));
                             self.proxy_map.clear();
