@@ -49,6 +49,8 @@ pub enum DirectMessage {
         /// quorum size, dynamically calculated
         current_quorum_size: usize,
     },
+    /// Sent to the client to indicate that this node is not available as a bootstrap node.
+    BootstrapDeny,
     /// Sent from a newly connected client to the bootstrap node to inform it about the client's
     /// public ID.
     ClientIdentify {
@@ -56,6 +58,8 @@ pub enum DirectMessage {
         serialised_public_id: Vec<u8>,
         /// Signature of the client.
         signature: sign::Signature,
+        /// Indicate whether we intend to remain a client.
+        client_restriction: bool,
     },
     /// Sent from a node to a node.
     NodeIdentify {

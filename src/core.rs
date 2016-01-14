@@ -19,6 +19,7 @@ use std::io;
 use itertools::Itertools;
 use crust;
 use std::fmt::{Debug, Formatter};
+use std::thread;
 use event::Event;
 use action::Action;
 use xor_name::XorName;
@@ -39,6 +40,10 @@ use acceptors::Acceptors;
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
 // const CRUST_DEFAULT_UTP_ACCEPTING_PORT: crust::Port = crust::Port::Utp(5483);
+
+/// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
+/// the same time.
+const MAX_JOINING_NODES: usize = 1;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -127,8 +132,8 @@ pub struct Core {
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
     // our bootstrap connections
     proxy_map: ::std::collections::HashMap<::crust::Connection, PublicId>,
-    // any clients we have proxying through us
-    client_map: ::std::collections::HashMap<sign::PublicKey, ::crust::Connection>,
+    // any clients we have proxying through us, and whether they have `client_restriction`
+    client_map: ::std::collections::HashMap<sign::PublicKey, (::crust::Connection, bool)>,
     data_cache: LruCache<XorName, Data>,
 }
 
@@ -352,8 +357,8 @@ impl Core {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
             } else if let Some((ref pub_key, _)) = self.client_map
-                                                .iter()
-                                                .find(|ref elt| &connection == elt.1) {
+                                                       .iter()
+                                                       .find(|ref elt| connection == (elt.1).0) {
                 try!(hop_msg.verify(pub_key));
             } else {
                 // TODO drop connection ?
@@ -386,6 +391,18 @@ impl Core {
 
         // Either swarm or Direction check
         if self.state == State::Node {
+            // Refuse to relay a GetNetworkName from a client that is in the client_map.
+            if let &RoutingMessage::Request(RequestMessage {
+                content: RequestContent::GetNetworkName { .. },
+                src: Authority::Client { ref client_key, .. },
+                ..
+            }) = signed_msg.content() {
+                // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
+                if let Some(&(_, true)) = self.client_map.get(client_key) {
+                    trace!("Illegitimate GetNetworkName request. Refusing to relay.");
+                    return Err(RoutingError::ClientConnectionNotFound)
+                }
+            }
             // Since endpoint request / GetCloseGroup response messages while relocating are sent
             // to a client we still need to accept these msgs sent to us even if we have become a node.
             if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
@@ -443,7 +460,9 @@ impl Core {
             if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                              &hop_name,
                                              signed_msg.content().dst().get_name()) {
-                return Err(RoutingError::DirectionCheckFailed);
+                trace!("Direction check failed.");
+                // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
+                // return Err(RoutingError::DirectionCheckFailed);
             }
         }
 
@@ -833,6 +852,12 @@ impl Core {
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
+    fn bootstrap_deny(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
+        let message = Message::DirectMessage(DirectMessage::BootstrapDeny);
+        let raw_bytes = try!(serialise(&message));
+        Ok(self.crust_service.send(connection, raw_bytes))
+    }
+
     fn client_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
         let serialised_public_id =
             try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
@@ -843,6 +868,7 @@ impl Core {
         let direct_message = DirectMessage::ClientIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
+            client_restriction: self.client_restriction,
         };
 
         let message = Message::DirectMessage(direct_message);
@@ -924,7 +950,12 @@ impl Core {
                 };
                 Ok(())
             }
-            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature } => {
+            DirectMessage::BootstrapDeny => {
+                warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
+                self.retry_bootstrap_with_blacklist(connection);
+                Ok(())
+            }
+            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
 
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                     signature) {
@@ -945,9 +976,21 @@ impl Core {
                     return Ok(());
                 }
 
-                if let Some(prev_conn) = self.client_map
-                                             .insert(public_id.signing_public_key().clone(),
-                                                     connection) {
+                if !client_restriction {
+                    let group_size = ::kademlia_routing_table::group_size();
+                    let joining_nodes_num = self.joining_nodes_num();
+                    // Restrict the number of simultaneously joining nodes. If the network is still
+                    // small, we need to accept `group_size` nodes, so that they can fill their
+                    // routing tables and drop the proxy connection.
+                    if !(self.routing_table.len() < group_size && joining_nodes_num < group_size)
+                            && joining_nodes_num >= MAX_JOINING_NODES  {
+                        trace!("No additional joining nodes allowed.");
+                        return self.bootstrap_deny(connection);
+                    }
+                }
+                if let Some((prev_conn, _)) = self.client_map
+                                                  .insert(public_id.signing_public_key().clone(),
+                                                          (connection, client_restriction)) {
                     debug!("Found previous connection against client key - Dropping {:?}",
                            prev_conn);
                     self.crust_service.drop_node(prev_conn);
@@ -1025,6 +1068,14 @@ impl Core {
                             return Ok(());
                         }
 
+                        if self.routing_table.len() >= ::kademlia_routing_table::group_size()
+                                && !self.proxy_map.is_empty() {
+                            trace!("Routing table reached group size. Dropping proxy.");
+                            self.proxy_map.keys()
+                                .foreach(|&connection| self.crust_service.drop_node(connection));
+                            self.proxy_map.clear();
+                        }
+
                         self.state = State::Node;
 
                         if let Some(node_to_drop) = node_removed {
@@ -1047,6 +1098,29 @@ impl Core {
                 }
             }
         }
+    }
+
+    /// Returns the number of clients for which we act as a proxy and which intend to become a
+    /// node.
+    fn joining_nodes_num(&self) -> usize {
+        self.client_map.values().filter(|&&(_, client_restriction)| !client_restriction).count()
+    }
+
+    fn retry_bootstrap_with_blacklist(&mut self, connection: crust::Connection) {
+        let _endpoint = connection.peer_endpoint();
+        self.crust_service.drop_node(connection);
+        self.crust_service.stop_bootstrap();
+        self.state = State::Disconnected;
+        for &connection in self.proxy_map.keys() {
+            self.crust_service.drop_node(connection);
+        }
+        self.proxy_map.clear();
+        thread::sleep(::std::time::Duration::from_secs(5));
+        self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
+        //TODO(andreas): Enable blacklisting once a solution for ci_test is found.
+        //               Currently, ci_test's nodes all connect via the same beacon.
+        //self.crust_service
+        //    .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
     }
 
     // Constructed by A; From A -> X
@@ -1504,16 +1578,17 @@ impl Core {
                        signed_msg: SignedMessage,
                        client_key: &sign::PublicKey)
                        -> Result<(), RoutingError> {
-        let connection = try!(self.client_map
-                                  .get(client_key)
-                                  .ok_or(RoutingError::ClientConnectionNotFound));
-        let hop_msg = try!(HopMessage::new(signed_msg,
-                                           self.full_id.public_id().name().clone(),
-                                           self.full_id.signing_private_key()));
-        let message = Message::HopMessage(hop_msg);
-        let raw_bytes = try!(serialise(&message));
+        if let Some(&(connection, _)) = self.client_map.get(client_key) {
+            let hop_msg = try!(HopMessage::new(signed_msg,
+                                               self.full_id.public_id().name().clone(),
+                                               self.full_id.signing_private_key()));
+            let message = Message::HopMessage(hop_msg);
+            let raw_bytes = try!(serialise(&message));
 
-        Ok(self.crust_service.send(connection.clone(), raw_bytes))
+            return Ok(self.crust_service.send(connection.clone(), raw_bytes))
+        }
+
+        Err(RoutingError::ClientConnectionNotFound)
     }
 
     fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
@@ -1584,12 +1659,13 @@ impl Core {
     }
 
     fn dropped_client_connection(&mut self, connection: &::crust::Connection) {
-        let public_key = self.client_map
-                             .iter()
-                             .find(|&(_, client)| client == connection)
-                             .map(|entry| entry.0.clone());
-        if let Some(public_key) = public_key {
-            let _ = self.client_map.remove(&public_key);
+        if let Some(public_key) = self.client_map
+                                      .iter()
+                                      .find(|entry| (entry.1).0 == *connection)
+                                      .map(|entry| entry.0.clone()) {
+            if let Some((_, false)) = self.client_map.remove(&public_key) {
+                trace!("Joining node dropped. {} remaining.", self.joining_nodes_num());
+            }
         }
     }
 
