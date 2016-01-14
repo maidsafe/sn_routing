@@ -372,8 +372,7 @@ impl Core {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        let (content, name) = hop_msg.extract();
-        self.handle_signed_message(content, name)
+        self.handle_signed_message(hop_msg.content().clone(), hop_msg.name().clone())
     }
 
     fn handle_signed_message(&mut self,
@@ -961,7 +960,7 @@ impl Core {
                                                                     signature) {
                     Ok(public_id) => public_id,
                     Err(_) => {
-                        warn!("Signature check failed in NodeIdentify - Dropping connection {:?}",
+                        warn!("Signature check failed in ClientIdentify - Dropping connection {:?}",
                               connection);
                         self.crust_service.drop_node(connection);
 
