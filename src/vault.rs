@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::Error;
+use error::InternalError;
 use maidsafe_utilities::serialisation::deserialise;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
@@ -105,7 +105,7 @@ impl Vault {
     }
 
     fn on_request(&mut self, request: RequestMessage) {
-        match (&request.src, &request.dst, &request.content) {
+        if let Err(error) = match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -138,7 +138,7 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::StructuredData(ref data), _)) => self.structured_data_manager.handle_put(data),
+             &RequestContent::Put(Data::StructuredData(_), _)) => self.structured_data_manager.handle_put(&self.routing_node, &request),
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
@@ -161,6 +161,8 @@ impl Vault {
             }
             // ================== Invalid Request ==================
             _ => error!("Unexpected request {:?}", request),
+        } {
+            warn!("Failed to handle request: {:?}", error);
         }
     }
 
@@ -179,11 +181,18 @@ impl Vault {
                 self.immutable_data_manager
                     .handle_get_failure(pmid_node_name, id, request, external_error_indicator)
             }
+            // ================== PutSuccess ==================
+            (&Authority::NaeManager(_),
+             &Authority::ClientManager(_),
+             &ResponseContent::PutSuccess(_, message_id)) => {
+                self.maid_manager.handle_put_success(&self.routing_node, &response)
+            }
             // ================== PutFailure ==================
-            // FIXME
-            // immutable_data_manager::Authority(_) => self.immutable_data_manager.handle_put_failure(response),
-            // pmid_manager::Authority(_) => self.pmid_manager.handle_put_failure(response),
-
+            (&Authority::NaeManager(_),
+             &Authority::ClientManager(_),
+             &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
+                self.maid_manager.handle_put_failure(&self.routing_node, id, external_error_indicator)
+            }
             // ================== Invalid Response ==================
             _ => error!("Unexpected response {:?}", response),
         }

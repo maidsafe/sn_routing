@@ -17,6 +17,7 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
+use error::InternalError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
 use vault::RoutingNode;
@@ -26,12 +27,12 @@ pub struct PmidNode {
 }
 
 impl PmidNode {
-    pub fn new() -> PmidNode {
+    pub fn new() -> Result<PmidNode, InternalError> {
         PmidNode {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1189
-            chunk_store: default_chunk_store::new().unwrap(),
+            chunk_store: try!(default_chunk_store::new()),
         }
     }
 
@@ -66,7 +67,7 @@ impl PmidNode {
                                               message_id.clone());
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
             RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
@@ -75,22 +76,19 @@ impl PmidNode {
         info!("pmid_node {:?} storing {:?}",
               request.dst.get_name(),
               data_name);
-        let serialised_data = match serialise(&data) {
-            Ok(data) => data,
-            Err(_) => return,
-        };
+        let serialised_data = try!(serialise(&data);
         if self.chunk_store.has_space(serialised_data.len()) {
             // the type_tag needs to be stored as well
             // TODO: error handling
-            let _ = self.chunk_store.put(&data_name, &serialised_data);
-            return;
+            try!(self.chunk_store.put(&data_name, &serialised_data));
+            return Ok(());
         }
 
         // If we can't store the data and it's a Backup or Sacrificial copy, just notify PmidManager
         // to update the account - replication shall not be carried out for it.
         if *data.get_type_tag() != ImmutableDataType::Normal {
             // self.notify_managers_of_sacrifice(our_authority, data, response_token);
-            return;
+            return Ok(());
         }
 
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
@@ -109,7 +107,6 @@ impl PmidNode {
                 Ok(data) => data,
                 Err(_) => {
                     // remove corrupted data
-                    // TODO: error handling
                     let _ = self.chunk_store.delete(name);
                     continue;
                 }
@@ -117,7 +114,6 @@ impl PmidNode {
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
-                    // TODO: error handling
                     let _ = self.chunk_store.delete(name);
 
                     // For sacrificed data, just notify PmidManager to update the account and
@@ -125,9 +121,8 @@ impl PmidNode {
                     // out for it.
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
-                        // TODO: error handling
-                        let _ = self.chunk_store.put(&data_name, &serialised_data);
-                        return;
+                        try!(self.chunk_store.put(&data_name, &serialised_data));
+                        return Ok(());
                     }
                 }
                 _ => {}
@@ -135,11 +130,10 @@ impl PmidNode {
         }
 
         // We failed to make room for it - replication needs to be carried out.
-        //        let error = ::routing::error::ResponseError::FailedRequestForData(original_data);
-        let src = request.dst.clone();
-        let dst = request.src.clone();
-        debug!("As {:?} sending Put failure to {:?}", src, dst);
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
+        // let src = request.dst.clone();
+        // let dst = request.src.clone();
+        // debug!("As {:?} sending Put failure to {:?}", src, dst);
+        // let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
     }
 
     // fn notify_managers_of_sacrifice(&self,

@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::{ClientError, InternalError};
+use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
@@ -22,6 +24,9 @@ use std::collections::HashMap;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
+
+const DEFAULT_ACCOUNT_SIZE: u64 = 1_073_741_824;  // 1 GB
+const DEFAULT_PAYMENT: u64 = 1_048_576;  // 1 MB
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -35,19 +40,19 @@ impl Default for Account {
     fn default() -> Account {
         Account {
             data_stored: 0,
-            space_available: 1073741824,
+            space_available: DEFAULT_ACCOUNT_SIZE,
         }
     }
 }
 
 impl Account {
-    fn put_data(&mut self, size: u64) -> bool {
+    fn put_data(&mut self, size: u64) -> Result<(), ClientError> {
         if size > self.space_available {
-            return false;
+            return Err(ClientError::LowBalance);
         }
         self.data_stored += size;
         self.space_available -= size;
-        true
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -66,57 +71,71 @@ impl Account {
 
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
+    request_cache: LruCache<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
-        MaidManager { accounts: HashMap::new() }
+        MaidManager {
+            accounts: HashMap::new(),
+            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
+        }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        // Take a hash of the message anticipating sending this as a success response to the client.
-        let message_hash = match serialise(request) {
-            Ok(encoded) => sha512::hash(&encoded[..]),
-            Err(error) => {
-                error!("Failed to serialise Put request: {:?}", error);
-                return;
-            }
-        };
-
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
-                (Data::ImmutableData(data.clone()), message_id.clone())
-            }
-            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
-                (Data::StructuredData(data.clone()), message_id.clone())
-            }
-            _ => unreachable!("Error in vault demuxing"),
-        };
-
-        // Try to add the data to the account
-        if !self.accounts
-                .entry(request.src.get_name().clone())
-                .or_insert(Account::default())
-                .put_data(data.payload_size() as u64) {
-            // let error = ::routing::error::ResponseError::LowBalance(data.clone(),
-            let src = request.dst.clone();
-            let dst = request.src.clone();
-            debug!("As {:?} sending Put failure message to {:?}", src, dst);
-            let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
-            return;
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        match request.content {
+            RequestContent::Put(Data::ImmutableData(_), _) => self.handle_put_immutable_data(routing_node, request),
+            RequestContent::Put(Data::StructuredData(_), _) => self.handle_put_structured_data(routing_node, request),
         }
+    }
 
-        {  // Send data on to NAE Manager
-            let src = request.dst.clone();
-            let dst = Authority::NaeManager(data.name());
-            let _ = routing_node.send_put_request(src, dst, data, message_id.clone());
+    pub fn handle_put_success(&mut self, routing_node: &RoutingNode, message_id: &MessageId) -> Result<(), InternalError> {
+        match request_cache.remove(message_id) {
+            Some(client_request) => {
+                // Send success response back to client
+                let message_hash = sha512::hash(&try!(serialise(client_request))[..]);
+                let src = client_request.dst;
+                let dst = client_request.src;
+                let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+                Ok(())
+            },
+            None => Err(InternalError::FailedToFindCachedRequest(mesasge_id.clone())),
         }
+    }
 
-        // Send success response back to client
+    pub fn handle_put_failure(&mut self, routing_node: &RoutingNode, message_id: &MessageId) -> Result<(), InternalError> {
+        match request_cache.remove(message_id) {
+            Some(client_request) => {
+                // Refund account and send failure response back to client
+                let account = match self.accounts.get_mut(request.src.get_name()) {
+                    Some(account) => account,
+                    None => {
+                        let error = ClientError::NoAccount;
+                        try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                        return Err(error);
+                    }
+                };
+
+                // Try to add the data to the account
+                if let Err(error) = account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */) {
+                    try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                    return Err(error);
+                }
+
+                self.reply_with_put_failure();
+                let message_hash = sha512::hash(&try!(serialise(client_request))[..]);
+                let src = client_request.dst.clone();
+                let dst = client_request.src.clone();
+                let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+                Ok(())
+            },
+            None => Err(InternalError::FailedToFindCachedRequest(mesasge_id.clone())),
+        }
+    }
         let src = request.dst.clone();
         let dst = request.src.clone();
-        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
-    }
+        let external_error_indicator = try!(serialise(error));
+        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
 
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
         let _ = self.accounts.insert(name, account);
@@ -136,6 +155,98 @@ impl MaidManager {
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
+    }
+
+    fn handle_put_immutable_data(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        // Take a hash of the message anticipating sending this as a success response to the client.
+        let message_hash = sha512::hash(&try!(serialise(request))[..]);
+
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
+                (Data::ImmutableData(data.clone()), message_id.clone())
+            }
+            _ => unreachable!("Logic error"),
+        };
+
+        // Account must already exist to Put ImmutableData
+        let account = match self.accounts.get_mut(request.src.get_name()) {
+            Some(account) => account,
+            None => {
+                let error = ClientError::NoAccount;
+                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                return Err(error);
+            }
+        };
+
+        // Try to add the data to the account
+        if let Err(error) = account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */) {
+            try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+            return Err(error);
+        }
+
+        {  // Send data on to NAE Manager
+            let src = request.dst.clone();
+            let dst = Authority::NaeManager(data.name());
+            let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
+        }
+
+        // Send success response back to client but log client request in case SD Put fails at SDMs
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+    }
+
+    fn handle_put_structured_data(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
+                (Data::StructuredData(data.clone()), message_id.clone())
+            }
+            _ => unreachable!("Logic error"),
+        };
+
+        // If the type_tag is 0, the account must not exist, else it must exist.
+        if data.get_type_tag() == 0 {
+            if self.accounts.contains_key(request.src.get_name()) {
+                let error = ClientError::AccountAlreadyExists;
+                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                return Err(error);
+            }
+
+            // Create the account
+            let _ = self.accounts.insert(request.src.get_name(), Account::default());
+        } else {
+            let account = match self.accounts.get_mut(request.src.get_name()) {
+                Some(account) => account,
+                None => {
+                    let error = ClientError::NoAccount;
+                    try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                    return Err(error);
+                }
+            };
+
+            // Try to add the data to the account
+            if let Err(error) = account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */) {
+                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, error));
+                return Err(error);
+            }
+        };
+
+        {  // Send data on to NAE Manager
+            let src = request.dst.clone();
+            let dst = Authority::NaeManager(data.name());
+            let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
+        }
+
+        if let Some(prior_request) = request_cache.insert(message_id.clone(), request) {
+            error!("Overwrote existing cached request: {:?}", prior_request);
+        }
+    }
+
+    fn reply_with_put_failure(&self, routing_node: &RoutingNode, request: RequestMessage, message_id: MessageId, error: &ClientError) -> Result<(), InternalError> {
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        let external_error_indicator = try!(serialise(error));
+        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
     }
 }
 

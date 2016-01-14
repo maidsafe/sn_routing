@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use error::InternalError;
 use maidsafe_utilities::serialisation::serialise;
 use routing::{Authority, Data, ImmutableData, MessageId, ResponseMessage};
 use std::collections::HashMap;
@@ -95,7 +96,7 @@ impl PmidManager {
                       routing_node: &RoutingNode,
                       data: &ImmutableData,
                       message_id: &MessageId,
-                      pmid_node: XorName) {
+                      pmid_node: XorName) -> Result<(), InternalError> {
         // Put data always being allowed, i.e. no early alert
         self.accounts.entry(pmid_node.clone()).or_insert(Account::default()).put_data(data.payload_size() as u64);
 
@@ -105,6 +106,7 @@ impl PmidManager {
                                               dst,
                                               Data::ImmutableData(data.clone()),
                                               message_id.clone());
+        Ok(())
     }
 
     #[allow(dead_code)]

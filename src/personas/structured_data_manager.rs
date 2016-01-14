@@ -17,6 +17,7 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
+use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
 use types::{Refresh, RefreshValue};
@@ -70,24 +71,32 @@ impl StructuredDataManager {
                                               message_id.clone());
     }
 
-    pub fn handle_put(&mut self, data: &StructuredData) {
-        // SD using PUT for the first copy so the request can pass through MaidManager,
-        //    then POST to update and transfer in case of churn
-        //       so if the data exists, then the put shall be rejected
-        //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
-        //              then the post shall be rejected
-        //       in addition to above, POST shall check the ownership
-        let data_name = data.name();
-        if !self.chunk_store.has_chunk(&data_name) {
-            if let Ok(serialised_data) = serialise(data) {
-                // TODO: error handling
-                let _ = self.chunk_store.put(&data_name, &serialised_data);
-            } else {
-                debug!("Failed to serialise {:?}", data_name);
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        // Take a hash of the message anticipating sending this as a success response to the MM.
+        let message_hash = sha512::hash(&try!(serialise(request))[..]);
+
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
+                (Data::StructuredData(data.clone()), message_id.clone())
             }
-        } else {
+            _ => unreachable!("Logic error"),
+        };
+
+        let data_name = data.name();
+        let response_src = request.dst.clone();
+        let response_dst = request.src.clone();
+
+        if self.chunk_store.has_chunk(&data_name) {
             debug!("Already have SD {:?}", data_name);
+            let error = ClientError::DataAlreadyExists(data_name);
+            let external_error_indicator = try!(serialise(error));
+            let _ = routing_node.send_put_failure(response_src, response_dst, request, external_error_indicator, message_id);
+            return Err(error);
         }
+
+        try!(self.chunk_store.put(&data_name, &try!(serialise(data))));
+        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+        Ok(())
     }
 
     pub fn handle_post(&mut self, request: &RequestMessage) {
