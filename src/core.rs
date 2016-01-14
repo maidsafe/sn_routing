@@ -15,27 +15,37 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::io;
-use itertools::Itertools;
+use accumulator::Accumulator;
 use crust;
-use std::fmt::{Debug, Formatter};
-use std::thread;
-use event::Event;
-use action::Action;
-use xor_name::XorName;
-use sodiumoxide::crypto::{box_, hash, sign};
-use id::{FullId, PublicId};
-use types::MessageId;
-use lru_time_cache::LruCache;
-use error::{RoutingError, InterfaceError};
-use authority::Authority;
+use itertools::Itertools;
+use kademlia_routing_table;
 use kademlia_routing_table::{NodeInfo, RoutingTable};
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use lru_time_cache::LruCache;
+use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+use maidsafe_utilities::serialisation;
+use maidsafe_utilities::thread::RaiiThreadJoiner;
+use message_filter::MessageFilter;
+use sodiumoxide::crypto::{box_, hash, sign};
+use std::io;
+use std::collections::HashMap;
+use std::fmt;
+use std::fmt::{Debug, Formatter};
+use std::sync::mpsc;
+use std::thread;
+use time::Duration;
+use xor_name::XorName;
+
+use acceptors::Acceptors;
+use action::Action;
+use authority::Authority;
 use data::{Data, DataRequest};
+use error::{RoutingError, InterfaceError};
+use event::Event;
+use id::{FullId, PublicId};
+use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
-use acceptors::Acceptors;
 
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 const CRUST_DEFAULT_TCP_ACCEPTING_PORT: crust::Port = crust::Port::Tcp(5483);
@@ -113,56 +123,50 @@ enum State {
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
 pub struct Core {
     // for CRUST
-    crust_service: ::crust::Service,
+    crust_service: crust::Service,
     acceptors: Acceptors,
     // for Core
     client_restriction: bool,
     is_listening: bool,
-    crust_rx: ::std::sync::mpsc::Receiver<::crust::Event>,
-    action_rx: ::std::sync::mpsc::Receiver<Action>,
-    event_sender: ::std::sync::mpsc::Sender<Event>,
-    signed_message_filter: ::message_filter::MessageFilter<::messages::SignedMessage>,
-    connection_filter: ::message_filter::MessageFilter<XorName>,
+    crust_rx: mpsc::Receiver<crust::Event>,
+    action_rx: mpsc::Receiver<Action>,
+    event_sender: mpsc::Sender<Event>,
+    signed_message_filter: MessageFilter<SignedMessage>,
+    connection_filter: MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
-    message_accumulator: ::accumulator::Accumulator<RoutingMessage, sign::PublicKey>,
+    message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
     // Group messages which have been accumulated and then actioned
-    grp_msg_filter: ::message_filter::MessageFilter<RoutingMessage>,
+    grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
     state: State,
-    routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
+    routing_table: RoutingTable<PublicId, crust::Connection>,
     // our bootstrap connections
-    proxy_map: ::std::collections::HashMap<::crust::Connection, PublicId>,
+    proxy_map: HashMap<crust::Connection, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
-    client_map: ::std::collections::HashMap<sign::PublicKey, (::crust::Connection, bool)>,
+    client_map: HashMap<sign::PublicKey, (crust::Connection, bool)>,
     data_cache: LruCache<XorName, Data>,
 }
 
 impl Core {
     /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
     /// in.
-    pub fn new(event_sender: ::std::sync::mpsc::Sender<Event>,
-               client_restriction: bool,
-               keys: Option<FullId>)
-               -> Result<(::types::RoutingActionSender,
-                          ::maidsafe_utilities::thread::RaiiThreadJoiner),
-                         RoutingError> {
-        let (crust_tx, crust_rx) = ::std::sync::mpsc::channel();
-        let (action_tx, action_rx) = ::std::sync::mpsc::channel();
-        let (category_tx, category_rx) = ::std::sync::mpsc::channel();
+    pub fn new(event_sender: mpsc::Sender<Event>, client_restriction: bool, keys: Option<FullId>)
+               -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
+        let (crust_tx, crust_rx) = mpsc::channel();
+        let (action_tx, action_rx) = mpsc::channel();
+        let (category_tx, category_rx) = mpsc::channel();
 
-        let routing_event_category =
-            ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent;
-        let action_sender = ::types::RoutingActionSender::new(action_tx,
-                                                              routing_event_category,
-                                                              category_tx.clone());
+        let routing_event_category = MaidSafeEventCategory::RoutingEvent;
+        let action_sender = RoutingActionSender::new(action_tx,
+                                                     routing_event_category,
+                                                     category_tx.clone());
 
-        let crust_event_category =
-            ::maidsafe_utilities::event_sender::MaidSafeEventCategory::CrustEvent;
-        let crust_sender = ::crust::CrustEventSender::new(crust_tx,
-                                                          crust_event_category,
-                                                          category_tx);
+        let crust_event_category = MaidSafeEventCategory::CrustEvent;
+        let crust_sender = crust::CrustEventSender::new(crust_tx,
+                                                        crust_event_category,
+                                                        category_tx);
 
-        let crust_service = match ::crust::Service::new(crust_sender) {
+        let crust_service = match crust::Service::new(crust_sender) {
             Ok(service) => service,
             Err(what) => panic!(format!("Unable to start crust::Service {}", what)),
         };
@@ -182,39 +186,33 @@ impl Core {
                 crust_rx: crust_rx,
                 action_rx: action_rx,
                 event_sender: event_sender,
-                signed_message_filter: ::message_filter
-                                       ::MessageFilter
-                                       ::with_expiry_duration(::time::Duration::minutes(20)),
-                connection_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                    ::time::Duration::seconds(20)), // TODO Needs further discussion on interval
-                node_id_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
-                message_accumulator: ::accumulator::Accumulator::with_duration(1,
-                    ::time::Duration::minutes(5)),
-                grp_msg_filter: ::message_filter::MessageFilter::with_expiry_duration(
-                    ::time::Duration::minutes(20)),
+                signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+                // TODO Needs further discussion on interval
+                connection_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)), 
+                node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+                message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
+                grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
-                proxy_map: ::std::collections::HashMap::new(),
-                client_map: ::std::collections::HashMap::new(),
-                data_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
+                proxy_map: HashMap::new(),
+                client_map: HashMap::new(),
+                data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             };
 
             core.run(category_rx);
         });
 
-        Ok((action_sender,
-            ::maidsafe_utilities::thread::RaiiThreadJoiner::new(joiner)))
+        Ok((action_sender, RaiiThreadJoiner::new(joiner)))
     }
 
     /// Run the event loop for sending and receiving messages.
-    pub fn run(&mut self,
-               category_rx: ::std::sync::mpsc::Receiver<::maidsafe_utilities::event_sender::MaidSafeEventCategory>) {
+    pub fn run(&mut self, category_rx: mpsc::Receiver<MaidSafeEventCategory>) {
         let mut cur_routing_table_size = 0;
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
         for it in category_rx.iter() {
             match it {
-                ::maidsafe_utilities::event_sender::MaidSafeEventCategory::RoutingEvent => {
+                MaidSafeEventCategory::RoutingEvent => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::NodeSendMessage { content, result_tx, } => {
@@ -286,37 +284,37 @@ impl Core {
                         }
                     }
                 }
-                ::maidsafe_utilities::event_sender::MaidSafeEventCategory::CrustEvent => {
+                MaidSafeEventCategory::CrustEvent => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         match crust_event {
-                            ::crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            ::crust::Event::OnAccept(endpoint, connection) => {
+                            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
+                            crust::Event::OnAccept(endpoint, connection) => {
                                 self.handle_on_accept(endpoint, connection)
                             }
                             // TODO (Fraser) This needs to restart if we are left with 0 connections
-                            ::crust::Event::LostConnection(connection) => {
+                            crust::Event::LostConnection(connection) => {
                                 self.handle_lost_connection(connection)
                             }
-                            ::crust::Event::NewMessage(connection, bytes) => {
+                            crust::Event::NewMessage(connection, bytes) => {
                                 match self.handle_new_message(connection, bytes) {
                                     Err(RoutingError::FilterCheckFailed) => (),
                                     Err(err) => error!("{:?} {:?}", self, err),
                                     Ok(_) => (),
                                 }
                             }
-                            ::crust::Event::OnConnect(io_result, connection_token) => {
+                            crust::Event::OnConnect(io_result, connection_token) => {
                                 self.handle_on_connect(io_result, connection_token)
                             }
-                            ::crust::Event::ExternalEndpoints(external_endpoints) => {
+                            crust::Event::ExternalEndpoints(external_endpoints) => {
                                 for external_endpoint in external_endpoints {
                                     debug!("Adding external endpoint {:?}", external_endpoint);
                                     // TODO - reimplement
                                     // self.accepting_on.push(external_endpoint);
                                 }
                             }
-                            ::crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
-                            ::crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
-                            ::crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
+                            crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
+                            crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
+                            crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
                         }
                     }
                 }
@@ -337,10 +335,10 @@ impl Core {
     }
 
     fn handle_new_message(&mut self,
-                          connection: ::crust::Connection,
+                          connection: crust::Connection,
                           bytes: Vec<u8>)
                           -> Result<(), RoutingError> {
-        match deserialise(&bytes) {
+        match serialisation::deserialise(&bytes) {
             Ok(Message::HopMessage(ref hop_msg)) => self.handle_hop_message(hop_msg, connection),
             Ok(Message::DirectMessage(direct_msg)) => {
                 self.handle_direct_message(direct_msg, connection)
@@ -351,7 +349,7 @@ impl Core {
 
     fn handle_hop_message(&mut self,
                           hop_msg: &HopMessage,
-                          connection: ::crust::Connection)
+                          connection: crust::Connection)
                           -> Result<(), RoutingError> {
         if self.state == State::Node {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
@@ -599,7 +597,7 @@ impl Core {
     }
 
     fn accumulate(&mut self,
-                  message: ::messages::RoutingMessage,
+                  message: RoutingMessage,
                   public_id: &PublicId)
                   -> Option<RoutingMessage> {
         // For clients we already have set it on reception of BootstrapIdentify message
@@ -814,7 +812,7 @@ impl Core {
         }
     }
 
-    fn handle_on_accept(&mut self, endpoint: crust::Endpoint, connection: ::crust::Connection) {
+    fn handle_on_accept(&mut self, endpoint: crust::Endpoint, connection: crust::Connection) {
         debug!("New connection via OnAccept {:?} {:?}", connection, self);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
@@ -832,37 +830,35 @@ impl Core {
         self.acceptors.add(endpoint);
     }
 
-    fn handle_lost_connection(&mut self, connection: ::crust::Connection) {
+    fn handle_lost_connection(&mut self, connection: crust::Connection) {
         debug!("Lost connection on {:?}", connection);
         self.dropped_routing_node_connection(&connection);
         self.dropped_client_connection(&connection);
         self.dropped_bootstrap_connection(&connection);
     }
 
-    fn bootstrap_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
+    fn bootstrap_identify(&mut self, connection: crust::Connection) -> Result<(), RoutingError> {
         let direct_message = DirectMessage::BootstrapIdentify {
             public_id: self.full_id.public_id().clone(),
             current_quorum_size: self.routing_table.dynamic_quorum_size(),
         };
 
         let message = Message::DirectMessage(direct_message);
-        let raw_bytes = try!(serialise(&message));
+        let raw_bytes = try!(serialisation::serialise(&message));
 
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
-    fn bootstrap_deny(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
+    fn bootstrap_deny(&mut self, connection: crust::Connection) -> Result<(), RoutingError> {
         let message = Message::DirectMessage(DirectMessage::BootstrapDeny);
-        let raw_bytes = try!(serialise(&message));
+        let raw_bytes = try!(serialisation::serialise(&message));
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
-    fn client_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
-        let serialised_public_id =
-            try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+    fn client_identify(&mut self, connection: crust::Connection) -> Result<(), RoutingError> {
+        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
-                                            self.full_id
-                                                .signing_private_key());
+                                            self.full_id.signing_private_key());
 
         let direct_message = DirectMessage::ClientIdentify {
             serialised_public_id: serialised_public_id,
@@ -871,14 +867,13 @@ impl Core {
         };
 
         let message = Message::DirectMessage(direct_message);
-        let raw_bytes = try!(serialise(&message));
+        let raw_bytes = try!(serialisation::serialise(&message));
 
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
-    fn node_identify(&mut self, connection: ::crust::Connection) -> Result<(), RoutingError> {
-        let serialised_public_id =
-            try!(::maidsafe_utilities::serialisation::serialise(self.full_id.public_id()));
+    fn node_identify(&mut self, connection: crust::Connection) -> Result<(), RoutingError> {
+        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id
                                                 .signing_private_key());
@@ -889,16 +884,15 @@ impl Core {
         };
 
         let message = Message::DirectMessage(direct_message);
-        let raw_bytes = try!(serialise(&message));
+        let raw_bytes = try!(serialisation::serialise(&message));
 
         Ok(self.crust_service.send(connection, raw_bytes))
     }
 
     fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &sign::Signature)
-                               -> Result<::id::PublicId, RoutingError> {
-        let public_id: ::id::PublicId =
-            try!(::maidsafe_utilities::serialisation::deserialise(serialised_public_id));
+                               -> Result<PublicId, RoutingError> {
+        let public_id: PublicId = try!(serialisation::deserialise(serialised_public_id));
         if sign::verify_detached(signature,
                                  serialised_public_id,
                                  public_id.signing_public_key()) {
@@ -910,7 +904,7 @@ impl Core {
 
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
-                             connection: ::crust::Connection)
+                             connection: crust::Connection)
                              -> Result<(), RoutingError> {
         match direct_message {
             DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
@@ -976,7 +970,7 @@ impl Core {
                 }
 
                 if !client_restriction {
-                    let group_size = ::kademlia_routing_table::group_size();
+                    let group_size = kademlia_routing_table::group_size();
                     let joining_nodes_num = self.joining_nodes_num();
                     // Restrict the number of simultaneously joining nodes. If the network is still
                     // small, we need to accept `group_size` nodes, so that they can fill their
@@ -1023,8 +1017,7 @@ impl Core {
                         return Ok(());
                     }
 
-                    let node_info = ::kademlia_routing_table::NodeInfo::new(public_id.clone(),
-                                                                            vec![connection]);
+                    let node_info = NodeInfo::new(public_id.clone(), vec![connection]);
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
@@ -1035,7 +1028,7 @@ impl Core {
                             // If the new node is going to displace a node from the close group then
                             // inform the vaults about the node being moved out of close group
                             let lost_close_node = if self.routing_table.len() >=
-                                                     ::kademlia_routing_table::group_size() {
+                                                     kademlia_routing_table::group_size() {
                                 if let Some(last_close_node) = self.routing_table
                                                                    .our_close_group()
                                                                    .last() {
@@ -1067,7 +1060,7 @@ impl Core {
                             return Ok(());
                         }
 
-                        if self.routing_table.len() >= ::kademlia_routing_table::group_size()
+                        if self.routing_table.len() >= kademlia_routing_table::group_size()
                                 && !self.proxy_map.is_empty() {
                             trace!("Routing table reached group size. Dropping proxy.");
                             self.proxy_map.keys()
@@ -1273,14 +1266,14 @@ impl Core {
 
         let routing_message = RoutingMessage::Response(response_msg);
 
-        let signed_message = try!(::messages::SignedMessage::new(routing_message, &self.full_id));
+        let signed_message = try!(SignedMessage::new(routing_message, &self.full_id));
 
         self.send(signed_message)
     }
 
     // Received by A; From Y -> A
     fn handle_get_close_group_response(&mut self,
-                                       close_group_ids: Vec<::id::PublicId>,
+                                       close_group_ids: Vec<PublicId>,
                                        client_key: sign::PublicKey,
                                        proxy_name: XorName)
                                        -> Result<(), RoutingError> {
@@ -1295,7 +1288,7 @@ impl Core {
                                              client_key: client_key,
                                              proxy_node_name: proxy_name,
                                          },
-                                         ::authority::Authority::ManagedNode(*peer_id.name())));
+                                         Authority::ManagedNode(*peer_id.name())));
             }
         }
 
@@ -1303,14 +1296,14 @@ impl Core {
     }
 
     fn send_endpoints(&mut self,
-                      their_public_id: ::id::PublicId,
+                      their_public_id: PublicId,
                       src: Authority,
                       dst: Authority)
                       -> Result<(), RoutingError> {
         trace!("{:?} sending endpoints {:?}",
                self,
                self.acceptors.endpoints());
-        let encoded_endpoints = try!(serialise(&self.acceptors.endpoints()));
+        let encoded_endpoints = try!(serialisation::serialise(&self.acceptors.endpoints()));
         let nonce = box_::gen_nonce();
         let encrypted_endpoints = box_::seal(&encoded_endpoints,
                                              &nonce,
@@ -1471,7 +1464,7 @@ impl Core {
 
             self.send(signed_msg)
         } else {
-            Err(::error::RoutingError::RejectedPublicId)
+            Err(RoutingError::RejectedPublicId)
         }
     }
 
@@ -1480,7 +1473,7 @@ impl Core {
                                      dst_name: XorName)
                                      -> Result<(), RoutingError> {
         if !self.want_address_in_routing_table(public_id.name()) {
-            return Err(::error::RoutingError::RefusedFromRoutingTable);
+            return Err(RoutingError::RefusedFromRoutingTable);
         }
 
         try!(self.send_endpoints(public_id.clone(),
@@ -1519,7 +1512,7 @@ impl Core {
 
             self.send(signed_msg)
         } else {
-            Err(::error::RoutingError::RejectedPublicId)
+            Err(RoutingError::RejectedPublicId)
         }
     }
 
@@ -1530,7 +1523,7 @@ impl Core {
                                                     dst_name: XorName)
                                                     -> Result<(), RoutingError> {
         if !self.want_address_in_routing_table(public_id.name()) {
-            return Err(::error::RoutingError::RefusedFromRoutingTable);
+            return Err(RoutingError::RefusedFromRoutingTable);
         }
 
         try!(self.send_endpoints(public_id.clone(),
@@ -1554,10 +1547,9 @@ impl Core {
                                          self.full_id.encrypting_private_key());
 
         let serialised_endpoints = try!(decipher_result.map_err(|()| {
-            ::error::RoutingError::AsymmetricDecryptionFailure
+            RoutingError::AsymmetricDecryptionFailure
         }));
-        let endpoints =
-            try!(::maidsafe_utilities::serialisation::deserialise(&serialised_endpoints));
+        let endpoints = try!(serialisation::deserialise(&serialised_endpoints));
 
         self.crust_service.connect(0u32, endpoints);
 
@@ -1582,7 +1574,7 @@ impl Core {
                                                self.full_id.public_id().name().clone(),
                                                self.full_id.signing_private_key()));
             let message = Message::HopMessage(hop_msg);
-            let raw_bytes = try!(serialise(&message));
+            let raw_bytes = try!(serialisation::serialise(&message));
 
             return Ok(self.crust_service.send(connection.clone(), raw_bytes))
         }
@@ -1595,7 +1587,7 @@ impl Core {
                                            self.full_id.public_id().name().clone(),
                                            self.full_id.signing_private_key()));
         let message = Message::HopMessage(hop_msg);
-        let raw_bytes = try!(serialise(&message));
+        let raw_bytes = try!(serialisation::serialise(&message));
 
         // If we're a client going to be a node, send via our bootstrap connection
         if self.state == State::Client {
@@ -1657,7 +1649,7 @@ impl Core {
         self.full_id.public_id_mut().set_name(new_name);
     }
 
-    fn dropped_client_connection(&mut self, connection: &::crust::Connection) {
+    fn dropped_client_connection(&mut self, connection: &crust::Connection) {
         if let Some(public_key) = self.client_map
                                       .iter()
                                       .find(|entry| (entry.1).0 == *connection)
@@ -1668,11 +1660,11 @@ impl Core {
         }
     }
 
-    fn dropped_bootstrap_connection(&mut self, connection: &::crust::Connection) {
+    fn dropped_bootstrap_connection(&mut self, connection: &crust::Connection) {
         let _ = self.proxy_map.remove(connection);
     }
 
-    fn dropped_routing_node_connection(&mut self, connection: &::crust::Connection) {
+    fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
         if let Some(node_name) = self.routing_table.drop_connection(connection) {
             if self.routing_table.is_close(&node_name) {
                 // If the lost node was in our close grp send Churn Event
@@ -1704,7 +1696,7 @@ impl Core {
 }
 
 impl Debug for Core {
-    fn fmt(&self, f: &mut Formatter) -> ::std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f,
                "{:?}({:?}) - ",
                self.state,
