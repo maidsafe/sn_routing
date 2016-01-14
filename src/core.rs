@@ -132,10 +132,8 @@ pub struct Core {
     routing_table: RoutingTable<::id::PublicId, ::crust::Connection>,
     // our bootstrap connections
     proxy_map: ::std::collections::HashMap<::crust::Connection, PublicId>,
-    // any clients we have proxying through us
-    client_map: ::std::collections::HashMap<sign::PublicKey, ::crust::Connection>,
-    // all prospective nodes trying to join the network through us
-    joining_nodes_map: ::std::collections::HashMap<sign::PublicKey, ::crust::Connection>,
+    // any clients we have proxying through us, and whether they have `client_restriction`
+    client_map: ::std::collections::HashMap<sign::PublicKey, (::crust::Connection, bool)>,
     data_cache: LruCache<XorName, Data>,
 }
 
@@ -197,7 +195,6 @@ impl Core {
                 routing_table: RoutingTable::new(&our_name),
                 proxy_map: ::std::collections::HashMap::new(),
                 client_map: ::std::collections::HashMap::new(),
-                joining_nodes_map: ::std::collections::HashMap::new(),
                 data_cache: LruCache::with_expiry_duration(::time::Duration::minutes(10)),
             };
 
@@ -357,9 +354,8 @@ impl Core {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
             } else if let Some((ref pub_key, _)) = self.client_map
-                                                .iter()
-                                                .chain(self.joining_nodes_map.iter())
-                                                .find(|ref elt| &connection == elt.1) {
+                                                       .iter()
+                                                       .find(|ref elt| connection == (elt.1).0) {
                 try!(hop_msg.verify(pub_key));
             } else {
                 // TODO drop connection ?
@@ -398,7 +394,8 @@ impl Core {
                 src: Authority::Client { ref client_key, .. },
                 ..
             }) = signed_msg.content() {
-                if self.client_map.contains_key(client_key) {
+                // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
+                if let Some(&(_, true)) = self.client_map.get(client_key) {
                     trace!("Illegitimate GetNetworkName request. Refusing to relay.");
                     return Err(RoutingError::ClientConnectionNotFound)
                 }
@@ -976,27 +973,24 @@ impl Core {
                     return Ok(());
                 }
 
-                if client_restriction {
-                    if let Some(prev_conn) = self.client_map
-                                                 .insert(public_id.signing_public_key().clone(),
-                                                         connection) {
-                        debug!("Found previous connection against client key - Dropping {:?}",
-                               prev_conn);
-                        self.crust_service.drop_node(prev_conn);
-                    }
-                } else {
+                if !client_restriction {
                     let group_size = ::kademlia_routing_table::group_size();
+                    let joining_nodes_num = self.joining_nodes_num();
                     // Restrict the number of simultaneously joining nodes. If the network is still
                     // small, we need to accept `group_size` nodes, so that they can fill their
                     // routing tables and drop the proxy connection.
-                    if self.joining_nodes_map.len() >= MAX_JOINING_NODES
-                            && !(self.routing_table.len() < group_size
-                                 && self.joining_nodes_map.len() < group_size) {
+                    if !(self.routing_table.len() < group_size && joining_nodes_num < group_size)
+                            && joining_nodes_num >= MAX_JOINING_NODES  {
                         trace!("No additional joining nodes allowed.");
                         return self.bootstrap_deny(connection);
                     }
-                    let _ = self.joining_nodes_map.insert(public_id.signing_public_key().clone(),
-                                                          connection);
+                }
+                if let Some((prev_conn, _)) = self.client_map
+                                                  .insert(public_id.signing_public_key().clone(),
+                                                          (connection, client_restriction)) {
+                    debug!("Found previous connection against client key - Dropping {:?}",
+                           prev_conn);
+                    self.crust_service.drop_node(prev_conn);
                 }
 
                 let _ = self.bootstrap_identify(connection);
@@ -1101,6 +1095,12 @@ impl Core {
                 }
             }
         }
+    }
+
+    /// Returns the number of clients for which we act as a proxy and which intend to become a
+    /// node.
+    fn joining_nodes_num(&self) -> usize {
+        self.client_map.values().filter(|&&(_, client_restriction)| !client_restriction).count()
     }
 
     fn retry_bootstrap_with_blacklist(&mut self, connection: crust::Connection) {
@@ -1575,10 +1575,7 @@ impl Core {
                        signed_msg: SignedMessage,
                        client_key: &sign::PublicKey)
                        -> Result<(), RoutingError> {
-        if let Some(connection) = self.client_map
-                                      .get(client_key)
-                                      .or(self.joining_nodes_map
-                                      .get(client_key)) {
+        if let Some(&(connection, _)) = self.client_map.get(client_key) {
             let hop_msg = try!(HopMessage::new(signed_msg,
                                                self.full_id.public_id().name().clone(),
                                                self.full_id.signing_private_key()));
@@ -1659,15 +1656,12 @@ impl Core {
     }
 
     fn dropped_client_connection(&mut self, connection: &::crust::Connection) {
-        let public_key = self.client_map
-                             .iter()
-                             .chain(self.joining_nodes_map.iter())
-                             .find(|&(_, client)| client == connection)
-                             .map(|entry| entry.0.clone());
-        if let Some(public_key) = public_key {
-            if self.client_map.remove(&public_key).is_none() {
-                let _ = self.joining_nodes_map.remove(&public_key);
-                trace!("Joining node dropped. {} remaining.", self.joining_nodes_map.len());
+        if let Some(public_key) = self.client_map
+                                      .iter()
+                                      .find(|entry| (entry.1).0 == *connection)
+                                      .map(|entry| entry.0.clone()) {
+            if let Some((_, false)) = self.client_map.remove(&public_key) {
+                trace!("Joining node dropped. {} remaining.", self.joining_nodes_num());
             }
         }
     }
