@@ -18,8 +18,9 @@
 use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
+use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 
@@ -37,7 +38,7 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         // TODO - handle type_tag from name too
         let (data_name, message_id) = match request.content {
             RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _), ref message_id) => {
@@ -46,21 +47,8 @@ impl StructuredDataManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = match self.chunk_store.get(&data_name) {
-            Ok(data) => data,
-            _ => {
-                warn!("Failed to GET data with name {:?}", data_name);
-                return;
-            }
-        };
-
-        let decoded = match deserialise::<StructuredData>(&data) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse data with name {:?}", data_name);
-                return;
-            }
-        };
+        let data = try!(self.chunk_store.get(&data_name));
+        let decoded = try!(serialisation::deserialise::<StructuredData>(&data));
         debug!("As {:?} sending data {:?} to {:?}",
                request.dst,
                Data::StructuredData(decoded.clone()),
@@ -69,11 +57,12 @@ impl StructuredDataManager {
                                               request.src.clone(),
                                               Data::StructuredData(decoded),
                                               message_id.clone());
+        Ok(())
     }
 
     pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         // Take a hash of the message anticipating sending this as a success response to the MM.
-        let message_hash = sha512::hash(&try!(serialise(request))[..]);
+        let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
         let (data, message_id) = match request.content {
             RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
@@ -89,17 +78,21 @@ impl StructuredDataManager {
         if self.chunk_store.has_chunk(&data_name) {
             debug!("Already have SD {:?}", data_name);
             let error = ClientError::DataAlreadyExists(data_name);
-            let external_error_indicator = try!(serialise(error));
-            let _ = routing_node.send_put_failure(response_src, response_dst, request, external_error_indicator, message_id);
-            return Err(error);
+            let external_error_indicator = try!(serialisation::serialise(&error));
+            let _ = routing_node.send_put_failure(response_src,
+                                                  response_dst,
+                                                  request.clone(),
+                                                  external_error_indicator,
+                                                  message_id);
+            return Err(InternalError::Client(error));
         }
 
-        try!(self.chunk_store.put(&data_name, &try!(serialise(data))));
-        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+        try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(&data))));
+        let _ = routing_node.send_put_success(response_src, response_dst, message_hash, message_id);
         Ok(())
     }
 
-    pub fn handle_post(&mut self, request: &RequestMessage) {
+    pub fn handle_post(&mut self, request: &RequestMessage) -> Result<(), InternalError> {
         let new_data = match &request.content {
             &RequestContent::Post(Data::StructuredData(ref structured_data), _) => structured_data,
             _ => unreachable!("Error in vault demuxing"),
@@ -111,15 +104,8 @@ impl StructuredDataManager {
         //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
         //              then the post shall be rejected
         //       in addition to above, POST shall check the ownership
-        let serialised_data = match self.chunk_store.get(&new_data.name()) {
-            Ok(data) => data,
-            _ => {
-                warn!("Don't currently hold data for POST at StructuredDataManager: {:?}", request);
-                return;
-            }
-        };
-
-        let _ = deserialise::<StructuredData>(&serialised_data)
+        let serialised_data = try!(self.chunk_store.get(&new_data.name()));
+        let _ = serialisation::deserialise::<StructuredData>(&serialised_data)
                     .ok()
                     .and_then(|mut existing_data| {
                         debug!("StructuredDataManager updating {:?} to {:?}",
@@ -127,16 +113,17 @@ impl StructuredDataManager {
                                new_data);
                         existing_data.replace_with_other(new_data.clone())
                                      .ok()
-                                     .and_then(|()| serialise(&existing_data).ok())
+                                     .and_then(|()| serialisation::serialise(&existing_data).ok())
                                      .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), &serialised)))
                     });
+        Ok(())
     }
 
-    pub fn handle_refresh(&mut self, structured_data: StructuredData) {
+    pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
         // TODO: error handling
         let _ = self.chunk_store.delete(&structured_data.name());
-        let _ = self.chunk_store.put(&structured_data.name(),
-                                     &serialise(&structured_data).unwrap_or(vec![]));
+        Ok(try!(self.chunk_store.put(&structured_data.name(),
+                                     &try!(serialisation::serialise(&structured_data)))))
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
@@ -147,7 +134,7 @@ impl StructuredDataManager {
                 _ => continue,
             };
 
-            let structured_data = match deserialise::<StructuredData>(&serialised_data) {
+            let structured_data = match serialisation::deserialise::<StructuredData>(&serialised_data) {
                 Ok(parsed_data) => parsed_data,
                 Err(_) => continue,
             };
@@ -158,7 +145,7 @@ impl StructuredDataManager {
                 name: data_name.clone(),
                 value: RefreshValue::StructuredDataManager(structured_data),
             };
-            if let Ok(serialised_refresh) = serialise(&refresh) {
+            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("SD Manager sending refresh for account {:?}",
                        src.get_name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);

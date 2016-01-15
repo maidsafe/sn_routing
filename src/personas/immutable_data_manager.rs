@@ -20,23 +20,23 @@
 
 use error::InternalError;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
-use std::cmp::{Ordering, max, min};
+use std::cmp::{self, Ordering};
 use std::collections::{HashMap, HashSet};
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
-use xor_name::{XorName, closer_to_target};
+use xor_name::{self, XorName};
 
 pub const REPLICANTS: usize = 2;
 pub const MIN_REPLICANTS: usize = 2;
 
 // This is the name of a PmidNode which has been chosen to store the data on.  It is assumed to be
 // `Good` (can return the data) until it fails a Get request, at which time it is deemed `Failed`.
-#[derive(Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum DataHolder {
     Good(XorName),
     Failed(XorName),
@@ -45,8 +45,8 @@ pub enum DataHolder {
 impl DataHolder {
     pub fn name(&self) -> &XorName {
         match self {
-            DataHolder::Good(name) => &name,
-            DataHolder::Failed(name) => &name,
+            &DataHolder::Good(ref name) => name,
+            &DataHolder::Failed(ref name) => name,
         }
     }
 }
@@ -77,7 +77,7 @@ impl ImmutableDataManager {
         }
     }
 
-    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data_name, message_id) = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _), ref message_id) => {
                 (data_name.clone(), message_id.clone())
@@ -103,7 +103,7 @@ impl ImmutableDataManager {
                        routing_node.name(),
                        (ongoing_get.0).1,
                        (ongoing_get.0).0);
-                self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
+                // self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
                 // Starts fetching immediately no matter how many alive pmid_nodes left over
                 // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
                 // of account status not synchronized among the DataManagers
@@ -111,15 +111,15 @@ impl ImmutableDataManager {
                 //                 fetching_list.insert((ongoing_get.0).0.clone()));
                 fetching_list.insert((ongoing_get.0).0.clone());
                 failing_entries.push(ongoing_get.0.clone());
-                if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
-                    // match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
-                    //     Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
-                    //     None => error!("Failed to insert failed_pmid_node in the cache."),
-                    // };
-                } else {
-                    let _ = self.failed_pmid_nodes
-                                .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
-                }
+                // if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
+                //     match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
+                //         Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
+                //         None => error!("Failed to insert failed_pmid_node in the cache."),
+                //     };
+                // } else {
+                //     let _ = self.failed_pmid_nodes
+                //                 .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
+                // }
             }
         }
         for failed_entry in failing_entries {
@@ -133,7 +133,7 @@ impl ImmutableDataManager {
             if let Some(account) = self.accounts.get(&data_name) {
                 for pmid_node in account.iter() {
                     let src = Authority::NaeManager(fetch_name.clone());
-                    let dst = Authority::ManagedNode(pmid_node.clone());
+                    let dst = Authority::ManagedNode(pmid_node.name().clone());
                     let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
                     debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
                            routing_node.name(),
@@ -141,13 +141,19 @@ impl ImmutableDataManager {
                            dst);
                     let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
                     let _ = self.ongoing_gets
-                                .insert((fetch_name.clone(), pmid_node.clone()), SteadyTime::now());
+                                .insert((fetch_name.clone(), pmid_node.name().clone()),
+                                        SteadyTime::now());
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, data: &ImmutableData, message_id: &MessageId) -> Result<(), InternalError> {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      data: &ImmutableData,
+                      message_id: &MessageId)
+                      -> Result<(), InternalError> {
         // If the data already exists, there's no more to do.
         let data_name = data.name();
         if self.accounts.contains_key(&data_name) {
@@ -173,7 +179,10 @@ impl ImmutableDataManager {
         Ok(())
     }
 
-    pub fn handle_get_success(&mut self, routing_node: &RoutingNode, response: &ResponseMessage) {
+    pub fn handle_get_success(&mut self,
+                              routing_node: &RoutingNode,
+                              response: &ResponseMessage)
+                              -> Result<(), InternalError> {
         let (data, message_id): (&ImmutableData, &MessageId) = match response.content {
             ResponseContent::GetSuccess(Data::ImmutableData(ref data), ref message_id) => (data, message_id),
             _ => unreachable!("Error in vault demuxing"),
@@ -199,6 +208,7 @@ impl ImmutableDataManager {
                 }
             };
         }
+        Ok(())
 
         // let _ = self.ongoing_gets.remove(&(response.name(), request.src.get_name().clone()));
         // match self.failed_pmid_nodes.remove(&response.name()) {
@@ -229,11 +239,13 @@ impl ImmutableDataManager {
                               _pmid_node: XorName,
                               _message_id: &MessageId,
                               _request: &RequestMessage,
-                              _external_error_indicator: &Vec<u8>) {
+                              _external_error_indicator: &Vec<u8>)
+                              -> Result<(), InternalError> {
+        Ok(())
     }
 
     #[allow(unused)]
-    pub fn handle_put_failure(&mut self, response: ResponseMessage) {
+    pub fn handle_put_failure(&mut self, response: ResponseMessage) -> Result<(), InternalError> {
         // match response {
         //     ::routing::error::ResponseError::FailedRequestForData(data) => {
         //         self.handle_failed_request_for_data(data, pmid_node, our_authority.clone());
@@ -243,6 +255,7 @@ impl ImmutableDataManager {
         //     }
         //     _ => warn!("Invalid response type for PUT response at ImmutableDataManager: {:?}", response),
         // }
+        Ok(())
     }
 
     pub fn handle_refresh(&mut self, data_name: XorName, account: Account) {
@@ -260,7 +273,7 @@ impl ImmutableDataManager {
                 name: data_name.clone(),
                 value: RefreshValue::ImmutableDataManager(pmid_nodes.clone()),
             };
-            if let Ok(serialised_refresh) = serialise(&refresh) {
+            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("ImmutableDataManager sending refresh for account {:?}",
                        src.get_name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -297,7 +310,9 @@ impl ImmutableDataManager {
         // }
     }
 
-    fn choose_target_pmid_nodes(routing_node: &RoutingNode, data_name: &XorName) -> Result<HashSet<DataHolder>, InternalError> {
+    fn choose_target_pmid_nodes(routing_node: &RoutingNode,
+                                data_name: &XorName)
+                                -> Result<HashSet<DataHolder>, InternalError> {
         let own_name = try!(routing_node.name());
         let mut target_pmid_nodes = try!(routing_node.close_group());
         target_pmid_nodes.push(own_name.clone());
@@ -327,18 +342,18 @@ impl ImmutableDataManager {
 
     fn sort_from_target(names: &mut Vec<XorName>, target: &XorName) {
         names.sort_by(|a, b| {
-            match closer_to_target(&a, &b, target) {
+            match xor_name::closer_to_target(&a, &b, target) {
                 true => Ordering::Less,
                 false => Ordering::Greater,
             }
         });
     }
 
-    fn remove_pmid_node_from_account(&mut self, data_name: &XorName, pmid_node: &XorName) {
-        if let Some(account) = self.accounts.get_mut(data_name) {
-            let _ = account.remove(pmid_node);
-        }
-    }
+    // fn remove_pmid_node_from_account(&mut self, data_name: &XorName, pmid_node: &XorName) {
+    //     if let Some(account) = self.accounts.get_mut(data_name) {
+    //         let _ = account.remove(pmid_node);
+    //     }
+    // }
 
     // fn handle_failed_request_for_data(&mut self,
     //                                   data: ::routing::data::Data,
@@ -375,10 +390,9 @@ impl ImmutableDataManager {
     //     }
     // }
 
-    #[allow(unused)]
-    fn handle_had_to_clear_sacrificial(&mut self, data_name: &XorName, pmid_node: &XorName) {
-        self.remove_pmid_node_from_account(data_name, pmid_node);
-    }
+    // fn handle_had_to_clear_sacrificial(&mut self, data_name: &XorName, pmid_node: &XorName) {
+    //     self.remove_pmid_node_from_account(data_name, pmid_node);
+    // }
 }
 
 

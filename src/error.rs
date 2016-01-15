@@ -17,7 +17,7 @@
 
 use chunk_store;
 use maidsafe_utilities::serialisation::SerialisationError;
-use routing::{InterfaceError, RoutingError};
+use routing::{InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
 use xor_name::XorName;
 
@@ -33,6 +33,7 @@ pub enum ClientError {
 pub enum InternalError {
     FailedToFindCachedRequest(MessageId),
     Client(ClientError),
+    UnknownMessageType(RoutingMessage),
     ChunkStore(chunk_store::Error),
     Serialisation(SerialisationError),
     Routing(InterfaceError),
