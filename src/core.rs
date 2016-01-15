@@ -913,7 +913,7 @@ impl Core {
                        current_quorum_size);
 
                 if *public_id.name() ==
-                   XorName::new(::sodiumoxide::crypto::hash::sha512::hash(&public_id.signing_public_key().0).0) {
+                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("Incoming Connection not validated as a proper node - dropping");
                     self.crust_service.drop_node(connection);
 
@@ -963,7 +963,7 @@ impl Core {
                 };
 
                 if *public_id.name() !=
-                   XorName::new(::sodiumoxide::crypto::hash::sha512::hash(&public_id.signing_public_key().0).0) {
+                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
                     warn!("Incoming Connection not validated as a proper client - dropping");
                     self.crust_service.drop_node(connection);
                     return Ok(());
