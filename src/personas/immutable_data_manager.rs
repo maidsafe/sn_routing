@@ -18,7 +18,7 @@
 // TODO remove this
 #![allow(unused)]
 
-use error::InternalError;
+use error::{ClientError, InternalError};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
@@ -51,29 +51,63 @@ impl DataHolder {
     }
 }
 
+// This is the name of a node which *should* hold the data and has been sent a Get request.  Until
+// it responds it is held as the `PendingResponse` variant.  Once it responds or the request times
+// out, it becomes the `Responded` variant.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum QueriedDataHolder {
+    PendingResponse(XorName),
+    Responded(DataHolder),
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct MetadataForGetRequest {
+    pub requests: Vec<RequestMessage>,
+    // Some(holder) indicates success/failure to provide chunk - None indicates no reply from pmid node yet
+    pub pmid_nodes: Vec<QueriedDataHolder>,
+    pub creation_timestamp: SteadyTime,
+    pub data: Option<ImmutableData>,
+    pub backup_ok: Option<bool>,
+    pub sacrificial_ok: Option<bool>,
+}
+
+impl MetadataForGetRequest {
+    pub fn new(request: &RequestMessage, pmid_nodes: &Account) -> MetadataForGetRequest {
+        // We only want to try and get data from "good" holders
+        let good_nodes = pmid_nodes.iter().filter_map(|data_holder| {
+            match data_holder {
+                &DataHolder::Good(pmid_node) => Some(QueriedDataHolder::PendingResponse(pmid_node)),
+                &DataHolder::Failed(_) => None,
+            }
+        }).collect();
+
+        MetadataForGetRequest{
+            requests: vec![request.clone(); 1],
+            pmid_nodes: good_nodes,
+            creation_timestamp: SteadyTime::now(),
+            data: None,
+            backup_ok: None,
+            sacrificial_ok: None,
+        }
+    }
+}
+
 pub type Account = HashSet<DataHolder>;  // Collection of PmidNodes holding a copy of the chunk
-type Address = XorName;
-type ChunkNameAndPmidNode = (XorName, XorName);
 
 const LRU_CACHE_SIZE: usize = 1000;
 
 pub struct ImmutableDataManager {
     // <Data name, PmidNodes holding a copy of the data>
     accounts: HashMap<XorName, Account>,
-    // FIXME - this cache should include the requester auth in the key since repeated requests for
-    // the same chunk could end up never being removed.  However, we need to be able to search in
-    // the cache by chunk name only.
-    request_cache: LruCache<XorName, RequestMessage>,
-    // key is pair of chunk_name and pmid_node, value is insertion time
-    ongoing_gets: LruCache<ChunkNameAndPmidNode, SteadyTime>,
+    // key is chunk_name
+    ongoing_gets: LruCache<XorName, MetadataForGetRequest>,
 }
 
 impl ImmutableDataManager {
     pub fn new() -> ImmutableDataManager {
         ImmutableDataManager {
             accounts: HashMap::new(),
-            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
-            ongoing_gets: LruCache::with_capacity(LRU_CACHE_SIZE),
+            ongoing_gets: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), LRU_CACHE_SIZE),
         }
     }
 
@@ -85,67 +119,113 @@ impl ImmutableDataManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        // Cache the request
-        debug!("ImmutableDataManager {:?} cached request {:?}",
-               routing_node.name(),
-               request);
-        // FIXME - should append to requests in the case of a pre-existing request for this chunk
-        let _ = self.request_cache.insert(data_name, request.clone());
-
-        // Before querying the records, first ensure all records are valid
-        let ongoing_gets = self.ongoing_gets.retrieve_all();
-        let mut failing_entries = Vec::new();
-        let mut fetching_list = HashSet::new();
-        fetching_list.insert(data_name.clone());
-        for ongoing_get in ongoing_gets {
-            if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
-                debug!("ImmutableDataManager {:?} removing pmid_node {:?} for chunk {:?}",
-                       routing_node.name(),
-                       (ongoing_get.0).1,
-                       (ongoing_get.0).0);
-                // self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
-                // Starts fetching immediately no matter how many alive pmid_nodes left over
-                // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
-                // of account status not synchronized among the DataManagers
-                //         let _ = self.replicate_to((ongoing_get.0).0).and_then(
-                //                 fetching_list.insert((ongoing_get.0).0.clone()));
-                fetching_list.insert((ongoing_get.0).0.clone());
-                failing_entries.push(ongoing_get.0.clone());
-                // if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
-                //     match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
-                //         Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
-                //         None => error!("Failed to insert failed_pmid_node in the cache."),
-                //     };
-                // } else {
-                //     let _ = self.failed_pmid_nodes
-                //                 .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
-                // }
+        // If the data doesn't exist, respond with GetFailure
+        let pmid_nodes = match self.accounts.get(&data_name) {
+            Some(account) => account,
+            None => {
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let error = ClientError::NoSuchData;
+                let external_error_indicator = try!(serialisation::serialise(&error));
+                let _ = routing_node.send_get_failure(src, dst, request.clone(), external_error_indicator, message_id);
+                return Err(InternalError::Client(error));
             }
-        }
-        for failed_entry in failing_entries {
-            let _ = self.ongoing_gets.remove(&failed_entry);
-        }
-        for fetch_name in fetching_list.iter() {
-            debug!("ImmutableDataManager {:?} having {:?} records for chunk {:?}",
-                   routing_node.name(),
-                   self.accounts.contains_key(&fetch_name),
-                   fetch_name);
-            if let Some(account) = self.accounts.get(&data_name) {
-                for pmid_node in account.iter() {
-                    let src = Authority::NaeManager(fetch_name.clone());
-                    let dst = Authority::ManagedNode(pmid_node.name().clone());
-                    let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
-                    debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
-                           routing_node.name(),
-                           fetch_name,
-                           dst);
-                    let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
-                    let _ = self.ongoing_gets
-                                .insert((fetch_name.clone(), pmid_node.name().clone()),
-                                        SteadyTime::now());
+        };
+
+        match self.ongoing_gets.get_mut(&data_name) {
+            Some(metadata) => {
+                // If we've already received the chunk, send it to the new requester.  Otherwise
+                // add the request to the others for later handling.
+                match metadata.data {
+                    Some(ref data) => {
+                        let src = request.dst.clone();
+                        let dst = request.src.clone();
+                        let _ = routing_node.send_get_success(src,
+                                                              dst,
+                                                              Data::ImmutableData(data.clone()),
+                                                              message_id.clone());
+                    }
+                    None => {
+                        metadata.requests.push(request.clone());
+                    }
                 }
             }
+            None => {
+                // This is new cache entry
+                let entry = MetadataForGetRequest::new(request, pmid_nodes);
+                for good_node in entry.pmid_nodes.iter() {
+//                    send Get
+                }
+                self.ongoing_gets.insert(data_name, entry);
+            }
         }
+
+
+
+
+
+
+        // // Cache the request
+        // debug!("ImmutableDataManager {:?} cached request {:?}",
+        //        routing_node.name(),
+        //        request);
+        // // FIXME - should append to requests in the case of a pre-existing request for this chunk
+        // let _ = self.request_cache.insert(data_name, request.clone());
+
+        // // Before querying the records, first ensure all records are valid
+        // let ongoing_gets = self.ongoing_gets.retrieve_all();
+        // let mut failing_entries = Vec::new();
+        // let mut fetching_list = HashSet::new();
+        // fetching_list.insert(data_name.clone());
+        // for ongoing_get in ongoing_gets {
+        //     if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
+        //         debug!("ImmutableDataManager {:?} removing pmid_node {:?} for chunk {:?}",
+        //                routing_node.name(),
+        //                (ongoing_get.0).1,
+        //                (ongoing_get.0).0);
+        //         // self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
+        //         // Starts fetching immediately no matter how many alive pmid_nodes left over
+        //         // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
+        //         // of account status not synchronized among the DataManagers
+        //         //         let _ = self.replicate_to((ongoing_get.0).0).and_then(
+        //         //                 fetching_list.insert((ongoing_get.0).0.clone()));
+        //         fetching_list.insert((ongoing_get.0).0.clone());
+        //         failing_entries.push(ongoing_get.0.clone());
+        //         // if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
+        //         //     match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
+        //         //         Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
+        //         //         None => error!("Failed to insert failed_pmid_node in the cache."),
+        //         //     };
+        //         // } else {
+        //         //     let _ = self.failed_pmid_nodes
+        //         //                 .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
+        //         // }
+        //     }
+        // }
+        // for failed_entry in failing_entries {
+        //     let _ = self.ongoing_gets.remove(&failed_entry);
+        // }
+        // for fetch_name in fetching_list.iter() {
+        //     debug!("ImmutableDataManager {:?} having {:?} records for chunk {:?}",
+        //            routing_node.name(),
+        //            self.accounts.contains_key(&fetch_name),
+        //            fetch_name);
+        //     if let Some(account) = self.accounts.get(&data_name) {
+        //         for pmid_node in account.iter() {
+        //             let src = Authority::NaeManager(fetch_name.clone());
+        //             let dst = Authority::ManagedNode(pmid_node.name().clone());
+        //             let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
+        //             debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
+        //                    routing_node.name(),
+        //                    fetch_name,
+        //                    dst);
+        //             let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
+        //             let _ = self.ongoing_gets
+        //                         .insert((fetch_name.clone(), pmid_node.name().clone()),
+        //                                 SteadyTime::now());
+        //         }
+        //     }
+        // }
         Ok(())
     }
 
@@ -190,24 +270,24 @@ impl ImmutableDataManager {
         let data_name = data.name();
 
         // Respond if there is a corresponding cached request.
-        if self.request_cache.contains_key(&data_name) {
-            match self.request_cache.remove(&data_name) {
-                Some(request) => {
-                    // for request in requests {
-                    let src = response.dst.clone();
-                    let dst = request.src;
-                    let _ = routing_node.send_get_success(src,
-                                                          dst,
-                                                          Data::ImmutableData(data.clone()),
-                                                          message_id.clone());
-                    // }
-                }
-                None => {
-                    debug!("Failed to find any requests for get response {:?}",
-                           response)
-                }
-            };
-        }
+        // if self.request_cache.contains_key(&data_name) {
+        //     match self.request_cache.remove(&data_name) {
+        //         Some(request) => {
+        //             // for request in requests {
+        //             let src = response.dst.clone();
+        //             let dst = request.src;
+        //             let _ = routing_node.send_get_success(src,
+        //                                                   dst,
+        //                                                   Data::ImmutableData(data.clone()),
+        //                                                   message_id.clone());
+        //             // }
+        //         }
+        //         None => {
+        //             debug!("Failed to find any requests for get response {:?}",
+        //                    response)
+        //         }
+        //     };
+        // }
         Ok(())
 
         // let _ = self.ongoing_gets.remove(&(response.name(), request.src.get_name().clone()));

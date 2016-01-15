@@ -19,13 +19,13 @@ use chunk_store;
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
-use xor_name::XorName;
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum ClientError {
-    NoAccount,
-    AccountAlreadyExists,
-    DataAlreadyExists(XorName),
+    NoSuchAccount,
+    AccountExists,
+    NoSuchData,
+    DataExists,
     LowBalance,
 }
 

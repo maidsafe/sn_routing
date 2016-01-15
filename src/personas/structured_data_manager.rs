@@ -77,7 +77,7 @@ impl StructuredDataManager {
 
         if self.chunk_store.has_chunk(&data_name) {
             debug!("Already have SD {:?}", data_name);
-            let error = ClientError::DataAlreadyExists(data_name);
+            let error = ClientError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = routing_node.send_put_failure(response_src,
                                                   response_dst,
