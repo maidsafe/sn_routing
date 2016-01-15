@@ -950,7 +950,12 @@ impl Core {
                 Ok(())
             }
             DirectMessage::BootstrapDeny => {
-                warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
+                if self.client_restriction {
+                    warn!("Connection failed: Proxy node needs a larger routing table to accept \
+                           clients.");
+                } else {
+                    warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
+                }
                 self.retry_bootstrap_with_blacklist(connection);
                 Ok(())
             }
@@ -975,8 +980,14 @@ impl Core {
                     return Ok(());
                 }
 
-                if !client_restriction {
-                    let group_size = ::kademlia_routing_table::group_size();
+                let group_size = ::kademlia_routing_table::group_size();
+                if client_restriction {
+                    if self.routing_table.len() < group_size {
+                        trace!("Client rejected: Routing table has {} entries. {} required.",
+                               self.routing_table.len(), group_size);
+                        return self.bootstrap_deny(connection);
+                    }
+                } else {
                     let joining_nodes_num = self.joining_nodes_num();
                     // Restrict the number of simultaneously joining nodes. If the network is still
                     // small, we need to accept `group_size` nodes, so that they can fill their
