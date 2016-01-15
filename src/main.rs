@@ -43,6 +43,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate chunk_store;
 extern crate crust;
+extern crate ctrlc;
 #[cfg(test)]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;

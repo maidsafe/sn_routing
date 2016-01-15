@@ -15,19 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use error::InternalError;
+use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation::deserialise;
+use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage};
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread;
+use xor_name::XorName;
+
+use error::Error;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
 use personas::pmid_manager::PmidManager;
 use personas::pmid_node::PmidNode;
 use personas::structured_data_manager::StructuredDataManager;
-use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage};
-use std::sync::{Arc, atomic, mpsc};
-use std::sync::atomic::AtomicBool;
 use types::{Refresh, RefreshValue};
-use xor_name::XorName;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
 pub type RoutingNode = ::routing::Node;
@@ -38,89 +41,112 @@ pub type RoutingNode = ::mock_routing::MockRoutingNode;
 #[allow(unused)]
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
-    routing_node: RoutingNode,
     immutable_data_manager: ImmutableDataManager,
     maid_manager: MaidManager,
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
-    receiver: mpsc::Receiver<Event>,
-    app_event_sender: Option<mpsc::Sender<Event>>,
-    should_stop: Option<Arc<AtomicBool>>,
+    stop_receiver: Option<Receiver<()>>,
+    app_event_sender: Option<Sender<Event>>,
 }
 
 impl Vault {
     pub fn run() {
+        let (stop_sender, stop_receiver) = mpsc::channel();
+
+        // Handle Ctrl+C to properly stop the vault instance.
+        // TODO: this should probably be moved over to main.
+        CtrlC::set_handler(move || {
+            let _ = stop_sender.send(());
+        });
+
         // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
-        unwrap_result!(Vault::new(None, None)).do_run();
+        let _ = unwrap_result!(Vault::new(None, stop_receiver).do_run());
     }
 
-    fn new(app_event_sender: Option<mpsc::Sender<Event>>,
-           should_stop: Option<Arc<AtomicBool>>)
-           -> Result<Vault, Error> {
+    fn new(app_event_sender: Option<Sender<Event>>, stop_receiver: Receiver<()>) -> Vault {
         ::sodiumoxide::init();
-        let (sender, receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(sender));
-        Ok(Vault {
-            routing_node: routing_node,
+
+        Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
             pmid_manager: PmidManager::new(),
             pmid_node: PmidNode::new(),
             structured_data_manager: StructuredDataManager::new(),
-            receiver: receiver,
+            stop_receiver: Some(stop_receiver),
             app_event_sender: app_event_sender,
-            should_stop: should_stop,
-        })
-    }
-
-    fn do_run(&mut self) {
-        loop {
-            match self.receiver.try_recv() {
-                Err(_) => {}
-                Ok(event) => {
-                    let _ = self.app_event_sender
-                                .clone()
-                                .and_then(|sender| Some(sender.send(event.clone())));
-                    info!("Vault {} received an event from routing: {:?}",
-                          unwrap_result!(self.routing_node.name()),
-                          event);
-                    match event {
-                        Event::Request(request) => self.on_request(request),
-                        Event::Response(response) => self.on_response(response),
-                        Event::Churn{ id, lost_close_node } => self.on_churn(id, lost_close_node),
-                        Event::Connected => self.on_connected(),
-                    };
-                }
-            }
-
-            if let &Some(ref arc) = &self.should_stop {
-                let ref should_stop = &*arc;
-                if should_stop.load(atomic::Ordering::Relaxed) {
-                    break;
-                }
-            }
-            ::std::thread::sleep(::std::time::Duration::from_millis(1));
         }
     }
 
-    fn on_request(&mut self, request: RequestMessage) {
+    fn do_run(&mut self) -> Result<(), Error> {
+        let (routing_sender, routing_receiver) = mpsc::channel();
+
+        let routing_node = try!(RoutingNode::new(routing_sender));
+        let routing_node1 = Arc::new(Mutex::new(Some(routing_node)));
+        let routing_node2 = routing_node1.clone();
+
+        // Take the stop_receiver from self, so we can move it into the stop
+        // thread;
+        let stop_receiver = self.stop_receiver.take().unwrap();
+
+        // Listen for stop event and destroy the routing node if one is
+        // received. Destroying it will close the routing event channel,
+        // stopping the main event loop.
+        let stop_thread_handle = thread::spawn(move || {
+            let _ = stop_receiver.recv();
+            let _ = routing_node1.lock().unwrap().take();
+
+            stop_receiver
+        });
+
+        for event in routing_receiver.iter() {
+            let routing_node = routing_node2.lock().unwrap();
+
+            if routing_node.is_none() {
+                break;
+            }
+
+            let routing_node = routing_node.as_ref().unwrap();
+
+            info!("Vault {} received an event from routing: {:?}",
+                  unwrap_result!(routing_node.name()),
+                  event);
+
+            let _ = self.app_event_sender
+                        .clone()
+                        .and_then(|sender| Some(sender.send(event.clone())));
+
+            match event {
+                Event::Request(request) => self.on_request(routing_node, request),
+                Event::Response(response) => self.on_response(routing_node, response),
+                Event::Churn{ id, lost_close_node } => self.on_churn(routing_node, id, lost_close_node),
+                Event::Connected => self.on_connected(),
+            }
+        }
+
+        // Return the stop_receiver back to self, in case we want to call do_run again.
+        self.stop_receiver = Some(stop_thread_handle.join().unwrap());
+
+        Ok(())
+    }
+
+    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) {
         if let Err(error) = match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
-                self.immutable_data_manager.handle_get(&self.routing_node, &request)
+                self.immutable_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::StructuredData(_, _), _)) => {
-                self.structured_data_manager.handle_get(&self.routing_node, &request)
+                self.structured_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
-                self.pmid_node.handle_get(&self.routing_node, &request)
+                self.pmid_node.handle_get(routing_node, &request)
             }
             // ================== Put ==================
             (&Authority::Client{ .. },
@@ -129,12 +155,12 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::StructuredData(_), _)) => {
-                self.maid_manager.handle_put(&self.routing_node, &request)
+                self.maid_manager.handle_put(routing_node, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
-                self.immutable_data_manager.handle_put(&self.routing_node, data, message_id)
+                self.immutable_data_manager.handle_put(routing_node, data, message_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
@@ -142,12 +168,12 @@ impl Vault {
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
-                self.pmid_manager.handle_put(&self.routing_node, data, message_id, pmid_node_name)
+                self.pmid_manager.handle_put(routing_node, data, message_id, pmid_node_name)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
              &RequestContent::Put(Data::ImmutableData(_), _)) => {
-                self.pmid_node.handle_put(&self.routing_node, &request)
+                self.pmid_node.handle_put(routing_node, &request)
             }
             // ================== Post ==================
             (&Authority::Client{ .. },
@@ -166,13 +192,13 @@ impl Vault {
         }
     }
 
-    fn on_response(&mut self, response: ResponseMessage) {
+    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) {
         match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::ImmutableData(_), _)) => {
-                self.immutable_data_manager.handle_get_success(&self.routing_node, &response)
+                self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(pmid_node_name),
@@ -198,11 +224,12 @@ impl Vault {
         }
     }
 
-    fn on_churn(&mut self, churn_event_id: MessageId, lost_close_node: Option<XorName>) {
-        self.maid_manager.handle_churn(&self.routing_node, &churn_event_id);
-        self.immutable_data_manager.handle_churn(&self.routing_node, &churn_event_id, lost_close_node);
-        self.structured_data_manager.handle_churn(&self.routing_node, &churn_event_id);
-        self.pmid_manager.handle_churn(&self.routing_node, &churn_event_id);
+    fn on_churn(&mut self, routing_node: &RoutingNode,
+                churn_event_id: MessageId, lost_close_node: Option<XorName>) {
+        self.maid_manager.handle_churn(routing_node, &churn_event_id);
+        self.immutable_data_manager.handle_churn(routing_node, &churn_event_id, lost_close_node);
+        self.structured_data_manager.handle_churn(routing_node, &churn_event_id);
+        self.pmid_manager.handle_churn(routing_node, &churn_event_id);
     }
 
     fn on_connected(&self) {
@@ -253,29 +280,31 @@ mod test {
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
                   RequestMessage, ResponseContent, ResponseMessage, StructuredData};
     use routing::Client as RoutingClient;
-    use std::sync::mpsc;
+    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::thread::{self, JoinHandle};
     use time::{Duration, SteadyTime};
     use utils::generate_random_vec_u8;
     use xor_name::XorName;
 
     struct VaultComms {
-        notifier: ::std::sync::mpsc::Receiver<(Event)>,
-        killer: ::std::sync::Arc<::std::sync::atomic::AtomicBool>,
-        join_handle: Option<::std::thread::JoinHandle<()>>,
+        notifier: Receiver<(Event)>,
+        killer: Sender<()>,
+        join_handle: Option<JoinHandle<()>>,
     }
 
     impl VaultComms {
         fn new(index: usize) -> VaultComms {
             println!("Starting vault {}", index);
-            let (sender, receiver) = ::std::sync::mpsc::channel();
-            let killer = ::std::sync::Arc::new(::std::sync::atomic::AtomicBool::new(false));
-            let mut vault = unwrap_result!(Vault::new(Some(sender), Some(killer.clone())));
-            let join_handle = Some(unwrap_result!(::std::thread::Builder::new()
+            let (event_sender, event_receiver) = mpsc::channel();
+            let (stop_sender, stop_receiver) = mpsc::channel();
+
+            let mut vault = Vault::new(Some(event_sender), stop_receiver);
+            let join_handle = Some(unwrap_result!(thread::Builder::new()
                                                       .name(format!("Vault {} worker", index))
-                                                      .spawn(move || vault.do_run())));
+                                                      .spawn(move || unwrap_result!(vault.do_run()))));
             let vault_comms = VaultComms {
-                notifier: receiver,
-                killer: killer,
+                notifier: event_receiver,
+                killer: stop_sender,
                 join_handle: join_handle,
             };
             let mut temp_comms = vec![vault_comms];
@@ -287,7 +316,7 @@ mod test {
         }
 
         fn stop(&mut self) {
-            self.killer.store(true, ::std::sync::atomic::Ordering::Relaxed);
+            let _ = self.killer.send(());
             if let Some(join_handle) = self.join_handle.take() {
                 unwrap_result!(join_handle.join());
             }
@@ -302,10 +331,10 @@ mod test {
 
     impl Client {
         fn new() -> Client {
-            let client_receiving = |routing_receiver: mpsc::Receiver<Event>,
-                                    network_event_sender: mpsc::Sender<Event>,
-                                    client_sender: mpsc::Sender<Data>| {
-                let _ = ::std::thread::spawn(move || {
+            let client_receiving = |routing_receiver: Receiver<Event>,
+                                    network_event_sender: Sender<Event>,
+                                    client_sender: Sender<Data>| {
+                let _ = thread::spawn(move || {
                     while let Ok(event) = routing_receiver.recv() {
                         match event {
                             Event::Request(request) => panic!("Received {:?}", request),
