@@ -27,23 +27,33 @@ use time;
 
 const STORE_REDUNDANCY: usize = 2;
 
-/// Network ExampleNode.
+/// A simple example node implementation for a network based on the Routing library.
 #[allow(unused)]
 pub struct ExampleNode {
+    /// The node interface to the Routing library.
     node: Node,
+    /// The receiver through which the Routing library will send events.
     receiver: ::std::sync::mpsc::Receiver<Event>,
+    /// A clone of the event sender passed to the Routing library.
     sender: ::std::sync::mpsc::Sender<Event>,
+    /// A map of the data chunks this node is storing.
     db: HashMap<XorName, Data>,
-    dm_accounts: HashMap<XorName, Vec<XorName>>, // DataName vs Vec<PmidNodes>
+    /// A map that contains for the name of each data chunk a list of nodes that are responsible
+    /// for storing that chunk.
+    dm_accounts: HashMap<XorName, Vec<XorName>>,
     client_accounts: HashMap<XorName, u64>,
     connected: bool,
-    client_request_cache: LruCache<XorName, Vec<Authority>>, /* DataName vs List of ClientAuth asking for data */
-    lost_node_cache: LruCache<XorName, XorName>, // DataName vs LostNode
+    /// A cache that contains for each data chunk name the list of client authorities that recently
+    /// asked for that data.
+    client_request_cache: LruCache<XorName, Vec<Authority>>,
+    /// A cache that contains for each data chunk a node that disconnected or left the close group.
+    /// These data chunks need to be relocated so that they have `STORE_REDUNDANCY` copies again.
+    lost_node_cache: LruCache<XorName, XorName>,
 }
 
 #[allow(unused)]
 impl ExampleNode {
-    /// Construct a new node.
+    /// Creates a new node and attempts to establish a connection to the network.
     pub fn new() -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
         let node = unwrap_result!(Node::new(sender.clone()));
@@ -61,7 +71,7 @@ impl ExampleNode {
         }
     }
 
-    /// Run event loop.
+    /// Runs the event loop, handling events raised by the Routing library.
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
             trace!("Received event: {:?}", event);
@@ -82,7 +92,7 @@ impl ExampleNode {
         }
     }
 
-    /// Allows external tests to send events.
+    /// Returns the event sender to allow external tests to send events.
     pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<Event> {
         self.sender.clone()
     }
@@ -395,15 +405,17 @@ impl ::std::fmt::Debug for ExampleNode {
     }
 }
 
-/// This can get defined for each of the personas in other crates
+/// Refresh messages.
 #[allow(unused)]
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
+    /// A message to a `ClientManager` to insert a new client.
     ForClientManager {
         id: MessageId,
         client_name: XorName,
         data: u64,
     },
+    /// A message to an `NaeManager` to add a new data chunk.
     ForNaeManager {
         id: MessageId,
         data_name: XorName,

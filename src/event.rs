@@ -19,21 +19,26 @@ use xor_name::XorName;
 use types::MessageId;
 use messages::{RequestMessage, ResponseMessage};
 
-/// An Event is received at the effective close group of B of a message flow < A | B >
+/// An Event raised by a `Node` or `Client` via its event sender.
+///
+/// These are sent by routing to the library's user. It allows the user to handle requests and
+/// responses, and to react to changes in the network.
+///
+/// `Request` and `Response` events from group authorities are only raised once the quorum has been
+/// reached, i. e. enough members of the group have sent the same message.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Event {
     /// Request.
     Request(RequestMessage),
     /// Response.
     Response(ResponseMessage),
-    /// Churn reports a change in close group and optionally a node that is no longer a part of
-    /// close group
+    /// A churn event: a node left or joined this node's close group.
     Churn {
-        /// Churn Id
+        /// The unique ID of this `Churn` event.
         id: MessageId,
-        /// If any close node was lost during this churn event
+        /// The name of the node that left the close group, if any.
         lost_close_node: Option<XorName>,
     },
-    /// Connected.
+    /// The client has successfully connected to a proxy node on the network.
     Connected,
 }

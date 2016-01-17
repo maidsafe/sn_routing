@@ -46,7 +46,7 @@ pub enum DirectMessage {
     BootstrapIdentify {
         /// The bootstrape node's keys and name.
         public_id: ::id::PublicId,
-        /// quorum size, dynamically calculated
+        /// The dynamically calculated quorum size the client's accumulator should use.
         current_quorum_size: usize,
     },
     /// Sent to the client to indicate that this node is not available as a bootstrap node.
@@ -58,33 +58,35 @@ pub enum DirectMessage {
         serialised_public_id: Vec<u8>,
         /// Signature of the client.
         signature: sign::Signature,
-        /// Indicate whether we intend to remain a client.
+        /// Indicate whether we intend to remain a client, as opposed to becoming a routing node.
         client_restriction: bool,
     },
-    /// Sent from a node to a node.
+    /// Sent from a node to a node, to allow the latter to add the former to its routing table.
     NodeIdentify {
-        /// keys and claimed name, serialised outside routing
+        /// Keys and claimed name, serialised outside routing.
         serialised_public_id: Vec<u8>,
-        /// Signature of the originator of this message
+        /// Signature of the originator of this message.
         signature: sign::Signature,
     },
 }
 
-/// A wrapper for all messages sent form node to node.
-/// Allows nodes to be sure there has been no alteration of message in transit. Also defeats
-/// MiTM attacks
+/// And individual hop message that represents a part of the route of a message in transit.
+///
+/// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
+/// The `signature` is from the node that sends this directly to a node in its routing table. To
+/// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct HopMessage {
-    /// wrapped signed message
+    /// Wrapped signed message.
     content: SignedMessage,
-    /// name claimed to have sent hop message
+    /// Name of the previous node in the `content`'s route.
     name: XorName,
-    /// signatire to be validated against public key held by name
+    /// Signature to be validated against `name`'s public key.
     signature: sign::Signature,
 }
 
 impl HopMessage {
-    /// Wrap a signed message for transmission to next hop.
+    /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
                name: XorName,
                sign_key: &sign::SecretKey)
@@ -96,9 +98,11 @@ impl HopMessage {
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
     }
-    /// Validate message is signed by public key contained in message.
-    /// this does not validate the message came from know node. That requires a check against
-    /// the routing table of the node to identify the name associated with the PublicKey
+
+    /// Validate that the message is signed by `verification_key` contained in message.
+    ///
+    /// This does not imply that the message came from a known node. That requires a check against
+    /// the routing table to identify the name associated with the `verification_key`.
     pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.name)));
         if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
@@ -107,12 +111,16 @@ impl HopMessage {
             Err(RoutingError::FailedSignature)
         }
     }
-    /// return a signed message, does not validate message. [#verify] must be called prior
-    /// to ensure sender is valid and validly signed he message
-    pub fn extract(&self) -> (SignedMessage, XorName) {
-        (self.content.clone(), self.name.clone())
+
+    /// Returns the `SignedMessage` and the `name` of the previous routing node.
+    ///
+    /// Does not validate the message! [#verify] must be called to ensure that the sender is valid
+    /// and signed the message.
+    pub fn content(&self) -> &SignedMessage {
+        &self.content
     }
-    /// The name asociated with te hop message.
+
+    /// The name of the previous node in the signed message's route.
     pub fn name(&self) -> &XorName {
         &self.name
     }
@@ -123,14 +131,16 @@ impl HopMessage {
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
-    /// Claimed public_id of a node/client. If cline then it is self verifyable. For nodes we need
-    /// to confirm this PublicId via a network message to the group of the claimed name.
+    /// Claimed public ID of a node or client.
+    ///
+    /// For clients this is easily verifiable since their name is computed from the ID. For nodes it
+    /// needs to be confirmed by their `NodeManager`.
     public_id: PublicId,
     signature: sign::Signature,
 }
 
 impl SignedMessage {
-    /// Construct a signed message wrapper around a routing message.
+    /// Creates a `SignedMessage` with the given `content` and signed by the given `full_id`.
     pub fn new(content: RoutingMessage, full_id: &FullId) -> Result<SignedMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
         Ok(SignedMessage {
@@ -139,7 +149,8 @@ impl SignedMessage {
             signature: sign::sign_detached(&bytes_to_sign, full_id.signing_private_key()),
         })
     }
-    /// confirm signature against `claimed` PublicId contained in signed message
+
+    /// Confirms the signature against the claimed public ID.
     pub fn check_integrity(&self) -> Result<(), RoutingError> {
         let signed_bytes = try!(serialise(&(&self.content, &self.public_id)));
         if sign::verify_detached(&self.signature,
@@ -151,35 +162,36 @@ impl SignedMessage {
         }
     }
 
-    /// The routing message that was singed.
+    /// The routing message that was signed.
     pub fn content(&self) -> &RoutingMessage {
         &self.content
     }
 
-    /// PublicId associated with the signed message
+    /// The `PublicId` associated with the signed message
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
     }
 }
 
-/// Variant type to old `either` a request or response
+/// Variant type to hold `either` a request or response.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum RoutingMessage {
-    /// outgoing RPC type message.
+    /// Outgoing RPC type message.
     Request(RequestMessage),
     /// Incoming answer to request RPC.
     Response(ResponseMessage),
 }
 
 impl RoutingMessage {
-    /// Return source authority of routing message.
+    /// Returns the sender, i. e. the source authority of the routing message.
     pub fn src(&self) -> &Authority {
         match *self {
             RoutingMessage::Request(ref msg) => &msg.src,
             RoutingMessage::Response(ref msg) => &msg.src,
         }
     }
-    /// Return destination authority of routing message.
+
+    /// Returns the recipient, i. e. the destination authority of routing message.
     pub fn dst(&self) -> &Authority {
         match *self {
             RoutingMessage::Request(ref msg) => &msg.dst,
@@ -191,61 +203,66 @@ impl RoutingMessage {
 /// A request message wrapper
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct RequestMessage {
-    /// Source address and persona type
+    /// Source authority
     pub src: Authority,
-    /// Destination target address (may be a group)
+    /// Destination authority
     pub dst: Authority,
-    /// Varient of request types
+    /// The request content
     pub content: RequestContent,
 }
 
 /// A response message wrapper
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct ResponseMessage {
-    /// Source address and persona type
+    /// Source authority
     pub src: Authority,
-    /// Destination target address (may be a group)
+    /// Destination authority
     pub dst: Authority,
-    /// varient of response types
+    /// The response content
     pub content: ResponseContent,
 }
 
-/// types of requests allowed on network
+/// The request types
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum RequestContent {
     // ---------- Internal ------------
-    /// Ask network to alter your PublciId name and forward to appropriate group
-    /// Client -> NaeManager
+    /// Ask the network to alter your `PublicId` name.
+    ///
+    /// This is sent by a `Client` to its `NaeManager` with the intent to become a routing node with
+    /// a new name chosen by the `NaeManager`.
     GetNetworkName {
-        /// Your PublicId (public keys and name)
+        /// The client's `PublicId` (public keys and name)
         current_id: PublicId,
     },
-    /// Receiving group of relocatted name will get this message
+    /// Notify a joining node's `NodeManager` so that it expects a `GetCloseGroup` request from it.
     ExpectCloseNode {
-        /// Your PublicId (public keys and name)
+        /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
     },
-    /// Ask each memeber of a group near an address for the PublicId of that node
+    /// Request the `PublicId`s of the recipient's close group.
+    ///
+    /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
+    /// `NodeManager`'s members.
     GetCloseGroup,
-    /// Request a connection to this node
+    /// Request a direct connection to the recipient.
     Connect,
-    /// Send our endpoints encrypted toa node we wish to connect to and have the keys for
+    /// Send our endpoints encrypted to a node we wish to connect to and have the keys for.
     Endpoints {
-        /// encrypted crust endpoints (socket addr and protocol)
+        /// Encrypted crust endpoints (socket address and protocol).
         encrypted_endpoints: Vec<u8>,
-        /// nonce used to provide a salt in the encrytped message
+        /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
-    /// Ask each memeber of a group near a node address for the PublicId
+    /// Ask each member of a group near a node address for the `PublicId`.
     GetPublicId,
-    /// Ask for a publicId but provide our endpoints encrytped
+    /// Ask for a `PublicId` but provide our endpoints encrytped.
     GetPublicIdWithEndpoints {
-        /// encrypted crust endpoints (socket addr and protocol)
+        /// Encrypted crust endpoints (socket address and protocol).
         encrypted_endpoints: Vec<u8>,
-        /// nonce used to provide a salt in the encrytped message
+        /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
-    /// Message from upper layers sending network state on any network churn event
+    /// Message from upper layers sending network state on any network churn event.
     Refresh(Vec<u8>),
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
@@ -258,45 +275,50 @@ pub enum RequestContent {
     Delete(Data, MessageId),
 }
 
-/// Types of respnses to exepect on the network.
-/// All responses will map to a specific request and where request was from a single node
-/// or client the response will contatin the singed request. This prevents forgery or co-ersion
-/// attacks.
+/// The response types
+///
+/// All responses map to a specific request, and where the request was from a single node
+/// or client, the response will contain the signed request to prevent forgery.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum ResponseContent {
     // ---------- Internal ------------
-    /// Reply with the altered publicId
-    /// NaeManager -> Client
+    /// Reply with the new `PublicId` for the joining node.
+    ///
+    /// Sent from the `NaeManager` to the `Client`.
     GetNetworkName {
-        /// Supplied publicId with name altered
+        /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
     },
-    /// Reply with the requested PublciId
-    /// NodeManager -> Client | ManagedNode
+    /// Reply with the requested `PublicId`.
+    ///
+    /// Sent from the `NodeManager` to the joining node.
     GetPublicId {
-        /// The relocatted PublciId
+        /// The requested `PublicId`
         public_id: PublicId,
     },
-    /// Send our publicId along with senders encrypted endpoints bak to sender
-    /// ManagedNode -> ManagedNode | client
+    /// Reply with the `PublicId` along with the sender's encrypted endpoints
+    ///
+    /// Sent from a `ManagedNode` to another node or client.
     GetPublicIdWithEndpoints {
-        /// Our publicId
+        /// Our `PublicId`
         public_id: PublicId,
-        /// their endpoints
+        /// Their endpoints
         encrypted_endpoints: Vec<u8>,
-        /// message salt
+        /// Message salt
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
-    /// Return the close PublicId's back to requestor
-    /// NodeManager -> client | ManagedNode
+    /// Return the close `PublicId`s back to the requestor.
+    ///
+    /// Sent from a `NodeManager` to a node or client.
     GetCloseGroup {
-        /// Our close group publci Id's
+        /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
     },
     // ---------- External ------------
-    /// Should not be ignored. The data requested sent back
-    /// (ManagedNode (cache) | NaeManagers) -> client
-    /// ManagedNode -> NaeManagers
+    /// Reply with the requested data (may not be ignored)
+    ///
+    /// Sent from a `ManagedNode` to an `NaeManager`, and from there to a `Client`, although this
+    /// may be shortcut if the data is in a node's cache.
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
     PutSuccess(sha512::Digest, MessageId),
@@ -304,40 +326,40 @@ pub enum ResponseContent {
     PostSuccess(sha512::Digest, MessageId),
     /// Success token for delete  (may be ignored)
     DeleteSuccess(sha512::Digest, MessageId),
-    /// Error for Get, includes signed request to prevent injection attacks
+    /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
         id: MessageId,
-        /// Originators signed request
+        /// Originator's signed request
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Put, includes signed request to prevent injection attacks
     PutFailure {
         /// Unique message identifier
         id: MessageId,
-        /// Originators signed request
+        /// Originator's signed request
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for Post, includes signed request to prevent injection attacks
     PostFailure {
         /// Unique message identifier
         id: MessageId,
-        /// Originators signed request
+        /// Originator's signed request
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
     /// Error for delete, includes signed request to prevent injection attacks
     DeleteFailure {
         /// Unique message identifier
         id: MessageId,
-        /// Originators signed request
+        /// Originator's signed request
         request: RequestMessage,
-        /// Error type sent back, may be injected form upper layers
+        /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
 }

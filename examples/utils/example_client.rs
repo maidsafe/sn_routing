@@ -28,24 +28,33 @@ use self::xor_name::XorName;
 use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
                     Client};
 
-/// Network Client.
+/// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
 pub struct ExampleClient {
+    /// The client interface to the Routing library.
     routing_client: Client,
+    /// The receiver through which the Routing library will send events.
     receiver: mpsc::Receiver<Event>,
+    /// This client's ID.
     full_id: FullId,
 }
 
 #[allow(unused)]
 impl ExampleClient {
-    /// Client constructor.
+    /// Creates a new client and attempts to establish a connection to the network.
     pub fn new() -> ExampleClient {
         let (sender, receiver) = mpsc::channel::<Event>();
+
+        // Generate new key pairs. The client's name will be computed from them. This is a
+        // requirement for clients: If the name does not match the keys, it will be rejected by the
+        // network.
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
         let routing_client = Client::new(sender, Some(full_id)).unwrap();
 
+        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
+        // requests to the network.
         for it in receiver.iter() {
             if let Event::Connected = it {
                 println!("Client Connected to network");
@@ -60,7 +69,9 @@ impl ExampleClient {
         }
     }
 
-    /// Get from network.
+    /// Send a `Get` request to the network and return the data received in the response.
+    ///
+    /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataRequest) -> Option<Data> {
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
@@ -87,7 +98,9 @@ impl ExampleClient {
         None
     }
 
-    /// Put to network.
+    /// Send a `Put` request to the network.
+    ///
+    /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
     pub fn put(&self, data: Data) {
         let data_name = data.name();
         unwrap_result!(self.routing_client

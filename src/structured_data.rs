@@ -22,10 +22,10 @@ use xor_name::XorName;
 
 /// Mutable structured data.
 ///
-/// The name is computed from the type tag and identifier.
+/// The name is computed from the type tag and identifier, so these two fields are immutable.
 ///
 /// These types may be stored unsigned with previous and current owner keys
-/// set to the same keys. Updates though require a signature to validate
+/// set to the same keys. Updates require a signature to validate.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct StructuredData {
     type_tag: u64,
@@ -39,7 +39,7 @@ pub struct StructuredData {
 
 
 impl StructuredData {
-    /// Constructor
+    /// Creates a new `StructuredData` signed with `signing_key`.
     pub fn new(type_tag: u64,
                identifier: XorName,
                version: u64,
@@ -80,10 +80,12 @@ impl StructuredData {
         XorName(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
 
-    /// replace this data item with an updated version if such exists, otherwise fail.
-    /// This is done this way to allow types to be created and previous_owner_signatures added one by one
-    /// To transfer ownership the current owner signs over the data, the previous owners field
-    /// must have the previous owners of version - 1 as the current owners of that last version.
+    /// Replaces this data item with the given updated version if the update is valid, otherwise
+    /// returns an error.
+    ///
+    /// This allows types to be created and `previous_owner_signatures` added one by one.
+    /// To transfer ownership, the current owner signs over the data; the previous owners field
+    /// must have the previous owners of `version - 1` as the current owners of that last version.
     pub fn replace_with_other(&mut self,
                               other: StructuredData)
                               -> Result<(), ::error::RoutingError> {
@@ -99,12 +101,18 @@ impl StructuredData {
         Ok(())
     }
 
-    /// Returns name and validates invariants
+    /// Returns the name, computed from the type tag and identifier.
     pub fn name(&self) -> XorName {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
-    /// Validate...
+    /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
+    ///
+    /// An update is valid if it doesn't change type tag or identifier (these are immutable),
+    /// increases the version by 1 and is signed by (more than 50% of) the owners.
+    ///
+    /// In case of an ownership transfer, the `previous_owner_keys` in `other` must match the
+    /// `current_owner_keys` in `self`.
     pub fn validate_self_against_successor(&self,
                                            other: &StructuredData)
                                            -> Result<(), ::error::RoutingError> {
@@ -123,7 +131,7 @@ impl StructuredData {
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
-    /// Confirms *unique and valid* owner_signatures are at least 50% of total owners
+    /// Confirms *unique and valid* owner_signatures are more than 50% of total owners.
     fn verify_previous_owner_signatures(&self,
                                         owner_keys: &[::sodiumoxide::crypto::sign::PublicKey])
                                         -> Result<(), ::error::RoutingError> {
@@ -174,7 +182,9 @@ impl StructuredData {
         Ok(enc.into_bytes())
     }
 
-    /// Returns number of previous_owner_signatures still required (if any, 0 means this is complete)
+    /// Adds a signature with the given `secret_key` to the `previous_owner_signatures` and returns
+    /// the number of signatures that are still required. If more than 50% of the previous owners
+    /// have signed, 0 is returned and validation is complete.
     pub fn add_signature(&mut self,
                          secret_key: &::sodiumoxide::crypto::sign::SecretKey)
                          -> Result<usize, ::error::RoutingError> {
@@ -186,10 +196,10 @@ impl StructuredData {
         } else {
             &self.previous_owner_keys
         };
-        Ok(((owner_keys.len() + 1) / 2) - self.previous_owner_signatures.len())
+        Ok(((owner_keys.len() / 2) + 1).saturating_sub(self.previous_owner_signatures.len()))
     }
 
-    /// Overwrite any existing signatures with the new signatures provided
+    /// Overwrite any existing signatures with the new signatures provided.
     pub fn replace_signatures(&mut self,
                               new_signatures: Vec<::sodiumoxide::crypto::sign::Signature>) {
         self.previous_owner_signatures = new_signatures;
@@ -386,13 +396,48 @@ mod test {
                                          vec![],
                                          owner_keys.clone(),
                                          vec![],
+                                         None) {
+            Ok(mut structured_data) => {
+                // After one signature, one more is required to reach majority.
+                assert_eq!(structured_data.add_signature(&keys1.1).unwrap(), 1);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_err());
+                // Two out of three is enough.
+                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Three out of three is also fine.
+                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+            }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn four_owners() {
+        let keys1 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys3 = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys4 = ::sodiumoxide::crypto::sign::gen_keypair();
+
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
+
+        match super::StructuredData::new(0,
+                                         rand::random(),
+                                         0,
+                                         vec![],
+                                         owner_keys.clone(),
+                                         vec![],
                                          Some(&keys1.1)) {
             Ok(mut structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           None);
-                assert_eq!(structured_data.add_signature(&keys2.1).ok(), Some(0));
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
-                           Some(()));
+                // Two signatures are not enough because they don't have a strict majority.
+                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 1);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Three out of four is enough.
+                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                // Four out of four is also fine.
+                assert_eq!(structured_data.add_signature(&keys4.1).unwrap(), 0);
+                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
