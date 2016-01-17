@@ -82,7 +82,7 @@ mod test {
 
     #[test]
     fn data_name() {
-        // name() resolves correctly for StructuedData
+        // name() resolves correctly for StructuredData
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
@@ -116,7 +116,7 @@ mod test {
 
     #[test]
     fn data_payload_size() {
-        // payload_size() resolves correctly for StructuedData
+        // payload_size() resolves correctly for StructuredData
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match ::structured_data::StructuredData::new(0,
