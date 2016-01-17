@@ -1,21 +1,31 @@
 # Routing - Change Log
 
+## [0.6.2]
+- Reject clients if the routing table is too small.
+- Fix computation of remaining required signatures for StructuredData.
+- Limit the number of concurrently joining nodes.
+- Remove unneeded files.
+- Expand documentation.
+- Distinct message IDs for added and lost nodes.
+- Ignore double puts in the example.
+
+## [0.6.1]
+- Update core to send on only first connection
+
 ## [0.6.0]
- - Update core to send on only first connection
-## [0.6.0]
- - Further updates to examples
- - Moved CI scripts to use Stable Rust
+- Further updates to examples
+- Moved CI scripts to use Stable Rust
 
 ## [0.5.3]
- - Getting examples updated
- - Updating the API to expose the routing node name and close group
+- Getting examples updated
+- Updating the API to expose the routing node name and close group
 
 ## [0.5.2]
- - Bug fix - Blocking InterfaceError not returning
- - Changing mutable to immutable for stop() function in routing.rs
+- Bug fix - Blocking InterfaceError not returning
+- Changing mutable to immutable for stop() function in routing.rs
 
 ## [0.5.1]
- - Expose ImmutableDataType
+- Expose ImmutableDataType
 
 ## [0.5.0]
 - Cleanup of routing API.
