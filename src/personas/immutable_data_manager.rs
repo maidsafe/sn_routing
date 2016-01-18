@@ -60,6 +60,15 @@ enum QueriedDataHolder {
     Responded(DataHolder),
 }
 
+impl QueriedDataHolder {
+    pub fn name(&self) -> &XorName {
+        match self {
+            &QueriedDataHolder::PendingResponse(ref name) => name,
+            &QueriedDataHolder::Responded(ref data_holder) => data_holder.name(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct MetadataForGetRequest {
     pub requests: Vec<RequestMessage>,
@@ -132,100 +141,27 @@ impl ImmutableDataManager {
             }
         };
 
-        match self.ongoing_gets.get_mut(&data_name) {
-            Some(metadata) => {
-                // If we've already received the chunk, send it to the new requester.  Otherwise
-                // add the request to the others for later handling.
-                match metadata.data {
-                    Some(ref data) => {
-                        let src = request.dst.clone();
-                        let dst = request.src.clone();
-                        let _ = routing_node.send_get_success(src,
-                                                              dst,
-                                                              Data::ImmutableData(data.clone()),
-                                                              message_id.clone());
-                    }
-                    None => {
-                        metadata.requests.push(request.clone());
-                    }
-                }
-            }
-            None => {
-                // This is new cache entry
-                let entry = MetadataForGetRequest::new(request, pmid_nodes);
-                for good_node in entry.pmid_nodes.iter() {
-//                    send Get
-                }
-                self.ongoing_gets.insert(data_name, entry);
+        {
+            // If there's already a cached get request, handle it here and return
+            if let Some(metadata) = self.ongoing_gets.get_mut(&data_name) {
+                return Ok(Self::reply_with_data_else_cache_request(routing_node, request, &message_id, metadata));
             }
         }
 
+        // This is new cache entry
+        let entry = MetadataForGetRequest::new(request, pmid_nodes);
+        for good_node in entry.pmid_nodes.iter() {
+            let src = request.dst.clone();
+            let dst = Authority::ManagedNode(good_node.name().clone());
+            let data_request = DataRequest::ImmutableData(data_name.clone(), ImmutableDataType::Normal);
+            debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
+                   routing_node.name(),
+                   data_name,
+                   dst);
+            let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
+        }
+        let _ = self.ongoing_gets.insert(data_name, entry);
 
-
-
-
-
-        // // Cache the request
-        // debug!("ImmutableDataManager {:?} cached request {:?}",
-        //        routing_node.name(),
-        //        request);
-        // // FIXME - should append to requests in the case of a pre-existing request for this chunk
-        // let _ = self.request_cache.insert(data_name, request.clone());
-
-        // // Before querying the records, first ensure all records are valid
-        // let ongoing_gets = self.ongoing_gets.retrieve_all();
-        // let mut failing_entries = Vec::new();
-        // let mut fetching_list = HashSet::new();
-        // fetching_list.insert(data_name.clone());
-        // for ongoing_get in ongoing_gets {
-        //     if ongoing_get.1 + Duration::seconds(10) < SteadyTime::now() {
-        //         debug!("ImmutableDataManager {:?} removing pmid_node {:?} for chunk {:?}",
-        //                routing_node.name(),
-        //                (ongoing_get.0).1,
-        //                (ongoing_get.0).0);
-        //         // self.remove_pmid_node_from_account(&(ongoing_get.0).0, &(ongoing_get.0).1);
-        //         // Starts fetching immediately no matter how many alive pmid_nodes left over
-        //         // so that correspondent PmidManagers can be notified ASAP, also reduce the risk
-        //         // of account status not synchronized among the DataManagers
-        //         //         let _ = self.replicate_to((ongoing_get.0).0).and_then(
-        //         //                 fetching_list.insert((ongoing_get.0).0.clone()));
-        //         fetching_list.insert((ongoing_get.0).0.clone());
-        //         failing_entries.push(ongoing_get.0.clone());
-        //         // if self.failed_pmid_nodes.contains_key(&(ongoing_get.0).0) {
-        //         //     match self.failed_pmid_nodes.get_mut(&(ongoing_get.0).0) {
-        //         //         Some(ref mut pmid_nodes) => pmid_nodes.push((ongoing_get.0).1.clone()),
-        //         //         None => error!("Failed to insert failed_pmid_node in the cache."),
-        //         //     };
-        //         // } else {
-        //         //     let _ = self.failed_pmid_nodes
-        //         //                 .insert((ongoing_get.0).0.clone(), vec![(ongoing_get.0).1.clone()]);
-        //         // }
-        //     }
-        // }
-        // for failed_entry in failing_entries {
-        //     let _ = self.ongoing_gets.remove(&failed_entry);
-        // }
-        // for fetch_name in fetching_list.iter() {
-        //     debug!("ImmutableDataManager {:?} having {:?} records for chunk {:?}",
-        //            routing_node.name(),
-        //            self.accounts.contains_key(&fetch_name),
-        //            fetch_name);
-        //     if let Some(account) = self.accounts.get(&data_name) {
-        //         for pmid_node in account.iter() {
-        //             let src = Authority::NaeManager(fetch_name.clone());
-        //             let dst = Authority::ManagedNode(pmid_node.name().clone());
-        //             let data_request = DataRequest::ImmutableData(fetch_name.clone(), ImmutableDataType::Normal);
-        //             debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
-        //                    routing_node.name(),
-        //                    fetch_name,
-        //                    dst);
-        //             let _ = routing_node.send_get_request(src, dst, data_request, message_id.clone());
-        //             let _ = self.ongoing_gets
-        //                         .insert((fetch_name.clone(), pmid_node.name().clone()),
-        //                                 SteadyTime::now());
-        //         }
-        //     }
-        // }
         Ok(())
     }
 
@@ -241,7 +177,7 @@ impl ImmutableDataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node, &data_name));
+        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node, &data_name, vec![]));
         debug!("ImmutableDataManager chosen {:?} as pmid_nodes for chunk {:?}",
                target_pmid_nodes,
                data_name);
@@ -269,26 +205,41 @@ impl ImmutableDataManager {
         };
         let data_name = data.name();
 
-        // Respond if there is a corresponding cached request.
-        // if self.request_cache.contains_key(&data_name) {
-        //     match self.request_cache.remove(&data_name) {
-        //         Some(request) => {
-        //             // for request in requests {
-        //             let src = response.dst.clone();
-        //             let dst = request.src;
-        //             let _ = routing_node.send_get_success(src,
-        //                                                   dst,
-        //                                                   Data::ImmutableData(data.clone()),
-        //                                                   message_id.clone());
-        //             // }
-        //         }
-        //         None => {
-        //             debug!("Failed to find any requests for get response {:?}",
-        //                    response)
-        //         }
-        //     };
-        // }
-        Ok(())
+        let mut result = Err(InternalError::FailedToFindCachedRequest(message_id.clone()));
+        if let Some(metadata) = self.ongoing_gets.get_mut(&data_name) {
+            result = Ok(());
+            // Reply to any unanswered requests
+            while let Some(request) = metadata.requests.pop() {
+                let src = request.dst.clone();
+                let dst = request.src;
+                let _ = routing_node.send_get_success(src,
+                                                      dst,
+                                                      Data::ImmutableData(data.clone()),
+                                                      message_id.clone());
+            }
+
+            // Mark the responder as "good"
+            let predicate = |elt: &QueriedDataHolder| {
+                match elt {
+                    &QueriedDataHolder::PendingResponse(ref name) => name == response.src.get_name(),
+                    &QueriedDataHolder::Responded(_) => false,
+                }
+            };
+            if let Some(pmid_node_index) = metadata.pmid_nodes.iter().position(predicate) {
+                let good_name = DataHolder::Good(metadata.pmid_nodes.remove(pmid_node_index).name().clone());
+                let _ = metadata.pmid_nodes.push(QueriedDataHolder::Responded(good_name));
+            }
+
+            // Keep the data with the cached metadata in case further get requests arrive for it
+            if metadata.data.is_none() {
+                metadata.data = Some(data.clone());
+            }
+        }
+
+        try!(self.check_ongoing_gets(routing_node, &data_name));
+        result
+    }
+
 
         // let _ = self.ongoing_gets.remove(&(response.name(), request.src.get_name().clone()));
         // match self.failed_pmid_nodes.remove(&response.name()) {
@@ -313,7 +264,6 @@ impl ImmutableDataManager {
         //     let location = Authority::ManagedNode(pmid_node);
         //     self.routing.put_request(our_authority.clone(), location, response.clone());
         // }
-    }
 
     pub fn handle_get_failure(&mut self,
                               _pmid_node: XorName,
@@ -390,12 +340,97 @@ impl ImmutableDataManager {
         // }
     }
 
+    fn reply_with_data_else_cache_request(routing_node: &RoutingNode, request: &RequestMessage, message_id: &MessageId, metadata: &mut MetadataForGetRequest) {
+        // If we've already received the chunk, send it to the new requester.  Otherwise
+        // add the request to the others for later handling.
+        match metadata.data {
+            Some(ref data) => {
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let _ = routing_node.send_get_success(src,
+                                                      dst,
+                                                      Data::ImmutableData(data.clone()),
+                                                      message_id.clone());
+            }
+            None => {
+                metadata.requests.push(request.clone());
+            }
+        }
+    }
+
+    fn check_ongoing_gets(&mut self, routing_node: &RoutingNode, data_name: &XorName) -> Result<(), InternalError> {
+        let mut finished = false;
+        let mut new_pmid_nodes = HashSet::<DataHolder>::new();
+        if let Some(metadata) = self.ongoing_gets.get_mut(&data_name) {
+            // Count the good holders, but just return from this function if any queried holders
+            // haven't responded yet
+            let mut good_holder_count = 0;
+            for queried_data_holder in metadata.pmid_nodes.iter() {
+                match queried_data_holder {
+                    &QueriedDataHolder::PendingResponse(_) => return Ok(()),
+                    &QueriedDataHolder::Responded(DataHolder::Good(_)) => good_holder_count += 1,
+                    &QueriedDataHolder::Responded(DataHolder::Failed(_)) => (),
+                }
+            }
+
+            if good_holder_count >= MIN_REPLICANTS {
+                // We can now delete this cached get request with no need for further action
+                finished = true;
+            } else if let Some(ref data) = metadata.data {
+                // Put to new close peers and delete this cached get request
+                let mut good_nodes = HashSet::<DataHolder>::new();
+                let mut nodes_to_exclude = vec![];
+                for queried_data_holder in metadata.pmid_nodes.iter() {
+                    match queried_data_holder {
+                        &QueriedDataHolder::Responded(DataHolder::Good(ref name)) => {
+                            let _ = good_nodes.insert(DataHolder::Good(name.clone()));
+                        }
+                        &QueriedDataHolder::Responded(DataHolder::Failed(ref name)) => {
+                            nodes_to_exclude.push(name);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node, data_name, nodes_to_exclude));
+                let message_id = MessageId::new();
+                for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
+                    let src = Authority::NaeManager(data_name.clone());
+                    let dst = Authority::NodeManager(new_pmid_node.name().clone());
+                    new_pmid_nodes.insert(new_pmid_node.clone());
+                    let _ = routing_node.send_put_request(src,
+                                                          dst,
+                                                          Data::ImmutableData(data.clone()),
+                                                          message_id.clone());
+                }
+                finished = true;
+            } else {
+                // Recover the data from backup and/or sacrificial locations
+                metadata.pmid_nodes.clear();
+                // TODO - actually retrieve the data
+            }
+        }
+
+        if finished {
+            let _ = self.ongoing_gets.remove(data_name);
+        }
+
+        if !new_pmid_nodes.is_empty() {
+            if let Some(pmid_nodes) = self.accounts.get_mut(data_name) {
+                *pmid_nodes = pmid_nodes.union(&new_pmid_nodes).cloned().collect();
+            }
+        }
+
+        Ok(())
+    }
+
     fn choose_target_pmid_nodes(routing_node: &RoutingNode,
-                                data_name: &XorName)
+                                data_name: &XorName,
+                                nodes_to_exclude: Vec<&XorName>)
                                 -> Result<HashSet<DataHolder>, InternalError> {
         let own_name = try!(routing_node.name());
         let mut target_pmid_nodes = try!(routing_node.close_group());
         target_pmid_nodes.push(own_name.clone());
+        target_pmid_nodes.retain(|elt| !nodes_to_exclude.iter().any(|exclude| elt == *exclude));
         Self::sort_from_target(&mut target_pmid_nodes, data_name);
         target_pmid_nodes.truncate(REPLICANTS);
         Ok(target_pmid_nodes.into_iter().map(|pmid_node| DataHolder::Good(pmid_node)).collect::<HashSet<DataHolder>>())
