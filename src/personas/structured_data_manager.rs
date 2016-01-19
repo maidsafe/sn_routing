@@ -98,29 +98,18 @@ impl StructuredDataManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        // SD using PUT for the first copy so the request can pass through MaidManager,
-        //    then POST to update and transfer in case of churn
-        //       so if the data exists, then the put shall be rejected
-        //          if the data does not exist, and the request is not from SDM(i.e. a transfer),
-        //              then the post shall be rejected
-        //       in addition to above, POST shall check the ownership
-        let serialised_data = try!(self.chunk_store.get(&new_data.name()));
-        let _ = serialisation::deserialise::<StructuredData>(&serialised_data)
-                    .ok()
-                    .and_then(|mut existing_data| {
-                        debug!("StructuredDataManager updating {:?} to {:?}",
-                               existing_data,
-                               new_data);
-                        existing_data.replace_with_other(new_data.clone())
-                                     .ok()
-                                     .and_then(|()| serialisation::serialise(&existing_data).ok())
-                                     .and_then(|serialised| Some(self.chunk_store.put(&new_data.name(), &serialised)))
-                    });
+        let mut serialised_data = try!(self.chunk_store.get(&new_data.name()));
+        let mut existing_data = try!(serialisation::deserialise::<StructuredData>(&serialised_data));
+        debug!("StructuredDataManager updating {:?} to {:?}",
+               existing_data,
+               new_data);
+        try!(existing_data.replace_with_other(new_data.clone()));
+        serialised_data = try!(serialisation::serialise(&existing_data));
+        try!(self.chunk_store.put(&new_data.name(), &serialised_data));
         Ok(())
     }
 
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
-        // TODO: error handling
         let _ = self.chunk_store.delete(&structured_data.name());
         Ok(try!(self.chunk_store.put(&structured_data.name(),
                                      &try!(serialisation::serialise(&structured_data)))))

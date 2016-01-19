@@ -108,19 +108,21 @@ impl Vault {
 
             let routing_node = routing_node.as_ref().unwrap();
 
-            info!("Vault {} received an event from routing: {:?}",
-                  unwrap_result!(routing_node.name()),
-                  event);
+            trace!("Vault {} received an event from routing: {:?}",
+                   unwrap_result!(routing_node.name()),
+                   event);
 
             let _ = self.app_event_sender
                         .clone()
                         .and_then(|sender| Some(sender.send(event.clone())));
 
-            match event {
+            if let Err(error) = match event {
                 Event::Request(request) => self.on_request(routing_node, request),
                 Event::Response(response) => self.on_response(routing_node, response),
                 Event::Churn{ id, lost_close_node } => self.on_churn(routing_node, id, lost_close_node),
                 Event::Connected => self.on_connected(),
+            } {
+                warn!("Failed to handle event: {:?}", error);
             }
         }
 
@@ -130,8 +132,8 @@ impl Vault {
         Ok(())
     }
 
-    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) {
-        if let Err(error) = match (&request.src, &request.dst, &request.content) {
+    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) -> Result<(), InternalError> {
+        match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -185,13 +187,11 @@ impl Vault {
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
-        } {
-            warn!("Failed to handle request: {:?}", error);
         }
     }
 
-    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) {
-        if let Err(error) = match (&response.src, &response.dst, &response.content) {
+    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) -> Result<(), InternalError> {
+        match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
@@ -199,11 +199,15 @@ impl Vault {
                 self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
             // ================== GetFailure ==================
-            (&Authority::ManagedNode(pmid_node_name),
+            (&Authority::ManagedNode(ref pmid_node),
              &Authority::NaeManager(_),
              &ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator }) => {
                 self.immutable_data_manager
-                    .handle_get_failure(pmid_node_name, id, request, external_error_indicator)
+                    .handle_get_failure(routing_node,
+                                        pmid_node,
+                                        id,
+                                        request,
+                                        external_error_indicator)
             }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
@@ -219,22 +223,26 @@ impl Vault {
             }
             // ================== Invalid Response ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Response(response.clone()))),
-        } {
-            warn!("Failed to handle response: {:?}", error);
         }
     }
 
-    fn on_churn(&mut self, routing_node: &RoutingNode, churn_event_id: MessageId, lost_close_node: Option<XorName>) {
+    fn on_churn(&mut self,
+                routing_node: &RoutingNode,
+                churn_event_id: MessageId,
+                lost_close_node: Option<XorName>)
+                -> Result<(), InternalError> {
         self.maid_manager.handle_churn(routing_node, &churn_event_id);
         self.immutable_data_manager.handle_churn(routing_node, &churn_event_id, lost_close_node);
         self.structured_data_manager.handle_churn(routing_node, &churn_event_id);
         self.pmid_manager.handle_churn(routing_node, &churn_event_id);
+        Ok(())
     }
 
-    fn on_connected(&self) {
+    fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
         // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.immutable_data_manager.nodes_in_table_len());
+        Ok(())
     }
 
     fn on_refresh(&mut self,
@@ -243,26 +251,29 @@ impl Vault {
                   serialised_refresh: &Vec<u8>)
                   -> Result<(), InternalError> {
         let refresh = try!(serialisation::deserialise::<Refresh>(serialised_refresh));
-        match (src, dst, refresh.value) {
+        match (src, dst, &refresh.value) {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             RefreshValue::MaidManager(account)) => self.maid_manager.handle_refresh(refresh.name, account),
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             RefreshValue::ImmutableDataManager(account)) => {
-                self.immutable_data_manager.handle_refresh(refresh.name, account)
+             &RefreshValue::MaidManager(ref account)) => {
+                Ok(self.maid_manager.handle_refresh(refresh.name, account.clone()))
             }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::StructuredDataManager(structured_data)) => {
-                try!(self.structured_data_manager.handle_refresh(structured_data))
+             &RefreshValue::ImmutableDataManager(ref account)) => {
+                Ok(self.immutable_data_manager.handle_refresh(refresh.name, account.clone()))
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             &RefreshValue::StructuredDataManager(ref structured_data)) => {
+                self.structured_data_manager.handle_refresh(structured_data.clone())
             }
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),
-             RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
-            _ => error!("Unexpected refresh from {:?} to {:?}", src, dst),
+             &RefreshValue::PmidManager(ref account)) => {
+                Ok(self.pmid_manager.handle_refresh(refresh.name, account.clone()))
+            }
+            _ => Err(InternalError::UnknownRefreshType(src.clone(), dst.clone(), refresh.clone())),
         }
-        Ok(())
     }
 }
 

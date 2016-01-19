@@ -17,8 +17,9 @@
 
 use chunk_store;
 use maidsafe_utilities::serialisation::SerialisationError;
-use routing::{InterfaceError, MessageId, RoutingError, RoutingMessage};
+use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
+use types::Refresh;
 
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum ClientError {
@@ -34,6 +35,8 @@ pub enum InternalError {
     FailedToFindCachedRequest(MessageId),
     Client(ClientError),
     UnknownMessageType(RoutingMessage),
+    UnknownRefreshType(Authority, Authority, Refresh),
+    InvalidResponse,
     ChunkStore(chunk_store::Error),
     Serialisation(SerialisationError),
     Routing(InterfaceError),
