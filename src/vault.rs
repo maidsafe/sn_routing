@@ -85,13 +85,11 @@ impl Vault {
         let routing_node1 = Arc::new(Mutex::new(Some(routing_node)));
         let routing_node2 = routing_node1.clone();
 
-        // Take the stop_receiver from self, so we can move it into the stop
-        // thread;
+        // Take the stop_receiver from self, so we can move it into the stop thread.
         let stop_receiver = self.stop_receiver.take().unwrap();
 
-        // Listen for stop event and destroy the routing node if one is
-        // received. Destroying it will close the routing event channel,
-        // stopping the main event loop.
+        // Listen for stop event and destroy the routing node if one is received.  Destroying it
+        // will close the routing event channel, stopping the main event loop.
         let stop_thread_handle = thread::spawn(move || {
             let _ = stop_receiver.recv();
             let _ = routing_node1.lock().unwrap().take();
@@ -284,13 +282,15 @@ mod test {
     use super::*;
     use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::log;
+    use maidsafe_utilities::thread::RaiiThreadJoiner;
     use personas::immutable_data_manager;
     use rand::random;
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
                   RequestMessage, ResponseContent, ResponseMessage, StructuredData};
     use routing::Client as RoutingClient;
+    use std::io::Write;
     use std::sync::mpsc::{self, Receiver, Sender};
-    use std::thread::{self, JoinHandle};
+    use std::thread;
     use time::{Duration, SteadyTime};
     use utils::generate_random_vec_u8;
     use xor_name::XorName;
@@ -298,7 +298,7 @@ mod test {
     struct VaultComms {
         notifier: Receiver<(Event)>,
         killer: Sender<()>,
-        join_handle: Option<JoinHandle<()>>,
+        _raii_thread_joiner: Option<RaiiThreadJoiner>,
     }
 
     impl VaultComms {
@@ -308,27 +308,25 @@ mod test {
             let (stop_sender, stop_receiver) = mpsc::channel();
 
             let mut vault = unwrap_result!(Vault::new(Some(event_sender), stop_receiver));
-            let join_handle = Some(unwrap_result!(thread::Builder::new()
-                                                      .name(format!("Vault {} worker", index))
-                                                      .spawn(move || unwrap_result!(vault.do_run()))));
+            let join_handle = Some(RaiiThreadJoiner::new(thread!(format!("Vault {} worker", index),
+                                                                 move || unwrap_result!(vault.do_run()))));
             let vault_comms = VaultComms {
                 notifier: event_receiver,
                 killer: stop_sender,
-                join_handle: join_handle,
+                _raii_thread_joiner: join_handle,
             };
-            let mut temp_comms = vec![vault_comms];
-            let _ = unwrap_result!(wait_for_hits(&temp_comms,
-                                                 10,
-                                                 index,
-                                                 ::time::Duration::seconds(10 * (index + 1) as i64)));
-            temp_comms.remove(0)
+            // let mut temp_comms = vec![vault_comms];
+            thread::sleep(::std::time::Duration::from_secs(3 + index as u64));
+            // let _ = unwrap_result!(wait_for_hits(&temp_comms,
+            //                                      10,
+            //                                      index,
+            //                                      Duration::seconds(10 * (index + 1) as i64)));
+            // temp_comms.remove(0)
+            vault_comms
         }
 
         fn stop(&mut self) {
             let _ = self.killer.send(());
-            if let Some(join_handle) = self.join_handle.take() {
-                unwrap_result!(join_handle.join());
-            }
         }
     }
 
@@ -565,7 +563,6 @@ mod test {
     }
 
     fn create_empty_file(extension: &'static str, default_content: &'static str) {
-        use std::io::Write;
         let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
             cur_bin_dir.push(get_file_name(extension));
             let mut file = try!(::std::fs::File::create(cur_bin_dir));
@@ -577,16 +574,9 @@ mod test {
     fn create_empty_files() {
         create_empty_file("bootstrap.cache", "[]");
         create_empty_file("crust.config",
-                          "{\n
-                    \"tcp_listening_port\": 5483,\n
-                    \
-                           \"utp_listening_port\": null,\n
-                    \"override_default_bootstrap\": \
-                           false,\n
-                    \"hard_coded_contacts\": [],\n
-                    \
-                           \"beacon_port\": 5484\n
-                }");
+                          "{\n\t\"tcp_listening_port\": 5483,\n\t\"utp_listening_port\": \
+                           null,\n\t\"override_default_bootstrap\": false,\n\t\"hard_coded_contacts\": \
+                           [],\n\t\"beacon_port\": 5484\n}\n");
     }
 
     #[test]
