@@ -188,7 +188,7 @@ impl Core {
                 event_sender: event_sender,
                 signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                 // TODO Needs further discussion on interval
-                connection_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)), 
+                connection_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
                 node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                 message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
                 grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
