@@ -185,6 +185,7 @@ mod messages;
 mod node;
 mod plain_data;
 mod structured_data;
+mod tests;
 mod types;
 mod utils;
 
