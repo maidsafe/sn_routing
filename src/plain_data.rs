@@ -15,14 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::XorName;
+use utils;
 
 /// Plain data with a name and a value.
 ///
 /// Its name is independent of its value and no restrictions on name or value are enforced. These
 /// are left to the implementation.
-#[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Hash, Clone, RustcEncodable, RustcDecodable, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PlainData {
     name: XorName,
     value: Vec<u8>,
@@ -54,6 +56,11 @@ impl PlainData {
     }
 }
 
+impl fmt::Debug for PlainData {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(formatter, "PlainData {{ name: {:?}, value: {:?} }}", self.name, utils::format_binary_array(&self.value))
+    }
+}
 
 
 #[cfg(test)]
