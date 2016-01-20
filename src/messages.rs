@@ -363,3 +363,77 @@ pub enum ResponseContent {
         external_error_indicator: Vec<u8>,
     },
 }
+
+
+#[cfg(test)]
+mod test {
+    extern crate rand;
+
+    use super::{HopMessage, SignedMessage, RoutingMessage, RequestMessage, RequestContent};
+    use id::FullId;
+    use authority::Authority;
+    use xor_name::XorName;
+    use sodiumoxide::crypto::sign;
+
+    #[test]
+    fn signed_message_check_integrity() {
+        let name: XorName = rand::random();
+        let routing_message = RoutingMessage::Request(
+            RequestMessage {
+                src: Authority::ClientManager(name),
+                dst: Authority::ClientManager(name),
+                content: RequestContent::Connect,
+            }
+        );
+        let full_id = FullId::new();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
+
+        assert!(signed_message_result.is_ok());
+
+        let signed_message = signed_message_result.unwrap();
+
+        assert_eq!(routing_message, *signed_message.content());
+        assert_eq!(full_id.public_id(), signed_message.public_id());
+
+        let check_integrity_result = signed_message.check_integrity();
+
+        assert!(check_integrity_result.is_ok());
+    }
+
+    #[test]
+    fn hop_message_verify() {
+        let name: XorName = rand::random();
+        let routing_message = RoutingMessage::Request(
+            RequestMessage {
+                src: Authority::ClientManager(name),
+                dst: Authority::ClientManager(name),
+                content: RequestContent::Connect,
+            }
+        );
+        let full_id = FullId::new();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
+
+        assert!(signed_message_result.is_ok());
+
+        let signed_message = signed_message_result.unwrap();
+        let hop_name: XorName = rand::random();
+        let (public_signing_key, secret_signing_key) = sign::gen_keypair();
+        let hop_message_result = HopMessage::new(signed_message.clone(), hop_name, &secret_signing_key);
+
+        assert!(hop_message_result.is_ok());
+
+        let hop_message = hop_message_result.unwrap();
+
+        assert_eq!(signed_message, *hop_message.content());
+        assert_eq!(hop_name, *hop_message.name());
+
+        let verify_result = hop_message.verify(&public_signing_key);
+
+        assert!(verify_result.is_ok());
+
+        let (public_signing_key, _) = sign::gen_keypair();
+        let verify_result = hop_message.verify(&public_signing_key);
+
+        assert!(verify_result.is_err());
+    }
+}
