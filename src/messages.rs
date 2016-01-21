@@ -484,7 +484,7 @@ mod test {
 
         assert!(signed_message_result.is_ok());
 
-        let signed_message = unwrap_result!(signed_message_result);
+        let mut signed_message = unwrap_result!(signed_message_result);
 
         assert_eq!(routing_message, *signed_message.content());
         assert_eq!(full_id.public_id(), signed_message.public_id());
