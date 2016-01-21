@@ -55,7 +55,7 @@ impl TestNode {
 
         // Wait for the node to finish bootstrapping (?).
         // TODO: find a way to get rid of this sleep.
-        thread::sleep(Duration::from_secs(1 + index as u64));
+        thread::sleep(Duration::from_millis(2000 * (1 + index as u64)));
 
         TestNode {
             node: node,
@@ -106,13 +106,13 @@ fn spawn_select_thread(index: usize,
     (sender, RaiiThreadJoiner::new(thread_handle))
 }
 
-fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
+fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
     loop {
         match receiver.try_recv() {
-            Ok(value) => return value,
+            Ok(value) => return Some(value),
             Err(TryRecvError::Disconnected) => break,
             _ => (),
         }
@@ -125,7 +125,7 @@ fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
         }
     }
 
-    panic!("Timeout");
+    None
 }
 
 fn create_nodes(count: usize, event_sender: Sender<TestEvent>) -> Vec<TestNode> {
@@ -143,7 +143,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
 
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match recv_with_timeout(event_receiver, timeout) {
+        match unwrap_option!(recv_with_timeout(event_receiver, timeout), "") {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
@@ -171,20 +171,20 @@ fn gen_plain_data() -> Data {
 fn connect() {
     let (event_sender, event_receiver) = mpsc::channel();
     let nodes = create_nodes(4, event_sender);
-    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(10));
+    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(60));
 }
 
 #[test]
 fn request_and_response() {
     let (event_sender, event_receiver) = mpsc::channel();
     let nodes = create_nodes(GROUP_SIZE + 1, event_sender.clone());
-    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(10));
+    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(60));
 
     let client = TestClient::new(nodes.len(), event_sender);
     let mut data = Some(gen_plain_data());
 
     loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(30)), "") {
             TestEvent(index, Event::Connected) if index == client.index => {
                 // The client is connected now. Send some request.
                 if let Some(data) = data.take() {
