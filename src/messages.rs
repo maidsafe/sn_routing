@@ -467,6 +467,7 @@ mod test {
     use authority::Authority;
     use xor_name::XorName;
     use sodiumoxide::crypto::sign;
+    use maidsafe_utilities::serialisation::serialise;
 
     #[test]
     fn signed_message_check_integrity() {
@@ -491,6 +492,16 @@ mod test {
         let check_integrity_result = signed_message.check_integrity();
 
         assert!(check_integrity_result.is_ok());
+
+        let full_id = FullId::new();
+        let bytes_to_sign = serialise(&(&routing_message, full_id.public_id())).unwrap();
+        let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
+
+        signed_message.signature = signature;
+
+        let check_integrity_result = signed_message.check_integrity();
+
+        assert!(check_integrity_result.is_err());
     }
 
     #[test]

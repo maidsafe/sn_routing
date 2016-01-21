@@ -59,11 +59,11 @@
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
-//! let (sender, receiver) = mpsc::channel::<Event>();
+//! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
 //! let client = Client::new(sender, Some(full_id.clone())).unwrap();
 //!
-//! let client_name = full_id.public_id().name();
+//! let _ = full_id.public_id().name();
 //! ```
 //!
 //! Messages can be sent using the methods of `client`, and received as `Event`s from the
@@ -78,8 +78,8 @@
 //! use std::sync::mpsc;
 //! use routing::{Node, Event};
 //!
-//! let (sender, receiver) = mpsc::channel::<Event>();
-//! let node = Node::new(sender).unwrap();
+//! let (sender, _receiver) = mpsc::channel::<Event>();
+//! let _ = Node::new(sender).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -185,6 +185,7 @@ mod messages;
 mod node;
 mod plain_data;
 mod structured_data;
+mod tests;
 mod types;
 mod utils;
 
