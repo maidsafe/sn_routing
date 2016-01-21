@@ -253,7 +253,7 @@ fn to_group_authorities() {
     let mut data = Some(gen_plain_data());
     let interval = time::Duration::seconds(10);
     let start = time::SteadyTime::now();
-    println!("start loop");
+
     loop {
         match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
             TestEvent(index, Event::Connected) if index == client.index => {
@@ -265,7 +265,7 @@ fn to_group_authorities() {
             TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
                 // A node received put request from the client. Remove it from close_group if present.
                 close_group.retain(|&name| name != nodes[index].name());
-                println!("closest_nodes length {:?}", close_group.len());
+
                 if close_group.is_empty() || start + interval > time::SteadyTime::now() {
                     break;
                 }
