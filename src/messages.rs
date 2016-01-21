@@ -483,7 +483,7 @@ mod test {
 
         assert!(signed_message_result.is_ok());
 
-        let signed_message = signed_message_result.unwrap();
+        let signed_message = unwrap_result!(signed_message_result);
 
         assert_eq!(routing_message, *signed_message.content());
         assert_eq!(full_id.public_id(), signed_message.public_id());
@@ -515,7 +515,7 @@ mod test {
 
         assert!(hop_message_result.is_ok());
 
-        let hop_message = hop_message_result.unwrap();
+        let hop_message = unwrap_result!(hop_message_result);
 
         assert_eq!(signed_message, *hop_message.content());
         assert_eq!(hop_name, *hop_message.name());
