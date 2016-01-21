@@ -51,14 +51,8 @@ impl TestNode {
     fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
         let (sender, joiner) = spawn_select_thread(index, main_sender);
 
-        let node = unwrap_result!(Node::new(sender));
-
-        // Wait for the node to finish bootstrapping (?).
-        // TODO: find a way to get rid of this sleep.
-        thread::sleep(Duration::from_millis(2000 * (1 + index as u64)));
-
         TestNode {
-            node: node,
+            node: unwrap_result!(Node::new(sender)),
             _thread_joiner: joiner,
         }
     }
@@ -128,26 +122,17 @@ fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> 
     None
 }
 
-fn create_nodes(count: usize, event_sender: Sender<TestEvent>) -> Vec<TestNode> {
-    (0..count)
-        .map(|i| TestNode::new(i, event_sender.clone()))
-        .collect()
-}
-
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
-                             event_receiver: &Receiver<TestEvent>,
-                             timeout: Duration) {
-    let mut connection_counts = iter::repeat(0)
-                                    .take(nodes.len())
-                                    .collect::<Vec<usize>>();
-
+                             connection_counts: &mut [usize],
+                             event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match unwrap_option!(recv_with_timeout(event_receiver, timeout), "") {
+        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(60)), "") {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
-                if connection_counts.iter().all(|n| *n >= nodes.len() - 1) {
+                let k = nodes.len();
+                if (0..k).map(|i| connection_counts[i]).all(|n| n >= k - 1) {
                     break;
                 }
             }
@@ -155,6 +140,30 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
             _ => (),
         }
     }
+}
+
+fn create_connected_nodes(count: usize,
+                          event_sender: Sender<TestEvent>,
+                          event_receiver: &Receiver<TestEvent>) -> Vec<TestNode> {
+    let mut nodes = Vec::with_capacity(count);
+    let mut connection_counts = iter::repeat(0).take(count).collect::<Vec<usize>>();
+
+    // Bootstrap node
+    nodes.push(TestNode::new(0, event_sender.clone()));
+
+    // HACK: wait until the above node switches to accepting mode. Would be
+    // nice to know exactly when it happens instead of having to thread::sleep...
+    thread::sleep(Duration::from_secs(5));
+
+    // For each node, wait until it fully connects to the previous nodes before
+    // continuing.
+    for _ in 1..count {
+        let index = nodes.len();
+        nodes.push(TestNode::new(index, event_sender.clone()));
+        wait_for_nodes_to_connect(&nodes, &mut connection_counts, event_receiver);
+    }
+
+    nodes
 }
 
 
@@ -170,15 +179,16 @@ fn gen_plain_data() -> Data {
 #[test]
 fn connect() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_nodes(4, event_sender);
-    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(60));
+    let _ = create_connected_nodes(4, event_sender, &event_receiver);
 }
 
 #[test]
 fn request_and_response() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_nodes(GROUP_SIZE + 1, event_sender.clone());
-    wait_for_nodes_to_connect(&nodes, &event_receiver, Duration::from_secs(60));
+
+    let nodes = create_connected_nodes(GROUP_SIZE + 1,
+                                       event_sender.clone(),
+                                       &event_receiver);
 
     let client = TestClient::new(nodes.len(), event_sender);
     let mut data = Some(gen_plain_data());
