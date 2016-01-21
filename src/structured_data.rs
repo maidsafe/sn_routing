@@ -253,11 +253,11 @@ impl ::std::fmt::Debug for StructuredData {
                     self.type_tag,
                     self.name(),
                     self.version,
-                    ::utils::get_debug_id(&self.data[..])));
+                    ::utils::format_binary_array(&self.data[..])));
 
         let prev_owner_keys: Vec<String> = self.previous_owner_keys
                                                .iter()
-                                               .map(|pub_key| ::utils::get_debug_id(&pub_key.0))
+                                               .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
                                                .collect();
         try!(write!(formatter, " , previous_owner_keys : ("));
         for itr in &prev_owner_keys {
@@ -267,7 +267,7 @@ impl ::std::fmt::Debug for StructuredData {
 
         let current_owner_keys: Vec<String> = self.current_owner_keys
                                                   .iter()
-                                                  .map(|pub_key| ::utils::get_debug_id(&pub_key.0))
+                                                  .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
                                                   .collect();
         try!(write!(formatter, " , current_owner_keys : ("));
         for itr in &current_owner_keys {
@@ -278,7 +278,7 @@ impl ::std::fmt::Debug for StructuredData {
         let prev_owner_signatures: Vec<String> = self.previous_owner_signatures
                                                      .iter()
                                                      .map(|signature| {
-                                                         ::utils::get_debug_id(&signature.0[..])
+                                                         ::utils::format_binary_array(&signature.0[..])
                                                      })
                                                      .collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
