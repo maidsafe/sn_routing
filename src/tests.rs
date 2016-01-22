@@ -55,6 +55,10 @@ impl TestNode {
             _thread_joiner: joiner,
         }
     }
+
+    fn name(&self) -> XorName {
+        self.node.name().unwrap()
+    }
 }
 
 struct TestClient {
@@ -128,7 +132,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match recv_with_timeout(event_receiver, Duration::from_secs(10)) {
+        match recv_with_timeout(event_receiver, Duration::from_secs(20)) {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
@@ -196,7 +200,7 @@ fn request_and_response() {
     let mut data = Some(gen_plain_data());
 
     loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
             TestEvent(index, Event::Connected) if index == client.index => {
                 // The client is connected now. Send some request.
                 if let Some(data) = data.take() {
@@ -234,23 +238,47 @@ fn request_and_response() {
 #[test]
 fn joining_nodes_cause_churn() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_connected_nodes(GROUP_SIZE,
-                                       event_sender.clone(),
-                                       &event_receiver);
+    let nodes = create_connected_nodes(GROUP_SIZE, event_sender.clone(), &event_receiver);
 
     let mut churns = iter::repeat(false).take(nodes.len()).collect::<Vec<_>>();
 
-    // Another node joins:
+    // a node joins...
     let _new_node = TestNode::new(nodes.len(), event_sender.clone());
 
     loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
-            TestEvent(index, Event::Churn { .. }) if index < nodes.len() => {
+        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
                 churns[index] = true;
                 if churns.iter().all(|b| *b) { break; }
-            },
+            }
 
-            _ => ()
+            _ => (),
+        }
+    }
+}
+
+#[test]
+fn leaving_nodes_cause_churn() {
+    let (event_sender, event_receiver) = mpsc::channel();
+    let mut nodes = create_connected_nodes(GROUP_SIZE, event_sender.clone(), &event_receiver);
+    let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
+
+    // a node leaves...
+    let node = nodes.pop().unwrap();
+    let name = node.name();
+    drop(node);
+
+    loop {
+        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. })
+                if index < nodes.len() && lost_name == name => {
+                churns[index] = true;
+                if churns.iter().all(|b| *b) {
+                    break;
+                }
+            }
+
+            _ => (),
         }
     }
 }
