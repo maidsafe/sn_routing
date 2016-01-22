@@ -19,20 +19,19 @@ use xor_name::XorName;
 
 /// Format a vector of bytes as a hexadecimal number, ellipsizing all but the first and last three.
 ///
-/// For three bytes with values 1, 2, 3, the output will be "BYTES:010203". For more than six
-/// bytes, e. g. for fifteen bytes with values 1, 2, ..., 15, the output will be
-/// "BYTES:010203..0D0E0F".
-pub fn get_debug_id<V: AsRef<[u8]>>(input: V) -> String {
+/// For three bytes with values 1, 2, 3, the output will be "010203". For more than six bytes, e.g. for fifteen bytes
+/// with values 1, 2, ..., 15, the output will be "010203..0D0E0F".
+pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
     use std::fmt::Write;
     let input_ref = input.as_ref();
     if input_ref.len() <= 6 {
-        let mut ret = String::from("BYTES:");
+        let mut ret = String::new();
         for byte in input_ref.iter() {
             unwrap_result!(write!(ret, "{:02x}", byte));
         }
         return ret;
     }
-    format!("BYTES:{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
+    format!("{:02x}{:02x}{:02x}..{:02x}{:02x}{:02x}",
             input_ref[0],
             input_ref[1],
             input_ref[2],
