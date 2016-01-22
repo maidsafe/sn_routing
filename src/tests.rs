@@ -85,6 +85,8 @@ impl TestClient {
     }
 }
 
+// Spanws a thread that received events from a node a routes them to the main
+// channel.
 fn spawn_select_thread(index: usize,
                        main_sender: Sender<TestEvent>)
                        -> (Sender<Event>, RaiiThreadJoiner) {
@@ -99,13 +101,13 @@ fn spawn_select_thread(index: usize,
     (sender, RaiiThreadJoiner::new(thread_handle))
 }
 
-fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> {
+fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
     loop {
         match receiver.try_recv() {
-            Ok(value) => return Some(value),
+            Ok(value) => return value,
             Err(TryRecvError::Disconnected) => break,
             _ => (),
         }
@@ -118,7 +120,7 @@ fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> 
         }
     }
 
-    None
+    panic!("Timeout")
 }
 
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
@@ -126,8 +128,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(10)),
-                             "") {
+        match recv_with_timeout(event_receiver, Duration::from_secs(10)) {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
@@ -195,8 +196,7 @@ fn request_and_response() {
     let mut data = Some(gen_plain_data());
 
     loop {
-        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(10)),
-                             "") {
+        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
             TestEvent(index, Event::Connected) if index == client.index => {
                 // The client is connected now. Send some request.
                 if let Some(data) = data.take() {
@@ -220,13 +220,37 @@ fn request_and_response() {
 
             TestEvent(index,
                       Event::Response(ResponseMessage{
-                        content: ResponseContent::PutSuccess(_, _), .. }))
+                        content: ResponseContent::PutSuccess(..), .. }))
                 if index == client.index => {
                 // The client received response to its request. We are done.
                 break;
             }
 
             _ => (),
+        }
+    }
+}
+
+#[test]
+fn joining_nodes_cause_churn() {
+    let (event_sender, event_receiver) = mpsc::channel();
+    let nodes = create_connected_nodes(GROUP_SIZE,
+                                       event_sender.clone(),
+                                       &event_receiver);
+
+    let mut churns = iter::repeat(false).take(nodes.len()).collect::<Vec<_>>();
+
+    // Another node joins:
+    let _new_node = TestNode::new(nodes.len(), event_sender.clone());
+
+    loop {
+        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+            TestEvent(index, Event::Churn { .. }) if index < nodes.len() => {
+                churns[index] = true;
+                if churns.iter().all(|b| *b) { break; }
+            },
+
+            _ => ()
         }
     }
 }
