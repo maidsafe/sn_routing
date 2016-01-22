@@ -41,6 +41,7 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+extern crate mpid_messaging;
 extern crate chunk_store;
 extern crate crust;
 extern crate ctrlc;
