@@ -19,9 +19,10 @@ install:
   - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh
   - . install_libsodium.sh
 script:
+  - export RUST_TEST_THREADS=1
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
 #  - cd $TRAVIS_BUILD_DIR && cargo run --release --example ci_test > output.log
-#  - cat output.log 
+#  - cat output.log
 before_cache:
   - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_elfutils.sh
   - . install_elfutils.sh

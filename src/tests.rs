@@ -127,7 +127,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(60)), "") {
+        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(10)), "") {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
@@ -153,7 +153,7 @@ fn create_connected_nodes(count: usize,
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
-    thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(2));
 
     // For each node, wait until it fully connects to the previous nodes before
     // continuing.
@@ -194,7 +194,7 @@ fn request_and_response() {
     let mut data = Some(gen_plain_data());
 
     loop {
-        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(30)), "") {
+        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(10)), "") {
             TestEvent(index, Event::Connected) if index == client.index => {
                 // The client is connected now. Send some request.
                 if let Some(data) = data.take() {
