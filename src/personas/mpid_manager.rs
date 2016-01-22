@@ -150,8 +150,8 @@ impl MpidManager {
             }
         };
 
-        match (mpid_message_wrapper.mpid_header, mpid_message_wrapper.mpid_message) {
-            (Some(mpid_header), None) => {
+        match mpid_message_wrapper {
+            MpidMessageWrapper::MpidHeader(mpid_header) => {
                 if self.accounts
                        .entry(mpid_header.msg_header.receiver)
                        .or_insert(Account::default())
@@ -159,7 +159,7 @@ impl MpidManager {
                     let _ = self.chunk_store.put(&data.name(), data.value());
                 }
             }
-            (None, Some(mpid_message)) => {
+            MpidMessageWrapper::MpidMessage(mpid_message) => {
                 if self.accounts
                        .entry(mpid_message.msg_header.sender)
                        .or_insert(Account::default())
@@ -174,10 +174,10 @@ impl MpidManager {
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
                     let dst = Authority::ClientManager(mpid_message.msg_header.receiver);
-                    let mpid_header = MpidHeader {
+                    let mpid_header = MpidMessageWrapper::MpidHeader(MpidHeader {
                         msg_header : mpid_message.msg_header,
                         msg_link : data.name(),
-                    };
+                    });
 
                     let (serialised_header, header_hash) = match serialise(&mpid_header) {
                         Ok(encoded) => (encoded.clone(), sha512::hash(&encoded[..])),
@@ -191,7 +191,6 @@ impl MpidManager {
                     let _ = routing_node.send_put_request(src, dst, notification, message_id.clone());
                 }
             }
-            (_, _) => {}
         }
     }
     // // sending message:
