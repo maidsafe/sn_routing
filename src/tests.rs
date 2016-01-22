@@ -19,7 +19,6 @@
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
-use rand::{thread_rng, Rng};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use std::iter;
@@ -168,8 +167,10 @@ fn create_connected_nodes(count: usize,
 
 
 fn gen_plain_data() -> Data {
-    let key: String = thread_rng().gen_ascii_chars().take(10).collect();
-    let value: String = thread_rng().gen_ascii_chars().take(10).collect();
+    // let key: String = thread_rng().gen_ascii_chars().take(10).collect();
+    // let value: String = thread_rng().gen_ascii_chars().take(10).collect();
+    let key = "foo";
+    let value = "bar";
     let name = XorName::new(sha512::hash(key.as_bytes()).0);
     let data = unwrap_result!(serialise(&(key, value)));
 
