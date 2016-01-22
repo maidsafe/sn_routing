@@ -1,6 +1,7 @@
 env:
   global:
     - secure: 6GJFbN62dQxgdMDUCy92Wc3xHaepp3D5/AwOfKM2tfik454AeZgoymGfXD/Om9WZXcwe1ji3szzCRNqwNKTeMgxBvjof4CdoybspEzjgHo5+XpkS7nHtlD3af9HL7NDKrep194B90YIkpoy/tML9wrlVSBMhrOX8dzNNnSSijmA=
+    - RUST_BACKTRACE=1
     - RUST_TEST_THREADS=1
 os:
   - linux

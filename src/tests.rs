@@ -184,6 +184,7 @@ fn connect() {
 }
 
 #[test]
+#[cfg_attr(target_os = "macos", ignore)]
 fn request_and_response() {
     let (event_sender, event_receiver) = mpsc::channel();
 
