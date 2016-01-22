@@ -126,7 +126,8 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(10)), "") {
+        match unwrap_option!(recv_with_timeout(event_receiver, Duration::from_secs(10)),
+                             "") {
             TestEvent(index, Event::Churn { .. }) => {
                 connection_counts[index] += 1;
 
@@ -143,7 +144,8 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
 
 fn create_connected_nodes(count: usize,
                           event_sender: Sender<TestEvent>,
-                          event_receiver: &Receiver<TestEvent>) -> Vec<TestNode> {
+                          event_receiver: &Receiver<TestEvent>)
+                          -> Vec<TestNode> {
     let mut nodes = Vec::with_capacity(count);
     let mut connection_counts = iter::repeat(0).take(count).collect::<Vec<usize>>();
 
@@ -183,20 +185,20 @@ fn connect() {
     let _ = create_connected_nodes(4, event_sender, &event_receiver);
 }
 
+// TODO: figure out the macos issue and unignore this test.
 #[test]
 #[cfg_attr(target_os = "macos", ignore)]
 fn request_and_response() {
     let (event_sender, event_receiver) = mpsc::channel();
 
-    let nodes = create_connected_nodes(GROUP_SIZE + 1,
-                                       event_sender.clone(),
-                                       &event_receiver);
+    let nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
 
     let client = TestClient::new(nodes.len(), event_sender);
     let mut data = Some(gen_plain_data());
 
     loop {
-        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(10)), "") {
+        match unwrap_option!(recv_with_timeout(&event_receiver, Duration::from_secs(10)),
+                             "") {
             TestEvent(index, Event::Connected) if index == client.index => {
                 // The client is connected now. Send some request.
                 if let Some(data) = data.take() {
