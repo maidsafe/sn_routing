@@ -185,9 +185,7 @@ fn connect() {
     let _ = create_connected_nodes(4, event_sender, &event_receiver);
 }
 
-// TODO: figure out the macos issue and unignore this test.
 #[test]
-#[cfg_attr(target_os = "macos", ignore)]
 fn request_and_response() {
     let (event_sender, event_receiver) = mpsc::channel();
 
