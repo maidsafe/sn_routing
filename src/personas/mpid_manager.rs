@@ -146,14 +146,8 @@ impl MpidManager {
         if self.chunk_store.has_chunk(&data.name()) {
             return;
         }
-
-        let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(data.value()) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse MpidMessageWrapper with name {:?}", data.name());
-                return;
-            }
-        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(data.value()),
+                                                  "Failed to parse MpidMessageWrapper");
 
         match mpid_message_wrapper {
             MpidMessageWrapper::MpidHeader(mpid_header) => {
@@ -238,13 +232,8 @@ impl MpidManager {
     fn handle_get_message(&mut self, message_name: XorName, message_id: &MessageId,
                               routing_node: &RoutingNode, request: &RequestMessage) {
         let content = unwrap_result!(self.chunk_store.get(&message_name));
-        let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(&content[..]) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse MpidMessageWrapper with name {:?}", message_name);
-                return;
-            }
-        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(&content[..]),
+                                                  "Failed to parse MpidMessageWrapper");
 
         match mpid_message_wrapper {
             MpidMessageWrapper::MpidHeader(mpid_header) => {
@@ -271,13 +260,8 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         };
-        let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(message.value()) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse MpidMessageWrapper with name {:?}", message.name());
-                return;
-            }
-        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(message.value()),
+                                                  "Failed to parse MpidMessageWrapper");
 
         let account = unwrap_option!(self.accounts.get_mut(request.src.get_name()),
                                      "Failed to get correspondent account");
@@ -365,4 +349,11 @@ impl MpidManager {
     //     }
     // }
 
+}
+
+fn deserialise_wrapper(serialised_wrapper: &[u8]) -> Option<MpidMessageWrapper> {
+    match deserialise::<MpidMessageWrapper>(serialised_wrapper) {
+        Ok(data) => Some(data),
+        Err(_) => None
+    }
 }
