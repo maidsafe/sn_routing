@@ -15,7 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(test)]
+extern crate itertools;
+extern crate routing;
+#[macro_use]
+extern crate maidsafe_utilities;
+extern crate kademlia_routing_table;
+extern crate rand;
+extern crate sodiumoxide;
+extern crate time;
+extern crate xor_name;
 
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
@@ -24,23 +32,19 @@ use std::sync::mpsc::{self, Sender, Receiver, TryRecvError};
 use std::thread;
 use std::time::Duration;
 use std::cmp::Ordering::{Less, Greater};
-use time;
-use rand;
 use itertools::Itertools;
 
-use xor_name;
 use xor_name::XorName;
-use kademlia_routing_table;
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
-use authority::Authority;
-use client::Client;
-use data::Data;
-use event::Event;
-use id::FullId;
-use messages::{RequestContent, ResponseContent, RequestMessage, ResponseMessage};
-use node::Node;
-use plain_data::PlainData;
+use routing::Authority;
+use routing::Client;
+use routing::Data;
+use routing::Event;
+use routing::FullId;
+use routing::{RequestContent, ResponseContent, RequestMessage, ResponseMessage};
+use routing::Node;
+use routing::PlainData;
 
 const GROUP_SIZE: usize = kademlia_routing_table::GROUP_SIZE as usize;
 
@@ -196,13 +200,13 @@ fn closest_nodes(node_names: &Vec<XorName>, target: &XorName) -> Vec<XorName> {
               .collect()
 }
 
-#[test]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
 
     {
         // request and response
+        println!("request and response");
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
 
@@ -242,6 +246,7 @@ fn core() {
 
     {
         // request to group authority
+        println!("request to group authority");
         let node_names = nodes.iter().map(|node| node.name()).collect();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
@@ -271,6 +276,7 @@ fn core() {
 
     {
         // response from group authority
+        println!("response from group authority");
         let node_names = nodes.iter().map(|node| node.name()).collect();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
@@ -320,6 +326,7 @@ fn core() {
 
     {
         // leaving nodes cause churn
+        println!("leaving nodes cause churn");
         let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
         // a node leaves...
         let node = nodes.pop().unwrap();
@@ -343,6 +350,7 @@ fn core() {
 
     {
         // joining nodes cause churn
+        println!("joining nodes cause churn");
         let nodes_len = nodes.len();
         let mut churns = iter::repeat(false).take(nodes_len + 1).collect::<Vec<_>>();
         // a node joins...
@@ -359,4 +367,8 @@ fn core() {
             }
         }
     }
+}
+
+fn main() {
+    core();
 }
