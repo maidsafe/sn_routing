@@ -36,8 +36,6 @@ pub struct Account {
 }
 
 impl Default for Account {
-    // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
-    //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> Account {
         Account {
             data_stored: 0,
@@ -254,81 +252,97 @@ impl MaidManager {
 }
 
 
-// #[cfg(all(test, feature = "use-mock-routing"))]
-// mod test {
-// use super::*;
-// use lru_time_cache::LruCache;
-// use maidsafe_utilities::serialisation::serialise;
-// use rand::random;
-// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-// ResponseContent, ResponseMessage};
-// use std::cmp::{Ordering, max, min};
-// use std::collections::BTreeSet;
-// use time::{Duration, SteadyTime};
-// use types::Refreshable;
-// use utils::{HANDLED, NOT_HANDLED, median, merge};
-// use vault::Routing;
-// use xor_name::{XorName, closer_to_target};
-//
-// fn env_setup()
-// -> (::routing::Authority,
-// ::vault::Routing,
-// MaidManager,
-// ::routing::Authority,
-// ImmutableData)
-// {
-// let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-// let maid_manager = MaidManager::new(routing.clone());
-// let from = random();
-// let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let value = generate_random_vec_u8(1024);
-// let data = ImmutableData::new(ImmutableDataType::Normal, value);
-// (Authority::ClientManager(from.clone()),
-// routing,
-// maid_manager,
-// Authority::Client(from, keys.0),
-// data)
-// }
-//
-// #[test]
-// fn handle_put() {
-// let (our_authority, routing, mut maid_manager, client, data) = env_setup();
-// assert_eq!(::utils::HANDLED,
-// maid_manager.handle_put(&our_authority,
-// &client,
-// &::routing::data::Data::ImmutableData(data.clone()),
-// &None));
-// let put_requests = routing.put_requests_given();
-// assert_eq!(put_requests.len(), 1);
-// assert_eq!(put_requests[0].our_authority, our_authority);
-// assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
-// assert_eq!(put_requests[0].data, Data::ImmutableData(data));
-// }
-//
-// #[test]
-// fn handle_churn_and_account_transfer() {
-// let churn_node = random();
-// let (our_authority, routing, mut maid_manager, client, data) = env_setup();
-// assert_eq!(::utils::HANDLED,
-// maid_manager.handle_put(&our_authority,
-// &client,
-// &::routing::data::Data::ImmutableData(data.clone()),
-// &None));
-// maid_manager.handle_churn(&churn_node);
-// let refresh_requests = routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 1);
-// assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-// assert_eq!(refresh_requests[0].our_authority.get_name(),
-// client.get_name());
-//
-// let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
-// if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
-// maid_manager.database.handle_account_transfer(mm_account);
-// }
-// maid_manager.handle_churn(&churn_node);
-// let refresh_requests = routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 2);
-// assert_eq!(refresh_requests[0], refresh_requests[1]);
-// }
-// }
-//
+#[cfg(all(test, feature = "use-mock-routing"))]
+mod test {
+    use super::*;
+    use rand::random;
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage};
+    use sodiumoxide::crypto::sign;
+    use std::sync::mpsc;
+    use utils::generate_random_vec_u8;
+    use vault::RoutingNode;
+    use xor_name::XorName;
+
+    struct Environment {
+        our_authority: Authority,
+        client: Authority,
+        routing: RoutingNode,
+        maid_manager: MaidManager,
+    }
+
+    impl Environment {
+        fn construct_put_request(&self) -> RequestMessage {
+            let value = generate_random_vec_u8(1024);
+            let data = ImmutableData::new(ImmutableDataType::Normal, value);
+            let message_id = MessageId::new();
+            RequestMessage{
+                src: self.client.clone(),
+                dst: self.our_authority.clone(),
+                content: RequestContent::Put(Data::ImmutableData(data), message_id),
+            }
+        }
+    }
+
+    fn environment_setup() -> Environment {
+        let from = random::<XorName>();
+        let keys = sign::gen_keypair();
+        Environment {
+            our_authority: Authority::ClientManager(from.clone()),
+            client: Authority::Client{ client_key: keys.0, proxy_node_name: from.clone(), },
+            routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
+            maid_manager: MaidManager::new(),
+        }
+    }
+
+    #[test]
+    fn handle_put() {
+        let mut env = environment_setup();
+        {
+            let request = env.construct_put_request();
+            unwrap_result!(env.maid_manager.handle_put(&env.routing, &request));
+            let put_requests = env.routing.put_requests_given();
+            assert_eq!(put_requests.len(), 1);
+            for i in 0..put_requests.len() {
+                assert_eq!(put_requests[i].src, env.our_authority);
+                assert_eq!(put_requests[i].content, request.content);
+            }
+        }
+
+        // assert_eq!(::utils::HANDLED,
+        //            maid_manager.handle_put(&our_authority,
+        //                                    &client,
+        //                                    &::routing::data::Data::ImmutableData(data.clone()),
+        //                                    &None));
+        // let put_requests = routing.put_requests_given();
+        // assert_eq!(put_requests.len(), 1);
+        // assert_eq!(put_requests[0].our_authority, our_authority);
+        // assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
+        // assert_eq!(put_requests[0].data, Data::ImmutableData(data));
+    }
+
+    // #[test]
+    // fn handle_churn_and_account_transfer() {
+    //     let churn_node = random();
+    //     let (our_authority, routing, mut maid_manager, client, data) = env_setup();
+    //     assert_eq!(::utils::HANDLED,
+    //                maid_manager.handle_put(&our_authority,
+    //                                        &client,
+    //                                        &::routing::data::Data::ImmutableData(data.clone()),
+    //                                        &None));
+    //     maid_manager.handle_churn(&churn_node);
+    //     let refresh_requests = routing.refresh_requests_given();
+    //     assert_eq!(refresh_requests.len(), 1);
+    //     assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
+    //     assert_eq!(refresh_requests[0].our_authority.get_name(),
+    //                client.get_name());
+
+    //     let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
+    //     if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
+    //         maid_manager.database.handle_account_transfer(mm_account);
+    //     }
+    //     maid_manager.handle_churn(&churn_node);
+    //     let refresh_requests = routing.refresh_requests_given();
+    //     assert_eq!(refresh_requests.len(), 2);
+    //     assert_eq!(refresh_requests[0], refresh_requests[1]);
+    // }
+}

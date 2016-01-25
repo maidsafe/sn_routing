@@ -528,20 +528,21 @@ mod test {
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
+    use vault::RoutingNode;
 
-    struct TestEnv {
+    struct Environment {
         pub our_authority: Authority,
-        pub routing: ::vault::RoutingNode,
+        pub routing: RoutingNode,
         pub immutable_data_manager: ImmutableDataManager,
         pub data: ImmutableData,
     }
 
-    fn env_setup() -> TestEnv {
-        let routing = unwrap_result!(::vault::RoutingNode::new(mpsc::channel().0));
+    fn environment_setup() -> Environment {
+        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
         let immutable_data_manager = ImmutableDataManager::new();
         let value = generate_random_vec_u8(1024);
         let data = ImmutableData::new(ImmutableDataType::Normal, value);
-        TestEnv {
+        Environment {
             our_authority: Authority::NaeManager(data.name().clone()),
             routing: routing,
             immutable_data_manager: immutable_data_manager,
@@ -551,10 +552,10 @@ mod test {
 
     #[test]
     fn handle_put_get() {
-        let mut env = env_setup();
+        let mut env = environment_setup();
         {
             let message_id = MessageId::new();
-            env.immutable_data_manager.handle_put(&env.routing, &env.data, &message_id);
+            unwrap_result!(env.immutable_data_manager.handle_put(&env.routing, &env.data, &message_id));
             let put_requests = env.routing.put_requests_given();
             assert_eq!(put_requests.len(), REPLICANTS);
             for i in 0..put_requests.len() {
@@ -592,7 +593,7 @@ mod test {
 
     #[test]
     fn handle_churn() {
-        // let mut env = env_setup();
+        // let mut env = environment_setup();
         // env.immutable_data_manager.handle_put(&env.routing, &env.data);
         // let close_group = vec![env.our_authority.get_name().clone()]
         //                       .into_iter()

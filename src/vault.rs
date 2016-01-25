@@ -351,7 +351,7 @@ mod test {
                                     ResponseMessage{ content: ResponseContent::GetSuccess(data, _), .. } => {
                                         let _ = client_sender.send(data);
                                     }
-                                    _ => panic!("not expected!"),
+                                    _ => unreachable!("Unexpected {:?}", response),
                                 }
                             }
                             Event::Churn{ .. } => info!("client received a churn"),
