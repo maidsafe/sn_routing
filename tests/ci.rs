@@ -206,7 +206,6 @@ fn core() {
 
     {
         // request and response
-        println!("request and response");
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
 
@@ -246,7 +245,6 @@ fn core() {
 
     {
         // request to group authority
-        println!("request to group authority");
         let node_names = nodes.iter().map(|node| node.name()).collect();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
@@ -276,7 +274,6 @@ fn core() {
 
     {
         // response from group authority
-        println!("response from group authority");
         let node_names = nodes.iter().map(|node| node.name()).collect();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
@@ -326,7 +323,6 @@ fn core() {
 
     {
         // leaving nodes cause churn
-        println!("leaving nodes cause churn");
         let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
         // a node leaves...
         let node = nodes.pop().unwrap();
@@ -350,7 +346,6 @@ fn core() {
 
     {
         // joining nodes cause churn
-        println!("joining nodes cause churn");
         let nodes_len = nodes.len();
         let mut churns = iter::repeat(false).take(nodes_len + 1).collect::<Vec<_>>();
         // a node joins...
