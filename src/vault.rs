@@ -17,8 +17,8 @@
 
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation::deserialise;
-use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage};
+use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -196,7 +196,11 @@ impl Vault {
              &Authority::NaeManager(_),
              &RequestContent::Post(Data::StructuredData(_), _)) => self.structured_data_manager.handle_post(&request),
             // ================== Delete ==================
-            (_, _, &RequestContent::Delete(_, _)) => unimplemented!(),
+            (&Authority::Client{ .. },
+             &Authority::ClientManager(_),
+             &RequestContent::Delete(Data::PlainData(_), _)) => {
+                self.mpid_manager.handle_delete(&request)
+            }
             // ================== Refresh ==================
             (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
                 self.on_refresh(src, dst, serialised_refresh)

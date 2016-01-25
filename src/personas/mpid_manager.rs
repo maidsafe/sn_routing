@@ -212,10 +212,9 @@ impl MpidManager {
         } else {
             self.handle_get_message(data_name, &message_id, routing_node, request);
         }
-
     }
 
-    pub fn handle_get_account(&mut self, account_name: XorName, message_id: &MessageId,
+    fn handle_get_account(&mut self, account_name: XorName, message_id: &MessageId,
                               routing_node: &RoutingNode, request: &RequestMessage) {
         match self.accounts.get(&account_name) {
             Some(account) => {
@@ -236,7 +235,7 @@ impl MpidManager {
         }
     }
 
-    pub fn handle_get_message(&mut self, message_name: XorName, message_id: &MessageId,
+    fn handle_get_message(&mut self, message_name: XorName, message_id: &MessageId,
                               routing_node: &RoutingNode, request: &RequestMessage) {
         let content = unwrap_result!(self.chunk_store.get(&message_name));
         let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(&content[..]) {
@@ -265,9 +264,47 @@ impl MpidManager {
                 request.src.clone(), reply, message_id.clone());
     }
 
+    pub fn handle_delete(&mut self, request: &RequestMessage) {
+        let (message, _message_id) = match &request.content {
+            &RequestContent::Delete(Data::PlainData(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+        let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(message.value()) {
+            Ok(data) => data,
+            Err(_) => {
+                warn!("Failed to parse MpidMessageWrapper with name {:?}", message.name());
+                return;
+            }
+        };
+
+        let account = unwrap_option!(self.accounts.get_mut(request.src.get_name()),
+                                     "Failed to get correspondent account");
+        match mpid_message_wrapper {
+            MpidMessageWrapper::MpidHeader(mpid_header) => {
+                // Only the receiver self is allowed to remove the notification
+                if &mpid_header.msg_header.receiver != request.src.get_name() {
+                    return;
+                }
+                account.inbox.remove(message.value().len() as u64, &message.name());
+            }
+            MpidMessageWrapper::MpidMessage(mpid_message) => {
+                // Only the receiver or the sender are allowed to remove the full message
+                if !(&mpid_message.msg_header.receiver == request.src.get_name() ||
+                     &mpid_message.msg_header.sender == request.src.get_name()) {
+                    return;
+                }
+                account.outbox.remove(message.value().len() as u64, &message.name());
+            }
+        }
+
+        let _ = self.chunk_store.delete(&message.name());
+    }
 
     // // removing message or header on request:
     // // 1, remove_message: delete request from recipient B to sender's MpidManagers(A)
+    // //                    delete request from sender A to sender's MpidManagers(A)
     // // 2, remove_header: delete request from recipient B to MpidManagers(B)
     // pub fn handle_delete(from, to, name) {
     //     if remove_message {  // from.name != to.name
