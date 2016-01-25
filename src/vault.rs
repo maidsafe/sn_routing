@@ -146,6 +146,11 @@ impl Vault {
              &RequestContent::Get(DataRequest::StructuredData(_, _), _)) => {
                 self.structured_data_manager.handle_get(routing_node, &request)
             }
+            (&Authority::Client{ .. },
+             &Authority::ClientManager(_),
+             &RequestContent::Get(DataRequest::PlainData(_), _)) => {
+                self.mpid_manager.handle_get(routing_node, &request)
+            }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
              &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {

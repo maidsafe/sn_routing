@@ -23,7 +23,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use mpid_messaging::{MpidHeader, MpidMessageWrapper};
-use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
+use routing::{Authority, Data, DataRequest, MessageId, PlainData, RequestContent, RequestMessage};
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -76,6 +76,11 @@ impl MailBox {
             }
         }
         true
+    }
+
+    #[allow(dead_code)]
+    fn has(&mut self, entry: &XorName) -> bool {
+        self.mail_box.contains(entry)
     }
 }
 
@@ -193,60 +198,73 @@ impl MpidManager {
             }
         }
     }
-    // // sending message:
-    // // 1, messaging: put request from sender A to its MpidManagers(A)
-    // // 2, notifying: from MpidManagers(A) to MpidManagers(B)
-    // pub fn handle_put(from, to, sd, token) {
-    //     if messaging {  // sd.data holds MpidMessage
-    //         // insert received mpid_message into the outbox_storage
-    //         if outbox_storage.insert(from, mpid_message) {
-    //             let forward_sd = StructuredData {
-    //                 type_tag: MPID_MESSAGE,
-    //                 identifier: mpid_message_name(mpid_message),
-    //                 data: ::utils::encode(mpid_message.mpid_header),
-    //                 previous_owner_keys: vec![],
-    //                 version: 0,
-    //                 current_owner_keys: vec![my_mpid.public_key],
-    //                 previous_owner_signatures: vec![]
-    //             }
-    //             routing.put_request(::mpid_manager::Authority(mpid_message.recipient), forward_sd);
-    //         } else {
-    //             // outbox full or other failure
-    //             reply failure to the sender (Client);
-    //         }
-    //     }
-    //     if notifying {  // sd.data holds MpidHeader
-    //         // insert received mpid_header into the inbox_storage
-    //         if inbox_storage.insert(to, mpid_header) {
-    //             let recipient_account = inbox_storage.find_account(to);
-    //             if recipient_account.recipient_clients.len() > 0 { // indicates there is connected client
-    //                 for header in recipient_account.headers {
-    //                     get_message(header);
-    //                 }
-    //             }
-    //         } else {
-    //             // inbox full or other failure
-    //             reply failure to the sender (MpidManagers);
-    //         }
-    //     }
-    // }
 
-    // // get messages or headers on request:
-    // pub fn handle_get(from, to, name, token) {
-    //     if outbox.has_account(name) {
-    //         // sender asking for the headers of existing messages
-    //         reply to the requester(from) with outbox.find_account(name).get_headers() via routing.post;
-    //     }
-    //     if inbox.has_account(name) {
-    //         // triggering pushing all existing messages to client, first needs to fetch them
-    //         let recipient_account = inbox_storage.find_account(to);
-    //         if recipient_account.recipient_clients.len() > 0 { // indicates there is connected client
-    //             for header in recipient_account.headers {
-    //                 get_message(header);
-    //             }
-    //         }
-    //     }
-    // }
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
+        let (data_name, message_id) = match &request.content {
+            &RequestContent::Get(DataRequest::PlainData(ref data_name), ref message_id) => {
+                (data_name.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+        if (request.src.get_name() == request.dst.get_name()) &&
+           (request.src.get_name() == &data_name) {
+            self.handle_get_account(data_name, &message_id, routing_node, request);
+        } else {
+            self.handle_get_message(data_name, &message_id, routing_node, request);
+        }
+
+    }
+
+    pub fn handle_get_account(&mut self, account_name: XorName, message_id: &MessageId,
+                              routing_node: &RoutingNode, request: &RequestMessage) {
+        match self.accounts.get(&account_name) {
+            Some(account) => {
+                let (encoded_account, account_hash) = match serialise(&account) {
+                    Ok(encoded) => (encoded.clone(), sha512::hash(&encoded[..])),
+                    Err(error) => {
+                        error!("Failed to serialise the account of {:?} with error: {:?}",
+                               account_name, error);
+                        return;
+                    }
+                };
+                let reply = Data::PlainData(PlainData::new(XorName(account_hash.0),
+                                                           encoded_account));
+                let _ = routing_node.send_put_request(request.dst.clone(),
+                        request.src.clone(), reply, message_id.clone());
+            }
+            None => warn!("cannont find account {:?} in MpidManager", account_name),
+        }
+    }
+
+    pub fn handle_get_message(&mut self, message_name: XorName, message_id: &MessageId,
+                              routing_node: &RoutingNode, request: &RequestMessage) {
+        let content = unwrap_result!(self.chunk_store.get(&message_name));
+        let mpid_message_wrapper = match deserialise::<MpidMessageWrapper>(&content[..]) {
+            Ok(data) => data,
+            Err(_) => {
+                warn!("Failed to parse MpidMessageWrapper with name {:?}", message_name);
+                return;
+            }
+        };
+
+        match mpid_message_wrapper {
+            MpidMessageWrapper::MpidHeader(mpid_header) => {
+                if &mpid_header.msg_header.receiver != request.src.get_name() {
+                    return;
+                }
+            }
+            MpidMessageWrapper::MpidMessage(mpid_message) => {
+                if (&mpid_message.msg_header.receiver != request.src.get_name()) &&
+                   (&mpid_message.msg_header.sender != request.src.get_name()) {
+                    return;
+                }
+            }
+        }
+        let reply = Data::PlainData(PlainData::new(message_name, content));
+        let _ = routing_node.send_put_request(request.dst.clone(),
+                request.src.clone(), reply, message_id.clone());
+    }
+
 
     // // removing message or header on request:
     // // 1, remove_message: delete request from recipient B to sender's MpidManagers(A)
@@ -308,21 +326,6 @@ impl MpidManager {
     //         original sender's `reply_to` and `token` will be available in this incoming message
     //         send failure to client via routing.put_failure using (reply_to, token, message);
     //     }
-    // }
-
-    // fn get_message(header: (sender_name: ::routing::NameType,
-    //                         sender_public_key: ::sodiumoxide::crypto::sign::PublicKey,
-    //                         mpid_header: MpidHeader)) {
-    //     let request_sd = StructuredData {
-    //         type_tag: MPID_MESSAGE,
-    //         identifier: header.sender_name,
-    //         data: ::utils::encode(MpidMessgeWrapper::GetMessage(mpid_header_name(mpid_header))),
-    //         previous_owner_keys: vec![],
-    //         version: 0,
-    //         current_owner_keys: vec![header.sender_public_key],
-    //         previous_owner_signatures: vec![]
-    //     }
-    //     routing.post_request(::mpid_manager::Authority(header.sender_name), request_sd);
     // }
 
 }
