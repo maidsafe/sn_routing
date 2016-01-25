@@ -197,179 +197,166 @@ fn closest_nodes(node_names: &Vec<XorName>, target: &XorName) -> Vec<XorName> {
 }
 
 #[test]
-fn connect() {
+fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let _ = create_connected_nodes(4, event_sender, &event_receiver);
-}
+    let mut nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
 
-#[test]
-fn request_and_response() {
-    let (event_sender, event_receiver) = mpsc::channel();
+    {
+        // request and response
+        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let data = gen_plain_data();
 
-    let nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
-
-    let client = TestClient::new(nodes.len(), event_sender);
-    let mut data = Some(gen_plain_data());
-
-    loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-            TestEvent(index, Event::Connected) if index == client.index => {
-                // The client is connected now. Send some request.
-                if let Some(data) = data.take() {
+        loop {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                TestEvent(index, Event::Connected) if index == client.index => {
+                    // The client is connected now. Send some request.
                     unwrap_result!(client.client.send_put_request(
-                        Authority::ClientManager(*client.name()), data));
+                        Authority::ClientManager(*client.name()), data.clone()));
                 }
-            }
 
-            TestEvent(index, Event::Request(message)) => {
-                // A node received request from the client. Reply with a success.
-                if let RequestContent::Put(_, ref id) = message.content {
-                    let encoded = unwrap_result!(serialise(&message));
-                    let ref node = nodes[index].node;
+                TestEvent(index, Event::Request(message)) => {
+                    // A node received request from the client. Reply with a success.
+                    if let RequestContent::Put(_, ref id) = message.content {
+                        let encoded = unwrap_result!(serialise(&message));
+                        let ref node = nodes[index].node;
 
-                    unwrap_result!(node.send_put_success(message.dst,
-                                                         message.src,
-                                                         sha512::hash(&encoded),
-                                                         id.clone()));
+                        unwrap_result!(node.send_put_success(message.dst,
+                                                             message.src,
+                                                             sha512::hash(&encoded),
+                                                             id.clone()));
+                    }
                 }
-            }
 
-            TestEvent(index,
-                      Event::Response(ResponseMessage{
-                        content: ResponseContent::PutSuccess(..), .. }))
-                if index == client.index => {
-                // The client received response to its request. We are done.
-                break;
-            }
-
-            _ => (),
-        }
-    }
-}
-
-#[test]
-fn joining_nodes_cause_churn() {
-    let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_connected_nodes(GROUP_SIZE, event_sender.clone(), &event_receiver);
-
-    let mut churns = iter::repeat(false).take(nodes.len()).collect::<Vec<_>>();
-
-    // a node joins...
-    let _new_node = TestNode::new(nodes.len(), event_sender.clone());
-
-    loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-            TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
-                churns[index] = true;
-                if churns.iter().all(|b| *b) { break; }
-            }
-
-            _ => (),
-        }
-    }
-}
-
-#[test]
-fn leaving_nodes_cause_churn() {
-    let (event_sender, event_receiver) = mpsc::channel();
-    let mut nodes = create_connected_nodes(GROUP_SIZE, event_sender.clone(), &event_receiver);
-    let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
-
-    // a node leaves...
-    let node = nodes.pop().unwrap();
-    let name = node.name();
-    drop(node);
-
-    loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-            TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. })
-                if index < nodes.len() && lost_name == name => {
-                churns[index] = true;
-                if churns.iter().all(|b| *b) {
+                TestEvent(index,
+                          Event::Response(ResponseMessage{
+                            content: ResponseContent::PutSuccess(..), .. }))
+                    if index == client.index => {
+                    // The client received response to its request. We are done.
                     break;
                 }
-            }
 
-            _ => (),
+                _ => (),
+            }
         }
     }
-}
 
-#[test]
-fn request_to_group_authority() {
-    let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
-    let node_names = nodes.iter().map(|node| node.name()).collect();
-    let client = TestClient::new(nodes.len(), event_sender);
-    let data = gen_plain_data();
-    let mut close_group = closest_nodes(&node_names, client.name());
-    let timeout = time::Duration::seconds(10);
-    let start = time::SteadyTime::now();
+    {
+        // request to group authority
+        let node_names = nodes.iter().map(|node| node.name()).collect();
+        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let data = gen_plain_data();
+        let mut close_group = closest_nodes(&node_names, client.name());
+        let timeout = time::Duration::seconds(10);
+        let start = time::SteadyTime::now();
 
-    loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
-            TestEvent(index, Event::Connected) if index == client.index => {
-                unwrap_result!(client.client.send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-            }
-            TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
-                close_group.retain(|&name| name != nodes[index].name());
-
-                if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
-                    break;
+        loop {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+                TestEvent(index, Event::Connected) if index == client.index => {
+                    unwrap_result!(client.client.send_put_request(
+                        Authority::ClientManager(*client.name()), data.clone()));
                 }
+                TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
+                    close_group.retain(|&name| name != nodes[index].name());
+
+                    if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
+                        break;
+                    }
+                }
+                _ => (),
             }
-            _ => (),
         }
+
+        assert!(close_group.is_empty());
     }
 
-    assert!(close_group.is_empty());
-}
+    {
+        // response from group authority
+        let node_names = nodes.iter().map(|node| node.name()).collect();
+        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let data = gen_plain_data();
+        let mut close_group = closest_nodes(&node_names, client.name());
+        let timeout = time::Duration::seconds(10);
+        let start = time::SteadyTime::now();
 
-#[test]
-fn response_from_group_authority() {
-    let (event_sender, event_receiver) = mpsc::channel();
-    let nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
-    let node_names = nodes.iter().map(|node| node.name()).collect();
-    let client = TestClient::new(nodes.len(), event_sender);
-    let data = gen_plain_data();
-    let mut close_group = closest_nodes(&node_names, client.name());
-    let timeout = time::Duration::seconds(10);
-    let start = time::SteadyTime::now();
-
-    loop {
-        match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
-            TestEvent(index, Event::Connected) if index == client.index => {
-                unwrap_result!(client.client.send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-            }
-            TestEvent(index, Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                            dst: Authority::ClientManager(name),
-                                                            content: RequestContent::Put(data, id) })) => {
-                unwrap_result!(nodes[index].node.send_put_request(
-                    Authority::ClientManager(name),
-                    Authority::NaeManager(data.name().clone()),
-                    data.clone(),
-                    id.clone()));
-            }
-            TestEvent(index, Event::Request(ref msg)) => {
-                if let RequestContent::Put(_, ref id) = msg.content {
-                    unwrap_result!(nodes[index].node.send_put_failure(
-                        msg.dst.clone(),
-                        msg.src.clone(),
-                        msg.clone(),
-                        vec![],
+        loop {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+                TestEvent(index, Event::Connected) if index == client.index => {
+                    unwrap_result!(client.client.send_put_request(
+                        Authority::ClientManager(*client.name()), data.clone()));
+                }
+                TestEvent(index, Event::Request(RequestMessage{ src: Authority::Client{ .. },
+                                                                dst: Authority::ClientManager(name),
+                                                                content: RequestContent::Put(data, id) })) => {
+                    unwrap_result!(nodes[index].node.send_put_request(
+                        Authority::ClientManager(name),
+                        Authority::NaeManager(data.name().clone()),
+                        data.clone(),
                         id.clone()));
                 }
-            }
-            TestEvent(index, Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. }, .. })) => {
-                close_group.retain(|&name| name != nodes[index].name());
-
-                if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
-                    break;
+                TestEvent(index, Event::Request(ref msg)) => {
+                    if let RequestContent::Put(_, ref id) = msg.content {
+                        unwrap_result!(nodes[index].node.send_put_failure(
+                            msg.dst.clone(),
+                            msg.src.clone(),
+                            msg.clone(),
+                            vec![],
+                            id.clone()));
+                    }
                 }
+                TestEvent(index, Event::Response(
+                        ResponseMessage{ content: ResponseContent::PutFailure{ .. }, .. })) => {
+                    close_group.retain(|&name| name != nodes[index].name());
+
+                    if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
+                        break;
+                    }
+                }
+                _ => (),
             }
-            _ => (),
+        }
+
+        assert!(close_group.is_empty());
+    }
+
+    {
+        // leaving nodes cause churn
+        let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
+        // a node leaves...
+        let node = nodes.pop().unwrap();
+        let name = node.name();
+        drop(node);
+
+        loop {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+                TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. })
+                    if index < nodes.len() && lost_name == name => {
+                    churns[index] = true;
+                    if churns.iter().all(|b| *b) {
+                        break;
+                    }
+                }
+
+                _ => (),
+            }
         }
     }
 
-    assert!(close_group.is_empty());
+    {
+        // joining nodes cause churn
+        let nodes_len = nodes.len();
+        let mut churns = iter::repeat(false).take(nodes_len + 1).collect::<Vec<_>>();
+        // a node joins...
+        nodes.push(TestNode::new(nodes_len, event_sender.clone()));
+
+        loop {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+                TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
+                    churns[index] = true;
+                    if churns.iter().all(|b| *b) { break; }
+                }
+
+                _ => (),
+            }
+        }
+    }
 }
