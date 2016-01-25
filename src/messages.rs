@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt;
 use data::{Data, DataRequest};
 use id::{FullId, PublicId};
 use types::MessageId;
@@ -40,7 +41,7 @@ pub enum Message {
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
@@ -75,7 +76,7 @@ pub enum DirectMessage {
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
 /// prevent Man-in-the-middle attacks, the `content` is signed by the original sender.
-#[derive(Debug, RustcEncodable, RustcDecodable)]
+#[derive(RustcEncodable, RustcDecodable)]
 pub struct HopMessage {
     /// Wrapped signed message.
     content: SignedMessage,
@@ -127,7 +128,7 @@ impl HopMessage {
 }
 
 /// Wrapper around a routing message, signed by the originator of the message.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub struct SignedMessage {
     /// A request or response type message.
     content: RoutingMessage,
@@ -223,7 +224,7 @@ pub struct ResponseMessage {
 }
 
 /// The request types
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum RequestContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
@@ -279,7 +280,7 @@ pub enum RequestContent {
 ///
 /// All responses map to a specific request, and where the request was from a single node
 /// or client, the response will contain the signed request to prevent forgery.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
 pub enum ResponseContent {
     // ---------- Internal ------------
     /// Reply with the new `PublicId` for the joining node.
@@ -362,4 +363,181 @@ pub enum ResponseContent {
         /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
+}
+
+impl fmt::Debug for DirectMessage {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } =>
+                write!(formatter, "DirectMessage {{ BootstrapIdentify {{ {:?}, {:?} }} }}",
+                    public_id, current_quorum_size),
+            DirectMessage::BootstrapDeny =>
+                write!(formatter, "DirectMessage {{ BootstrapDeny }}"),
+            DirectMessage::ClientIdentify { ref client_restriction, .. } =>
+                write!(formatter, "DirectMessage {{ ClientIdentify {{ .., {:?} }} }}", client_restriction),
+            DirectMessage::NodeIdentify { .. } =>
+                write!(formatter, "DirectMessage {{ NodeIdentify {{ .. }} }}"),
+        }
+    }
+}
+
+impl fmt::Debug for HopMessage {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(formatter, "HopMessage {{ content: {:?}, name: {:?}, signature: .. }}",
+            self.content, self.name)
+    }
+}
+
+impl fmt::Debug for SignedMessage {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(formatter, "SignedMessage {{ content: {:?}, public_id: {:?}, signature: .. }}",
+            self.content, self.public_id)
+    }
+}
+
+impl fmt::Debug for RequestContent {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            RequestContent::GetNetworkName { ref current_id } =>
+                write!(formatter, "RequestContent {{ GetNetworkName {{ {:?} }} }}", current_id),
+            RequestContent::ExpectCloseNode { ref expect_id } =>
+                write!(formatter, "RequestContent {{ ExpectCloseNode {{ {:?} }} }}", expect_id),
+            RequestContent::GetCloseGroup =>
+                write!(formatter, "RequestContent {{ GetCloseGroup }}"),
+            RequestContent::Connect =>
+                write!(formatter, "RequestContent {{ Connect }}"),
+            RequestContent::Endpoints { .. } =>
+                write!(formatter, "RequestContent {{ Endpoints {{ .. }} }}"),
+            RequestContent::GetPublicId =>
+                write!(formatter, "RequestContent {{ GetPublicId }}"),
+            RequestContent::GetPublicIdWithEndpoints { .. } =>
+                write!(formatter, "RequestContent {{ GetPublicIdWithEndpoints {{ .. }} }}"),
+            RequestContent::Refresh(..) =>
+                write!(formatter, "RequestContent {{ Refresh(..) }}"),
+            RequestContent::Get(ref data_request, ref message_id) =>
+                write!(formatter, "RequestContent {{ Get( {:?}, {:?} ) }}", data_request, message_id),
+            RequestContent::Put(ref data, ref message_id) =>
+                write!(formatter, "RequestContent {{ Put( {:?}, {:?} ) }}", data, message_id),
+            RequestContent::Post(ref data, ref message_id) =>
+                write!(formatter, "RequestContent {{ Post( {:?}, {:?} ) }}", data, message_id),
+            RequestContent::Delete(ref data, ref message_id) =>
+                write!(formatter, "RequestContent {{ Delete( {:?}, {:?} ) }}", data, message_id),
+        }
+    }
+}
+
+impl fmt::Debug for ResponseContent {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            ResponseContent::GetNetworkName { ref relocated_id } =>
+                write!(formatter, "ResponseContent {{ GetNetworkName {{ {:?} }} }}", relocated_id),
+            ResponseContent::GetPublicId { ref public_id } =>
+                write!(formatter, "ResponseContent {{ GetPublicId {{ {:?} }} }}", public_id),
+            ResponseContent::GetPublicIdWithEndpoints { ref public_id, .. } =>
+                write!(formatter, "ResponseContent {{ GetPublicIdWithEndpoints {{ {:?}, .. }} }}", public_id),
+            ResponseContent::GetCloseGroup { ref close_group_ids } =>
+                write!(formatter, "ResponseContent {{ GetCloseGroup {{ {:?} }} }}", close_group_ids),
+            ResponseContent::GetSuccess(ref data, ref message_id) =>
+                write!(formatter, "ResponseContent {{ GetSuccess {{ {:?}, {:?} }} }}", data, message_id),
+            ResponseContent::PutSuccess(ref digest, ref message_id) =>
+                write!(formatter, "ResponseContent {{ PutSuccess {{ {:?}, {:?} }} }}", digest, message_id),
+            ResponseContent::PostSuccess(ref digest, ref message_id) =>
+                write!(formatter, "ResponseContent {{ PostSuccess {{ {:?}, {:?} }} }}", digest, message_id),
+            ResponseContent::DeleteSuccess(ref digest, ref message_id) =>
+                write!(formatter, "ResponseContent {{ DeleteSuccess {{ {:?}, {:?} }} }}", digest, message_id),
+            ResponseContent::GetFailure { ref id, ref request, .. } =>
+                write!(formatter, "ResponseContent {{ GetFailure {{ {:?}, {:?}, .. }} }}", id, request),
+            ResponseContent::PutFailure { ref id, ref request, .. } =>
+                write!(formatter, "ResponseContent {{ PutFailure {{ {:?}, {:?}, .. }} }}", id, request),
+            ResponseContent::PostFailure { ref id, ref request, .. } =>
+                write!(formatter, "ResponseContent {{ PostFailure {{ {:?}, {:?}, .. }} }}", id, request),
+            ResponseContent::DeleteFailure { ref id, ref request, .. } =>
+                write!(formatter, "ResponseContent {{ DeleteFailure {{ {:?}, {:?}, .. }} }}", id, request),
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    extern crate rand;
+
+    use super::{HopMessage, SignedMessage, RoutingMessage, RequestMessage, RequestContent};
+    use id::FullId;
+    use authority::Authority;
+    use xor_name::XorName;
+    use sodiumoxide::crypto::sign;
+    use maidsafe_utilities::serialisation::serialise;
+
+    #[test]
+    fn signed_message_check_integrity() {
+        let name: XorName = rand::random();
+        let routing_message = RoutingMessage::Request(
+            RequestMessage {
+                src: Authority::ClientManager(name),
+                dst: Authority::ClientManager(name),
+                content: RequestContent::Connect,
+            }
+        );
+        let full_id = FullId::new();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
+
+        assert!(signed_message_result.is_ok());
+
+        let mut signed_message = unwrap_result!(signed_message_result);
+
+        assert_eq!(routing_message, *signed_message.content());
+        assert_eq!(full_id.public_id(), signed_message.public_id());
+
+        let check_integrity_result = signed_message.check_integrity();
+
+        assert!(check_integrity_result.is_ok());
+
+        let full_id = FullId::new();
+        let bytes_to_sign = serialise(&(&routing_message, full_id.public_id())).unwrap();
+        let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
+
+        signed_message.signature = signature;
+
+        let check_integrity_result = signed_message.check_integrity();
+
+        assert!(check_integrity_result.is_err());
+    }
+
+    #[test]
+    fn hop_message_verify() {
+        let name: XorName = rand::random();
+        let routing_message = RoutingMessage::Request(
+            RequestMessage {
+                src: Authority::ClientManager(name),
+                dst: Authority::ClientManager(name),
+                content: RequestContent::Connect,
+            }
+        );
+        let full_id = FullId::new();
+        let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
+
+        assert!(signed_message_result.is_ok());
+
+        let signed_message = signed_message_result.unwrap();
+        let hop_name: XorName = rand::random();
+        let (public_signing_key, secret_signing_key) = sign::gen_keypair();
+        let hop_message_result = HopMessage::new(signed_message.clone(), hop_name, &secret_signing_key);
+
+        assert!(hop_message_result.is_ok());
+
+        let hop_message = unwrap_result!(hop_message_result);
+
+        assert_eq!(signed_message, *hop_message.content());
+        assert_eq!(hop_name, *hop_message.name());
+
+        let verify_result = hop_message.verify(&public_signing_key);
+
+        assert!(verify_result.is_ok());
+
+        let (public_signing_key, _) = sign::gen_keypair();
+        let verify_result = hop_message.verify(&public_signing_key);
+
+        assert!(verify_result.is_err());
+    }
 }
