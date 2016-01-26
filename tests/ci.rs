@@ -42,6 +42,7 @@ use routing::{Client, Data, Event, FullId, Node, PlainData, RequestContent, Requ
               ResponseMessage};
 
 const GROUP_SIZE: usize = kademlia_routing_table::GROUP_SIZE as usize;
+const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
@@ -108,13 +109,13 @@ fn spawn_select_thread(index: usize, main_sender: Sender<TestEvent>) -> (Sender<
     (sender, RaiiThreadJoiner::new(thread_handle))
 }
 
-fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
+fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> {
     let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
     loop {
         match receiver.try_recv() {
-            Ok(value) => return value,
+            Ok(value) => return Some(value),
             Err(TryRecvError::Disconnected) => break,
             _ => (),
         }
@@ -127,7 +128,7 @@ fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
         }
     }
 
-    panic!("Timeout");
+    None
 }
 
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
@@ -135,17 +136,21 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        match recv_with_timeout(event_receiver, Duration::from_secs(20)) {
-            TestEvent(index, Event::Churn { .. }) => {
-                connection_counts[index] += 1;
+        if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            match test_event {
+                TestEvent(index, Event::Churn { .. }) => {
+                    connection_counts[index] += 1;
 
-                let k = nodes.len();
-                if (0..k).map(|i| connection_counts[i]).all(|n| n >= k - 1) {
-                    break;
+                    let k = nodes.len();
+                    if (0..k).map(|i| connection_counts[i]).all(|n| n >= k - 1) {
+                        break;
+                    }
                 }
-            }
 
-            _ => (),
+                _ => (),
+            }
+        } else {
+            panic!("Timeout");
         }
     }
 }
@@ -209,35 +214,39 @@ fn core() {
         let data = gen_plain_data();
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-                TestEvent(index, Event::Connected) if index == client.index => {
-                    // The client is connected now. Send some request.
-                    unwrap_result!(client.client
-                                         .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-                }
-
-                TestEvent(index, Event::Request(message)) => {
-                    // A node received request from the client. Reply with a success.
-                    if let RequestContent::Put(_, ref id) = message.content {
-                        let encoded = unwrap_result!(serialise(&message));
-                        let ref node = nodes[index].node;
-
-                        unwrap_result!(node.send_put_success(message.dst,
-                                                             message.src,
-                                                             sha512::hash(&encoded),
-                                                             id.clone()));
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                match test_event {
+                    TestEvent(index, Event::Connected) if index == client.index => {
+                        // The client is connected now. Send some request.
+                        unwrap_result!(client.client
+                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
                     }
-                }
 
-                TestEvent(index,
-                          Event::Response(ResponseMessage{
-                            content: ResponseContent::PutSuccess(..), .. }))
-                    if index == client.index => {
-                    // The client received response to its request. We are done.
-                    break;
-                }
+                    TestEvent(index, Event::Request(message)) => {
+                        // A node received request from the client. Reply with a success.
+                        if let RequestContent::Put(_, ref id) = message.content {
+                            let encoded = unwrap_result!(serialise(&message));
+                            let ref node = nodes[index].node;
 
-                _ => (),
+                            unwrap_result!(node.send_put_success(message.dst,
+                                                                 message.src,
+                                                                 sha512::hash(&encoded),
+                                                                 id.clone()));
+                        }
+                    }
+
+                    TestEvent(index,
+                              Event::Response(ResponseMessage{
+                                content: ResponseContent::PutSuccess(..), .. }))
+                        if index == client.index => {
+                        // The client received response to its request. We are done.
+                        break;
+                    }
+
+                    _ => (),
+                }
+            } else {
+                panic!("Timeout");
             }
         }
     }
@@ -250,19 +259,23 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
-                TestEvent(index, Event::Connected) if index == client.index => {
-                    unwrap_result!(client.client
-                                         .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-                }
-                TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
-                    close_group.retain(|&name| name != nodes[index].name());
-
-                    if close_group.is_empty() {
-                        break;
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                match test_event {
+                    TestEvent(index, Event::Connected) if index == client.index => {
+                        unwrap_result!(client.client
+                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
                     }
+                    TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
+                        close_group.retain(|&name| name != nodes[index].name());
+
+                        if close_group.is_empty() {
+                            break;
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
+            } else {
+                panic!("Timeout");
             }
         }
 
@@ -277,39 +290,43 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
-                TestEvent(index, Event::Connected) if index == client.index => {
-                    unwrap_result!(client.client
-                                         .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-                }
-                TestEvent(index,
-                          Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                                dst: Authority::ClientManager(name),
-                                                                content: RequestContent::Put(data, id) })) => {
-                    unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
-                                                                      Authority::NaeManager(data.name().clone()),
-                                                                      data.clone(),
-                                                                      id.clone()));
-                }
-                TestEvent(index, Event::Request(ref msg)) => {
-                    if let RequestContent::Put(_, ref id) = msg.content {
-                        unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
-                                                                          msg.src.clone(),
-                                                                          msg.clone(),
-                                                                          vec![],
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                match test_event {
+                    TestEvent(index, Event::Connected) if index == client.index => {
+                        unwrap_result!(client.client
+                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                    }
+                    TestEvent(index,
+                              Event::Request(RequestMessage{ src: Authority::Client{ .. },
+                                                                    dst: Authority::ClientManager(name),
+                                                                    content: RequestContent::Put(data, id) })) => {
+                        unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
+                                                                          Authority::NaeManager(data.name().clone()),
+                                                                          data.clone(),
                                                                           id.clone()));
                     }
-                }
-                TestEvent(index,
-                          Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
-                                                                  .. })) => {
-                    close_group.retain(|&name| name != nodes[index].name());
-
-                    if close_group.is_empty() {
-                        break;
+                    TestEvent(index, Event::Request(ref msg)) => {
+                        if let RequestContent::Put(_, ref id) = msg.content {
+                            unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
+                                                                              msg.src.clone(),
+                                                                              msg.clone(),
+                                                                              vec![],
+                                                                              id.clone()));
+                        }
                     }
+                    TestEvent(index,
+                              Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
+                                                                      .. })) => {
+                        close_group.retain(|&name| name != nodes[index].name());
+
+                        if close_group.is_empty() {
+                            break;
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
+            } else {
+                panic!("Timeout");
             }
         }
 
@@ -325,16 +342,20 @@ fn core() {
         drop(node);
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-                TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. }) if index < nodes.len() &&
-                                                                                           lost_name == name => {
-                    churns[index] = true;
-                    if churns.iter().all(|b| *b) {
-                        break;
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                match test_event {
+                    TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. }) if index < nodes.len() &&
+                                                                                               lost_name == name => {
+                        churns[index] = true;
+                        if churns.iter().all(|b| *b) {
+                            break;
+                        }
                     }
-                }
 
-                _ => (),
+                    _ => (),
+                }
+            } else {
+                panic!("Timeout");
             }
         }
     }
@@ -347,15 +368,104 @@ fn core() {
         nodes.push(TestNode::new(nodes_len, event_sender.clone()));
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
-                TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
-                    churns[index] = true;
-                    if churns.iter().all(|b| *b) {
-                        break;
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+                match test_event {
+                    TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
+                        churns[index] = true;
+                        if churns.iter().all(|b| *b) {
+                            break;
+                        }
                     }
-                }
 
-                _ => (),
+                    _ => (),
+                }
+            } else {
+                panic!("Timeout");
+            }
+        }
+    }
+
+    {
+        // message from quorum - 1 group members
+        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let data = gen_plain_data();
+
+        loop {
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+                match test_event {
+                    TestEvent(index, Event::Connected) if index == client.index => {
+                        unwrap_result!(client.client
+                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                    }
+                    TestEvent(index,
+                              Event::Request(RequestMessage{ src: Authority::Client{ .. },
+                                                                    dst: Authority::ClientManager(name),
+                                                                    content: RequestContent::Put(data, id) })) => {
+                        unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
+                                                                          Authority::NaeManager(data.name().clone()),
+                                                                          data.clone(),
+                                                                          id.clone()));
+                    }
+                    TestEvent(index, Event::Request(ref msg)) => {
+                        if let RequestContent::Put(_, ref id) = msg.content {
+                            if index < QUORUM_SIZE - 1 {
+                                unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
+                                                                                  msg.src.clone(),
+                                                                                  msg.clone(),
+                                                                                  vec![],
+                                                                                  id.clone()));
+                            }
+                        }
+                    }
+                    TestEvent(_index,
+                              Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
+                                                                      .. })) => {
+                        panic!("Unexpected response.");
+                    }
+                    _ => (),
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    {
+        // message from more than quorum group members
+        let client = TestClient::new(nodes.len(), event_sender.clone());
+        let data = gen_plain_data();
+        let mut number_of_events = 0;
+
+        loop {
+            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+                match test_event {
+                    TestEvent(index, Event::Connected) if index == client.index => {
+                        // The client is connected now. Send some request.
+                        unwrap_result!(client.client
+                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                    }
+                    TestEvent(index, Event::Request(message)) => {
+                        // A node received request from the client. Reply with a success.
+                        if let RequestContent::Put(_, ref id) = message.content {
+                            let encoded = unwrap_result!(serialise(&message));
+
+                            unwrap_result!(nodes[index].node.send_put_success(message.dst,
+                                                                              message.src,
+                                                                              sha512::hash(&encoded),
+                                                                              id.clone()));
+                        }
+                    }
+                    TestEvent(index,
+                              Event::Response(ResponseMessage{
+                                content: ResponseContent::PutSuccess(..), .. }))
+                        if index == client.index => {
+                        number_of_events += 1;
+                    }
+                    _ => (),
+                }
+            } else {
+                assert_eq!(number_of_events, 1);
+                break;
             }
         }
     }
