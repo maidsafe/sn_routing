@@ -45,4 +45,3 @@ test = true
 bench = false
 harness = false
 name = "ci"
-test = true

@@ -109,7 +109,7 @@ fn spawn_select_thread(index: usize, main_sender: Sender<TestEvent>) -> (Sender<
 }
 
 fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> T {
-    let interval = timeout;
+    let interval = Duration::from_millis(100);
     let mut elapsed = Duration::from_millis(0);
 
     loop {
@@ -248,8 +248,6 @@ fn core() {
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
         let mut close_group = closest_nodes(&node_names, client.name());
-        let timeout = time::Duration::seconds(10);
-        let start = time::SteadyTime::now();
 
         loop {
             match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
@@ -260,7 +258,7 @@ fn core() {
                 TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
                     close_group.retain(|&name| name != nodes[index].name());
 
-                    if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
+                    if close_group.is_empty() {
                         break;
                     }
                 }
@@ -277,8 +275,6 @@ fn core() {
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
         let mut close_group = closest_nodes(&node_names, client.name());
-        let timeout = time::Duration::seconds(10);
-        let start = time::SteadyTime::now();
 
         loop {
             match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
@@ -309,7 +305,7 @@ fn core() {
                                                                   .. })) => {
                     close_group.retain(|&name| name != nodes[index].name());
 
-                    if close_group.is_empty() || start + timeout > time::SteadyTime::now() {
+                    if close_group.is_empty() {
                         break;
                     }
                 }
@@ -329,7 +325,7 @@ fn core() {
         drop(node);
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. }) if index < nodes.len() &&
                                                                                            lost_name == name => {
                     churns[index] = true;
@@ -351,7 +347,7 @@ fn core() {
         nodes.push(TestNode::new(nodes_len, event_sender.clone()));
 
         loop {
-            match recv_with_timeout(&event_receiver, Duration::from_secs(10)) {
+            match recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index < nodes.len() => {
                     churns[index] = true;
                     if churns.iter().all(|b| *b) {
