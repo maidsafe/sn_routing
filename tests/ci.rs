@@ -431,7 +431,7 @@ fn core() {
     }
 
     {
-        // message from quorum - 1 group members
+        // message from more than quorum group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
         let mut number_of_events = 0;
