@@ -255,8 +255,11 @@ impl MaidManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use error::{ClientError, InternalError};
+    use maidsafe_utilities::serialisation;
     use rand::random;
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
+                  ResponseContent};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -270,42 +273,54 @@ mod test {
         maid_manager: MaidManager,
     }
 
-    impl Environment {
-        fn construct_put_request(&self) -> RequestMessage {
-            let value = generate_random_vec_u8(1024);
-            let data = ImmutableData::new(ImmutableDataType::Normal, value);
-            let message_id = MessageId::new();
-            RequestMessage{
-                src: self.client.clone(),
-                dst: self.our_authority.clone(),
-                content: RequestContent::Put(Data::ImmutableData(data), message_id),
-            }
-        }
-    }
-
     fn environment_setup() -> Environment {
         let from = random::<XorName>();
         let keys = sign::gen_keypair();
         Environment {
             our_authority: Authority::ClientManager(from.clone()),
-            client: Authority::Client{ client_key: keys.0, proxy_node_name: from.clone(), },
+            client: Authority::Client {
+                client_key: keys.0,
+                proxy_node_name: from.clone(),
+            },
             routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
             maid_manager: MaidManager::new(),
         }
     }
 
     #[test]
-    fn handle_put() {
+    fn handle_put_without_account() {
         let mut env = environment_setup();
-        {
-            let request = env.construct_put_request();
-            unwrap_result!(env.maid_manager.handle_put(&env.routing, &request));
-            let put_requests = env.routing.put_requests_given();
-            assert_eq!(put_requests.len(), 1);
-            for i in 0..put_requests.len() {
-                assert_eq!(put_requests[i].src, env.our_authority);
-                assert_eq!(put_requests[i].content, request.content);
+
+        // Try with valid ImmutableData before account is created
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::ImmutableData(immutable_data), message_id.clone()),
+        };
+
+        match env.maid_manager.handle_put(&env.routing, &valid_request) {
+            Err(InternalError::Client(ClientError::NoSuchAccount)) => (),
+            _ => unreachable!(),
+        }
+        let put_requests = env.routing.put_requests_given();
+        assert!(put_requests.is_empty());
+        let put_failures = env.routing.put_failures_given();
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.client);
+        match &put_failures[0].content {
+            &ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } => {
+                assert_eq!(*id, message_id);
+                assert_eq!(*request, valid_request);
+                match unwrap_result!(serialisation::deserialise::<ClientError>(external_error_indicator)) {
+                    ClientError::NoSuchAccount => (),
+                    _ => unreachable!(),
+                }
+
             }
+            _ => unreachable!(),
         }
 
         // assert_eq!(::utils::HANDLED,
