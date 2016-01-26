@@ -61,7 +61,7 @@
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let client = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -185,7 +185,6 @@ mod messages;
 mod node;
 mod plain_data;
 mod structured_data;
-mod tests;
 mod types;
 mod utils;
 

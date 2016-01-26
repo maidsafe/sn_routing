@@ -40,3 +40,8 @@ test = true
 bench = false
 name = "ci_test"
 test = true
+
+[[test]]
+bench = false
+harness = false
+name = "ci"
