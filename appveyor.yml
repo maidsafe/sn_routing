@@ -38,4 +38,4 @@ build_script:
 
 test_script:
   - ps: . ".\Run Tests.ps1"
-  - cargo test --release -- --nocapture vault::test::network_test
+#  - cargo test --release -- --nocapture vault::test::network_test

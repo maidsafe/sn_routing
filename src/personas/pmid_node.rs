@@ -17,7 +17,8 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
+use error::InternalError;
+use maidsafe_utilities::serialisation;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
 use vault::RoutingNode;
 
@@ -26,36 +27,23 @@ pub struct PmidNode {
 }
 
 impl PmidNode {
-    pub fn new() -> PmidNode {
-        PmidNode {
+    pub fn new() -> Result<PmidNode, InternalError> {
+        Ok(PmidNode {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1189
-            chunk_store: default_chunk_store::new().unwrap(),
-        }
+            chunk_store: try!(default_chunk_store::new()),
+        })
     }
 
-    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data_name, message_id) = match &request.content {
             &RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref message_id) => (name, message_id),
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = match self.chunk_store.get(data_name) {
-            Ok(data) => data,
-            _ => {
-                warn!("Failed to GET data with name {:?}", data_name);
-                return;
-            }
-        };
-
-        let decoded = match deserialise::<ImmutableData>(&data) {
-            Ok(data) => data,
-            Err(_) => {
-                warn!("Failed to parse data with name {:?}", data_name);
-                return;
-            }
-        };
+        let data = try!(self.chunk_store.get(data_name));
+        let decoded = try!(serialisation::deserialise::<ImmutableData>(&data));
         debug!("As {:?} sending data {:?} to {:?}",
                request.dst,
                Data::ImmutableData(decoded.clone()),
@@ -64,52 +52,48 @@ impl PmidNode {
                                               request.src.clone(),
                                               Data::ImmutableData(decoded),
                                               message_id.clone());
+        Ok(())
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) {
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => (data.clone(), message_id.clone()),
+    pub fn handle_put(&mut self, request: &RequestMessage) -> Result<(), InternalError> {
+        let data = match request.content {
+            RequestContent::Put(Data::ImmutableData(ref data), _) => data.clone(),
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
         info!("pmid_node {:?} storing {:?}",
               request.dst.get_name(),
               data_name);
-        let serialised_data = match serialise(&data) {
-            Ok(data) => data,
-            Err(_) => return,
-        };
+        let serialised_data = try!(serialisation::serialise(&data));
         if self.chunk_store.has_space(serialised_data.len()) {
             // the type_tag needs to be stored as well
             // TODO: error handling
-            let _ = self.chunk_store.put(&data_name, &serialised_data);
-            return;
+            try!(self.chunk_store.put(&data_name, &serialised_data));
+            return Ok(());
         }
 
         // If we can't store the data and it's a Backup or Sacrificial copy, just notify PmidManager
         // to update the account - replication shall not be carried out for it.
         if *data.get_type_tag() != ImmutableDataType::Normal {
             // self.notify_managers_of_sacrifice(our_authority, data, response_token);
-            return;
+            return Ok(());
         }
 
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
         // out Sacrificial chunks.
-        let required_space = serialised_data.len() -
-                             (self.chunk_store.max_space() - self.chunk_store.used_space());
+        let required_space = serialised_data.len() - (self.chunk_store.max_space() - self.chunk_store.used_space());
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
             let fetched_data = match self.chunk_store.get(name) {
                 Ok(data) => data,
-                _ => continue
+                _ => continue,
             };
 
-            let parsed_data = match deserialise::<ImmutableData>(&fetched_data) {
+            let parsed_data = match serialisation::deserialise::<ImmutableData>(&fetched_data) {
                 Ok(data) => data,
                 Err(_) => {
                     // remove corrupted data
-                    // TODO: error handling
                     let _ = self.chunk_store.delete(name);
                     continue;
                 }
@@ -117,7 +101,6 @@ impl PmidNode {
             match *parsed_data.get_type_tag() {
                 ImmutableDataType::Sacrificial => {
                     emptied_space += fetched_data.len();
-                    // TODO: error handling
                     let _ = self.chunk_store.delete(name);
 
                     // For sacrificed data, just notify PmidManager to update the account and
@@ -125,9 +108,8 @@ impl PmidNode {
                     // out for it.
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
-                        // TODO: error handling
-                        let _ = self.chunk_store.put(&data_name, &serialised_data);
-                        return;
+                        try!(self.chunk_store.put(&data_name, &serialised_data));
+                        return Ok(());
                     }
                 }
                 _ => {}
@@ -135,11 +117,11 @@ impl PmidNode {
         }
 
         // We failed to make room for it - replication needs to be carried out.
-        //        let error = ::routing::error::ResponseError::FailedRequestForData(original_data);
-        let src = request.dst.clone();
-        let dst = request.src.clone();
-        debug!("As {:?} sending Put failure to {:?}", src, dst);
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
+        // let src = request.dst.clone();
+        // let dst = request.src.clone();
+        // debug!("As {:?} sending Put failure to {:?}", src, dst);
+        // let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);  // TODO - set proper error value
+        Ok(())
     }
 
     // fn notify_managers_of_sacrifice(&self,

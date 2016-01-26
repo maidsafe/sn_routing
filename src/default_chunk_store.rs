@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -19,10 +19,10 @@
 
 use chunk_store::{ChunkStore, Error};
 
-const PREFIX : &'static str = "safe-vault";
-const SIZE : usize = 1073741824;
+const PREFIX: &'static str = "safe-vault";
+const SIZE: usize = 1073741824;
 
-/// Construct a new ChunkStore initialized with the default parameters.
+// Construct a new ChunkStore initialised with the default parameters.
 pub fn new() -> Result<ChunkStore, Error> {
-  ChunkStore::new(PREFIX, SIZE)
+    ChunkStore::new(PREFIX, SIZE)
 }

@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::serialisation::serialise;
+use error::InternalError;
+use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, ImmutableData, MessageId, ResponseMessage};
 use std::collections::HashMap;
 use types::{Refresh, RefreshValue};
@@ -95,7 +96,8 @@ impl PmidManager {
                       routing_node: &RoutingNode,
                       data: &ImmutableData,
                       message_id: &MessageId,
-                      pmid_node: XorName) {
+                      pmid_node: XorName)
+                      -> Result<(), InternalError> {
         // Put data always being allowed, i.e. no early alert
         self.accounts.entry(pmid_node.clone()).or_insert(Account::default()).put_data(data.payload_size() as u64);
 
@@ -105,6 +107,7 @@ impl PmidManager {
                                               dst,
                                               Data::ImmutableData(data.clone()),
                                               message_id.clone());
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -173,7 +176,7 @@ impl PmidManager {
                 name: pmid_node.clone(),
                 value: RefreshValue::PmidManager(account.clone()),
             };
-            if let Ok(serialised_refresh) = serialise(&refresh) {
+            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("PmidManager sending refresh for account {:?}",
                        src.get_name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
