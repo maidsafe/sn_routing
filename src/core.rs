@@ -19,7 +19,7 @@ use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
 use kademlia_routing_table;
-use kademlia_routing_table::{NodeInfo, RoutingTable};
+use kademlia_routing_table::{HopType, NodeInfo, RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -974,7 +974,7 @@ impl Core {
                     return Ok(());
                 }
 
-                let group_size = kademlia_routing_table::group_size();
+                let group_size = kademlia_routing_table::GROUP_SIZE;
                 if client_restriction {
                     if self.routing_table.len() < group_size {
                         trace!("Client rejected: Routing table has {} entries. {} required.",
@@ -1039,7 +1039,7 @@ impl Core {
                             // If the new node is going to displace a node from the close group then
                             // inform the vaults about the node being moved out of close group
                             let lost_close_node = if self.routing_table.len() >=
-                                                     kademlia_routing_table::group_size() {
+                                                     kademlia_routing_table::GROUP_SIZE {
                                 if let Some(last_close_node) = self.routing_table
                                                                    .our_close_group()
                                                                    .last() {
@@ -1062,7 +1062,7 @@ impl Core {
                             }
                         }
 
-                        let (is_added, node_removed) = self.routing_table.add_node(node_info);
+                        let is_added = self.routing_table.add_node(node_info);
 
                         if !is_added {
                             self.crust_service.drop_node(connection);
@@ -1071,7 +1071,7 @@ impl Core {
                             return Ok(());
                         }
 
-                        if self.routing_table.len() >= kademlia_routing_table::group_size()
+                        if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
                                 && !self.proxy_map.is_empty() {
                             trace!("Routing table reached group size. Dropping proxy.");
                             self.proxy_map.keys()
@@ -1080,15 +1080,6 @@ impl Core {
                         }
 
                         self.state = State::Node;
-
-                        if let Some(node_to_drop) = node_removed {
-                            debug!("Node ejected by routing table on an add. Dropping node {:?}",
-                                   node_to_drop);
-
-                            for it in node_to_drop.connections.into_iter() {
-                                self.crust_service.drop_node(it);
-                            }
-                        }
                     }
 
                     let _ = self.node_identify(connection);
@@ -1619,8 +1610,14 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
+        let hop_type = if signed_msg.content().src().get_name() == self.routing_table.our_name() {
+            HopType::OriginalSender
+        } else {
+            HopType::CopyNr(0) // TODO: Count copies!
+        };
         // Query routing table to send it out parallel or to our close group (ourselves excluded)
-        let targets = self.routing_table.target_nodes(signed_msg.content().dst().get_name());
+        let targets = self.routing_table.target_nodes(signed_msg.content().dst().to_destination(),
+                                                      hop_type);
         targets.iter().foreach(|node_info| {
             if let Some(connection) = node_info.connections.iter().next() {
                 self.crust_service.send(connection.clone(), raw_bytes.clone());

@@ -15,7 +15,7 @@ cbor = "~0.3.16"
 crust = "~0.8.0"
 ip = "~1.0.0"
 itertools = "~0.4.5"
-kademlia_routing_table = "~0.0.5"
+kademlia_routing_table = { git = "https://github.com/afck/kademlia_routing_table.git", branch = "new_logic" }
 log = "~0.3.4"
 lru_time_cache = "~0.2.5"
 maidsafe_utilities = "~0.1.5"
