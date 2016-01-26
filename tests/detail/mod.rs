@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,29 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust;
-use std::{env, process, sync};
-use std::path::Path;
+mod client;
+mod setup_network;
+mod test_cases;
 
-static HANDLE_VERSION: sync::Once = sync::ONCE_INIT;
+pub use self::client::Client;
+pub use self::setup_network::setup_network;
+pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
+pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
 
-pub fn handle_version() {
-    HANDLE_VERSION.call_once(|| {
-        let name = crust::exe_file_stem().unwrap_or(Path::new("").to_path_buf());
-        let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
-        if env::args().any(|arg| arg == "--version") {
-            println!("{}", name_and_version);
-            process::exit(0);
-        }
-        let message = String::from("Running ") + &name_and_version;
-        let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
-        info!("\n\n{}\n{}", message, underline);
-    });
-}
+use rand::random;
 
-#[cfg(all(test, feature = "use-mock-routing"))]
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::random;
     let mut vec: Vec<u8> = Vec::with_capacity(size);
     for _ in 0..size {
         vec.push(random::<u8>());
