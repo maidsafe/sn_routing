@@ -1,13 +1,18 @@
 # Routing - Change Log
 
+## [0.6.3]
+- Added several tests
+- Further documentation improvements
+- Improved debug output of several types
+
 ## [0.6.2]
-- Reject clients if the routing table is too small.
-- Fix computation of remaining required signatures for StructuredData.
-- Limit the number of concurrently joining nodes.
-- Remove unneeded files.
-- Expand documentation.
-- Distinct message IDs for added and lost nodes.
-- Ignore double puts in the example.
+- Reject clients if the routing table is too small
+- Fix computation of remaining required signatures for StructuredData
+- Limit the number of concurrently joining nodes
+- Remove unneeded files
+- Expand documentation
+- Distinct message IDs for added and lost nodes
+- Ignore double puts in the example
 
 ## [0.6.1]
 - Update core to send on only first connection
@@ -28,7 +33,7 @@
 - Expose ImmutableDataType
 
 ## [0.5.0]
-- Cleanup of routing API.
+- Cleanup of routing API
 - Exposing of success and failure event for GET, PUT, POST and DELETE
 - Separating XorName and Routing Table into their own crates
 
