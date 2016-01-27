@@ -70,9 +70,12 @@ pub enum RoutingError {
     RoutingTableEmpty,
     /// Public id rejected because of disallowed relocated status
     RejectedPublicId,
-    /// Routing table did not add the node information,
-    /// either because it was already added, or because it did not improve the routing table
+    /// Routing table did not add the node information, either because it was already added, or
+    /// because it did not improve the routing table
     RefusedFromRoutingTable,
+    /// Rejected providing the close group, because the destination address does not match any of
+    /// the sender's buckets
+    RejectedGetCloseGroup,
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// Interface error
@@ -83,6 +86,8 @@ pub enum RoutingError {
     Cbor(::cbor::CborError),
     /// Channel sending error
     SendEventError(SendError<Event>),
+    /// The bit index for a `XorName` was out of bounds.
+    BitIndexOutOfBoundsError,
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
@@ -140,3 +145,10 @@ impl From<::maidsafe_utilities::serialisation::SerialisationError> for RoutingEr
         RoutingError::SerialisationError(error)
     }
 }
+
+impl From<::xor_name::BitIndexOutOfBoundsError> for RoutingError {
+    fn from(_: ::xor_name::BitIndexOutOfBoundsError) -> RoutingError {
+        RoutingError::BitIndexOutOfBoundsError
+    }
+}
+

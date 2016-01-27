@@ -24,7 +24,7 @@ rand = "~0.3.12"
 rustc-serialize = "~0.3.16"
 sodiumoxide = "~0.0.9"
 time = "~0.1.34"
-xor_name = "~0.0.1"
+xor_name = { git = "https://github.com/afck/xor_name.git", branch = "new_logic" }
 
 [dev-dependencies]
 bit-vec = "~0.4.2"
