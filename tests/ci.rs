@@ -24,6 +24,8 @@ extern crate rand;
 extern crate sodiumoxide;
 extern crate time;
 extern crate xor_name;
+#[cfg(target_os = "macos")]
+extern crate libc;
 
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
@@ -33,6 +35,8 @@ use std::thread;
 use std::time::Duration;
 use std::cmp::Ordering::{Greater, Less};
 use itertools::Itertools;
+#[cfg(target_os = "macos")]
+use std::io;
 
 use xor_name::XorName;
 use maidsafe_utilities::serialisation::serialise;
@@ -95,8 +99,45 @@ impl TestClient {
     }
 }
 
-// Spanws a thread that received events from a node a routes them to the main
-// channel.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn get_open_file_limits() -> io::Result<libc::rlimit> {
+    unsafe {
+        let mut result = libc::rlimit{ rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut result) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
+    unsafe {
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &limits) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn init() {
+    maidsafe_utilities::log::init(true);
+    let mut limits = unwrap_result!(get_open_file_limits());
+    if limits.rlim_cur < 1024 {
+        limits.rlim_cur = 1024;
+        unwrap_result!(set_open_file_limits(limits));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn init() {
+    maidsafe_utilities::log::init(true);
+}
+
+// Spawns a thread that received events from a node a routes them to the main channel.
 fn spawn_select_thread(index: usize, main_sender: Sender<TestEvent>) -> (Sender<Event>, RaiiThreadJoiner) {
     let (sender, receiver) = mpsc::channel();
 
@@ -472,5 +513,6 @@ fn core() {
 }
 
 fn main() {
+    init();
     core();
 }
