@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use xor_name::XorName;
-use types::MessageId;
 use messages::{RequestMessage, ResponseMessage};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -32,13 +31,10 @@ pub enum Event {
     Request(RequestMessage),
     /// Response.
     Response(ResponseMessage),
-    /// A churn event: a node left or joined this node's close group.
-    Churn {
-        /// The unique ID of this `Churn` event.
-        id: MessageId,
-        /// The name of the node that left the close group, if any.
-        lost_close_node: Option<XorName>,
-    },
+    /// A new node joined the network and may be a member of group authorities we also belong to.
+    NodeAdded(XorName),
+    /// A node left the network and may have been a member of group authorities we also belong to.
+    NodeLost(XorName),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
 }

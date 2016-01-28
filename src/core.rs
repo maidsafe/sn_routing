@@ -1041,12 +1041,7 @@ impl Core {
                                 self.crust_service.send(connection, raw_bytes);
                             }
                             if churn {
-                                // TODO: Add added_close_node to Event::Churn.
-                                let event = Event::Churn {
-                                    id: MessageId::from_added_node(public_id.name().clone()),
-                                    lost_close_node: None,
-                                };
-
+                                let event = Event::NodeAdded(public_id.name().clone());
                                 if let Err(err) = self.event_sender.send(event) {
                                     error!("Error sending event to routing user - {:?}", err);
                                 }
@@ -1701,11 +1696,7 @@ impl Core {
                 self.routing_table.drop_connection(connection) {
             if churn {
                 // If the lost node shared some close group with us, send Churn.
-                let event = Event::Churn {
-                    id: MessageId::from_lost_node(node_name.clone()),
-                    lost_close_node: Some(node_name),
-                };
-
+                let event = Event::NodeLost(node_name.clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
                 }
