@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 use ctrlc::CtrlC;
-use maidsafe_utilities::serialisation::deserialise;
-use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use maidsafe_utilities::serialisation;
+use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, RoutingMessage};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use xor_name::XorName;
 
-use error::Error;
+use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
 use personas::mpid_manager::MpidManager;
@@ -63,38 +63,36 @@ impl Vault {
         });
 
         // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
-        let _ = unwrap_result!(Vault::new(None, stop_receiver).do_run());
+        let _ = unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver)).do_run());
     }
 
-    fn new(app_event_sender: Option<Sender<Event>>, stop_receiver: Receiver<()>) -> Vault {
+    fn new(app_event_sender: Option<Sender<Event>>, stop_receiver: Receiver<()>) -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
 
-        Vault {
+        Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
             mpid_manager: MpidManager::new(),
             pmid_manager: PmidManager::new(),
-            pmid_node: PmidNode::new(),
+            pmid_node: try!(PmidNode::new()),
             structured_data_manager: StructuredDataManager::new(),
             stop_receiver: Some(stop_receiver),
             app_event_sender: app_event_sender,
-        }
+        })
     }
 
-    fn do_run(&mut self) -> Result<(), Error> {
+    fn do_run(&mut self) -> Result<(), InternalError> {
         let (routing_sender, routing_receiver) = mpsc::channel();
 
         let routing_node = try!(RoutingNode::new(routing_sender));
         let routing_node1 = Arc::new(Mutex::new(Some(routing_node)));
         let routing_node2 = routing_node1.clone();
 
-        // Take the stop_receiver from self, so we can move it into the stop
-        // thread;
+        // Take the stop_receiver from self, so we can move it into the stop thread.
         let stop_receiver = self.stop_receiver.take().unwrap();
 
-        // Listen for stop event and destroy the routing node if one is
-        // received. Destroying it will close the routing event channel,
-        // stopping the main event loop.
+        // Listen for stop event and destroy the routing node if one is received.  Destroying it
+        // will close the routing event channel, stopping the main event loop.
         let stop_thread_handle = thread::spawn(move || {
             let _ = stop_receiver.recv();
             let _ = routing_node1.lock().unwrap().take();
@@ -111,19 +109,21 @@ impl Vault {
 
             let routing_node = routing_node.as_ref().unwrap();
 
-            info!("Vault {} received an event from routing: {:?}",
-                  unwrap_result!(routing_node.name()),
-                  event);
+            trace!("Vault {} received an event from routing: {:?}",
+                   unwrap_result!(routing_node.name()),
+                   event);
 
             let _ = self.app_event_sender
                         .clone()
                         .and_then(|sender| Some(sender.send(event.clone())));
 
-            match event {
+            if let Err(error) = match event {
                 Event::Request(request) => self.on_request(routing_node, request),
                 Event::Response(response) => self.on_response(routing_node, response),
                 Event::Churn{ id, lost_close_node } => self.on_churn(routing_node, id, lost_close_node),
                 Event::Connected => self.on_connected(),
+            } {
+                warn!("Failed to handle event: {:?}", error);
             }
         }
 
@@ -133,7 +133,7 @@ impl Vault {
         Ok(())
     }
 
-    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) {
+    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) -> Result<(), InternalError> {
         match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
@@ -180,7 +180,9 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::StructuredData(ref data), _)) => self.structured_data_manager.handle_put(data),
+             &RequestContent::Put(Data::StructuredData(_), _)) => {
+                self.structured_data_manager.handle_put(routing_node, &request)
+            }
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
@@ -188,9 +190,7 @@ impl Vault {
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::ImmutableData(_), _)) => {
-                self.pmid_node.handle_put(routing_node, &request)
-            }
+             &RequestContent::Put(Data::ImmutableData(_), _)) => self.pmid_node.handle_put(&request),
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -206,11 +206,11 @@ impl Vault {
                 self.on_refresh(src, dst, serialised_refresh)
             }
             // ================== Invalid Request ==================
-            _ => error!("Unexpected request {:?}", request),
+            _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
         }
     }
 
-    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) {
+    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
@@ -219,62 +219,80 @@ impl Vault {
                 self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
             // ================== GetFailure ==================
-            (&Authority::ManagedNode(pmid_node_name),
+            (&Authority::ManagedNode(ref pmid_node),
              &Authority::NaeManager(_),
              &ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator }) => {
                 self.immutable_data_manager
-                    .handle_get_failure(pmid_node_name, id, request, external_error_indicator)
+                    .handle_get_failure(routing_node,
+                                        pmid_node,
+                                        id,
+                                        request,
+                                        external_error_indicator)
+            }
+            // ================== PutSuccess ==================
+            (&Authority::NaeManager(_),
+             &Authority::ClientManager(_),
+             &ResponseContent::PutSuccess(_, ref message_id)) => {
+                self.maid_manager.handle_put_success(routing_node, message_id)
             }
             // ================== PutFailure ==================
-            // FIXME
-            // immutable_data_manager::Authority(_) => self.immutable_data_manager.handle_put_failure(response),
-            // pmid_manager::Authority(_) => self.pmid_manager.handle_put_failure(response),
-
+            (&Authority::NaeManager(_),
+             &Authority::ClientManager(_),
+             &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
+                self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
+            }
             // ================== Invalid Response ==================
-            _ => error!("Unexpected response {:?}", response),
+            _ => Err(InternalError::UnknownMessageType(RoutingMessage::Response(response.clone()))),
         }
     }
 
-    fn on_churn(&mut self, routing_node: &RoutingNode,
-                churn_event_id: MessageId, lost_close_node: Option<XorName>) {
+    fn on_churn(&mut self,
+                routing_node: &RoutingNode,
+                churn_event_id: MessageId,
+                lost_close_node: Option<XorName>)
+                -> Result<(), InternalError> {
         self.maid_manager.handle_churn(routing_node, &churn_event_id);
         self.immutable_data_manager.handle_churn(routing_node, &churn_event_id, lost_close_node);
         self.structured_data_manager.handle_churn(routing_node, &churn_event_id);
         self.pmid_manager.handle_churn(routing_node, &churn_event_id);
+        Ok(())
     }
 
-    fn on_connected(&self) {
+    fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
         // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.immutable_data_manager.nodes_in_table_len());
+        Ok(())
     }
 
-    fn on_refresh(&mut self, src: &Authority, dst: &Authority, serialised_refresh: &Vec<u8>) {
-        let refresh = match deserialise::<Refresh>(serialised_refresh) {
-            Ok(content) => content,
-            Err(error) => {
-                debug!("Failed to parse refresh request: {:?}", error);
-                return;
-            }
-        };
-        match (src, dst, refresh.value) {
+    fn on_refresh(&mut self,
+                  src: &Authority,
+                  dst: &Authority,
+                  serialised_refresh: &Vec<u8>)
+                  -> Result<(), InternalError> {
+        let refresh = try!(serialisation::deserialise::<Refresh>(serialised_refresh));
+        match (src, dst, &refresh.value) {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             RefreshValue::MaidManager(account)) => self.maid_manager.handle_refresh(refresh.name, account),
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             RefreshValue::ImmutableDataManager(account)) => {
-                self.immutable_data_manager.handle_refresh(refresh.name, account)
+             &RefreshValue::MaidManager(ref account)) => {
+                Ok(self.maid_manager.handle_refresh(refresh.name, account.clone()))
             }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             RefreshValue::StructuredDataManager(structured_data)) => {
-                self.structured_data_manager.handle_refresh(structured_data)
+             &RefreshValue::ImmutableDataManager(ref account)) => {
+                Ok(self.immutable_data_manager.handle_refresh(refresh.name, account.clone()))
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             &RefreshValue::StructuredDataManager(ref structured_data)) => {
+                self.structured_data_manager.handle_refresh(structured_data.clone())
             }
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),
-             RefreshValue::PmidManager(account)) => self.pmid_manager.handle_refresh(refresh.name, account),
-            _ => error!("Unexpected refresh from {:?} to {:?}", src, dst),
+             &RefreshValue::PmidManager(ref account)) => {
+                Ok(self.pmid_manager.handle_refresh(refresh.name, account.clone()))
+            }
+            _ => Err(InternalError::UnknownRefreshType(src.clone(), dst.clone(), refresh.clone())),
         }
     }
 }
@@ -286,13 +304,15 @@ mod test {
     use super::*;
     use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::log;
+    use maidsafe_utilities::thread::RaiiThreadJoiner;
     use personas::immutable_data_manager;
     use rand::random;
     use routing::{Authority, Data, DataRequest, Event, FullId, ImmutableData, ImmutableDataType, RequestContent,
                   RequestMessage, ResponseContent, ResponseMessage, StructuredData};
     use routing::Client as RoutingClient;
+    use std::io::Write;
     use std::sync::mpsc::{self, Receiver, Sender};
-    use std::thread::{self, JoinHandle};
+    use std::thread;
     use time::{Duration, SteadyTime};
     use utils::generate_random_vec_u8;
     use xor_name::XorName;
@@ -300,7 +320,7 @@ mod test {
     struct VaultComms {
         notifier: Receiver<(Event)>,
         killer: Sender<()>,
-        join_handle: Option<JoinHandle<()>>,
+        _raii_thread_joiner: Option<RaiiThreadJoiner>,
     }
 
     impl VaultComms {
@@ -309,28 +329,26 @@ mod test {
             let (event_sender, event_receiver) = mpsc::channel();
             let (stop_sender, stop_receiver) = mpsc::channel();
 
-            let mut vault = Vault::new(Some(event_sender), stop_receiver);
-            let join_handle = Some(unwrap_result!(thread::Builder::new()
-                                                      .name(format!("Vault {} worker", index))
-                                                      .spawn(move || unwrap_result!(vault.do_run()))));
+            let mut vault = unwrap_result!(Vault::new(Some(event_sender), stop_receiver));
+            let join_handle = Some(RaiiThreadJoiner::new(thread!(format!("Vault {} worker", index),
+                                                                 move || unwrap_result!(vault.do_run()))));
             let vault_comms = VaultComms {
                 notifier: event_receiver,
                 killer: stop_sender,
-                join_handle: join_handle,
+                _raii_thread_joiner: join_handle,
             };
-            let mut temp_comms = vec![vault_comms];
-            let _ = unwrap_result!(wait_for_hits(&temp_comms,
-                                                 10,
-                                                 index,
-                                                 ::time::Duration::seconds(10 * (index + 1) as i64)));
-            temp_comms.remove(0)
+            // let mut temp_comms = vec![vault_comms];
+            thread::sleep(::std::time::Duration::from_secs(3 + index as u64));
+            // let _ = unwrap_result!(wait_for_hits(&temp_comms,
+            //                                      10,
+            //                                      index,
+            //                                      Duration::seconds(10 * (index + 1) as i64)));
+            // temp_comms.remove(0)
+            vault_comms
         }
 
         fn stop(&mut self) {
             let _ = self.killer.send(());
-            if let Some(join_handle) = self.join_handle.take() {
-                unwrap_result!(join_handle.join());
-            }
         }
     }
 
@@ -355,7 +373,7 @@ mod test {
                                     ResponseMessage{ content: ResponseContent::GetSuccess(data, _), .. } => {
                                         let _ = client_sender.send(data);
                                     }
-                                    _ => panic!("not expected!"),
+                                    _ => unreachable!("Unexpected {:?}", response),
                                 }
                             }
                             Event::Churn{ .. } => info!("client received a churn"),
@@ -567,7 +585,6 @@ mod test {
     }
 
     fn create_empty_file(extension: &'static str, default_content: &'static str) {
-        use std::io::Write;
         let _ = ::crust::current_bin_dir().and_then(|mut cur_bin_dir| {
             cur_bin_dir.push(get_file_name(extension));
             let mut file = try!(::std::fs::File::create(cur_bin_dir));
@@ -579,16 +596,9 @@ mod test {
     fn create_empty_files() {
         create_empty_file("bootstrap.cache", "[]");
         create_empty_file("crust.config",
-                          "{\n
-                    \"tcp_listening_port\": 5483,\n
-                    \
-                           \"utp_listening_port\": null,\n
-                    \"override_default_bootstrap\": \
-                           false,\n
-                    \"hard_coded_contacts\": [],\n
-                    \
-                           \"beacon_port\": 5484\n
-                }");
+                          "{\n\t\"tcp_listening_port\": 5483,\n\t\"utp_listening_port\": \
+                           null,\n\t\"override_default_bootstrap\": false,\n\t\"hard_coded_contacts\": \
+                           [],\n\t\"beacon_port\": 5484\n}\n");
     }
 
     #[test]
