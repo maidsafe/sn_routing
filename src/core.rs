@@ -1311,10 +1311,10 @@ impl Core {
         // From A -> Each in Y
         for peer_id in close_group_ids {
             if self.node_id_cache.insert(*peer_id.name(), peer_id.clone()).is_none() &&
-               self.routing_table.want_to_add(peer_id.name()) {
-                try!(self.send_endpoints(peer_id.clone(),
-                                         dst.clone(),
-                                         Authority::ManagedNode(*peer_id.name())));
+               self.routing_table.allow_connection(peer_id.name()) {
+                   try!(self.send_endpoints(peer_id.clone(),
+                                            dst.clone(),
+                                            Authority::ManagedNode(*peer_id.name())));
             }
         }
 
@@ -1707,9 +1707,7 @@ impl Core {
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
     /// there. If not, returns an error.
     fn check_address_for_routing_table(&self, name: &XorName) -> Result<(), RoutingError> {
-        if self.routing_table.get(name).is_some() ||
-            self.routing_table.want_to_add(name) ||
-            self.routing_table.is_close_to_bucket_of(name) {
+        if self.routing_table.allow_connection(name) {
             Ok(())
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
