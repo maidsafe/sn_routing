@@ -569,17 +569,10 @@ impl Core {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            // Don't accumulate GetCloseGroupResponse as close_group info received is unique
-            // to each node in the sender group
-            match routing_msg {
-                RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) => (),
-                _ => {
-                    if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
-                        let _ = self.grp_msg_filter.insert(output_msg.clone());
-                    } else {
-                        return Ok(());
-                    }
-                }
+            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+                let _ = self.grp_msg_filter.insert(output_msg.clone());
+            } else {
+                return Ok(());
             }
         }
         self.dispatch_request_response(routing_msg)
@@ -1280,6 +1273,7 @@ impl Core {
 
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
+        public_ids.sort_by(|a, b| dst_name.cmp_distance(&a.name(), &b.name()));
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
