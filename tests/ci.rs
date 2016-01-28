@@ -15,33 +15,51 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+//! Standalone CI test runner which starts a routing network with each node running in its own
+//! thread.
+
+// For explanation of lint checks, run `rustc -W help` or see
+// https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
+#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
+          unknown_crate_types, warnings)]
+#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+      non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
+      private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
+      unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+      unused_comparisons, unused_features, unused_parens, while_true)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+        unused_qualifications, unused_results, variant_size_differences)]
+#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+         missing_debug_implementations)]
+
 extern crate itertools;
-extern crate routing;
+extern crate kademlia_routing_table;
+#[cfg(target_os = "macos")]
+extern crate libc;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate kademlia_routing_table;
 extern crate rand;
+extern crate routing;
 extern crate sodiumoxide;
-extern crate time;
 extern crate xor_name;
 
+use std::cmp::Ordering::{Greater, Less};
+#[cfg(target_os = "macos")]
+use std::io;
+use std::{iter, thread};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::time::Duration;
+
+use itertools::Itertools;
+use kademlia_routing_table::GROUP_SIZE;
+use maidsafe_utilities::serialisation;
+use maidsafe_utilities::thread::RaiiThreadJoiner;
+use routing::{Authority, Client, Data, Event, FullId, Node, PlainData, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
-use std::iter;
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::thread;
-use std::time::Duration;
-use std::cmp::Ordering::{Greater, Less};
-use itertools::Itertools;
-
 use xor_name::XorName;
-use maidsafe_utilities::serialisation::serialise;
-use maidsafe_utilities::thread::RaiiThreadJoiner;
-use routing::Authority;
-use routing::{Client, Data, Event, FullId, Node, PlainData, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage};
 
-const GROUP_SIZE: usize = kademlia_routing_table::GROUP_SIZE as usize;
 const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
@@ -54,7 +72,8 @@ struct TestNode {
 
 impl TestNode {
     fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
-        let (sender, joiner) = spawn_select_thread(index, main_sender);
+        let thread_name = format!("TestNode {} event sender", index);
+        let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
             node: unwrap_result!(Node::new(sender)),
@@ -76,7 +95,8 @@ struct TestClient {
 
 impl TestClient {
     fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
-        let (sender, joiner) = spawn_select_thread(index, main_sender);
+        let thread_name = format!("TestClient {} event sender", index);
+        let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
@@ -95,12 +115,55 @@ impl TestClient {
     }
 }
 
-// Spanws a thread that received events from a node a routes them to the main
-// channel.
-fn spawn_select_thread(index: usize, main_sender: Sender<TestEvent>) -> (Sender<Event>, RaiiThreadJoiner) {
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn get_open_file_limits() -> io::Result<libc::rlimit> {
+    unsafe {
+        let mut result = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut result) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
+    unsafe {
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &limits) != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn init() {
+    maidsafe_utilities::log::init(true);
+    let mut limits = unwrap_result!(get_open_file_limits());
+    if limits.rlim_cur < 1024 {
+        limits.rlim_cur = 1024;
+        unwrap_result!(set_open_file_limits(limits));
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn init() {
+    maidsafe_utilities::log::init(true);
+}
+
+// Spawns a thread that received events from a node a routes them to the main channel.
+fn spawn_select_thread(index: usize,
+                       main_sender: Sender<TestEvent>,
+                       thread_name: String)
+                       -> (Sender<Event>, RaiiThreadJoiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread::spawn(move || {
+    let thread_handle = thread!(thread_name, move || {
         for event in receiver.iter() {
             let _ = unwrap_result!(main_sender.send(TestEvent(index, event)));
         }
@@ -184,7 +247,7 @@ fn gen_plain_data() -> Data {
     let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let name = XorName::new(sha512::hash(key.as_bytes()).0);
-    let data = unwrap_result!(serialise(&(key, value)));
+    let data = unwrap_result!(serialisation::serialise(&(key, value)));
 
     Data::PlainData(PlainData::new(name.clone(), data))
 }
@@ -225,7 +288,7 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, ref id) = message.content {
-                            let encoded = unwrap_result!(serialise(&message));
+                            let encoded = unwrap_result!(serialisation::serialise(&message));
                             let ref node = nodes[index].node;
 
                             unwrap_result!(node.send_put_success(message.dst,
@@ -344,8 +407,8 @@ fn core() {
         loop {
             if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
-                                                                    lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name))
+                        if index < nodes.len() && lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -447,12 +510,14 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, ref id) = message.content {
-                            let encoded = unwrap_result!(serialise(&message));
+                            let encoded = unwrap_result!(serialisation::serialise(&message));
 
-                            unwrap_result!(nodes[index].node.send_put_success(message.dst,
-                                                                              message.src,
-                                                                              sha512::hash(&encoded),
-                                                                              id.clone()));
+                            unwrap_result!(nodes[index]
+                                               .node
+                                               .send_put_success(message.dst,
+                                                                 message.src,
+                                                                 sha512::hash(&encoded),
+                                                                 id.clone()));
                         }
                     }
                     TestEvent(index,
@@ -472,5 +537,6 @@ fn core() {
 }
 
 fn main() {
+    init();
     core();
 }
