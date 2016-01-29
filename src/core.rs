@@ -19,7 +19,7 @@ use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
 use kademlia_routing_table;
-use kademlia_routing_table::{HopType, NodeInfo, RoutingTable};
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, HopType, NodeInfo, RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -429,7 +429,7 @@ impl Core {
                                       -> Result<(), RoutingError> {
         // Node Harvesting
         if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
-           self.routing_table.want_to_add(signed_msg.public_id().name()) {
+           self.routing_table.need_to_add(signed_msg.public_id().name()) {
             let _ = self.send_connect_request(signed_msg.public_id().name());
         }
 
@@ -1019,21 +1019,23 @@ impl Core {
                         return Ok(());
                     }
 
-                    let node_info = NodeInfo::new(public_id.clone(), vec![connection]);
+                    let node_info = NodeInfo::new(public_id.clone(),
+                                                  vec![connection].into_iter().collect());
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
                             return Ok(());
                         }
                     } else {
-                        if let Some((to_notify, churn)) = self.routing_table.add_node(node_info) {
-                            for node in to_notify {
+                        if let Some(AddedNodeDetails { must_notify, common_groups }) =
+                                self.routing_table.add_node(node_info) {
+                            for node in must_notify {
                                 let direct_message = DirectMessage::NewNode(node.public_id);
                                 let message = Message::DirectMessage(direct_message);
                                 let raw_bytes = try!(serialisation::serialise(&message));
                                 self.crust_service.send(connection, raw_bytes);
                             }
-                            if churn {
+                            if common_groups {
                                 let event = Event::NodeAdded(public_id.name().clone());
                                 if let Err(err) = self.event_sender.send(event) {
                                     error!("Error sending event to routing user - {:?}", err);
@@ -1076,7 +1078,7 @@ impl Core {
                 }
             }
             DirectMessage::NewNode(public_id) => {
-                if self.routing_table.want_to_add(public_id.name()) {
+                if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }
                 return Ok(());
@@ -1627,7 +1629,7 @@ impl Core {
         let hop_type = if signed_msg.content().src().get_name() == self.routing_table.our_name() {
             HopType::OriginalSender
         } else {
-            HopType::CopyNr(0) // TODO: Count copies!
+            HopType::CopyNum(0) // TODO: Count copies!
         };
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table.target_nodes(destination, hop_type);
@@ -1686,16 +1688,16 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
-        if let Some((node_name, opt_bucket_i, churn)) =
+        if let Some(DroppedNodeDetails { name, incomplete_bucket, common_groups }) =
                 self.routing_table.drop_connection(connection) {
-            if churn {
+            if common_groups {
                 // If the lost node shared some close group with us, send Churn.
-                let event = Event::NodeLost(node_name.clone());
+                let event = Event::NodeLost(name.clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
                 }
             }
-            if let Some(bucket_index) = opt_bucket_i {
+            if let Some(bucket_index) = incomplete_bucket {
                 if let Err(e) = self.request_bucket_ids_with_endpoints(bucket_index) {
                     trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
                            bucket_index, e);
