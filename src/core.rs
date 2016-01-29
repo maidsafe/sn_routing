@@ -1019,8 +1019,7 @@ impl Core {
                         return Ok(());
                     }
 
-                    let node_info = NodeInfo::new(public_id.clone(),
-                                                  vec![connection].into_iter().collect());
+                    let node_info = NodeInfo::new(public_id.clone(), Some(connection));
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
