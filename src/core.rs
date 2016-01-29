@@ -1048,6 +1048,8 @@ impl Core {
                             return Ok(());
                         }
 
+                        self.state = State::Node;
+
                         if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
                                 && !self.proxy_map.is_empty() {
                             trace!("Routing table reached group size. Dropping proxy.");
@@ -1064,8 +1066,6 @@ impl Core {
                                 }
                             }
                         }
-
-                        self.state = State::Node;
                     }
 
                     let _ = self.node_identify(connection);
@@ -1305,7 +1305,7 @@ impl Core {
             self.start_listening();
         } else {
             match dst {
-                Authority::NodeManager(..) => (),
+                Authority::ManagedNode(..) => (),
                 _ => return Err(RoutingError::BadAuthority),
             }
         }
