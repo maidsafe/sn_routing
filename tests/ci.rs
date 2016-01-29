@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,13 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! SAFE Vault provides the interface to SAFE routing.
-//! The resulting executable is the Vault node for the SAFE network.
-
-#![doc(html_logo_url =
-           "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
-       html_favicon_url = "http://maidsafe.net/img/favicon.ico",
-       html_root_url = "http://maidsafe.github.io/safe_vault")]
+//! Standalone CI test runner which starts a vault network with each vault as a separate process.
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
@@ -37,36 +31,31 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
+// To avoid multiple cfg statements before each import.
+#![allow(unused_extern_crates)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate mpid_messaging;
-extern crate chunk_store;
-extern crate crust;
-extern crate ctrlc;
-#[cfg(all(test, feature = "use-mock-routing"))]
-extern crate kademlia_routing_table;
-extern crate lru_time_cache;
-#[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
 extern crate routing;
-extern crate rustc_serialize;
 extern crate sodiumoxide;
-extern crate time;
 extern crate xor_name;
 
-mod default_chunk_store;
-mod error;
-mod mock_routing;
-mod personas;
-mod types;
-mod utils;
-mod vault;
+#[cfg(not(feature = "use-mock-routing"))]
+mod detail;
 
-/// Runs a SAFE Network vault.
-pub fn main() {
+#[cfg(not(feature = "use-mock-routing"))]
+fn main() {
+    use detail::*;
     maidsafe_utilities::log::init(false);
-    utils::handle_version();
-    vault::Vault::run();
+    let vault_count = 10;
+    let _processes = setup_network(vault_count);
+    let mut client = Client::new();
+    immutable_data_churn_test(&mut client);
+    structured_data_churn_test(&mut client);
 }
+
+#[cfg(feature = "use-mock-routing")]
+fn main() {}
