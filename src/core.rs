@@ -101,7 +101,7 @@ enum State {
 /// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
 /// of A's current name. X computes a new name and sends it in its response to A.
 ///
-/// It also sends an `ExpectCloseNode` request to the `NodeManager` Y of A's new name to inform Y
+/// It also sends an `ExpectCloseNode` request to the `NaeManager` Y of A's new name to inform Y
 /// about the new node. Each member of Y caches A's public ID.
 ///
 ///
@@ -621,8 +621,8 @@ impl Core {
             }
             (RequestContent::ExpectCloseNode { expect_id, },
              Authority::NaeManager(_),
-             Authority::NodeManager(_)) => self.handle_expect_close_node_request(expect_id),
-            (RequestContent::GetCloseGroup, src, Authority::NodeManager(dst_name)) => {
+             Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id),
+            (RequestContent::GetCloseGroup, src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name)
             }
             (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
@@ -697,7 +697,7 @@ impl Core {
                 self.handle_get_public_id_with_endpoints_response(public_id, encrypted_endpoints, nonce_bytes, dst_name)
             }
             (ResponseContent::GetCloseGroup { close_group_ids },
-             Authority::NodeManager(_),
+             Authority::NaeManager(_),
              dst) => {
                 self.handle_get_close_group_response(close_group_ids, dst)
             }
@@ -1092,7 +1092,7 @@ impl Core {
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(self.routing_table.our_name().clone()),
-            dst: Authority::NodeManager(bucket_address),
+            dst: Authority::NaeManager(bucket_address),
             content: RequestContent::GetCloseGroup,
         };
         let routing_msg = RoutingMessage::Request(request_msg);
@@ -1193,7 +1193,7 @@ impl Core {
 
             let request_msg = RequestMessage {
                 src: Authority::NaeManager(dst_name),
-                dst: Authority::NodeManager(relocated_name),
+                dst: Authority::NaeManager(relocated_name),
                 content: request_content,
             };
 
@@ -1235,7 +1235,7 @@ impl Core {
                 client_key: client_key,
                 proxy_node_name: proxy_name,
             },
-            dst: Authority::NodeManager(*relocated_id.name()),
+            dst: Authority::NaeManager(*relocated_id.name()),
             content: request_content,
         };
 
@@ -1280,7 +1280,7 @@ impl Core {
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
         let response_msg = ResponseMessage {
-            src: Authority::NodeManager(dst_name),
+            src: Authority::NaeManager(dst_name),
             dst: src,
             content: response_content,
         };
