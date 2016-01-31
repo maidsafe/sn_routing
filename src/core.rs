@@ -19,7 +19,7 @@ use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
 use kademlia_routing_table;
-use kademlia_routing_table::{NodeInfo, RoutingTable};
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, HopType, NodeInfo, RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -101,7 +101,7 @@ enum State {
 /// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
 /// of A's current name. X computes a new name and sends it in its response to A.
 ///
-/// It also sends an `ExpectCloseNode` request to the `NodeManager` Y of A's new name to inform Y
+/// It also sends an `ExpectCloseNode` request to the `NaeManager` Y of A's new name to inform Y
 /// about the new node. Each member of Y caches A's public ID.
 ///
 ///
@@ -429,7 +429,7 @@ impl Core {
                                       -> Result<(), RoutingError> {
         // Node Harvesting
         if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
-           self.routing_table.want_to_add(signed_msg.public_id().name()) {
+           self.routing_table.need_to_add(signed_msg.public_id().name()) {
             let _ = self.send_connect_request(signed_msg.public_id().name());
         }
 
@@ -569,17 +569,10 @@ impl Core {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            // Don't accumulate GetCloseGroupResponse as close_group info received is unique
-            // to each node in the sender group
-            match routing_msg {
-                RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) => (),
-                _ => {
-                    if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
-                        let _ = self.grp_msg_filter.insert(output_msg.clone());
-                    } else {
-                        return Ok(());
-                    }
-                }
+            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+                let _ = self.grp_msg_filter.insert(output_msg.clone());
+            } else {
+                return Ok(());
             }
         }
         self.dispatch_request_response(routing_msg)
@@ -628,11 +621,9 @@ impl Core {
             }
             (RequestContent::ExpectCloseNode { expect_id, },
              Authority::NaeManager(_),
-             Authority::NodeManager(_)) => self.handle_expect_close_node_request(expect_id),
-            (RequestContent::GetCloseGroup,
-             Authority::Client { client_key, proxy_node_name, },
-             Authority::NodeManager(dst_name)) => {
-                self.handle_get_close_group_request(client_key, proxy_node_name, dst_name)
+             Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id),
+            (RequestContent::GetCloseGroup, src, Authority::NaeManager(dst_name)) => {
+                self.handle_get_close_group_request(src, dst_name)
             }
             (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
              Authority::Client { client_key, proxy_node_name, },
@@ -706,9 +697,9 @@ impl Core {
                 self.handle_get_public_id_with_endpoints_response(public_id, encrypted_endpoints, nonce_bytes, dst_name)
             }
             (ResponseContent::GetCloseGroup { close_group_ids },
-             Authority::NodeManager(_),
-             Authority::Client { client_key, proxy_node_name, }) => {
-                self.handle_get_close_group_response(close_group_ids, client_key, proxy_node_name)
+             Authority::NaeManager(_),
+             dst) => {
+                self.handle_get_close_group_response(close_group_ids, dst)
             }
             (ResponseContent::GetSuccess(..), _, _) |
             (ResponseContent::PutSuccess(..), _, _) |
@@ -974,7 +965,7 @@ impl Core {
                     return Ok(());
                 }
 
-                let group_size = kademlia_routing_table::group_size();
+                let group_size = kademlia_routing_table::GROUP_SIZE;
                 if client_restriction {
                     if self.routing_table.len() < group_size {
                         trace!("Client rejected: Routing table has {} entries. {} required.",
@@ -1028,65 +1019,50 @@ impl Core {
                         return Ok(());
                     }
 
-                    let node_info = NodeInfo::new(public_id.clone(), vec![connection]);
+                    let node_info = NodeInfo::new(public_id.clone(), Some(connection));
                     if let Some(_) = self.routing_table.get(public_id.name()) {
                         if !self.routing_table.add_connection(public_id.name(), connection) {
                             // We already sent an identify down this connection
                             return Ok(());
                         }
                     } else {
-                        if self.routing_table.is_close(public_id.name()) {
-                            // If the new node is going to displace a node from the close group then
-                            // inform the vaults about the node being moved out of close group
-                            let lost_close_node = if self.routing_table.len() >=
-                                                     kademlia_routing_table::group_size() {
-                                if let Some(last_close_node) = self.routing_table
-                                                                   .our_close_group()
-                                                                   .last() {
-                                    Some(last_close_node.public_id.name().clone())
-                                } else {
-                                    None
-                                }
-                            } else {
-                                None
-                            };
-
-                            // send churn
-                            let event = Event::Churn {
-                                id: MessageId::from_added_node(public_id.name().clone()),
-                                lost_close_node: lost_close_node,
-                            };
-
-                            if let Err(err) = self.event_sender.send(event) {
-                                error!("Error sending event to routing user - {:?}", err);
+                        if let Some(AddedNodeDetails { must_notify, common_groups }) =
+                                self.routing_table.add_node(node_info) {
+                            for node in must_notify {
+                                let direct_message = DirectMessage::NewNode(node.public_id);
+                                let message = Message::DirectMessage(direct_message);
+                                let raw_bytes = try!(serialisation::serialise(&message));
+                                self.crust_service.send(connection, raw_bytes);
                             }
-                        }
-
-                        let (is_added, node_removed) = self.routing_table.add_node(node_info);
-
-                        if !is_added {
+                            if common_groups {
+                                let event = Event::NodeAdded(public_id.name().clone());
+                                if let Err(err) = self.event_sender.send(event) {
+                                    error!("Error sending event to routing user - {:?}", err);
+                                }
+                            }
+                        } else {
                             self.crust_service.drop_node(connection);
                             let _ = self.node_id_cache.remove(public_id.name());
 
                             return Ok(());
                         }
 
-                        if self.routing_table.len() >= kademlia_routing_table::group_size()
+                        self.state = State::Node;
+
+                        if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
                                 && !self.proxy_map.is_empty() {
                             trace!("Routing table reached group size. Dropping proxy.");
                             self.proxy_map.keys()
                                 .foreach(|&connection| self.crust_service.drop_node(connection));
                             self.proxy_map.clear();
-                        }
-
-                        self.state = State::Node;
-
-                        if let Some(node_to_drop) = node_removed {
-                            debug!("Node ejected by routing table on an add. Dropping node {:?}",
-                                   node_to_drop);
-
-                            for it in node_to_drop.connections.into_iter() {
-                                self.crust_service.drop_node(it);
+                            // We have all close contacts now and know which bucket addresses to
+                            // request IDs from: All buckets up to the one containing the furthest
+                            // close node might still be not maximally filled.
+                            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+                                if let Err(e) = self.request_bucket_ids_with_endpoints(i) {
+                                    trace!("Failed to request endpoints from bucket {}: {:?}.",
+                                           i, e);
+                                }
                             }
                         }
                     }
@@ -1100,7 +1076,27 @@ impl Core {
                     return Ok(());
                 }
             }
+            DirectMessage::NewNode(public_id) => {
+                if self.routing_table.need_to_add(public_id.name()) {
+                    return self.send_connect_request(public_id.name());
+                }
+                return Ok(());
+            }
         }
+    }
+
+    /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
+    /// address.
+    fn request_bucket_ids_with_endpoints(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+        let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
+        let request_msg = RequestMessage {
+            src: Authority::ManagedNode(self.routing_table.our_name().clone()),
+            dst: Authority::NaeManager(bucket_address),
+            content: RequestContent::GetCloseGroup,
+        };
+        let routing_msg = RoutingMessage::Request(request_msg);
+        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
+        self.send(signed_msg)
     }
 
     /// Returns the number of clients for which we act as a proxy and which intend to become a
@@ -1196,7 +1192,7 @@ impl Core {
 
             let request_msg = RequestMessage {
                 src: Authority::NaeManager(dst_name),
-                dst: Authority::NodeManager(relocated_name),
+                dst: Authority::NaeManager(relocated_name),
                 content: request_content,
             };
 
@@ -1238,7 +1234,7 @@ impl Core {
                 client_key: client_key,
                 proxy_node_name: proxy_name,
             },
-            dst: Authority::NodeManager(*relocated_id.name()),
+            dst: Authority::NaeManager(*relocated_id.name()),
             content: request_content,
         };
 
@@ -1249,29 +1245,42 @@ impl Core {
         self.send(signed_msg)
     }
 
-    // Received by Y; From A -> Y
-    fn handle_get_close_group_request(&mut self,
-                                      client_key: sign::PublicKey,
-                                      proxy_name: XorName,
-                                      dst_name: XorName)
-                                      -> Result<(), RoutingError> {
-        let mut public_ids = self.routing_table
-                                 .our_close_group()
+    // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
+    fn handle_get_close_group_request(&mut self, src: Authority, dst_name: XorName)
+            -> Result<(), RoutingError> {
+        match src {
+            Authority::Client { client_key, .. } => {
+                if self.node_id_cache
+                       .retrieve_all()
+                       .iter()
+                       .all(|elt| *elt.1.signing_public_key() != client_key) {
+                    return Err(RoutingError::RejectedGetCloseGroup);
+                }
+            }
+            Authority::ManagedNode(_) => {
+                // Check that the destination is one of the sender's bucket addresses or the address
+                // itself, i. e. it differs from it in 1 or 0 bits.
+                if src.get_name().count_differing_bits(&dst_name) > 1 {
+                    return Err(RoutingError::RejectedGetCloseGroup);
+                }
+            }
+            _ => return Err(RoutingError::BadAuthority),
+        }
+        let id_number = kademlia_routing_table::GROUP_SIZE - 1;
+        let mut public_ids = self.routing_table.closest_nodes_to(&dst_name, id_number)
                                  .into_iter()
                                  .map(|node_info| node_info.public_id)
                                  .collect_vec();
 
         // Also add our own full_id to the close_group list getting sent
         public_ids.push(self.full_id.public_id().clone());
+        public_ids.sort_by(|a, b| dst_name.cmp_distance(&a.name(), &b.name()));
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
         let response_msg = ResponseMessage {
-            src: Authority::NodeManager(dst_name),
-            dst: Authority::Client {
-                client_key: client_key,
-                proxy_node_name: proxy_name,
-            },
+            src: Authority::NaeManager(dst_name),
+            dst: src,
             content: response_content,
         };
 
@@ -1282,24 +1291,31 @@ impl Core {
         self.send(signed_message)
     }
 
-    // Received by A; From Y -> A
+    // Received by A; From Y -> A, or from any node close to one of the sender's bucket addresses.
     fn handle_get_close_group_response(&mut self,
                                        close_group_ids: Vec<PublicId>,
-                                       client_key: sign::PublicKey,
-                                       proxy_name: XorName)
+                                       dst: Authority)
                                        -> Result<(), RoutingError> {
-        self.start_listening();
+        if self.state == State::Client {
+            match dst {
+                Authority::Client { .. } => (),
+                _ => return Err(RoutingError::BadAuthority),
+            }
+            self.start_listening();
+        } else {
+            match dst {
+                Authority::ManagedNode(..) => (),
+                _ => return Err(RoutingError::BadAuthority),
+            }
+        }
 
         // From A -> Each in Y
         for peer_id in close_group_ids {
             if self.node_id_cache.insert(*peer_id.name(), peer_id.clone()).is_none() &&
-               self.routing_table.want_to_add(peer_id.name()) {
-                try!(self.send_endpoints(peer_id.clone(),
-                                         Authority::Client {
-                                             client_key: client_key,
-                                             proxy_node_name: proxy_name,
-                                         },
-                                         Authority::ManagedNode(*peer_id.name())));
+               self.routing_table.allow_connection(peer_id.name()) {
+                   try!(self.send_endpoints(peer_id.clone(),
+                                            dst.clone(),
+                                            Authority::ManagedNode(*peer_id.name())));
             }
         }
 
@@ -1351,19 +1367,16 @@ impl Core {
                   .iter()
                   .find(|elt| *elt.1.signing_public_key() == client_key) {
             Some(&(ref name, ref their_public_id)) => {
-                if self.want_address_in_routing_table(&name) {
-                    try!(self.connect(encrypted_endpoints,
-                                      nonce_bytes,
-                                      their_public_id.encrypting_public_key()));
-                    self.send_endpoints(their_public_id.clone(),
-                                        Authority::ManagedNode(dst_name),
-                                        Authority::Client {
-                                            client_key: client_key,
-                                            proxy_node_name: proxy_name,
-                                        })
-                } else {
-                    Err(RoutingError::RefusedFromRoutingTable)
-                }
+                try!(self.check_address_for_routing_table(&name));
+                try!(self.connect(encrypted_endpoints,
+                                  nonce_bytes,
+                                  their_public_id.encrypting_public_key()));
+                self.send_endpoints(their_public_id.clone(),
+                                    Authority::ManagedNode(dst_name),
+                                    Authority::Client {
+                                        client_key: client_key,
+                                        proxy_node_name: proxy_name,
+                                    })
             }
             None => Err(RoutingError::RejectedPublicId),
         }
@@ -1375,32 +1388,31 @@ impl Core {
                                   src_name: XorName,
                                   dst: Authority)
                                   -> Result<(), RoutingError> {
-        if self.want_address_in_routing_table(&src_name) {
-            if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
-                self.connect(encrypted_endpoints,
-                             nonce_bytes,
-                             their_public_id.encrypting_public_key())
-            } else {
-                let request_content = RequestContent::GetPublicIdWithEndpoints {
-                    encrypted_endpoints: encrypted_endpoints,
-                    nonce_bytes: nonce_bytes,
-                };
-
-                let request_msg = RequestMessage {
-                    src: dst,
-                    dst: Authority::ManagedNode(src_name),
-                    content: request_content,
-                };
-
-                let routing_msg = RoutingMessage::Request(request_msg);
-
-                let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-                self.send(signed_message)
-            }
-        } else {
+        if let Err(err) = self.check_address_for_routing_table(&src_name) {
             let _ = self.node_id_cache.remove(&src_name);
-            Err(RoutingError::RefusedFromRoutingTable)
+            return Err(err);
+        }
+        if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
+            self.connect(encrypted_endpoints,
+                         nonce_bytes,
+                         their_public_id.encrypting_public_key())
+        } else {
+            let request_content = RequestContent::GetPublicIdWithEndpoints {
+                encrypted_endpoints: encrypted_endpoints,
+                nonce_bytes: nonce_bytes,
+            };
+
+            let request_msg = RequestMessage {
+                src: dst,
+                dst: Authority::ManagedNode(src_name),
+                content: request_content,
+            };
+
+            let routing_msg = RoutingMessage::Request(request_msg);
+
+            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
+
+            self.send(signed_message)
         }
     }
 
@@ -1426,9 +1438,7 @@ impl Core {
                               src_name: XorName,
                               dst_name: XorName)
                               -> Result<(), RoutingError> {
-        if !self.want_address_in_routing_table(&src_name) {
-            return Err(RoutingError::RefusedFromRoutingTable);
-        }
+        try!(self.check_address_for_routing_table(&src_name));
 
         if let Some(public_id) = self.node_id_cache.get(&src_name).cloned() {
             let our_name = self.full_id.public_id().name().clone();
@@ -1483,9 +1493,7 @@ impl Core {
                                      public_id: PublicId,
                                      dst_name: XorName)
                                      -> Result<(), RoutingError> {
-        if !self.want_address_in_routing_table(public_id.name()) {
-            return Err(RoutingError::RefusedFromRoutingTable);
-        }
+        try!(self.check_address_for_routing_table(public_id.name()));
 
         try!(self.send_endpoints(public_id.clone(),
                                  Authority::ManagedNode(dst_name),
@@ -1533,9 +1541,7 @@ impl Core {
                                                     nonce_bytes: [u8; box_::NONCEBYTES],
                                                     dst_name: XorName)
                                                     -> Result<(), RoutingError> {
-        if !self.want_address_in_routing_table(public_id.name()) {
-            return Err(RoutingError::RefusedFromRoutingTable);
-        }
+        try!(self.check_address_for_routing_table(public_id.name()));
 
         try!(self.send_endpoints(public_id.clone(),
                                  Authority::ManagedNode(dst_name),
@@ -1600,7 +1606,7 @@ impl Core {
         let message = Message::HopMessage(hop_msg);
         let raw_bytes = try!(serialisation::serialise(&message));
 
-        // If we're a client going to be a node, send via our bootstrap connection
+        // If we're a client going to be a node, send via our bootstrap connection.
         if self.state == State::Client {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if let Some((connection, _)) = self.proxy_map
@@ -1619,8 +1625,13 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
-        // Query routing table to send it out parallel or to our close group (ourselves excluded)
-        let targets = self.routing_table.target_nodes(signed_msg.content().dst().get_name());
+        let hop_type = if signed_msg.content().src().get_name() == self.routing_table.our_name() {
+            HopType::OriginalSender
+        } else {
+            HopType::CopyNum(0) // TODO: Count copies!
+        };
+        let destination = signed_msg.content().dst().to_destination();
+        let targets = self.routing_table.target_nodes(destination, hop_type);
         targets.iter().foreach(|node_info| {
             if let Some(connection) = node_info.connections.iter().next() {
                 self.crust_service.send(connection.clone(), raw_bytes.clone());
@@ -1676,25 +1687,32 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
-        if let Some(node_name) = self.routing_table.drop_connection(connection) {
-            if self.routing_table.is_close(&node_name) {
-                // If the lost node was in our close grp send Churn Event
-                let event = Event::Churn {
-                    id: MessageId::from_lost_node(node_name.clone()),
-                    lost_close_node: Some(node_name),
-                };
-
+        if let Some(DroppedNodeDetails { name, incomplete_bucket, common_groups }) =
+                self.routing_table.drop_connection(connection) {
+            if common_groups {
+                // If the lost node shared some close group with us, send Churn.
+                let event = Event::NodeLost(name.clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("Error sending event to routing user - {:?}", err);
+                }
+            }
+            if let Some(bucket_index) = incomplete_bucket {
+                if let Err(e) = self.request_bucket_ids_with_endpoints(bucket_index) {
+                    trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
+                           bucket_index, e);
                 }
             }
         }
     }
 
-    // Used to check if a given name is something we want in our RT
-    // regardless of if we already have an entry for same in the RT
-    fn want_address_in_routing_table(&self, name: &XorName) -> bool {
-        self.routing_table.get(name).is_some() || self.routing_table.want_to_add(name)
+    /// Checks whether the given `name` is allowed to be added to our routing table or is already
+    /// there. If not, returns an error.
+    fn check_address_for_routing_table(&self, name: &XorName) -> Result<(), RoutingError> {
+        if self.routing_table.allow_connection(name) {
+            Ok(())
+        } else {
+            Err(RoutingError::RefusedFromRoutingTable)
+        }
     }
 
     fn close_group_names(&self) -> Vec<XorName> {

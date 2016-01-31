@@ -79,9 +79,13 @@ impl ExampleNode {
             match event {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
-                Event::Churn { id, lost_close_node } => {
-                    trace!("{:?} Received churn event {:?}", self, id);
-                    self.handle_churn(id, lost_close_node)
+                Event::NodeAdded(name) => {
+                    trace!("{:?} Received NodeAdded event {:?}", self, name);
+                    self.handle_node_added(name);
+                }
+                Event::NodeLost(name) => {
+                    trace!("{:?} Received NodeLost event {:?}", self, name);
+                    self.handle_node_lost(name);
                 }
                 // Event::Bootstrapped => trace!("Received bootstrapped event"),
                 Event::Connected => {
@@ -308,7 +312,29 @@ impl ExampleNode {
 
     // While handling churn messages, we first "action" it ourselves and then
     // send the corresponding refresh messages out to our close group.
-    fn handle_churn(&mut self, id: MessageId, lost_close_node: Option<XorName>) {
+    fn handle_node_added(&mut self, name: XorName) {
+        let id = MessageId::from_added_node(name);
+        for (client_name, stored) in self.client_accounts.iter() {
+            // TODO: Check whether name is actually close to client_name.
+            let refresh_content = RefreshContent::ForClientManager {
+                id: id.clone(),
+                client_name: client_name.clone(),
+                data: stored.clone(),
+            };
+
+            let content = unwrap_result!(serialise(&refresh_content));
+
+            unwrap_result!(self.node
+                               .send_refresh_request(Authority::ClientManager(client_name.clone()),
+                                                     content));
+        }
+
+        self.send_data_manager_refresh_messages(id);
+    }
+
+    fn handle_node_lost(&mut self, name: XorName) {
+        let id = MessageId::from_lost_node(name);
+        // TODO: Check whether name was actually close to client_name.
         for (client_name, stored) in self.client_accounts.iter() {
             let refresh_content = RefreshContent::ForClientManager {
                 id: id.clone(),
@@ -323,15 +349,11 @@ impl ExampleNode {
                                                      content));
         }
 
-        if let Some(lost_close_node) = lost_close_node {
-            self.process_lost_close_node(lost_close_node, id.clone());
+        self.process_lost_close_node(name, id.clone());
 
-            // Send current dm_accounts here after removal of lost_close_node with id reversed
-            // will also get sent after chunk relocation with id
-            self.send_data_manager_refresh_messages(MessageId::from_reverse(&id));
-        } else {
-            self.send_data_manager_refresh_messages(id);
-        }
+        // Send current dm_accounts here after removal of lost_close_node with id reversed
+        // will also get sent after chunk relocation with id
+        self.send_data_manager_refresh_messages(MessageId::from_reverse(&id));
     }
 
     /// Sends `Get` requests to retrieve all data chunks that have lost a copy.

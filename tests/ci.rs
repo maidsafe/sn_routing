@@ -51,6 +51,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::Duration;
 
 use itertools::Itertools;
+use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, Node, PlainData, RequestContent,
@@ -59,7 +60,6 @@ use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
 
-const GROUP_SIZE: usize = kademlia_routing_table::GROUP_SIZE as usize;
 const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
@@ -201,7 +201,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
     loop {
         if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
             match test_event {
-                TestEvent(index, Event::Churn { .. }) => {
+                TestEvent(index, Event::NodeAdded(_)) => {
                     connection_counts[index] += 1;
 
                     let k = nodes.len();
@@ -407,7 +407,7 @@ fn core() {
         loop {
             if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::Churn { lost_close_node: Some(lost_name), .. })
+                    TestEvent(index, Event::NodeLost(lost_name))
                         if index < nodes.len() && lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
@@ -433,8 +433,7 @@ fn core() {
         loop {
             if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::Churn { lost_close_node: None, .. }) if index <
-                                                                                    nodes.len() => {
+                    TestEvent(index, Event::NodeAdded(_)) if index < nodes.len() => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;

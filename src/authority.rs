@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::Destination;
 use xor_name::XorName;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{Debug, Formatter};
@@ -65,6 +66,15 @@ impl Authority {
             Authority::NodeManager(ref name) => name,
             Authority::ManagedNode(ref name) => name,
             Authority::Client { ref proxy_node_name, .. } => proxy_node_name,
+        }
+    }
+
+    /// Returns the `Destination` for the `RoutingTable`.
+    pub fn to_destination(&self) -> Destination {
+        if self.is_group() {
+            Destination::Group(self.get_name())
+        } else {
+            Destination::Node(self.get_name())
         }
     }
 }
