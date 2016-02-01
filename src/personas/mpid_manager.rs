@@ -150,6 +150,10 @@ impl Account {
     fn received_headers(&self) -> Vec<XorName> {
         self.inbox.names()
     }
+
+    fn registerred_clients(&self) -> &Vec<Authority> {
+        &self.clients
+    }
 }
 
 pub struct MpidManager {
@@ -333,6 +337,20 @@ impl MpidManager {
                         let _ = routing_node.send_post_failure(dst.clone(),
                             src.clone(), request.clone(), Vec::new(), message_id);
                     }
+                }
+            }
+            MpidMessageWrapper::PutMessage(mpid_message) => {
+                match self.accounts.get(dst.get_name()) {
+                    Some(receiver) => {
+                        let clients = receiver.registerred_clients();
+                        for client in clients.iter() {
+                            if mpid_message.recipient() == dst.get_name() {
+                                let _ = routing_node.send_post_request(dst.clone(),
+                                    client.clone(), Data::PlainData(data.clone()), message_id.clone());
+                            }
+                        }
+                    }
+                    None => warn!("can not find the account {:?}", dst.get_name()),
                 }
             }
             _ => unreachable!("Error in vault demuxing"),
