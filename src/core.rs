@@ -42,7 +42,7 @@ use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
-use types::{MessageId, RoutingActionSender};
+use types::RoutingActionSender;
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
@@ -256,8 +256,7 @@ impl Core {
                                 }
                             }
                             Action::Name{ result_tx, } => {
-                                if result_tx.send(self.full_id.public_id().name().clone())
-                                            .is_err() {
+                                if result_tx.send(self.name().clone()).is_err() {
                                     return;
                                 }
                             }
@@ -358,12 +357,12 @@ impl Core {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        self.handle_signed_message(hop_msg.content().clone(), hop_msg.name().clone())
+        self.handle_signed_message(hop_msg.content(), hop_msg.name())
     }
 
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
-                             hop_name: XorName)
+                             signed_msg: &SignedMessage,
+                             hop_name: &XorName)
                              -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
@@ -374,40 +373,10 @@ impl Core {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        // Either swarm or Direction check
-        if self.state == State::Node {
-            // Refuse to relay a GetNetworkName from a client that is in the client_map.
-            if let RoutingMessage::Request(RequestMessage {
-                content: RequestContent::GetNetworkName { .. },
-                src: Authority::Client { ref client_key, .. },
-                ..
-            }) = *signed_msg.content() {
-                // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
-                if let Some(&(_, true)) = self.client_map.get(client_key) {
-                    trace!("Illegitimate GetNetworkName request. Refusing to relay.");
-                    return Err(RoutingError::ClientConnectionNotFound);
-                }
-            }
-            // Since endpoint request / GetCloseGroup response messages while relocating are sent
-            // to a client we still need to accept these msgs sent to us even if we have become a node.
-            if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
-                if client_key == self.full_id.public_id().signing_public_key() {
-                    if let RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
-                           *signed_msg.content() {
-                        try!(self.handle_signed_message_for_client(&signed_msg));
-                    }
-
-                    if let RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) =
-                        *signed_msg.content() {
-                        try!(self.handle_signed_message_for_client(&signed_msg));
-                    }
-                }
-            }
-            self.handle_signed_message_for_node(&signed_msg, &hop_name)
-        } else if self.state == State::Client {
-            self.handle_signed_message_for_client(&signed_msg)
-        } else {
-            Err(RoutingError::InvalidStateForOperation)
+        match self.state {
+            State::Node => self.handle_signed_message_for_node(signed_msg, hop_name),
+            State::Client => self.handle_signed_message_for_client(signed_msg),
+            _ => Err(RoutingError::InvalidStateForOperation),
         }
     }
 
@@ -415,36 +384,52 @@ impl Core {
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName)
                                       -> Result<(), RoutingError> {
-        // Node Harvesting
-        if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
-           self.routing_table.need_to_add(signed_msg.public_id().name()) {
-            let _ = self.send_connect_request(signed_msg.public_id().name());
+        try!(self.check_get_network_name_permission(signed_msg.content()));
+
+        let (src, dst) = (signed_msg.content().src(), signed_msg.content().dst());
+
+        // Since endpoint request / GetCloseGroup response messages while relocating are sent
+        // to a client we still need to accept these msgs sent to us even if we have become a node.
+        if let Authority::Client { ref client_key, .. } = *dst {
+            if client_key == self.full_id.public_id().signing_public_key() {
+                match *signed_msg.content() {
+                    RoutingMessage::Request(RequestMessage {
+                        content: RequestContent::Endpoints { .. },
+                        ..
+                    }) => try!(self.handle_signed_message_for_client(&signed_msg)),
+                    RoutingMessage::Response(ResponseMessage {
+                        content: ResponseContent::GetCloseGroup { .. },
+                        ..
+                    }) => try!(self.handle_signed_message_for_client(&signed_msg)),
+                    _ => ()
+                }
+            }
         }
 
-        if self.routing_table.is_close(signed_msg.content().dst().name()) {
+        try!(self.harvest_node(signed_msg.public_id().name()));
+
+        if self.routing_table.is_close(dst.name()) {
             try!(self.signed_msg_security_check(&signed_msg));
 
-            if signed_msg.content().dst().is_group() {
+            if dst.is_group() {
                 try!(self.send(signed_msg.clone()));  // Swarm
-            } else if self.full_id.public_id().name() != signed_msg.content().dst().name() {
+            } else if self.name() != dst.name() {
                 // TODO See if this puts caching into disadvantage
                 // Incoming msg is in our range and not for a group and also not for us, thus
                 // sending on and bailing out
                 return self.send(signed_msg.clone());  // Swarm
-            } else if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
+            } else if let Authority::Client { ref client_key, .. } = *dst {
                 return self.relay_to_client(signed_msg.clone(), client_key);
             }
         } else {
             // If message is coming from a client who we are the proxy node for
             // send the message on to the network
-            if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
-                if proxy_node_name == self.full_id.public_id().name() {
+            if let Authority::Client { ref proxy_node_name, .. } = *src {
+                if proxy_node_name == self.name() {
                     return self.send(signed_msg.clone());
                 }
             }
-            if !::xor_name::closer_to_target(self.full_id.public_id().name(),
-                                             &hop_name,
-                                             signed_msg.content().dst().name()) {
+            if !::xor_name::closer_to_target(self.name(), &hop_name, dst.name()) {
                 trace!("Direction check failed.");
                 // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
                 // return Err(RoutingError::DirectionCheckFailed);
@@ -452,28 +437,43 @@ impl Core {
         }
 
         // Cache handling
-        if let Some((data, id)) = self.get_from_cache(signed_msg.content()) {
-            let content = ResponseContent::GetSuccess(data, id);
-
-            let response_msg = ResponseMessage {
-                src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
-                dst: signed_msg.content().src().clone(),
-                content: content,
-            };
-
-            let routing_msg = RoutingMessage::Response(response_msg);
-            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            return self.send(signed_message);
+        if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
+            let response = try!(SignedMessage::new(routing_msg, &self.full_id));
+            return self.send(response);
         }
-
         self.add_to_cache(signed_msg.content());
 
         // Forwarding the message not meant for us (transit)
-        if !self.routing_table.is_close(signed_msg.content().dst().name()) {
+        if !self.routing_table.is_close(dst.name()) {
             return self.send(signed_msg.clone());
         }
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
+    }
+
+    fn check_get_network_name_permission(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        // Refuse to relay a GetNetworkName from a client that is in the client_map.
+        if let RoutingMessage::Request(RequestMessage {
+            content: RequestContent::GetNetworkName { .. },
+            src: Authority::Client { ref client_key, .. },
+            ..
+        }) = *msg {
+            // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
+            if let Some(&(_, true)) = self.client_map.get(client_key) {
+                trace!("Illegitimate GetNetworkName request. Refusing to relay.");
+                return Err(RoutingError::ClientConnectionNotFound);
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks if the given name is missing from our routing table and if so, tries to connect.
+    fn harvest_node(&mut self, name: &XorName) -> Result<(), RoutingError> {
+        if self.connection_filter.insert(name.clone()).is_none() &&
+           self.routing_table.need_to_add(name) {
+            self.send_connect_request(name)
+        } else {
+            Ok(())
+        }
     }
 
     fn handle_signed_message_for_client(&mut self,
@@ -524,19 +524,28 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<(Data, MessageId)> {
-        match *routing_msg {
+    /// Returns a cached response, if one is available for the given message, otherwise `None`.
+    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
+        let content = match *routing_msg {
             RoutingMessage::Request(RequestMessage {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref id),
                     ..
                 }) => {
                 match self.data_cache.get(&name) {
-                    Some(data) => Some((data.clone(), id.clone())),
-                    _ => None,
+                    Some(data) => ResponseContent::GetSuccess(data.clone(), id.clone()),
+                    _ => return None,
                 }
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+
+        let response_msg = ResponseMessage {
+            src: Authority::ManagedNode(self.name().clone()),
+            dst: routing_msg.src().clone(),
+            content: content,
+        };
+
+        Some(RoutingMessage::Response(response_msg))
     }
 
     fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
@@ -1142,7 +1151,7 @@ impl Core {
 
         let request_msg = RequestMessage {
             src: try!(self.get_client_authority()),
-            dst: Authority::NaeManager(*self.full_id.public_id().name()),
+            dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };
 
@@ -1169,7 +1178,7 @@ impl Core {
         }
 
         let mut close_group = self.close_group_names();
-        close_group.push(self.full_id.public_id().name().clone());
+        close_group.push(self.name().clone());
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 
@@ -1437,7 +1446,7 @@ impl Core {
         let request_content = RequestContent::Connect;
 
         let request_msg = RequestMessage {
-            src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
+            src: Authority::ManagedNode(self.name().clone()),
             dst: Authority::ManagedNode(*dst_name),
             content: request_content,
         };
@@ -1456,9 +1465,8 @@ impl Core {
         try!(self.check_address_for_routing_table(&src_name));
 
         if let Some(public_id) = self.node_id_cache.get(&src_name).cloned() {
-            let our_name = self.full_id.public_id().name().clone();
             try!(self.send_endpoints(public_id,
-                                     Authority::ManagedNode(our_name),
+                                     Authority::ManagedNode(self.name().clone()),
                                      Authority::ManagedNode(src_name)));
             return Ok(());
         }
@@ -1603,7 +1611,7 @@ impl Core {
                        -> Result<(), RoutingError> {
         if let Some(&(connection, _)) = self.client_map.get(client_key) {
             let hop_msg = try!(HopMessage::new(signed_msg,
-                                               self.full_id.public_id().name().clone(),
+                                               self.name().clone(),
                                                self.full_id.signing_private_key()));
             let message = Message::HopMessage(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
@@ -1616,7 +1624,7 @@ impl Core {
 
     fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
         let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           self.full_id.public_id().name().clone(),
+                                           self.name().clone(),
                                            self.full_id.signing_private_key()));
         let message = Message::HopMessage(hop_msg);
         let raw_bytes = try!(serialisation::serialise(&message));
@@ -1656,8 +1664,7 @@ impl Core {
         // If we need to handle this message, handle it.
         if self.routing_table.is_close(signed_msg.content().dst().name()) &&
            self.signed_message_filter.insert(signed_msg.clone()).is_none() {
-            let hop_name = self.full_id.public_id().name().clone();
-            return self.handle_signed_message_for_node(&signed_msg, &hop_name);
+            return self.handle_signed_message_for_node(&signed_msg, &self.name().clone());
         }
 
         Ok(())
@@ -1739,13 +1746,15 @@ impl Core {
             .map(|node_info| node_info.public_id.name().clone())
             .collect_vec()
     }
+
+    /// Returns the `XorName` of this node.
+    fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
 }
 
 impl Debug for Core {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f,
-               "{:?}({:?}) - ",
-               self.state,
-               self.full_id.public_id().name())
+        write!(f, "{:?}({:?}) - ", self.state, self.name())
     }
 }
