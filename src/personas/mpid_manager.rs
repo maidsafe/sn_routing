@@ -291,10 +291,55 @@ impl MpidManager {
                     }
                 }
             }
+            MpidMessageWrapper::GetMessage(mpid_header) => {
+                let header_name = match mpid_messaging::mpid_header_name(&mpid_header) {
+                    Some(name) => name,
+                    None => {
+                        error!("Failed to calculate name of the header");
+                        let _ = routing_node.send_post_failure(dst.clone(),
+                            src.clone(), request.clone(), Vec::new(), message_id);
+                        return Ok(());
+                    }
+                };
+                match self.chunk_store_outbox.get(&header_name) {
+                    Ok(serialised_wrapper) => {
+                        let wrapper = unwrap_option!(deserialise_wrapper(&serialised_wrapper[..]),
+                                                     "Failed to parse MpidMessageWrapper");
+                        match wrapper {
+                            MpidMessageWrapper::PutMessage(mpid_message) => {
+                                let message_name = match mpid_messaging::mpid_message_name(&mpid_message) {
+                                    Some(name) => name,
+                                    None => {
+                                        error!("Failed to calculate name of the message");
+                                        let _ = routing_node.send_post_failure(dst.clone(),
+                                            src.clone(), request.clone(), Vec::new(), message_id);
+                                        return Ok(());
+                                    }
+                                };
+                                if (message_name == header_name) &&
+                                   (mpid_message.recipient() == src.get_name()) {
+                                    let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
+                                    let _ = routing_node.send_post_request(dst.clone(),
+                                        src.clone(), data, message_id.clone());
+                                }
+                            }
+                            _ => {
+                                let _ = routing_node.send_post_failure(dst.clone(),
+                                    src.clone(), request.clone(), Vec::new(), message_id);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        let _ = routing_node.send_post_failure(dst.clone(),
+                            src.clone(), request.clone(), Vec::new(), message_id);
+                    }
+                }
+            }
             _ => unreachable!("Error in vault demuxing"),
         }
         Ok(())
     }
+
 
 }
 
