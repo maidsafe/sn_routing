@@ -27,6 +27,7 @@ use xor_name::XorName;
 use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
+use personas::mpid_manager::MpidManager;
 use personas::pmid_manager::PmidManager;
 use personas::pmid_node::PmidNode;
 use personas::structured_data_manager::StructuredDataManager;
@@ -43,6 +44,7 @@ pub type RoutingNode = ::mock_routing::MockRoutingNode;
 pub struct Vault {
     immutable_data_manager: ImmutableDataManager,
     maid_manager: MaidManager,
+    mpid_manager: MpidManager,
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
@@ -70,6 +72,7 @@ impl Vault {
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
+            mpid_manager: MpidManager::new(),
             pmid_manager: PmidManager::new(),
             pmid_node: try!(PmidNode::new()),
             structured_data_manager: StructuredDataManager::new(),
@@ -154,7 +157,17 @@ impl Vault {
              &RequestContent::Put(Data::ImmutableData(_), _)) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_), _)) => self.maid_manager.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::StructuredData(_), _)) => {
+                self.maid_manager.handle_put(routing_node, &request)
+            }
+            (&Authority::Client{ .. },
+             &Authority::ClientManager(_),
+             &RequestContent::Put(Data::PlainData(_), _)) |
+            (&Authority::ClientManager(_),
+             &Authority::ClientManager(_),
+             &RequestContent::Put(Data::PlainData(_), _)) => {
+                self.mpid_manager.handle_put(routing_node, &request)
+            }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
@@ -177,8 +190,6 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Post(Data::StructuredData(_), _)) => self.structured_data_manager.handle_post(&request),
-            // ================== Delete ==================
-            (_, _, &RequestContent::Delete(_, _)) => unimplemented!(),
             // ================== Refresh ==================
             (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
                 self.on_refresh(src, dst, serialised_refresh)

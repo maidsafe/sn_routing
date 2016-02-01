@@ -17,6 +17,7 @@
 
 pub mod immutable_data_manager;
 pub mod maid_manager;
+pub mod mpid_manager;
 pub mod pmid_manager;
 pub mod pmid_node;
 pub mod structured_data_manager;
