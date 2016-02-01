@@ -371,62 +371,96 @@ pub enum ResponseContent {
 impl fmt::Debug for DirectMessage {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } =>
-                write!(formatter, "DirectMessage {{ BootstrapIdentify {{ {:?}, {:?} }} }}",
-                    public_id, current_quorum_size),
-            DirectMessage::BootstrapDeny =>
-                write!(formatter, "DirectMessage {{ BootstrapDeny }}"),
-            DirectMessage::ClientIdentify { ref client_restriction, .. } =>
-                write!(formatter, "DirectMessage {{ ClientIdentify {{ .., {:?} }} }}", client_restriction),
-            DirectMessage::NodeIdentify { .. } =>
-                write!(formatter, "DirectMessage {{ NodeIdentify {{ .. }} }}"),
-            DirectMessage::NewNode(ref public_id) =>
-                write!(formatter, "DirectMessage {{ NewNode({:?}) }}", public_id),
+            DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
+                write!(formatter,
+                       "DirectMessage {{ BootstrapIdentify {{ {:?}, {:?} }} }}",
+                       public_id,
+                       current_quorum_size)
+            }
+            DirectMessage::BootstrapDeny => write!(formatter, "DirectMessage {{ BootstrapDeny }}"),
+            DirectMessage::ClientIdentify { ref client_restriction, .. } => {
+                write!(formatter,
+                       "DirectMessage {{ ClientIdentify {{ .., {:?} }} }}",
+                       client_restriction)
+            }
+            DirectMessage::NodeIdentify { .. } => {
+                write!(formatter, "DirectMessage {{ NodeIdentify {{ .. }} }}")
+            }
+            DirectMessage::NewNode(ref public_id) => {
+                write!(formatter, "DirectMessage {{ NewNode({:?}) }}", public_id)
+            }
         }
     }
 }
 
 impl fmt::Debug for HopMessage {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(formatter, "HopMessage {{ content: {:?}, name: {:?}, signature: .. }}",
-            self.content, self.name)
+        write!(formatter,
+               "HopMessage {{ content: {:?}, name: {:?}, signature: .. }}",
+               self.content,
+               self.name)
     }
 }
 
 impl fmt::Debug for SignedMessage {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(formatter, "SignedMessage {{ content: {:?}, public_id: {:?}, signature: .. }}",
-            self.content, self.public_id)
+        write!(formatter,
+               "SignedMessage {{ content: {:?}, public_id: {:?}, signature: .. }}",
+               self.content,
+               self.public_id)
     }
 }
 
 impl fmt::Debug for RequestContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            RequestContent::GetNetworkName { ref current_id } =>
-                write!(formatter, "RequestContent {{ GetNetworkName {{ {:?} }} }}", current_id),
-            RequestContent::ExpectCloseNode { ref expect_id } =>
-                write!(formatter, "RequestContent {{ ExpectCloseNode {{ {:?} }} }}", expect_id),
-            RequestContent::GetCloseGroup =>
-                write!(formatter, "RequestContent {{ GetCloseGroup }}"),
-            RequestContent::Connect =>
-                write!(formatter, "RequestContent {{ Connect }}"),
-            RequestContent::Endpoints { .. } =>
-                write!(formatter, "RequestContent {{ Endpoints {{ .. }} }}"),
-            RequestContent::GetPublicId =>
-                write!(formatter, "RequestContent {{ GetPublicId }}"),
-            RequestContent::GetPublicIdWithEndpoints { .. } =>
-                write!(formatter, "RequestContent {{ GetPublicIdWithEndpoints {{ .. }} }}"),
-            RequestContent::Refresh(..) =>
-                write!(formatter, "RequestContent {{ Refresh(..) }}"),
-            RequestContent::Get(ref data_request, ref message_id) =>
-                write!(formatter, "RequestContent {{ Get( {:?}, {:?} ) }}", data_request, message_id),
-            RequestContent::Put(ref data, ref message_id) =>
-                write!(formatter, "RequestContent {{ Put( {:?}, {:?} ) }}", data, message_id),
-            RequestContent::Post(ref data, ref message_id) =>
-                write!(formatter, "RequestContent {{ Post( {:?}, {:?} ) }}", data, message_id),
-            RequestContent::Delete(ref data, ref message_id) =>
-                write!(formatter, "RequestContent {{ Delete( {:?}, {:?} ) }}", data, message_id),
+            RequestContent::GetNetworkName { ref current_id } => {
+                write!(formatter,
+                       "RequestContent {{ GetNetworkName {{ {:?} }} }}",
+                       current_id)
+            }
+            RequestContent::ExpectCloseNode { ref expect_id } => {
+                write!(formatter,
+                       "RequestContent {{ ExpectCloseNode {{ {:?} }} }}",
+                       expect_id)
+            }
+            RequestContent::GetCloseGroup => {
+                write!(formatter, "RequestContent {{ GetCloseGroup }}")
+            }
+            RequestContent::Connect => write!(formatter, "RequestContent {{ Connect }}"),
+            RequestContent::Endpoints { .. } => {
+                write!(formatter, "RequestContent {{ Endpoints {{ .. }} }}")
+            }
+            RequestContent::GetPublicId => write!(formatter, "RequestContent {{ GetPublicId }}"),
+            RequestContent::GetPublicIdWithEndpoints { .. } => {
+                write!(formatter,
+                       "RequestContent {{ GetPublicIdWithEndpoints {{ .. }} }}")
+            }
+            RequestContent::Refresh(..) => write!(formatter, "RequestContent {{ Refresh(..) }}"),
+            RequestContent::Get(ref data_request, ref message_id) => {
+                write!(formatter,
+                       "RequestContent {{ Get( {:?}, {:?} ) }}",
+                       data_request,
+                       message_id)
+            }
+            RequestContent::Put(ref data, ref message_id) => {
+                write!(formatter,
+                       "RequestContent {{ Put( {:?}, {:?} ) }}",
+                       data,
+                       message_id)
+            }
+            RequestContent::Post(ref data, ref message_id) => {
+                write!(formatter,
+                       "RequestContent {{ Post( {:?}, {:?} ) }}",
+                       data,
+                       message_id)
+            }
+            RequestContent::Delete(ref data, ref message_id) => {
+                write!(formatter,
+                       "RequestContent {{ Delete( {:?}, {:?} ) }}",
+                       data,
+                       message_id)
+            }
         }
     }
 }
@@ -434,30 +468,74 @@ impl fmt::Debug for RequestContent {
 impl fmt::Debug for ResponseContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            ResponseContent::GetNetworkName { ref relocated_id } =>
-                write!(formatter, "ResponseContent {{ GetNetworkName {{ {:?} }} }}", relocated_id),
-            ResponseContent::GetPublicId { ref public_id } =>
-                write!(formatter, "ResponseContent {{ GetPublicId {{ {:?} }} }}", public_id),
-            ResponseContent::GetPublicIdWithEndpoints { ref public_id, .. } =>
-                write!(formatter, "ResponseContent {{ GetPublicIdWithEndpoints {{ {:?}, .. }} }}", public_id),
-            ResponseContent::GetCloseGroup { ref close_group_ids } =>
-                write!(formatter, "ResponseContent {{ GetCloseGroup {{ {:?} }} }}", close_group_ids),
-            ResponseContent::GetSuccess(ref data, ref message_id) =>
-                write!(formatter, "ResponseContent {{ GetSuccess {{ {:?}, {:?} }} }}", data, message_id),
-            ResponseContent::PutSuccess(ref digest, ref message_id) =>
-                write!(formatter, "ResponseContent {{ PutSuccess {{ {:?}, {:?} }} }}", digest, message_id),
-            ResponseContent::PostSuccess(ref digest, ref message_id) =>
-                write!(formatter, "ResponseContent {{ PostSuccess {{ {:?}, {:?} }} }}", digest, message_id),
-            ResponseContent::DeleteSuccess(ref digest, ref message_id) =>
-                write!(formatter, "ResponseContent {{ DeleteSuccess {{ {:?}, {:?} }} }}", digest, message_id),
-            ResponseContent::GetFailure { ref id, ref request, .. } =>
-                write!(formatter, "ResponseContent {{ GetFailure {{ {:?}, {:?}, .. }} }}", id, request),
-            ResponseContent::PutFailure { ref id, ref request, .. } =>
-                write!(formatter, "ResponseContent {{ PutFailure {{ {:?}, {:?}, .. }} }}", id, request),
-            ResponseContent::PostFailure { ref id, ref request, .. } =>
-                write!(formatter, "ResponseContent {{ PostFailure {{ {:?}, {:?}, .. }} }}", id, request),
-            ResponseContent::DeleteFailure { ref id, ref request, .. } =>
-                write!(formatter, "ResponseContent {{ DeleteFailure {{ {:?}, {:?}, .. }} }}", id, request),
+            ResponseContent::GetNetworkName { ref relocated_id } => {
+                write!(formatter,
+                       "ResponseContent {{ GetNetworkName {{ {:?} }} }}",
+                       relocated_id)
+            }
+            ResponseContent::GetPublicId { ref public_id } => {
+                write!(formatter,
+                       "ResponseContent {{ GetPublicId {{ {:?} }} }}",
+                       public_id)
+            }
+            ResponseContent::GetPublicIdWithEndpoints { ref public_id, .. } => {
+                write!(formatter,
+                       "ResponseContent {{ GetPublicIdWithEndpoints {{ {:?}, .. }} }}",
+                       public_id)
+            }
+            ResponseContent::GetCloseGroup { ref close_group_ids } => {
+                write!(formatter,
+                       "ResponseContent {{ GetCloseGroup {{ {:?} }} }}",
+                       close_group_ids)
+            }
+            ResponseContent::GetSuccess(ref data, ref message_id) => {
+                write!(formatter,
+                       "ResponseContent {{ GetSuccess {{ {:?}, {:?} }} }}",
+                       data,
+                       message_id)
+            }
+            ResponseContent::PutSuccess(ref digest, ref message_id) => {
+                write!(formatter,
+                       "ResponseContent {{ PutSuccess {{ {:?}, {:?} }} }}",
+                       digest,
+                       message_id)
+            }
+            ResponseContent::PostSuccess(ref digest, ref message_id) => {
+                write!(formatter,
+                       "ResponseContent {{ PostSuccess {{ {:?}, {:?} }} }}",
+                       digest,
+                       message_id)
+            }
+            ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
+                write!(formatter,
+                       "ResponseContent {{ DeleteSuccess {{ {:?}, {:?} }} }}",
+                       digest,
+                       message_id)
+            }
+            ResponseContent::GetFailure { ref id, ref request, .. } => {
+                write!(formatter,
+                       "ResponseContent {{ GetFailure {{ {:?}, {:?}, .. }} }}",
+                       id,
+                       request)
+            }
+            ResponseContent::PutFailure { ref id, ref request, .. } => {
+                write!(formatter,
+                       "ResponseContent {{ PutFailure {{ {:?}, {:?}, .. }} }}",
+                       id,
+                       request)
+            }
+            ResponseContent::PostFailure { ref id, ref request, .. } => {
+                write!(formatter,
+                       "ResponseContent {{ PostFailure {{ {:?}, {:?}, .. }} }}",
+                       id,
+                       request)
+            }
+            ResponseContent::DeleteFailure { ref id, ref request, .. } => {
+                write!(formatter,
+                       "ResponseContent {{ DeleteFailure {{ {:?}, {:?}, .. }} }}",
+                       id,
+                       request)
+            }
         }
     }
 }
@@ -477,13 +555,11 @@ mod test {
     #[test]
     fn signed_message_check_integrity() {
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage::Request(
-            RequestMessage {
-                src: Authority::ClientManager(name),
-                dst: Authority::ClientManager(name),
-                content: RequestContent::Connect,
-            }
-        );
+        let routing_message = RoutingMessage::Request(RequestMessage {
+            src: Authority::ClientManager(name),
+            dst: Authority::ClientManager(name),
+            content: RequestContent::Connect,
+        });
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
 
@@ -512,13 +588,11 @@ mod test {
     #[test]
     fn hop_message_verify() {
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage::Request(
-            RequestMessage {
-                src: Authority::ClientManager(name),
-                dst: Authority::ClientManager(name),
-                content: RequestContent::Connect,
-            }
-        );
+        let routing_message = RoutingMessage::Request(RequestMessage {
+            src: Authority::ClientManager(name),
+            dst: Authority::ClientManager(name),
+            content: RequestContent::Connect,
+        });
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
 
@@ -527,7 +601,9 @@ mod test {
         let signed_message = signed_message_result.unwrap();
         let hop_name: XorName = rand::random();
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(), hop_name, &secret_signing_key);
+        let hop_message_result = HopMessage::new(signed_message.clone(),
+                                                 hop_name,
+                                                 &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 

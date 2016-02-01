@@ -257,7 +257,9 @@ impl ::std::fmt::Debug for StructuredData {
 
         let prev_owner_keys: Vec<String> = self.previous_owner_keys
                                                .iter()
-                                               .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
+                                               .map(|pub_key| {
+                                                   ::utils::format_binary_array(&pub_key.0)
+                                               })
                                                .collect();
         try!(write!(formatter, " , previous_owner_keys : ("));
         for itr in &prev_owner_keys {
@@ -267,7 +269,9 @@ impl ::std::fmt::Debug for StructuredData {
 
         let current_owner_keys: Vec<String> = self.current_owner_keys
                                                   .iter()
-                                                  .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
+                                                  .map(|pub_key| {
+                                                      ::utils::format_binary_array(&pub_key.0)
+                                                  })
                                                   .collect();
         try!(write!(formatter, " , current_owner_keys : ("));
         for itr in &current_owner_keys {
@@ -275,12 +279,11 @@ impl ::std::fmt::Debug for StructuredData {
         }
         try!(write!(formatter, ") "));
 
-        let prev_owner_signatures: Vec<String> = self.previous_owner_signatures
-                                                     .iter()
-                                                     .map(|signature| {
-                                                         ::utils::format_binary_array(&signature.0[..])
-                                                     })
-                                                     .collect();
+        let prev_owner_signatures: Vec<String> =
+            self.previous_owner_signatures
+                .iter()
+                .map(|signature| ::utils::format_binary_array(&signature.0[..]))
+                .collect();
         try!(write!(formatter, " , prev_owner_signatures : ("));
         for itr in &prev_owner_signatures {
             try!(write!(formatter, "{:?} ", itr));

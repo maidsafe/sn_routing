@@ -42,7 +42,7 @@ use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
-use types::{MessageId, RoutingActionSender};
+use types::RoutingActionSender;
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
@@ -150,7 +150,9 @@ pub struct Core {
 impl Core {
     /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
     /// in.
-    pub fn new(event_sender: mpsc::Sender<Event>, client_restriction: bool, keys: Option<FullId>)
+    pub fn new(event_sender: mpsc::Sender<Event>,
+               client_restriction: bool,
+               keys: Option<FullId>)
                -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -216,54 +218,35 @@ impl Core {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::NodeSendMessage { content, result_tx, } => {
-                                match self.send_message(content) {
-                                    Err(RoutingError::Interface(err)) => {
-                                        if result_tx.send(Err(err)).is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Err(_err) => {
-                                        if result_tx.send(Ok(())).is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Ok(()) => {
-                                        if result_tx.send(Ok(())).is_err() {
-                                            return;
-                                        }
-                                    }
+                                if result_tx.send(match self.send_message(content) {
+                                                Err(RoutingError::Interface(err)) => Err(err),
+                                                Err(_err) => Ok(()),
+                                                Ok(()) => Ok(()),
+                                            })
+                                            .is_err() {
+                                    return;
                                 }
                             }
                             Action::ClientSendRequest { content, dst, result_tx, } => {
-                                if let Ok(src) = self.get_client_authority() {
-                                    let request_msg = RequestMessage {
-                                        content: content,
-                                        src: src,
-                                        dst: dst,
-                                    };
+                                if result_tx.send(if let Ok(src) = self.get_client_authority() {
+                                                let request_msg = RequestMessage {
+                                                    content: content,
+                                                    src: src,
+                                                    dst: dst,
+                                                };
 
-                                    let routing_msg = RoutingMessage::Request(request_msg);
-                                    match self.send_message(routing_msg) {
-                                        Err(RoutingError::Interface(err)) => {
-                                            if result_tx.send(Err(err)).is_err() {
-                                                return;
-                                            }
-                                        }
-                                        Err(_err) => {
-                                            if result_tx.send(Ok(())).is_err() {
-                                                return;
-                                            }
-                                        }
-                                        Ok(()) => {
-                                            if result_tx.send(Ok(())).is_err() {
-                                                return;
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    if result_tx.send(Err(InterfaceError::NotConnected)).is_err() {
-                                        return;
-                                    }
+                                                let routing_msg =
+                                                    RoutingMessage::Request(request_msg);
+                                                match self.send_message(routing_msg) {
+                                                    Err(RoutingError::Interface(err)) => Err(err),
+                                                    Err(_err) => Ok(()),
+                                                    Ok(()) => Ok(()),
+                                                }
+                                            } else {
+                                                Err(InterfaceError::NotConnected)
+                                            })
+                                            .is_err() {
+                                    return;
                                 }
                             }
                             Action::CloseGroup{ result_tx, } => {
@@ -273,8 +256,7 @@ impl Core {
                                 }
                             }
                             Action::Name{ result_tx, } => {
-                                if result_tx.send(self.full_id.public_id().name().clone())
-                                            .is_err() {
+                                if result_tx.send(self.name().clone()).is_err() {
                                     return;
                                 }
                             }
@@ -286,36 +268,7 @@ impl Core {
                 }
                 MaidSafeEventCategory::CrustEvent => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
-                        match crust_event {
-                            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            crust::Event::OnAccept(endpoint, connection) => {
-                                self.handle_on_accept(endpoint, connection)
-                            }
-                            // TODO (Fraser) This needs to restart if we are left with 0 connections
-                            crust::Event::LostConnection(connection) => {
-                                self.handle_lost_connection(connection)
-                            }
-                            crust::Event::NewMessage(connection, bytes) => {
-                                match self.handle_new_message(connection, bytes) {
-                                    Err(RoutingError::FilterCheckFailed) => (),
-                                    Err(err) => error!("{:?} {:?}", self, err),
-                                    Ok(_) => (),
-                                }
-                            }
-                            crust::Event::OnConnect(io_result, connection_token) => {
-                                self.handle_on_connect(io_result, connection_token)
-                            }
-                            crust::Event::ExternalEndpoints(external_endpoints) => {
-                                for external_endpoint in external_endpoints {
-                                    debug!("Adding external endpoint {:?}", external_endpoint);
-                                    // TODO - reimplement
-                                    // self.accepting_on.push(external_endpoint);
-                                }
-                            }
-                            crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
-                            crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
-                            crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
-                        }
+                        self.handle_crust_event(crust_event);
                     }
                 }
             } // Category Match
@@ -326,12 +279,46 @@ impl Core {
                 trace!("| Routing Table size updated to: {}",
                        self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
+                //     trace!("Name: {:?} Connections {:?}  -- {:?}",
+                //            elt.public_id.name(),
+                //            elt.connections.len(),
+                //            elt.connections);
                 //     true
                 // });
                 trace!(" -----------------------------------");
             }
         } // Category Rx
+    }
+
+    fn handle_crust_event(&mut self, crust_event: crust::Event) {
+        match crust_event {
+            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
+            crust::Event::OnAccept(endpoint, connection) => {
+                self.handle_on_accept(endpoint, connection)
+            }
+            // TODO (Fraser) This needs to restart if we are left with 0 connections
+            crust::Event::LostConnection(connection) => self.handle_lost_connection(connection),
+            crust::Event::NewMessage(connection, bytes) => {
+                match self.handle_new_message(connection, bytes) {
+                    Err(RoutingError::FilterCheckFailed) => (),
+                    Err(err) => error!("{:?} {:?}", self, err),
+                    Ok(_) => (),
+                }
+            }
+            crust::Event::OnConnect(io_result, connection_token) => {
+                self.handle_on_connect(io_result, connection_token)
+            }
+            crust::Event::ExternalEndpoints(external_endpoints) => {
+                for external_endpoint in external_endpoints {
+                    debug!("Adding external endpoint {:?}", external_endpoint);
+                    // TODO - reimplement
+                    // self.accepting_on.push(external_endpoint);
+                }
+            }
+            crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
+            crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
+            crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
+        }
     }
 
     fn handle_new_message(&mut self,
@@ -355,8 +342,8 @@ impl Core {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
             } else if let Some((ref pub_key, _)) = self.client_map
-                                                       .iter()
-                                                       .find(|ref elt| connection == (elt.1).0) {
+                                                .iter()
+                                                .find(|ref elt| connection == (elt.1).0) {
                 try!(hop_msg.verify(pub_key));
             } else {
                 // TODO drop connection ?
@@ -370,12 +357,12 @@ impl Core {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        self.handle_signed_message(hop_msg.content().clone(), hop_msg.name().clone())
+        self.handle_signed_message(hop_msg.content(), hop_msg.name())
     }
 
     fn handle_signed_message(&mut self,
-                             signed_msg: SignedMessage,
-                             hop_name: XorName)
+                             signed_msg: &SignedMessage,
+                             hop_name: &XorName)
                              -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
@@ -386,40 +373,10 @@ impl Core {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        // Either swarm or Direction check
-        if self.state == State::Node {
-            // Refuse to relay a GetNetworkName from a client that is in the client_map.
-            if let &RoutingMessage::Request(RequestMessage {
-                content: RequestContent::GetNetworkName { .. },
-                src: Authority::Client { ref client_key, .. },
-                ..
-            }) = signed_msg.content() {
-                // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
-                if let Some(&(_, true)) = self.client_map.get(client_key) {
-                    trace!("Illegitimate GetNetworkName request. Refusing to relay.");
-                    return Err(RoutingError::ClientConnectionNotFound)
-                }
-            }
-            // Since endpoint request / GetCloseGroup response messages while relocating are sent
-            // to a client we still need to accept these msgs sent to us even if we have become a node.
-            if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
-                if client_key == self.full_id.public_id().signing_public_key() {
-                    if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
-                           signed_msg.content() {
-                        try!(self.handle_signed_message_for_client(&signed_msg));
-                    }
-
-                    if let &RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) =
-                        signed_msg.content() {
-                        try!(self.handle_signed_message_for_client(&signed_msg));
-                    }
-                }
-            }
-            self.handle_signed_message_for_node(&signed_msg, &hop_name)
-        } else if self.state == State::Client {
-            self.handle_signed_message_for_client(&signed_msg)
-        } else {
-            Err(RoutingError::InvalidStateForOperation)
+        match self.state {
+            State::Node => self.handle_signed_message_for_node(signed_msg, hop_name),
+            State::Client => self.handle_signed_message_for_client(signed_msg),
+            _ => Err(RoutingError::InvalidStateForOperation),
         }
     }
 
@@ -427,36 +384,52 @@ impl Core {
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName)
                                       -> Result<(), RoutingError> {
-        // Node Harvesting
-        if self.connection_filter.insert(signed_msg.public_id().name().clone()).is_none() &&
-           self.routing_table.need_to_add(signed_msg.public_id().name()) {
-            let _ = self.send_connect_request(signed_msg.public_id().name());
+        try!(self.check_get_network_name_permission(signed_msg.content()));
+
+        let (src, dst) = (signed_msg.content().src(), signed_msg.content().dst());
+
+        // Since endpoint request / GetCloseGroup response messages while relocating are sent
+        // to a client we still need to accept these msgs sent to us even if we have become a node.
+        if let Authority::Client { ref client_key, .. } = *dst {
+            if client_key == self.full_id.public_id().signing_public_key() {
+                match *signed_msg.content() {
+                    RoutingMessage::Request(RequestMessage {
+                        content: RequestContent::Endpoints { .. },
+                        ..
+                    }) => try!(self.handle_signed_message_for_client(&signed_msg)),
+                    RoutingMessage::Response(ResponseMessage {
+                        content: ResponseContent::GetCloseGroup { .. },
+                        ..
+                    }) => try!(self.handle_signed_message_for_client(&signed_msg)),
+                    _ => ()
+                }
+            }
         }
 
-        if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+        try!(self.harvest_node(signed_msg.public_id().name()));
+
+        if self.routing_table.is_close(dst.name()) {
             try!(self.signed_msg_security_check(&signed_msg));
 
-            if signed_msg.content().dst().is_group() {
+            if dst.is_group() {
                 try!(self.send(signed_msg.clone()));  // Swarm
-            } else if self.full_id.public_id().name() != signed_msg.content().dst().get_name() {
+            } else if self.name() != dst.name() {
                 // TODO See if this puts caching into disadvantage
                 // Incoming msg is in our range and not for a group and also not for us, thus
                 // sending on and bailing out
                 return self.send(signed_msg.clone());  // Swarm
-            } else if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
+            } else if let Authority::Client { ref client_key, .. } = *dst {
                 return self.relay_to_client(signed_msg.clone(), client_key);
             }
         } else {
             // If message is coming from a client who we are the proxy node for
             // send the message on to the network
-            if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
-                if proxy_node_name == self.full_id.public_id().name() {
+            if let Authority::Client { ref proxy_node_name, .. } = *src {
+                if proxy_node_name == self.name() {
                     return self.send(signed_msg.clone());
                 }
             }
-            if !::xor_name::closer_to_target(self.full_id.public_id().name(),
-                                             &hop_name,
-                                             signed_msg.content().dst().get_name()) {
+            if !::xor_name::closer_to_target(self.name(), &hop_name, dst.name()) {
                 trace!("Direction check failed.");
                 // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
                 // return Err(RoutingError::DirectionCheckFailed);
@@ -464,28 +437,43 @@ impl Core {
         }
 
         // Cache handling
-        if let Some((data, id)) = self.get_from_cache(signed_msg.content()) {
-            let content = ResponseContent::GetSuccess(data, id);
-
-            let response_msg = ResponseMessage {
-                src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
-                dst: signed_msg.content().src().clone(),
-                content: content,
-            };
-
-            let routing_msg = RoutingMessage::Response(response_msg);
-            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            return self.send(signed_message);
+        if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
+            let response = try!(SignedMessage::new(routing_msg, &self.full_id));
+            return self.send(response);
         }
-
         self.add_to_cache(signed_msg.content());
 
         // Forwarding the message not meant for us (transit)
-        if !self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+        if !self.routing_table.is_close(dst.name()) {
             return self.send(signed_msg.clone());
         }
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
+    }
+
+    fn check_get_network_name_permission(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        // Refuse to relay a GetNetworkName from a client that is in the client_map.
+        if let RoutingMessage::Request(RequestMessage {
+            content: RequestContent::GetNetworkName { .. },
+            src: Authority::Client { ref client_key, .. },
+            ..
+        }) = *msg {
+            // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
+            if let Some(&(_, true)) = self.client_map.get(client_key) {
+                trace!("Illegitimate GetNetworkName request. Refusing to relay.");
+                return Err(RoutingError::ClientConnectionNotFound);
+            }
+        }
+        Ok(())
+    }
+
+    /// Checks if the given name is missing from our routing table and if so, tries to connect.
+    fn harvest_node(&mut self, name: &XorName) -> Result<(), RoutingError> {
+        if self.connection_filter.insert(name.clone()).is_none() &&
+           self.routing_table.need_to_add(name) {
+            self.send_connect_request(name)
+        } else {
+            Ok(())
+        }
     }
 
     fn handle_signed_message_for_client(&mut self,
@@ -508,7 +496,7 @@ impl Core {
 
             // FIXME This check will need to get finalised in routing table
             // if !self.routing_table
-            //         .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
+            //         .try_confirm_safe_group_distance(signed_msg.content().src().name(),
             //                                          signed_msg.public_id().name()) {
             //     return Err(RoutingError::RoutingTableBucketIndexFailed);
             // }
@@ -536,19 +524,28 @@ impl Core {
         }
     }
 
-    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<(Data, MessageId)> {
-        match *routing_msg {
+    /// Returns a cached response, if one is available for the given message, otherwise `None`.
+    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
+        let content = match *routing_msg {
             RoutingMessage::Request(RequestMessage {
                     content: RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref id),
                     ..
                 }) => {
                 match self.data_cache.get(&name) {
-                    Some(data) => Some((data.clone(), id.clone())),
-                    _ => None,
+                    Some(data) => ResponseContent::GetSuccess(data.clone(), id.clone()),
+                    _ => return None,
                 }
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+
+        let response_msg = ResponseMessage {
+            src: Authority::ManagedNode(self.name().clone()),
+            dst: routing_msg.src().clone(),
+            content: content,
+        };
+
+        Some(RoutingMessage::Response(response_msg))
     }
 
     fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
@@ -622,9 +619,9 @@ impl Core {
             (RequestContent::ExpectCloseNode { expect_id, },
              Authority::NaeManager(_),
              Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id),
-            (RequestContent::GetCloseGroup, src, Authority::NaeManager(dst_name)) => {
-                self.handle_get_close_group_request(src, dst_name)
-            }
+            (RequestContent::GetCloseGroup,
+             src,
+             Authority::NaeManager(dst_name)) => self.handle_get_close_group_request(src, dst_name),
             (RequestContent::Endpoints { encrypted_endpoints, nonce_bytes },
              Authority::Client { client_key, proxy_node_name, },
              Authority::ManagedNode(dst_name)) => {
@@ -698,9 +695,7 @@ impl Core {
             }
             (ResponseContent::GetCloseGroup { close_group_ids },
              Authority::NaeManager(_),
-             dst) => {
-                self.handle_get_close_group_response(close_group_ids, dst)
-            }
+             dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (ResponseContent::GetSuccess(..), _, _) |
             (ResponseContent::PutSuccess(..), _, _) |
             (ResponseContent::PostSuccess(..), _, _) |
@@ -898,41 +893,8 @@ impl Core {
                              connection: crust::Connection)
                              -> Result<(), RoutingError> {
         match direct_message {
-            DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
-                trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}",
-                       self,
-                       current_quorum_size);
-
-                if *public_id.name() ==
-                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
-                    warn!("Incoming Connection not validated as a proper node - dropping");
-                    self.crust_service.drop_node(connection);
-
-                // Probably look for other bootstrap connections
-                    return Ok(());
-                }
-
-                if let Some(previous_name) = self.proxy_map.insert(connection, public_id.clone()) {
-                    warn!("Adding bootstrap node to proxy map caused a prior id to eject. \
-                           Previous name: {:?}",
-                          previous_name);
-                    warn!("Dropping this connection {:?}", connection);
-                    self.crust_service.drop_node(connection);
-                    let _ = self.proxy_map.remove(&connection);
-
-                    // Probably look for other bootstrap connections
-                    return Ok(());
-                }
-
-                self.state = State::Client;
-                self.message_accumulator.set_quorum_size(current_quorum_size);
-
-                if self.client_restriction {
-                    let _ = self.event_sender.send(Event::Connected);
-                } else {
-                    try!(self.relocate());
-                };
-                Ok(())
+            DirectMessage::BootstrapIdentify { public_id, current_quorum_size } => {
+                self.handle_bootstrap_identify(public_id, connection, current_quorum_size)
             }
             DirectMessage::BootstrapDeny => {
                 if self.client_restriction {
@@ -944,55 +906,24 @@ impl Core {
                 self.retry_bootstrap_with_blacklist(connection);
                 Ok(())
             }
-            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
-
+            DirectMessage::ClientIdentify {
+                ref serialised_public_id,
+                ref signature,
+                client_restriction
+            } => {
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                     signature) {
                     Ok(public_id) => public_id,
                     Err(_) => {
-                        warn!("Signature check failed in ClientIdentify - Dropping connection {:?}",
+                        warn!("Signature check failed in ClientIdentify - Dropping connection \
+                               {:?}",
                               connection);
                         self.crust_service.drop_node(connection);
 
                         return Ok(());
                     }
                 };
-
-                if *public_id.name() !=
-                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
-                    warn!("Incoming Connection not validated as a proper client - dropping");
-                    self.crust_service.drop_node(connection);
-                    return Ok(());
-                }
-
-                let group_size = kademlia_routing_table::GROUP_SIZE;
-                if client_restriction {
-                    if self.routing_table.len() < group_size {
-                        trace!("Client rejected: Routing table has {} entries. {} required.",
-                               self.routing_table.len(), group_size);
-                        return self.bootstrap_deny(connection);
-                    }
-                } else {
-                    let joining_nodes_num = self.joining_nodes_num();
-                    // Restrict the number of simultaneously joining nodes. If the network is still
-                    // small, we need to accept `group_size` nodes, so that they can fill their
-                    // routing tables and drop the proxy connection.
-                    if !(self.routing_table.len() < group_size && joining_nodes_num < group_size)
-                            && joining_nodes_num >= MAX_JOINING_NODES  {
-                        trace!("No additional joining nodes allowed.");
-                        return self.bootstrap_deny(connection);
-                    }
-                }
-                if let Some((prev_conn, _)) = self.client_map
-                                                  .insert(public_id.signing_public_key().clone(),
-                                                          (connection, client_restriction)) {
-                    debug!("Found previous connection against client key - Dropping {:?}",
-                           prev_conn);
-                    self.crust_service.drop_node(prev_conn);
-                }
-
-                let _ = self.bootstrap_identify(connection);
-                Ok(())
+                self.handle_client_identify(public_id, connection, client_restriction)
             }
             DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
@@ -1006,88 +937,178 @@ impl Core {
                         return Ok(());
                     }
                 };
-
-                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
-                    if their_public_id != public_id {
-                        warn!("Given Public ID and Public ID in cache don't match - Given {:?} \
-                               :: In cache {:?} Dropping connection {:?}",
-                              public_id,
-                              their_public_id,
-                              connection);
-
-                        self.crust_service.drop_node(connection);
-                        return Ok(());
-                    }
-
-                    let node_info = NodeInfo::new(public_id.clone(), Some(connection));
-                    if let Some(_) = self.routing_table.get(public_id.name()) {
-                        if !self.routing_table.add_connection(public_id.name(), connection) {
-                            // We already sent an identify down this connection
-                            return Ok(());
-                        }
-                    } else {
-                        if let Some(AddedNodeDetails { must_notify, common_groups }) =
-                                self.routing_table.add_node(node_info) {
-                            for node in must_notify {
-                                let direct_message = DirectMessage::NewNode(node.public_id);
-                                let message = Message::DirectMessage(direct_message);
-                                let raw_bytes = try!(serialisation::serialise(&message));
-                                self.crust_service.send(connection, raw_bytes);
-                            }
-                            if common_groups {
-                                let event = Event::NodeAdded(public_id.name().clone());
-                                if let Err(err) = self.event_sender.send(event) {
-                                    error!("Error sending event to routing user - {:?}", err);
-                                }
-                            }
-                        } else {
-                            self.crust_service.drop_node(connection);
-                            let _ = self.node_id_cache.remove(public_id.name());
-
-                            return Ok(());
-                        }
-
-                        self.state = State::Node;
-
-                        if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
-                                && !self.proxy_map.is_empty() {
-                            trace!("Routing table reached group size. Dropping proxy.");
-                            self.proxy_map.keys()
-                                .foreach(|&connection| self.crust_service.drop_node(connection));
-                            self.proxy_map.clear();
-                            // We have all close contacts now and know which bucket addresses to
-                            // request IDs from: All buckets up to the one containing the furthest
-                            // close node might still be not maximally filled.
-                            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
-                                if let Err(e) = self.request_bucket_ids_with_endpoints(i) {
-                                    trace!("Failed to request endpoints from bucket {}: {:?}.",
-                                           i, e);
-                                }
-                            }
-                        }
-                    }
-
-                    let _ = self.node_identify(connection);
-                    return Ok(());
-                } else {
-                    debug!("PublicId not found in node_id_cache - Dropping Connection {:?}",
-                           connection);
-                    self.crust_service.drop_node(connection);
-                    return Ok(());
-                }
+                self.handle_node_identify(public_id, connection)
             }
             DirectMessage::NewNode(public_id) => {
                 if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }
+                Ok(())
+            }
+        }
+    }
+
+    fn handle_bootstrap_identify(&mut self,
+                                 public_id: PublicId,
+                                 connection: crust::Connection,
+                                 current_quorum_size: usize)
+                                 -> Result<(), RoutingError> {
+        trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}",
+               self,
+               current_quorum_size);
+
+        if *public_id.name() ==
+           XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+            warn!("Incoming Connection not validated as a proper node - dropping");
+            self.crust_service.drop_node(connection);
+
+            // Probably look for other bootstrap connections
+            return Ok(());
+        }
+
+        if let Some(previous_name) = self.proxy_map.insert(connection, public_id.clone()) {
+            warn!("Adding bootstrap node to proxy map caused a prior id to eject. Previous name: \
+                   {:?}",
+                  previous_name);
+            warn!("Dropping this connection {:?}", connection);
+            self.crust_service.drop_node(connection);
+            let _ = self.proxy_map.remove(&connection);
+
+            // Probably look for other bootstrap connections
+            return Ok(());
+        }
+
+        self.state = State::Client;
+        self.message_accumulator.set_quorum_size(current_quorum_size);
+
+        if self.client_restriction {
+            let _ = self.event_sender.send(Event::Connected);
+        } else {
+            try!(self.relocate());
+        };
+        Ok(())
+    }
+
+    fn handle_client_identify(&mut self,
+                              public_id: PublicId,
+                              connection: crust::Connection,
+                              client_restriction: bool)
+                              -> Result<(), RoutingError> {
+        if *public_id.name() !=
+           XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+            warn!("Incoming Connection not validated as a proper client - dropping");
+            self.crust_service.drop_node(connection);
+            return Ok(());
+        }
+
+        let group_size = kademlia_routing_table::GROUP_SIZE;
+        if client_restriction {
+            if self.routing_table.len() < group_size {
+                trace!("Client rejected: Routing table has {} entries. {} required.",
+                       self.routing_table.len(),
+                       group_size);
+                return self.bootstrap_deny(connection);
+            }
+        } else {
+            let joining_nodes_num = self.joining_nodes_num();
+            // Restrict the number of simultaneously joining nodes. If the network is still
+            // small, we need to accept `group_size` nodes, so that they can fill their
+            // routing tables and drop the proxy connection.
+            if !(self.routing_table.len() < group_size && joining_nodes_num < group_size) &&
+               joining_nodes_num >= MAX_JOINING_NODES {
+                trace!("No additional joining nodes allowed.");
+                return self.bootstrap_deny(connection);
+            }
+        }
+        if let Some((prev_conn, _)) = self.client_map
+                                          .insert(public_id.signing_public_key().clone(),
+                                                  (connection, client_restriction)) {
+            debug!("Found previous connection against client key - Dropping {:?}",
+                   prev_conn);
+            self.crust_service.drop_node(prev_conn);
+        }
+
+        let _ = self.bootstrap_identify(connection);
+        Ok(())
+    }
+
+    fn handle_node_identify(&mut self,
+                            public_id: PublicId,
+                            connection: crust::Connection)
+                            -> Result<(), RoutingError> {
+        if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
+            if their_public_id != public_id {
+                warn!("Given Public ID and Public ID in cache don't match - Given {:?} :: In \
+                       cache {:?} Dropping connection {:?}",
+                      public_id,
+                      their_public_id,
+                      connection);
+
+                self.crust_service.drop_node(connection);
                 return Ok(());
             }
+
+            let node_info = NodeInfo::new(public_id.clone(), Some(connection));
+            if let Some(_) = self.routing_table.get(public_id.name()) {
+                if !self.routing_table.add_connection(public_id.name(), connection) {
+                    // We already sent an identify down this connection
+                    return Ok(());
+                }
+            } else {
+                if let Some(AddedNodeDetails { must_notify, common_groups }) =
+                       self.routing_table.add_node(node_info) {
+                    for node in must_notify {
+                        let direct_message = DirectMessage::NewNode(node.public_id);
+                        let message = Message::DirectMessage(direct_message);
+                        let raw_bytes = try!(serialisation::serialise(&message));
+                        self.crust_service.send(connection, raw_bytes);
+                    }
+                    if common_groups {
+                        let event = Event::NodeAdded(public_id.name().clone());
+                        if let Err(err) = self.event_sender.send(event) {
+                            error!("Error sending event to routing user - {:?}", err);
+                        }
+                    }
+                } else {
+                    self.crust_service.drop_node(connection);
+                    let _ = self.node_id_cache.remove(public_id.name());
+
+                    return Ok(());
+                }
+
+                self.state = State::Node;
+
+                if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE &&
+                   !self.proxy_map.is_empty() {
+                    trace!("Routing table reached group size. Dropping proxy.");
+                    self.proxy_map
+                        .keys()
+                        .foreach(|&connection| self.crust_service.drop_node(connection));
+                    self.proxy_map.clear();
+                    // We have all close contacts now and know which bucket addresses to
+                    // request IDs from: All buckets up to the one containing the furthest
+                    // close node might still be not maximally filled.
+                    for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+                        if let Err(e) = self.request_bucket_ids(i) {
+                            trace!("Failed to request endpoints from bucket {}: {:?}.", i, e);
+                        }
+                    }
+                }
+            }
+
+            let _ = self.node_identify(connection);
+            return Ok(());
+        } else {
+            debug!("PublicId not found in node_id_cache - Dropping Connection {:?}",
+                   connection);
+            self.crust_service.drop_node(connection);
+            return Ok(());
         }
     }
 
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
-    fn request_bucket_ids_with_endpoints(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+    fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(self.routing_table.our_name().clone()),
@@ -1116,9 +1137,9 @@ impl Core {
         self.proxy_map.clear();
         thread::sleep(::std::time::Duration::from_secs(5));
         self.crust_service.bootstrap(0u32, Some(CRUST_DEFAULT_BEACON_PORT));
-        //TODO(andreas): Enable blacklisting once a solution for ci_test is found.
+        // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
         //               Currently, ci_test's nodes all connect via the same beacon.
-        //self.crust_service
+        // self.crust_service
         //    .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
     }
 
@@ -1130,7 +1151,7 @@ impl Core {
 
         let request_msg = RequestMessage {
             src: try!(self.get_client_authority()),
-            dst: Authority::NaeManager(*self.full_id.public_id().name()),
+            dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };
 
@@ -1157,7 +1178,7 @@ impl Core {
         }
 
         let mut close_group = self.close_group_names();
-        close_group.push(self.full_id.public_id().name().clone());
+        close_group.push(self.name().clone());
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 
@@ -1246,8 +1267,10 @@ impl Core {
     }
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
-    fn handle_get_close_group_request(&mut self, src: Authority, dst_name: XorName)
-            -> Result<(), RoutingError> {
+    fn handle_get_close_group_request(&mut self,
+                                      src: Authority,
+                                      dst_name: XorName)
+                                      -> Result<(), RoutingError> {
         match src {
             Authority::Client { client_key, .. } => {
                 if self.node_id_cache
@@ -1260,14 +1283,15 @@ impl Core {
             Authority::ManagedNode(_) => {
                 // Check that the destination is one of the sender's bucket addresses or the address
                 // itself, i. e. it differs from it in 1 or 0 bits.
-                if src.get_name().count_differing_bits(&dst_name) > 1 {
+                if src.name().count_differing_bits(&dst_name) > 1 {
                     return Err(RoutingError::RejectedGetCloseGroup);
                 }
             }
             _ => return Err(RoutingError::BadAuthority),
         }
         let id_number = kademlia_routing_table::GROUP_SIZE - 1;
-        let mut public_ids = self.routing_table.closest_nodes_to(&dst_name, id_number)
+        let mut public_ids = self.routing_table
+                                 .closest_nodes_to(&dst_name, id_number)
                                  .into_iter()
                                  .map(|node_info| node_info.public_id)
                                  .collect_vec();
@@ -1313,9 +1337,9 @@ impl Core {
         for peer_id in close_group_ids {
             if self.node_id_cache.insert(*peer_id.name(), peer_id.clone()).is_none() &&
                self.routing_table.allow_connection(peer_id.name()) {
-                   try!(self.send_endpoints(peer_id.clone(),
-                                            dst.clone(),
-                                            Authority::ManagedNode(*peer_id.name())));
+                try!(self.send_endpoints(peer_id.clone(),
+                                         dst.clone(),
+                                         Authority::ManagedNode(*peer_id.name())));
             }
         }
 
@@ -1422,7 +1446,7 @@ impl Core {
         let request_content = RequestContent::Connect;
 
         let request_msg = RequestMessage {
-            src: Authority::ManagedNode(self.full_id.public_id().name().clone()),
+            src: Authority::ManagedNode(self.name().clone()),
             dst: Authority::ManagedNode(*dst_name),
             content: request_content,
         };
@@ -1440,8 +1464,8 @@ impl Core {
                               -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(&src_name));
 
+        let our_name = self.name().clone();
         if let Some(public_id) = self.node_id_cache.get(&src_name).cloned() {
-            let our_name = self.full_id.public_id().name().clone();
             try!(self.send_endpoints(public_id,
                                      Authority::ManagedNode(our_name),
                                      Authority::ManagedNode(src_name)));
@@ -1588,12 +1612,12 @@ impl Core {
                        -> Result<(), RoutingError> {
         if let Some(&(connection, _)) = self.client_map.get(client_key) {
             let hop_msg = try!(HopMessage::new(signed_msg,
-                                               self.full_id.public_id().name().clone(),
+                                               self.name().clone(),
                                                self.full_id.signing_private_key()));
             let message = Message::HopMessage(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
 
-            return Ok(self.crust_service.send(connection.clone(), raw_bytes))
+            return Ok(self.crust_service.send(connection.clone(), raw_bytes));
         }
 
         Err(RoutingError::ClientConnectionNotFound)
@@ -1601,7 +1625,7 @@ impl Core {
 
     fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
         let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           self.full_id.public_id().name().clone(),
+                                           self.name().clone(),
                                            self.full_id.signing_private_key()));
         let message = Message::HopMessage(hop_msg);
         let raw_bytes = try!(serialisation::serialise(&message));
@@ -1625,7 +1649,7 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
-        let hop_type = if signed_msg.content().src().get_name() == self.routing_table.our_name() {
+        let hop_type = if signed_msg.content().src().name() == self.routing_table.our_name() {
             HopType::OriginalSender
         } else {
             HopType::CopyNum(0) // TODO: Count copies!
@@ -1639,9 +1663,9 @@ impl Core {
         });
 
         // If we need to handle this message, handle it.
-        if self.routing_table.is_close(signed_msg.content().dst().get_name()) &&
+        let hop_name = self.name().clone();
+        if self.routing_table.is_close(signed_msg.content().dst().name()) &&
            self.signed_message_filter.insert(signed_msg.clone()).is_none() {
-            let hop_name = self.full_id.public_id().name().clone();
             return self.handle_signed_message_for_node(&signed_msg, &hop_name);
         }
 
@@ -1677,7 +1701,8 @@ impl Core {
                                       .find(|entry| (entry.1).0 == *connection)
                                       .map(|entry| entry.0.clone()) {
             if let Some((_, false)) = self.client_map.remove(&public_key) {
-                trace!("Joining node dropped. {} remaining.", self.joining_nodes_num());
+                trace!("Joining node dropped. {} remaining.",
+                       self.joining_nodes_num());
             }
         }
     }
@@ -1688,7 +1713,7 @@ impl Core {
 
     fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
         if let Some(DroppedNodeDetails { name, incomplete_bucket, common_groups }) =
-                self.routing_table.drop_connection(connection) {
+               self.routing_table.drop_connection(connection) {
             if common_groups {
                 // If the lost node shared some close group with us, send Churn.
                 let event = Event::NodeLost(name.clone());
@@ -1697,9 +1722,10 @@ impl Core {
                 }
             }
             if let Some(bucket_index) = incomplete_bucket {
-                if let Err(e) = self.request_bucket_ids_with_endpoints(bucket_index) {
+                if let Err(e) = self.request_bucket_ids(bucket_index) {
                     trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
-                           bucket_index, e);
+                           bucket_index,
+                           e);
                 }
             }
         }
@@ -1722,13 +1748,15 @@ impl Core {
             .map(|node_info| node_info.public_id.name().clone())
             .collect_vec()
     }
+
+    /// Returns the `XorName` of this node.
+    fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
 }
 
 impl Debug for Core {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f,
-               "{:?}({:?}) - ",
-               self.state,
-               self.full_id.public_id().name())
+        write!(f, "{:?}({:?}) - ", self.state, self.name())
     }
 }

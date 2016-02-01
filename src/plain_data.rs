@@ -58,7 +58,10 @@ impl PlainData {
 
 impl fmt::Debug for PlainData {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(formatter, "PlainData {{ name: {:?}, value: {:?} }}", self.name, utils::format_binary_array(&self.value))
+        write!(formatter,
+               "PlainData {{ name: {:?}, value: {:?} }}",
+               self.name,
+               utils::format_binary_array(&self.value))
     }
 }
 

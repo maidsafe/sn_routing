@@ -59,7 +59,7 @@ impl Authority {
     }
 
     /// Returns the name of authority.
-    pub fn get_name(&self) -> &XorName {
+    pub fn name(&self) -> &XorName {
         match *self {
             Authority::ClientManager(ref name) => name,
             Authority::NaeManager(ref name) => name,
@@ -72,9 +72,9 @@ impl Authority {
     /// Returns the `Destination` for the `RoutingTable`.
     pub fn to_destination(&self) -> Destination {
         if self.is_group() {
-            Destination::Group(self.get_name())
+            Destination::Group(self.name())
         } else {
-            Destination::Node(self.get_name())
+            Destination::Node(self.name())
         }
     }
 }

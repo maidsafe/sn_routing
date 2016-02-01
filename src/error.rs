@@ -151,4 +151,3 @@ impl From<::xor_name::BitIndexOutOfBoundsError> for RoutingError {
         RoutingError::BitIndexOutOfBoundsError
     }
 }
-
