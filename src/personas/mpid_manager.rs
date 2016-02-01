@@ -23,7 +23,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use mpid_messaging::{self, MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidMessageWrapper};
+use mpid_messaging::{self, MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidMessageWrapper, MpidMessage};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -83,7 +83,7 @@ impl MailBox {
     }
 
     #[allow(dead_code)]
-    fn has(&mut self, entry: &XorName) -> bool {
+    fn has(&self, entry: &XorName) -> bool {
         self.mail_box.contains_key(entry)
     }
 }
@@ -127,6 +127,10 @@ impl Account {
     #[allow(dead_code)]
     fn remove_from_inbox(&mut self, size: u64, entry: &XorName) -> bool {
         self.inbox.remove(size, entry)
+    }
+
+    fn has_in_outbox(&self, entry: &XorName) -> bool {
+        self.outbox.has(entry)
     }
 }
 
@@ -213,6 +217,50 @@ impl MpidManager {
         Ok(())
     }
 
+    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
+            -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Post(Data::PlainData(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(data.value()),
+                                                  "Failed to parse MpidMessageWrapper");
+        match mpid_message_wrapper {
+            MpidMessageWrapper::OutboxHas(header_names) => {
+                if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
+                    let names_in_outbox = header_names.iter()
+                                                      .filter(|h| account.has_in_outbox(h))
+                                                      .cloned()
+                                                      .collect::<Vec<XorName>>();
+                    let mut mpid_headers = vec![];
+
+                    for name in names_in_outbox.iter() {
+                        if let Ok(data) = self.chunk_store_outbox.get(name) {
+                            let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                            mpid_headers.push(mpid_message.header().clone());
+                        }
+                    }
+
+                    let src = request.dst.clone();
+                    let dst = request.src.clone();
+                    let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
+                    let serialised_wrapper = match serialise(&wrapper) {
+                        Ok(encoded) => encoded,
+                        Err(error) => {
+                            error!("Failed to serialise PutHeader wrapper: {:?}", error);
+                            return Err(InternalError::Serialisation(error));
+                        }
+                    };
+                    let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
+                    let _ = routing_node.send_post_request(src, dst, data, message_id.clone());
+                }
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        }
+        Ok(())
+    }
 }
 
 fn deserialise_wrapper(serialised_wrapper: &[u8]) -> Option<MpidMessageWrapper> {
