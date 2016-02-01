@@ -1059,7 +1059,7 @@ impl Core {
                             // request IDs from: All buckets up to the one containing the furthest
                             // close node might still be not maximally filled.
                             for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
-                                if let Err(e) = self.request_bucket_ids_with_endpoints(i) {
+                                if let Err(e) = self.request_bucket_ids(i) {
                                     trace!("Failed to request endpoints from bucket {}: {:?}.",
                                            i, e);
                                 }
@@ -1087,7 +1087,7 @@ impl Core {
 
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
-    fn request_bucket_ids_with_endpoints(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+    fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(self.routing_table.our_name().clone()),
@@ -1697,7 +1697,7 @@ impl Core {
                 }
             }
             if let Some(bucket_index) = incomplete_bucket {
-                if let Err(e) = self.request_bucket_ids_with_endpoints(bucket_index) {
+                if let Err(e) = self.request_bucket_ids(bucket_index) {
                     trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
                            bucket_index, e);
                 }
