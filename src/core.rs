@@ -433,12 +433,12 @@ impl Core {
             let _ = self.send_connect_request(signed_msg.public_id().name());
         }
 
-        if self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+        if self.routing_table.is_close(signed_msg.content().dst().name()) {
             try!(self.signed_msg_security_check(&signed_msg));
 
             if signed_msg.content().dst().is_group() {
                 try!(self.send(signed_msg.clone()));  // Swarm
-            } else if self.full_id.public_id().name() != signed_msg.content().dst().get_name() {
+            } else if self.full_id.public_id().name() != signed_msg.content().dst().name() {
                 // TODO See if this puts caching into disadvantage
                 // Incoming msg is in our range and not for a group and also not for us, thus
                 // sending on and bailing out
@@ -456,7 +456,7 @@ impl Core {
             }
             if !::xor_name::closer_to_target(self.full_id.public_id().name(),
                                              &hop_name,
-                                             signed_msg.content().dst().get_name()) {
+                                             signed_msg.content().dst().name()) {
                 trace!("Direction check failed.");
                 // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
                 // return Err(RoutingError::DirectionCheckFailed);
@@ -482,7 +482,7 @@ impl Core {
         self.add_to_cache(signed_msg.content());
 
         // Forwarding the message not meant for us (transit)
-        if !self.routing_table.is_close(signed_msg.content().dst().get_name()) {
+        if !self.routing_table.is_close(signed_msg.content().dst().name()) {
             return self.send(signed_msg.clone());
         }
         self.handle_routing_message(signed_msg.content().clone(), signed_msg.public_id().clone())
@@ -508,7 +508,7 @@ impl Core {
 
             // FIXME This check will need to get finalised in routing table
             // if !self.routing_table
-            //         .try_confirm_safe_group_distance(signed_msg.content().src().get_name(),
+            //         .try_confirm_safe_group_distance(signed_msg.content().src().name(),
             //                                          signed_msg.public_id().name()) {
             //     return Err(RoutingError::RoutingTableBucketIndexFailed);
             // }
@@ -1260,7 +1260,7 @@ impl Core {
             Authority::ManagedNode(_) => {
                 // Check that the destination is one of the sender's bucket addresses or the address
                 // itself, i. e. it differs from it in 1 or 0 bits.
-                if src.get_name().count_differing_bits(&dst_name) > 1 {
+                if src.name().count_differing_bits(&dst_name) > 1 {
                     return Err(RoutingError::RejectedGetCloseGroup);
                 }
             }
@@ -1625,7 +1625,7 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
-        let hop_type = if signed_msg.content().src().get_name() == self.routing_table.our_name() {
+        let hop_type = if signed_msg.content().src().name() == self.routing_table.our_name() {
             HopType::OriginalSender
         } else {
             HopType::CopyNum(0) // TODO: Count copies!
@@ -1639,7 +1639,7 @@ impl Core {
         });
 
         // If we need to handle this message, handle it.
-        if self.routing_table.is_close(signed_msg.content().dst().get_name()) &&
+        if self.routing_table.is_close(signed_msg.content().dst().name()) &&
            self.signed_message_filter.insert(signed_msg.clone()).is_none() {
             let hop_name = self.full_id.public_id().name().clone();
             return self.handle_signed_message_for_node(&signed_msg, &hop_name);
