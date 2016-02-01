@@ -216,26 +216,16 @@ impl Core {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::NodeSendMessage { content, result_tx, } => {
-                                match self.send_message(content) {
-                                    Err(RoutingError::Interface(err)) => {
-                                        if result_tx.send(Err(err)).is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Err(_err) => {
-                                        if result_tx.send(Ok(())).is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Ok(()) => {
-                                        if result_tx.send(Ok(())).is_err() {
-                                            return;
-                                        }
-                                    }
+                                if result_tx.send(match self.send_message(content) {
+                                    Err(RoutingError::Interface(err)) => Err(err),
+                                    Err(_err) => Ok(()),
+                                    Ok(()) => Ok(()),
+                                }).is_err() {
+                                    return;
                                 }
                             }
                             Action::ClientSendRequest { content, dst, result_tx, } => {
-                                if let Ok(src) = self.get_client_authority() {
+                                if result_tx.send(if let Ok(src) = self.get_client_authority() {
                                     let request_msg = RequestMessage {
                                         content: content,
                                         src: src,
@@ -244,26 +234,14 @@ impl Core {
 
                                     let routing_msg = RoutingMessage::Request(request_msg);
                                     match self.send_message(routing_msg) {
-                                        Err(RoutingError::Interface(err)) => {
-                                            if result_tx.send(Err(err)).is_err() {
-                                                return;
-                                            }
-                                        }
-                                        Err(_err) => {
-                                            if result_tx.send(Ok(())).is_err() {
-                                                return;
-                                            }
-                                        }
-                                        Ok(()) => {
-                                            if result_tx.send(Ok(())).is_err() {
-                                                return;
-                                            }
-                                        }
+                                        Err(RoutingError::Interface(err)) => Err(err),
+                                        Err(_err) => Ok(()),
+                                        Ok(()) => Ok(()),
                                     }
                                 } else {
-                                    if result_tx.send(Err(InterfaceError::NotConnected)).is_err() {
-                                        return;
-                                    }
+                                    Err(InterfaceError::NotConnected)
+                                }).is_err() {
+                                    return;
                                 }
                             }
                             Action::CloseGroup{ result_tx, } => {
@@ -286,36 +264,7 @@ impl Core {
                 }
                 MaidSafeEventCategory::CrustEvent => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
-                        match crust_event {
-                            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
-                            crust::Event::OnAccept(endpoint, connection) => {
-                                self.handle_on_accept(endpoint, connection)
-                            }
-                            // TODO (Fraser) This needs to restart if we are left with 0 connections
-                            crust::Event::LostConnection(connection) => {
-                                self.handle_lost_connection(connection)
-                            }
-                            crust::Event::NewMessage(connection, bytes) => {
-                                match self.handle_new_message(connection, bytes) {
-                                    Err(RoutingError::FilterCheckFailed) => (),
-                                    Err(err) => error!("{:?} {:?}", self, err),
-                                    Ok(_) => (),
-                                }
-                            }
-                            crust::Event::OnConnect(io_result, connection_token) => {
-                                self.handle_on_connect(io_result, connection_token)
-                            }
-                            crust::Event::ExternalEndpoints(external_endpoints) => {
-                                for external_endpoint in external_endpoints {
-                                    debug!("Adding external endpoint {:?}", external_endpoint);
-                                    // TODO - reimplement
-                                    // self.accepting_on.push(external_endpoint);
-                                }
-                            }
-                            crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
-                            crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
-                            crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
-                        }
+                        self.handle_crust_event(crust_event);
                     }
                 }
             } // Category Match
@@ -326,12 +275,48 @@ impl Core {
                 trace!("| Routing Table size updated to: {}",
                        self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?} Connections {:?}  -- {:?}", elt.public_id.name(), elt.connections.len(), elt.connections);
+                //     trace!("Name: {:?} Connections {:?}  -- {:?}",
+                //            elt.public_id.name(),
+                //            elt.connections.len(),
+                //            elt.connections);
                 //     true
                 // });
                 trace!(" -----------------------------------");
             }
         } // Category Rx
+    }
+
+    fn handle_crust_event(&mut self, crust_event: crust::Event) {
+        match crust_event {
+            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
+            crust::Event::OnAccept(endpoint, connection) => {
+                self.handle_on_accept(endpoint, connection)
+            }
+            // TODO (Fraser) This needs to restart if we are left with 0 connections
+            crust::Event::LostConnection(connection) => {
+                self.handle_lost_connection(connection)
+            }
+            crust::Event::NewMessage(connection, bytes) => {
+                match self.handle_new_message(connection, bytes) {
+                    Err(RoutingError::FilterCheckFailed) => (),
+                    Err(err) => error!("{:?} {:?}", self, err),
+                    Ok(_) => (),
+                }
+            }
+            crust::Event::OnConnect(io_result, connection_token) => {
+                self.handle_on_connect(io_result, connection_token)
+            }
+            crust::Event::ExternalEndpoints(external_endpoints) => {
+                for external_endpoint in external_endpoints {
+                    debug!("Adding external endpoint {:?}", external_endpoint);
+                    // TODO - reimplement
+                    // self.accepting_on.push(external_endpoint);
+                }
+            }
+            crust::Event::OnHolePunched(_hole_punch_result) => unimplemented!(),
+            crust::Event::OnUdpSocketMapped(_mapped_udp_socket) => unimplemented!(),
+            crust::Event::OnRendezvousConnect(_connection, _signed_request) => unimplemented!(),
+        }
     }
 
     fn handle_new_message(&mut self,
@@ -389,11 +374,11 @@ impl Core {
         // Either swarm or Direction check
         if self.state == State::Node {
             // Refuse to relay a GetNetworkName from a client that is in the client_map.
-            if let &RoutingMessage::Request(RequestMessage {
+            if let RoutingMessage::Request(RequestMessage {
                 content: RequestContent::GetNetworkName { .. },
                 src: Authority::Client { ref client_key, .. },
                 ..
-            }) = signed_msg.content() {
+            }) = *signed_msg.content() {
                 // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
                 if let Some(&(_, true)) = self.client_map.get(client_key) {
                     trace!("Illegitimate GetNetworkName request. Refusing to relay.");
@@ -404,13 +389,13 @@ impl Core {
             // to a client we still need to accept these msgs sent to us even if we have become a node.
             if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
                 if client_key == self.full_id.public_id().signing_public_key() {
-                    if let &RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
-                           signed_msg.content() {
+                    if let RoutingMessage::Request(RequestMessage { content: RequestContent::Endpoints { .. }, .. }) =
+                           *signed_msg.content() {
                         try!(self.handle_signed_message_for_client(&signed_msg));
                     }
 
-                    if let &RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) =
-                        signed_msg.content() {
+                    if let RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetCloseGroup { .. }, .. }) =
+                        *signed_msg.content() {
                         try!(self.handle_signed_message_for_client(&signed_msg));
                     }
                 }
@@ -898,41 +883,8 @@ impl Core {
                              connection: crust::Connection)
                              -> Result<(), RoutingError> {
         match direct_message {
-            DirectMessage::BootstrapIdentify { ref public_id, current_quorum_size } => {
-                trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}",
-                       self,
-                       current_quorum_size);
-
-                if *public_id.name() ==
-                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
-                    warn!("Incoming Connection not validated as a proper node - dropping");
-                    self.crust_service.drop_node(connection);
-
-                // Probably look for other bootstrap connections
-                    return Ok(());
-                }
-
-                if let Some(previous_name) = self.proxy_map.insert(connection, public_id.clone()) {
-                    warn!("Adding bootstrap node to proxy map caused a prior id to eject. \
-                           Previous name: {:?}",
-                          previous_name);
-                    warn!("Dropping this connection {:?}", connection);
-                    self.crust_service.drop_node(connection);
-                    let _ = self.proxy_map.remove(&connection);
-
-                    // Probably look for other bootstrap connections
-                    return Ok(());
-                }
-
-                self.state = State::Client;
-                self.message_accumulator.set_quorum_size(current_quorum_size);
-
-                if self.client_restriction {
-                    let _ = self.event_sender.send(Event::Connected);
-                } else {
-                    try!(self.relocate());
-                };
-                Ok(())
+            DirectMessage::BootstrapIdentify { public_id, current_quorum_size } => {
+                self.handle_bootstrap_identify(public_id, connection, current_quorum_size)
             }
             DirectMessage::BootstrapDeny => {
                 if self.client_restriction {
@@ -944,8 +896,11 @@ impl Core {
                 self.retry_bootstrap_with_blacklist(connection);
                 Ok(())
             }
-            DirectMessage::ClientIdentify { ref serialised_public_id, ref signature, client_restriction } => {
-
+            DirectMessage::ClientIdentify {
+                ref serialised_public_id,
+                ref signature,
+                client_restriction
+            } => {
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
                                                                     signature) {
                     Ok(public_id) => public_id,
@@ -957,42 +912,7 @@ impl Core {
                         return Ok(());
                     }
                 };
-
-                if *public_id.name() !=
-                   XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
-                    warn!("Incoming Connection not validated as a proper client - dropping");
-                    self.crust_service.drop_node(connection);
-                    return Ok(());
-                }
-
-                let group_size = kademlia_routing_table::GROUP_SIZE;
-                if client_restriction {
-                    if self.routing_table.len() < group_size {
-                        trace!("Client rejected: Routing table has {} entries. {} required.",
-                               self.routing_table.len(), group_size);
-                        return self.bootstrap_deny(connection);
-                    }
-                } else {
-                    let joining_nodes_num = self.joining_nodes_num();
-                    // Restrict the number of simultaneously joining nodes. If the network is still
-                    // small, we need to accept `group_size` nodes, so that they can fill their
-                    // routing tables and drop the proxy connection.
-                    if !(self.routing_table.len() < group_size && joining_nodes_num < group_size)
-                            && joining_nodes_num >= MAX_JOINING_NODES  {
-                        trace!("No additional joining nodes allowed.");
-                        return self.bootstrap_deny(connection);
-                    }
-                }
-                if let Some((prev_conn, _)) = self.client_map
-                                                  .insert(public_id.signing_public_key().clone(),
-                                                          (connection, client_restriction)) {
-                    debug!("Found previous connection against client key - Dropping {:?}",
-                           prev_conn);
-                    self.crust_service.drop_node(prev_conn);
-                }
-
-                let _ = self.bootstrap_identify(connection);
-                Ok(())
+                self.handle_client_identify(public_id, connection, client_restriction)
             }
             DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
                 let public_id = match Core::verify_signed_public_id(serialised_public_id,
@@ -1006,82 +926,167 @@ impl Core {
                         return Ok(());
                     }
                 };
-
-                if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
-                    if their_public_id != public_id {
-                        warn!("Given Public ID and Public ID in cache don't match - Given {:?} \
-                               :: In cache {:?} Dropping connection {:?}",
-                              public_id,
-                              their_public_id,
-                              connection);
-
-                        self.crust_service.drop_node(connection);
-                        return Ok(());
-                    }
-
-                    let node_info = NodeInfo::new(public_id.clone(), Some(connection));
-                    if let Some(_) = self.routing_table.get(public_id.name()) {
-                        if !self.routing_table.add_connection(public_id.name(), connection) {
-                            // We already sent an identify down this connection
-                            return Ok(());
-                        }
-                    } else {
-                        if let Some(AddedNodeDetails { must_notify, common_groups }) =
-                                self.routing_table.add_node(node_info) {
-                            for node in must_notify {
-                                let direct_message = DirectMessage::NewNode(node.public_id);
-                                let message = Message::DirectMessage(direct_message);
-                                let raw_bytes = try!(serialisation::serialise(&message));
-                                self.crust_service.send(connection, raw_bytes);
-                            }
-                            if common_groups {
-                                let event = Event::NodeAdded(public_id.name().clone());
-                                if let Err(err) = self.event_sender.send(event) {
-                                    error!("Error sending event to routing user - {:?}", err);
-                                }
-                            }
-                        } else {
-                            self.crust_service.drop_node(connection);
-                            let _ = self.node_id_cache.remove(public_id.name());
-
-                            return Ok(());
-                        }
-
-                        self.state = State::Node;
-
-                        if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
-                                && !self.proxy_map.is_empty() {
-                            trace!("Routing table reached group size. Dropping proxy.");
-                            self.proxy_map.keys()
-                                .foreach(|&connection| self.crust_service.drop_node(connection));
-                            self.proxy_map.clear();
-                            // We have all close contacts now and know which bucket addresses to
-                            // request IDs from: All buckets up to the one containing the furthest
-                            // close node might still be not maximally filled.
-                            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
-                                if let Err(e) = self.request_bucket_ids(i) {
-                                    trace!("Failed to request endpoints from bucket {}: {:?}.",
-                                           i, e);
-                                }
-                            }
-                        }
-                    }
-
-                    let _ = self.node_identify(connection);
-                    return Ok(());
-                } else {
-                    debug!("PublicId not found in node_id_cache - Dropping Connection {:?}",
-                           connection);
-                    self.crust_service.drop_node(connection);
-                    return Ok(());
-                }
+                self.handle_node_identify(public_id, connection)
             }
             DirectMessage::NewNode(public_id) => {
                 if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }
+                Ok(())
+            }
+        }
+    }
+
+    fn handle_bootstrap_identify(&mut self,
+                                 public_id: PublicId,
+                                 connection: crust::Connection,
+                                 current_quorum_size: usize)
+                                 -> Result<(), RoutingError> {
+        trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}", self, current_quorum_size);
+
+        if *public_id.name() ==
+                XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+            warn!("Incoming Connection not validated as a proper node - dropping");
+            self.crust_service.drop_node(connection);
+
+        // Probably look for other bootstrap connections
+            return Ok(());
+        }
+
+        if let Some(previous_name) = self.proxy_map.insert(connection, public_id.clone()) {
+            warn!("Adding bootstrap node to proxy map caused a prior id to eject. \
+                   Previous name: {:?}",
+                  previous_name);
+            warn!("Dropping this connection {:?}", connection);
+            self.crust_service.drop_node(connection);
+            let _ = self.proxy_map.remove(&connection);
+
+            // Probably look for other bootstrap connections
+            return Ok(());
+        }
+
+        self.state = State::Client;
+        self.message_accumulator.set_quorum_size(current_quorum_size);
+
+        if self.client_restriction {
+            let _ = self.event_sender.send(Event::Connected);
+        } else {
+            try!(self.relocate());
+        };
+        Ok(())
+    }
+
+    fn handle_client_identify(&mut self,
+                              public_id: PublicId,
+                              connection: crust::Connection,
+                              client_restriction: bool)
+                              -> Result<(), RoutingError> {
+        if *public_id.name() !=
+           XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+            warn!("Incoming Connection not validated as a proper client - dropping");
+            self.crust_service.drop_node(connection);
+            return Ok(());
+        }
+
+        let group_size = kademlia_routing_table::GROUP_SIZE;
+        if client_restriction {
+            if self.routing_table.len() < group_size {
+                trace!("Client rejected: Routing table has {} entries. {} required.",
+                       self.routing_table.len(), group_size);
+                return self.bootstrap_deny(connection);
+            }
+        } else {
+            let joining_nodes_num = self.joining_nodes_num();
+            // Restrict the number of simultaneously joining nodes. If the network is still
+            // small, we need to accept `group_size` nodes, so that they can fill their
+            // routing tables and drop the proxy connection.
+            if !(self.routing_table.len() < group_size && joining_nodes_num < group_size)
+                    && joining_nodes_num >= MAX_JOINING_NODES  {
+                trace!("No additional joining nodes allowed.");
+                return self.bootstrap_deny(connection);
+            }
+        }
+        if let Some((prev_conn, _)) = self.client_map
+                                          .insert(public_id.signing_public_key().clone(),
+                                                  (connection, client_restriction)) {
+            debug!("Found previous connection against client key - Dropping {:?}",
+                   prev_conn);
+            self.crust_service.drop_node(prev_conn);
+        }
+
+        let _ = self.bootstrap_identify(connection);
+        Ok(())
+    }
+
+    fn handle_node_identify(&mut self, public_id: PublicId, connection: crust::Connection)
+        -> Result<(), RoutingError> {
+        if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
+            if their_public_id != public_id {
+                warn!("Given Public ID and Public ID in cache don't match - Given {:?} \
+                       :: In cache {:?} Dropping connection {:?}",
+                      public_id,
+                      their_public_id,
+                      connection);
+
+                self.crust_service.drop_node(connection);
                 return Ok(());
             }
+
+            let node_info = NodeInfo::new(public_id.clone(), Some(connection));
+            if let Some(_) = self.routing_table.get(public_id.name()) {
+                if !self.routing_table.add_connection(public_id.name(), connection) {
+                    // We already sent an identify down this connection
+                    return Ok(());
+                }
+            } else {
+                if let Some(AddedNodeDetails { must_notify, common_groups }) =
+                        self.routing_table.add_node(node_info) {
+                    for node in must_notify {
+                        let direct_message = DirectMessage::NewNode(node.public_id);
+                        let message = Message::DirectMessage(direct_message);
+                        let raw_bytes = try!(serialisation::serialise(&message));
+                        self.crust_service.send(connection, raw_bytes);
+                    }
+                    if common_groups {
+                        let event = Event::NodeAdded(public_id.name().clone());
+                        if let Err(err) = self.event_sender.send(event) {
+                            error!("Error sending event to routing user - {:?}", err);
+                        }
+                    }
+                } else {
+                    self.crust_service.drop_node(connection);
+                    let _ = self.node_id_cache.remove(public_id.name());
+
+                    return Ok(());
+                }
+
+                self.state = State::Node;
+
+                if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE
+                        && !self.proxy_map.is_empty() {
+                    trace!("Routing table reached group size. Dropping proxy.");
+                    self.proxy_map.keys()
+                        .foreach(|&connection| self.crust_service.drop_node(connection));
+                    self.proxy_map.clear();
+                    // We have all close contacts now and know which bucket addresses to
+                    // request IDs from: All buckets up to the one containing the furthest
+                    // close node might still be not maximally filled.
+                    for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+                        if let Err(e) = self.request_bucket_ids(i) {
+                            trace!("Failed to request endpoints from bucket {}: {:?}.",
+                                   i, e);
+                        }
+                    }
+                }
+            }
+
+            let _ = self.node_identify(connection);
+            return Ok(());
+        } else {
+            debug!("PublicId not found in node_id_cache - Dropping Connection {:?}",
+                   connection);
+            self.crust_service.drop_node(connection);
+            return Ok(());
         }
     }
 
