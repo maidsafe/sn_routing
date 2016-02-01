@@ -1464,9 +1464,10 @@ impl Core {
                               -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(&src_name));
 
+        let our_name = self.name().clone();
         if let Some(public_id) = self.node_id_cache.get(&src_name).cloned() {
             try!(self.send_endpoints(public_id,
-                                     Authority::ManagedNode(self.name().clone()),
+                                     Authority::ManagedNode(our_name),
                                      Authority::ManagedNode(src_name)));
             return Ok(());
         }
@@ -1662,9 +1663,10 @@ impl Core {
         });
 
         // If we need to handle this message, handle it.
+        let hop_name = self.name().clone();
         if self.routing_table.is_close(signed_msg.content().dst().name()) &&
            self.signed_message_filter.insert(signed_msg.clone()).is_none() {
-            return self.handle_signed_message_for_node(&signed_msg, &self.name().clone());
+            return self.handle_signed_message_for_node(&signed_msg, &hop_name);
         }
 
         Ok(())
