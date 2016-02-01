@@ -190,6 +190,9 @@ impl Vault {
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Post(Data::StructuredData(_), _)) => self.structured_data_manager.handle_post(&request),
+            (src, dst, &RequestContent::Post(Data::PlainData(_), _)) => {
+                self.mpid_manager.handle_post(src, dst, routing_node, &request)
+            }
             // ================== Refresh ==================
             (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
                 self.on_refresh(src, dst, serialised_refresh)
