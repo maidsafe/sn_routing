@@ -65,7 +65,6 @@ impl MailBox {
         }
     }
 
-    #[allow(dead_code)]
     fn remove(&mut self, size: u64, entry: &XorName) -> bool {
         if !self.mail_box.contains_key(entry) {
             return false;
@@ -123,12 +122,10 @@ impl Account {
         self.inbox.put(size, entry, public_key)
     }
 
-    #[allow(dead_code)]
     fn remove_from_outbox(&mut self, size: u64, entry: &XorName) -> bool {
         self.outbox.remove(size, entry)
     }
 
-    #[allow(dead_code)]
     fn remove_from_inbox(&mut self, size: u64, entry: &XorName) -> bool {
         self.inbox.remove(size, entry)
     }
@@ -406,7 +403,7 @@ impl MpidManager {
                         let serialised_wrapper = match serialise(&wrapper) {
                             Ok(serialised) => serialised,
                             Err(error) => {
-                                error!("Failed to serialise OutboxHasResponse wrapper: {:?}", error);
+                                error!("Failed to serialise GetOutboxHeadersResponse wrapper: {:?}", error);
                                 return Err(InternalError::Serialisation(error));
                             }
                         };
@@ -417,6 +414,68 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         }
+        Ok(())
+    }
+
+    pub fn handle_delete(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
+            -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Delete(Data::PlainData(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(data.value()),
+                                                  "Failed to parse MpidMessageWrapper");
+        match mpid_message_wrapper {
+            MpidMessageWrapper::DeleteMessage(message_name) => {
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                    let mut registered = false;
+
+                    if account.registered_clients().iter().any(|authority| *authority == request.src) {
+                        registered = true;
+                    }
+
+                    if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
+                        if !registered {
+                            let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                            if mpid_message.recipient() != request.src.get_name() {
+                                return Ok(()); // !
+                            }
+                        }
+
+                        let data_size = data.len() as u64;
+                        try!(self.chunk_store_outbox.delete(&message_name));
+                        if !account.remove_from_outbox(data_size, &message_name) {
+                            warn!("Failed to remove message name from outbox.");
+                        }
+                    } else {
+                        error!("Failed to get from chunk store.");
+                        let _ = unwrap_result!(routing_node.send_delete_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id));
+                    }
+                }
+            }
+            MpidMessageWrapper::DeleteHeader(header_name) => {
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                    if account.registered_clients().iter().any(|authority| *authority == request.src) {
+                        if let Ok(data) = self.chunk_store_inbox.get(&header_name) {
+                            let data_size = data.len() as u64;
+                            try!(self.chunk_store_inbox.delete(&header_name));
+                            if !account.remove_from_inbox(data_size, &header_name) {
+                                debug!("Failed to remove header name from inbox.");
+                            }
+                        } else {
+                            error!("Failed to get from chunk store.");
+                            let _ = unwrap_result!(routing_node.send_delete_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                        }
+                    }
+                }
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        }
+
         Ok(())
     }
 }
