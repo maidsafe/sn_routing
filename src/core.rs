@@ -342,10 +342,16 @@ impl Core {
         if self.state == State::Node {
             if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
-            } else if let Some((ref pub_key, _)) = self.client_map
-                                                .iter()
-                                                .find(|ref elt| connection == (elt.1).0) {
+                try!(self.check_direction(hop_msg));
+            } else if let Some((ref pub_key, &(_, client_restriction))) = self.client_map
+                                                                       .iter()
+                                                                       .find(|ref elt| {
+                                                                           connection == (elt.1).0
+                                                                       }) {
                 try!(hop_msg.verify(pub_key));
+                if client_restriction {
+                    try!(self.check_not_get_network_name(hop_msg.content().content()));
+                }
             } else {
                 // TODO drop connection ?
                 return Err(RoutingError::UnknownConnection);
@@ -359,6 +365,36 @@ impl Core {
         }
 
         self.handle_signed_message(hop_msg.content(), hop_msg.name())
+    }
+
+    fn check_not_get_network_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        match *msg {
+            RoutingMessage::Request(RequestMessage {
+                content: RequestContent::GetNetworkName { .. },
+                ..
+            }) => {
+                trace!("Illegitimate GetNetworkName request. Refusing to relay.");
+                Err(RoutingError::RejectedGetNetworkName)
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Returns an error if this is not a swarm message and was not sent in the right direction.
+    fn check_direction(&self, hop_msg: &HopMessage) -> Result<(), RoutingError> {
+        let dst = hop_msg.content().content().dst();
+        if self.is_swarm(dst, hop_msg.name()) {
+            Ok(())
+        } else if xor_name::closer_to_target(&hop_msg.name(), self.name(), dst.name()) {
+            trace!("Direction check failed in hop message from node {:?}: {:?}",
+                   hop_msg.name(),
+                   hop_msg.content().content());
+            // TODO: Reconsider direction checks once we know whether they help secure routing.
+            Ok(())
+            // Err(RoutingError::DirectionCheckFailed)
+        } else {
+            Ok(())
+        }
     }
 
     fn handle_signed_message(&mut self,
@@ -385,9 +421,7 @@ impl Core {
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName)
                                       -> Result<(), RoutingError> {
-        try!(self.check_get_network_name_permission(signed_msg.content()));
-
-        let (src, dst) = (signed_msg.content().src(), signed_msg.content().dst());
+        let dst = signed_msg.content().dst();
 
         // Since endpoint request / GetCloseGroup response messages while relocating are sent
         // to a client we still need to accept these msgs sent to us even if we have become a node.
@@ -409,36 +443,15 @@ impl Core {
 
         try!(self.harvest_node(signed_msg.public_id().name()));
 
-        let from_our_client = match *src {
-            Authority::Client { ref proxy_node_name, .. } => proxy_node_name == self.name(),
-            _ => false,
-        };
+        if let Authority::Client { ref client_key, .. } = *dst {
+            if self.name() == dst.name() {
+                // This is a message for a client we are the proxy of. Relay it.
+                return self.relay_to_client(signed_msg.clone(), client_key);
+            }
+        }
 
         if self.routing_table.is_close(dst.name()) {
             try!(self.signed_msg_security_check(&signed_msg));
-
-            if dst.is_group() {
-                // Only swarm if this isn't already a swarm message, i. e. if hop_name is not
-                // _also_ close to the destination address.
-                if from_our_client || (hop_name != self.name() && self.routing_table
-                       .closest_nodes_to(dst.name(), GROUP_SIZE - 1)
-                       .into_iter()
-                       .all(|n| n.name() != hop_name)) {
-                    try!(self.send(signed_msg.clone()));  // Swarm
-                }
-            } else if self.name() != dst.name() {
-                // TODO See if this puts caching into disadvantage
-                // Incoming msg is in our range and not for a group and also not for us, thus
-                // sending on and bailing out
-                return self.send(signed_msg.clone());
-            } else if let Authority::Client { ref client_key, .. } = *dst {
-                return self.relay_to_client(signed_msg.clone(), client_key);
-            }
-        } else {
-            if !(from_our_client || xor_name::closer_to_target(self.name(), &hop_name, dst.name())) {
-                trace!("Direction check failed.");
-                return Err(RoutingError::DirectionCheckFailed);
-            }
         }
 
         // Cache handling
@@ -448,37 +461,37 @@ impl Core {
         }
         self.add_to_cache(signed_msg.content());
 
-        // Forwarding the message not meant for us (transit)
-        if !self.routing_table.is_close(dst.name()) {
-            return self.send(signed_msg.clone());
-        }
+        // TODO: Move more of this logic to kademlia_routing_table: Methods of the routing table
+        //       should not only decide whether to handle it, but also whether to forward it.
+        // Forwarding the message
         if self.routing_table.is_recipient(dst.to_destination()) {
-            try!(self.handle_routing_message(signed_msg.content().clone(),
-                                             signed_msg.public_id().clone()));
+            // If the message is for a group and not already a swarm message, send swarm messages.
+            if dst.is_group() && !self.is_swarm(dst, hop_name) {
+                try!(self.send(signed_msg.clone()));
+            }
+            self.handle_routing_message(signed_msg.content().clone(),
+                                        signed_msg.public_id().clone())
+        } else {
+            // If it was not meant for us, forward it.
+            self.send(signed_msg.clone())
         }
-        Ok(())
     }
 
-    fn check_get_network_name_permission(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        // Refuse to relay a GetNetworkName from a client that is in the client_map.
-        if let RoutingMessage::Request(RequestMessage {
-            content: RequestContent::GetNetworkName { .. },
-            src: Authority::Client { ref client_key, .. },
-            ..
-        }) = *msg {
-            // Clients with `client_restriction` are not allowed to send `GetNetworkName`.
-            if let Some(&(_, true)) = self.client_map.get(client_key) {
-                trace!("Illegitimate GetNetworkName request. Refusing to relay.");
-                return Err(RoutingError::ClientConnectionNotFound);
-            }
-        }
-        Ok(())
+    /// Returns `true` if a message is a swarm message.
+    ///
+    /// This is the case if a routing node in the destination's close group sent this message.
+    fn is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
+        dst.is_group() && self.routing_table.is_close(dst.name()) &&
+        (hop_name == self.name() ||
+         self.routing_table
+             .closest_nodes_to(dst.name(), GROUP_SIZE - 1)
+             .into_iter()
+             .any(|n| n.name() == hop_name))
     }
 
     /// Checks if the given name is missing from our routing table and if so, tries to connect.
     fn harvest_node(&mut self, name: &XorName) -> Result<(), RoutingError> {
-        if self.connection_filter.insert(name) == 0 &&
-           self.routing_table.need_to_add(name) {
+        if self.connection_filter.insert(name) == 0 && self.routing_table.need_to_add(name) {
             self.send_connect_request(name)
         } else {
             Ok(())
