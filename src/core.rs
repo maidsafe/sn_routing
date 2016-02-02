@@ -236,9 +236,7 @@ impl Core {
                                                     dst: dst,
                                                 };
 
-                                                let routing_msg =
-                                                    RoutingMessage::Request(request_msg);
-                                                match self.send_message(routing_msg) {
+                                                match self.send_request(request_msg) {
                                                     Err(RoutingError::Interface(err)) => Err(err),
                                                     Err(_err) => Ok(()),
                                                     Ok(()) => Ok(()),
@@ -457,8 +455,7 @@ impl Core {
 
         // Cache handling
         if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
-            let response = try!(SignedMessage::new(routing_msg, &self.full_id));
-            return self.send(response);
+            return self.send_message(routing_msg);
         }
         self.add_to_cache(signed_msg.content());
 
@@ -468,13 +465,13 @@ impl Core {
         if self.routing_table.is_recipient(dst.to_destination()) {
             // If the message is for a group and not already a swarm message, send swarm messages.
             if dst.is_group() && !self.is_swarm(dst, hop_name) && relay {
-                try!(self.relay(signed_msg));
+                try!(self.send(signed_msg.clone(), false));
             }
             self.handle_routing_message(signed_msg.content().clone(),
                                         signed_msg.public_id().clone())
         } else if relay {
             // If it was not meant for us, forward it.
-            self.relay(signed_msg)
+            self.send(signed_msg.clone(), false)
         } else {
             Ok(())
         }
@@ -1141,9 +1138,7 @@ impl Core {
             dst: Authority::NaeManager(bucket_address),
             content: RequestContent::GetCloseGroup,
         };
-        let routing_msg = RoutingMessage::Request(request_msg);
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-        self.send(signed_msg)
+        self.send_request(request_msg)
     }
 
     /// Returns the number of clients for which we act as a proxy and which intend to become a
@@ -1181,11 +1176,7 @@ impl Core {
             content: request_content,
         };
 
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        self.send(signed_message)
+        self.send_request(request_msg)
     }
 
     // Received by X; From A -> X
@@ -1225,10 +1216,7 @@ impl Core {
                 content: response_content,
             };
 
-            let routing_msg = RoutingMessage::Response(response_msg);
-
-            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-            try!(self.send(signed_message));
+            try!(self.send_response(response_msg));
         }
 
         // From X -> Y; Send to close group of the relocated name
@@ -1243,11 +1231,7 @@ impl Core {
                 content: request_content,
             };
 
-            let routing_msg = RoutingMessage::Request(request_msg);
-
-            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            self.send(signed_message)
+            self.send_request(request_msg)
         }
     }
 
@@ -1285,11 +1269,7 @@ impl Core {
             content: request_content,
         };
 
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        self.send(signed_msg)
+        self.send_request(request_msg)
     }
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
@@ -1333,11 +1313,7 @@ impl Core {
             content: response_content,
         };
 
-        let routing_message = RoutingMessage::Response(response_msg);
-
-        let signed_message = try!(SignedMessage::new(routing_message, &self.full_id));
-
-        self.send(signed_message)
+        self.send_response(response_msg)
     }
 
     // Received by A; From Y -> A, or from any node close to one of the sender's bucket addresses.
@@ -1397,11 +1373,7 @@ impl Core {
             content: request_content,
         };
 
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        self.send(signed_msg)
+        self.send_request(request_msg)
     }
 
     fn handle_endpoints_from_client(&mut self,
@@ -1457,11 +1429,7 @@ impl Core {
                 content: request_content,
             };
 
-            let routing_msg = RoutingMessage::Request(request_msg);
-
-            let signed_message = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            self.send(signed_message)
+            self.send_request(request_msg)
         }
     }
 
@@ -1476,11 +1444,7 @@ impl Core {
             content: request_content,
         };
 
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        self.send(signed_msg)
+        self.send_request(request_msg)
     }
 
     fn handle_connect_request(&mut self,
@@ -1505,11 +1469,7 @@ impl Core {
             content: request_content,
         };
 
-        let routing_msg = RoutingMessage::Request(request_msg);
-
-        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-        self.send(signed_msg)
+        self.send_request(request_msg)
     }
 
     fn handle_get_public_id(&mut self,
@@ -1528,11 +1488,7 @@ impl Core {
                 content: response_content,
             };
 
-            let routing_msg = RoutingMessage::Response(response_msg);
-
-            let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            self.send(signed_msg)
+            self.send_response(response_msg)
         } else {
             Err(RoutingError::RejectedPublicId)
         }
@@ -1574,11 +1530,7 @@ impl Core {
                 content: response_content,
             };
 
-            let routing_msg = RoutingMessage::Response(response_msg);
-
-            let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
-
-            self.send(signed_msg)
+            self.send_response(response_msg)
         } else {
             Err(RoutingError::RejectedPublicId)
         }
@@ -1624,11 +1576,19 @@ impl Core {
 
     // ----- Send Functions -----------------------------------------------------------------------
 
+    fn send_request(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
+        self.send_message(RoutingMessage::Request(request_msg))
+    }
+
+    fn send_response(&mut self, response_msg: ResponseMessage) -> Result<(), RoutingError> {
+        self.send_message(RoutingMessage::Response(response_msg))
+    }
+
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
 
-        self.send(signed_msg)
+        self.send(signed_msg, true)
     }
 
     fn relay_to_client(&mut self,
@@ -1656,12 +1616,7 @@ impl Core {
         Ok(try!(serialisation::serialise(&message)))
     }
 
-    // TODO(afck): Deduplicate this code and call `relay` in `send`.
-    //             For some reason, when I do this, it panics:
-    //
-    //             'index out of bounds: the len is 9 but the index is 9',
-    //             ../src/libcollections/vec.rs:1132
-    fn relay(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
+    fn send(&mut self, signed_msg: SignedMessage, handle: bool) -> Result<(), RoutingError> {
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone()));
 
         // If we're a client going to be a node, send via our bootstrap connection.
@@ -1686,45 +1641,7 @@ impl Core {
         let hop_type = if signed_msg.content().src().name() == self.routing_table.our_name() {
             HopType::OriginalSender
         } else {
-            HopType::CopyNum(self.signed_message_filter.count(&signed_msg))
-        };
-        let destination = signed_msg.content().dst().to_destination();
-        let targets = self.routing_table.target_nodes(destination, hop_type);
-        targets.iter().foreach(|node_info| {
-            if let Some(connection) = node_info.connections.iter().next() {
-                self.crust_service.send(connection.clone(), raw_bytes.clone());
-            }
-        });
-
-        Ok(())
-    }
-
-    fn send(&mut self, signed_msg: SignedMessage) -> Result<(), RoutingError> {
-        let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone()));
-
-        // If we're a client going to be a node, send via our bootstrap connection.
-        if self.state == State::Client {
-            if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
-                if let Some((connection, _)) = self.proxy_map
-                                                   .iter()
-                                                   .find(|elt| elt.1.name() == proxy_node_name) {
-                    return Ok(self.crust_service.send(connection.clone(), raw_bytes));
-                }
-
-                error!("{:?} Unable to find connection to proxy node in proxy map",
-                       self);
-                return Err(RoutingError::ProxyConnectionNotFound);
-            }
-
-            error!("{:?} Source should be client if our state is a Client",
-                   self);
-            return Err(RoutingError::InvalidSource);
-        }
-
-        let hop_type = if signed_msg.content().src().name() == self.routing_table.our_name() {
-            HopType::OriginalSender
-        } else {
-            HopType::CopyNum(self.signed_message_filter.count(&signed_msg))
+            HopType::CopyNum(self.signed_message_filter.count(&signed_msg).saturating_sub(1))
         };
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table.target_nodes(destination, hop_type);
@@ -1736,7 +1653,7 @@ impl Core {
 
         // If we need to handle this message, handle it.
         let hop_name = self.name().clone();
-        if self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
+        if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
             return self.handle_signed_message_for_node(&signed_msg, &hop_name, false);
         }
