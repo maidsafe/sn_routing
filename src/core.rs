@@ -18,8 +18,8 @@
 use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
-use kademlia_routing_table;
-use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, HopType, NodeInfo, RoutingTable};
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, GROUP_SIZE, HopType, NodeInfo,
+                             RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -33,6 +33,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
 use std::thread;
 use time::Duration;
+use xor_name;
 use xor_name::XorName;
 
 use acceptors::Acceptors;
@@ -401,38 +402,42 @@ impl Core {
                         content: ResponseContent::GetCloseGroup { .. },
                         ..
                     }) => try!(self.handle_signed_message_for_client(&signed_msg)),
-                    _ => ()
+                    _ => (),
                 }
             }
         }
 
         try!(self.harvest_node(signed_msg.public_id().name()));
 
+        let from_our_client = match *src {
+            Authority::Client { ref proxy_node_name, .. } => proxy_node_name == self.name(),
+            _ => false,
+        };
+
         if self.routing_table.is_close(dst.name()) {
             try!(self.signed_msg_security_check(&signed_msg));
 
             if dst.is_group() {
-                try!(self.send(signed_msg.clone()));  // Swarm
+                // Only swarm if this isn't already a swarm message, i. e. if hop_name is not
+                // _also_ close to the destination address.
+                if from_our_client || (hop_name != self.name() && self.routing_table
+                       .closest_nodes_to(dst.name(), GROUP_SIZE - 1)
+                       .into_iter()
+                       .all(|n| n.name() != hop_name)) {
+                    try!(self.send(signed_msg.clone()));  // Swarm
+                }
             } else if self.name() != dst.name() {
                 // TODO See if this puts caching into disadvantage
                 // Incoming msg is in our range and not for a group and also not for us, thus
                 // sending on and bailing out
-                return self.send(signed_msg.clone());  // Swarm
+                return self.send(signed_msg.clone());
             } else if let Authority::Client { ref client_key, .. } = *dst {
                 return self.relay_to_client(signed_msg.clone(), client_key);
             }
         } else {
-            // If message is coming from a client who we are the proxy node for
-            // send the message on to the network
-            if let Authority::Client { ref proxy_node_name, .. } = *src {
-                if proxy_node_name == self.name() {
-                    return self.send(signed_msg.clone());
-                }
-            }
-            if !::xor_name::closer_to_target(self.name(), &hop_name, dst.name()) {
+            if !(from_our_client || xor_name::closer_to_target(self.name(), &hop_name, dst.name())) {
                 trace!("Direction check failed.");
-                // TODO: Revisit this once is_close() is fixed in kademlia_routing_table.
-                // return Err(RoutingError::DirectionCheckFailed);
+                return Err(RoutingError::DirectionCheckFailed);
             }
         }
 
@@ -1001,20 +1006,19 @@ impl Core {
             return Ok(());
         }
 
-        let group_size = kademlia_routing_table::GROUP_SIZE;
         if client_restriction {
-            if self.routing_table.len() < group_size {
+            if self.routing_table.len() < GROUP_SIZE {
                 trace!("Client rejected: Routing table has {} entries. {} required.",
                        self.routing_table.len(),
-                       group_size);
+                       GROUP_SIZE);
                 return self.bootstrap_deny(connection);
             }
         } else {
             let joining_nodes_num = self.joining_nodes_num();
             // Restrict the number of simultaneously joining nodes. If the network is still
-            // small, we need to accept `group_size` nodes, so that they can fill their
+            // small, we need to accept `GROUP_SIZE` nodes, so that they can fill their
             // routing tables and drop the proxy connection.
-            if !(self.routing_table.len() < group_size && joining_nodes_num < group_size) &&
+            if !(self.routing_table.len() < GROUP_SIZE && joining_nodes_num < GROUP_SIZE) &&
                joining_nodes_num >= MAX_JOINING_NODES {
                 trace!("No additional joining nodes allowed.");
                 return self.bootstrap_deny(connection);
@@ -1078,8 +1082,7 @@ impl Core {
 
                 self.state = State::Node;
 
-                if self.routing_table.len() >= kademlia_routing_table::GROUP_SIZE &&
-                   !self.proxy_map.is_empty() {
+                if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
                     trace!("Routing table reached group size. Dropping proxy.");
                     self.proxy_map
                         .keys()
@@ -1289,9 +1292,8 @@ impl Core {
             }
             _ => return Err(RoutingError::BadAuthority),
         }
-        let id_number = kademlia_routing_table::GROUP_SIZE - 1;
         let mut public_ids = self.routing_table
-                                 .closest_nodes_to(&dst_name, id_number)
+                                 .closest_nodes_to(&dst_name, GROUP_SIZE - 1)
                                  .into_iter()
                                  .map(|node_info| node_info.public_id)
                                  .collect_vec();
