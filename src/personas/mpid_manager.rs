@@ -23,7 +23,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use mpid_messaging::{self, MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidMessageWrapper};
+use mpid_messaging::{self, MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidMessageWrapper, MpidMessage};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -82,8 +82,7 @@ impl MailBox {
         }
     }
 
-    #[allow(dead_code)]
-    fn has(&mut self, entry: &XorName) -> bool {
+    fn has(&self, entry: &XorName) -> bool {
         self.mail_box.contains_key(entry)
     }
 
@@ -95,7 +94,7 @@ impl MailBox {
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 struct Account {
-    // account owners' registerred client proxies
+    // account owners' registered client proxies
     clients: Vec<Authority>,
     inbox: MailBox,
     outbox: MailBox,
@@ -134,11 +133,15 @@ impl Account {
         self.inbox.remove(size, entry)
     }
 
+    fn has_in_outbox(&self, entry: &XorName) -> bool {
+        self.outbox.has(entry)
+    }
+
     fn register_online(&mut self, client: &Authority) {
         match client.clone() {
             Authority::Client { .. } => {
                 if self.clients.contains(&client) {
-                    warn!("client {:?} already registerred", client)
+                    warn!("client {:?} already registered", client)
                 } else {
                     self.clients.push(client.clone());
                 }
@@ -151,7 +154,7 @@ impl Account {
         self.inbox.names()
     }
 
-    fn registerred_clients(&self) -> &Vec<Authority> {
+    fn registered_clients(&self) -> &Vec<Authority> {
         &self.clients
     }
 }
@@ -241,9 +244,8 @@ impl MpidManager {
         Ok(())
     }
 
-    pub fn handle_post(&mut self, src: &Authority, dst: &Authority,
-                       routing_node: &RoutingNode, request: &RequestMessage)
-                  -> Result<(), InternalError> {
+    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
+            -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
             RequestContent::Post(Data::PlainData(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
@@ -255,9 +257,9 @@ impl MpidManager {
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
                 let account = self.accounts
-                    .entry(dst.get_name().clone())
+                    .entry(request.dst.get_name().clone())
                     .or_insert(Account::default());
-                account.register_online(src);
+                account.register_online(&request.src);
                 // For each received header in the inbox, fetch the full message from the sender
                 let received_headers = account.received_headers();
                 for header in received_headers.iter() {
@@ -269,8 +271,8 @@ impl MpidManager {
                                 MpidMessageWrapper::PutHeader(mpid_header) => {
                                     // fetch full message from the sender
                                     let target = Authority::ClientManager(mpid_header.sender_name().clone());
-                                    let request = MpidMessageWrapper::GetMessage(mpid_header.clone());
-                                    let serialised_request = match serialise(&request) {
+                                    let request_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                                    let serialised_request = match serialise(&request_wrapper) {
                                         Ok(encoded) => encoded,
                                         Err(error) => {
                                             error!("Failed to serialise GetMessage wrapper: {:?}", error);
@@ -285,7 +287,7 @@ impl MpidManager {
                                         }
                                     };
                                     let data = Data::PlainData(PlainData::new(name, serialised_request));
-                                    let _ = routing_node.send_post_request(dst.clone(),
+                                    let _ = routing_node.send_post_request(request.dst.clone(),
                                         target, data, message_id.clone());
                                 }
                                 _ => {}
@@ -300,8 +302,8 @@ impl MpidManager {
                     Some(name) => name,
                     None => {
                         error!("Failed to calculate name of the header");
-                        let _ = routing_node.send_post_failure(dst.clone(),
-                            src.clone(), request.clone(), Vec::new(), message_id);
+                        let _ = routing_node.send_post_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id);
                         return Ok(());
                     }
                 };
@@ -315,50 +317,80 @@ impl MpidManager {
                                     Some(name) => name,
                                     None => {
                                         error!("Failed to calculate name of the message");
-                                        let _ = routing_node.send_post_failure(dst.clone(),
-                                            src.clone(), request.clone(), Vec::new(), message_id);
+                                        let _ = routing_node.send_post_failure(request.dst.clone(),
+                                            request.src.clone(), request.clone(), Vec::new(), message_id);
                                         return Ok(());
                                     }
                                 };
                                 if (message_name == header_name) &&
-                                   (mpid_message.recipient() == src.get_name()) {
+                                   (mpid_message.recipient() == request.src.get_name()) {
                                     let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
-                                    let _ = routing_node.send_post_request(dst.clone(),
-                                        src.clone(), data, message_id.clone());
+                                    let _ = routing_node.send_post_request(request.dst.clone(),
+                                        request.src.clone(), data, message_id.clone());
                                 }
                             }
                             _ => {
-                                let _ = routing_node.send_post_failure(dst.clone(),
-                                    src.clone(), request.clone(), Vec::new(), message_id);
+                                let _ = routing_node.send_post_failure(request.dst.clone(),
+                                    request.src.clone(), request.clone(), Vec::new(), message_id);
                             }
                         }
                     }
                     Err(_) => {
-                        let _ = routing_node.send_post_failure(dst.clone(),
-                            src.clone(), request.clone(), Vec::new(), message_id);
+                        let _ = routing_node.send_post_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id);
                     }
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
-                match self.accounts.get(dst.get_name()) {
+                match self.accounts.get(request.dst.get_name()) {
                     Some(receiver) => {
-                        let clients = receiver.registerred_clients();
+                        let clients = receiver.registered_clients();
                         for client in clients.iter() {
-                            if mpid_message.recipient() == dst.get_name() {
-                                let _ = routing_node.send_post_request(dst.clone(),
+                            if mpid_message.recipient() == request.dst.get_name() {
+                                let _ = routing_node.send_post_request(request.dst.clone(),
                                     client.clone(), Data::PlainData(data.clone()), message_id.clone());
                             }
                         }
                     }
-                    None => warn!("can not find the account {:?}", dst.get_name()),
+                    None => warn!("can not find the account {:?}", request.dst.get_name().clone()),
+                }
+            }
+            MpidMessageWrapper::OutboxHas(header_names) => {
+                if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
+                    if account.registered_clients().iter()
+                                                   .any(|authority| *authority == request.src) {
+                        let names_in_outbox = header_names.iter()
+                                                          .filter(|name| account.has_in_outbox(name))
+                                                          .cloned()
+                                                          .collect::<Vec<XorName>>();
+                        let mut mpid_headers = vec![];
+
+                        for name in names_in_outbox.iter() {
+                            if let Ok(data) = self.chunk_store_outbox.get(name) {
+                                let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                                mpid_headers.push(mpid_message.header().clone());
+                            }
+                        }
+
+                        let src = request.dst.clone();
+                        let dst = request.src.clone();
+                        let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
+                        let serialised_wrapper = match serialise(&wrapper) {
+                            Ok(serialised) => serialised,
+                            Err(error) => {
+                                error!("Failed to serialise OutboxHasResponse wrapper: {:?}", error);
+                                return Err(InternalError::Serialisation(error));
+                            }
+                        };
+                        let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
+                        try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
+                    }
                 }
             }
             _ => unreachable!("Error in vault demuxing"),
         }
         Ok(())
     }
-
-
 }
 
 fn deserialise_wrapper(serialised_wrapper: &[u8]) -> Option<MpidMessageWrapper> {
