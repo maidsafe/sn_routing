@@ -387,6 +387,34 @@ impl MpidManager {
                     }
                 }
             }
+            MpidMessageWrapper::GetOutboxHeaders => {
+                if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
+                    if account.registered_clients().iter()
+                                                   .any(|authority| *authority == request.src) {
+                        let mut mpid_headers = vec![];
+
+                        for name in account.received_headers().iter() {
+                            if let Ok(data) = self.chunk_store_outbox.get(name) {
+                                let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                                mpid_headers.push(mpid_message.header().clone());
+                            }
+                        }
+
+                        let src = request.dst.clone();
+                        let dst = request.src.clone();
+                        let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
+                        let serialised_wrapper = match serialise(&wrapper) {
+                            Ok(serialised) => serialised,
+                            Err(error) => {
+                                error!("Failed to serialise OutboxHasResponse wrapper: {:?}", error);
+                                return Err(InternalError::Serialisation(error));
+                            }
+                        };
+                        let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
+                        try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
+                    }
+                }
+            }
             _ => unreachable!("Error in vault demuxing"),
         }
         Ok(())
