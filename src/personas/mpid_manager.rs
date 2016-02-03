@@ -391,8 +391,7 @@ impl MpidManager {
             }
             MpidMessageWrapper::OutboxHas(header_names) => {
                 if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
-                    if account.registered_clients().iter()
-                                                   .any(|authority| *authority == request.src) {
+                    if account.registered_clients().iter().any(|authority| *authority == request.src) {
                         let names_in_outbox = header_names.iter()
                                                           .filter(|name| account.has_in_outbox(name))
                                                           .cloned()
@@ -423,8 +422,7 @@ impl MpidManager {
             }
             MpidMessageWrapper::GetOutboxHeaders => {
                 if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
-                    if account.registered_clients().iter()
-                                                   .any(|authority| *authority == request.src) {
+                    if account.registered_clients().iter().any(|authority| *authority == request.src) {
                         let mut mpid_headers = vec![];
 
                         for name in account.received_headers().iter() {
@@ -488,8 +486,8 @@ impl MpidManager {
                         }
                     } else {
                         error!("Failed to get from chunk store.");
-                        let _ = unwrap_result!(routing_node.send_delete_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id));
+                        try!(routing_node.send_delete_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id))
                     }
                 }
             }
@@ -500,12 +498,12 @@ impl MpidManager {
                             let data_size = data.len() as u64;
                             try!(self.chunk_store_inbox.delete(&header_name));
                             if !account.remove_from_inbox(data_size, &header_name) {
-                                debug!("Failed to remove header name from inbox.");
+                                warn!("Failed to remove header name from inbox.");
                             }
                         } else {
                             error!("Failed to get from chunk store.");
-                            let _ = unwrap_result!(routing_node.send_delete_failure(request.dst.clone(),
-                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                            try!(routing_node.send_delete_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id))
                         }
                     }
                 }
