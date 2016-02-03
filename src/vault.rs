@@ -244,6 +244,11 @@ impl Vault {
              &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
                 self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
             }
+            (&Authority::ClientManager(_),
+             &Authority::ClientManager(_),
+             &ResponseContent::PutFailure{ ref request, .. }) => {
+                self.mpid_manager.handle_put_failure(routing_node, request)
+            }
             // ================== Invalid Response ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Response(response.clone()))),
         }

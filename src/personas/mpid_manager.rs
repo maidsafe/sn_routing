@@ -187,14 +187,17 @@ impl MpidManager {
         match mpid_message_wrapper {
             MpidMessageWrapper::PutHeader(_mpid_header) => {
                 if self.chunk_store_inbox.has_chunk(&data.name()) {
-                    return Err(InternalError::Client(ClientError::DataExists));;
+                    return Err(InternalError::Client(ClientError::DataExists));
                 }
                 // TODO: how the sender's public key get retained?
                 if self.accounts
                        .entry(request.dst.get_name().clone())
                        .or_insert(Account::default())
                        .put_into_inbox(data.payload_size() as u64, &data.name(), &None) {
-                    let _ = self.chunk_store_inbox.put(&data.name(), data.value());
+                    try!(self.chunk_store_inbox.put(&data.name(), data.value()));
+                } else {
+                    try!(routing_node.send_put_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id));
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
@@ -233,7 +236,45 @@ impl MpidManager {
                         }
                     };
                     let notification = Data::PlainData(PlainData::new(name, serialised_wrapper));
-                    let _ = routing_node.send_put_request(src, dst, notification, message_id.clone());
+                    try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
+                } else {
+                    try!(routing_node.send_put_failure(request.dst.clone(),
+                            request.src.clone(), request.clone(), Vec::new(), message_id));
+                }
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        }
+        Ok(())
+    }
+
+    // PutFailure only happens from receiver's MpidManager to sender's MpidManager to
+    // indicate an inbox full.
+    // The request in the put_failure response is the original request from sender's MpidManager
+    // to receiver's MpidManager, i.e. MpidMessageWrapper::PutHeader(mpid_header)
+    pub fn handle_put_failure(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
+            -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::PlainData(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+        let mpid_message_wrapper = unwrap_option!(deserialise_wrapper(data.value()),
+                                                  "Failed to parse MpidMessageWrapper");
+        match mpid_message_wrapper {
+            MpidMessageWrapper::PutHeader(mpid_header) => {
+                if mpid_header.sender_name() == request.src.get_name() {
+                    if let Some(ref account) = self.accounts.get(&request.src.get_name().clone()) {
+                        let ori_msg_name = unwrap_option!(mpid_messaging::mpid_header_name(&mpid_header),
+                                                          "Failed to calculate mpid_header_name");
+                        if account.has_in_outbox(&ori_msg_name) {
+                            let clients = account.registered_clients();
+                            for client in clients.iter() {
+                                let _ = routing_node.send_put_failure(request.src.clone(),
+                                    client.clone(), request.clone(), Vec::new(), message_id.clone());
+                            }
+                        }
+                    }
                 }
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -299,8 +340,8 @@ impl MpidManager {
                     Some(name) => name,
                     None => {
                         error!("Failed to calculate name of the header");
-                        let _ = routing_node.send_post_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id);
+                        try!(routing_node.send_post_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
                         return Ok(());
                     }
                 };
@@ -314,36 +355,32 @@ impl MpidManager {
                                     Some(name) => name,
                                     None => {
                                         error!("Failed to calculate name of the message");
-                                        let _ = routing_node.send_post_failure(request.dst.clone(),
-                                            request.src.clone(), request.clone(), Vec::new(), message_id);
+                                        try!(routing_node.send_post_failure(request.dst.clone(),
+                                                request.src.clone(), request.clone(), Vec::new(), message_id));
                                         return Ok(());
                                     }
                                 };
                                 if (message_name == header_name) &&
                                    (mpid_message.recipient() == request.src.get_name()) {
                                     let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
-                                    let _ = routing_node.send_post_request(request.dst.clone(),
-                                        request.src.clone(), data, message_id.clone());
+                                    try!(routing_node.send_post_request(request.dst.clone(),
+                                            request.src.clone(), data, message_id.clone()));
                                 }
                             }
-                            _ => {
-                                let _ = routing_node.send_post_failure(request.dst.clone(),
-                                    request.src.clone(), request.clone(), Vec::new(), message_id);
-                            }
+                            _ => try!(routing_node.send_post_failure(request.dst.clone(),
+                                        request.src.clone(), request.clone(), Vec::new(), message_id)),
                         }
                     }
-                    Err(_) => {
-                        let _ = routing_node.send_post_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id);
-                    }
+                    Err(_) => try!(routing_node.send_post_failure(request.dst.clone(),
+                                      request.src.clone(), request.clone(), Vec::new(), message_id)),
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
                 match self.accounts.get(request.dst.get_name()) {
                     Some(receiver) => {
-                        let clients = receiver.registered_clients();
-                        for client in clients.iter() {
-                            if mpid_message.recipient() == request.dst.get_name() {
+                        if mpid_message.recipient() == request.dst.get_name() {
+                            let clients = receiver.registered_clients();
+                            for client in clients.iter() {
                                 let _ = routing_node.send_post_request(request.dst.clone(),
                                     client.clone(), Data::PlainData(data.clone()), message_id.clone());
                             }
