@@ -1081,11 +1081,13 @@ impl Core {
             } else {
                 if let Some(AddedNodeDetails { must_notify, common_groups }) =
                        self.routing_table.add_node(node_info) {
-                    for node in must_notify {
-                        let direct_message = DirectMessage::NewNode(node.public_id);
-                        let message = Message::DirectMessage(direct_message);
-                        let raw_bytes = try!(serialisation::serialise(&message));
-                        self.crust_service.send(connection, raw_bytes);
+                    for notify_node in must_notify {
+                        if let Some(notify_connection) = notify_node.connections.iter().next() {
+                            let direct_message = DirectMessage::NewNode(public_id.clone());
+                            let message = Message::DirectMessage(direct_message);
+                            let raw_bytes = try!(serialisation::serialise(&message));
+                            self.crust_service.send(*notify_connection, raw_bytes);
+                        }
                     }
                     if common_groups {
                         let event = Event::NodeAdded(public_id.name().clone());
