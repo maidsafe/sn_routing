@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store;
+use mpid_messaging;
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
@@ -38,6 +39,7 @@ pub enum InternalError {
     UnknownRefreshType(Authority, Authority, Refresh),
     InvalidResponse,
     ChunkStore(chunk_store::Error),
+    MpidMessaging(mpid_messaging::Error),
     Serialisation(SerialisationError),
     Routing(InterfaceError),
     RoutingInternal(RoutingError),
@@ -53,6 +55,12 @@ impl From<ClientError> for InternalError {
 impl From<chunk_store::Error> for InternalError {
     fn from(error: chunk_store::Error) -> InternalError {
         InternalError::ChunkStore(error)
+    }
+}
+
+impl From<mpid_messaging::Error> for InternalError {
+    fn from(error: mpid_messaging::Error) -> InternalError {
+        InternalError::MpidMessaging(error)
     }
 }
 
