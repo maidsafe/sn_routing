@@ -18,8 +18,8 @@
 use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
-use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, GROUP_SIZE, HopType, NodeInfo,
-                             PARALLELISM, RoutingTable};
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, GROUP_SIZE, PARALLELISM,
+                             RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -27,7 +27,7 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use message_filter::MessageFilter;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::io;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
@@ -140,7 +140,9 @@ pub struct Core {
     grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
     state: State,
-    routing_table: RoutingTable<PublicId, crust::Connection>,
+    routing_table: RoutingTable,
+    node_connections: HashMap<XorName, HashSet<crust::Connection>>,
+    node_ids: HashMap<XorName, PublicId>,
     // our bootstrap connections
     proxy_map: HashMap<crust::Connection, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
@@ -198,10 +200,14 @@ impl Core {
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(&our_name),
+                node_connections: HashMap::new(),
+                node_ids: HashMap::new(),
                 proxy_map: HashMap::new(),
                 client_map: HashMap::new(),
                 data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             };
+
+            let _ = core.node_ids.insert(our_name, core.full_id.public_id().clone());
 
             core.run(category_rx);
         });
@@ -248,9 +254,8 @@ impl Core {
                                     return;
                                 }
                             }
-                            Action::CloseGroup{ result_tx, } => {
-                                let close_group = self.close_group_names();
-                                if result_tx.send(close_group).is_err() {
+                            Action::CloseGroup{ name, result_tx, } => {
+                                if result_tx.send(self.routing_table.close_nodes(&name)).is_err() {
                                     return;
                                 }
                             }
@@ -338,7 +343,7 @@ impl Core {
                           connection: crust::Connection)
                           -> Result<(), RoutingError> {
         if self.state == State::Node {
-            if let Some(&NodeInfo { ref public_id, ..}) = self.routing_table.get(hop_msg.name()) {
+            if let Some(public_id) = self.node_ids.get(hop_msg.name()) {
                 try!(hop_msg.verify(public_id.signing_public_key()));
                 try!(self.check_direction(hop_msg));
             } else if let Some((ref pub_key, &(_, client_restriction))) = self.client_map
@@ -459,19 +464,13 @@ impl Core {
         }
         self.add_to_cache(signed_msg.content());
 
-        // TODO: Move more of this logic to kademlia_routing_table: Methods of the routing table
-        //       should not only decide whether to handle it, but also whether to forward it.
-        // Forwarding the message
-        if self.routing_table.is_recipient(dst.to_destination()) {
-            // If the message is for a group and not already a swarm message, send swarm messages.
-            if dst.is_group() && !self.is_swarm(dst, hop_name) && relay {
-                try!(self.send(signed_msg.clone(), false));
-            }
+        if relay {
+            try!(self.send(signed_msg.clone(), hop_name, false));
+        }
+        if self.signed_message_filter.count(signed_msg) == 0 &&
+           self.routing_table.is_recipient(dst.to_destination()) {
             self.handle_routing_message(signed_msg.content().clone(),
                                         signed_msg.public_id().clone())
-        } else if relay {
-            // If it was not meant for us, forward it.
-            self.send(signed_msg.clone(), false)
         } else {
             Ok(())
         }
@@ -481,12 +480,11 @@ impl Core {
     ///
     /// This is the case if a routing node in the destination's close group sent this message.
     fn is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
-        dst.is_group() && self.routing_table.is_close(dst.name()) &&
-        (hop_name == self.name() ||
-         self.routing_table
-             .closest_nodes_to(dst.name(), GROUP_SIZE - 1)
-             .into_iter()
-             .any(|n| n.name() == hop_name))
+        dst.is_group() &&
+        match self.routing_table.other_close_nodes(dst.name()) {
+            None => false,
+            Some(close_group) => close_group.into_iter().any(|n| n == *hop_name),
+        }
     }
 
     /// Checks if the given name is missing from our routing table and if so, tries to connect.
@@ -1060,7 +1058,8 @@ impl Core {
                             public_id: PublicId,
                             connection: crust::Connection)
                             -> Result<(), RoutingError> {
-        if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
+        let name = *public_id.name();
+        if let Some(their_public_id) = self.node_id_cache.get(&name).cloned() {
             if their_public_id != public_id {
                 warn!("Given Public ID and Public ID in cache don't match - Given {:?} :: In \
                        cache {:?} Dropping connection {:?}",
@@ -1072,17 +1071,16 @@ impl Core {
                 return Ok(());
             }
 
-            let node_info = NodeInfo::new(public_id.clone(), Some(connection));
-            if let Some(_) = self.routing_table.get(public_id.name()) {
-                if !self.routing_table.add_connection(public_id.name(), connection) {
-                    // We already sent an identify down this connection
-                    return Ok(());
-                }
-            } else {
-                if let Some(AddedNodeDetails { must_notify, common_groups }) =
-                       self.routing_table.add_node(node_info) {
-                    for notify_node in must_notify {
-                        if let Some(notify_connection) = notify_node.connections.iter().next() {
+            if !self.node_connections.entry(name).or_insert_with(HashSet::new).insert(connection) {
+                // We already sent an identify down this connection
+                return Ok(());
+            }
+            if !self.routing_table.contains(&name) {
+                if let Some(AddedNodeDetails { must_notify, common_groups }) = self.routing_table
+                                                                                   .add(name) {
+                    let _ = self.node_ids.insert(name, public_id.clone());
+                    for notify_name in must_notify {
+                        if let Some(notify_connection) = self.get_connection(&notify_name) {
                             let direct_message = DirectMessage::NewNode(public_id.clone());
                             let message = Message::DirectMessage(direct_message);
                             let raw_bytes = try!(serialisation::serialise(&message));
@@ -1090,14 +1088,15 @@ impl Core {
                         }
                     }
                     if common_groups {
-                        let event = Event::NodeAdded(public_id.name().clone());
+                        let event = Event::NodeAdded(name);
                         if let Err(err) = self.event_sender.send(event) {
                             error!("Error sending event to routing user - {:?}", err);
                         }
                     }
                 } else {
                     self.crust_service.drop_node(connection);
-                    let _ = self.node_id_cache.remove(public_id.name());
+                    let _ = self.node_id_cache.remove(&name);
+                    let _ = self.node_connections.remove(&name);
 
                     return Ok(());
                 }
@@ -1136,7 +1135,7 @@ impl Core {
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
-            src: Authority::ManagedNode(self.routing_table.our_name().clone()),
+            src: Authority::ManagedNode(*self.name()),
             dst: Authority::NaeManager(bucket_address),
             content: RequestContent::GetCloseGroup,
         };
@@ -1196,8 +1195,10 @@ impl Core {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let mut close_group = self.close_group_names();
-        close_group.push(self.name().clone());
+        let close_group = match self.routing_table.close_nodes(&dst_name) {
+            Some(close_group) => close_group,
+            None => return Err(RoutingError::InvalidDestination),
+        };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 
@@ -1297,15 +1298,13 @@ impl Core {
             }
             _ => return Err(RoutingError::BadAuthority),
         }
-        let mut public_ids = self.routing_table
-                                 .closest_nodes_to(&dst_name, GROUP_SIZE - 1)
-                                 .into_iter()
-                                 .map(|node_info| node_info.public_id)
-                                 .collect_vec();
-
-        // Also add our own full_id to the close_group list getting sent
-        public_ids.push(self.full_id.public_id().clone());
-        public_ids.sort_by(|a, b| dst_name.cmp_distance(&a.name(), &b.name()));
+        let close_group = match self.routing_table.close_nodes(&dst_name) {
+            Some(close_group) => close_group,
+            None => return Err(RoutingError::InvalidDestination),
+        };
+        let public_ids = close_group.into_iter()
+                                    .map(|name| self.node_ids[&name].clone())
+                                    .collect_vec();
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
@@ -1478,11 +1477,12 @@ impl Core {
                             src_name: XorName,
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
-        if let Some(node_info) = self.routing_table
-                                     .our_close_group()
-                                     .into_iter()
-                                     .find(|elt| *elt.name() == dst_name) {
-            let response_content = ResponseContent::GetPublicId { public_id: node_info.public_id };
+        if !self.routing_table.is_close(&dst_name) || !self.node_ids.contains_key(&dst_name) {
+            Err(RoutingError::RejectedPublicId)
+        } else {
+            let response_content = ResponseContent::GetPublicId {
+                public_id: self.node_ids[&dst_name].clone(),
+            };
 
             let response_msg = ResponseMessage {
                 src: Authority::NodeManager(dst_name),
@@ -1491,8 +1491,6 @@ impl Core {
             };
 
             self.send_response(response_msg)
-        } else {
-            Err(RoutingError::RejectedPublicId)
         }
     }
 
@@ -1516,12 +1514,11 @@ impl Core {
                                            src_name: XorName,
                                            dst_name: XorName)
                                            -> Result<(), RoutingError> {
-        if let Some(node_info) = self.routing_table
-                                     .our_close_group()
-                                     .into_iter()
-                                     .find(|elt| *elt.name() == dst_name) {
+        if !self.routing_table.is_close(&dst_name) || !self.node_ids.contains_key(&dst_name) {
+            Err(RoutingError::RejectedPublicId)
+        } else {
             let response_content = ResponseContent::GetPublicIdWithEndpoints {
-                public_id: node_info.public_id,
+                public_id: self.node_ids[&dst_name].clone(),
                 encrypted_endpoints: encrypted_endpoints,
                 nonce_bytes: nonce_bytes,
             };
@@ -1533,8 +1530,6 @@ impl Core {
             };
 
             self.send_response(response_msg)
-        } else {
-            Err(RoutingError::RejectedPublicId)
         }
     }
 
@@ -1589,8 +1584,8 @@ impl Core {
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
-
-        self.send(signed_msg, true)
+        let hop = *self.name();
+        self.send(signed_msg, &hop, true)
     }
 
     fn relay_to_client(&mut self,
@@ -1618,7 +1613,11 @@ impl Core {
         Ok(try!(serialisation::serialise(&message)))
     }
 
-    fn send(&mut self, signed_msg: SignedMessage, handle: bool) -> Result<(), RoutingError> {
+    fn send(&mut self,
+            signed_msg: SignedMessage,
+            hop: &XorName,
+            handle: bool)
+            -> Result<(), RoutingError> {
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone()));
 
         // If we're a client going to be a node, send via our bootstrap connection.
@@ -1640,15 +1639,11 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
-        let hop_type = if signed_msg.content().src().name() == self.routing_table.our_name() {
-            HopType::OriginalSender
-        } else {
-            HopType::CopyNum(self.signed_message_filter.count(&signed_msg).saturating_sub(1))
-        };
+        let count = self.signed_message_filter.count(&signed_msg).saturating_sub(1);
         let destination = signed_msg.content().dst().to_destination();
-        let targets = self.routing_table.target_nodes(destination, hop_type);
-        targets.iter().foreach(|node_info| {
-            if let Some(connection) = node_info.connections.iter().next() {
+        let targets = self.routing_table.target_nodes(destination, hop, count);
+        targets.iter().foreach(|target_name| {
+            if let Some(connection) = self.get_connection(target_name) {
                 self.crust_service.send(connection.clone(), raw_bytes.clone());
             }
         });
@@ -1661,6 +1656,11 @@ impl Core {
         }
 
         Ok(())
+    }
+
+    /// Returns a connection to the node with the given name, if present.
+    fn get_connection(&self, name: &XorName) -> Option<&crust::Connection> {
+        self.node_connections.get(name).and_then(|connections| connections.iter().next())
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
@@ -1684,6 +1684,9 @@ impl Core {
 
         self.routing_table = RoutingTable::new(&new_name);
         self.full_id.public_id_mut().set_name(new_name);
+        self.node_ids = HashMap::new();
+        let _ = self.node_ids.insert(new_name, self.full_id.public_id().clone());
+        self.node_connections = HashMap::new();
     }
 
     fn dropped_client_connection(&mut self, connection: &crust::Connection) {
@@ -1703,23 +1706,39 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
-        if let Some(DroppedNodeDetails { name, incomplete_bucket, common_groups }) =
-               self.routing_table.drop_connection(connection) {
-            if common_groups {
-                // If the lost node shared some close group with us, send Churn.
-                let event = Event::NodeLost(name.clone());
-                if let Err(err) = self.event_sender.send(event) {
-                    error!("Error sending event to routing user - {:?}", err);
+        if let Some((&name, _)) = self.node_connections
+                                      .iter()
+                                      .skip_while(|&(_, connections)| {
+                                          !connections.contains(connection)
+                                      })
+                                      .next() {
+            if let Some(connections) = self.node_connections.get_mut(&name) {
+                connections.remove(connection);
+            } else {
+                return;
+            }
+            if self.node_connections[&name].is_empty() {
+                let _ = self.node_connections.remove(&name);
+                let _ = self.node_ids.remove(&name);
+                if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
+                       self.routing_table.remove(&name) {
+                    if common_groups {
+                        // If the lost node shared some close group with us, send Churn.
+                        let event = Event::NodeLost(name.clone());
+                        if let Err(err) = self.event_sender.send(event) {
+                            error!("Error sending event to routing user - {:?}", err);
+                        }
+                    }
+                    if let Some(bucket_index) = incomplete_bucket {
+                        if let Err(e) = self.request_bucket_ids(bucket_index) {
+                            trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
+                                   bucket_index,
+                                   e);
+                        }
+                    }
                 }
             }
-            if let Some(bucket_index) = incomplete_bucket {
-                if let Err(e) = self.request_bucket_ids(bucket_index) {
-                    trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
-                           bucket_index,
-                           e);
-                }
-            }
-        }
+        };
     }
 
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
@@ -1730,14 +1749,6 @@ impl Core {
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
         }
-    }
-
-    fn close_group_names(&self) -> Vec<XorName> {
-        self.routing_table
-            .our_close_group()
-            .iter()
-            .map(|node_info| node_info.public_id.name().clone())
-            .collect_vec()
     }
 
     /// Returns the `XorName` of this node.

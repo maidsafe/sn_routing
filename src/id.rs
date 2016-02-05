@@ -56,7 +56,6 @@ impl FullId {
         &self.public_id
     }
 
-
     /// Returns mutable reference to public ID.
     pub fn public_id_mut(&mut self) -> &mut ::PublicId {
         &mut self.public_id
@@ -84,12 +83,6 @@ pub struct PublicId {
 impl ::std::fmt::Debug for PublicId {
     fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(formatter, "PublicId(name: {:?})", self.name)
-    }
-}
-
-impl ::kademlia_routing_table::HasName for PublicId {
-    fn name(&self) -> &XorName {
-        &self.name
     }
 }
 

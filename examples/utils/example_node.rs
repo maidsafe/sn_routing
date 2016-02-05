@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use lru_time_cache::LruCache;
-use xor_name::{XorName, closer_to_target};
+use xor_name::XorName;
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
               Authority, Node, Event, Data, DataRequest, InterfaceError};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
@@ -202,7 +202,13 @@ impl ExampleNode {
                 if self.dm_accounts.contains_key(&data.name()) {
                     return // Don't allow duplicate put.
                 }
-                let mut close_grp = unwrap_result!(self.group_by_closeness(&data.name()));
+                let mut close_grp = match unwrap_result!(self.group_by_closeness(&data.name())) {
+                    None => {
+                        trace!("CloseGroup action returned None.");
+                        return;
+                    }
+                    Some(close_grp) => close_grp,
+                };
                 close_grp.truncate(STORE_REDUNDANCY);
 
                 for i in 0..STORE_REDUNDANCY {
@@ -271,7 +277,13 @@ impl ExampleNode {
                    lost_node,
                    data.name());
             // Find a member of our close group that doesn't already have the lost data item.
-            let close_grp = unwrap_result!(self.group_by_closeness(&data.name()));
+            let close_grp = match unwrap_result!(self.group_by_closeness(&data.name())) {
+                None => {
+                    trace!("CloseGroup action returned None.");
+                    return;
+                }
+                Some(close_grp) => close_grp,
+            };
             if let Some(node) = close_grp.into_iter().find(|outer| {
                 unwrap_option!(self.dm_accounts.get(&data.name()), "")
                      .iter()
@@ -297,17 +309,8 @@ impl ExampleNode {
     }
 
     /// Return the close group, including this node, sorted by closeness to the given name.
-    fn group_by_closeness(&self, name: &XorName) -> Result<Vec<XorName>, InterfaceError> {
-        let mut close_grp = try!(self.node.close_group());
-        close_grp.push(try!(self.node.name()));
-        close_grp.sort_by(|lhs, rhs| {
-            if closer_to_target(lhs, rhs, name) {
-                ::std::cmp::Ordering::Less
-            } else {
-                ::std::cmp::Ordering::Greater
-            }
-        });
-        Ok(close_grp)
+    fn group_by_closeness(&self, name: &XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+        Ok(try!(self.node.close_group(*name)))
     }
 
     // While handling churn messages, we first "action" it ourselves and then
