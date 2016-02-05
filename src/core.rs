@@ -467,7 +467,8 @@ impl Core {
         if relay {
             try!(self.send(signed_msg.clone(), hop_name, false));
         }
-        if self.routing_table.is_recipient(dst.to_destination()) {
+        if self.signed_message_filter.count(signed_msg) == 0 &&
+           self.routing_table.is_recipient(dst.to_destination()) {
             self.handle_routing_message(signed_msg.content().clone(),
                                         signed_msg.public_id().clone())
         } else {
