@@ -179,14 +179,14 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         };
-        let mpid_message_wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+        let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::PutHeader(mpid_header) => {
                 if self.chunk_store_inbox.has_chunk(&data.name()) {
                     return Err(InternalError::Client(ClientError::DataExists));
                 }
                 // TODO: how the sender's public key get retained?
-                let serialised_header = unwrap_result!(serialise(&mpid_header));
+                let serialised_header = try!(serialise(&mpid_header));
                 if self.accounts
                        .entry(request.dst.get_name().clone())
                        .or_insert(Account::default())
@@ -202,7 +202,7 @@ impl MpidManager {
                     return Err(InternalError::Client(ClientError::DataExists));
                 }
                 // TODO: how the sender's public key get retained?
-                let serialised_message = unwrap_result!(serialise(&mpid_message));
+                let serialised_message = try!(serialise(&mpid_message));
                 if self.accounts
                        .entry(request.dst.get_name().clone())
                        .or_insert(Account::default())
@@ -212,8 +212,8 @@ impl MpidManager {
                     let src = request.dst.clone();
                     let dst = Authority::ClientManager(mpid_message.recipient().clone());
                     let wrapper = MpidMessageWrapper::PutHeader(mpid_message.header().clone());
-                    let serialised_wrapper = unwrap_result!(serialise(&wrapper));
-                    let name = unwrap_result!(mpid_message.header().name());
+                    let serialised_wrapper = try!(serialise(&wrapper));
+                    let name = try!(mpid_message.header().name());
                     let notification = Data::PlainData(PlainData::new(name, serialised_wrapper));
                     try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
                 } else {
@@ -239,12 +239,12 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         };
-        let mpid_message_wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+        let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::PutHeader(mpid_header) => {
                 if mpid_header.sender() == request.src.get_name() {
                     if let Some(ref account) = self.accounts.get(&request.src.get_name().clone()) {
-                        let ori_msg_name = unwrap_result!(mpid_header.name());
+                        let ori_msg_name = try!(mpid_header.name());
                         if account.has_in_outbox(&ori_msg_name) {
                             let clients = account.registered_clients();
                             for client in clients.iter() {
@@ -268,7 +268,7 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         };
-        let mpid_message_wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+        let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
                 let account = self.accounts
@@ -280,7 +280,7 @@ impl MpidManager {
                 for header in received_headers.iter() {
                     match self.chunk_store_inbox.get(&header) {
                         Ok(serialised_header) => {
-                            let mpid_header: MpidHeader = unwrap_result!(deserialise(&serialised_header));
+                            let mpid_header: MpidHeader = try!(deserialise(&serialised_header));
                             // fetch full message from the sender
                             let target = Authority::ClientManager(mpid_header.sender().clone());
                             let request_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
@@ -291,7 +291,7 @@ impl MpidManager {
                                     continue;
                                 }
                             };
-                            let name = unwrap_result!(mpid_header.name());
+                            let name = try!(mpid_header.name());
                             let data = Data::PlainData(PlainData::new(name, serialised_request));
                             let _ = routing_node.send_post_request(request.dst.clone(),
                                 target, data, message_id.clone());
@@ -301,15 +301,15 @@ impl MpidManager {
                 }
             }
             MpidMessageWrapper::GetMessage(mpid_header) => {
-                let header_name = unwrap_result!(mpid_header.name());
+                let header_name = try!(mpid_header.name());
                 match self.chunk_store_outbox.get(&header_name) {
                     Ok(serialised_message) => {
-                        let mpid_message: MpidMessage = unwrap_result!(deserialise(&serialised_message));
-                        let message_name = unwrap_result!(mpid_message.header().name());
+                        let mpid_message: MpidMessage = try!(deserialise(&serialised_message));
+                        let message_name = try!(mpid_message.header().name());
                         if (message_name == header_name) &&
                            (mpid_message.recipient() == request.src.get_name()) {
                             let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
-                            let serialised_wrapper = unwrap_result!(serialise(&wrapper));
+                            let serialised_wrapper = try!(serialise(&wrapper));
                             let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
                             try!(routing_node.send_post_request(request.dst.clone(),
                                     request.src.clone(), data, message_id.clone()));
@@ -344,7 +344,7 @@ impl MpidManager {
 
                         for name in names_in_outbox.iter() {
                             if let Ok(data) = self.chunk_store_outbox.get(name) {
-                                let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                                let mpid_message: MpidMessage = try!(deserialise(&data));
                                 mpid_headers.push(mpid_message.header().clone());
                             }
                         }
@@ -352,7 +352,7 @@ impl MpidManager {
                         let src = request.dst.clone();
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
-                        let serialised_wrapper = unwrap_result!(serialise(&wrapper));
+                        let serialised_wrapper = try!(serialise(&wrapper));
                         let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
@@ -365,7 +365,7 @@ impl MpidManager {
 
                         for name in account.stored_messages().iter() {
                             if let Ok(data) = self.chunk_store_outbox.get(name) {
-                                let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                                let mpid_message: MpidMessage = try!(deserialise(&data));
                                 mpid_headers.push(mpid_message.header().clone());
                             }
                         }
@@ -373,7 +373,7 @@ impl MpidManager {
                         let src = request.dst.clone();
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
-                        let serialised_wrapper = unwrap_result!(serialise(&wrapper));
+                        let serialised_wrapper = try!(serialise(&wrapper));
                         let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
@@ -393,7 +393,7 @@ impl MpidManager {
             }
             _ => unreachable!("Error in vault demuxing"),
         };
-        let mpid_message_wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+        let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::DeleteMessage(message_name) => {
                 if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
@@ -405,7 +405,7 @@ impl MpidManager {
 
                     if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
                         if !registered {
-                            let mpid_message: MpidMessage = unwrap_result!(deserialise(&data));
+                            let mpid_message: MpidMessage = try!(deserialise(&data));
                             if mpid_message.recipient() != request.src.get_name() {
                                 return Ok(()); // !
                             }
@@ -540,8 +540,8 @@ mod test {
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
         let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
+            src: env.our_authority.clone(),
+            dst: Authority::ClientManager(rand::random::<XorName>()),
             content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
         };
 
