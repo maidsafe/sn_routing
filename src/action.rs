@@ -39,7 +39,8 @@ pub enum Action {
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     CloseGroup {
-        result_tx: Sender<Vec<XorName>>,
+        name: XorName,
+        result_tx: Sender<Option<Vec<XorName>>>,
     },
     Name {
         result_tx: Sender<XorName>,

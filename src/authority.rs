@@ -72,9 +72,9 @@ impl Authority {
     /// Returns the `Destination` for the `RoutingTable`.
     pub fn to_destination(&self) -> Destination {
         if self.is_group() {
-            Destination::Group(self.name())
+            Destination::Group(*self.name())
         } else {
-            Destination::Node(self.name())
+            Destination::Node(*self.name())
         }
     }
 }
