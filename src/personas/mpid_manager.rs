@@ -483,43 +483,139 @@ mod test {
         }
     }
 
-    #[test]
-    fn put_message() {
-        let mut env = environment_setup();
-        let (_public_key, secret_key) = sign::gen_keypair();
-        let sender = rand::random::<XorName>();
-        let metadata: Vec<u8> = generate_random_vec_u8(128);
-        let body: Vec<u8> = generate_random_vec_u8(128);
-        let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
-        let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+    fn register_online(env: &mut Environment, src: &Authority, dst: &Authority) {
+        let wrapper = MpidMessageWrapper::Online;
+        let name = src.get_name().clone();
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name, value);
         let message_id = MessageId::new();
+        let request = RequestMessage {
+            src: src.clone(),
+            dst: dst.clone(),
+            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+        };
+
+        match env.mpid_manager.handle_post(&env.routing, &request) {
+            Ok(()) => (),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    fn generate_receiver() -> Authority {
+        Authority::Client { client_key: sign::gen_keypair().0, proxy_node_name: rand::random::<XorName>() }
+    }
+
+    fn put_mpid_message(env: &mut Environment, mpid_message: &MpidMessage, id: &MessageId) {
+        let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
+        let name = unwrap_result!(mpid_message.header().name());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name.clone(), value);
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Put(Data::PlainData(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(()) => (),
             Err(error) => panic!("Error: {:?}", error),
         }
+    }
+
+    fn put_mpid_header(env: &mut Environment, header: &MpidHeader, src: &Authority, dst: &Authority, id: &MessageId) {
+        let wrapper = MpidMessageWrapper::PutHeader(header.clone());
+        let name = unwrap_result!(header.name());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name.clone(), value);
+        let request = RequestMessage {
+            src: src.clone(),
+            dst: dst.clone(),
+            content: RequestContent::Put(Data::PlainData(plain_data.clone()), id.clone()),
+        };
+
+        match env.mpid_manager.handle_put(&env.routing, &request) {
+            Ok(()) => (),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    fn get_mpid_message(env: &mut Environment, header: &MpidHeader, src: &Authority, dst: &Authority, id: &MessageId) {
+        let wrapper = MpidMessageWrapper::GetMessage(header.clone());
+        let name = unwrap_result!(header.name());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name.clone(), value);
+        let request = RequestMessage {
+            src: src.clone(),
+            dst: dst.clone(),
+            content: RequestContent::Post(Data::PlainData(plain_data.clone()), id.clone()),
+        };
+
+        match env.mpid_manager.handle_post(&env.routing, &request) {
+            Ok(()) => (),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    fn delete_mpid_header(env: &mut Environment, name: &XorName, src: &Authority, dst: &Authority, id: &MessageId) {
+        let wrapper = MpidMessageWrapper::DeleteHeader(name.clone());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name.clone(), value);
+        let request = RequestMessage {
+            src: src.clone(),
+            dst: dst.clone(),
+            content: RequestContent::Delete(Data::PlainData(plain_data.clone()), id.clone()),
+        };
+
+        match env.mpid_manager.handle_delete(&env.routing, &request) {
+            Ok(()) => (),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    fn delete_mpid_message(env: &mut Environment, name: &XorName, src: &Authority, dst: &Authority, id: &MessageId) {
+        let wrapper = MpidMessageWrapper::DeleteMessage(name.clone());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let plain_data = PlainData::new(name.clone(), value);
+        let request = RequestMessage {
+            src: src.clone(),
+            dst: dst.clone(),
+            content: RequestContent::Delete(Data::PlainData(plain_data.clone()), id.clone()),
+        };
+
+        match env.mpid_manager.handle_delete(&env.routing, &request) {
+            Ok(()) => (),
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+
+    #[test]
+    fn put_message() {
+        let mut env = environment_setup();
+        // put message...
+        let (_public_key, secret_key) = sign::gen_keypair();
+        let sender = rand::random::<XorName>();
+        let metadata: Vec<u8> = generate_random_vec_u8(128);
+        let body: Vec<u8> = generate_random_vec_u8(128);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let message_id = MessageId::new();
+        put_mpid_message(&mut env, &mpid_message, &message_id);
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
         let put_requests = env.routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver));
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name));
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let mpid_header = mpid_message.header().clone();
-                let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -530,25 +626,19 @@ mod test {
     #[test]
     fn put_header() {
         let mut env = environment_setup();
+        // put header...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
         let metadata: Vec<u8> = generate_random_vec_u8(128);
-        let mpid_header = unwrap_result!(MpidHeader::new(sender, metadata, &secret_key));
-        let mpid_header_wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
-        let name = unwrap_result!(mpid_header.name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+        let body: Vec<u8> = generate_random_vec_u8(128);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let mpid_header = mpid_message.header().clone();
+        let src = env.our_authority.clone();
+        let dst = Authority::ClientManager(receiver_name.clone());
         let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.our_authority.clone(),
-            dst: Authority::ClientManager(rand::random::<XorName>()),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_put(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
+        put_mpid_header(&mut env, &mpid_header, &src, &dst, &message_id);
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -559,6 +649,7 @@ mod test {
     #[test]
     fn put_message_and_header_twice() {
         let mut env = environment_setup();
+        // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
         let metadata: Vec<u8> = generate_random_vec_u8(128);
@@ -591,20 +682,22 @@ mod test {
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
             _ => unreachable!(),
         }
 
+        // put message again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
             Err(InternalError::Client(ClientError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
 
+        // put header...
         let mpid_header_wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
         let name = unwrap_result!(mpid_header.name());
         let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));
@@ -629,14 +722,15 @@ mod test {
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
             _ => unreachable!(),
         }
 
+        // put header again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
             Err(InternalError::Client(ClientError::DataExists)) => (),
@@ -647,71 +741,53 @@ mod test {
     #[test]
     fn get_message() {
         let mut env = environment_setup();
+        // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
         let metadata: Vec<u8> = generate_random_vec_u8(128);
         let body: Vec<u8> = generate_random_vec_u8(128);
-        let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
-        let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
         let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_put(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
+        put_mpid_message(&mut env, &mpid_message, &message_id);
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
         let put_requests = env.routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver));
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let mpid_header = mpid_message.header().clone();
-                let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name.clone(), serialised_wrapper));
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
             _ => unreachable!(),
         }
 
+        // get message...
         let mpid_header = mpid_message.header().clone();
-        let get_message_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
-        let value = unwrap_result!(serialisation::serialise(&get_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+        let src = Authority::ClientManager(receiver_name.clone());
+        let dst = env.our_authority.clone();
         let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: Authority::ClientManager(receiver.clone()),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_post(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
+        get_mpid_message(&mut env, &mpid_header, &src, &dst, &message_id);
 
         let post_requests = env.routing.post_requests_given();
         assert_eq!(post_requests.len(), 1);
         assert_eq!(post_requests[0].src, env.our_authority);
-        assert_eq!(post_requests[0].dst, Authority::ClientManager(receiver));
+        assert_eq!(post_requests[0].dst, Authority::ClientManager(receiver_name));
         match &post_requests[0].content {
             &RequestContent::Post(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name.clone(), serialised_wrapper));
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -722,62 +798,41 @@ mod test {
     #[test]
     fn outbox_has() {
         let mut env = environment_setup();
-        let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
-        let value = unwrap_result!(serialisation::serialise(&online_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
-        let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
 
-        match env.mpid_manager.handle_post(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
+        // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
         let metadata: Vec<u8> = generate_random_vec_u8(128);
         let body: Vec<u8> = generate_random_vec_u8(128);
-        let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
-        let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
         let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_put(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
+        put_mpid_message(&mut env, &mpid_message, &message_id);
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
         let put_requests = env.routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver));
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let mpid_header = mpid_message.header().clone();
-                let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name.clone(), serialised_wrapper));
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
             _ => unreachable!(),
         }
 
+        // outbox has...
         let mpid_header = mpid_message.header().clone();
         let mpid_header_name = unwrap_result!(mpid_header.name());
         let outbox_has_wrapper = MpidMessageWrapper::OutboxHas(vec![mpid_header_name]);
@@ -803,8 +858,8 @@ mod test {
         match &post_requests[0].content {
             &RequestContent::Post(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::OutboxHasResponse(vec![mpid_header]);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -815,62 +870,41 @@ mod test {
     #[test]
     fn get_outbox_headers() {
         let mut env = environment_setup();
-        let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
-        let value = unwrap_result!(serialisation::serialise(&online_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
-        let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
 
-        match env.mpid_manager.handle_post(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
+        // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
         let metadata: Vec<u8> = generate_random_vec_u8(128);
         let body: Vec<u8> = generate_random_vec_u8(128);
-        let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
-        let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
         let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_put(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
+        put_mpid_message(&mut env, &mpid_message, &message_id);
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
         let put_requests = env.routing.put_requests_given();
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver));
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
         match &put_requests[0].content {
             &RequestContent::Put(ref data, ref id) => {
                 let mpid_header = mpid_message.header().clone();
-                let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name.clone(), serialised_wrapper));
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
             _ => unreachable!(),
         }
 
+        // get outbox headers...
         let get_outbox_headers_wrapper = MpidMessageWrapper::GetOutboxHeaders;
         let name = env.our_authority.get_name().clone();
         let value = unwrap_result!(serialisation::serialise(&get_outbox_headers_wrapper));
@@ -895,8 +929,8 @@ mod test {
             &RequestContent::Post(ref data, ref id) => {
                 let mpid_header = mpid_message.header().clone();
                 let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(vec![mpid_header]);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -907,14 +941,236 @@ mod test {
     #[test]
     fn delete_message() {
         let mut env = environment_setup();
-        let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
-        let value = unwrap_result!(serialisation::serialise(&online_wrapper));
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
+        // put message...
+        let (_public_key, secret_key) = sign::gen_keypair();
+        let sender = rand::random::<XorName>();
+        let metadata: Vec<u8> = generate_random_vec_u8(128);
+        let body: Vec<u8> = generate_random_vec_u8(128);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let message_id = MessageId::new();
+        put_mpid_message(&mut env, &mpid_message, &message_id);
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+        let put_requests = env.routing.put_requests_given();
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
+        match &put_requests[0].content {
+            &RequestContent::Put(ref data, ref id) => {
+                let mpid_header = mpid_message.header().clone();
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
+                assert_eq!(*data, expected_data);
+                assert_eq!(*id, message_id);
+            }
+            _ => unreachable!(),
+        }
+
+        // delete message...
+        let mpid_header_name = unwrap_result!(mpid_message.header().name());
+        let message_id = MessageId::new();
+        delete_mpid_message(&mut env, &mpid_header_name, &src, &dst, &message_id);
+
+        // get message...
+        let mpid_header = mpid_message.header().clone();
+        let src = Authority::ClientManager(receiver_name.clone());
+        let dst = env.our_authority.clone();
+        let message_id = MessageId::new();
+        get_mpid_message(&mut env, &mpid_header, &src, &dst, &message_id);
+
+        let post_failures = env.routing.post_failures_given();
+        assert_eq!(post_failures.len(), 1);
+        assert_eq!(post_failures[0].src, env.our_authority);
+        assert_eq!(post_failures[0].dst, Authority::ClientManager(receiver_name.clone()));
+        match &post_failures[0].content {
+            &ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } => {
+                let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let plain_data = PlainData::new(mpid_header_name, value);
+                let get_request = RequestMessage {
+                    src: src,
+                    dst: dst,
+                    content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+                };
+                assert_eq!(*id, message_id);
+                assert_eq!(*request, get_request);
+                assert_eq!(*external_error_indicator, vec![]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn delete_header() {
+        let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
+        // put message...
+        let (_public_key, secret_key) = sign::gen_keypair();
+        let sender = rand::random::<XorName>();
+        let metadata: Vec<u8> = generate_random_vec_u8(128);
+        let body: Vec<u8> = generate_random_vec_u8(128);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let message_id = MessageId::new();
+        put_mpid_message(&mut env, &mpid_message, &message_id);
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+        let put_requests = env.routing.put_requests_given();
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, dst.clone());
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
+        match &put_requests[0].content {
+            &RequestContent::Put(ref data, ref id) => {
+                let mpid_header = mpid_message.header().clone();
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
+                assert_eq!(*data, expected_data);
+                assert_eq!(*id, message_id);
+            }
+            _ => unreachable!(),
+        }
+
+        // register client receiver online...
+        let dst = Authority::ClientManager(receiver_name.clone());
+        register_online(&mut env, &receiver, &dst);
+
+        // put header...
+        let mpid_header = mpid_message.header().clone();
+        let src = env.our_authority.clone();
+        let dst = Authority::ClientManager(receiver_name.clone());
+        let message_id = MessageId::new();
+        put_mpid_header(&mut env, &mpid_header, &src, &dst.clone(), &message_id);
+
+        // delete header...
+        let mpid_header_name = unwrap_result!(mpid_header.name());
+        let message_id = MessageId::new();
+        delete_mpid_header(&mut env, &mpid_header_name, &receiver, &dst, &message_id);
+
+        let delete_requests = env.routing.delete_requests_given();
+        assert!(delete_requests.is_empty());
+        let delete_failures = env.routing.delete_failures_given();
+        assert!(delete_failures.is_empty());
+
+        // delete header again...
+        let message_id = MessageId::new();
+        delete_mpid_header(&mut env, &mpid_header_name, &receiver, &dst, &message_id);
+
+        let delete_requests = env.routing.delete_requests_given();
+        assert!(delete_requests.is_empty());
+        let delete_failures = env.routing.delete_failures_given();
+        assert_eq!(delete_failures.len(), 1);
+        assert_eq!(delete_failures[0].src, Authority::ClientManager(receiver_name.clone()));
+        assert_eq!(delete_failures[0].dst, receiver);
+        match &delete_failures[0].content {
+            &ResponseContent::DeleteFailure{ ref id, ref request, ref external_error_indicator } => {
+                let mpid_header_wrapper = MpidMessageWrapper::DeleteHeader(mpid_header_name);
+                let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));
+                let plain_data = PlainData::new(mpid_header_name, value);
+                let delete_request = RequestMessage {
+                    src: receiver.clone(),
+                    dst: dst,
+                    content: RequestContent::Delete(Data::PlainData(plain_data.clone()), message_id.clone()),
+                };
+                assert_eq!(*id, message_id);
+                assert_eq!(*request, delete_request);
+                assert_eq!(*external_error_indicator, vec![]);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn post_put_message() {
+        let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
+        // put message...
+        let (_public_key, secret_key) = sign::gen_keypair();
+        let sender = rand::random::<XorName>();
+        let metadata: Vec<u8> = generate_random_vec_u8(128);
+        let body: Vec<u8> = generate_random_vec_u8(128);
+        let receiver = generate_receiver();
+        let receiver_name = receiver.get_name().clone();
+        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let message_id = MessageId::new();
+        put_mpid_message(&mut env, &mpid_message, &message_id);
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+        let put_requests = env.routing.put_requests_given();
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, dst.clone());
+        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver_name.clone()));
+        match &put_requests[0].content {
+            &RequestContent::Put(ref data, ref id) => {
+                let mpid_header = mpid_message.header().clone();
+                let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
+                assert_eq!(*data, expected_data);
+                assert_eq!(*id, message_id);
+            }
+            _ => unreachable!(),
+        }
+
+        // register client receiver online...
+        let dst = Authority::ClientManager(receiver_name.clone());
+        register_online(&mut env, &receiver, &dst);
+
+        // get message...
+        let mpid_header = mpid_message.header().clone();
+        let src = Authority::ClientManager(receiver_name.clone());
+        let dst = env.our_authority.clone();
+        let message_id = MessageId::new();
+        get_mpid_message(&mut env, &mpid_header, &src, &dst, &message_id);
+
+        let post_requests = env.routing.post_requests_given();
+        assert_eq!(post_requests.len(), 1);
+        assert_eq!(post_requests[0].src, env.our_authority);
+        assert_eq!(post_requests[0].dst, Authority::ClientManager(receiver_name));
+        match &post_requests[0].content {
+            &RequestContent::Post(ref data, ref id) => {
+                let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
+                let name = unwrap_result!(mpid_header.name());
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
+                assert_eq!(*data, expected_data);
+                assert_eq!(*id, message_id);
+            }
+            _ => unreachable!(),
+        }
+
+        // post put message...
+        let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
+        let name = unwrap_result!(mpid_message.header().name());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
         let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
+            src: Authority::ClientManager(receiver_name.clone()),
+            dst: receiver.clone(),
             content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
         };
 
@@ -923,88 +1179,17 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
 
-        let (_public_key, secret_key) = sign::gen_keypair();
-        let sender = rand::random::<XorName>();
-        let metadata: Vec<u8> = generate_random_vec_u8(128);
-        let body: Vec<u8> = generate_random_vec_u8(128);
-        let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
-        let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialisation::serialise(&mpid_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
-        let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_put(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        let put_failures = env.routing.put_failures_given();
-        assert!(put_failures.is_empty());
-        let put_requests = env.routing.put_requests_given();
-        assert_eq!(put_requests.len(), 1);
-        assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ClientManager(receiver));
-        match &put_requests[0].content {
-            &RequestContent::Put(ref data, ref id) => {
-                let mpid_header = mpid_message.header().clone();
-                let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
-                let serialised_wrapper = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, serialised_wrapper));
+        let post_requests = env.routing.post_requests_given();
+        assert_eq!(post_requests.len(), 2);
+        assert_eq!(post_requests[1].src, receiver.clone());
+        assert_eq!(post_requests[1].dst, receiver.clone());
+        match &post_requests[1].content {
+            &RequestContent::Post(ref data, ref id) => {
+                let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
+                let value = unwrap_result!(serialisation::serialise(&wrapper));
+                let expected_data = Data::PlainData(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
-            }
-            _ => unreachable!(),
-        }
-
-        let mpid_header_name = unwrap_result!(mpid_message.header().name());
-        let delete_message_wrapper = MpidMessageWrapper::DeleteMessage(mpid_header_name.clone());
-        let name = env.our_authority.get_name().clone();
-        let value = unwrap_result!(serialisation::serialise(&delete_message_wrapper));
-        let plain_data = PlainData::new(name.clone(), value);
-        let message_id = MessageId::new();
-        let request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Delete(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_delete(&env.routing, &request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        let mpid_header = mpid_message.header().clone();
-        let get_message_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
-        let value = unwrap_result!(serialisation::serialise(&get_message_wrapper));
-        let plain_data = PlainData::new(mpid_header_name, value);
-        let message_id = MessageId::new();
-        let get_request = RequestMessage {
-            src: Authority::ClientManager(receiver.clone()),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
-        };
-
-        match env.mpid_manager.handle_post(&env.routing, &get_request) {
-            Ok(()) => (),
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        let post_failures = env.routing.post_failures_given();
-        assert_eq!(post_failures.len(), 1);
-        assert_eq!(post_failures[0].src, env.our_authority);
-        assert_eq!(post_failures[0].dst, Authority::ClientManager(receiver.clone()));
-        match &post_failures[0].content {
-            &ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } => {
-                assert_eq!(*id, message_id);
-                assert_eq!(*request, get_request);
-                assert_eq!(*external_error_indicator, vec![]);
             }
             _ => unreachable!(),
         }
