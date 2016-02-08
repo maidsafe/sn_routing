@@ -43,12 +43,14 @@ extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
 
-use xor_name::XorName;
-use routing::StructuredData;
-use routing::Data;
-
 #[cfg(not(feature = "use-mock-routing"))]
 mod detail;
+#[cfg(not(feature = "use-mock-routing"))]
+use xor_name::XorName;
+#[cfg(not(feature = "use-mock-routing"))]
+use routing::StructuredData;
+#[cfg(not(feature = "use-mock-routing"))]
+use routing::Data;
 
 #[cfg(not(feature = "use-mock-routing"))]
 fn main() {
