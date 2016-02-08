@@ -55,7 +55,7 @@ fn main() {
     use detail::*;
     maidsafe_utilities::log::init(false);
     let vault_count = 10;
-    let _processes = setup_network(vault_count);
+    let processes = setup_network(vault_count);
     let mut client = Client::new();
 
     let sd = unwrap_result!(StructuredData::new(0, rand::random::<XorName>(), 0, vec![], vec![], vec![], None));
@@ -63,6 +63,10 @@ fn main() {
 
     immutable_data_churn_test(&mut client);
     structured_data_churn_test(&mut client);
+
+    for mut process in processes {
+        let _ = process.kill();
+    }
 }
 
 #[cfg(feature = "use-mock-routing")]
