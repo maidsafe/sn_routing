@@ -115,6 +115,7 @@ impl StructuredDataManager {
                                      &try!(serialisation::serialise(&structured_data)))))
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         let data_names = self.chunk_store.names();
         for data_name in data_names {
@@ -136,7 +137,7 @@ impl StructuredDataManager {
             };
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("SD Manager sending refresh for account {:?}",
-                       src.get_name());
+                       src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }

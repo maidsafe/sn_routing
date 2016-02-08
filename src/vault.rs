@@ -120,7 +120,8 @@ impl Vault {
             if let Err(error) = match event {
                 Event::Request(request) => self.on_request(routing_node, request),
                 Event::Response(response) => self.on_response(routing_node, response),
-                Event::Churn{ id, lost_close_node } => self.on_churn(routing_node, id, lost_close_node),
+                Event::NodeAdded(_id) => Ok(()),  //self.on_churn(routing_node, id, lost_close_node),
+                Event::NodeLost(_id) => Ok(()),  //self.on_churn(routing_node, id, lost_close_node),
                 Event::Connected => self.on_connected(),
             } {
                 warn!("Failed to handle event: {:?}", error);
@@ -254,6 +255,7 @@ impl Vault {
         }
     }
 
+    #[allow(unused)]
     fn on_churn(&mut self,
                 routing_node: &RoutingNode,
                 churn_event_id: MessageId,

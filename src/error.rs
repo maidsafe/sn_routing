@@ -38,6 +38,7 @@ pub enum InternalError {
     UnknownMessageType(RoutingMessage),
     UnknownRefreshType(Authority, Authority, Refresh),
     InvalidResponse,
+    NotInCloseGroup,
     ChunkStore(chunk_store::Error),
     MpidMessaging(mpid_messaging::Error),
     Serialisation(SerialisationError),

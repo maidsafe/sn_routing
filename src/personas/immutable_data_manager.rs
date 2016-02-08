@@ -229,7 +229,7 @@ impl ImmutableDataManager {
             // Mark the responder as "good"
             let predicate = |elt: &QueriedDataHolder| {
                 match elt {
-                    &QueriedDataHolder::PendingResponse(ref name) => name == response.src.get_name(),
+                    &QueriedDataHolder::PendingResponse(ref name) => name == response.src.name(),
                     &QueriedDataHolder::Responded(_) => false,
                 }
             };
@@ -309,7 +309,7 @@ impl ImmutableDataManager {
             };
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("ImmutableDataManager sending refresh for account {:?}",
-                       src.get_name());
+                       src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
@@ -434,13 +434,15 @@ impl ImmutableDataManager {
                                 data_name: &XorName,
                                 nodes_to_exclude: Vec<&XorName>)
                                 -> Result<HashSet<DataHolder>, InternalError> {
-        let own_name = try!(routing_node.name());
-        let mut target_pmid_nodes = try!(routing_node.close_group());
-        target_pmid_nodes.push(own_name.clone());
-        target_pmid_nodes.retain(|elt| !nodes_to_exclude.iter().any(|exclude| elt == *exclude));
-        Self::sort_from_target(&mut target_pmid_nodes, data_name);
-        target_pmid_nodes.truncate(REPLICANTS);
-        Ok(target_pmid_nodes.into_iter().map(|pmid_node| DataHolder::Good(pmid_node)).collect::<HashSet<DataHolder>>())
+        match try!(routing_node.close_group(data_name.clone())) {
+            Some(mut target_pmid_nodes) => {
+                target_pmid_nodes.retain(|elt| !nodes_to_exclude.iter().any(|exclude| elt == *exclude));
+                Self::sort_from_target(&mut target_pmid_nodes, data_name);
+                target_pmid_nodes.truncate(REPLICANTS);
+                Ok(target_pmid_nodes.into_iter().map(|pmid_node| DataHolder::Good(pmid_node)).collect::<HashSet<DataHolder>>())
+            }
+            None => Err(InternalError::NotInCloseGroup),
+        }
     }
 
     #[allow(unused)]
@@ -595,7 +597,7 @@ mod test {
     fn handle_churn() {
         // let mut env = environment_setup();
         // env.immutable_data_manager.handle_put(&env.routing, &env.data);
-        // let close_group = vec![env.our_authority.get_name().clone()]
+        // let close_group = vec![env.our_authority.name().clone()]
         //                       .into_iter()
         //                       .chain(env.routing.close_group_including_self().into_iter())
         //                       .collect();
@@ -605,7 +607,7 @@ mod test {
         // assert_eq!(refresh_requests.len(), 2);
         // {
         //     // Account refresh
-        //     assert_eq!(refresh_requests[0].src.get_name().clone(), env.data.name());
+        //     assert_eq!(refresh_requests[0].src.name().clone(), env.data.name());
         //     let (type_tag, cause) = match refresh_requests[0].content {
         //         RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
         //         _ => panic!("Invalid content type"),
@@ -615,7 +617,7 @@ mod test {
         // }
         // {
         //     // Stats refresh
-        //     assert_eq!(refresh_requests[1].src.get_name().clone(), churn_node);
+        //     assert_eq!(refresh_requests[1].src.name().clone(), churn_node);
         //     let (type_tag, cause) = match refresh_requests[1].content {
         //         RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
         //         _ => panic!("Invalid content type"),

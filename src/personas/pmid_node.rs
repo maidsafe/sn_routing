@@ -62,7 +62,7 @@ impl PmidNode {
         };
         let data_name = data.name();
         info!("pmid_node {:?} storing {:?}",
-              request.dst.get_name(),
+              request.dst.name(),
               data_name);
         let serialised_data = try!(serialisation::serialise(&data));
         if self.chunk_store.has_space(serialised_data.len()) {
@@ -128,7 +128,7 @@ impl PmidNode {
     //                                 our_authority: &::routing::Authority,
     //                                 data: ImmutableData,
     //                                 response_token: &Option<::routing::SignedToken>) {
-    //     let location = Authority::NodeManager(our_authority.get_name().clone());
+    //     let location = Authority::NodeManager(our_authority.name().clone());
     //     let error =
     //         ::routing::error::ResponseError::HadToClearSacrificial(data.name(),
     //                                                                data.payload_size() as u32);

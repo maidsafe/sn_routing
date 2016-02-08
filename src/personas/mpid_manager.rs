@@ -79,8 +79,7 @@ impl MailBox {
     }
 
     fn names(&self) -> Vec<XorName> {
-        use itertools::Itertools;
-        self.mail_box.iter().map(|pair| pair.0.clone()).collect_vec()
+        self.mail_box.iter().map(|pair| pair.0.clone()).collect()
     }
 }
 
@@ -188,7 +187,7 @@ impl MpidManager {
                 // TODO: how the sender's public key get retained?
                 let serialised_header = try!(serialise(&mpid_header));
                 if self.accounts
-                       .entry(request.dst.get_name().clone())
+                       .entry(request.dst.name().clone())
                        .or_insert(Account::default())
                        .put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
                     try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
@@ -204,9 +203,9 @@ impl MpidManager {
                 // TODO: how the sender's public key get retained?
                 let serialised_message = try!(serialise(&mpid_message));
                 if self.accounts
-                       .entry(request.dst.get_name().clone())
+                       .entry(request.dst.name().clone())
                        .or_insert(Account::default())
-                       .put_into_outbox(serialised_message.len() as u64, &data.name(), &None) {                    
+                       .put_into_outbox(serialised_message.len() as u64, &data.name(), &None) {
                     try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
@@ -242,8 +241,8 @@ impl MpidManager {
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::PutHeader(mpid_header) => {
-                if mpid_header.sender() == request.src.get_name() {
-                    if let Some(ref account) = self.accounts.get(&request.src.get_name().clone()) {
+                if mpid_header.sender() == request.src.name() {
+                    if let Some(ref account) = self.accounts.get(&request.src.name().clone()) {
                         let ori_msg_name = try!(mpid_header.name());
                         if account.has_in_outbox(&ori_msg_name) {
                             let clients = account.registered_clients();
@@ -272,7 +271,7 @@ impl MpidManager {
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
                 let account = self.accounts
-                    .entry(request.dst.get_name().clone())
+                    .entry(request.dst.name().clone())
                     .or_insert(Account::default());
                 account.register_online(&request.src);
                 // For each received header in the inbox, fetch the full message from the sender
@@ -307,7 +306,7 @@ impl MpidManager {
                         let mpid_message: MpidMessage = try!(deserialise(&serialised_message));
                         let message_name = try!(mpid_message.header().name());
                         if (message_name == header_name) &&
-                           (mpid_message.recipient() == request.src.get_name()) {
+                           (mpid_message.recipient() == request.src.name()) {
                             let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                             let serialised_wrapper = try!(serialise(&wrapper));
                             let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
@@ -320,9 +319,9 @@ impl MpidManager {
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
-                match self.accounts.get(request.dst.get_name()) {
+                match self.accounts.get(request.dst.name()) {
                     Some(receiver) => {
-                        if mpid_message.recipient() == request.dst.get_name() {
+                        if mpid_message.recipient() == request.dst.name() {
                             let clients = receiver.registered_clients();
                             for client in clients.iter() {
                                 let _ = routing_node.send_post_request(request.dst.clone(),
@@ -330,11 +329,11 @@ impl MpidManager {
                             }
                         }
                     }
-                    None => warn!("can not find the account {:?}", request.dst.get_name().clone()),
+                    None => warn!("can not find the account {:?}", request.dst.name().clone()),
                 }
             }
             MpidMessageWrapper::OutboxHas(header_names) => {
-                if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
+                if let Some(ref account) = self.accounts.get(&request.dst.name().clone()) {
                     if account.registered_clients().iter().any(|authority| *authority == request.src) {
                         let names_in_outbox = header_names.iter()
                                                           .filter(|name| account.has_in_outbox(name))
@@ -353,13 +352,13 @@ impl MpidManager {
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
                         let serialised_wrapper = try!(serialise(&wrapper));
-                        let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
+                        let data = Data::PlainData(PlainData::new(request.dst.name().clone(), serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
                 }
             }
             MpidMessageWrapper::GetOutboxHeaders => {
-                if let Some(ref account) = self.accounts.get(&request.dst.get_name().clone()) {
+                if let Some(ref account) = self.accounts.get(&request.dst.name().clone()) {
                     if account.registered_clients().iter().any(|authority| *authority == request.src) {
                         let mut mpid_headers = vec![];
 
@@ -374,7 +373,7 @@ impl MpidManager {
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
                         let serialised_wrapper = try!(serialise(&wrapper));
-                        let data = Data::PlainData(PlainData::new(request.dst.get_name().clone(), serialised_wrapper));
+                        let data = Data::PlainData(PlainData::new(request.dst.name().clone(), serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
                 }
@@ -396,7 +395,7 @@ impl MpidManager {
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::DeleteMessage(message_name) => {
-                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.name().clone()) {
                     let mut registered = false;
 
                     if account.registered_clients().iter().any(|authority| *authority == request.src) {
@@ -406,7 +405,7 @@ impl MpidManager {
                     if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
                         if !registered {
                             let mpid_message: MpidMessage = try!(deserialise(&data));
-                            if mpid_message.recipient() != request.src.get_name() {
+                            if mpid_message.recipient() != request.src.name() {
                                 return Ok(()); // !
                             }
                         }
@@ -424,7 +423,7 @@ impl MpidManager {
                 }
             }
             MpidMessageWrapper::DeleteHeader(header_name) => {
-                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.name().clone()) {
                     if account.registered_clients().iter().any(|authority| *authority == request.src) {
                         if let Ok(data) = self.chunk_store_inbox.get(&header_name) {
                             let data_size = data.len() as u64;
@@ -723,7 +722,7 @@ mod test {
     fn outbox_has() {
         let mut env = environment_setup();
         let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&online_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
@@ -781,7 +780,7 @@ mod test {
         let mpid_header = mpid_message.header().clone();
         let mpid_header_name = unwrap_result!(mpid_header.name());
         let outbox_has_wrapper = MpidMessageWrapper::OutboxHas(vec![mpid_header_name]);
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&outbox_has_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
@@ -816,7 +815,7 @@ mod test {
     fn get_outbox_headers() {
         let mut env = environment_setup();
         let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&online_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
@@ -872,7 +871,7 @@ mod test {
         }
 
         let get_outbox_headers_wrapper = MpidMessageWrapper::GetOutboxHeaders;
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&get_outbox_headers_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
@@ -908,7 +907,7 @@ mod test {
     fn delete_message() {
         let mut env = environment_setup();
         let online_wrapper = MpidMessageWrapper::Online;
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&online_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();
@@ -965,7 +964,7 @@ mod test {
 
         let mpid_header_name = unwrap_result!(mpid_message.header().name());
         let delete_message_wrapper = MpidMessageWrapper::DeleteMessage(mpid_header_name.clone());
-        let name = env.our_authority.get_name().clone();
+        let name = env.our_authority.name().clone();
         let value = unwrap_result!(serialisation::serialise(&delete_message_wrapper));
         let plain_data = PlainData::new(name.clone(), value);
         let message_id = MessageId::new();

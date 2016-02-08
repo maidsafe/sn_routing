@@ -47,7 +47,6 @@ extern crate crust;
 extern crate ctrlc;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
-extern crate itertools;
 extern crate lru_time_cache;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;

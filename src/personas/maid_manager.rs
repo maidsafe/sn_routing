@@ -113,7 +113,7 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Refund account
-                match self.accounts.get_mut(client_request.src.get_name()) {
+                match self.accounts.get_mut(client_request.src.name()) {
                     Some(account) => account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */),
                     None => return Ok(()),
                 }
@@ -130,6 +130,7 @@ impl MaidManager {
         let _ = self.accounts.insert(name, account);
     }
 
+    #[allow(unused)]
     pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
         for (maid_name, account) in self.accounts.iter() {
             let src = Authority::ClientManager(maid_name.clone());
@@ -140,7 +141,7 @@ impl MaidManager {
             };
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("MaidManager sending refresh for account {:?}",
-                       src.get_name());
+                       src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
@@ -163,7 +164,7 @@ impl MaidManager {
         // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
         // account
         let result = self.accounts
-                         .get_mut(request.src.get_name())
+                         .get_mut(request.src.name())
                          .ok_or(ClientError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -202,18 +203,18 @@ impl MaidManager {
 
         // If the type_tag is 0, the account must not exist, else it must exist.
         if type_tag == 0 {
-            if self.accounts.contains_key(request.src.get_name()) {
+            if self.accounts.contains_key(request.src.name()) {
                 let error = ClientError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
                 return Err(InternalError::Client(error));
             }
 
             // Create the account
-            let _ = self.accounts.insert(*request.src.get_name(), Account::default());
+            let _ = self.accounts.insert(*request.src.name(), Account::default());
         } else {
             // Update the account
             let result = self.accounts
-                             .get_mut(request.src.get_name())
+                             .get_mut(request.src.name())
                              .ok_or(ClientError::NoSuchAccount)
                              .and_then(|account| {
                                  account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -348,8 +349,8 @@ mod test {
     //     let refresh_requests = routing.refresh_requests_given();
     //     assert_eq!(refresh_requests.len(), 1);
     //     assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-    //     assert_eq!(refresh_requests[0].our_authority.get_name(),
-    //                client.get_name());
+    //     assert_eq!(refresh_requests[0].our_authority.name(),
+    //                client.name());
 
     //     let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
     //     if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
