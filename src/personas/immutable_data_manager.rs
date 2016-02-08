@@ -296,17 +296,19 @@ impl ImmutableDataManager {
         let _ = self.accounts.insert(data_name, account);
     }
 
-    pub fn handle_churn(&mut self,
-                        routing_node: &RoutingNode,
-                        churn_event_id: &MessageId,
-                        lost_close_node: Option<XorName>) {
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, _node_added: XorName) {
+        self.handle_churn(routing_node)
+    }
+
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, _node_lost: XorName) {
+        self.handle_churn(routing_node)
+    }
+
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (data_name, pmid_nodes) in self.accounts.iter() {
             let src = Authority::NaeManager(data_name.clone());
-            let refresh = Refresh {
-                id: churn_event_id.clone(),
-                name: data_name.clone(),
-                value: RefreshValue::ImmutableDataManager(pmid_nodes.clone()),
-            };
+            let refresh = Refresh::new(data_name,
+                                       RefreshValue::ImmutableDataManager(pmid_nodes.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("ImmutableDataManager sending refresh for account {:?}",
                        src.name());
@@ -439,7 +441,9 @@ impl ImmutableDataManager {
                 target_pmid_nodes.retain(|elt| !nodes_to_exclude.iter().any(|exclude| elt == *exclude));
                 Self::sort_from_target(&mut target_pmid_nodes, data_name);
                 target_pmid_nodes.truncate(REPLICANTS);
-                Ok(target_pmid_nodes.into_iter().map(|pmid_node| DataHolder::Good(pmid_node)).collect::<HashSet<DataHolder>>())
+                Ok(target_pmid_nodes.into_iter()
+                                    .map(|pmid_node| DataHolder::Good(pmid_node))
+                                    .collect::<HashSet<DataHolder>>())
             }
             None => Err(InternalError::NotInCloseGroup),
         }

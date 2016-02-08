@@ -19,7 +19,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -65,9 +65,7 @@ impl StructuredDataManager {
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
-                (data, message_id.clone())
-            }
+            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => (data, message_id.clone()),
             _ => unreachable!("Logic error"),
         };
 
@@ -115,8 +113,7 @@ impl StructuredDataManager {
                                      &try!(serialisation::serialise(&structured_data)))))
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         let data_names = self.chunk_store.names();
         for data_name in data_names {
             let serialised_data = match self.chunk_store.get(&data_name) {
@@ -130,14 +127,10 @@ impl StructuredDataManager {
             };
 
             let src = Authority::NaeManager(data_name.clone());
-            let refresh = Refresh {
-                id: churn_event_id.clone(),
-                name: data_name.clone(),
-                value: RefreshValue::StructuredDataManager(structured_data),
-            };
+            let refresh = Refresh::new(&data_name,
+                                       RefreshValue::StructuredDataManager(structured_data));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("SD Manager sending refresh for account {:?}",
-                       src.name());
+                debug!("SD Manager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }

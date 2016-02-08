@@ -23,7 +23,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessageWrapper, MpidMessage};
+use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -43,7 +43,7 @@ impl MailBox {
             allowance: allowance,
             used_space: 0,
             space_available: allowance,
-            mail_box: HashMap::new()
+            mail_box: HashMap::new(),
         }
     }
 
@@ -104,13 +104,11 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_into_outbox(&mut self, size: u64, entry: &XorName,
-                       public_key: &Option<PublicKey>) -> bool {
+    fn put_into_outbox(&mut self, size: u64, entry: &XorName, public_key: &Option<PublicKey>) -> bool {
         self.outbox.put(size, entry, public_key)
     }
 
-    fn put_into_inbox(&mut self, size: u64, entry: &XorName,
-                      public_key: &Option<PublicKey>) -> bool {
+    fn put_into_inbox(&mut self, size: u64, entry: &XorName, public_key: &Option<PublicKey>) -> bool {
         self.inbox.put(size, entry, public_key)
     }
 
@@ -170,12 +168,9 @@ impl MpidManager {
     // The name of the PlainData is expected to be the mpidheader or mpidmessage name
     // The content of the PlainData is execpted to be the serialised MpidMessageWrapper
     // holding mpidheader or mpidmessage
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
-            -> Result<(), InternalError> {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::PlainData(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
+            RequestContent::Put(Data::PlainData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
@@ -193,7 +188,10 @@ impl MpidManager {
                     try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
                 } else {
                     try!(routing_node.send_put_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id));
+                                                       request.src.clone(),
+                                                       request.clone(),
+                                                       Vec::new(),
+                                                       message_id));
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
@@ -217,7 +215,10 @@ impl MpidManager {
                     try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
                 } else {
                     try!(routing_node.send_put_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id));
+                                                       request.src.clone(),
+                                                       request.clone(),
+                                                       Vec::new(),
+                                                       message_id));
                 }
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -230,12 +231,12 @@ impl MpidManager {
     // indicate an inbox full.
     // The request in the put_failure response is the original request from sender's MpidManager
     // to receiver's MpidManager, i.e. MpidMessageWrapper::PutHeader(mpid_header)
-    pub fn handle_put_failure(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
-            -> Result<(), InternalError> {
+    pub fn handle_put_failure(&mut self,
+                              routing_node: &RoutingNode,
+                              request: &RequestMessage)
+                              -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::PlainData(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
+            RequestContent::Put(Data::PlainData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
@@ -248,7 +249,10 @@ impl MpidManager {
                             let clients = account.registered_clients();
                             for client in clients.iter() {
                                 let _ = routing_node.send_put_failure(request.src.clone(),
-                                    client.clone(), request.clone(), Vec::new(), message_id.clone());
+                                                                      client.clone(),
+                                                                      request.clone(),
+                                                                      Vec::new(),
+                                                                      message_id.clone());
                             }
                         }
                     }
@@ -259,20 +263,17 @@ impl MpidManager {
         Ok(())
     }
 
-    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
-            -> Result<(), InternalError> {
+    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Post(Data::PlainData(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
+            RequestContent::Post(Data::PlainData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
                 let account = self.accounts
-                    .entry(request.dst.name().clone())
-                    .or_insert(Account::default());
+                                  .entry(request.dst.name().clone())
+                                  .or_insert(Account::default());
                 account.register_online(&request.src);
                 // For each received header in the inbox, fetch the full message from the sender
                 let received_headers = account.received_headers();
@@ -293,7 +294,9 @@ impl MpidManager {
                             let name = try!(mpid_header.name());
                             let data = Data::PlainData(PlainData::new(name, serialised_request));
                             let _ = routing_node.send_post_request(request.dst.clone(),
-                                target, data, message_id.clone());
+                                                                   target,
+                                                                   data,
+                                                                   message_id.clone());
                         }
                         Err(_) => {}
                     }
@@ -305,17 +308,23 @@ impl MpidManager {
                     Ok(serialised_message) => {
                         let mpid_message: MpidMessage = try!(deserialise(&serialised_message));
                         let message_name = try!(mpid_message.header().name());
-                        if (message_name == header_name) &&
-                           (mpid_message.recipient() == request.src.name()) {
+                        if (message_name == header_name) && (mpid_message.recipient() == request.src.name()) {
                             let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                             let serialised_wrapper = try!(serialise(&wrapper));
                             let data = Data::PlainData(PlainData::new(message_name, serialised_wrapper));
                             try!(routing_node.send_post_request(request.dst.clone(),
-                                    request.src.clone(), data, message_id.clone()));
+                                                                request.src.clone(),
+                                                                data,
+                                                                message_id.clone()));
                         }
                     }
-                    _ => try!(routing_node.send_post_failure(request.dst.clone(),
-                                request.src.clone(), request.clone(), Vec::new(), message_id)),
+                    _ => {
+                        try!(routing_node.send_post_failure(request.dst.clone(),
+                                                            request.src.clone(),
+                                                            request.clone(),
+                                                            Vec::new(),
+                                                            message_id))
+                    }
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
@@ -325,7 +334,9 @@ impl MpidManager {
                             let clients = receiver.registered_clients();
                             for client in clients.iter() {
                                 let _ = routing_node.send_post_request(request.dst.clone(),
-                                    client.clone(), Data::PlainData(data.clone()), message_id.clone());
+                                                                       client.clone(),
+                                                                       Data::PlainData(data.clone()),
+                                                                       message_id.clone());
                             }
                         }
                     }
@@ -384,12 +395,9 @@ impl MpidManager {
         Ok(())
     }
 
-    pub fn handle_delete(&mut self, routing_node: &RoutingNode, request: &RequestMessage)
-            -> Result<(), InternalError> {
+    pub fn handle_delete(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Delete(Data::PlainData(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
+            RequestContent::Delete(Data::PlainData(ref data), ref message_id) => (data.clone(), message_id.clone()),
             _ => unreachable!("Error in vault demuxing"),
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
@@ -418,7 +426,10 @@ impl MpidManager {
                     } else {
                         error!("Failed to get from chunk store.");
                         try!(routing_node.send_delete_failure(request.dst.clone(),
-                            request.src.clone(), request.clone(), Vec::new(), message_id))
+                                                              request.src.clone(),
+                                                              request.clone(),
+                                                              Vec::new(),
+                                                              message_id))
                     }
                 }
             }
@@ -434,7 +445,10 @@ impl MpidManager {
                         } else {
                             error!("Failed to get from chunk store.");
                             try!(routing_node.send_delete_failure(request.dst.clone(),
-                                request.src.clone(), request.clone(), Vec::new(), message_id))
+                                                                  request.src.clone(),
+                                                                  request.clone(),
+                                                                  Vec::new(),
+                                                                  message_id))
                         }
                     }
                 }
@@ -453,13 +467,13 @@ mod test {
     use error::{ClientError, InternalError};
     use maidsafe_utilities::serialisation;
     use rand;
-    use routing::{Authority, Data, PlainData, MessageId, RequestContent, RequestMessage, ResponseContent};
+    use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage, ResponseContent};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
-    use mpid_messaging::{MpidMessageWrapper, MpidMessage, MpidHeader};
+    use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
     struct Environment {
         our_authority: Authority,
@@ -611,7 +625,8 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), MessageId::new().clone()),
+            content: RequestContent::Put(Data::PlainData(plain_data.clone()),
+                                         MessageId::new().clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {
@@ -998,7 +1013,8 @@ mod test {
         let post_failures = env.routing.post_failures_given();
         assert_eq!(post_failures.len(), 1);
         assert_eq!(post_failures[0].src, env.our_authority);
-        assert_eq!(post_failures[0].dst, Authority::ClientManager(receiver.clone()));
+        assert_eq!(post_failures[0].dst,
+                   Authority::ClientManager(receiver.clone()));
         match &post_failures[0].content {
             &ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } => {
                 assert_eq!(*id, message_id);

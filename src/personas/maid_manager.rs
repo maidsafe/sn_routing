@@ -130,18 +130,12 @@ impl MaidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-    #[allow(unused)]
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (maid_name, account) in self.accounts.iter() {
             let src = Authority::ClientManager(maid_name.clone());
-            let refresh = Refresh {
-                id: churn_event_id.clone(),
-                name: maid_name.clone(),
-                value: RefreshValue::MaidManager(account.clone()),
-            };
+            let refresh = Refresh::new(maid_name, RefreshValue::MaidManager(account.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("MaidManager sending refresh for account {:?}",
-                       src.name());
+                debug!("MaidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }

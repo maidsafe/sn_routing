@@ -61,9 +61,7 @@ impl PmidNode {
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
-        info!("pmid_node {:?} storing {:?}",
-              request.dst.name(),
-              data_name);
+        info!("pmid_node {:?} storing {:?}", request.dst.name(), data_name);
         let serialised_data = try!(serialisation::serialise(&data));
         if self.chunk_store.has_space(serialised_data.len()) {
             // the type_tag needs to be stored as well

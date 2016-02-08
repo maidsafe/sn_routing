@@ -16,14 +16,22 @@
 // relating to use of the SAFE Network Software.
 
 use personas::{immutable_data_manager, maid_manager, pmid_manager};
-use routing::{MessageId, StructuredData};
+use routing::StructuredData;
 use xor_name::XorName;
 
 #[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Refresh {
-    pub id: MessageId,
     pub name: XorName,
     pub value: RefreshValue,
+}
+
+impl Refresh {
+    pub fn new(name: &XorName, value: RefreshValue) -> Refresh {
+        Refresh {
+            name: name.clone(),
+            value: value,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]

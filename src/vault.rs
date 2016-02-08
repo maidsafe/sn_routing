@@ -17,8 +17,8 @@
 
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, Event, MessageId, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, RoutingMessage};
+use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
+              RoutingMessage};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -120,8 +120,8 @@ impl Vault {
             if let Err(error) = match event {
                 Event::Request(request) => self.on_request(routing_node, request),
                 Event::Response(response) => self.on_response(routing_node, response),
-                Event::NodeAdded(_id) => Ok(()),  //self.on_churn(routing_node, id, lost_close_node),
-                Event::NodeLost(_id) => Ok(()),  //self.on_churn(routing_node, id, lost_close_node),
+                Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
+                Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
                 Event::Connected => self.on_connected(),
             } {
                 warn!("Failed to handle event: {:?}", error);
@@ -158,17 +158,13 @@ impl Vault {
              &RequestContent::Put(Data::ImmutableData(_), _)) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_), _)) => {
-                self.maid_manager.handle_put(routing_node, &request)
-            }
+             &RequestContent::Put(Data::StructuredData(_), _)) => self.maid_manager.handle_put(routing_node, &request),
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::PlainData(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::PlainData(_), _)) => {
-                self.mpid_manager.handle_put(routing_node, &request)
-            }
+             &RequestContent::Put(Data::PlainData(_), _)) => self.mpid_manager.handle_put(routing_node, &request),
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
@@ -196,15 +192,11 @@ impl Vault {
              &RequestContent::Post(Data::PlainData(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Post(Data::PlainData(_), _)) => {
-                self.mpid_manager.handle_post(routing_node, &request)
-            }
+             &RequestContent::Post(Data::PlainData(_), _)) => self.mpid_manager.handle_post(routing_node, &request),
             // ================== Delete ==================
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Delete(Data::PlainData(_), _)) => {
-                self.mpid_manager.handle_delete(routing_node, &request)
-            }
+             &RequestContent::Delete(Data::PlainData(_), _)) => self.mpid_manager.handle_delete(routing_node, &request),
             // ================== Refresh ==================
             (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
                 self.on_refresh(src, dst, serialised_refresh)
@@ -255,16 +247,19 @@ impl Vault {
         }
     }
 
-    #[allow(unused)]
-    fn on_churn(&mut self,
-                routing_node: &RoutingNode,
-                churn_event_id: MessageId,
-                lost_close_node: Option<XorName>)
-                -> Result<(), InternalError> {
-        self.maid_manager.handle_churn(routing_node, &churn_event_id);
-        self.immutable_data_manager.handle_churn(routing_node, &churn_event_id, lost_close_node);
-        self.structured_data_manager.handle_churn(routing_node, &churn_event_id);
-        self.pmid_manager.handle_churn(routing_node, &churn_event_id);
+    fn on_node_added(&mut self, routing_node: &RoutingNode, node_added: XorName) -> Result<(), InternalError> {
+        self.maid_manager.handle_churn(routing_node);
+        self.immutable_data_manager.handle_node_added(routing_node, node_added);
+        self.structured_data_manager.handle_churn(routing_node);
+        self.pmid_manager.handle_churn(routing_node);
+        Ok(())
+    }
+
+    fn on_node_lost(&mut self, routing_node: &RoutingNode, node_lost: XorName) -> Result<(), InternalError> {
+        self.maid_manager.handle_churn(routing_node);
+        self.immutable_data_manager.handle_node_lost(routing_node, node_lost);
+        self.structured_data_manager.handle_churn(routing_node);
+        self.pmid_manager.handle_churn(routing_node);
         Ok(())
     }
 
