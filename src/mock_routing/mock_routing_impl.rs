@@ -29,6 +29,7 @@ use xor_name::{XorName, closer_to_target};
 
 pub struct MockRoutingNodeImpl {
     name: XorName,
+    // TODO: Use RT crate instead of this Vec<XorName> (provides realistic result for `close_nodes`)
     peers: Vec<XorName>,
     sender: mpsc::Sender<Event>,
     client_sender: mpsc::Sender<Event>,
@@ -122,13 +123,17 @@ impl MockRoutingNodeImpl {
                                   "Mock Client Delete Request");
     }
 
-    pub fn churn_event(&mut self, event_id: MessageId, lost_close_node: Option<XorName>) {
+    pub fn node_added_event(&mut self, node_added: XorName) {
         let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock Churn Event", move || {
-            let _ = cloned_sender.send(Event::Churn {
-                id: event_id,
-                lost_close_node: lost_close_node,
-            });
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeAdded Event", move || {
+            let _ = cloned_sender.send(Event::NodeAdded(node_added));
+        })));
+    }
+
+    pub fn node_lost_event(&mut self, node_lost: XorName) {
+        let cloned_sender = self.sender.clone();
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeLost Event", move || {
+            let _ = cloned_sender.send(Event::NodeLost(node_lost));
         })));
     }
 
@@ -343,12 +348,12 @@ impl MockRoutingNodeImpl {
         Ok(self.refresh_requests_given.push(message))
     }
 
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
-        Ok(self.name.clone())
+    pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+        Ok(Some(self.peers.iter().take(group_size()).cloned().collect()))
     }
 
-    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
-        Ok(self.peers.iter().take(group_size()).cloned().collect())
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        Ok(self.name.clone())
     }
 
     fn send_request(&mut self,

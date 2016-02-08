@@ -38,7 +38,7 @@ impl MockRoutingNode {
         Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
-    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Event> {
+    pub fn get_client_receiver(&self) -> mpsc::Receiver<Event> {
         unwrap_result!(self.pimpl.lock()).get_client_receiver()
     }
 
@@ -60,8 +60,12 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).client_delete(Self::client_authority(client_address, client_pub_key), data)
     }
 
-    pub fn churn_event(&self, event_id: MessageId, lost_close_node: Option<XorName>) {
-        unwrap_result!(self.pimpl.lock()).churn_event(event_id, lost_close_node)
+    pub fn node_added_event(&self, node_added: XorName) {
+        unwrap_result!(self.pimpl.lock()).node_added_event(node_added)
+    }
+
+    pub fn node_lost_event(&self, node_lost: XorName) {
+        unwrap_result!(self.pimpl.lock()).node_lost_event(node_lost)
     }
 
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
@@ -235,12 +239,12 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).send_refresh_request(src, content)
     }
 
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).name()
+    pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).close_group(name)
     }
 
-    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).close_group()
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).name()
     }
 
     fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {
