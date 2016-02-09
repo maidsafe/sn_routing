@@ -66,7 +66,7 @@ impl StructuredDataManager {
 
         let (data, message_id) = match request.content {
             RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
-                (Data::StructuredData(data.clone()), message_id.clone())
+                (data, message_id.clone())
             }
             _ => unreachable!("Logic error"),
         };
@@ -87,7 +87,7 @@ impl StructuredDataManager {
             return Err(InternalError::Client(error));
         }
 
-        try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(&data))));
+        try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
         let _ = routing_node.send_put_success(response_src, response_dst, message_hash, message_id);
         Ok(())
     }
