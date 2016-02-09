@@ -1649,9 +1649,9 @@ impl Core {
         });
 
         // If we need to handle this message, handle it.
-        let hop_name = self.name().clone();
         if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
+            let hop_name = self.name().clone();
             return self.handle_signed_message_for_node(&signed_msg, &hop_name, false);
         }
 
