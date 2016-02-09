@@ -12,6 +12,7 @@ version = "0.6.3"
 [dependencies]
 accumulator = "~0.1.3"
 cbor = "~0.3.16"
+clippy = {version = "~0.0.37", optional = true}
 crust = "~0.8.0"
 ip = "~1.0.0"
 itertools = "~0.4.5"
