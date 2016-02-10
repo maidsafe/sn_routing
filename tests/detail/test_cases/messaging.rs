@@ -15,22 +15,21 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod client;
-mod setup_network;
-mod test_cases;
+use super::*;
+use rand;
+use sodiumoxide::crypto::sign;
+use routing::Authority;
+use xor_name::XorName;
 
-pub use self::client::Client;
-pub use self::setup_network::setup_network;
-pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
-pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
-pub use self::test_cases::messaging::test as messaging_test;
+pub fn test(client: &mut Client) {
+    println!("Running Messaging test");
 
-use rand::random;
+    client.register_online();
 
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
+    let metadata: Vec<u8> = generate_random_vec_u8(128);
+    let body: Vec<u8> = generate_random_vec_u8(128);
+    let receiver = Authority::Client { client_key: sign::gen_keypair().0, proxy_node_name: rand::random::<XorName>() };
+    let receiver_name = receiver.get_name().clone();
+
+    client.put_message(&metadata, &body, &receiver_name);
 }

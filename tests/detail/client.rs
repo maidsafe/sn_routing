@@ -19,9 +19,11 @@
 
 use std::sync::mpsc;
 
-use routing::{self, Authority, Data, DataRequest, Event, FullId, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto;
+use maidsafe_utilities::serialisation;
+use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, ResponseContent, ResponseMessage};
 use xor_name::XorName;
+use mpid_messaging::{MpidMessage, MpidMessageWrapper};
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct Client {
@@ -106,6 +108,50 @@ impl Client {
                 break;
             } else {
                 panic!("Failed to store {:?}", data_name);
+            }
+        }
+    }
+
+    /// Send an `Mpidmessage` to a recipient.
+    pub fn put_message(&self, metadata: &Vec<u8>, body: &Vec<u8>, receiver: &XorName) {
+        let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
+                                                           metadata.clone(),
+                                                           receiver.clone(),
+                                                           body.clone(),
+                                                           &self.full_id.signing_private_key()));
+        let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
+        let name = unwrap_result!(mpid_message.header().name());
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
+
+        // Wait for PutSuccess response.
+        for it in self.receiver.iter() {
+            if let Event::Response(ResponseMessage { content: ResponseContent::PutSuccess(..), .. }) = it {
+                println!("Successfully sent message {:?}", mpid_message);
+                break;
+            } else {
+                panic!("Failed to send message {:?}", mpid_message);
+            }
+        }
+    }
+
+    /// Register client online.
+    pub fn register_online(&self) {
+        let wrapper = MpidMessageWrapper::Online;
+        let value = unwrap_result!(serialisation::serialise(&wrapper));
+        let data = Data::PlainData(PlainData::new(*self.name(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
+
+        // Wait for PostSuccess response.
+        for it in self.receiver.iter() {
+            if let Event::Response(ResponseMessage { content: ResponseContent::PostSuccess(..), .. }) = it {
+                println!("Successfully sent online message.");
+                break;
+            } else {
+                panic!("Failed to send online message.");
             }
         }
     }

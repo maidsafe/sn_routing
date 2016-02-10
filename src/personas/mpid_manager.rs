@@ -16,9 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use std::collections::HashMap;
-
 use sodiumoxide::crypto::sign::PublicKey;
-
+use sodiumoxide::crypto::hash::sha512;
 use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
@@ -201,13 +200,12 @@ impl MpidManager {
                 if self.chunk_store_outbox.has_chunk(&data.name()) {
                     return Err(InternalError::Client(ClientError::DataExists));
                 }
-                // TODO: how the sender's public key get retained?
-                let serialised_message = try!(serialise(&mpid_message));
-                if self.accounts
-                       .entry(request.dst.get_name().clone())
-                       .or_insert(Account::default())
-                       .put_into_outbox(serialised_message.len() as u64, &data.name(), &None) {                    
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                    let serialised_message = try!(serialise(&mpid_message));
                     try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
+                    if let Authority::Client { client_key, .. } = request.src {
+                        account.put_into_outbox(serialised_message.len() as u64, &data.name(), &Some(client_key));
+                    };
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
                     let dst = Authority::ClientManager(mpid_message.recipient().clone());
@@ -216,7 +214,13 @@ impl MpidManager {
                     let name = try!(mpid_message.header().name());
                     let notification = Data::PlainData(PlainData::new(name, serialised_wrapper));
                     try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
+                    // Send put success to Client.
+                    let src = request.dst.clone();
+                    let dst = request.src.clone();
+                    let digest = sha512::hash(&try!(serialise(request))[..]);
+                    let _ = routing_node.send_put_success(src, dst, digest, message_id);
                 } else {
+                    // Client not registered online.
                     try!(routing_node.send_put_failure(request.dst.clone(),
                             request.src.clone(), request.clone(), Vec::new(), message_id));
                 }
@@ -275,6 +279,11 @@ impl MpidManager {
                     .entry(request.dst.get_name().clone())
                     .or_insert(Account::default());
                 account.register_online(&request.src);
+                // Send post success to client.
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let digest = sha512::hash(&try!(serialise(request))[..]);
+                let _ = routing_node.send_post_success(src, dst, digest, message_id.clone());
                 // For each received header in the inbox, fetch the full message from the sender
                 let received_headers = account.received_headers();
                 for header in received_headers.iter() {
