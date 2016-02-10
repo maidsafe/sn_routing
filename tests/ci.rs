@@ -32,6 +32,10 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations)]
 
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
+#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+
 extern crate itertools;
 extern crate kademlia_routing_table;
 #[cfg(target_os = "macos")]

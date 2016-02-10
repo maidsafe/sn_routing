@@ -9,6 +9,7 @@ os:
 language: rust
 rust:
   - stable
+  - nightly
 sudo: false
 branches:
   only:
