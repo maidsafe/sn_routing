@@ -18,7 +18,7 @@
 use lru_time_cache::LruCache;
 use xor_name::XorName;
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              Authority, Node, Event, Data, DataRequest, InterfaceError};
+              Authority, Node, Event, Data, DataRequest};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use sodiumoxide::crypto::hash::sha512::hash;
 use std::collections::HashMap;
@@ -202,7 +202,7 @@ impl ExampleNode {
                 if self.dm_accounts.contains_key(&data.name()) {
                     return // Don't allow duplicate put.
                 }
-                let mut close_grp = match unwrap_result!(self.group_by_closeness(&data.name())) {
+                let mut close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                     None => {
                         trace!("CloseGroup action returned None.");
                         return;
@@ -277,7 +277,7 @@ impl ExampleNode {
                    lost_node,
                    data.name());
             // Find a member of our close group that doesn't already have the lost data item.
-            let close_grp = match unwrap_result!(self.group_by_closeness(&data.name())) {
+            let close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                 None => {
                     trace!("CloseGroup action returned None.");
                     return;
@@ -306,11 +306,6 @@ impl ExampleNode {
                 self.send_data_manager_refresh_messages(id);
             }
         }
-    }
-
-    /// Return the close group, including this node, sorted by closeness to the given name.
-    fn group_by_closeness(&self, name: &XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
-        Ok(try!(self.node.close_group(*name)))
     }
 
     // While handling churn messages, we first "action" it ourselves and then
