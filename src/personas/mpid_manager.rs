@@ -624,6 +624,11 @@ mod test {
     #[test]
     fn put_message() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
@@ -681,6 +686,11 @@ mod test {
     #[test]
     fn put_message_and_header_twice() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
@@ -773,6 +783,11 @@ mod test {
     #[test]
     fn get_message() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
