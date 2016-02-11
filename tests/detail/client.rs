@@ -114,11 +114,13 @@ impl Client {
     }
 
     /// Send an `Mpidmessage` to a recipient.
-    pub fn put_message(&self, metadata: &Vec<u8>, body: &Vec<u8>, receiver: &XorName) -> MpidMessage {
+    pub fn put_message(&self, receiver: &XorName) -> MpidMessage {
+        let metadata = super::generate_random_vec_u8(128);
+        let body = super::generate_random_vec_u8(128);
         let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
-                                                           metadata.clone(),
+                                                           metadata,
                                                            receiver.clone(),
-                                                           body.clone(),
+                                                           body,
                                                            &self.full_id.signing_private_key()));
         let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
         let name = unwrap_result!(mpid_message.header().name());
@@ -159,7 +161,7 @@ impl Client {
         }
     }
 
-    /// Wait for a message to arrive with given name.
+    /// Wait for a message to arrive.
     pub fn get_message(&self) -> Option<MpidMessage> {
         for it in self.receiver.iter() {
             if let Event::Request(RequestMessage { src, dst, content: RequestContent::Post(data, _id) }) = it {
@@ -177,7 +179,7 @@ impl Client {
                     _ => panic!("Unexpected data."),
                 }
             } else {
-                panic!("Failed to send message.");
+                panic!("Failed to get message.");
             }
         }
 

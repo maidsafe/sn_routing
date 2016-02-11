@@ -71,7 +71,6 @@ fn main() {
     immutable_data_churn_test(&mut client);
     structured_data_churn_test(&mut client);
 
-    // messaging_test(&mut client);
     messaging_test();
 
     for mut process in processes {

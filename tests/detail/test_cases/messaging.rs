@@ -16,25 +16,21 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-// use rand;
-// use routing::{Data, StructuredData};
-// use xor_name::XorName;
 
-// pub fn test(client: &mut Client) {
 pub fn test() {
     println!("Running Messaging test");
 
     let sender = Client::new();
     sender.register_online();
-
     let receiver = Client::new();
-    let metadata = generate_random_vec_u8(128);
-    let body = generate_random_vec_u8(128);
-    let message_sent = sender.put_message(&metadata, &body, receiver.name());
-
     receiver.register_online();
+
+    let message_sent = sender.put_message(receiver.name());
     let optional_message = receiver.get_message();
+
     assert!(optional_message.is_some());
+
     let message_received = unwrap_option!(optional_message, "");
+
     assert_eq!(message_received, message_sent);
 }
