@@ -18,7 +18,7 @@
 use accumulator::Accumulator;
 use crust;
 use itertools::Itertools;
-use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, GROUP_SIZE, PARALLELISM,
+use kademlia_routing_table::{AddedNodeDetails, ContactInfo, GROUP_SIZE, PARALLELISM,
                              RoutingTable};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
@@ -30,6 +30,7 @@ use std::io;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use std::iter::FromIterator;
 use std::sync::mpsc;
 use std::thread;
 use time::Duration;
@@ -67,6 +68,30 @@ enum State {
     Client,
     /// We have been Relocated and now a node.
     Node,
+}
+
+/// Info about nodes in the routing table.
+#[derive(Clone, Eq, PartialEq)]
+struct NodeInfo {
+    public_id: PublicId,
+    connections: HashSet<crust::Connection>,
+}
+
+impl NodeInfo {
+    fn new<I>(public_id: PublicId, connection_iter: I) -> Self
+        where I: IntoIterator<Item=crust::Connection>
+    {
+        NodeInfo {
+            public_id: public_id,
+            connections: HashSet::from_iter(connection_iter),
+        }
+    }
+}
+
+impl ContactInfo for NodeInfo {
+    fn name(&self) -> &XorName {
+        self.public_id.name()
+    }
 }
 
 /// An interface for clients and nodes that handles routing and connecting to the network.
@@ -140,9 +165,7 @@ pub struct Core {
     grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
     state: State,
-    routing_table: RoutingTable,
-    node_connections: HashMap<XorName, HashSet<crust::Connection>>,
-    node_ids: HashMap<XorName, PublicId>,
+    routing_table: RoutingTable<NodeInfo>,
     // our bootstrap connections
     proxy_map: HashMap<crust::Connection, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
@@ -180,7 +203,8 @@ impl Core {
             Some(full_id) => full_id,
             None => FullId::new(),
         };
-        let our_name = *full_id.public_id().name();
+
+        let our_info = NodeInfo::new(full_id.public_id().clone(), None);
 
         let joiner = thread!("RoutingThread", move || {
             let mut core = Core {
@@ -199,15 +223,11 @@ impl Core {
                 grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                 full_id: full_id,
                 state: State::Disconnected,
-                routing_table: RoutingTable::new(&our_name),
-                node_connections: HashMap::new(),
-                node_ids: HashMap::new(),
+                routing_table: RoutingTable::new(our_info),
                 proxy_map: HashMap::new(),
                 client_map: HashMap::new(),
                 data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             };
-
-            let _ = core.node_ids.insert(our_name, core.full_id.public_id().clone());
 
             core.run(category_rx);
         });
@@ -255,15 +275,26 @@ impl Core {
                                 }
                             }
                             Action::CloseGroup{ name, result_tx, } => {
-                                if result_tx.send(self.routing_table.close_nodes(&name)).is_err() {
+                                let close_group = self.routing_table
+                                                      .close_nodes(&name)
+                                                      .map(|infos| {
+                                                        infos.iter()
+                                                             .map(NodeInfo::name)
+                                                             .cloned()
+                                                             .collect()
+                                                      });
+
+                                if result_tx.send(close_group).is_err() {
                                     return;
                                 }
                             }
+
                             Action::Name{ result_tx, } => {
                                 if result_tx.send(self.name().clone()).is_err() {
                                     return;
                                 }
                             }
+
                             Action::Terminate => {
                                 break;
                             }
@@ -343,8 +374,8 @@ impl Core {
                           connection: crust::Connection)
                           -> Result<(), RoutingError> {
         if self.state == State::Node {
-            if let Some(public_id) = self.node_ids.get(hop_msg.name()) {
-                try!(hop_msg.verify(public_id.signing_public_key()));
+            if let Some(info) = self.routing_table.get(hop_msg.name()) {
+                try!(hop_msg.verify(info.public_id.signing_public_key()));
                 try!(self.check_direction(hop_msg));
             } else if let Some((ref pub_key, &(_, client_restriction))) = self.client_map
                                                                        .iter()
@@ -483,7 +514,7 @@ impl Core {
         dst.is_group() &&
         match self.routing_table.other_close_nodes(dst.name()) {
             None => false,
-            Some(close_group) => close_group.into_iter().any(|n| n == *hop_name),
+            Some(close_group) => close_group.into_iter().any(|n| n.name() == hop_name),
         }
     }
 
@@ -1071,20 +1102,28 @@ impl Core {
                 return Ok(());
             }
 
-            if !self.node_connections.entry(name).or_insert_with(HashSet::new).insert(connection) {
+            // TODO: Detect if we already have this connection.
+            let has_connection = false;
+            // let has_connection = !self.routing_table
+            //                           .get(&name)
+            //                           .map(|info| info.connections.insert(connection))
+            //                           .unwrap_or(true);
+
+            if has_connection {
                 // We already sent an identify down this connection
                 return Ok(());
             }
             if !self.routing_table.contains(&name) {
+                let info = NodeInfo::new(public_id.clone(), Some(connection));
+
                 if let Some(AddedNodeDetails { must_notify, common_groups }) = self.routing_table
-                                                                                   .add(name) {
-                    let _ = self.node_ids.insert(name, public_id.clone());
-                    for notify_name in must_notify {
-                        if let Some(notify_connection) = self.get_connection(&notify_name) {
+                                                                                   .add(info) {
+                    for notify_info in must_notify {
+                        if let Some(notify_connection) = notify_info.connections.into_iter().next() {
                             let direct_message = DirectMessage::NewNode(public_id.clone());
                             let message = Message::DirectMessage(direct_message);
                             let raw_bytes = try!(serialisation::serialise(&message));
-                            self.crust_service.send(*notify_connection, raw_bytes);
+                            self.crust_service.send(notify_connection, raw_bytes);
                         }
                     }
                     if common_groups {
@@ -1096,7 +1135,6 @@ impl Core {
                 } else {
                     self.crust_service.drop_node(connection);
                     let _ = self.node_id_cache.remove(&name);
-                    let _ = self.node_connections.remove(&name);
 
                     return Ok(());
                 }
@@ -1196,7 +1234,10 @@ impl Core {
         }
 
         let close_group = match self.routing_table.close_nodes(&dst_name) {
-            Some(close_group) => close_group,
+            Some(close_group) => close_group.iter()
+                                            .map(NodeInfo::name)
+                                            .cloned()
+                                            .collect(),
             None => return Err(RoutingError::InvalidDestination),
         };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
@@ -1303,7 +1344,7 @@ impl Core {
             None => return Err(RoutingError::InvalidDestination),
         };
         let public_ids = close_group.into_iter()
-                                    .map(|name| self.node_ids[&name].clone())
+                                    .map(|info| info.public_id.clone())
                                     .collect_vec();
 
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
@@ -1477,20 +1518,24 @@ impl Core {
                             src_name: XorName,
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
-        if !self.routing_table.is_close(&dst_name) || !self.node_ids.contains_key(&dst_name) {
+        if !self.routing_table.is_close(&dst_name) {
             Err(RoutingError::RejectedPublicId)
         } else {
-            let response_content = ResponseContent::GetPublicId {
-                public_id: self.node_ids[&dst_name].clone(),
+            let msg = if let Some(info) = self.routing_table.get(&dst_name) {
+                let response_content = ResponseContent::GetPublicId {
+                    public_id: info.public_id.clone(),
+                };
+
+                ResponseMessage {
+                    src: Authority::NodeManager(dst_name),
+                    dst: Authority::ManagedNode(src_name),
+                    content: response_content,
+                }
+            } else {
+                return Err(RoutingError::RejectedPublicId);
             };
 
-            let response_msg = ResponseMessage {
-                src: Authority::NodeManager(dst_name),
-                dst: Authority::ManagedNode(src_name),
-                content: response_content,
-            };
-
-            self.send_response(response_msg)
+            self.send_response(msg)
         }
     }
 
@@ -1514,22 +1559,26 @@ impl Core {
                                            src_name: XorName,
                                            dst_name: XorName)
                                            -> Result<(), RoutingError> {
-        if !self.routing_table.is_close(&dst_name) || !self.node_ids.contains_key(&dst_name) {
+        if !self.routing_table.is_close(&dst_name) {
             Err(RoutingError::RejectedPublicId)
         } else {
-            let response_content = ResponseContent::GetPublicIdWithEndpoints {
-                public_id: self.node_ids[&dst_name].clone(),
-                encrypted_endpoints: encrypted_endpoints,
-                nonce_bytes: nonce_bytes,
+            let msg = if let Some(info) = self.routing_table.get(&dst_name) {
+                let response_content = ResponseContent::GetPublicIdWithEndpoints {
+                    public_id: info.public_id.clone(),
+                    encrypted_endpoints: encrypted_endpoints,
+                    nonce_bytes: nonce_bytes,
+                };
+
+                ResponseMessage {
+                    src: Authority::NodeManager(dst_name),
+                    dst: Authority::ManagedNode(src_name),
+                    content: response_content,
+                }
+            } else {
+                return Err(RoutingError::RejectedPublicId);
             };
 
-            let response_msg = ResponseMessage {
-                src: Authority::NodeManager(dst_name),
-                dst: Authority::ManagedNode(src_name),
-                content: response_content,
-            };
-
-            self.send_response(response_msg)
+            self.send_response(msg)
         }
     }
 
@@ -1642,11 +1691,11 @@ impl Core {
         let count = self.signed_message_filter.count(&signed_msg).saturating_sub(1);
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table.target_nodes(destination, hop, count);
-        targets.iter().foreach(|target_name| {
-            if let Some(connection) = self.get_connection(target_name) {
-                self.crust_service.send(connection.clone(), raw_bytes.clone());
+        for target in targets {
+            if let Some(connection) = target.connections.into_iter().next() {
+                self.crust_service.send(connection, raw_bytes.clone());
             }
-        });
+        }
 
         // If we need to handle this message, handle it.
         if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
@@ -1656,11 +1705,6 @@ impl Core {
         }
 
         Ok(())
-    }
-
-    /// Returns a connection to the node with the given name, if present.
-    fn get_connection(&self, name: &XorName) -> Option<&crust::Connection> {
-        self.node_connections.get(name).and_then(|connections| connections.iter().next())
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
@@ -1682,11 +1726,9 @@ impl Core {
         assert!(XorName(hash::sha512::hash(&self.full_id.public_id().signing_public_key().0).0) !=
                 new_name);
 
-        self.routing_table = RoutingTable::new(&new_name);
         self.full_id.public_id_mut().set_name(new_name);
-        self.node_ids = HashMap::new();
-        let _ = self.node_ids.insert(new_name, self.full_id.public_id().clone());
-        self.node_connections = HashMap::new();
+        let our_info = NodeInfo::new(self.full_id.public_id().clone(), None);
+        self.routing_table = RoutingTable::new(our_info);
     }
 
     fn dropped_client_connection(&mut self, connection: &crust::Connection) {
@@ -1705,40 +1747,42 @@ impl Core {
         let _ = self.proxy_map.remove(connection);
     }
 
-    fn dropped_routing_node_connection(&mut self, connection: &crust::Connection) {
-        if let Some((&name, _)) = self.node_connections
-                                      .iter()
-                                      .skip_while(|&(_, connections)| {
-                                          !connections.contains(connection)
-                                      })
-                                      .next() {
-            if let Some(connections) = self.node_connections.get_mut(&name) {
-                connections.remove(connection);
-            } else {
-                return;
-            }
-            if self.node_connections[&name].is_empty() {
-                let _ = self.node_connections.remove(&name);
-                let _ = self.node_ids.remove(&name);
-                if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
-                       self.routing_table.remove(&name) {
-                    if common_groups {
-                        // If the lost node shared some close group with us, send Churn.
-                        let event = Event::NodeLost(name.clone());
-                        if let Err(err) = self.event_sender.send(event) {
-                            error!("Error sending event to routing user - {:?}", err);
-                        }
-                    }
-                    if let Some(bucket_index) = incomplete_bucket {
-                        if let Err(e) = self.request_bucket_ids(bucket_index) {
-                            trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
-                                   bucket_index,
-                                   e);
-                        }
-                    }
-                }
-            }
-        };
+    fn dropped_routing_node_connection(&mut self, _connection: &crust::Connection) {
+        // TODO: dropping connections
+
+        // if let Some((&name, _)) = self.node_connections
+        //                               .iter()
+        //                               .skip_while(|&(_, connections)| {
+        //                                   !connections.contains(connection)
+        //                               })
+        //                               .next() {
+        //     if let Some(connections) = self.node_connections.get_mut(&name) {
+        //         connections.remove(connection);
+        //     } else {
+        //         return;
+        //     }
+        //     if self.node_connections[&name].is_empty() {
+        //         let _ = self.node_connections.remove(&name);
+        //         let _ = self.node_ids.remove(&name);
+        //         if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
+        //                self.routing_table.remove(&name) {
+        //             if common_groups {
+        //                 // If the lost node shared some close group with us, send Churn.
+        //                 let event = Event::NodeLost(name.clone());
+        //                 if let Err(err) = self.event_sender.send(event) {
+        //                     error!("Error sending event to routing user - {:?}", err);
+        //                 }
+        //             }
+        //             if let Some(bucket_index) = incomplete_bucket {
+        //                 if let Err(e) = self.request_bucket_ids(bucket_index) {
+        //                     trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
+        //                            bucket_index,
+        //                            e);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // };
     }
 
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
