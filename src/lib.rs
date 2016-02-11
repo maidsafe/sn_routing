@@ -164,7 +164,6 @@ extern crate maidsafe_utilities;
 extern crate accumulator;
 extern crate cbor;
 extern crate crust;
-extern crate ip;
 extern crate itertools;
 extern crate lru_time_cache;
 extern crate kademlia_routing_table;
@@ -175,7 +174,6 @@ extern crate sodiumoxide;
 extern crate time;
 extern crate xor_name;
 
-mod acceptors;
 mod action;
 mod authority;
 mod client;

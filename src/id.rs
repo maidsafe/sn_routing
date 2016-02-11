@@ -72,7 +72,7 @@ impl FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 /// Network identity component containing name and public keys.
 pub struct PublicId {
     public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
