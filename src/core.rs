@@ -276,10 +276,10 @@ impl Core {
                                 let close_group = self.routing_table
                                                       .close_nodes(&name)
                                                       .map(|infos| {
-                                                        infos.iter()
-                                                             .map(NodeInfo::name)
-                                                             .cloned()
-                                                             .collect()
+                                                          infos.iter()
+                                                               .map(NodeInfo::name)
+                                                               .cloned()
+                                                               .collect()
                                                       });
 
                                 if result_tx.send(close_group).is_err() {
@@ -388,10 +388,7 @@ impl Core {
                                        _result: io::Result<OurConnectionInfo>) {
     }
 
-    fn handle_new_message(&mut self,
-                          peer_id: PeerId,
-                          bytes: Vec<u8>)
-                          -> Result<(), RoutingError> {
+    fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
         match serialisation::deserialise(&bytes) {
             Ok(Message::HopMessage(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(Message::DirectMessage(direct_msg)) => {
@@ -928,8 +925,10 @@ impl Core {
             }
             DirectMessage::ClientToNode => {
                 if let Some((&peer_id, _)) = self.client_map
-                                            .iter()
-                                            .find(|&(_, &(client_id, _))| client_id == peer_id) {
+                                                 .iter()
+                                                 .find(|&(_, &(client_id, _))| {
+                                                     client_id == peer_id
+                                                 }) {
                     let _ = self.client_map.remove(&peer_id);
                 }
                 // TODO(afck): Try adding them to the routing table?
@@ -1052,8 +1051,8 @@ impl Core {
             }
         }
         if let Some((prev_id, _)) = self.client_map
-                                          .insert(public_id.signing_public_key().clone(),
-                                                  (peer_id, client_restriction)) {
+                                        .insert(public_id.signing_public_key().clone(),
+                                                (peer_id, client_restriction)) {
             debug!("Found previous Crust ID associated with client key - Dropping {:?}",
                    prev_id);
             self.crust_service.disconnect(&prev_id);
@@ -1063,37 +1062,50 @@ impl Core {
         Ok(())
     }
 
+    /// Returns whether the given node is in the cache with the given public ID.
+    fn node_in_cache(&mut self, public_id: &PublicId, peer_id: &PeerId) -> bool {
+        if let Some(their_public_id) = self.node_id_cache.get(public_id.name()).cloned() {
+            if their_public_id == *public_id {
+                return true;
+            }
+            warn!("Given Public ID and Public ID in cache don't match - Given {:?} :: In cache \
+                   {:?} Dropping peer {:?}",
+                  public_id,
+                  their_public_id,
+                  peer_id);
+        } else {
+            debug!("PublicId not found in node_id_cache - Dropping peer {:?}",
+                   peer_id);
+        }
+        false
+    }
+
     fn handle_node_identify(&mut self,
                             public_id: PublicId,
                             peer_id: PeerId)
                             -> Result<(), RoutingError> {
+        if !self.node_in_cache(&public_id, &peer_id) {
+            self.crust_service.disconnect(&peer_id);
+            return Ok(());
+        }
+
         let name = *public_id.name();
-        if let Some(their_public_id) = self.node_id_cache.get(&name).cloned() {
-            if their_public_id != public_id {
-                warn!("Given Public ID and Public ID in cache don't match - Given {:?} :: In \
-                       cache {:?} Dropping peer {:?}",
-                      public_id,
-                      their_public_id,
-                      peer_id);
+        if self.routing_table.contains(&name) {
+            // We already sent an identify to this peer.
+            return Ok(());
+        }
+        let info = NodeInfo::new(public_id.clone(), peer_id);
 
+        match self.routing_table.add(info) {
+            None => {
+                error!("Peer was not added to the routing table: {:?}", peer_id);
                 self.crust_service.disconnect(&peer_id);
+                let _ = self.node_id_cache.remove(&name);
                 return Ok(());
             }
-
-            if self.routing_table.contains(&name) {
-                // We already sent an identify to this peer.
-                return Ok(());
-            }
-            let info = NodeInfo::new(public_id.clone(), peer_id);
-
-            if let Some(AddedNodeDetails { must_notify, common_groups }) = self.routing_table
-                                                                               .add(info) {
+            Some(AddedNodeDetails { must_notify, common_groups }) => {
                 for notify_info in must_notify {
-                    let notify_id = notify_info.peer_id;
-                    let direct_message = DirectMessage::NewNode(public_id.clone());
-                    let message = Message::DirectMessage(direct_message);
-                    let raw_bytes = try!(serialisation::serialise(&message));
-                    try!(self.crust_service.send(&notify_id, &raw_bytes[..]));
+                    try!(self.notify_about_new_node(notify_info, public_id));
                 }
                 if common_groups {
                     let event = Event::NodeAdded(name);
@@ -1101,47 +1113,51 @@ impl Core {
                         error!("Error sending event to routing user - {:?}", err);
                     }
                 }
-            } else {
-                error!("Peer was not added to the routing table: {:?}", peer_id);
-                self.crust_service.disconnect(&peer_id);
-                let _ = self.node_id_cache.remove(&name);
-
-                return Ok(());
             }
-
-            self.state = State::Node;
-
-            if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
-                trace!("Routing table reached group size. Dropping proxy.");
-                let retained_node_ids: Vec<_> = self.proxy_map.keys().filter(|&peer_id| {
-                    if self.routing_table.find(|node| node.peer_id == *peer_id).is_none() {
-                        self.crust_service.disconnect(&peer_id);
-                        false
-                    } else {
-                        true
-                    }
-                }).cloned().collect();
-                for peer_id in retained_node_ids {
-                    try!(self.client_to_node(peer_id));
-                }
-                self.proxy_map.clear();
-                // We have all close contacts now and know which bucket addresses to
-                // request IDs from: All buckets up to the one containing the furthest
-                // close node might still be not maximally filled.
-                for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
-                    if let Err(e) = self.request_bucket_ids(i) {
-                        trace!("Failed to request endpoints from bucket {}: {:?}.", i, e);
-                    }
-                }
-            }
-
-            let _ = self.node_identify(peer_id);
-            return Ok(());
-        } else {
-            debug!("PublicId not found in node_id_cache - Dropping contact {:?}", peer_id);
-            self.crust_service.disconnect(&peer_id);
-            return Ok(());
         }
+
+        self.state = State::Node;
+
+        if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
+            trace!("Routing table reached group size. Dropping proxy.");
+            try!(self.drop_proxies());
+            // We have all close contacts now and know which bucket addresses to
+            // request IDs from: All buckets up to the one containing the furthest
+            // close node might still be not maximally filled.
+            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+                if let Err(e) = self.request_bucket_ids(i) {
+                    trace!("Failed to request endpoints from bucket {}: {:?}.", i, e);
+                }
+            }
+        }
+
+        self.node_identify(peer_id)
+    }
+
+    /// Send `NewNode` messages to the given contacts.
+    fn notify_about_new_node(&mut self,
+                             notify_info: NodeInfo,
+                             public_id: PublicId)
+                             -> Result<(), RoutingError> {
+        let notify_id = notify_info.peer_id;
+        let direct_message = DirectMessage::NewNode(public_id);
+        let message = Message::DirectMessage(direct_message);
+        let raw_bytes = try!(serialisation::serialise(&message));
+        try!(self.crust_service.send(&notify_id, &raw_bytes[..]));
+        Ok(())
+    }
+
+    /// Removes all proxy map entries and notifies or disconnects from them.
+    fn drop_proxies(&mut self) -> Result<(), RoutingError> {
+        let former_proxies = self.proxy_map.drain().collect_vec();
+        for (peer_id, public_id) in former_proxies {
+            if self.routing_table.contains(public_id.name()) {
+                try!(self.client_to_node(peer_id));
+            } else {
+                self.crust_service.disconnect(&peer_id);
+            }
+        }
+        Ok(())
     }
 
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
@@ -1173,8 +1189,8 @@ impl Core {
         thread::sleep(::std::time::Duration::from_secs(5));
         self.crust_service = match crust::Service::new(self.crust_sender.clone(),
                                                        CRUST_DEFAULT_BEACON_PORT) {
-           Ok(service) => service,
-           Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
+            Ok(service) => service,
+            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
         };
         // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
         //               Currently, ci_test's nodes all connect via the same beacon.
@@ -1213,10 +1229,12 @@ impl Core {
         }
 
         let close_group = match self.routing_table.close_nodes(&dst_name) {
-            Some(close_group) => close_group.iter()
-                                            .map(NodeInfo::name)
-                                            .cloned()
-                                            .collect(),
+            Some(close_group) => {
+                close_group.iter()
+                           .map(NodeInfo::name)
+                           .cloned()
+                           .collect()
+            }
             None => return Err(RoutingError::InvalidDestination),
         };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
@@ -1578,22 +1596,22 @@ impl Core {
     }
 
     fn connect(&mut self,
-               encrypted_endpoints: Vec<u8>,
-               nonce_bytes: [u8; box_::NONCEBYTES],
-               their_public_key: &box_::PublicKey)
+               _encrypted_endpoints: Vec<u8>,
+               _nonce_bytes: [u8; box_::NONCEBYTES],
+               _their_public_key: &box_::PublicKey)
                -> Result<(), RoutingError> {
-        let decipher_result = box_::open(&encrypted_endpoints,
-                                         &box_::Nonce(nonce_bytes),
-                                         their_public_key,
-                                         self.full_id.encrypting_private_key());
-
-        let serialised_endpoints = try!(decipher_result.map_err(|()| {
-            RoutingError::AsymmetricDecryptionFailure
-        }));
-        let _endpoints = try!(serialisation::deserialise(&serialised_endpoints));
-
         // TODO(afck): Exchange contact infos.
-        //self.crust_service.connect(0u32, endpoints);
+
+        // let decipher_result = box_::open(&encrypted_endpoints,
+        //                                 &box_::Nonce(nonce_bytes),
+        //                                 their_public_key,
+        //                                 self.full_id.encrypting_private_key());
+
+        // let serialised_endpoints = try!(decipher_result.map_err(|()| {
+        //    RoutingError::AsymmetricDecryptionFailure
+        // }));
+        // let _endpoints = try!(serialisation::deserialise(&serialised_endpoints));
+        // self.crust_service.connect(0u32, endpoints);
 
         Ok(())
     }
@@ -1652,8 +1670,8 @@ impl Core {
         if self.state == State::Client {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if let Some((peer_id, _)) = self.proxy_map
-                                           .iter()
-                                           .find(|elt| elt.1.name() == proxy_node_name) {
+                                                .iter()
+                                                .find(|elt| elt.1.name() == proxy_node_name) {
                     try!(self.crust_service.send(&peer_id, &raw_bytes[..]));
                     return Ok(());
                 }
@@ -1726,25 +1744,25 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
-         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
-             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
-                    self.routing_table.remove(node.public_id.name()) {
-                 if common_groups {
-                     // If the lost node shared some close group with us, send Churn.
-                     let event = Event::NodeLost(*node.public_id.name());
-                     if let Err(err) = self.event_sender.send(event) {
-                         error!("Error sending event to routing user - {:?}", err);
-                     }
-                 }
-                 if let Some(bucket_index) = incomplete_bucket {
-                     if let Err(e) = self.request_bucket_ids(bucket_index) {
-                         trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
-                                bucket_index,
-                                e);
-                     }
-                 }
-             }
-         };
+        if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
+            if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
+                   self.routing_table.remove(node.public_id.name()) {
+                if common_groups {
+                    // If the lost node shared some close group with us, send Churn.
+                    let event = Event::NodeLost(*node.public_id.name());
+                    if let Err(err) = self.event_sender.send(event) {
+                        error!("Error sending event to routing user - {:?}", err);
+                    }
+                }
+                if let Some(bucket_index) = incomplete_bucket {
+                    if let Err(e) = self.request_bucket_ids(bucket_index) {
+                        trace!("Failed to request replacement endpoints from bucket {}: {:?}.",
+                               bucket_index,
+                               e);
+                    }
+                }
+            }
+        };
     }
 
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
