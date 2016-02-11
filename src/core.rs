@@ -852,6 +852,13 @@ impl Core {
         Ok(())
     }
 
+    fn client_to_node(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+        let message = Message::DirectMessage(DirectMessage::ClientToNode);
+        let raw_bytes = try!(serialisation::serialise(&message));
+        try!(self.crust_service.send(&peer_id, &raw_bytes[..]));
+        Ok(())
+    }
+
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -917,6 +924,18 @@ impl Core {
                     warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
                 }
                 self.retry_bootstrap_with_blacklist(peer_id);
+                Ok(())
+            }
+            DirectMessage::ClientToNode => {
+                if let Some((&peer_id, _)) = self.client_map
+                                            .iter()
+                                            .find(|&(_, &(client_id, _))| client_id == peer_id) {
+                    let _ = self.client_map.remove(&peer_id);
+                }
+                // TODO(afck): Try adding them to the routing table?
+                if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                    self.crust_service.disconnect(&peer_id);
+                }
                 Ok(())
             }
             DirectMessage::ClientIdentify {
@@ -1094,14 +1113,17 @@ impl Core {
 
             if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
                 trace!("Routing table reached group size. Dropping proxy.");
-                self.proxy_map.keys().foreach(|&peer_id| {
-                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                let retained_node_ids: Vec<_> = self.proxy_map.keys().filter(|&peer_id| {
+                    if self.routing_table.find(|node| node.peer_id == *peer_id).is_none() {
                         self.crust_service.disconnect(&peer_id);
+                        false
                     } else {
-                        // TODO(afck): Send a message to the proxy that they may remove us from
-                        //             their client map.
+                        true
                     }
-                });
+                }).cloned().collect();
+                for peer_id in retained_node_ids {
+                    try!(self.client_to_node(peer_id));
+                }
                 self.proxy_map.clear();
                 // We have all close contacts now and know which bucket addresses to
                 // request IDs from: All buckets up to the one containing the furthest
