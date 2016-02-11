@@ -16,20 +16,25 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use rand;
-use sodiumoxide::crypto::sign;
-use routing::Authority;
-use xor_name::XorName;
+// use rand;
+// use routing::{Data, StructuredData};
+// use xor_name::XorName;
 
-pub fn test(client: &mut Client) {
+// pub fn test(client: &mut Client) {
+pub fn test() {
     println!("Running Messaging test");
 
-    client.register_online();
+    let sender = Client::new();
+    sender.register_online();
 
-    let metadata: Vec<u8> = generate_random_vec_u8(128);
-    let body: Vec<u8> = generate_random_vec_u8(128);
-    let receiver = Authority::Client { client_key: sign::gen_keypair().0, proxy_node_name: rand::random::<XorName>() };
-    let receiver_name = receiver.get_name().clone();
+    let receiver = Client::new();
+    let metadata = generate_random_vec_u8(128);
+    let body = generate_random_vec_u8(128);
+    let message_sent = sender.put_message(&metadata, &body, receiver.name());
 
-    client.put_message(&metadata, &body, &receiver_name);
+    receiver.register_online();
+    let optional_message = receiver.get_message();
+    assert!(optional_message.is_some());
+    let message_received = unwrap_option!(optional_message, "");
+    assert_eq!(message_received, message_sent);
 }

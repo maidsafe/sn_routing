@@ -184,8 +184,27 @@ impl MpidManager {
                 if self.chunk_store_inbox.has_chunk(&data.name()) {
                     return Err(InternalError::Client(ClientError::DataExists));
                 }
-                // TODO: how the sender's public key get retained?
+
                 let serialised_header = try!(serialise(&mpid_header));
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                    // Client is online.
+                    // TODO: how the sender's public key get retained?
+                    if account.put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
+                        try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
+                        let dst = Authority::ClientManager(mpid_header.sender().clone());
+                        let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                        let value = try!(serialise(&wrapper));
+                        let name = try!(mpid_header.name());
+                        let data = Data::PlainData(PlainData::new(name, value));
+                        try!(routing_node.send_post_request(request.dst.clone(), dst, data, message_id.clone()));
+                        return Ok(())
+                    } else {
+                        try!(routing_node.send_put_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                        return Ok(())
+                    }
+                }
+
                 if self.accounts
                        .entry(request.dst.get_name().clone())
                        .or_insert(Account::default())
@@ -197,14 +216,18 @@ impl MpidManager {
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
-                if self.chunk_store_outbox.has_chunk(&data.name()) {
-                    return Err(InternalError::Client(ClientError::DataExists));
-                }
                 if let Some(ref mut account) = self.accounts.get_mut(&request.dst.get_name().clone()) {
+                    if self.chunk_store_outbox.has_chunk(&data.name()) {
+                        return Err(InternalError::Client(ClientError::DataExists));
+                    }
                     let serialised_message = try!(serialise(&mpid_message));
                     try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
                     if let Authority::Client { client_key, .. } = request.src {
-                        account.put_into_outbox(serialised_message.len() as u64, &data.name(), &Some(client_key));
+                        if !account.put_into_outbox(serialised_message.len() as u64, &data.name(), &Some(client_key)) {
+                            try!(routing_node.send_put_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                            return Ok(())
+                        }
                     };
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
@@ -276,8 +299,8 @@ impl MpidManager {
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
                 let account = self.accounts
-                    .entry(request.dst.get_name().clone())
-                    .or_insert(Account::default());
+                                  .entry(request.dst.get_name().clone())
+                                  .or_insert(Account::default());
                 account.register_online(&request.src);
                 // Send post success to client.
                 let src = request.dst.clone();
