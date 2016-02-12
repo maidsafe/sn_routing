@@ -221,7 +221,6 @@ impl MpidManager {
                         return Err(InternalError::Client(ClientError::DataExists));
                     }
                     let serialised_message = try!(serialise(&mpid_message));
-                    try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
                     if let Authority::Client { client_key, .. } = request.src {
                         if !account.put_into_outbox(serialised_message.len() as u64, &data.name(), &Some(client_key)) {
                             try!(routing_node.send_put_failure(request.dst.clone(),
@@ -229,6 +228,7 @@ impl MpidManager {
                             return Ok(())
                         }
                     };
+                    try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
                     let dst = Authority::ClientManager(mpid_message.recipient().clone());
