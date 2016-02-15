@@ -461,6 +461,7 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
+        //trace!("{:?} Handling hop message: {:?}", self, hop_msg);
         if self.state == State::Node {
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
@@ -987,15 +988,18 @@ impl Core {
                 Ok(())
             }
             DirectMessage::ClientToNode => {
-                if let Some((&peer_id, _)) = self.client_map
+                if let Some((&public_id, _)) = self.client_map
                                                  .iter()
                                                  .find(|&(_, &(client_id, _))| {
                                                      client_id == peer_id
                                                  }) {
-                    let _ = self.client_map.remove(&peer_id);
+                    let _ = self.client_map.remove(&public_id);
                 }
                 // TODO(afck): Try adding them to the routing table?
                 if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                    error!("{:?}Client requested ClientToNode, but is not in routing table: {:?}",
+                           self,
+                           peer_id);
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
@@ -1148,12 +1152,13 @@ impl Core {
                             public_id: PublicId,
                             peer_id: PeerId)
                             -> Result<(), RoutingError> {
+        let name = *public_id.name();
+        trace!("{:?} Handling NodeIdentify from {:?}.", self, name);
         if !self.node_in_cache(&public_id, &peer_id) {
             self.crust_service.disconnect(&peer_id);
             return Ok(());
         }
 
-        let name = *public_id.name();
         if self.routing_table.contains(&name) {
             // We already sent an identify to this peer.
             return Ok(());
@@ -1168,6 +1173,7 @@ impl Core {
                 return Ok(());
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
+                trace!("{:?}: Added node to routing table: {:?}", self, name);
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
@@ -1243,6 +1249,7 @@ impl Core {
     }
 
     fn retry_bootstrap_with_blacklist(&mut self, peer_id: PeerId) {
+        trace!("{:?}Retry bootstrap without {:?}.", self, peer_id);
         self.crust_service.disconnect(&peer_id);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
@@ -1301,6 +1308,7 @@ impl Core {
             }
             None => return Err(RoutingError::InvalidDestination),
         };
+        trace!("Computing relocated name for {:?} from close group: {:?}", client_key, close_group);
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
 
@@ -1639,10 +1647,30 @@ impl Core {
                             src: Authority,
                             dst: Authority)
                             -> Result<(), RoutingError> {
-        let token = rand::random();
-        self.crust_service.prepare_connection_info(token);
-        let _ = self.connection_token_map.insert(token, (their_public_id, src, dst));
-        Ok(())
+        if let Some(peer_id) = self.get_proxy_or_client_peer_id(&their_public_id) {
+            self.node_identify(peer_id)
+        } else if !self.routing_table.contains(their_public_id.name()) &&
+                their_public_id.signing_public_key() != self.full_id.public_id().signing_public_key() {
+            let token = rand::random();
+            self.crust_service.prepare_connection_info(token);
+            let _ = self.connection_token_map.insert(token, (their_public_id, src, dst));
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Returns the peer ID of the given node if it is our proxy or client.
+    fn get_proxy_or_client_peer_id(&self, public_id: &PublicId) -> Option<PeerId> {
+        if let Some(&(peer_id, _)) = self.client_map.get(public_id.signing_public_key()) {
+            return Some(peer_id);
+        };
+        if let Some((&peer_id, _)) = self.proxy_map
+                                        .iter()
+                                        .find(|elt| elt.1 == public_id) {
+            return Some(peer_id);
+        }
+        None
     }
 
     fn connect(&mut self,
@@ -1806,6 +1834,7 @@ impl Core {
         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
                    self.routing_table.remove(node.public_id.name()) {
+                trace!("{:?} Dropped {:?} from the routing table.", self, node.public_id.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send Churn.
                     let event = Event::NodeLost(*node.public_id.name());
