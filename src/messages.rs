@@ -253,19 +253,19 @@ pub enum RequestContent {
     GetCloseGroup,
     /// Request a direct connection to the recipient.
     Connect,
-    /// Send our endpoints encrypted to a node we wish to connect to and have the keys for.
-    Endpoints {
-        /// Encrypted crust endpoints (socket address and protocol).
-        encrypted_endpoints: Vec<u8>,
+    /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
+    ConnectionInfo {
+        /// Encrypted Crust connection info.
+        encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Ask each member of a group near a node address for the `PublicId`.
     GetPublicId,
-    /// Ask for a `PublicId` but provide our endpoints encrytped.
-    GetPublicIdWithEndpoints {
-        /// Encrypted crust endpoints (socket address and protocol).
-        encrypted_endpoints: Vec<u8>,
+    /// Ask for a `PublicId` but provide our connection_info encrytped.
+    GetPublicIdWithConnectionInfo {
+        /// Encrypted crust connection_info (socket address and protocol).
+        encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
@@ -303,14 +303,14 @@ pub enum ResponseContent {
         /// The requested `PublicId`
         public_id: PublicId,
     },
-    /// Reply with the `PublicId` along with the sender's encrypted endpoints
+    /// Reply with the `PublicId` along with the sender's encrypted connection_info
     ///
     /// Sent from a `ManagedNode` to another node or client.
-    GetPublicIdWithEndpoints {
+    GetPublicIdWithConnectionInfo {
         /// Our `PublicId`
         public_id: PublicId,
-        /// Their endpoints
-        encrypted_endpoints: Vec<u8>,
+        /// Their connection_info
+        encrypted_connection_info: Vec<u8>,
         /// Message salt
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
@@ -432,13 +432,13 @@ impl fmt::Debug for RequestContent {
                 write!(formatter, "RequestContent {{ GetCloseGroup }}")
             }
             RequestContent::Connect => write!(formatter, "RequestContent {{ Connect }}"),
-            RequestContent::Endpoints { .. } => {
-                write!(formatter, "RequestContent {{ Endpoints {{ .. }} }}")
+            RequestContent::ConnectionInfo { .. } => {
+                write!(formatter, "RequestContent {{ ConnectionInfo {{ .. }} }}")
             }
             RequestContent::GetPublicId => write!(formatter, "RequestContent {{ GetPublicId }}"),
-            RequestContent::GetPublicIdWithEndpoints { .. } => {
+            RequestContent::GetPublicIdWithConnectionInfo { .. } => {
                 write!(formatter,
-                       "RequestContent {{ GetPublicIdWithEndpoints {{ .. }} }}")
+                       "RequestContent {{ GetPublicIdWithConnectionInfo {{ .. }} }}")
             }
             RequestContent::Refresh(..) => write!(formatter, "RequestContent {{ Refresh(..) }}"),
             RequestContent::Get(ref data_request, ref message_id) => {
@@ -482,9 +482,9 @@ impl fmt::Debug for ResponseContent {
                        "ResponseContent {{ GetPublicId {{ {:?} }} }}",
                        public_id)
             }
-            ResponseContent::GetPublicIdWithEndpoints { ref public_id, .. } => {
+            ResponseContent::GetPublicIdWithConnectionInfo { ref public_id, .. } => {
                 write!(formatter,
-                       "ResponseContent {{ GetPublicIdWithEndpoints {{ {:?}, .. }} }}",
+                       "ResponseContent {{ GetPublicIdWithConnectionInfo {{ {:?}, .. }} }}",
                        public_id)
             }
             ResponseContent::GetCloseGroup { ref close_group_ids } => {
