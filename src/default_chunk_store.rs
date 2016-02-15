@@ -20,7 +20,7 @@
 use chunk_store::{ChunkStore, Error};
 
 const PREFIX: &'static str = "safe-vault";
-const SIZE: usize = 1073741824;
+const SIZE: u64 = 1073741824;
 
 // Construct a new ChunkStore initialised with the default parameters.
 pub fn new() -> Result<ChunkStore, Error> {
