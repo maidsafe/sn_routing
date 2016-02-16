@@ -17,12 +17,12 @@ ctrlc = "~1.1.0"
 log = "~0.3.5"
 lru_time_cache = "~0.2.6"
 maidsafe_utilities = "~0.1.5"
+mpid_messaging = "~0.1.0"
 routing = "*"
 rustc-serialize = "~0.3.18"
 sodiumoxide = "~0.0.9"
 time = "~0.1.34"
 xor_name = "~0.0.3"
-mpid_messaging = "~0.1.0"
 
 [dev-dependencies]
 kademlia_routing_table = "~0.3.0"
