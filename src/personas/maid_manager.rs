@@ -158,7 +158,7 @@ impl MaidManager {
         // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
         // account
         let result = self.accounts
-                         .get_mut(request.src.name())
+                         .get_mut(request.dst.name())
                          .ok_or(ClientError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -197,18 +197,18 @@ impl MaidManager {
 
         // If the type_tag is 0, the account must not exist, else it must exist.
         if type_tag == 0 {
-            if self.accounts.contains_key(request.src.name()) {
+            if self.accounts.contains_key(request.dst.name()) {
                 let error = ClientError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
                 return Err(InternalError::Client(error));
             }
 
             // Create the account
-            let _ = self.accounts.insert(*request.src.name(), Account::default());
+            let _ = self.accounts.insert(*request.dst.name(), Account::default());
         } else {
             // Update the account
             let result = self.accounts
-                             .get_mut(request.src.name())
+                             .get_mut(request.dst.name())
                              .ok_or(ClientError::NoSuchAccount)
                              .and_then(|account| {
                                  account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
