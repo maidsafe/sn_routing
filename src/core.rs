@@ -337,7 +337,7 @@ impl Core {
             crust::Event::BootstrapConnect(peer_id) => self.handle_bootstrap_connect(peer_id),
             crust::Event::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
             crust::Event::NewPeer(result, peer_id) => self.handle_new_peer(result, peer_id),
-            crust::Event::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
+            crust::Event::LostPeer(peer_id, err) => self.handle_lost_peer(peer_id, err),
             crust::Event::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
                     Err(RoutingError::FilterCheckFailed) => (),
@@ -886,8 +886,8 @@ impl Core {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId) {
-        debug!("Lost connection to {:?}", peer_id);
+    fn handle_lost_peer(&mut self, peer_id: PeerId, err: io::Error) {
+        debug!("Lost connection to {:?}. Reason: {:?}", peer_id, err);
         self.dropped_routing_node_connection(&peer_id);
         self.dropped_client_connection(&peer_id);
         self.dropped_bootstrap_connection(&peer_id);
@@ -1308,9 +1308,9 @@ impl Core {
             }
             None => return Err(RoutingError::InvalidDestination),
         };
-        trace!("Computing relocated name for {:?} from close group: {:?}", client_key, close_group);
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
+        trace!("Computed relocated name {:?} for {:?}.", relocated_name, their_public_id.name());
 
         their_public_id.set_name(relocated_name.clone());
 
@@ -1416,7 +1416,7 @@ impl Core {
                                     .map(|info| info.public_id.clone())
                                     .collect_vec();
 
-        trace!("Sending GetCloseGroup response to {:?}.", src.name());
+        trace!("Sending GetCloseGroup response to {:?}.", src);
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
         let response_msg = ResponseMessage {
@@ -1652,8 +1652,12 @@ impl Core {
         } else if !self.routing_table.contains(their_public_id.name()) &&
                 their_public_id.signing_public_key() != self.full_id.public_id().signing_public_key() {
             let token = rand::random();
-            self.crust_service.prepare_connection_info(token);
-            let _ = self.connection_token_map.insert(token, (their_public_id, src, dst));
+            if self.our_connection_info_map.contains_key(&their_public_id) {
+                debug!("Already sent connection info to {:?}!", their_public_id.name());
+            } else {
+                self.crust_service.prepare_connection_info(token);
+                let _ = self.connection_token_map.insert(token, (their_public_id, src, dst));
+            }
             Ok(())
         } else {
             Ok(())
