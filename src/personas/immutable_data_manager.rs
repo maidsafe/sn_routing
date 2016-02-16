@@ -528,6 +528,7 @@ impl ImmutableDataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
+    use maidsafe_utilities::log;
     use rand::random;
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
                   RequestMessage};
@@ -544,15 +545,21 @@ mod test {
     }
 
     fn environment_setup() -> Environment {
+        log::init(false);
         let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
         let immutable_data_manager = ImmutableDataManager::new();
-        let value = generate_random_vec_u8(1024);
-        let data = ImmutableData::new(ImmutableDataType::Normal, value);
-        Environment {
-            our_authority: Authority::NaeManager(data.name().clone()),
-            routing: routing,
-            immutable_data_manager: immutable_data_manager,
-            data: data,
+        loop {
+            // Create random ImmutableData until we get one we're close to.
+            let value = generate_random_vec_u8(1024);
+            let data = ImmutableData::new(ImmutableDataType::Normal, value);
+            if unwrap_result!(routing.close_group(data.name())).is_some() {
+                return Environment {
+                    our_authority: Authority::NaeManager(data.name().clone()),
+                    routing: routing,
+                    immutable_data_manager: immutable_data_manager,
+                    data: data,
+                };
+            }
         }
     }
 
