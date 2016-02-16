@@ -25,6 +25,7 @@ use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
+use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -84,7 +85,7 @@ impl MailBox {
 }
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
-struct Account {
+pub struct Account {
     // account owners' registered client proxies
     clients: Vec<Authority>,
     inbox: MailBox,
@@ -457,6 +458,44 @@ impl MpidManager {
         }
 
         Ok(())
+    }
+
+    pub fn handle_refresh(&mut self, name: XorName, account: &Account, stored_messages: &Vec<PlainData>, received_headers: &Vec<PlainData>) {
+        let _ = self.accounts.insert(name.clone(), account.clone());
+        Self::insert_chunks(& mut self.chunk_store_outbox, stored_messages);
+        Self::insert_chunks(& mut self.chunk_store_inbox, received_headers);
+    }
+
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+        for (mpid_name, account) in self.accounts.iter() {
+            let received_headers = Self::fetch_chunks(&self.chunk_store_inbox, &account.received_headers());
+            let stored_messages = Self::fetch_chunks(&self.chunk_store_outbox, &account.stored_messages());
+
+            let src = Authority::ClientManager(mpid_name.clone());
+            let refresh = Refresh::new(mpid_name, RefreshValue::MpidManager(account.clone(), stored_messages, received_headers));
+            if let Ok(serialised_refresh) = serialise(&refresh) {
+                debug!("MpidManager sending refresh for account {:?}", src.name());
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            }
+        }
+    }
+
+    fn fetch_chunks(storage: &ChunkStore, names: &Vec<XorName>) -> Vec<PlainData> {
+        let mut datas = Vec::new();
+        for name in names.iter() {
+            if let Ok(data) = storage.get(name) {
+                datas.push(PlainData::new(name.clone(), data));
+            }
+        }
+        datas
+    }
+
+    fn insert_chunks(storage: &mut ChunkStore, datas: &Vec<PlainData>) {
+        for data in datas.iter() {
+            if !storage.has_chunk(&data.name()) {
+                let _ = storage.put(&data.name(), data.value());
+            }
+        }
     }
 }
 
