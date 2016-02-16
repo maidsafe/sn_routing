@@ -16,7 +16,7 @@ clippy = {version = "~0.0.37", optional = true}
 crust = { git="https://github.com/afck/crust.git", branch="connect_tcp" }
 ip = "~1.1.0"
 itertools = "~0.4.5"
-kademlia_routing_table = { git="https://github.com/afck/kademlia_routing_table.git" }
+kademlia_routing_table = { git="https://github.com/maidsafe/kademlia_routing_table.git" }
 log = "~0.3.4"
 lru_time_cache = "~0.2.5"
 maidsafe_utilities = "~0.1.5"
