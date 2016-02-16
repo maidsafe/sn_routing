@@ -801,9 +801,9 @@ impl Core {
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => {
                 self.handle_get_public_id_with_connection_info(encrypted_connection_info,
-                                                         nonce_bytes,
-                                                         src_name,
-                                                         dst_name)
+                                                               nonce_bytes,
+                                                               src_name,
+                                                               dst_name)
             }
             (RequestContent::Get(..), _, _) |
             (RequestContent::Put(..), _, _) |
@@ -1451,9 +1451,10 @@ impl Core {
 
         // From A -> Each in Y
         for close_node_id in close_group_ids {
-            trace!("Inserting {:?} into node_id_cache.", close_node_id);
             if self.node_id_cache.insert(*close_node_id.name(), close_node_id.clone()).is_none() &&
-               self.routing_table.allow_connection(close_node_id.name()) {
+                !self.routing_table.contains(close_node_id.name()) &&
+                self.routing_table.allow_connection(close_node_id.name()) {
+                trace!("Sending connection info to {:?} on GetCloseGroup response.", close_node_id);
                 try!(self.send_connection_info(close_node_id.clone(),
                                                dst.clone(),
                                                Authority::ManagedNode(*close_node_id.name())));
@@ -1513,7 +1514,7 @@ impl Core {
 
             let request_msg = RequestMessage {
                 src: dst,
-                dst: Authority::ManagedNode(src_name),
+                dst: Authority::NodeManager(src_name),
                 content: request_content,
             };
 
