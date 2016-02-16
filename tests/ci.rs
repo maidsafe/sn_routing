@@ -43,18 +43,13 @@ extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
+extern crate time;
 extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
 
 #[cfg(not(feature = "use-mock-routing"))]
 mod detail;
-#[cfg(not(feature = "use-mock-routing"))]
-use xor_name::XorName;
-#[cfg(not(feature = "use-mock-routing"))]
-use routing::StructuredData;
-#[cfg(not(feature = "use-mock-routing"))]
-use routing::Data;
 
 #[cfg(not(feature = "use-mock-routing"))]
 fn main() {
@@ -62,13 +57,14 @@ fn main() {
     maidsafe_utilities::log::init(false);
     let vault_count = 10;
     let processes = setup_network(vault_count);
-    let mut client = Client::new();
 
-    let sd = unwrap_result!(StructuredData::new(0, rand::random::<XorName>(), 0, vec![], vec![], vec![], None));
-    let _ = client.put(Data::StructuredData(sd));
+    immutable_data_test();
+    structured_data_test();
 
-    immutable_data_churn_test(&mut client);
-    structured_data_churn_test(&mut client);
+    // let mut client = Client::new();
+
+    // immutable_data_churn_test(&mut client);
+    // structured_data_churn_test(&mut client);
 
     for mut process in processes {
         let _ = process.kill();

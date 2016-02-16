@@ -17,8 +17,9 @@
 
 #![allow(unused)]
 
-use std::sync::mpsc;
-
+use std::sync::mpsc::{self, TryRecvError};
+use std::thread;
+use std::time::Duration;
 use routing::{self, Authority, Data, DataRequest, Event, FullId, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto;
 use xor_name::XorName;
@@ -64,26 +65,19 @@ impl Client {
         }
     }
 
-    /// Send a `Get` request to the network and return the data received in the response.
+    /// Send a `Get` request to the network and return the received response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
-    pub fn get(&mut self, request: DataRequest) -> Option<Data> {
+    pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()), request.clone()));
 
-        // Wait for Get success event from Routing
+        // Wait for Get response event from Routing
         for it in self.receiver.iter() {
-            match it {
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(data, _), .. }) => return Some(data),
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure { external_error_indicator, .. }, .. }) => {
-                    error!("Failed to Get {:?}: {:?}",
-                           request.name(),
-                           unwrap_result!(String::from_utf8(external_error_indicator)));
-                    return None;
-                }
-                _ => (),
+            if let Event::Response(response_message) = it {
+                return Some(response_message)
+            } else {
+                panic!("Unexpected event {:?}", it);
             }
         }
 
@@ -92,27 +86,52 @@ impl Client {
 
     /// Send a `Put` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
-    pub fn put(&self, data: Data) {
-        let data_name = data.name();
+    /// This is a blocking call and will wait indefinitely for a response.
+    pub fn put(&self, data: Data) -> Option<ResponseMessage> {
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
 
-        // Wait for Put success event from Routing
+        // Wait for Put response event from Routing
         for it in self.receiver.iter() {
-            if let Event::Response(ResponseMessage {
-                content: ResponseContent::PutSuccess(..), .. }) = it {
-                println!("Successfully stored {:?}", data_name);
-                break;
+            if let Event::Response(response_message) = it {
+                return Some(response_message)
             } else {
-                panic!("Failed to store {:?}", data_name);
+                panic!("Unexpected event {:?}", it);
             }
         }
+
+        None
     }
 
     /// Post data onto the network.
-    pub fn post(&self) {
-        unimplemented!()
+    pub fn post(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::NaeManager(data.name()), data));
+
+        let timeout = Duration::from_millis(10000);
+        let interval = Duration::from_millis(100);
+        let mut elapsed = Duration::from_millis(0);
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(value) => {
+                    if let Event::Response(response_message) = value {
+                        return Some(response_message)
+                    }
+                }
+                Err(TryRecvError::Disconnected) => break,
+                _ => (),
+            }
+
+            thread::sleep(interval);
+            elapsed = elapsed + interval;
+
+            if elapsed > timeout {
+                break;
+            }
+        }
+
+        None
     }
 
     /// Delete data from the network.
@@ -123,5 +142,15 @@ impl Client {
     /// Return network name.
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
+    }
+
+    /// Return public signing key.
+    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+        self.full_id.public_id().signing_public_key().clone()
+    }
+
+    /// Return secret signing key.
+    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
+        self.full_id.signing_private_key()
     }
 }

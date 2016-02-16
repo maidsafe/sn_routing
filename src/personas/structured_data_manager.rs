@@ -47,16 +47,22 @@ impl StructuredDataManager {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = try!(self.chunk_store.get(&data_name));
-        let decoded = try!(serialisation::deserialise::<StructuredData>(&data));
-        debug!("As {:?} sending data {:?} to {:?}",
-               request.dst,
-               Data::StructuredData(decoded.clone()),
-               request.src);
-        let _ = routing_node.send_get_success(request.dst.clone(),
-                                              request.src.clone(),
-                                              Data::StructuredData(decoded),
-                                              message_id.clone());
+        if let Ok(data) = self.chunk_store.get(&data_name) {
+            if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
+                debug!("As {:?} sending data {:?} to {:?}",
+                       request.dst,
+                       Data::StructuredData(decoded.clone()),
+                       request.src);
+                let _ = routing_node.send_get_success(request.dst.clone(),
+                                                      request.src.clone(),
+                                                      Data::StructuredData(decoded),
+                                                      message_id.clone());
+                return Ok(())
+            }
+        }
+
+        try!(routing_node.send_get_failure(
+            request.dst.clone(), request.src.clone(), request.clone(), Vec::new(), message_id.clone()));
         Ok(())
     }
 
@@ -90,20 +96,37 @@ impl StructuredDataManager {
         Ok(())
     }
 
-    pub fn handle_post(&mut self, request: &RequestMessage) -> Result<(), InternalError> {
-        let new_data = match &request.content {
-            &RequestContent::Post(Data::StructuredData(ref structured_data), _) => structured_data,
+    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (new_data, message_id) = match &request.content {
+            &RequestContent::Post(Data::StructuredData(ref structured_data), ref message_id) =>
+                (structured_data, message_id),
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let mut serialised_data = try!(self.chunk_store.get(&new_data.name()));
-        let mut existing_data = try!(serialisation::deserialise::<StructuredData>(&serialised_data));
-        debug!("StructuredDataManager updating {:?} to {:?}",
-               existing_data,
-               new_data);
-        try!(existing_data.replace_with_other(new_data.clone()));
-        serialised_data = try!(serialisation::serialise(&existing_data));
-        try!(self.chunk_store.put(&new_data.name(), &serialised_data));
+        if let Ok(serialised_data) = self.chunk_store.get(&new_data.name()) {
+            if let Ok(mut existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
+                debug!("StructuredDataManager updating {:?} to {:?}", existing_data, new_data);
+                if existing_data.replace_with_other(new_data.clone()).is_ok() {
+                    if let Ok(serialised_data) = serialisation::serialise(&existing_data) {
+                        if let Ok(()) = self.chunk_store.put(&existing_data.name(), &serialised_data) {
+                            if let Ok(serialised_request) = serialisation::serialise(request) {
+                                let digest = sha512::hash(&serialised_request[..]);
+                                let _ = routing_node.send_post_success(request.dst.clone(),
+                                                                       request.src.clone(),
+                                                                       digest,
+                                                                       message_id.clone());
+                                return Ok(())
+                            }
+                        }
+                    }
+                } else {
+                    return Ok(())
+                }
+            }
+        }
+
+        try!(routing_node.send_post_failure(
+            request.dst.clone(), request.src.clone(), request.clone(), Vec::new(), message_id.clone()));
         Ok(())
     }
 

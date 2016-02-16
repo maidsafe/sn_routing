@@ -31,8 +31,8 @@ use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::{self, XorName};
 
-pub const REPLICANTS: usize = 2;
-pub const MIN_REPLICANTS: usize = 2;
+pub const REPLICANTS: usize = 6;
+pub const MIN_REPLICANTS: usize = 6;
 
 // This is the name of a PmidNode which has been chosen to store the data on.  It is assumed to be
 // `Good` (can return the data) until it fails a Get request, at which time it is deemed `Failed`.
