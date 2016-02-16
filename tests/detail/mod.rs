@@ -21,11 +21,15 @@ mod test_cases;
 
 pub use self::client::Client;
 pub use self::setup_network::setup_network;
+pub use self::test_cases::immutable_data::test as immutable_data_test;
+pub use self::test_cases::structured_data::test as structured_data_test;
 pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
 pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
 pub use self::test_cases::messaging::test as messaging_test;
 
 use rand::random;
+use routing::{Data, StructuredData};
+use xor_name::XorName;
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
@@ -33,4 +37,9 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
         vec.push(random::<u8>());
     }
     vec
+}
+
+pub fn create_account(client: &mut Client) {
+    let sd = unwrap_result!(StructuredData::new(0, random::<XorName>(), 0, vec![], vec![], vec![], None));
+    let _ = client.put(Data::StructuredData(sd));
 }

@@ -17,6 +17,7 @@
 
 use super::Client;
 
+#[allow(unused)]
 pub fn test(_client: &mut Client) {
     println!("Running StructuredData churn test");
     // let mut processes = start_vaults(4);

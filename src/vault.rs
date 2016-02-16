@@ -186,7 +186,9 @@ impl Vault {
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::StructuredData(_), _)) => self.structured_data_manager.handle_post(&request),
+             &RequestContent::Post(Data::StructuredData(_), _)) => {
+                self.structured_data_manager.handle_post(routing_node, &request)
+            }
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
              &RequestContent::Post(Data::PlainData(_), _)) |

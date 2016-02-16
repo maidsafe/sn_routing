@@ -113,7 +113,7 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Refund account
-                match self.accounts.get_mut(client_request.src.name()) {
+                match self.accounts.get_mut(client_request.dst.name()) {
                     Some(account) => account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */),
                     None => return Ok(()),
                 }

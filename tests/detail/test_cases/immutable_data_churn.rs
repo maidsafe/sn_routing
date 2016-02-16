@@ -16,14 +16,16 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use routing::{Data, ImmutableData, ImmutableDataType};
+// use routing::{Data, ImmutableData, ImmutableDataType};
 
-pub fn test(client: &mut Client) {
+#[allow(unused)]
+pub fn test(_client: &mut Client) {
     println!("Running ImmutableData churn test");
 
-    let value = generate_random_vec_u8(1024);
-    let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
-    client.put(Data::ImmutableData(im_data.clone()));
+    // let value = generate_random_vec_u8(1024);
+    // let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
+    // client.put(Data::ImmutableData(im_data.clone()));
+
     // let duration = Duration::from_millis(5000);
     // thread::sleep(duration);
 
