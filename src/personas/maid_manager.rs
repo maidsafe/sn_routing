@@ -157,8 +157,9 @@ impl MaidManager {
 
         // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
         // account
+        let client_name = self.client_name(&request.src);
         let result = self.accounts
-                         .get_mut(request.dst.name())
+                         .get_mut(&client_name)
                          .ok_or(ClientError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -196,19 +197,20 @@ impl MaidManager {
         };
 
         // If the type_tag is 0, the account must not exist, else it must exist.
+        let client_name = self.client_name(&request.src);
         if type_tag == 0 {
-            if self.accounts.contains_key(request.dst.name()) {
+            if self.accounts.contains_key(&client_name) {
                 let error = ClientError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
                 return Err(InternalError::Client(error));
             }
 
             // Create the account
-            let _ = self.accounts.insert(*request.dst.name(), Account::default());
+            let _ = self.accounts.insert(client_name, Account::default());
         } else {
             // Update the account
             let result = self.accounts
-                             .get_mut(request.dst.name())
+                             .get_mut(&client_name)
                              .ok_or(ClientError::NoSuchAccount)
                              .and_then(|account| {
                                  account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -243,6 +245,13 @@ impl MaidManager {
         let external_error_indicator = try!(serialisation::serialise(error));
         let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
         Ok(())
+    }
+
+    fn client_name(&self, authority: &Authority) -> XorName {
+        match authority {
+            &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
+            _ => unreachable!("Logic error"),
+        }
     }
 }
 

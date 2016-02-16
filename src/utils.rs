@@ -15,15 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust;
+use config_file_handler;
 use std::{env, process, sync};
-use std::path::Path;
+use std::ffi::OsString;
 
 static HANDLE_VERSION: sync::Once = sync::ONCE_INIT;
 
 pub fn handle_version() {
     HANDLE_VERSION.call_once(|| {
-        let name = crust::exe_file_stem().unwrap_or(Path::new("").to_path_buf());
+        let name = config_file_handler::exe_file_stem().unwrap_or(OsString::new());
         let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
         if env::args().any(|arg| arg == "--version") {
             println!("{}", name_and_version);

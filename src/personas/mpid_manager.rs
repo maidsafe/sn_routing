@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 use std::collections::HashMap;
-
 use sodiumoxide::crypto::sign::PublicKey;
-
+use sodiumoxide::crypto::hash::sha512;
 use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
+use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -84,7 +84,7 @@ impl MailBox {
 }
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
-struct Account {
+pub struct Account {
     // account owners' registered client proxies
     clients: Vec<Authority>,
     inbox: MailBox,
@@ -179,8 +179,27 @@ impl MpidManager {
                 if self.chunk_store_inbox.has_chunk(&data.name()) {
                     return Err(InternalError::Client(ClientError::DataExists));
                 }
-                // TODO: how the sender's public key get retained?
+
                 let serialised_header = try!(serialise(&mpid_header));
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.name().clone()) {
+                    // Client is online.
+                    // TODO: how the sender's public key get retained?
+                    if account.put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
+                        try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
+                        let dst = Authority::ClientManager(mpid_header.sender().clone());
+                        let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                        let value = try!(serialise(&wrapper));
+                        let name = try!(mpid_header.name());
+                        let data = Data::PlainData(PlainData::new(name, value));
+                        try!(routing_node.send_post_request(request.dst.clone(), dst, data, message_id.clone()));
+                        return Ok(())
+                    } else {
+                        try!(routing_node.send_put_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                        return Ok(())
+                    }
+                }
+
                 if self.accounts
                        .entry(request.dst.name().clone())
                        .or_insert(Account::default())
@@ -195,15 +214,18 @@ impl MpidManager {
                 }
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
-                if self.chunk_store_outbox.has_chunk(&data.name()) {
-                    return Err(InternalError::Client(ClientError::DataExists));
-                }
-                // TODO: how the sender's public key get retained?
-                let serialised_message = try!(serialise(&mpid_message));
-                if self.accounts
-                       .entry(request.dst.name().clone())
-                       .or_insert(Account::default())
-                       .put_into_outbox(serialised_message.len() as u64, &data.name(), &None) {
+                if let Some(ref mut account) = self.accounts.get_mut(&request.dst.name().clone()) {
+                    if self.chunk_store_outbox.has_chunk(&data.name()) {
+                        return Err(InternalError::Client(ClientError::DataExists));
+                    }
+                    let serialised_message = try!(serialise(&mpid_message));
+                    if let Authority::Client { client_key, .. } = request.src {
+                        if !account.put_into_outbox(serialised_message.len() as u64, &data.name(), &Some(client_key)) {
+                            try!(routing_node.send_put_failure(request.dst.clone(),
+                                request.src.clone(), request.clone(), Vec::new(), message_id));
+                            return Ok(())
+                        }
+                    };
                     try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
                     // Send notification to receiver's MpidManager
                     let src = request.dst.clone();
@@ -213,7 +235,13 @@ impl MpidManager {
                     let name = try!(mpid_message.header().name());
                     let notification = Data::PlainData(PlainData::new(name, serialised_wrapper));
                     try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
+                    // Send put success to Client.
+                    let src = request.dst.clone();
+                    let dst = request.src.clone();
+                    let digest = sha512::hash(&try!(serialise(request))[..]);
+                    let _ = routing_node.send_put_success(src, dst, digest, message_id);
                 } else {
+                    // Client not registered online.
                     try!(routing_node.send_put_failure(request.dst.clone(),
                                                        request.src.clone(),
                                                        request.clone(),
@@ -275,6 +303,11 @@ impl MpidManager {
                                   .entry(request.dst.name().clone())
                                   .or_insert(Account::default());
                 account.register_online(&request.src);
+                // Send post success to client.
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let digest = sha512::hash(&try!(serialise(request))[..]);
+                let _ = routing_node.send_post_success(src, dst, digest, message_id.clone());
                 // For each received header in the inbox, fetch the full message from the sender
                 let received_headers = account.received_headers();
                 for header in received_headers.iter() {
@@ -458,6 +491,44 @@ impl MpidManager {
 
         Ok(())
     }
+
+    pub fn handle_refresh(&mut self, name: XorName, account: &Account, stored_messages: &Vec<PlainData>, received_headers: &Vec<PlainData>) {
+        let _ = self.accounts.insert(name.clone(), account.clone());
+        Self::insert_chunks(& mut self.chunk_store_outbox, stored_messages);
+        Self::insert_chunks(& mut self.chunk_store_inbox, received_headers);
+    }
+
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+        for (mpid_name, account) in self.accounts.iter() {
+            let received_headers = Self::fetch_chunks(&self.chunk_store_inbox, &account.received_headers());
+            let stored_messages = Self::fetch_chunks(&self.chunk_store_outbox, &account.stored_messages());
+
+            let src = Authority::ClientManager(mpid_name.clone());
+            let refresh = Refresh::new(mpid_name, RefreshValue::MpidManager(account.clone(), stored_messages, received_headers));
+            if let Ok(serialised_refresh) = serialise(&refresh) {
+                debug!("MpidManager sending refresh for account {:?}", src.name());
+                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            }
+        }
+    }
+
+    fn fetch_chunks(storage: &ChunkStore, names: &Vec<XorName>) -> Vec<PlainData> {
+        let mut datas = Vec::new();
+        for name in names.iter() {
+            if let Ok(data) = storage.get(name) {
+                datas.push(PlainData::new(name.clone(), data));
+            }
+        }
+        datas
+    }
+
+    fn insert_chunks(storage: &mut ChunkStore, datas: &Vec<PlainData>) {
+        for data in datas.iter() {
+            if !storage.has_chunk(&data.name()) {
+                let _ = storage.put(&data.name(), data.value());
+            }
+        }
+    }
 }
 
 
@@ -608,6 +679,11 @@ mod test {
     #[test]
     fn put_message() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
@@ -665,6 +741,11 @@ mod test {
     #[test]
     fn put_message_and_header_twice() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();
@@ -758,6 +839,11 @@ mod test {
     #[test]
     fn get_message() {
         let mut env = environment_setup();
+        // register client sender online...
+        let src = env.client.clone();
+        let dst = env.our_authority.clone();
+        register_online(&mut env, &src, &dst);
+
         // put message...
         let (_public_key, secret_key) = sign::gen_keypair();
         let sender = rand::random::<XorName>();

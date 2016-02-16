@@ -254,6 +254,7 @@ impl Vault {
         self.immutable_data_manager.handle_node_added(routing_node, node_added);
         self.structured_data_manager.handle_churn(routing_node);
         self.pmid_manager.handle_churn(routing_node);
+        self.mpid_manager.handle_churn(routing_node);
         Ok(())
     }
 
@@ -262,6 +263,7 @@ impl Vault {
         self.immutable_data_manager.handle_node_lost(routing_node, node_lost);
         self.structured_data_manager.handle_churn(routing_node);
         self.pmid_manager.handle_churn(routing_node);
+        self.mpid_manager.handle_churn(routing_node);
         Ok(())
     }
 
@@ -283,6 +285,11 @@ impl Vault {
              &Authority::ClientManager(_),
              &RefreshValue::MaidManager(ref account)) => {
                 Ok(self.maid_manager.handle_refresh(refresh.name, account.clone()))
+            }
+            (&Authority::ClientManager(_),
+             &Authority::ClientManager(_),
+             &RefreshValue::MpidManager(ref account, ref stored_messages, ref received_headers)) => {
+                Ok(self.mpid_manager.handle_refresh(refresh.name, account, stored_messages, received_headers))
             }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),

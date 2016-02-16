@@ -15,31 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-mod client;
-mod setup_network;
-mod test_cases;
+use super::*;
 
-pub use self::client::Client;
-pub use self::setup_network::setup_network;
-pub use self::test_cases::immutable_data::test as immutable_data_test;
-pub use self::test_cases::structured_data::test as structured_data_test;
-pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
-pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
-pub use self::test_cases::messaging::test as messaging_test;
+pub fn test() {
+    println!("Running Messaging test");
 
-use rand::random;
-use routing::{Data, StructuredData};
-use xor_name::XorName;
+    let sender = Client::new();
+    sender.register_online();
+    let receiver = Client::new();
+    receiver.register_online();
 
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
-}
+    let message_sent = sender.put_message(receiver.name());
+    let optional_message = receiver.get_message();
 
-pub fn create_account(client: &mut Client) {
-    let sd = unwrap_result!(StructuredData::new(0, random::<XorName>(), 0, vec![], vec![], vec![], None));
-    let _ = client.put(Data::StructuredData(sd));
+    assert!(optional_message.is_some());
+
+    let message_received = unwrap_option!(optional_message, "");
+
+    assert_eq!(message_received, message_sent);
 }

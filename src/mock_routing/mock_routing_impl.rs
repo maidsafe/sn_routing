@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::{group_size, optimal_table_size};
+use kademlia_routing_table::{GROUP_SIZE, ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent, RequestMessage,
@@ -27,10 +27,19 @@ use std::thread::sleep;
 use std::time::Duration;
 use xor_name::{XorName, closer_to_target};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NodeInfo(XorName);
+
+impl ContactInfo for NodeInfo {
+    fn name(&self) -> &XorName {
+        &self.0
+    }
+}
+
 pub struct MockRoutingNodeImpl {
     name: XorName,
     // TODO: Use RT crate instead of this Vec<XorName> (provides realistic result for `close_nodes`)
-    peers: Vec<XorName>,
+    routing_table: RoutingTable<NodeInfo>,
     sender: mpsc::Sender<Event>,
     client_sender: mpsc::Sender<Event>,
     simulated_latency: Duration,
@@ -54,20 +63,14 @@ impl MockRoutingNodeImpl {
     pub fn new(sender: mpsc::Sender<Event>) -> MockRoutingNodeImpl {
         let (client_sender, _) = mpsc::channel();
         let name: XorName = random();
-        let mut peers = Vec::with_capacity(optimal_table_size());
-        for _ in 0..optimal_table_size() {
-            peers.push(random());
+        let mut routing_table = RoutingTable::new(NodeInfo(name));
+        for _ in 0..1000 {
+            let _ = routing_table.add(NodeInfo(random()));
         }
-        peers.sort_by(|a, b| {
-            match closer_to_target(&a, &b, &name) {
-                true => Ordering::Less,
-                false => Ordering::Greater,
-            }
-        });
 
         MockRoutingNodeImpl {
             name: name,
-            peers: peers,
+            routing_table: routing_table,
             sender: sender,
             client_sender: client_sender,
             simulated_latency: Duration::from_millis(200),
@@ -349,7 +352,9 @@ impl MockRoutingNodeImpl {
     }
 
     pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
-        Ok(Some(self.peers.iter().take(group_size()).cloned().collect()))
+        Ok(self.routing_table.close_nodes(&name).map(|infos| {
+            infos.iter().map(|info| &info.0).cloned().collect()
+        }))
     }
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
