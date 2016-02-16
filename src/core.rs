@@ -1236,6 +1236,7 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+        trace!("Send GetCloseGroup to bucket {}.", bucket_index);
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(*self.name()),
