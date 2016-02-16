@@ -63,7 +63,7 @@ impl PmidNode {
         let data_name = data.name();
         info!("pmid_node {:?} storing {:?}", request.dst.name(), data_name);
         let serialised_data = try!(serialisation::serialise(&data));
-        if self.chunk_store.has_space(serialised_data.len()) {
+        if self.chunk_store.has_space(serialised_data.len() as u64) {
             // the type_tag needs to be stored as well
             // TODO: error handling
             try!(self.chunk_store.put(&data_name, &serialised_data));
@@ -79,7 +79,7 @@ impl PmidNode {
 
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
         // out Sacrificial chunks.
-        let required_space = serialised_data.len() - (self.chunk_store.max_space() - self.chunk_store.used_space());
+        let required_space = serialised_data.len() - (self.chunk_store.max_space() - self.chunk_store.used_space()) as usize;
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
