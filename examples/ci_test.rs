@@ -116,7 +116,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                  i + 1,
                  nodes[i].0.id());
         // Let Routing properly stabilise and populate its routing-table
-        thread::sleep(Duration::from_secs(3 + i as u64));
+        thread::sleep(Duration::from_secs(1));
     }
 
     println!("Waiting 10 seconds to let the network stabilise");

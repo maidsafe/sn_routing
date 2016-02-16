@@ -337,11 +337,11 @@ impl Core {
             crust::Event::BootstrapConnect(peer_id) => self.handle_bootstrap_connect(peer_id),
             crust::Event::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
             crust::Event::NewPeer(result, peer_id) => self.handle_new_peer(result, peer_id),
-            crust::Event::LostPeer(peer_id, err) => self.handle_lost_peer(peer_id, err),
+            crust::Event::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
             crust::Event::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
                     Err(RoutingError::FilterCheckFailed) => (),
-                    Err(err) => error!("{:?} {:?}", self, err),
+                    Err(err) => error!("{:?}{:?}", self, err),
                     Ok(_) => (),
                 }
             }
@@ -411,8 +411,8 @@ impl Core {
                 }
                 Ok(encoded_connection_info) => encoded_connection_info,
             };
-        let (their_public_id, src, dst) = match self.connection_token_map.remove(&result_token) {
-            Some(entry) => entry,
+        let (their_public_id, src, dst) = match self.connection_token_map.get(&result_token) {
+            Some(entry) => entry.clone(),
             None => {
                 error!("Prepared connection info, but no entry found in token map.");
                 return;
@@ -426,8 +426,12 @@ impl Core {
 
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
-            self.crust_service.connect(our_connection_info, their_connection_info);
+            self.crust_service.tcp_connect(our_connection_info, their_connection_info);
         } else {
+            if self.our_connection_info_map.contains_key(&their_public_id) {
+                error!("Prepared more than one connection info for {:?}.", their_public_id.name());
+                return;
+            }
             let _ = self.our_connection_info_map.insert(their_public_id, our_connection_info);
         }
 
@@ -461,7 +465,7 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
-        //trace!("{:?} Handling hop message: {:?}", self, hop_msg);
+        //trace!("{:?}Handling hop message: {:?}", self, hop_msg);
         if self.state == State::Node {
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
@@ -724,7 +728,7 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
-        trace!("{:?} Handling - {:?}", self, routing_msg);
+        trace!("{:?}Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
@@ -886,8 +890,7 @@ impl Core {
         }
     }
 
-    fn handle_lost_peer(&mut self, peer_id: PeerId, err: io::Error) {
-        debug!("Lost connection to {:?}. Reason: {:?}", peer_id, err);
+    fn handle_lost_peer(&mut self, peer_id: PeerId) {
         self.dropped_routing_node_connection(&peer_id);
         self.dropped_client_connection(&peer_id);
         self.dropped_bootstrap_connection(&peer_id);
@@ -1051,7 +1054,7 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        trace!("{:?} Rxd BootstrapIdentify - Quorum size: {}",
+        trace!("{:?}Rxd BootstrapIdentify - Quorum size: {}",
                self,
                current_quorum_size);
 
@@ -1153,7 +1156,7 @@ impl Core {
                             peer_id: PeerId)
                             -> Result<(), RoutingError> {
         let name = *public_id.name();
-        trace!("{:?} Handling NodeIdentify from {:?}.", self, name);
+        trace!("{:?}Handling NodeIdentify from {:?}.", self, name);
         if !self.node_in_cache(&public_id, &peer_id) {
             self.crust_service.disconnect(&peer_id);
             return Ok(());
@@ -1173,7 +1176,7 @@ impl Core {
                 return Ok(());
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
-                trace!("{:?}: Added node to routing table: {:?}", self, name);
+                trace!("{:?}Added node to routing table: {:?}", self, name);
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
@@ -1416,7 +1419,7 @@ impl Core {
                                     .map(|info| info.public_id.clone())
                                     .collect_vec();
 
-        trace!("Sending GetCloseGroup response to {:?}.", src);
+        trace!("Sending GetCloseGroup response with {:?} to {:?}.", public_ids, src);
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
         let response_msg = ResponseMessage {
@@ -1651,10 +1654,12 @@ impl Core {
             self.node_identify(peer_id)
         } else if !self.routing_table.contains(their_public_id.name()) &&
                 their_public_id.signing_public_key() != self.full_id.public_id().signing_public_key() {
-            let token = rand::random();
-            if self.our_connection_info_map.contains_key(&their_public_id) {
+            if self.connection_token_map.retrieve_all().into_iter().any(|(_, (public_id, _, _))| {
+                public_id == their_public_id
+            }) {
                 debug!("Already sent connection info to {:?}!", their_public_id.name());
             } else {
+                let token = rand::random();
                 self.crust_service.prepare_connection_info(token);
                 let _ = self.connection_token_map.insert(token, (their_public_id, src, dst));
             }
@@ -1696,7 +1701,7 @@ impl Core {
 
         match self.our_connection_info_map.remove(&their_public_id) {
             Some(our_connection_info) => {
-                self.crust_service.connect(our_connection_info, their_connection_info);
+                self.crust_service.tcp_connect(our_connection_info, their_connection_info);
                 Ok(())
             }
             None => {
@@ -1767,12 +1772,12 @@ impl Core {
                     return Ok(());
                 }
 
-                error!("{:?} Unable to find connection to proxy node in proxy map",
+                error!("{:?}Unable to find connection to proxy node in proxy map",
                        self);
                 return Err(RoutingError::ProxyConnectionNotFound);
             }
 
-            error!("{:?} Source should be client if our state is a Client",
+            error!("{:?}Source should be client if our state is a Client",
                    self);
             return Err(RoutingError::InvalidSource);
         }
@@ -1838,7 +1843,7 @@ impl Core {
         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
                    self.routing_table.remove(node.public_id.name()) {
-                trace!("{:?} Dropped {:?} from the routing table.", self, node.public_id.name());
+                trace!("{:?}Dropped {:?} from the routing table.", self, node.public_id.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send Churn.
                     let event = Event::NodeLost(*node.public_id.name());
