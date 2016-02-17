@@ -51,7 +51,7 @@ extern crate time;
 
 mod utils;
 
-use log::LogRecord;
+use log::{LogRecord, LogLevel};
 
 use std::fs::OpenOptions;
 use std::time::Duration;
@@ -116,7 +116,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                  i + 1,
                  nodes[i].0.id());
         // Let Routing properly stabilise and populate its routing-table
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs(3));
     }
 
     println!("Waiting 10 seconds to let the network stabilise");
@@ -229,10 +229,27 @@ fn init(file_name: String) {
     log_path.set_file_name(file_name.clone());
 
     let format = move |record: &LogRecord| {
-        let log_message = format!("[{}:{}] {}\n",
-                                  record.location().file(),
-                                  record.location().line(),
-                                  record.args());
+        let now = ::time::now();
+        let thread_name = " ".to_owned();
+        let log_message =  format!("{} {}.{:06} {}[{}:{}:{}] {}\n",
+                    match record.level() {
+                        LogLevel::Error => 'E',
+                        LogLevel::Warn => 'W',
+                        LogLevel::Info => 'I',
+                        LogLevel::Debug => 'D',
+                        LogLevel::Trace => 'T',
+                    },
+                    if let Ok(time_txt) = ::time::strftime("%T", &now) {
+                        time_txt
+                    } else {
+                        "".to_owned()
+                    },
+                    now.tm_nsec / 1000,
+                    thread_name,
+                    record.location().module_path().splitn(2, "::").next().unwrap_or(""),
+                    record.location().file(),
+                    record.location().line(),
+                    record.args());
         let mut logfile = unwrap_result!(OpenOptions::new()
                                              .write(true)
                                              .create(true)
