@@ -140,8 +140,8 @@ impl Client {
     /// Wait to receive an `MpidMessage`.
     pub fn get_mpid_message(&self) -> Option<MpidMessage> {
         match unwrap_option!(self.wait_for_request(), "") {
-            RequestMessage { src, dst, content: RequestContent::Post(Data::PlainData(data), _) } => {
-                let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+            RequestMessage { src, dst, content: RequestContent::Post(Data::PlainData(msg), _) } => {
+                let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
                 match wrapper {
                     MpidMessageWrapper::PutMessage(mpid_message) => {
                         trace!("{:?} received message {:?}", self, mpid_message);

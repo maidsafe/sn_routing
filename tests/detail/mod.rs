@@ -38,7 +38,13 @@ pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
 }
 
 pub fn create_account(client: &mut Client) {
-    let account = unwrap_result!(StructuredData::new(0, random::<XorName>(), 0, vec![], vec![], vec![], None));
+    let account = unwrap_result!(StructuredData::new(0,
+                                                     random::<XorName>(),
+                                                     0,
+                                                     vec![],
+                                                     vec![],
+                                                     vec![],
+                                                     None));
     match unwrap_option!(client.put(Data::StructuredData(account)), "") {
         ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
             info!("{:?} created account", client);

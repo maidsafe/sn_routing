@@ -89,7 +89,7 @@ pub fn test() {
                                                 Some(client2.signing_private_key())));
     let data = Data::StructuredData(sd.clone());
     match client2.post(data.clone()) {
-        None => {},
+        None => {}
         _ => panic!("Received unexpected response"),
     }
 

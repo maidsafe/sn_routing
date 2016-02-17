@@ -36,7 +36,7 @@ pub fn setup_network(vault_count: u32) -> Vec<Child> {
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
     trace!("Expecting vault executable at the path of {}",
-          executable_path.to_path_buf().display());
+           executable_path.to_path_buf().display());
 
     for i in 0..vault_count {
         info!("Starting vault {}", i);

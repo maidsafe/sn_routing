@@ -23,7 +23,10 @@ pub struct TestGroup {
 impl TestGroup {
     pub fn new(name: &str) -> TestGroup {
         println!("{} ...", name);
-        TestGroup { name: Some(name.to_owned()), case: None, }
+        TestGroup {
+            name: Some(name.to_owned()),
+            case: None,
+        }
     }
 
     pub fn start_case(&mut self, case: &str) {

@@ -17,7 +17,8 @@
 
 use super::*;
 use rand;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent, ResponseMessage};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
+              ResponseMessage};
 use xor_name::XorName;
 
 pub fn test() {
@@ -25,7 +26,8 @@ pub fn test() {
 
     test_group.start_case("Put with no account");
     let mut client1 = Client::new();
-    let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024)));
+    let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal,
+                                                      generate_random_vec_u8(1024)));
     match unwrap_option!(client1.put(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PutFailure { .. }, .. } => {}
         _ => panic!("Received unexpected response"),
