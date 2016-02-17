@@ -1032,7 +1032,7 @@ impl Core {
                 } else {
                     warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
                 }
-                self.retry_bootstrap_with_blacklist(peer_id);
+                self.retry_bootstrap_with_blacklist(&peer_id);
                 Ok(())
             }
             DirectMessage::ClientToNode => {
@@ -1108,9 +1108,8 @@ impl Core {
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
-            self.crust_service.disconnect(&peer_id);
+            self.retry_bootstrap_with_blacklist(&peer_id);
 
-            // Probably look for other bootstrap connections
             return Ok(());
         }
 
@@ -1333,9 +1332,9 @@ impl Core {
         }
     }
 
-    fn retry_bootstrap_with_blacklist(&mut self, peer_id: PeerId) {
+    fn retry_bootstrap_with_blacklist(&mut self, peer_id: &PeerId) {
         trace!("{:?}Retry bootstrap without {:?}.", self, peer_id);
-        self.crust_service.disconnect(&peer_id);
+        self.crust_service.disconnect(peer_id);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
         for &proxy_peer_id in self.proxy_map.keys() {
@@ -1927,6 +1926,9 @@ impl Core {
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if let Some(public_id) = self.proxy_map.remove(peer_id) {
             trace!("Lost bootstrap connection to {:?}.", public_id.name());
+        } else if self.state == State::Bootstrapping {
+            trace!("Lost connection to candidate for proxy node {:?}", peer_id);
+            self.retry_bootstrap_with_blacklist(peer_id);
         }
     }
 
