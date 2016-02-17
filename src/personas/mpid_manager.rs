@@ -446,7 +446,7 @@ impl MpidManager {
                     if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
                         if !registered {
                             let mpid_message: MpidMessage = try!(deserialise(&data));
-                            if mpid_message.recipient() != request.src.name() {
+                            if *mpid_message.recipient() != client_name(&request.src) {
                                 return Ok(()); // !
                             }
                         }
@@ -528,6 +528,14 @@ impl MpidManager {
                 let _ = storage.put(&data.name(), data.value());
             }
         }
+    }
+
+}
+
+fn client_name(authority: &Authority) -> XorName {
+    match authority {
+        &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
+        _ => unreachable!("Logic error"),
     }
 }
 
