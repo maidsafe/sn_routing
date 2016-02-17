@@ -381,7 +381,7 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        trace!("Received BootstrapConnect as {:?}", self.state);
+        trace!("{:?}Received BootstrapConnect.", self);
         if self.state == State::Disconnected {
             // Established connection. Pending Validity checks
             self.state = State::Bootstrapping;
@@ -391,7 +391,7 @@ impl Core {
     }
 
     fn handle_bootstrap_accept(&mut self, _peer_id: PeerId) {
-        trace!("Received BootstrapAccept as {:?}", self.state);
+        trace!("{:?}Received BootstrapAccept.", self);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
@@ -496,7 +496,7 @@ impl Core {
         if self.state == State::Node {
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
-                try!(self.check_direction(hop_msg));
+                // try!(self.check_direction(hop_msg));
             } else if let Some((pub_key, client_info)) = self.client_by_peer_id(&peer_id) {
                 try!(hop_msg.verify(pub_key));
                 if client_info.client_restriction {
@@ -530,10 +530,15 @@ impl Core {
         }
     }
 
+    // TODO(afck): Direction checks are currently expected to fail in a lot of cases. To enable
+    // them again, every node would need to keep track of those routing table entries which are not
+    // yet fully connected. Only messages from nodes that have populated their routing tables
+    // enough to satisfy the kademlia_routing_table invariant can be expected to pass direction
+    // checks.
     /// Returns an error if this is not a swarm message and was not sent in the right direction.
-    fn check_direction(&self, hop_msg: &HopMessage) -> Result<(), RoutingError> {
+    fn _check_direction(&self, hop_msg: &HopMessage) -> Result<(), RoutingError> {
         let dst = hop_msg.content().content().dst();
-        if self.is_swarm(dst, hop_msg.name()) {
+        if self._is_swarm(dst, hop_msg.name()) {
             Ok(())
         } else if xor_name::closer_to_target(&hop_msg.name(), self.name(), dst.name()) {
             trace!("Direction check failed in hop message from node {:?}: {:?}",
@@ -544,6 +549,17 @@ impl Core {
             // Err(RoutingError::DirectionCheckFailed)
         } else {
             Ok(())
+        }
+    }
+
+    /// Returns `true` if a message is a swarm message.
+    ///
+    /// This is the case if a routing node in the destination's close group sent this message.
+    fn _is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
+        dst.is_group() &&
+        match self.routing_table.other_close_nodes(dst.name()) {
+            None => false,
+            Some(close_group) => close_group.into_iter().any(|n| n.name() == hop_name),
         }
     }
 
@@ -623,23 +639,12 @@ impl Core {
         }
     }
 
-    /// Returns `true` if a message is a swarm message.
-    ///
-    /// This is the case if a routing node in the destination's close group sent this message.
-    fn is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
-        dst.is_group() &&
-        match self.routing_table.other_close_nodes(dst.name()) {
-            None => false,
-            Some(close_group) => close_group.into_iter().any(|n| n.name() == hop_name),
-        }
-    }
-
-    /// Checks if the given name is missing from our routing table and if so, tries to connect.
+    /// Checks if the given name is missing from our routing table. If so, tries to refill the
+    /// bucket.
     fn harvest_node(&mut self, name: &XorName) -> Result<(), RoutingError> {
         if self.connection_filter.insert(name) == 0 && self.routing_table.need_to_add(name) {
-            // TODO(afck): Instead, send `GetCloseGroup` to `name`'s bucket address.
-            // self.send_connect_request(name)
-            Ok(())
+            let i = self.name().bucket_index(name);
+            self.request_bucket_ids(i)
         } else {
             Ok(())
         }
