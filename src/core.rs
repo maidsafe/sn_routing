@@ -497,9 +497,7 @@ impl Core {
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 try!(self.check_direction(hop_msg));
-            } else if let Some((ref pub_key, client_info)) = self.client_map
-                                                                 .iter()
-                                                                 .find(|&(_, info)| info.peer_id == peer_id) {
+            } else if let Some((pub_key, client_info)) = self.client_by_peer_id(&peer_id) {
                 try!(hop_msg.verify(pub_key));
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
@@ -1016,12 +1014,8 @@ impl Core {
                 Ok(())
             }
             DirectMessage::ClientToNode => {
-                if let Some((&public_id, _)) = self.client_map
-                                                   .iter()
-                                                   .find(|&(_, info)| {
-                                                       info.peer_id == peer_id
-                                                   }) {
-                    let _ = self.client_map.remove(&public_id);
+                if let Some((&pub_key, _)) = self.client_by_peer_id(&peer_id) {
+                    let _ = self.client_map.remove(&pub_key);
                 }
                 // TODO(afck): Try adding them to the routing table?
                 if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
@@ -1072,6 +1066,12 @@ impl Core {
                 Ok(())
             }
         }
+    }
+
+    /// Returns the public signing key and the `ClientInfo` associated with the given Crust
+    /// `PeerId`, or `None` if not found in the `client_map`.
+    fn client_by_peer_id(&self, peer_id: &PeerId) -> Option<(&sign::PublicKey, &ClientInfo)> {
+        self.client_map.iter().find(|&(_, info)| info.peer_id == *peer_id)
     }
 
     fn handle_bootstrap_identify(&mut self,
@@ -1203,7 +1203,8 @@ impl Core {
                 return Ok(());
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
-                trace!("{:?}Added node to routing table: {:?}", self, name);
+                trace!("{:?}Added node to routing table: {:?}. Table size {}.",
+                       self, name, self.routing_table.len());
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
@@ -1872,10 +1873,7 @@ impl Core {
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
-        if let Some(public_key) = self.client_map
-                                      .iter()
-                                      .find(|&(_, info)| info.peer_id == *peer_id)
-                                      .map(|(public_key, _)| public_key.clone()) {
+        if let Some((&public_key, _)) = self.client_by_peer_id(peer_id) {
             if let Some(info) = self.client_map.remove(&public_key) {
                 if !info.client_restriction {
                     trace!("Joining node dropped. {} remaining.",
@@ -1886,7 +1884,9 @@ impl Core {
     }
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
-        let _ = self.proxy_map.remove(peer_id);
+        if let Some(public_id) = self.proxy_map.remove(peer_id) {
+            trace!("Lost bootstrap connection to {:?}.", public_id.name());
+        }
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
