@@ -18,19 +18,18 @@
 use super::*;
 
 pub fn test() {
-    println!("Running Messaging test");
+    let mut test_group = TestGroup::new("Messaging test");
 
+    test_group.start_case("Simple send and receive");
     let sender = Client::new();
     sender.register_online();
     let receiver = Client::new();
     receiver.register_online();
 
-    let message_sent = sender.put_message(receiver.name());
-    let optional_message = receiver.get_message();
-
-    assert!(optional_message.is_some());
-
+    let message_sent = sender.put_mpid_message(receiver.name());
+    let optional_message = receiver.get_mpid_message();
     let message_received = unwrap_option!(optional_message, "");
 
     assert_eq!(message_received, message_sent);
+    test_group.release();
 }

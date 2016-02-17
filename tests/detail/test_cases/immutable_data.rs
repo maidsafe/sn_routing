@@ -21,53 +21,47 @@ use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseConte
 use xor_name::XorName;
 
 pub fn test() {
-    println!("Running ImmutableData test");
+    let mut test_group = TestGroup::new("ImmutableData test");
 
+    test_group.start_case("Put with no account");
     let mut client1 = Client::new();
-    let mut client2 = Client::new();
-
     let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024)));
-
     match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { .. }, .. } => {
-            println!("Received expected response.");
-        }
-        _ => panic!("Received unexpected response."),
+        ResponseMessage { content: ResponseContent::PutFailure { .. }, .. } => {}
+        _ => panic!("Received unexpected response"),
     }
 
+    test_group.start_case("Put");
     create_account(&mut client1);
-
     match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
-            println!("Received expected response.");
-        }
-        _ => panic!("Received unexpected response."),
+        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
+        _ => panic!("Received unexpected response"),
     }
 
-    let data_request = DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal);
-
+    test_group.start_case("Get");
+    let mut data_request = DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request.clone()), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
-            println!("Received expected response.");
         }
-        _ => panic!("Received unexpected response."),
+        _ => panic!("Received unexpected response"),
     }
 
+    test_group.start_case("Get via different Client");
+    let mut client2 = Client::new();
     match unwrap_option!(client2.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
-            println!("Received expected response.");
         }
-        _ => panic!("Received unexpected response."),
+        _ => panic!("Received unexpected response"),
     }
 
-    let data_request = DataRequest::ImmutableData(rand::random::<XorName>(), ImmutableDataType::Normal);
-
+    test_group.start_case("Get for non-existent data");
+    data_request = DataRequest::ImmutableData(rand::random::<XorName>(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { .. }, .. } => {
-            println!("Received expected response.");
-        }
-        _ => panic!("Received unexpected response."),
+        ResponseMessage { content: ResponseContent::GetFailure { .. }, .. } => {}
+        _ => panic!("Received unexpected response"),
     }
+
+    test_group.release();
 }

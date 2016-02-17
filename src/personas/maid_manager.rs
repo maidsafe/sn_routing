@@ -23,6 +23,7 @@ use sodiumoxide::crypto::hash::sha512;
 use std::collections::HashMap;
 use time::Duration;
 use types::{Refresh, RefreshValue};
+use utils;
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -157,7 +158,7 @@ impl MaidManager {
 
         // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
         // account
-        let client_name = self.client_name(&request.src);
+        let client_name = utils::client_name(&request.src);
         let result = self.accounts
                          .get_mut(&client_name)
                          .ok_or(ClientError::NoSuchAccount)
@@ -197,7 +198,7 @@ impl MaidManager {
         };
 
         // If the type_tag is 0, the account must not exist, else it must exist.
-        let client_name = self.client_name(&request.src);
+        let client_name = utils::client_name(&request.src);
         if type_tag == 0 {
             if self.accounts.contains_key(&client_name) {
                 let error = ClientError::AccountExists;
@@ -245,13 +246,6 @@ impl MaidManager {
         let external_error_indicator = try!(serialisation::serialise(error));
         let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
         Ok(())
-    }
-
-    fn client_name(&self, authority: &Authority) -> XorName {
-        match authority {
-            &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
-            _ => unreachable!("Logic error"),
-        }
     }
 }
 

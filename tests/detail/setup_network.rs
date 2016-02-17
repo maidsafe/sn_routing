@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use super::TestGroup;
 use std::{env, thread};
 use std::error::Error;
 use std::path::Path;
@@ -22,6 +23,8 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 pub fn setup_network(vault_count: u32) -> Vec<Child> {
+    let mut test_group = TestGroup::new(&format!("Setting up network of {} Vaults", vault_count));
+
     let mut processes = Vec::new();
     let executable_path = match env::current_exe() {
         Ok(mut exe_path) => {
@@ -32,20 +35,22 @@ pub fn setup_network(vault_count: u32) -> Vec<Child> {
         }
         Err(e) => panic!("Failed to get current integration test path: {}", e),
     };
-    println!("Expecting vault executable at the path of {}",
-             executable_path.to_path_buf().display());
+    trace!("Expecting vault executable at the path of {}",
+          executable_path.to_path_buf().display());
 
     for i in 0..vault_count {
-        println!("Starting vault {}", i);
+        info!("Starting vault {}", i);
         processes.push(match Command::new(executable_path.to_path_buf())
                                  .stderr(Stdio::piped())
                                  .spawn() {
             Err(why) => panic!("Couldn't spawn vault: {}", why.description()),
             Ok(process) => process,
         });
-        thread::sleep(Duration::from_secs(3 + i as u64));
+        thread::sleep(Duration::from_secs(1 + i as u64));
     }
-    println!("Waiting 10 seconds to let the network stabilise");
+    info!("Waiting 10 seconds to let the network stabilise");
     thread::sleep(Duration::from_secs(10));
+
+    test_group.release();
     processes
 }

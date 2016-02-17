@@ -18,6 +18,7 @@
 mod client;
 mod setup_network;
 mod test_cases;
+mod test_group;
 
 pub use self::client::Client;
 pub use self::setup_network::setup_network;
@@ -26,20 +27,22 @@ pub use self::test_cases::structured_data::test as structured_data_test;
 pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
 pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
 pub use self::test_cases::messaging::test as messaging_test;
+pub use self::test_group::TestGroup;
 
-use rand::random;
-use routing::{Data, StructuredData};
+use rand::{random, Rng, thread_rng};
+use routing::{Data, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
+    thread_rng().gen_iter().take(size).collect()
 }
 
 pub fn create_account(client: &mut Client) {
-    let sd = unwrap_result!(StructuredData::new(0, random::<XorName>(), 0, vec![], vec![], vec![], None));
-    let _ = client.put(Data::StructuredData(sd));
+    let account = unwrap_result!(StructuredData::new(0, random::<XorName>(), 0, vec![], vec![], vec![], None));
+    match unwrap_option!(client.put(Data::StructuredData(account)), "") {
+        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
+            info!("{:?} created account", client);
+        }
+        _ => panic!("{:?} failed to create account"),
+    }
 }

@@ -16,8 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use config_file_handler;
+use routing::Authority;
+use sodiumoxide::crypto::hash::sha512;
 use std::{env, process, sync};
 use std::ffi::OsString;
+use xor_name::XorName;
 
 static HANDLE_VERSION: sync::Once = sync::ONCE_INIT;
 
@@ -33,6 +36,13 @@ pub fn handle_version() {
         let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
         info!("\n\n{}\n{}", message, underline);
     });
+}
+
+pub fn client_name(authority: &Authority) -> XorName {
+    match authority {
+        &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
+        _ => unreachable!("Logic error"),
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-routing"))]

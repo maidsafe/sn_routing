@@ -17,13 +17,14 @@
 
 #![allow(unused)]
 
+use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::Duration;
 use sodiumoxide::crypto;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage, RequestContent,
-              ResponseContent, ResponseMessage};
+use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage,
+              RequestContent, ResponseContent, ResponseMessage};
 use xor_name::XorName;
 use mpid_messaging::{MpidMessage, MpidMessageWrapper};
 
@@ -40,7 +41,6 @@ pub struct Client {
 impl Client {
     /// Creates a new client and attempts to establish a connection to the network.
     pub fn new() -> Client {
-        println!("Starting Client");
         let (sender, receiver) = mpsc::channel::<Event>();
 
         // Generate new key pairs. The client's name will be computed from them. This is a
@@ -49,65 +49,74 @@ impl Client {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        info!("Creating Client({:?})", full_id.public_id().name());
         let routing_client = routing::Client::new(sender, Some(full_id)).unwrap();
 
-        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
-        // requests to the network.
-        println!("Waiting for Client to connect");
-        for it in receiver.iter() {
-            if let Event::Connected = it {
-                println!("Client Connected to network");
-                break;
-            }
-        }
-
-        Client {
+        let client = Client {
             routing_client: routing_client,
             receiver: receiver,
             full_id: FullId::with_keys(encrypt_keys, sign_keys),
+        };
+
+        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
+        // requests to the network.
+        info!("Waiting for {:?} to connect to network", client);
+        for it in client.receiver.iter() {
+            if let Event::Connected = it {
+                info!("{:?} connected to network", client);
+                break;
+            } else {
+                trace!("{:?} ignoring event {:?}", client, it);
+            }
         }
+        client
     }
 
     /// Send a `Get` request to the network and return the received response.
-    ///
-    /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
         unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()), request.clone()));
-
-        // Wait for Get response event from Routing
-        for it in self.receiver.iter() {
-            if let Event::Response(response_message) = it {
-                return Some(response_message)
-            } else {
-                panic!("Unexpected event {:?}", it);
-            }
-        }
-
-        None
+                           .send_get_request(Authority::NaeManager(request.name()),
+                                             request.clone()));
+        self.wait_for_response()
     }
 
     /// Send a `Put` request to the network.
-    ///
-    /// This is a blocking call and will wait indefinitely for a response.
     pub fn put(&self, data: Data) -> Option<ResponseMessage> {
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
-
-        // Wait for Put response event from Routing
-        for it in self.receiver.iter() {
-            if let Event::Response(response_message) = it {
-                return Some(response_message)
-            } else {
-                panic!("Unexpected event {:?}", it);
-            }
-        }
-
-        None
+        self.wait_for_response()
     }
 
-    /// Send an `Mpidmessage` to a recipient.
-    pub fn put_message(&self, receiver: &XorName) -> MpidMessage {
+    /// Post data onto the network.
+    pub fn post(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::NaeManager(data.name()), data));
+        self.wait_for_response()
+    }
+
+    /// Delete data from the network.
+    pub fn delete(&self, _data: Data) {
+        unimplemented!()
+    }
+
+    /// Register client online.
+    pub fn register_online(&self) {
+        let wrapper = MpidMessageWrapper::Online;
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::PlainData(PlainData::new(*self.name(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
+
+        match unwrap_option!(self.wait_for_response(), "") {
+            ResponseMessage { content: ResponseContent::PostSuccess(..), .. } => {
+                trace!("{:?} successfully sent online message", self);
+            }
+            _ => panic!("{:?} failed to send online message", self),
+        }
+    }
+
+    /// Send an `MpidMessage` to a recipient.
+    pub fn put_mpid_message(&self, receiver: &XorName) -> MpidMessage {
         let metadata = super::generate_random_vec_u8(128);
         let body = super::generate_random_vec_u8(128);
         let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
@@ -119,100 +128,30 @@ impl Client {
         let name = unwrap_result!(mpid_message.header().name());
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::PlainData(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
-
-        // Wait for PutSuccess response.
-        for it in self.receiver.iter() {
-            if let Event::Response(ResponseMessage { content: ResponseContent::PutSuccess(..), .. }) = it {
-                println!("Successfully sent message {:?}", mpid_message);
-                break;
-            } else {
-                panic!("Failed to send message {:?}", mpid_message);
+        match unwrap_option!(self.put(data), "") {
+            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
+                trace!("{:?} successfully sent message {:?}", self, mpid_message);
             }
+            _ => panic!("{:?} failed to send message {:?}", self, mpid_message),
         }
-
         mpid_message
     }
 
-    /// Register client online.
-    pub fn register_online(&self) {
-        let wrapper = MpidMessageWrapper::Online;
-        let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::PlainData(PlainData::new(*self.name(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
-
-        // Wait for PostSuccess response.
-        for it in self.receiver.iter() {
-            if let Event::Response(ResponseMessage { content: ResponseContent::PostSuccess(..), .. }) = it {
-                println!("Successfully sent online message.");
-                break;
-            } else {
-                panic!("Failed to send online message.");
-            }
-        }
-    }
-
-    /// Wait for a message to arrive.
-    pub fn get_message(&self) -> Option<MpidMessage> {
-        for it in self.receiver.iter() {
-            if let Event::Request(RequestMessage { src, dst, content: RequestContent::Post(data, _id) }) = it {
-                match data {
-                    Data::PlainData(plain_data) => {
-                        let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&plain_data.value()));
-                        match wrapper {
-                            MpidMessageWrapper::PutMessage(mpid_message) => {
-                                println!("Received message {:?}", mpid_message);
-                                return Some(mpid_message)
-                            }
-                            _ => panic!("Unexpected message."),
-                        }
+    /// Wait to receive an `MpidMessage`.
+    pub fn get_mpid_message(&self) -> Option<MpidMessage> {
+        match unwrap_option!(self.wait_for_request(), "") {
+            RequestMessage { src, dst, content: RequestContent::Post(Data::PlainData(data), _) } => {
+                let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&data.value()));
+                match wrapper {
+                    MpidMessageWrapper::PutMessage(mpid_message) => {
+                        trace!("{:?} received message {:?}", self, mpid_message);
+                        Some(mpid_message)
                     }
-                    _ => panic!("Unexpected data."),
+                    _ => panic!("{:?} unexpected message"),
                 }
-            } else {
-                panic!("Failed to get message.");
             }
+            _ => panic!("{:?} failed to receive MPID message", self),
         }
-
-        None
-    }
-
-    /// Post data onto the network.
-    pub fn post(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::NaeManager(data.name()), data));
-
-        let timeout = Duration::from_millis(10000);
-        let interval = Duration::from_millis(100);
-        let mut elapsed = Duration::from_millis(0);
-
-        loop {
-            match self.receiver.try_recv() {
-                Ok(value) => {
-                    if let Event::Response(response_message) = value {
-                        return Some(response_message)
-                    }
-                }
-                Err(TryRecvError::Disconnected) => break,
-                _ => (),
-            }
-
-            thread::sleep(interval);
-            elapsed = elapsed + interval;
-
-            if elapsed > timeout {
-                break;
-            }
-        }
-
-        None
-    }
-
-    /// Delete data from the network.
-    pub fn delete(&self) {
-        unimplemented!()
     }
 
     /// Return network name.
@@ -228,5 +167,52 @@ impl Client {
     /// Return secret signing key.
     pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
         self.full_id.signing_private_key()
+    }
+
+    fn wait_for_request(&self) -> Option<RequestMessage> {
+        self.wait_for_event().and_then(|event| {
+            match event {
+                Event::Request(request_message) => Some(request_message),
+                _ => panic!("{:?} unexpected event {:?}", self, event),
+            }
+        })
+    }
+
+    fn wait_for_response(&self) -> Option<ResponseMessage> {
+        self.wait_for_event().and_then(|event| {
+            match event {
+                Event::Response(response_message) => Some(response_message),
+                _ => panic!("{:?} unexpected event {:?}", self, event),
+            }
+        })
+    }
+
+    fn wait_for_event(&self) -> Option<Event> {
+        let timeout = Duration::from_secs(10);
+        let interval = Duration::from_millis(100);
+        let mut elapsed = Duration::new(0, 0);
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(value) => return Some(value),
+                Err(TryRecvError::Disconnected) => break,
+                _ => (),
+            }
+
+            thread::sleep(interval);
+            elapsed = elapsed + interval;
+
+            if elapsed > timeout {
+                break;
+            }
+        }
+
+        None
+    }
+}
+
+impl Debug for Client {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Client({:?})", self.name())
     }
 }

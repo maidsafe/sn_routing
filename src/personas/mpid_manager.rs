@@ -16,15 +16,17 @@
 // relating to use of the SAFE Network Software.
 
 use std::collections::HashMap;
-use sodiumoxide::crypto::sign::PublicKey;
-use sodiumoxide::crypto::hash::sha512;
+
 use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
 use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
+use sodiumoxide::crypto::sign::PublicKey;
+use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
+use utils;
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -446,7 +448,7 @@ impl MpidManager {
                     if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
                         if !registered {
                             let mpid_message: MpidMessage = try!(deserialise(&data));
-                            if *mpid_message.recipient() != client_name(&request.src) {
+                            if *mpid_message.recipient() != utils::client_name(&request.src) {
                                 return Ok(()); // !
                             }
                         }
@@ -532,12 +534,6 @@ impl MpidManager {
 
 }
 
-fn client_name(authority: &Authority) -> XorName {
-    match authority {
-        &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
-        _ => unreachable!("Logic error"),
-    }
-}
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
