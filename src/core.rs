@@ -1137,7 +1137,7 @@ impl Core {
             return Ok(());
         }
 
-        if self.proxy_map.empty() {
+        if self.proxy_map.is_empty() {
             let _ = self.proxy_map.insert(peer_id, public_id.clone());
         } else {
             if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id.clone()) {
