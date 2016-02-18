@@ -16,7 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use std::env;
+use std::fs::File;
 use std::fmt::{self, Debug, Formatter};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
@@ -39,7 +41,7 @@ impl VaultProcess {
 
         trace!("Starting vault {}", index);
         match Command::new(executable_path.to_path_buf())
-                  .stdout(Stdio::null())
+                  .stdout(Stdio::piped())
                   .stderr(Stdio::null())
                   .spawn() {
             Err(error) => {
@@ -66,6 +68,29 @@ impl Drop for VaultProcess {
             Ok(()) => info!("Killed {:?}", self),
             Err(error) => error!("Error killing {:?} - {:?}", self, error),
         }
+
+        let mut log_file_name = String::from("vault_");
+        log_file_name.push_str(&self.index.to_string());
+        log_file_name.push_str(".log");
+        let log_file_path = match env::current_exe() {
+            Ok(mut exe_path) => {
+                exe_path.pop();
+                Path::new("./target").join(exe_path.iter().last().unwrap()).join(log_file_name)
+            }
+            Err(e) => panic!("Failed to get current integration test path: {}", e),
+        };
+        let mut log_result = Vec::<u8>::new();
+        match self.child.stdout {
+            Some(ref mut stdout) => {
+                let _ = stdout.read_to_end(&mut log_result);
+            }
+            None => return,
+        }
+        let _ = File::create(&log_file_path)
+            .and_then(|mut file| {
+                file.write_all(&log_result[..])
+                    .and_then(|()| file.sync_all())
+            });
     }
 }
 
