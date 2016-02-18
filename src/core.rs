@@ -369,10 +369,6 @@ impl Core {
                 //     true
                 // });
                 trace!(" -----------------------------------");
-
-                trace!(" -----------------------------------");
-                trace!("| Number of proxy nodes : {}", self.proxy_map.len());
-                trace!(" -----------------------------------");
             }
         } // Category Rx
     }
@@ -1141,7 +1137,7 @@ impl Core {
             return Ok(());
         }
 
-        if self.proxy_map.len() == 0 {
+        if self.proxy_map.empty() {
             let _ = self.proxy_map.insert(peer_id, public_id.clone());
         } else {
             if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id.clone()) {
