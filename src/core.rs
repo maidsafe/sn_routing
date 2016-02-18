@@ -411,6 +411,8 @@ impl Core {
     fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
         match result {
             Ok(()) => {
+                // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
+                // NodeIdentify.
                 let _ = self.node_identify(peer_id);
             }
             Err(err) => {
@@ -743,10 +745,25 @@ impl Core {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
-                let _ = self.grp_msg_filter.insert(&output_msg);
-            } else {
-                return Ok(());
+            // TODO(afck): Currently we don't accumulate GetCloseGroup responses, because while a
+            // node is joining, the responses can disagree. Some of the group members might already
+            // have the new node in their routing table and others might not. To resolve this, we
+            // will need a cleaner algorithm for joining nodes: They should connect to all their
+            // future routing table entries, and once these connections are established, send a
+            // direct message to these contacts. Only when they receive that message, the contacts
+            // should add the new node to their routing tables in turn, because only then it can
+            // act as a fully functioning routing node.
+            match routing_msg {
+                RoutingMessage::Response(ResponseMessage {
+                    content: ResponseContent::GetCloseGroup { .. }, ..
+                }) => (),
+                _ => {
+                    if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+                        let _ = self.grp_msg_filter.insert(&output_msg);
+                    } else {
+                        return Ok(());
+                    }
+                }
             }
         }
         self.dispatch_request_response(routing_msg)
@@ -1024,9 +1041,9 @@ impl Core {
                 }
                 // TODO(afck): Try adding them to the routing table?
                 if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
-                    error!("{:?}Client requested ClientToNode, but is not in routing table: {:?}",
-                           self,
-                           peer_id);
+                    warn!("{:?}Client requested ClientToNode, but is not in routing table: {:?}",
+                          self,
+                          peer_id);
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
@@ -1136,7 +1153,8 @@ impl Core {
 
         if client_restriction {
             if self.routing_table.len() < GROUP_SIZE {
-                trace!("Client rejected: Routing table has {} entries. {} required.",
+                trace!("Client {:?} rejected: Routing table has {} entries. {} required.",
+                       public_id.name(),
                        self.routing_table.len(),
                        GROUP_SIZE);
                 return self.bootstrap_deny(peer_id);
@@ -1148,7 +1166,8 @@ impl Core {
             // routing tables and drop the proxy connection.
             if !(self.routing_table.len() < GROUP_SIZE && joining_nodes_num < GROUP_SIZE) &&
                joining_nodes_num >= MAX_JOINING_NODES {
-                trace!("No additional joining nodes allowed.");
+                trace!("No additional joining nodes allowed. Denying {:?} to join.",
+                       public_id.name());
                 return self.bootstrap_deny(peer_id);
             }
         }
@@ -1175,11 +1194,23 @@ impl Core {
                   public_id,
                   their_public_id,
                   peer_id);
-        } else {
-            debug!("PublicId {:?} not found in node_id_cache - Dropping peer {:?}",
-                   public_id,
-                   peer_id);
+            return false;
         }
+        if self.client_by_peer_id(&peer_id).is_some() {
+            // TODO(afck): At this point we probably haven't verified that the client's new name is
+            // correct.
+            trace!("Public ID not in cache, but peer {:?} is a client.",
+                   peer_id);
+            return true;
+        }
+        if self.proxy_map.get(&peer_id) == Some(&public_id) {
+            // TODO(afck): Maybe we should verify the proxy's public ID.
+            trace!("Public ID not in cache, but peer {:?} is a proxy.", peer_id);
+            return true;
+        }
+        debug!("PublicId {:?} not found in node_id_cache - Dropping peer {:?}",
+               public_id,
+               peer_id);
         false
     }
 
@@ -1209,7 +1240,9 @@ impl Core {
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?}Added node to routing table: {:?}. Table size {}.",
-                       self, name, self.routing_table.len());
+                       self,
+                       name,
+                       self.routing_table.len());
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
@@ -1286,14 +1319,16 @@ impl Core {
     }
 
     fn remove_stale_joining_nodes(&mut self) {
-        let stale_keys = self.client_map.iter()
-                                        .filter(|&(_, info)| info.is_stale())
-                                        .map(|(&public_key, _)| public_key)
-                                        .collect::<Vec<_>>();
+        let stale_keys = self.client_map
+                             .iter()
+                             .filter(|&(_, info)| info.is_stale())
+                             .map(|(&public_key, _)| public_key)
+                             .collect::<Vec<_>>();
 
         for key in stale_keys {
             if let Some(info) = self.client_map.remove(&key) {
-                trace!("Removing stale joining node with Crust ID {:?}", info.peer_id);
+                trace!("Removing stale joining node with Crust ID {:?}",
+                       info.peer_id);
             }
         }
     }
@@ -1468,8 +1503,8 @@ impl Core {
                                     .map(|info| info.public_id.clone())
                                     .collect_vec();
 
-        trace!("Sending GetCloseGroup response with {:?} to {:?}.",
-               public_ids,
+        trace!("Sending GetCloseGroup response with {:?} to client {:?}.",
+               public_ids.iter().map(PublicId::name).collect_vec(),
                src);
         let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
 
@@ -1618,6 +1653,7 @@ impl Core {
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
         if !self.routing_table.is_close(&dst_name) {
+            error!("Handling RejectedPublicId, but not close to the target!");
             Err(RoutingError::RejectedPublicId)
         } else {
             let msg = if let Some(info) = self.routing_table.get(&dst_name) {
