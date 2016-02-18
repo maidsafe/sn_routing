@@ -36,19 +36,18 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 
 // To avoid multiple cfg statements before each import.
-#![allow(unused_extern_crates)]
+#![cfg_attr(feature="use-mock-routing", allow(unused, unused_extern_crates))]
 
 extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+extern crate mpid_messaging;
 extern crate rand;
-extern crate time;
 extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
-extern crate mpid_messaging;
 
 #[cfg(not(feature = "use-mock-routing"))]
 mod detail;
@@ -64,6 +63,7 @@ const REQUEST_COUNT: u32 = 30;
 
 use std::process;
 use std::sync::{Arc, Mutex, Condvar};
+#[cfg(not(feature = "use-mock-routing"))]
 use detail::*;
 
 #[cfg(not(feature = "use-mock-routing"))]
