@@ -38,7 +38,8 @@ pub fn test(request_count: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get ImmutableData {}", i));
-        let data_request = DataRequest::ImmutableData(stored_data[i].name(), ImmutableDataType::Normal);
+        let data_request = DataRequest::ImmutableData(stored_data[i].name(),
+                                                      ImmutableDataType::Normal);
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
                 assert_eq!(stored_data[i], response_data);

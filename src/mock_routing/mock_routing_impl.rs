@@ -18,8 +18,8 @@
 use kademlia_routing_table::{GROUP_SIZE, ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, min};
 use std::sync::mpsc;
@@ -345,16 +345,19 @@ impl MockRoutingNodeImpl {
         Ok(self.delete_failures_given.push(message))
     }
 
-    pub fn send_refresh_request(&mut self, src: Authority, content: Vec<u8>) -> Result<(), InterfaceError> {
+    pub fn send_refresh_request(&mut self,
+                                src: Authority,
+                                content: Vec<u8>)
+                                -> Result<(), InterfaceError> {
         let content = RequestContent::Refresh(content);
         let message = self.send_request(src.clone(), src, content, "Mock Refresh Request");
         Ok(self.refresh_requests_given.push(message))
     }
 
     pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
-        Ok(self.routing_table.close_nodes(&name).map(|infos| {
-            infos.iter().map(|info| &info.0).cloned().collect()
-        }))
+        Ok(self.routing_table
+               .close_nodes(&name)
+               .map(|infos| infos.iter().map(|info| &info.0).cloned().collect()))
     }
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {

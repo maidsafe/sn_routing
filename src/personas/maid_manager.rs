@@ -81,10 +81,17 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
         match request.content {
-            RequestContent::Put(Data::ImmutableData(_), _) => self.handle_put_immutable_data(routing_node, request),
-            RequestContent::Put(Data::StructuredData(_), _) => self.handle_put_structured_data(routing_node, request),
+            RequestContent::Put(Data::ImmutableData(_), _) => {
+                self.handle_put_immutable_data(routing_node, request)
+            }
+            RequestContent::Put(Data::StructuredData(_), _) => {
+                self.handle_put_structured_data(routing_node, request)
+            }
             _ => unreachable!("Error in vault demuxing"),
         }
     }
@@ -96,7 +103,8 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Send success response back to client
-                let message_hash = sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
+                let message_hash =
+                    sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = routing_node.send_put_success(src, dst, message_hash, message_id.clone());
@@ -115,13 +123,19 @@ impl MaidManager {
             Some(client_request) => {
                 // Refund account
                 match self.accounts.get_mut(client_request.dst.name()) {
-                    Some(account) => account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */),
+                    Some(account) => {
+                        account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                    }
                     None => return Ok(()),
                 }
 
                 // Send failure response back to client
-                let error = try!(serialisation::deserialise::<ClientError>(external_error_indicator));
-                self.reply_with_put_failure(routing_node, client_request, message_id.clone(), &error)
+                let error =
+                    try!(serialisation::deserialise::<ClientError>(external_error_indicator));
+                self.reply_with_put_failure(routing_node,
+                                            client_request,
+                                            message_id.clone(),
+                                            &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
         }
@@ -202,7 +216,10 @@ impl MaidManager {
         if type_tag == 0 {
             if self.accounts.contains_key(&client_name) {
                 let error = ClientError::AccountExists;
-                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
+                try!(self.reply_with_put_failure(routing_node,
+                                                 request.clone(),
+                                                 message_id,
+                                                 &error));
                 return Err(InternalError::Client(error));
             }
 
@@ -217,7 +234,10 @@ impl MaidManager {
                                  account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                              });
             if let Err(error) = result {
-                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
+                try!(self.reply_with_put_failure(routing_node,
+                                                 request.clone(),
+                                                 message_id,
+                                                 &error));
                 return Err(InternalError::Client(error));
             }
         };
@@ -229,7 +249,8 @@ impl MaidManager {
             let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
         }
 
-        if let Some(prior_request) = self.request_cache.insert(message_id.clone(), request.clone()) {
+        if let Some(prior_request) = self.request_cache
+                                         .insert(message_id.clone(), request.clone()) {
             error!("Overwrote existing cached request: {:?}", prior_request);
         }
         Ok(())
@@ -244,7 +265,11 @@ impl MaidManager {
         let src = request.dst.clone();
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
-        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
+        let _ = routing_node.send_put_failure(src,
+                                              dst,
+                                              request,
+                                              external_error_indicator,
+                                              message_id);
         Ok(())
     }
 }
@@ -256,8 +281,8 @@ mod test {
     use error::{ClientError, InternalError};
     use maidsafe_utilities::serialisation;
     use rand::random;
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
-                  ResponseContent};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+                  RequestMessage, ResponseContent};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -290,7 +315,8 @@ mod test {
         let mut env = environment_setup();
 
         // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),

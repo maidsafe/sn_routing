@@ -56,7 +56,10 @@ pub fn simulate_churn(mut processes: Vec<VaultProcess>,
                 }
             }
 
-            if let Err(err) = simulate_churn_impl(&mut processes, &mut rng, vault_count, &mut vault_index) {
+            if let Err(err) = simulate_churn_impl(&mut processes,
+                                                  &mut rng,
+                                                  vault_count,
+                                                  &mut vault_index) {
                 error!("{:?}", err);
                 break;
             }

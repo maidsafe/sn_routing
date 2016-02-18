@@ -99,7 +99,10 @@ impl PmidManager {
                       pmid_node: XorName)
                       -> Result<(), InternalError> {
         // Put data always being allowed, i.e. no early alert
-        self.accounts.entry(pmid_node.clone()).or_insert(Account::default()).put_data(data.payload_size() as u64);
+        self.accounts
+            .entry(pmid_node.clone())
+            .or_insert(Account::default())
+            .put_data(data.payload_size() as u64);
 
         let src = Authority::NodeManager(pmid_node.clone());
         let dst = Authority::ManagedNode(pmid_node);

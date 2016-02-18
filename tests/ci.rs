@@ -77,7 +77,9 @@ fn main() {
         let request_count = REQUEST_COUNT;
         let processes = setup_network(vault_count);
 
-        let mut is_err = thread!("ImmutableData test", move || immutable_data_test()).join().is_err();
+        let mut is_err = thread!("ImmutableData test", move || immutable_data_test())
+                             .join()
+                             .is_err();
         failed = failed || is_err;
         is_err = thread!("StructuredData test", move || structured_data_test()).join().is_err();
         failed = failed || is_err;
@@ -85,10 +87,20 @@ fn main() {
         failed = failed || is_err;
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
-        let _joiner = simulate_churn(processes, stop_flag.clone(), vault_count, min_wait, max_wait);
-        is_err = thread!("ImmutableData churn test", move || immutable_data_churn_test(request_count)).join().is_err();
+        let _joiner = simulate_churn(processes,
+                                     stop_flag.clone(),
+                                     vault_count,
+                                     min_wait,
+                                     max_wait);
+        is_err = thread!("ImmutableData churn test",
+                         move || immutable_data_churn_test(request_count))
+                     .join()
+                     .is_err();
         failed = failed || is_err;
-        is_err = thread!("StructuredData churn test", move || structured_data_churn_test(request_count)).join().is_err();
+        is_err = thread!("StructuredData churn test",
+                         move || structured_data_churn_test(request_count))
+                     .join()
+                     .is_err();
         failed = failed || is_err;
 
         // Stop churn thread

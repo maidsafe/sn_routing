@@ -36,9 +36,14 @@ impl PmidNode {
         })
     }
 
-    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+    pub fn handle_get(&mut self,
+                      routing_node: &RoutingNode,
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
         let (data_name, message_id) = match &request.content {
-            &RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref message_id) => (name, message_id),
+            &RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref message_id) => {
+                (name, message_id)
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -79,7 +84,9 @@ impl PmidNode {
 
         // If we can't store the data and it's a Normal copy, try to make room for it by clearing
         // out Sacrificial chunks.
-        let required_space = serialised_data.len() - (self.chunk_store.max_space() - self.chunk_store.used_space()) as usize;
+        let required_space = serialised_data.len() -
+                             (self.chunk_store.max_space() -
+                              self.chunk_store.used_space()) as usize;
         let names = self.chunk_store.names();
         let mut emptied_space = 0;
         for name in names.iter() {
@@ -137,64 +144,63 @@ impl PmidNode {
 }
 
 
-/*
-#[cfg(all(test, feature = "use-mock-routing"))]
-mod test {
-    use super::*;
-    use lru_time_cache::LruCache;
-    use maidsafe_utilities::serialisation::serialise;
-    use rand::random;
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-                  ResponseContent, ResponseMessage};
-    use std::cmp::{max, min, Ordering};
-    use std::collections::BTreeSet;
-    use time::{Duration, SteadyTime};
-    use types::Refreshable;
-    use utils::{median, merge, HANDLED, NOT_HANDLED};
-    use vault::Routing;
-    use xor_name::{XorName, closer_to_target};
-
-    #[test]
-    fn handle_put_get() {
-        let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-        let mut pmid_node = PmidNode::new(routing.clone());
-
-        let us = random();
-        let our_authority = Authority::ManagedNode(us.clone());
-
-        let from_authority = Authority::NodeManager(us.clone());
-
-        let value = generate_random_vec_u8(1024);
-        let data =
-            ImmutableData::new(ImmutableDataType::Normal, value);
-        {
-            assert_eq!(::utils::HANDLED,
-                       pmid_node.handle_put(&our_authority,
-                                            &from_authority,
-                                            &::routing::data::Data::ImmutableData(data.clone()),
-                                            &None));
-            assert_eq!(0, routing.put_requests_given().len());
-            assert_eq!(0, routing.put_responses_given().len());
-        }
-        {
-            let from = random();
-            let from_authority = Authority::NaeManager(from.clone());
-
-            let request =
-                ::routing::data::DataRequest::ImmutableData(data.name().clone(),
-                                                            ImmutableDataType::Normal);
-
-            assert_eq!(::utils::HANDLED,
-                       pmid_node.handle_get(&our_authority, &from_authority, &request, &None));
-            let get_responses = routing.get_responses_given();
-            assert_eq!(get_responses.len(), 1);
-            assert_eq!(get_responses[0].our_authority, our_authority);
-            assert_eq!(get_responses[0].location, from_authority);
-            assert_eq!(get_responses[0].data,
-                       ::routing::data::Data::ImmutableData(data.clone()));
-            assert_eq!(get_responses[0].data_request, request);
-            assert_eq!(get_responses[0].response_token, None);
-        }
-    }
-}
-*/
+// #[cfg(all(test, feature = "use-mock-routing"))]
+// mod test {
+// use super::*;
+// use lru_time_cache::LruCache;
+// use maidsafe_utilities::serialisation::serialise;
+// use rand::random;
+// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
+// ResponseContent, ResponseMessage};
+// use std::cmp::{max, min, Ordering};
+// use std::collections::BTreeSet;
+// use time::{Duration, SteadyTime};
+// use types::Refreshable;
+// use utils::{median, merge, HANDLED, NOT_HANDLED};
+// use vault::Routing;
+// use xor_name::{XorName, closer_to_target};
+//
+// #[test]
+// fn handle_put_get() {
+// let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
+// let mut pmid_node = PmidNode::new(routing.clone());
+//
+// let us = random();
+// let our_authority = Authority::ManagedNode(us.clone());
+//
+// let from_authority = Authority::NodeManager(us.clone());
+//
+// let value = generate_random_vec_u8(1024);
+// let data =
+// ImmutableData::new(ImmutableDataType::Normal, value);
+// {
+// assert_eq!(::utils::HANDLED,
+// pmid_node.handle_put(&our_authority,
+// &from_authority,
+// &::routing::data::Data::ImmutableData(data.clone()),
+// &None));
+// assert_eq!(0, routing.put_requests_given().len());
+// assert_eq!(0, routing.put_responses_given().len());
+// }
+// {
+// let from = random();
+// let from_authority = Authority::NaeManager(from.clone());
+//
+// let request =
+// ::routing::data::DataRequest::ImmutableData(data.name().clone(),
+// ImmutableDataType::Normal);
+//
+// assert_eq!(::utils::HANDLED,
+// pmid_node.handle_get(&our_authority, &from_authority, &request, &None));
+// let get_responses = routing.get_responses_given();
+// assert_eq!(get_responses.len(), 1);
+// assert_eq!(get_responses[0].our_authority, our_authority);
+// assert_eq!(get_responses[0].location, from_authority);
+// assert_eq!(get_responses[0].data,
+// ::routing::data::Data::ImmutableData(data.clone()));
+// assert_eq!(get_responses[0].data_request, request);
+// assert_eq!(get_responses[0].response_token, None);
+// }
+// }
+// }
+//

@@ -45,7 +45,8 @@ pub fn test(request_count: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get StructuredData {}", i));
-        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(),
+                                                       stored_data[i].get_type_tag());
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
@@ -73,7 +74,8 @@ pub fn test(request_count: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
-        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(),
+                                                       stored_data[i].get_type_tag());
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
