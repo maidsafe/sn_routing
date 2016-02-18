@@ -1137,15 +1137,21 @@ impl Core {
             return Ok(());
         }
 
-        if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id.clone()) {
-            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous name: \
-                   {:?}",
-                  previous_name);
-            warn!("Dropping this peer {:?}", peer_id);
-            self.crust_service.disconnect(&peer_id);
-            let _ = self.proxy_map.remove(&peer_id);
+        if self.proxy_map.empty() {
+            let _ = self.proxy_map.insert(peer_id, public_id.clone());
+        } else {
+            if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id.clone()) {
+                warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous name: \
+                       {:?}",
+                      previous_name);
+                warn!("Dropping this peer {:?}", peer_id);
+                self.crust_service.disconnect(&peer_id);
+                let _ = self.proxy_map.remove(&peer_id);
+            } else {
+                trace!("Disconnecting {:?} not accepting further bootstrap connections.", peer_id);
+                self.crust_service.disconnect(&peer_id);
+            }
 
-            // Probably look for other bootstrap connections
             return Ok(());
         }
 
