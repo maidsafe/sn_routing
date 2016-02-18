@@ -23,8 +23,9 @@ use std::thread;
 use std::time::Duration;
 use sodiumoxide::crypto;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+use rand::{random, Rng, thread_rng};
 use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage,
-              RequestContent, ResponseContent, ResponseMessage};
+              RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 use mpid_messaging::{MpidMessage, MpidMessageWrapper};
 
@@ -70,6 +71,23 @@ impl Client {
             }
         }
         client
+    }
+
+    /// Create an account
+    pub fn create_account(&mut self) {
+        let account = unwrap_result!(StructuredData::new(0,
+                                                         random::<XorName>(),
+                                                         0,
+                                                         vec![],
+                                                         vec![],
+                                                         vec![],
+                                                         None));
+        match unwrap_option!(self.put(Data::StructuredData(account)), "") {
+            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
+                info!("{:?} created account", self);
+            }
+            _ => panic!("{:?} failed to create account", self),
+        }
     }
 
     /// Send a `Get` request to the network and return the received response.

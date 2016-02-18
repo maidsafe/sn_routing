@@ -15,54 +15,72 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::Client;
+use super::*;
+use rand;
+use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
+use xor_name::XorName;
 
-#[allow(unused)]
-pub fn test(_client: &mut Client) {
-    println!("Running StructuredData churn test");
-    // let mut processes = start_vaults(4);
-    // let (mut client_routing, client_receiver, client_name) = start_client();
+pub fn test(request_count: u32) {
+    let mut test_group = TestGroup::new("StructuredData churn test");
 
-    // let name = XorName(slice_as_u8_64_array(&*generate_random_vec_u8(64)));
-    // let value = generate_random_vec_u8(1024);
-    // let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
-    // let sd = ::routing::structured_data::StructuredData::new(0,
-    //                                                          name,
-    //                                                          0,
-    //                                                          value.clone(),
-    //                                                          vec![sign_keys.0],
-    //                                                          vec![],
-    //                                                          Some(&sign_keys.1))
-    //              .ok()
-    //              .unwrap();
-    // client_routing.put_request(::routing::Authority::ClientManager(client_name),
-    //                            ::routing::data::Data::StructuredData(sd.clone()));
-    // let duration = ::std::time::Duration::from_millis(5000);
-    // ::std::thread::sleep(duration);
+    let mut client = Client::new();
+    client.create_account();
+    let mut stored_data = Vec::with_capacity(request_count as usize);
+    for i in 0..request_count {
+        test_group.start_case(&format!("Put StructuredData {}", i));
+        let sd = unwrap_result!(StructuredData::new(1,
+                                                    rand::random::<XorName>(),
+                                                    0,
+                                                    generate_random_vec_u8(10),
+                                                    vec![client.signing_public_key()],
+                                                    vec![],
+                                                    Some(client.signing_private_key())));
+        let data = Data::StructuredData(sd.clone());
+        match unwrap_option!(client.put(data), "") {
+            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
+            _ => panic!("Received unexpected response"),
+        }
+        stored_data.push(sd);
+    }
 
-    // let mut new_vault_process = start_vaults(1);
+    for i in 0..request_count as usize {
+        test_group.start_case(&format!("Get StructuredData {}", i));
+        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        match unwrap_option!(client.get(data_request.clone()), "") {
+            ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
+                assert_eq!(stored_data[i], sd);
+            }
+            _ => panic!("Received unexpected response"),
+        }
+    }
 
-    // client_routing.get_request(::routing::Authority::NaeManager(sd.name()),
-    //                            ::routing::data::DataRequest::StructuredData(sd.name(), 0));
-    // while let Ok(data) = client_receiver.recv() {
-    //     assert_eq!(data, ::routing::data::Data::StructuredData(sd.clone()));
-    //     break;
-    // }
+    for i in 0..request_count as usize {
+        test_group.start_case(&format!("Post StructuredData {}", i));
+        let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
+                                                    *stored_data[i].get_identifier(),
+                                                    stored_data[i].get_version() + 1,
+                                                    generate_random_vec_u8(10),
+                                                    stored_data[i].get_owner_keys().clone(),
+                                                    vec![],
+                                                    Some(client.signing_private_key())));
+        let data = Data::StructuredData(sd.clone());
+        match unwrap_option!(client.post(data), "") {
+            ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
+            _ => panic!("Received unexpected response"),
+        }
+        stored_data[i] = sd;
+    }
 
-    // if let Some(mut process) = new_vault_process.pop() {
-    //     let _ = process.kill();
-    //     let result: Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-    //     let s = String::from_utf8(result).unwrap();
-    //     let sd_v: Vec<&str> = s.split("SdManager transferred structured_data").collect();
-    //     assert_eq!(2, sd_v.len());
-    //     println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n",
-    //              s);
-    // };
-    // while let Some(mut process) = processes.pop() {
-    //     let _ = process.kill();
-    //     let result: Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-    //     let s = String::from_utf8(result).unwrap();
-    //     println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n",
-    //              s);
-    // }
+    for i in 0..request_count as usize {
+        test_group.start_case(&format!("Get updated StructuredData {}", i));
+        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        match unwrap_option!(client.get(data_request.clone()), "") {
+            ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
+                assert_eq!(stored_data[i], sd);
+            }
+            _ => panic!("Received unexpected response"),
+        }
+    }
+
+    test_group.release();
 }

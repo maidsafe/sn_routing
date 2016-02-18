@@ -40,7 +40,7 @@ pub fn test() {
     }
 
     test_group.start_case("Put");
-    create_account(&mut client1);
+    client1.create_account();
     let sd = unwrap_result!(StructuredData::new(1,
                                                 rand::random::<XorName>(),
                                                 0,
@@ -55,7 +55,7 @@ pub fn test() {
     }
 
     test_group.start_case("Get");
-    let data_request = DataRequest::StructuredData(sd.get_identifier().clone(), sd.get_type_tag());
+    let data_request = DataRequest::StructuredData(*sd.get_identifier(), sd.get_type_tag());
     match unwrap_option!(client1.get(data_request.clone()), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
@@ -81,21 +81,21 @@ pub fn test() {
 
     test_group.start_case("Post from non-authorised Client");
     let sd = unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                sd.get_identifier().clone(),
+                                                *sd.get_identifier(),
                                                 sd.get_version() + 1,
                                                 generate_random_vec_u8(10),
                                                 sd.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client2.signing_private_key())));
     let data = Data::StructuredData(sd.clone());
-    match client2.post(data.clone()) {
+    match client2.post(data) {
         None => {}
         _ => panic!("Received unexpected response"),
     }
 
     test_group.start_case("Post");
     let sd = unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                sd.get_identifier().clone(),
+                                                *sd.get_identifier(),
                                                 sd.get_version(),
                                                 generate_random_vec_u8(10),
                                                 sd.get_owner_keys().clone(),
@@ -109,8 +109,8 @@ pub fn test() {
 
 
     test_group.start_case("Get updated");
-    let data_request = DataRequest::StructuredData(sd.get_identifier().clone(), sd.get_type_tag());
-    match unwrap_option!(client1.get(data_request.clone()), "") {
+    let data_request = DataRequest::StructuredData(*sd.get_identifier(), sd.get_type_tag());
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -125,8 +125,8 @@ pub fn test() {
                                                 vec![client1.signing_public_key()],
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd.clone());
-    match unwrap_option!(client1.post(data.clone()), "") {
+    let data = Data::StructuredData(sd);
+    match unwrap_option!(client1.post(data), "") {
         ResponseMessage { content: ResponseContent::PostFailure { .. }, .. } => {}
         _ => panic!("Received unexpected response"),
     }

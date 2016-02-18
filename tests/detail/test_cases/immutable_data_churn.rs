@@ -16,46 +16,36 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-// use routing::{Data, ImmutableData, ImmutableDataType};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
+              ResponseMessage};
 
-#[allow(unused)]
-pub fn test(_client: &mut Client) {
-    println!("Running ImmutableData churn test");
+pub fn test(request_count: u32) {
+    let mut test_group = TestGroup::new("ImmutableData churn test");
 
-    // let value = generate_random_vec_u8(1024);
-    // let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
-    // client.put(Data::ImmutableData(im_data.clone()));
+    let mut client = Client::new();
+    client.create_account();
+    let mut stored_data = Vec::with_capacity(request_count as usize);
+    for i in 0..request_count {
+        test_group.start_case(&format!("Put ImmutableData {}", i));
+        let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal,
+                                                          generate_random_vec_u8(1024)));
+        match unwrap_option!(client.put(data.clone()), "") {
+            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
+            _ => panic!("Received unexpected response"),
+        }
+        stored_data.push(data);
+    }
 
-    // let duration = Duration::from_millis(5000);
-    // thread::sleep(duration);
+    for i in 0..request_count as usize {
+        test_group.start_case(&format!("Get ImmutableData {}", i));
+        let data_request = DataRequest::ImmutableData(stored_data[i].name(), ImmutableDataType::Normal);
+        match unwrap_option!(client.get(data_request.clone()), "") {
+            ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
+                assert_eq!(stored_data[i], response_data);
+            }
+            _ => panic!("Received unexpected response"),
+        }
+    }
 
-    // let mut new_vault_process = start_vaults(1);
-
-    // client_routing.get_request(Authority::NaeManager(im_data.name()),
-    //                            DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal));
-    // while let Ok(data) = client_receiver.recv() {
-    //     assert_eq!(data, Data::ImmutableData(im_data.clone()));
-    //     break;
-    // }
-
-    // if let Some(mut process) = new_vault_process.pop() {
-    //     let _ = process.kill();
-    //     let result: Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-    //     let s = String::from_utf8(result).unwrap();
-    //     let mm_v: Vec<&str> = s.split("MaidManager updated account").collect();
-    //     assert_eq!(2, mm_v.len());
-    //     let dm_v: Vec<&str> = s.split("ImmutableDataManager updated account").collect();
-    //     assert_eq!(2, dm_v.len());
-    //     let pm_v: Vec<&str> = s.split("ImmutableDataManager updated account").collect();
-    //     assert_eq!(2, pm_v.len());
-    //     println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n",
-    //              s);
-    // };
-    // while let Some(mut process) = processes.pop() {
-    //     let _ = process.kill();
-    //     let result: Vec<u8> = process.stderr.unwrap().bytes().map(|x| x.unwrap()).collect();
-    //     let s = String::from_utf8(result).unwrap();
-    //     println!("\n\n     +++++++++++++++++++++++++++++++++++++++\n {} \n\n",
-    //              s);
-    // }
+    test_group.release();
 }

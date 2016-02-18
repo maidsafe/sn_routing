@@ -34,7 +34,7 @@ pub fn test() {
     }
 
     test_group.start_case("Put");
-    create_account(&mut client1);
+    client1.create_account();
     match unwrap_option!(client1.put(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
         _ => panic!("Received unexpected response"),
