@@ -44,10 +44,13 @@ use data::{Data, DataRequest};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
+use timer::Timer;
 use types::RoutingActionSender;
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
+
+type StdDuration = ::std::time::Duration;
 
 const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 // const CRUST_DEFAULT_TCP_ACCEPTING_PORT: u16 = 5483;
@@ -60,6 +63,9 @@ const MAX_JOINING_NODES: usize = 1;
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: i64 = 5;
+
+/// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
+const BOOTSTRAP_TIMEOUT_SECS: i64 = 10;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -181,6 +187,7 @@ pub struct Core {
     action_rx: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
     crust_sender: crust::CrustEventSender,
+    timer: Timer,
     signed_message_filter: MessageFilter<SignedMessage>,
     connection_filter: MessageFilter<XorName>,
     node_id_cache: LruCache<XorName, PublicId>,
@@ -190,6 +197,10 @@ pub struct Core {
     full_id: FullId,
     state: State,
     routing_table: RoutingTable<NodeInfo>,
+
+    // nodes we are trying to bootstrap against
+    proxy_candidates: Vec<(PeerId, u64)>,
+
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
@@ -216,6 +227,7 @@ impl Core {
         let action_sender = RoutingActionSender::new(action_tx,
                                                      routing_event_category,
                                                      category_tx.clone());
+        let action_sender2 = action_sender.clone();
 
         let crust_event_category = MaidSafeEventCategory::CrustEvent;
         let crust_sender = crust::CrustEventSender::new(crust_tx,
@@ -245,6 +257,7 @@ impl Core {
                 action_rx: action_rx,
                 event_sender: event_sender,
                 crust_sender: crust_sender,
+                timer: Timer::new(action_sender2),
                 signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                 // TODO Needs further discussion on interval
                 connection_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
@@ -254,6 +267,7 @@ impl Core {
                 full_id: full_id,
                 state: State::Disconnected,
                 routing_table: RoutingTable::new(our_info),
+                proxy_candidates: Vec::new(),
                 proxy_map: HashMap::new(),
                 client_map: HashMap::new(),
                 data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -326,6 +340,8 @@ impl Core {
                                     return;
                                 }
                             }
+
+                            Action::Timeout(token) => self.handle_timeout(token),
 
                             Action::Terminate => {
                                 break;
@@ -969,6 +985,14 @@ impl Core {
     }
 
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+        if self.proxy_candidates.iter().any(|&(id, _)| id == peer_id) {
+            warn!("Already sent ClientIdentify to this peer {:?}", peer_id);
+            return Ok(());
+        }
+
+        let token = self.timer.schedule(StdDuration::from_secs(BOOTSTRAP_TIMEOUT_SECS as u64));
+        self.proxy_candidates.push((peer_id.clone(), token));
+
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
                                             self.full_id.signing_private_key());
@@ -1032,7 +1056,7 @@ impl Core {
                 } else {
                     warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
                 }
-                self.retry_bootstrap_with_blacklist(peer_id);
+                self.retry_bootstrap_with_blacklist(&peer_id);
                 Ok(())
             }
             DirectMessage::ClientToNode => {
@@ -1108,9 +1132,8 @@ impl Core {
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
-            self.crust_service.disconnect(&peer_id);
+            self.retry_bootstrap_with_blacklist(&peer_id);
 
-            // Probably look for other bootstrap connections
             return Ok(());
         }
 
@@ -1125,6 +1148,9 @@ impl Core {
             // Probably look for other bootstrap connections
             return Ok(());
         }
+
+        // Remove the peer from the list of proxy candidates.
+        let _ = swap_remove_if(&mut self.proxy_candidates, |&(id, _)| id == peer_id);
 
         self.state = State::Client;
         self.message_accumulator.set_quorum_size(current_quorum_size);
@@ -1333,16 +1359,16 @@ impl Core {
         }
     }
 
-    fn retry_bootstrap_with_blacklist(&mut self, peer_id: PeerId) {
+    fn retry_bootstrap_with_blacklist(&mut self, peer_id: &PeerId) {
         trace!("{:?}Retry bootstrap without {:?}.", self, peer_id);
-        self.crust_service.disconnect(&peer_id);
+        self.crust_service.disconnect(peer_id);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
         for &proxy_peer_id in self.proxy_map.keys() {
             self.crust_service.disconnect(&proxy_peer_id);
         }
         self.proxy_map.clear();
-        thread::sleep(::std::time::Duration::from_secs(5));
+        thread::sleep(StdDuration::from_secs(5));
         self.crust_service = match crust::Service::new(self.crust_sender.clone(),
                                                        CRUST_DEFAULT_BEACON_PORT) {
             Ok(service) => service,
@@ -1760,6 +1786,16 @@ impl Core {
         }
     }
 
+    fn handle_timeout(&mut self, token: u64) {
+        // We haven't received response from a node we are trying to bootstrap against.
+        if let Some((peer_id, _)) = swap_remove_if(&mut self.proxy_candidates, |&(_, t)| t == token) {
+            if self.state == State::Bootstrapping {
+                trace!("Timeout when trying to bootstrap against {:?}", peer_id);
+                self.retry_bootstrap_with_blacklist(&peer_id);
+            }
+        }
+    }
+
     /// Returns the peer ID of the given node if it is our proxy or client.
     fn get_proxy_or_client_peer_id(&self, public_id: &PublicId) -> Option<PeerId> {
         if let Some(info) = self.client_map.get(public_id.signing_public_key()) {
@@ -1927,6 +1963,9 @@ impl Core {
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if let Some(public_id) = self.proxy_map.remove(peer_id) {
             trace!("Lost bootstrap connection to {:?}.", public_id.name());
+        } else if self.state == State::Bootstrapping {
+            trace!("Lost connection to candidate for proxy node {:?}", peer_id);
+            self.retry_bootstrap_with_blacklist(peer_id);
         }
     }
 
@@ -1975,5 +2014,16 @@ impl Core {
 impl Debug for Core {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}({:?}) - ", self.state, self.name())
+    }
+}
+
+// Remove and return the first element for which the given predicate returns true.
+fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
+    where F: Fn(&T) -> bool
+{
+    if let Some(pos) = vec.iter().position(pred) {
+        Some(vec.swap_remove(pos))
+    } else {
+        None
     }
 }
