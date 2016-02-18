@@ -35,7 +35,7 @@ pub fn simulate_churn(mut processes: Vec<VaultProcess>,
         let mut rng = thread_rng();
         let wait_range = Range::new(min_wait, max_wait);
 
-        let mut vault_index = processes.len() as u32;
+        let mut vault_index = processes.len() as u32 - 1;
         loop {
             {
                 let &(ref lock, ref cond_var) = &*stop_flag;
