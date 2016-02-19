@@ -27,7 +27,7 @@ use rand::{random, Rng, thread_rng};
 use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage,
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
-use mpid_messaging::{MpidMessage, MpidMessageWrapper};
+use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct Client {
@@ -133,8 +133,9 @@ impl Client {
         }
     }
 
-    /// Send an `MpidMessage` to a recipient.
-    pub fn put_mpid_message(&self, receiver: &XorName) -> MpidMessage {
+    /// Generate an `MpidMessage` targeting the specified recipient,
+    /// and its correspondent PutMessage wrapper
+    pub fn generate_mpid_message(&self, receiver: &XorName) -> (MpidMessage, Data) {
         let metadata = super::generate_random_vec_u8(128);
         let body = super::generate_random_vec_u8(128);
         let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
@@ -146,29 +147,59 @@ impl Client {
         let name = unwrap_result!(mpid_message.header().name());
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::PlainData(PlainData::new(name.clone(), value));
-        match unwrap_option!(self.put(data), "") {
-            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
-                trace!("{:?} successfully sent message {:?}", self, mpid_message);
-            }
-            _ => panic!("{:?} failed to send message {:?}", self, mpid_message),
-        }
-        mpid_message
+        (mpid_message, data)
     }
 
     /// Wait to receive an `MpidMessage`.
     pub fn get_mpid_message(&self) -> Option<MpidMessage> {
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::PutMessage(mpid_message) => {
+                trace!("{:?} received message {:?}", self, mpid_message);
+                Some(mpid_message)
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+
+    /// Query outbox
+    pub fn query_outbox(&self) -> Vec<MpidHeader> {
+        self.send_wrapper(MpidMessageWrapper::GetOutboxHeaders);
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
+                trace!("{:?} outbox has following mpid_headers {:?}", self, mpid_headers);
+                mpid_headers
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+
+    /// Query whether outbox has particular message
+    pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
+        self.send_wrapper(MpidMessageWrapper::OutboxHas(msg_names));
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
+                trace!("{:?} outbox has following mpid_headers {:?}", self, mpid_headers);
+                mpid_headers
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+
+    fn send_wrapper(&self, wrapper: MpidMessageWrapper) {
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
+    }
+
+    fn wait_for_wrapper(&self) -> MpidMessageWrapper {
         match unwrap_option!(self.wait_for_request(), "") {
             RequestMessage { src, dst, content: RequestContent::Post(Data::PlainData(msg), _) } => {
                 let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
-                match wrapper {
-                    MpidMessageWrapper::PutMessage(mpid_message) => {
-                        trace!("{:?} received message {:?}", self, mpid_message);
-                        Some(mpid_message)
-                    }
-                    _ => panic!("{:?} unexpected message"),
-                }
+                wrapper
             }
-            _ => panic!("{:?} failed to receive MPID message", self),
+            _ => panic!("{:?} failed to receive outbox query response", self),
         }
     }
 
