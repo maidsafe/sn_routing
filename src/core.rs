@@ -630,7 +630,7 @@ impl Core {
                                       -> Result<(), RoutingError> {
         let dst = signed_msg.content().dst();
 
-        try!(self.harvest_node(signed_msg.public_id().name()));
+        try!(self.harvest_node(signed_msg.public_id().name(), &signed_msg.content()));
 
         if let Authority::Client { ref client_key, .. } = *dst {
             if self.name() == dst.name() {
@@ -663,12 +663,18 @@ impl Core {
 
     /// Checks if the given name is missing from our routing table. If so, tries to refill the
     /// bucket.
-    fn harvest_node(&mut self, name: &XorName) -> Result<(), RoutingError> {
-        if self.connection_filter.insert(name) == 0 && self.routing_table.need_to_add(name) {
-            let i = self.name().bucket_index(name);
-            self.request_bucket_ids(i)
-        } else {
-            Ok(())
+    fn harvest_node(&mut self, name: &XorName, routing_msg: &RoutingMessage) -> Result<(), RoutingError> {
+        match routing_msg {
+            &RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
+                if self.connection_filter.insert(name) == 0 && self.routing_table.need_to_add(name) {
+                    let i = self.name().bucket_index(name);
+                    trace!("Harvesting on {:?} in bucket index {}.", name, i);
+                    self.request_bucket_ids(i)
+                } else {
+                    Ok(())
+                }
+            }
+            _ => Ok(())
         }
     }
 
