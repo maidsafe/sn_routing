@@ -38,7 +38,6 @@
 // To avoid multiple cfg statements before each import.
 #![cfg_attr(feature="use-mock-routing", allow(unused, unused_extern_crates))]
 
-extern crate chunk_store;
 extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
