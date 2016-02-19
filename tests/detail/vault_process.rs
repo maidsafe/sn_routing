@@ -90,11 +90,10 @@ impl Drop for VaultProcess {
             }
             None => return,
         }
-        let _ = File::create(&log_file_path)
-            .and_then(|mut file| {
-                let _ = file.write_all(&stdout_log_result[..]).and_then(|()| file.sync_all());
-                file.write_all(&stderr_log_result[..]).and_then(|()| file.sync_all())
-            });
+        let _ = File::create(&log_file_path).and_then(|mut file| {
+            let _ = file.write_all(&stdout_log_result[..]).and_then(|()| file.sync_all());
+            file.write_all(&stderr_log_result[..]).and_then(|()| file.sync_all())
+        });
     }
 }
 

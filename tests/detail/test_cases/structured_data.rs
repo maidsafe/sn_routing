@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use super::error::ClientError;
 use maidsafe_utilities::serialisation::deserialise;
 use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};

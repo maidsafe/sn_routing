@@ -20,6 +20,5 @@ pub mod structured_data;
 pub mod immutable_data_churn;
 pub mod structured_data_churn;
 pub mod messaging;
-mod error;
 
 pub use super::*;

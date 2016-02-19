@@ -24,43 +24,43 @@ pub fn test() {
     let sender = Client::new();
     let receiver = Client::new();
 
-    test_group.start_case("sender not registered yet");
+    test_group.start_case("Sender not registered yet");
     let (message_sent, request) = sender.generate_mpid_message(receiver.name());
     match unwrap_option!(sender.put(request.clone()), "") {
         ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
             // mpid_manager hasn't implemented a proper external_error_indicator in PutFailure
-            assert_eq!(0, external_error_indicator.len());
+            assert!(external_error_indicator.is_empty());
         }
         _ => panic!("Received unexpected response"),
     }
 
-    test_group.start_case("sender registered and sent a message");
+    test_group.start_case("Sender registered and sent a message");
     sender.register_online();
     match unwrap_option!(sender.put(request.clone()), "") {
         ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
-            trace!("successfully sent message {:?}", message_sent);
+            trace!("Successfully sent message {:?}", message_sent);
         }
-        _ => panic!("failed to send message {:?}", message_sent),
+        _ => panic!("Failed to send message {:?}", message_sent),
     }
-    
-    test_group.start_case("receiver registered and receiving message");
+
+    test_group.start_case("Receiver registered and receiving message");
     receiver.register_online();
     let optional_message = receiver.get_mpid_message();
     let message_received = unwrap_option!(optional_message, "");
     assert_eq!(message_received, message_sent);
 
-    test_group.start_case("query one's outbox");
+    test_group.start_case("Query one's outbox");
     let sender_mpid_headers = sender.query_outbox();
     assert_eq!(1, sender_mpid_headers.len());
     assert_eq!(message_sent.header().clone(), sender_mpid_headers[0]);
     let receiver_mpid_headers = receiver.query_outbox();
     assert_eq!(0, receiver_mpid_headers.len());
 
-    test_group.start_case("query particular record in outbox");
+    test_group.start_case("Query particular record in outbox");
     let msg_name = unwrap_result!(message_sent.header().name());
     let mpid_headers = sender.outbox_has(vec![msg_name]);
     assert_eq!(1, mpid_headers.len());
     assert_eq!(message_sent.header().clone(), mpid_headers[0]);
-    
+
     test_group.release();
 }

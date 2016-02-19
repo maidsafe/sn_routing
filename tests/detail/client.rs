@@ -29,6 +29,15 @@ use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, Requ
 use xor_name::XorName;
 use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub enum ClientError {
+    NoSuchAccount,
+    AccountExists,
+    NoSuchData,
+    DataExists,
+    LowBalance,
+}
+
 /// A simple example client implementation for a network based on the Routing library.
 pub struct Client {
     /// The client interface to the Routing library.
@@ -133,8 +142,8 @@ impl Client {
         }
     }
 
-    /// Generate an `MpidMessage` targeting the specified recipient,
-    /// and its correspondent PutMessage wrapper
+    /// Generate an `MpidMessage` targeting the specified recipient, and its corresponding
+    /// PutMessage wrapper.
     pub fn generate_mpid_message(&self, receiver: &XorName) -> (MpidMessage, Data) {
         let metadata = super::generate_random_vec_u8(128);
         let body = super::generate_random_vec_u8(128);
@@ -161,28 +170,46 @@ impl Client {
         }
     }
 
-    /// Query outbox
+    /// Query outbox.
     pub fn query_outbox(&self) -> Vec<MpidHeader> {
         self.send_wrapper(MpidMessageWrapper::GetOutboxHeaders);
         match self.wait_for_wrapper() {
             MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
-                trace!("{:?} outbox has following mpid_headers {:?}", self, mpid_headers);
+                trace!("{:?} outbox has following mpid_headers {:?}",
+                       self,
+                       mpid_headers);
                 mpid_headers
             }
             _ => panic!("{:?} unexpected message"),
         }
     }
 
-    /// Query whether outbox has particular message
+    /// Query whether outbox has particular message.
     pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
         self.send_wrapper(MpidMessageWrapper::OutboxHas(msg_names));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
-                trace!("{:?} outbox has following mpid_headers {:?}", self, mpid_headers);
+                trace!("{:?} outbox has following mpid_headers {:?}",
+                       self,
+                       mpid_headers);
                 mpid_headers
             }
             _ => panic!("{:?} unexpected message"),
         }
+    }
+    /// Return network name.
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
+    /// Return public signing key.
+    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+        self.full_id.public_id().signing_public_key().clone()
+    }
+
+    /// Return secret signing key.
+    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
+        self.full_id.signing_private_key()
     }
 
     fn send_wrapper(&self, wrapper: MpidMessageWrapper) {
@@ -201,21 +228,6 @@ impl Client {
             }
             _ => panic!("{:?} failed to receive outbox query response", self),
         }
-    }
-
-    /// Return network name.
-    pub fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
-    }
-
-    /// Return public signing key.
-    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
-        self.full_id.public_id().signing_public_key().clone()
-    }
-
-    /// Return secret signing key.
-    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
-        self.full_id.signing_private_key()
     }
 
     fn wait_for_request(&self) -> Option<RequestMessage> {
