@@ -68,7 +68,12 @@ pub fn test() {
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::ImmutableData(rand::random::<XorName>(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchData => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
         _ => panic!("Received unexpected response"),
     }
 
