@@ -425,14 +425,18 @@ impl Core {
     }
 
     fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
-        match result {
-            Ok(()) => {
-                // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
-                // NodeIdentify.
-                let _ = self.node_identify(peer_id);
-            }
-            Err(err) => {
-                error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
+        if self.client_restriction {
+            trace!("Received new peer event as a client.");
+        } else {
+            match result {
+                Ok(()) => {
+                    // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
+                    // NodeIdentify.
+                    let _ = self.node_identify(peer_id);
+                }
+                Err(err) => {
+                    error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
+                }
             }
         }
     }
@@ -952,8 +956,10 @@ impl Core {
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) {
-        self.dropped_routing_node_connection(&peer_id);
-        self.dropped_client_connection(&peer_id);
+        if !self.client_restriction {
+            self.dropped_routing_node_connection(&peer_id);
+            self.dropped_client_connection(&peer_id);
+        }
         self.dropped_bootstrap_connection(&peer_id);
     }
 
@@ -1250,6 +1256,11 @@ impl Core {
                             public_id: PublicId,
                             peer_id: PeerId)
                             -> Result<(), RoutingError> {
+        if self.client_restriction {
+            trace!("Received node identify as a client.");
+            return Ok(());
+        }
+
         let name = *public_id.name();
         trace!("{:?}Handling NodeIdentify from {:?}.", self, name);
         if !self.node_in_cache(&public_id, &peer_id) {
