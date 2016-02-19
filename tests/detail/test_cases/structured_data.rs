@@ -140,7 +140,7 @@ pub fn test() {
     let data = Data::StructuredData(sd);
     match unwrap_option!(client1.post(data), "") {
         ResponseMessage { content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } => {
-            // structured_data_manager has implement a proper external_error_indicator in PostFailure
+            // structured_data_manager hasn't implemented a proper external_error_indicator in PostFailure
             assert_eq!(0, external_error_indicator.len());
         }
         _ => panic!("Received unexpected response"),
