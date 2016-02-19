@@ -1,4 +1,4 @@
-// Copyright 2016 MaidSafe.net limited.
+// Copyright 2015 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub mod immutable_data;
-pub mod structured_data;
-pub mod immutable_data_churn;
-pub mod structured_data_churn;
-pub mod messaging;
-mod error;
-
-pub use super::*;
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub enum ClientError {
+    NoSuchAccount,
+    AccountExists,
+    NoSuchData,
+    DataExists,
+    LowBalance,
+}

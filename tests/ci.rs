@@ -46,6 +46,7 @@ extern crate maidsafe_utilities;
 extern crate mpid_messaging;
 extern crate rand;
 extern crate routing;
+extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate xor_name;
 

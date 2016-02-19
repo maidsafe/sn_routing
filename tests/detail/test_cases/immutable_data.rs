@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
+use super::error::ClientError;
+use maidsafe_utilities::serialisation::deserialise;
 use rand;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
               ResponseMessage};
@@ -29,7 +31,12 @@ pub fn test() {
     let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal,
                                                       generate_random_vec_u8(1024)));
     match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchAccount => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
         _ => panic!("Received unexpected response"),
     }
 
@@ -61,7 +68,12 @@ pub fn test() {
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::ImmutableData(rand::random::<XorName>(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchData => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
         _ => panic!("Received unexpected response"),
     }
 

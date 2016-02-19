@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
+use super::error::ClientError;
+use maidsafe_utilities::serialisation::deserialise;
 use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
@@ -35,7 +37,12 @@ pub fn test() {
                                 Some(client1.signing_private_key()))));
 
     match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchAccount => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
         _ => panic!("Received unexpected response"),
     }
 
@@ -75,7 +82,12 @@ pub fn test() {
     test_group.start_case("Get for non-existent data");
     let data_request = DataRequest::StructuredData(rand::random::<XorName>(), 1);
     match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchData => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
         _ => panic!("Received unexpected response"),
     }
 
@@ -127,7 +139,10 @@ pub fn test() {
                                                 Some(client1.signing_private_key())));
     let data = Data::StructuredData(sd);
     match unwrap_option!(client1.post(data), "") {
-        ResponseMessage { content: ResponseContent::PostFailure { .. }, .. } => {}
+        ResponseMessage { content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } => {
+            // structured_data_manager hasn't implemented a proper external_error_indicator in PostFailure
+            assert_eq!(0, external_error_indicator.len());
+        }
         _ => panic!("Received unexpected response"),
     }
 
