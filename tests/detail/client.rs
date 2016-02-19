@@ -29,6 +29,8 @@ use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, Requ
 use xor_name::XorName;
 use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
+// TODO: These are a duplicate of those in src/error.rs until we get a crate for the types which are
+// common to Vaults and Core.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum ClientError {
     NoSuchAccount,
@@ -71,15 +73,10 @@ impl Client {
         // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
         // requests to the network.
         info!("Waiting for {:?} to connect to network", client);
-        for it in client.receiver.iter() {
-            if let Event::Connected = it {
-                info!("{:?} connected to network", client);
-                break;
-            } else {
-                trace!("{:?} ignoring event {:?}", client, it);
-            }
+        if let Some(Event::Connected) = client.wait_for_event() {
+            return client
         }
-        client
+        panic!("{:?} failed to connect.");
     }
 
     /// Create an account
