@@ -186,7 +186,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         println!("Killing Node #{}", kill_at_index + 1);
         let _ = nodes.remove(kill_at_index);
     } else {
-        let arg = format!("--node=Node_{}.log", log_file_number);
+        let arg = format!("--node=Node_{:02}.log", log_file_number);
         *log_file_number += 1;
 
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))

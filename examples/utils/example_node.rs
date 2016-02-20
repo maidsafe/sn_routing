@@ -204,7 +204,7 @@ impl ExampleNode {
                 }
                 let mut close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                     None => {
-                        trace!("CloseGroup action returned None.");
+                        warn!("CloseGroup action returned None.");
                         return;
                     }
                     Some(close_grp) => close_grp,
@@ -279,15 +279,15 @@ impl ExampleNode {
             // Find a member of our close group that doesn't already have the lost data item.
             let close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                 None => {
-                    trace!("CloseGroup action returned None.");
+                    warn!("CloseGroup action returned None.");
                     return;
                 }
                 Some(close_grp) => close_grp,
             };
-            if let Some(node) = close_grp.into_iter().find(|outer| {
+            if let Some(node) = close_grp.into_iter().find(|close_node| {
                 unwrap_option!(self.dm_accounts.get(&data.name()), "")
                      .iter()
-                     .all(|inner| *inner != *outer)
+                     .all(|data_node| *data_node != *close_node)
             }) {
                 let src = dst;
                 let dst = Authority::ManagedNode(node.clone());

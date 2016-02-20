@@ -62,10 +62,10 @@ const MAX_JOINING_NODES: usize = 1;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
-const JOINING_NODE_TIMEOUT_SECS: i64 = 5;
+const JOINING_NODE_TIMEOUT_SECS: i64 = 20;
 
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const BOOTSTRAP_TIMEOUT_SECS: i64 = 10;
+const BOOTSTRAP_TIMEOUT_SECS: i64 = 20;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -432,7 +432,9 @@ impl Core {
                 Ok(()) => {
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
-                    let _ = self.node_identify(peer_id);
+                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                        let _ = self.node_identify(peer_id);
+                    }
                 }
                 Err(err) => {
                     error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
@@ -1275,7 +1277,6 @@ impl Core {
         }
 
         if self.routing_table.contains(&name) {
-            // We already sent an identify to this peer.
             return Ok(());
         }
         let info = NodeInfo::new(public_id.clone(), peer_id);
@@ -1319,7 +1320,7 @@ impl Core {
             }
         }
 
-        self.node_identify(peer_id)
+        Ok(())
     }
 
     /// Send `NewNode` messages to the given contacts.
@@ -1586,9 +1587,13 @@ impl Core {
 
         // From A -> Each in Y
         for close_node_id in close_group_ids {
-            if self.node_id_cache.insert(*close_node_id.name(), close_node_id.clone()).is_none() &&
-               !self.routing_table.contains(close_node_id.name()) &&
-               self.routing_table.allow_connection(close_node_id.name()) {
+            if self.node_id_cache.insert(*close_node_id.name(), close_node_id.clone()).is_some() {
+                trace!("Node ID cache already contains {:?}.", close_node_id);
+            } else if self.routing_table.contains(close_node_id.name()) {
+                trace!("Routing table already contains {:?}.", close_node_id);
+            } else if !self.routing_table.allow_connection(close_node_id.name()) {
+                trace!("Routing table does not allow {:?}.", close_node_id);
+            } else {
                 trace!("Sending connection info to {:?} on GetCloseGroup response.",
                        close_node_id);
                 try!(self.send_connection_info(close_node_id.clone(),
@@ -1789,9 +1794,10 @@ impl Core {
                             dst: Authority)
                             -> Result<(), RoutingError> {
         if let Some(peer_id) = self.get_proxy_or_client_peer_id(&their_public_id) {
+            try!(self.handle_node_identify(their_public_id, peer_id));
             self.node_identify(peer_id)
         } else if !self.routing_table.contains(their_public_id.name()) &&
-           their_public_id.signing_public_key() != self.full_id.public_id().signing_public_key() {
+           self.routing_table.allow_connection(their_public_id.name()) {
             if self.connection_token_map
                    .retrieve_all()
                    .into_iter()
@@ -2000,7 +2006,7 @@ impl Core {
                        self,
                        node.public_id.name());
                 if common_groups {
-                    // If the lost node shared some close group with us, send Churn.
+                    // If the lost node shared some close group with us, send a NodeLost event.
                     let event = Event::NodeLost(*node.public_id.name());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("Error sending event to routing user - {:?}", err);
