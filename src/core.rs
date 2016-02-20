@@ -189,7 +189,7 @@ pub struct Core {
     crust_sender: crust::CrustEventSender,
     timer: Timer,
     signed_message_filter: MessageFilter<SignedMessage>,
-    connection_filter: MessageFilter<XorName>,
+    bucket_filter: MessageFilter<usize>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
     // Group messages which have been accumulated and then actioned
@@ -260,7 +260,7 @@ impl Core {
                 timer: Timer::new(action_sender2),
                 signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
                 // TODO Needs further discussion on interval
-                connection_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
+                bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
                 node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
                 message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
                 grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
@@ -666,8 +666,8 @@ impl Core {
     fn harvest_node(&mut self, name: &XorName, routing_msg: &RoutingMessage) -> Result<(), RoutingError> {
         match routing_msg {
             &RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
-                if self.connection_filter.insert(name) == 0 && self.routing_table.need_to_add(name) {
-                    let i = self.name().bucket_index(name);
+                let i = self.name().bucket_index(name);
+                if self.bucket_filter.insert(&i) == 0 && self.routing_table.need_to_add(name) {
                     trace!("Harvesting on {:?} in bucket index {}.", name, i);
                     self.request_bucket_ids(i)
                 } else {
