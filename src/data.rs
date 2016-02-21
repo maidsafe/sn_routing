@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt;
 use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataType};
@@ -22,7 +23,7 @@ pub use plain_data::PlainData;
 use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
-#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
     /// StructuredData Data type.
     StructuredData(StructuredData),
@@ -61,6 +62,16 @@ pub enum DataRequest {
     ImmutableData(XorName, ImmutableDataType),
     /// Request for PlainData.
     PlainData(XorName),
+}
+
+impl fmt::Debug for Data {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match *self {
+            Data::StructuredData(ref d) => d.fmt(formatter),
+            Data::ImmutableData(ref d) => d.fmt(formatter),
+            Data::PlainData(ref d) => d.fmt(formatter),
+        }
+    }
 }
 
 impl DataRequest {

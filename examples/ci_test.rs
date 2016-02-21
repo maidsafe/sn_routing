@@ -231,7 +231,7 @@ fn init(file_name: String) {
     let format = move |record: &LogRecord| {
         let now = ::time::now();
         let thread_name = " ".to_owned();
-        let log_message =  format!("{} {}.{:06} {}[{}:{}:{}] {}\n",
+        let log_message =  format!("{} {}.{:06} {}[{}:{}:{:4}] {}\n",
                     match record.level() {
                         LogLevel::Error => 'E',
                         LogLevel::Warn => 'W',

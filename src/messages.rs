@@ -23,6 +23,7 @@ use xor_name::XorName;
 use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha512;
+use utils;
 use authority::Authority;
 use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
@@ -376,22 +377,23 @@ impl fmt::Debug for DirectMessage {
         match *self {
             DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
                 write!(formatter,
-                       "DirectMessage {{ BootstrapIdentify {{ {:?}, {:?} }} }}",
+                       "BootstrapIdentify {{ {:?}, {:?} }}",
                        public_id,
                        current_quorum_size)
             }
-            DirectMessage::BootstrapDeny => write!(formatter, "DirectMessage {{ BootstrapDeny }}"),
-            DirectMessage::ClientToNode => write!(formatter, "DirectMessage {{ ClientToNode }}"),
-            DirectMessage::ClientIdentify { ref client_restriction, .. } => {
-                write!(formatter,
-                       "DirectMessage {{ ClientIdentify {{ .., {:?} }} }}",
-                       client_restriction)
+            DirectMessage::BootstrapDeny => write!(formatter, "BootstrapDeny"),
+            DirectMessage::ClientToNode => write!(formatter, "ClientToNode"),
+            DirectMessage::ClientIdentify { client_restriction: true, .. } => {
+                write!(formatter, "ClientIdentify (client only)")
+            }
+            DirectMessage::ClientIdentify { client_restriction: false, .. } => {
+                write!(formatter, "ClientIdentify (joining node)")
             }
             DirectMessage::NodeIdentify { .. } => {
-                write!(formatter, "DirectMessage {{ NodeIdentify {{ .. }} }}")
+                write!(formatter, "NodeIdentify {{ .. }}")
             }
             DirectMessage::NewNode(ref public_id) => {
-                write!(formatter, "DirectMessage {{ NewNode({:?}) }}", public_id)
+                write!(formatter, "NewNode({:?})", public_id)
             }
         }
     }
@@ -420,50 +422,37 @@ impl fmt::Debug for RequestContent {
         match *self {
             RequestContent::GetNetworkName { ref current_id } => {
                 write!(formatter,
-                       "RequestContent {{ GetNetworkName {{ {:?} }} }}",
+                       "GetNetworkName {{ {:?} }}",
                        current_id)
             }
             RequestContent::ExpectCloseNode { ref expect_id } => {
                 write!(formatter,
-                       "RequestContent {{ ExpectCloseNode {{ {:?} }} }}",
+                       "ExpectCloseNode {{ {:?} }}",
                        expect_id)
             }
-            RequestContent::GetCloseGroup => {
-                write!(formatter, "RequestContent {{ GetCloseGroup }}")
-            }
-            RequestContent::Connect => write!(formatter, "RequestContent {{ Connect }}"),
+            RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
+            RequestContent::Connect => write!(formatter, "Connect"),
             RequestContent::ConnectionInfo { .. } => {
-                write!(formatter, "RequestContent {{ ConnectionInfo {{ .. }} }}")
+                write!(formatter, "ConnectionInfo {{ .. }}")
             }
-            RequestContent::GetPublicId => write!(formatter, "RequestContent {{ GetPublicId }}"),
+            RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
             RequestContent::GetPublicIdWithConnectionInfo { .. } => {
-                write!(formatter,
-                       "RequestContent {{ GetPublicIdWithConnectionInfo {{ .. }} }}")
+                write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
             }
-            RequestContent::Refresh(..) => write!(formatter, "RequestContent {{ Refresh(..) }}"),
+            RequestContent::Refresh(ref data) => {
+                write!(formatter, "Refresh({:?})", utils::format_binary_array(data))
+            }
             RequestContent::Get(ref data_request, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Get( {:?}, {:?} ) }}",
-                       data_request,
-                       message_id)
+                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
             }
             RequestContent::Put(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Put( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Put({:?}, {:?})", data, message_id)
             }
             RequestContent::Post(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Post( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Post({:?}, {:?})", data, message_id)
             }
             RequestContent::Delete(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Delete( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Delete({:?}, {:?})", data, message_id)
             }
         }
     }
@@ -473,72 +462,42 @@ impl fmt::Debug for ResponseContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             ResponseContent::GetNetworkName { ref relocated_id } => {
-                write!(formatter,
-                       "ResponseContent {{ GetNetworkName {{ {:?} }} }}",
-                       relocated_id)
+                write!(formatter, "GetNetworkName {{ {:?} }}", relocated_id)
             }
             ResponseContent::GetPublicId { ref public_id } => {
-                write!(formatter,
-                       "ResponseContent {{ GetPublicId {{ {:?} }} }}",
-                       public_id)
+                write!(formatter, "GetPublicId {{ {:?} }}", public_id)
             }
             ResponseContent::GetPublicIdWithConnectionInfo { ref public_id, .. } => {
                 write!(formatter,
-                       "ResponseContent {{ GetPublicIdWithConnectionInfo {{ {:?}, .. }} }}",
+                       "GetPublicIdWithConnectionInfo {{ {:?}, .. }}",
                        public_id)
             }
             ResponseContent::GetCloseGroup { ref close_group_ids } => {
-                write!(formatter,
-                       "ResponseContent {{ GetCloseGroup {{ {:?} }} }}",
-                       close_group_ids)
+                write!(formatter, "GetCloseGroup {{ {:?} }}", close_group_ids)
             }
             ResponseContent::GetSuccess(ref data, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ GetSuccess {{ {:?}, {:?} }} }}",
-                       data,
-                       message_id)
+                write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
             }
             ResponseContent::PutSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ PutSuccess {{ {:?}, {:?} }} }}",
-                       digest,
-                       message_id)
+                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", digest, message_id)
             }
             ResponseContent::PostSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ PostSuccess {{ {:?}, {:?} }} }}",
-                       digest,
-                       message_id)
+                write!(formatter, "PostSuccess {{ {:?}, {:?} }}", digest, message_id)
             }
             ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ DeleteSuccess {{ {:?}, {:?} }} }}",
-                       digest,
-                       message_id)
+                write!(formatter, "DeleteSuccess {{ {:?}, {:?} }}", digest, message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ GetFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::PutFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ PutFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::PostFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ PostFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::DeleteFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ DeleteFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, request)
             }
         }
     }

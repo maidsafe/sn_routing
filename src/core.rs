@@ -358,9 +358,8 @@ impl Core {
 
             if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
                 cur_routing_table_size = self.routing_table.len();
-                trace!(" -----------------------------------");
-                trace!("| Routing Table size updated to: {}",
-                       self.routing_table.len());
+                trace!(" ---------------------------------------");
+                trace!("| {:?} - Routing Table size: {:3} |", self, self.routing_table.len());
                 // self.routing_table.our_close_group().iter().all(|elt| {
                 //     trace!("Name: {:?} Connections {:?}  -- {:?}",
                 //            elt.public_id.name(),
@@ -368,7 +367,7 @@ impl Core {
                 //            elt.connections);
                 //     true
                 // });
-                trace!(" -----------------------------------");
+                trace!(" ---------------------------------------");
             }
         } // Category Rx
     }
@@ -383,7 +382,7 @@ impl Core {
             crust::Event::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
                     Err(RoutingError::FilterCheckFailed) => (),
-                    Err(err) => error!("{:?}{:?}", self, err),
+                    Err(err) => error!("{:?} - {:?}", self, err),
                     Ok(_) => (),
                 }
             }
@@ -397,7 +396,7 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        trace!("{:?}Received BootstrapConnect.", self);
+        trace!("Received BootstrapConnect from {:?}.", peer_id);
         if self.state == State::Disconnected {
             // Established connection. Pending Validity checks
             self.state = State::Bootstrapping;
@@ -406,8 +405,8 @@ impl Core {
         }
     }
 
-    fn handle_bootstrap_accept(&mut self, _peer_id: PeerId) {
-        trace!("{:?}Received BootstrapAccept.", self);
+    fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
+        trace!("Received BootstrapAccept from {:?}.", peer_id);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
@@ -420,16 +419,18 @@ impl Core {
             // This will give me a new RT and set state to Relocated
             self.set_self_node_name(new_name);
             self.state = State::Node;
+            trace!("{:?} - Started a new network as a seed node.", self)
         }
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
     fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
         if self.client_restriction {
-            trace!("Received new peer event as a client.");
+            warn!("Received NewPeer event as a client.");
         } else {
             match result {
                 Ok(()) => {
+            		trace!("Received NewPeer with Ok from {:?}.", peer_id);
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
                     if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
@@ -516,7 +517,6 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
-        // trace!("{:?}Handling hop message: {:?}", self, hop_msg);
         if self.state == State::Node {
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
@@ -801,7 +801,6 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
-        trace!("{:?}Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
@@ -827,9 +826,11 @@ impl Core {
     }
 
     fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
-        match (request_msg.content.clone(),
-               request_msg.src.clone(),
-               request_msg.dst.clone()) {
+        let content = request_msg.content.clone();
+        let src = request_msg.src.clone();
+        let dst = request_msg.dst.clone();
+        trace!("Got request {:?} from {:?} to {:?}.", content, src, dst);
+        match (content, src, dst) {
             (RequestContent::GetNetworkName { current_id, },
              Authority::Client { client_key, proxy_node_name },
              Authority::NaeManager(dst_name)) => {
@@ -897,9 +898,11 @@ impl Core {
     fn handle_response_message(&mut self,
                                response_msg: ResponseMessage)
                                -> Result<(), RoutingError> {
-        match (response_msg.content.clone(),
-               response_msg.src.clone(),
-               response_msg.dst.clone()) {
+        let content = response_msg.content.clone();
+        let src = response_msg.src.clone();
+        let dst = response_msg.dst.clone();
+        trace!("Got response {:?} from {:?} to {:?}.", content, src, dst);
+        match (content, src, dst) {
             (ResponseContent::GetNetworkName { relocated_id, },
              Authority::NaeManager(_),
              Authority::Client { client_key, proxy_node_name, }) => {
@@ -1004,6 +1007,8 @@ impl Core {
             return Ok(());
         }
 
+        trace!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
+
         let token = self.timer.schedule(StdDuration::from_secs(BOOTSTRAP_TIMEOUT_SECS as u64));
         self.proxy_candidates.push((peer_id.clone(), token));
 
@@ -1079,8 +1084,7 @@ impl Core {
                 }
                 // TODO(afck): Try adding them to the routing table?
                 if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
-                    warn!("{:?}Client requested ClientToNode, but is not in routing table: {:?}",
-                          self,
+                    warn!("Client requested ClientToNode, but is not in routing table: {:?}",
                           peer_id);
                     self.crust_service.disconnect(&peer_id);
                 }
@@ -1120,6 +1124,7 @@ impl Core {
                 self.handle_node_identify(public_id, peer_id)
             }
             DirectMessage::NewNode(public_id) => {
+                trace!("Received NewNode({:?}).", public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }
@@ -1139,10 +1144,6 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        trace!("{:?}Rxd BootstrapIdentify - Quorum size: {}",
-               self,
-               current_quorum_size);
-
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
@@ -1173,6 +1174,7 @@ impl Core {
         let _ = swap_remove_if(&mut self.proxy_candidates, |&(id, _)| id == peer_id);
 
         self.state = State::Client;
+        trace!("{:?} - State changed to client, quorum size: {}.", self, current_quorum_size);
         self.message_accumulator.set_quorum_size(current_quorum_size);
 
         if self.client_restriction {
@@ -1225,6 +1227,8 @@ impl Core {
             self.crust_service.disconnect(&prev_info.peer_id);
         }
 
+        trace!("Accepted client {:?}.", public_id.name());
+
         let _ = self.bootstrap_identify(peer_id);
         Ok(())
     }
@@ -1270,7 +1274,7 @@ impl Core {
         }
 
         let name = *public_id.name();
-        trace!("{:?}Handling NodeIdentify from {:?}.", self, name);
+        trace!("Handling NodeIdentify from {:?}.", name);
         if !self.node_in_cache(&public_id, &peer_id) {
             self.crust_service.disconnect(&peer_id);
             return Ok(());
@@ -1289,10 +1293,7 @@ impl Core {
                 return Ok(());
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
-                trace!("{:?}Added node to routing table: {:?}. Table size {}.",
-                       self,
-                       name,
-                       self.routing_table.len());
+                trace!("Added {:?} to routing table.", name);
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
@@ -1305,7 +1306,10 @@ impl Core {
             }
         }
 
-        self.state = State::Node;
+        if self.state != State::Node {
+            self.state = State::Node;
+            trace!("{:?} - State changed to node.", self);
+        }
 
         if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
             trace!("Routing table reached group size. Dropping proxy.");
@@ -1384,7 +1388,7 @@ impl Core {
     }
 
     fn retry_bootstrap_with_blacklist(&mut self, peer_id: &PeerId) {
-        trace!("{:?}Retry bootstrap without {:?}.", self, peer_id);
+        trace!("Retry bootstrap without {:?}.", peer_id);
         self.crust_service.disconnect(peer_id);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
@@ -1445,10 +1449,6 @@ impl Core {
         };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
-        trace!("Computed relocated name {:?} for {:?}.",
-               relocated_name,
-               their_public_id.name());
-
         their_public_id.set_name(relocated_name.clone());
 
         // From X -> A (via B)
@@ -1587,18 +1587,18 @@ impl Core {
 
         // From A -> Each in Y
         for close_node_id in close_group_ids {
-            if self.node_id_cache.insert(*close_node_id.name(), close_node_id.clone()).is_some() {
-                trace!("Node ID cache already contains {:?}.", close_node_id);
-            } else if self.routing_table.contains(close_node_id.name()) {
-                trace!("Routing table already contains {:?}.", close_node_id);
-            } else if !self.routing_table.allow_connection(close_node_id.name()) {
-                trace!("Routing table does not allow {:?}.", close_node_id);
-            } else {
-                trace!("Sending connection info to {:?} on GetCloseGroup response.",
-                       close_node_id);
-                try!(self.send_connection_info(close_node_id.clone(),
-                                               dst.clone(),
-                                               Authority::ManagedNode(*close_node_id.name())));
+            if self.node_id_cache.insert(*close_node_id.name(), close_node_id.clone()).is_none() {
+                if self.routing_table.contains(close_node_id.name()) {
+                    trace!("Routing table already contains {:?}.", close_node_id);
+                } else if !self.routing_table.allow_connection(close_node_id.name()) {
+                    trace!("Routing table does not allow {:?}.", close_node_id);
+                } else {
+                    trace!("Sending connection info to {:?} on GetCloseGroup response.",
+                           close_node_id);
+                    try!(self.send_connection_info(close_node_id,
+                                                   dst.clone(),
+                                                   Authority::ManagedNode(*close_node_id.name())));
+                }
             }
         }
 
@@ -1928,12 +1928,12 @@ impl Core {
                     return Ok(());
                 }
 
-                error!("{:?}Unable to find connection to proxy node in proxy map",
+                error!("{:?} - Unable to find connection to proxy node in proxy map",
                        self);
                 return Err(RoutingError::ProxyConnectionNotFound);
             }
 
-            error!("{:?}Source should be client if our state is a Client", self);
+            error!("{:?} - Source should be client if our state is a Client", self);
             return Err(RoutingError::InvalidSource);
         }
 
@@ -2002,9 +2002,7 @@ impl Core {
         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
                    self.routing_table.remove(node.public_id.name()) {
-                trace!("{:?}Dropped {:?} from the routing table.",
-                       self,
-                       node.public_id.name());
+                trace!("Dropped {:?} from the routing table.", node.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send a NodeLost event.
                     let event = Event::NodeLost(*node.public_id.name());
@@ -2042,7 +2040,7 @@ impl Core {
 
 impl Debug for Core {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}({:?}) - ", self.state, self.name())
+        write!(f, "{:?}({:?})", self.state, self.name())
     }
 }
 
