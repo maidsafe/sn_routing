@@ -192,10 +192,12 @@ mod timer;
 mod types;
 mod utils;
 
-#[cfg(test)]
-mod core_tests;
-#[cfg(test)]
-mod crust_mock;
+#[cfg(test)] mod core_tests;
+#[cfg(test)] mod crust_mock;
+
+// TODO: move this to maidsafe_utilities or to a separate crate
+#[allow(missing_docs)]
+pub mod test_utils;
 
 pub use authority::Authority;
 pub use client::Client;
