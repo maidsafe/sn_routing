@@ -203,13 +203,15 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+        if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
             match test_event {
                 TestEvent(index, Event::NodeAdded(_)) => {
                     connection_counts[index] += 1;
 
                     let k = nodes.len();
-                    if (0..k).map(|i| connection_counts[i]).all(|n| n >= k - 1) {
+                    if (0..k).map(|i| connection_counts[i]).all(|n| {
+                        n >= k - 1 || n >= GROUP_SIZE - 1
+                    }) {
                         break;
                     }
                 }

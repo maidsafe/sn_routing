@@ -1578,6 +1578,7 @@ impl Core {
         } else {
             match dst {
                 Authority::ManagedNode(..) => (),
+                Authority::Client { .. } => (),
                 _ => return Err(RoutingError::BadAuthority),
             }
         }

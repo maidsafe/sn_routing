@@ -46,6 +46,7 @@ extern crate docopt;
 extern crate sodiumoxide;
 extern crate routing;
 extern crate xor_name;
+extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate time;
 
@@ -66,13 +67,14 @@ use sodiumoxide::crypto::hash;
 use utils::{ExampleNode, ExampleClient};
 use routing::{Data, DataRequest, PlainData};
 
+use kademlia_routing_table::GROUP_SIZE;
+
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
-const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
 const CHURN_MIN_WAIT_SEC: u64 = 10;
 const CHURN_MAX_WAIT_SEC: u64 = 15;
