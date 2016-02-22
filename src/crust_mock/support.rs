@@ -1,0 +1,491 @@
+// Copyright 2016 MaidSafe.net limited.
+//
+// This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
+// version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
+// licence you accepted on initial access to the Software (the "Licences").
+//
+// By contributing code to the SAFE Network Software, or to this project generally, you agree to be
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
+//
+// Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
+// under the GPL Licence is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.
+//
+// Please review the Licences for the specific language governing permissions and limitations
+// relating to use of the SAFE Network Software.
+
+use rand;
+use std::collections::{HashMap, VecDeque};
+use std::io;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use std::thread::{Builder, JoinHandle};
+
+use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
+                   Service, TheirConnectionInfo};
+
+/// Mock network. Create one before testing with mocks. Use it to create `Device`s.
+pub struct Network(Arc<NetworkImp>, Option<JoinHandle<()>>);
+
+pub struct NetworkImp {
+    services: Mutex<HashMap<Endpoint, Weak<Mutex<ServiceImp>>>>,
+    next_endpoint: AtomicUsize,
+    queue: (Mutex<VecDeque<(Endpoint, Endpoint, Packet)>>, Condvar),
+}
+
+impl Network {
+    /// Create new mock Network.
+    pub fn new() -> Self {
+        let imp = Arc::new(NetworkImp {
+            services: Mutex::new(HashMap::new()),
+            next_endpoint: ATOMIC_USIZE_INIT,
+            queue: (Mutex::new(VecDeque::new()), Condvar::new()),
+        });
+
+        let imp2 = imp.clone();
+        let handle = Builder::new()
+                         .name("mock network thread".to_owned())
+                         .spawn(move || while imp2.wait_and_process_packets() {})
+                         .unwrap();
+
+        Network(imp, Some(handle))
+    }
+
+    /// Create new Device.
+    pub fn new_device(&self, config: Option<Config>, endpoint: Option<Endpoint>) -> Device {
+        let config = config.unwrap_or_else(|| Config::new());
+        let endpoint = endpoint.unwrap_or_else(|| self.gen_endpoint());
+
+        let device = Device::new(self.0.clone(), config, endpoint);
+        let _ = self.0
+                    .services
+                    .lock()
+                    .unwrap()
+                    .insert(endpoint, Arc::downgrade(&device.0));
+
+        device
+    }
+
+    pub fn gen_endpoint(&self) -> Endpoint {
+        Endpoint(self.0.next_endpoint.fetch_add(1, Ordering::AcqRel))
+    }
+}
+
+impl Drop for Network {
+    fn drop(&mut self) {
+        self.0.send(Endpoint(0), Endpoint(0), Packet::Terminate);
+        self.1.take().map(JoinHandle::join).is_some();
+    }
+}
+
+impl NetworkImp {
+    fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+        self.queue.0.lock().unwrap().push_front((sender, receiver, packet));
+        self.queue.1.notify_one();
+    }
+
+    fn wait_and_process_packets(&self) -> bool {
+        self.wait_for_packets();
+        self.process_packets()
+    }
+
+    fn wait_for_packets(&self) {
+        let mut guard = self.queue.0.lock().unwrap();
+
+        while guard.is_empty() {
+            guard = self.queue.1.wait(guard).unwrap();
+        }
+    }
+
+    fn process_packets(&self) -> bool {
+        loop {
+            match self.pop_packet() {
+                Some((_, _, Packet::Terminate)) => return false,
+
+                Some((sender, receiver, packet)) => {
+                    self.process_packet(sender, receiver, packet);
+                }
+
+                None => return true,
+            }
+        }
+    }
+
+    fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
+        let mut queue = self.queue.0.lock().unwrap();
+        queue.pop_back()
+    }
+
+    fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+        if let Some(service) = self.find_service(receiver) {
+            service.lock().unwrap().receive_packet(sender, packet);
+        } else {
+            // Event sent to a non-existing peer.
+            if let Some(failure) = packet.to_failure() {
+                self.send(receiver, sender, failure);
+            }
+        }
+    }
+
+    fn find_service(&self, endpoint: Endpoint) -> Option<Arc<Mutex<ServiceImp>>> {
+        let mut services = self.services.lock().unwrap();
+        let mut remove = false;
+
+        if let Some(service) = services.get(&endpoint) {
+            if let Some(service) = service.upgrade() {
+                return Some(service);
+            } else {
+                remove = true;
+            }
+        }
+
+        if remove {
+            let _ = services.remove(&endpoint);
+        }
+
+        None
+    }
+}
+
+/// Device represents a mock version of a real machine connected to the network.
+pub struct Device(Arc<Mutex<ServiceImp>>);
+
+impl Device {
+    fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
+        Device(Arc::new(Mutex::new(ServiceImp::new(network, config, endpoint))))
+    }
+
+    pub fn endpoint(&self) -> Endpoint {
+        self.imp().endpoint
+    }
+
+    /// Create a mock Service bound to this Device. The Service will use the
+    /// Config of this Device.
+    pub fn make_service(&self, event_sender: CrustEventSender, beacon_port: u16) -> Service {
+        self.imp().start(event_sender, beacon_port);
+        Service(self.0.clone())
+    }
+
+    fn imp(&self) -> MutexGuard<ServiceImp> {
+        self.0.lock().unwrap()
+    }
+}
+
+pub struct ServiceImp {
+    network: Arc<NetworkImp>,
+    endpoint: Endpoint,
+    pub peer_id: PeerId,
+    config: Config,
+    pub listening_tcp: bool,
+    pub listening_udp: bool,
+    event_sender: Option<CrustEventSender>,
+    pending_bootstraps: u64,
+    pending_connects: HashMap<PeerId, ConnectState>,
+    connections: Vec<(PeerId, Endpoint)>,
+}
+
+impl ServiceImp {
+    fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
+        ServiceImp {
+            network: network,
+            endpoint: endpoint,
+            peer_id: gen_peer_id(endpoint),
+            config: config,
+            listening_tcp: false,
+            listening_udp: false,
+            event_sender: None,
+            pending_bootstraps: 0,
+            pending_connects: HashMap::new(),
+            connections: Vec::new(),
+        }
+    }
+
+    pub fn start(&mut self, event_sender: CrustEventSender, _beacon_port: u16) {
+        let mut pending_bootstraps = 0;
+
+        for endpoint in self.config.hard_coded_contacts.iter() {
+            self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
+            pending_bootstraps += 1;
+        }
+
+        // If we have no contacts in the config, we can fire BootstrapFinished
+        // immediately.
+        if pending_bootstraps == 0 {
+            let _ = event_sender.send(Event::BootstrapFinished).unwrap();
+        }
+
+        self.pending_bootstraps = pending_bootstraps;
+        self.event_sender = Some(event_sender);
+    }
+
+    pub fn restart(&mut self, event_sender: CrustEventSender, beacon_port: u16) {
+        self.disconnect_all();
+
+        self.peer_id = gen_peer_id(self.endpoint);
+        self.listening_tcp = false;
+        self.listening_udp = false;
+
+        self.start(event_sender, beacon_port)
+    }
+
+    pub fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> bool {
+        if let Some(endpoint) = self.find_endpoint_by_peer_id(peer_id) {
+            self.send_packet(endpoint, Packet::Message(data));
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn prepare_connection_info(&self, result_token: u32) {
+        // TODO: should we also simulate failure here?
+        // TODO: should we simulate asynchrony here?
+
+        let result = ConnectionInfoResult {
+            result_token: result_token,
+            result: Ok(OurConnectionInfo(self.peer_id, self.endpoint)),
+        };
+
+        self.send_event(Event::ConnectionInfoPrepared(result));
+    }
+
+    pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
+        self.send_packet(their_info.1, Packet::ConnectRequest(their_info.0));
+    }
+
+    fn send_packet(&self, receiver: Endpoint, packet: Packet) {
+        self.network.send(self.endpoint, receiver, packet);
+    }
+
+    fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
+
+        // TODO: filter packets
+
+        match packet {
+            Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
+            Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
+            Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
+            Packet::ConnectRequest(our_peer_id) => self.handle_connect_request(sender, our_peer_id),
+            Packet::ConnectSuccess(peer_id) => self.handle_connect_success(sender, peer_id),
+            Packet::ConnectFailure(peer_id) => self.handle_connect_failure(sender, peer_id),
+            Packet::Message(data) => self.handle_message(sender, data),
+            Packet::Disconnect => self.handle_disconnect(sender),
+            Packet::Terminate => unreachable!(),
+        }
+    }
+
+    fn handle_bootstrap_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+        if self.is_listening() {
+            self.handle_bootstrap_accept(peer_endpoint, peer_id);
+            self.send_packet(peer_endpoint, Packet::BootstrapSuccess(self.peer_id));
+        } else {
+            self.send_packet(peer_endpoint, Packet::BootstrapFailure);
+        }
+    }
+
+    fn handle_bootstrap_accept(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+        self.add_connection(peer_id, peer_endpoint);
+        self.send_event(Event::BootstrapAccept(peer_id));
+    }
+
+    fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+        self.add_connection(peer_id, peer_endpoint);
+        self.send_event(Event::BootstrapConnect(peer_id));
+        self.decrement_pending_bootstraps();
+    }
+
+    fn handle_bootstrap_failure(&mut self, _peer_endpoint: Endpoint) {
+        self.decrement_pending_bootstraps();
+    }
+
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, our_peer_id: PeerId) {
+        assert!(our_peer_id == self.peer_id);
+        self.send_packet(peer_endpoint, Packet::ConnectSuccess(our_peer_id));
+        self.update_connect_state(our_peer_id, ConnectState::TheyToUs);
+    }
+
+    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+        // TODO: ignore if we are already connected
+
+        self.add_connection(peer_id, peer_endpoint);
+        self.update_connect_state(peer_id, ConnectState::WeToThem);
+    }
+
+    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, peer_id: PeerId) {
+        let err = io::Error::new(io::ErrorKind::NotFound, "Peer not found");
+        self.send_event(Event::NewPeer(Err(err), peer_id));
+    }
+
+    fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
+        if let Some(peer_id) = self.find_peer_id_by_endpoint(&peer_endpoint) {
+            self.send_event(Event::NewMessage(peer_id, data));
+        } else {
+            unreachable!("Received message from non-connected {:?}",
+                         peer_endpoint);
+        }
+    }
+
+    fn handle_disconnect(&mut self, peer_endpoint: Endpoint) {
+        if let Some(peer_id) = self.remove_connection_by_endpoint(peer_endpoint) {
+            self.send_event(Event::LostPeer(peer_id));
+        }
+    }
+
+    fn send_event(&self, event: Event) {
+        let _ = self.event_sender.as_ref().unwrap().send(event).unwrap();
+    }
+
+    fn is_listening(&self) -> bool {
+        self.listening_tcp || self.listening_udp
+    }
+
+    fn decrement_pending_bootstraps(&mut self) {
+        if self.pending_bootstraps == 0 {
+            return;
+        }
+
+        self.pending_bootstraps -= 1;
+
+        if self.pending_bootstraps == 0 {
+            self.send_event(Event::BootstrapFinished);
+        }
+    }
+
+    fn update_connect_state(&mut self, peer_id: PeerId, new_state: ConnectState) {
+        let state = *self.pending_connects
+                         .entry(peer_id)
+                         .or_insert(new_state);
+
+        if state != new_state {
+            self.pending_connects.remove(&peer_id).is_some();
+            self.send_event(Event::NewPeer(Ok(()), peer_id));
+        }
+    }
+
+    fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
+        self.connections.push((peer_id, peer_endpoint))
+    }
+
+    // Remove connected peer with the given peer id and return its endpoint,
+    // or None if no such peer exists.
+    fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
+        if let Some(i) = self.connections
+                             .iter()
+                             .position(|&(id, _)| id == *peer_id) {
+            Some(self.connections.swap_remove(i).1)
+        } else {
+            None
+        }
+    }
+
+    fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
+        if let Some(i) = self.connections
+                             .iter()
+                             .position(|&(_, ep)| ep == endpoint) {
+            Some(self.connections.swap_remove(i).0)
+        } else {
+            None
+        }
+    }
+
+    fn find_endpoint_by_peer_id(&self, peer_id: &PeerId) -> Option<Endpoint> {
+        self.connections
+            .iter()
+            .find(|&&(id, _)| id == *peer_id)
+            .map(|&(_, ep)| ep)
+    }
+
+    fn find_peer_id_by_endpoint(&self, endpoint: &Endpoint) -> Option<PeerId> {
+        self.connections
+            .iter()
+            .find(|&&(_, ep)| ep == *endpoint)
+            .map(|&(id, _)| id)
+    }
+
+    pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {
+        if let Some(endpoint) = self.remove_connection_by_peer_id(peer_id) {
+            self.send_packet(endpoint, Packet::Disconnect);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn disconnect_all(&mut self) {
+        let endpoints = self.connections
+                            .drain(..)
+                            .map(|(_, ep)| ep)
+                            .collect::<Vec<_>>();
+
+        for endpoint in endpoints {
+            self.send_packet(endpoint, Packet::Disconnect);
+        }
+    }
+}
+
+impl Drop for ServiceImp {
+    fn drop(&mut self) {
+        self.disconnect_all();
+    }
+}
+
+fn gen_peer_id(endpoint: Endpoint) -> PeerId {
+    PeerId(endpoint.0, rand::random())
+}
+
+/// Simulated crust config file.
+#[derive(Clone)]
+pub struct Config {
+    pub hard_coded_contacts: Vec<Endpoint>,
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Self::new_with_contacts(&[])
+    }
+
+    pub fn new_with_contacts(contacts: &[Endpoint]) -> Self {
+        Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
+    }
+}
+
+/// Simulated network endpoint (socket address). This is used to identify and
+/// address Devices in the mock network.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
+pub struct Endpoint(usize);
+
+#[derive(Clone, Debug)]
+enum Packet {
+    BootstrapRequest(PeerId),
+    BootstrapSuccess(PeerId),
+    BootstrapFailure,
+
+    ConnectRequest(PeerId),
+    ConnectSuccess(PeerId),
+    ConnectFailure(PeerId),
+
+    Message(Vec<u8>),
+    Disconnect,
+    Terminate,
+}
+
+impl Packet {
+    // Given a request packet, returns the corresponding failure packet.
+    fn to_failure(&self) -> Option<Packet> {
+        match *self {
+            Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
+            Packet::ConnectRequest(peer_id) => Some(Packet::ConnectFailure(peer_id)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+enum ConnectState {
+    // We are connected to them
+    WeToThem,
+
+    // They are connected to us
+    TheyToUs,
+}

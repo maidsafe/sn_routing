@@ -164,6 +164,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate accumulator;
 extern crate cbor;
+#[cfg(not(test))]
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
