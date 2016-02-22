@@ -16,8 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use accumulator::Accumulator;
-use crust;
-use crust::{ConnectionInfoResult, OurConnectionInfo, PeerId, TheirConnectionInfo};
+
+#[cfg(not(test))]
+use crust::Service;
+#[cfg(test)]
+use crust_mock::Service;
+use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, TheirConnectionInfo};
+
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
                              PARALLELISM, RoutingTable};
@@ -543,6 +548,7 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
+        // trace!("{:?}Handling hop message: {:?}", self, hop_msg);
         if self.state == State::Node {
             let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
@@ -615,6 +621,8 @@ impl Core {
             // TODO: Reconsider direction checks once we know whether they help secure routing.
             Ok(())
             // Err(RoutingError::DirectionCheckFailed)
+        } else {
+            Ok(())
         }
     }
 
@@ -843,6 +851,7 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
+        trace!("{:?}Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
@@ -1180,6 +1189,10 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
+        trace!("{:?}Rxd BootstrapIdentify - Quorum size: {}",
+               self,
+               current_quorum_size);
+
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
@@ -1325,6 +1338,7 @@ impl Core {
                             -> Result<(), RoutingError> {
         let name = *public_id.name();
         if self.routing_table.contains(&name) {
+            // We already sent an identify to this peer.
             return Ok(());
         }
 
