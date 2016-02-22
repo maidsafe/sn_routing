@@ -63,10 +63,12 @@ impl StructuredDataManager {
             }
         }
 
+        let error = ClientError::NoSuchData;
+        let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
                                            request.src.clone(),
                                            request.clone(),
-                                           Vec::new(),
+                                           external_error_indicator,
                                            message_id.clone()));
         Ok(())
     }

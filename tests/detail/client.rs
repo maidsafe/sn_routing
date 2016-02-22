@@ -169,7 +169,11 @@ impl Client {
 
     /// Query outbox.
     pub fn query_outbox(&self) -> Vec<MpidHeader> {
-        self.send_wrapper(MpidMessageWrapper::GetOutboxHeaders);
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
+        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -183,7 +187,11 @@ impl Client {
 
     /// Query whether outbox has particular message.
     pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
-        self.send_wrapper(MpidMessageWrapper::OutboxHas(msg_names));
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
+        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
