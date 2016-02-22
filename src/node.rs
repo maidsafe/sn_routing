@@ -31,7 +31,7 @@ use xor_name::XorName;
 use types::{MessageId, RoutingActionSender};
 
 #[cfg(test)]
-use crust_mock::Service;
+use crust_mock::Device;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -66,11 +66,11 @@ impl Node {
     }
 
     #[cfg(test)]
-    pub fn new(service: Service, event_sender: Sender<Event>) -> Result<Self, RoutingError> {
+    pub fn new(device: &Device, event_sender: Sender<Event>) -> Result<Self, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        Self::new_imp(try!(Core::new(service, event_sender, false, None)))
+        Self::new_imp(try!(Core::new(device, event_sender, false, None)))
     }
 
     fn new_imp(core: (RoutingActionSender, RaiiThreadJoiner)) -> Result<Self, RoutingError> {

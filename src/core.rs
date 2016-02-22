@@ -18,10 +18,12 @@
 use accumulator::Accumulator;
 
 #[cfg(not(test))]
-use crust::Service;
+use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
+
 #[cfg(test)]
-use crust_mock::Service;
-use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, TheirConnectionInfo};
+use crust_mock::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
+#[cfg(test)]
+use crust_mock::Device;
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
@@ -184,7 +186,7 @@ impl ClientInfo {
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
 pub struct Core {
     // for CRUST
-    crust_service: crust::Service,
+    crust_service: Service,
     // for Core
     client_restriction: bool,
     is_listening: bool,
@@ -220,12 +222,39 @@ pub struct Core {
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
 impl Core {
-    /// A Core instance for a client or node with the given ID. Sends events to upper layer via the
-    /// mpsc sender passed in.
+    /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
+    /// in.
+    #[cfg(not(test))]
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
                -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
+        Self::new_impl(event_sender, client_restriction, keys, |sender| {
+            match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
+                Ok(service) => service,
+                Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
+            }
+        })
+    }
+
+    #[cfg(test)]
+    pub fn new(device: &Device,
+               event_sender: mpsc::Sender<Event>,
+               client_restriction: bool,
+               keys: Option<FullId>)
+               -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
+        Self::new_impl(event_sender, client_restriction, keys, |sender| {
+            device.make_service(sender, CRUST_DEFAULT_BEACON_PORT)
+        })
+    }
+
+    fn new_impl<F>(event_sender: mpsc::Sender<Event>,
+                   client_restriction: bool,
+                   keys: Option<FullId>,
+                   gen_crust_service: F)
+        -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError>
+        where F: FnOnce(crust::CrustEventSender) -> Service
+        {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
@@ -242,11 +271,7 @@ impl Core {
                                                         category_tx);
 
         // TODO(afck): Add the listening port to the Service constructor.
-        let crust_service = match crust::Service::new(crust_sender.clone(),
-                                                      CRUST_DEFAULT_BEACON_PORT) {
-            Ok(service) => service,
-            Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
-        };
+        let crust_service = gen_crust_service(crust_sender.clone());
 
         let full_id = match keys {
             Some(full_id) => full_id,
@@ -620,8 +645,6 @@ impl Core {
             // TODO: Reconsider direction checks once we know whether they help secure routing.
             Ok(())
             // Err(RoutingError::DirectionCheckFailed)
-        } else {
-            Ok(())
         }
     }
 
@@ -1464,11 +1487,7 @@ impl Core {
         }
         self.proxy_map.clear();
         thread::sleep(StdDuration::from_secs(5));
-        self.crust_service = match crust::Service::new(self.crust_sender.clone(),
-                                                       CRUST_DEFAULT_BEACON_PORT) {
-            Ok(service) => service,
-            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
-        };
+        restart_crust_service(&mut self.crust_service, self.crust_sender.clone());
         // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
         //               Currently, ci_test's nodes all connect via the same beacon.
         // self.crust_service
@@ -2137,4 +2156,19 @@ fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
     } else {
         None
     }
+}
+
+#[cfg(not(test))]
+fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
+    use std::mem;
+
+    let _ = mem::replace(service, match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
+        Ok(service) => service,
+        Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
+    });
+}
+
+#[cfg(test)]
+fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
+    service.restart(sender, CRUST_DEFAULT_BEACON_PORT)
 }
