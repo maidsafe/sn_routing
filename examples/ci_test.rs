@@ -74,8 +74,9 @@ use rand::distributions::{IndependentSample, Range};
 
 const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
-const CHURN_MIN_WAIT_SEC: u64 = 30;
-const CHURN_MAX_WAIT_SEC: u64 = 35;
+const CHURN_MIN_WAIT_SEC: u64 = 10;
+const CHURN_MAX_WAIT_SEC: u64 = 15;
+const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 
@@ -172,7 +173,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        log_file_number: &mut usize,
                        network_size: usize)
                        -> Result<(), io::Error> {
-    println!("About to churn on #{} active nodes...", nodes.len());
+    println!("About to churn on {} active nodes...", nodes.len());
 
     let kill_node = match nodes.len() {
         size if size == GROUP_SIZE => false,
@@ -313,6 +314,9 @@ fn main() {
             example_client.put(data.clone());
             stored_data.push(data);
         }
+
+        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
+        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
         println!("--------- Getting Data -----------");
         for i in 0..requests {

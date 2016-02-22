@@ -27,7 +27,7 @@ pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 /// This is used for deduplication: Since the network sends messages redundantly along different
 /// routes, the same message will usually arrive more than once at any given node. A message with
 /// an ID that is already in the cache will be ignored.
-#[derive(Ord, PartialOrd, Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
+#[derive(Ord, PartialOrd, Debug, Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
 pub struct MessageId(XorName);
 
 impl MessageId {
