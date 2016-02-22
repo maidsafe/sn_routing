@@ -214,6 +214,11 @@ impl Vault {
              &RequestContent::Delete(Data::PlainData(_), _)) => {
                 self.mpid_manager.handle_delete(routing_node, &request)
             }
+            (&Authority::Client{ .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Delete(Data::StructuredData(_), _)) => {
+                self.structured_data_manager.handle_delete(routing_node, &request)
+            }
             // ================== Refresh ==================
             (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
                 self.on_refresh(src, dst, serialised_refresh)

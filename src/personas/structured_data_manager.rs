@@ -151,6 +151,44 @@ impl StructuredDataManager {
         Ok(())
     }
 
+    /// The structured_data in the delete request must be a valid updating version of the target
+    pub fn handle_delete(&mut self,
+                         routing_node: &RoutingNode,
+                         request: &RequestMessage)
+                         -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Delete(Data::StructuredData(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
+            _ => unreachable!("Error in vault demuxing"),
+        };
+
+        if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
+            if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
+                debug!("StructuredDataManager deleting {:?} with requested new version {:?}", existing_data, data);
+                if existing_data.validate_self_against_successor(&data).is_ok() {
+                    if let Ok(()) = self.chunk_store.delete(&data.name()) {
+                        if let Ok(serialised_request) = serialisation::serialise(request) {
+                            let digest = sha512::hash(&serialised_request[..]);
+                            let _ = routing_node.send_delete_success(request.dst.clone(),
+                                                                     request.src.clone(),
+                                                                     digest,
+                                                                     message_id.clone());
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        try!(routing_node.send_delete_failure(request.dst.clone(),
+                                              request.src.clone(),
+                                              request.clone(),
+                                              Vec::new(),
+                                              message_id.clone()));
+        Ok(())
+    }
+
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
         let _ = self.chunk_store.delete(&structured_data.name());
         Ok(try!(self.chunk_store.put(&structured_data.name(),
