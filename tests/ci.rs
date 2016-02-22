@@ -179,28 +179,6 @@ fn spawn_select_thread(index: usize,
     (sender, RaiiThreadJoiner::new(thread_handle))
 }
 
-fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> {
-    let interval = Duration::from_millis(100);
-    let mut elapsed = Duration::from_millis(0);
-
-    loop {
-        match receiver.try_recv() {
-            Ok(value) => return Some(value),
-            Err(TryRecvError::Disconnected) => break,
-            _ => (),
-        }
-
-        thread::sleep(interval);
-        elapsed = elapsed + interval;
-
-        if elapsed > timeout {
-            break;
-        }
-    }
-
-    None
-}
-
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              connection_counts: &mut [usize],
                              event_receiver: &Receiver<TestEvent>) {
@@ -217,8 +195,6 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                 if all_events_received {
                     break;
                 }
-
-                _ => (),
             }
         } else {
             panic!("Timeout");
@@ -542,6 +518,7 @@ fn core() {
     }
 }
 
+#[test]
 fn main() {
     init();
     core();
