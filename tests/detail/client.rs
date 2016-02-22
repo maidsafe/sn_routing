@@ -119,8 +119,10 @@ impl Client {
     }
 
     /// Delete data from the network.
-    pub fn delete(&self, _data: Data) {
-        unimplemented!()
+    pub fn delete(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_delete_request(Authority::NaeManager(data.name()), data));
+        self.wait_for_response()
     }
 
     /// Register client online.

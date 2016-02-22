@@ -105,15 +105,15 @@ pub fn test() {
     }
 
     test_group.start_case("Post");
-    let sd = unwrap_result!(StructuredData::new(sd.get_type_tag(),
+    let sd_posted = unwrap_result!(StructuredData::new(sd.get_type_tag(),
                                                 *sd.get_identifier(),
                                                 sd.get_version(),
                                                 generate_random_vec_u8(10),
                                                 sd.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd.clone());
-    match unwrap_option!(client1.post(data.clone()), "") {
+    let data_posted = Data::StructuredData(sd_posted.clone());
+    match unwrap_option!(client1.post(data_posted.clone()), "") {
         ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
         _ => panic!("Received unexpected response"),
     }
@@ -123,7 +123,7 @@ pub fn test() {
     let data_request = DataRequest::StructuredData(*sd.get_identifier(), sd.get_type_tag());
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data, response_data);
+            assert_eq!(data_posted, response_data);
         }
         _ => panic!("Received unexpected response"),
     }
@@ -141,6 +141,54 @@ pub fn test() {
         ResponseMessage { content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } => {
             // structured_data_manager hasn't implemented a proper external_error_indicator in PostFailure
             assert_eq!(0, external_error_indicator.len());
+        }
+        _ => panic!("Received unexpected response"),
+    }
+
+    test_group.start_case("Delete improperly");
+    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
+                                                *sd_posted.get_identifier(),
+                                                sd_posted.get_version(),
+                                                generate_random_vec_u8(10),
+                                                sd_posted.get_owner_keys().clone(),
+                                                vec![],
+                                                Some(client2.signing_private_key())));
+    let data = Data::StructuredData(sd);
+    match unwrap_option!(client1.delete(data), "") {
+        ResponseMessage { content: ResponseContent::DeleteFailure { ref external_error_indicator, .. }, .. } => {
+            // structured_data_manager hasn't implemented a proper external_error_indicator in DeleteFailure
+            assert_eq!(0, external_error_indicator.len());
+        }
+        _ => panic!("Received unexpected response"),
+    }
+    let data_request = DataRequest::StructuredData(*sd_posted.get_identifier(), sd_posted.get_type_tag());
+    match unwrap_option!(client1.get(data_request), "") {
+        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
+            assert_eq!(data_posted, response_data);
+        }
+        _ => panic!("Received unexpected response"),
+    }
+
+    test_group.start_case("Delete properly");
+    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
+                                                *sd_posted.get_identifier(),
+                                                sd_posted.get_version() + 1,
+                                                generate_random_vec_u8(10),
+                                                sd_posted.get_owner_keys().clone(),
+                                                vec![],
+                                                Some(client1.signing_private_key())));
+    let data = Data::StructuredData(sd);
+    match unwrap_option!(client1.delete(data), "") {
+        ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
+        _ => panic!("Received unexpected response"),
+    }
+    let data_request = DataRequest::StructuredData(*sd_posted.get_identifier(), sd_posted.get_type_tag());
+    match unwrap_option!(client1.get(data_request), "") {
+        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::NoSuchData => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
         }
         _ => panic!("Received unexpected response"),
     }

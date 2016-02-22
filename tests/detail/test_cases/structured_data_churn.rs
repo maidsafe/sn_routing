@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
+use maidsafe_utilities::serialisation::deserialise;
 use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
@@ -79,6 +80,32 @@ pub fn test(request_count: u32) {
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
+            }
+            _ => panic!("Received unexpected response"),
+        }
+    }
+
+    for i in 0..request_count as usize {
+        test_group.start_case(&format!("Delete StructuredData {}", i));
+        let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
+                                                    *stored_data[i].get_identifier(),
+                                                    stored_data[i].get_version() + 2,
+                                                    generate_random_vec_u8(10),
+                                                    stored_data[i].get_owner_keys().clone(),
+                                                    vec![],
+                                                    Some(client.signing_private_key())));
+        let data = Data::StructuredData(sd);
+        match unwrap_option!(client.delete(data), "") {
+            ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
+            _ => panic!("Received unexpected response"),
+        }
+        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        match unwrap_option!(client.get(data_request), "") {
+            ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
+                match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                    ClientError::NoSuchData => {}
+                    _ => panic!("Received unexpected external_error_indicator"),
+                }
             }
             _ => panic!("Received unexpected response"),
         }
