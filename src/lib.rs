@@ -192,6 +192,11 @@ mod timer;
 mod types;
 mod utils;
 
+#[cfg(test)]
+mod core_tests;
+#[cfg(test)]
+mod crust_mock;
+
 pub use authority::Authority;
 pub use client::Client;
 pub use data::{Data, DataRequest};
