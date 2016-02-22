@@ -13,10 +13,10 @@ version = "0.6.3"
 accumulator = "~0.1.3"
 cbor = "~0.3.16"
 clippy = {version = "~0.0.37", optional = true}
-crust = { git="https://github.com/afck/crust.git", branch="connect_tcp" }
+crust = "~0.8.1"
 ip = "~1.1.0"
 itertools = "~0.4.5"
-kademlia_routing_table = { git="https://github.com/maidsafe/kademlia_routing_table.git" }
+kademlia_routing_table = "~0.3.1"
 log = "~0.3.4"
 lru_time_cache = "~0.2.5"
 maidsafe_utilities = "~0.1.5"
@@ -25,7 +25,7 @@ rand = "~0.3.12"
 rustc-serialize = "~0.3.16"
 sodiumoxide = "~0.0.9"
 time = "~0.1.34"
-xor_name = "~0.0.3"
+xor_name = "~0.0.4"
 
 [dev-dependencies]
 docopt = "~0.6.78"

@@ -477,7 +477,7 @@ impl Core {
 
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
-            self.crust_service.tcp_connect(our_connection_info, their_connection_info);
+            self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
             if self.our_connection_info_map.contains_key(&their_public_id) {
                 error!("Prepared more than one connection info for {:?}.",
@@ -1306,10 +1306,7 @@ impl Core {
             }
         }
 
-        if self.state != State::Node {
-            self.state = State::Node;
-            trace!("{:?} - State changed to node.", self);
-        }
+        self.state = State::Node;
 
         if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
             trace!("Routing table reached group size. Dropping proxy.");
@@ -1857,7 +1854,7 @@ impl Core {
 
         match self.our_connection_info_map.remove(&their_public_id) {
             Some(our_connection_info) => {
-                self.crust_service.tcp_connect(our_connection_info, their_connection_info);
+                self.crust_service.connect(our_connection_info, their_connection_info);
                 Ok(())
             }
             None => {
@@ -1900,6 +1897,7 @@ impl Core {
             return Ok(());
         }
 
+        error!("Client connection not found for message {:?}.", signed_msg);
         Err(RoutingError::ClientConnectionNotFound)
     }
 
