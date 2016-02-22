@@ -139,10 +139,10 @@ impl ExampleNode {
         match dst {
             Authority::NaeManager(_) => {
                 if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
-                    let _ = self.client_request_cache
-                                .entry(data_request.name())
-                                .or_insert(Vec::new())
-                                .push(src);
+                    self.client_request_cache
+                        .entry(data_request.name())
+                        .or_insert(Vec::new())
+                        .push(src);
 
                     for it in managed_nodes.iter() {
                         trace!("{:?} Handle Get request for NaeManager: data {:?} from {:?}",
@@ -153,7 +153,7 @@ impl ExampleNode {
                                            .send_get_request(dst.clone(),
                                                              Authority::ManagedNode(it.clone()),
                                                              data_request.clone(),
-                                                             id.clone()));
+                                                             id));
                     }
                 } else {
                     error!("{:?} Data name {:?} not found in NaeManager. Current DM Account: {:?}",
@@ -163,7 +163,7 @@ impl ExampleNode {
                     let msg = RequestMessage {
                         src: src.clone(),
                         dst: dst.clone(),
-                        content: RequestContent::Get(data_request, id.clone()),
+                        content: RequestContent::Get(data_request, id),
                     };
                     let text = "Data not found".to_owned().into_bytes();
                     unwrap_result!(self.node.send_get_failure(dst, src, msg, text, id));
@@ -173,17 +173,13 @@ impl ExampleNode {
                 trace!("{:?} Handle get request for ManagedNode: data {:?}",
                        self,
                        data_request.name());
-                match self.db.get(&data_request.name()) {
-                    Some(data) => {
-                        unwrap_result!(self.node
-                                           .send_get_success(dst, src, data.clone(), id))
-                    }
-                    None => {
-                        trace!("{:?} GetDataRequest failed for {:?}.",
-                               self,
-                               data_request.name());
-                        return;
-                    }
+                if let Some(data) = self.db.get(&data_request.name()) {
+                    unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
+                } else {
+                    trace!("{:?} GetDataRequest failed for {:?}.",
+                           self,
+                           data_request.name());
+                    return;
                 }
             }
             _ => unreachable!("Wrong Destination Authority {:?}", dst),
@@ -194,7 +190,7 @@ impl ExampleNode {
         match dst {
             Authority::NaeManager(_) => {
                 if self.dm_accounts.contains_key(&data.name()) {
-                    return // Don't allow duplicate put.
+                    return; // Don't allow duplicate put.
                 }
                 let mut close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                     None => {
@@ -210,7 +206,7 @@ impl ExampleNode {
                                        .send_put_request(dst.clone(),
                                                          Authority::ManagedNode(name),
                                                          data.clone(),
-                                                         id.clone()));
+                                                         id));
                 }
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for put success to confirm the same.
@@ -228,12 +224,12 @@ impl ExampleNode {
                 {
                     let src = dst.clone();
                     let dst = Authority::NaeManager(data.name());
-                    unwrap_result!(self.node.send_put_request(src, dst, data.clone(), id.clone()));
+                    unwrap_result!(self.node.send_put_request(src, dst, data.clone(), id));
                 }
                 let request_message = RequestMessage {
                     src: src.clone(),
                     dst: dst.clone(),
-                    content: RequestContent::Put(data, id.clone()),
+                    content: RequestContent::Put(data, id),
                 };
                 let encoded = unwrap_result!(serialise(&request_message));
                 unwrap_result!(self.node.send_put_success(dst, src, hash(&encoded[..]), id));
@@ -259,7 +255,7 @@ impl ExampleNode {
             let src = dst.clone();
             for client_auth in client_auths {
                 let _ = self.node
-                            .send_get_success(src.clone(), client_auth, data.clone(), id.clone());
+                            .send_get_success(src.clone(), client_auth, data.clone(), id);
             }
         }
 
@@ -278,15 +274,17 @@ impl ExampleNode {
                 self.dm_accounts[&data.name()].iter().all(|data_node| *data_node != *close_node)
             }) {
                 let src = dst;
-                let dst = Authority::ManagedNode(node.clone());
+                let dst = Authority::ManagedNode(node);
                 unwrap_result!(self.node
-                                   .send_put_request(src.clone(), dst, data.clone(), id.clone()));
+                                   .send_put_request(src.clone(), dst, data.clone(), id));
 
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for Put success to confirm the same.
-                self.dm_accounts.get_mut(&data.name()).unwrap().push(node);
+                unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
                 trace!("{:?} Replicating chunk {:?} to {:?}",
-                       self, data.name(), self.dm_accounts[&data.name()]);
+                       self,
+                       data.name(),
+                       self.dm_accounts[&data.name()]);
 
                 // Send Refresh message with updated storage locations in DataManager
                 self.send_data_manager_refresh_message(&data.name(),
@@ -300,80 +298,83 @@ impl ExampleNode {
     // send the corresponding refresh messages out to our close group.
     fn handle_node_added(&mut self, name: XorName) {
         let id = MessageId::from_added_node(name);
-        for (client_name, stored) in self.client_accounts.iter() {
+        for (client_name, stored) in &self.client_accounts {
             // TODO: Check whether name is actually close to client_name.
-            let refresh_content = RefreshContent::ForClientManager {
-                id: id.clone(),
-                client_name: client_name.clone(),
-                data: stored.clone(),
+            let refresh_content = RefreshContent::Client {
+                id: id,
+                client_name: *client_name,
+                data: *stored,
             };
 
             let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
-                               .send_refresh_request(Authority::ClientManager(client_name.clone()),
+                               .send_refresh_request(Authority::ClientManager(*client_name),
                                                      content));
         }
 
-        self.process_lost_close_node(id.clone());
+        self.process_lost_close_node(id);
         self.send_data_manager_refresh_messages(id);
     }
 
     fn handle_node_lost(&mut self, name: XorName) {
         let id = MessageId::from_lost_node(name);
         // TODO: Check whether name was actually close to client_name.
-        for (client_name, stored) in self.client_accounts.iter() {
-            let refresh_content = RefreshContent::ForClientManager {
-                id: id.clone(),
-                client_name: client_name.clone(),
-                data: stored.clone(),
+        for (client_name, stored) in &self.client_accounts {
+            let refresh_content = RefreshContent::Client {
+                id: id,
+                client_name: *client_name,
+                data: *stored,
             };
 
             let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
-                               .send_refresh_request(Authority::ClientManager(client_name.clone()),
+                               .send_refresh_request(Authority::ClientManager(*client_name),
                                                      content));
         }
 
-        self.process_lost_close_node(id.clone());
+        self.process_lost_close_node(id);
         self.send_data_manager_refresh_messages(id);
     }
 
     /// Sends `Get` requests to retrieve all data chunks that have lost a copy.
     fn process_lost_close_node(&mut self, id: MessageId) {
         let dm_accounts = mem::replace(&mut self.dm_accounts, HashMap::new());
-        self.dm_accounts = dm_accounts.into_iter().filter_map(|(data_name, mut dms)| {
-            // TODO: This switches threads on every close_group() call!
-            let close_grp: HashSet<_> = match unwrap_result!(self.node.close_group(data_name)) {
-                None => {
-                    // Remove entry, as we're not part of the NaeManager anymore.
-                    let _ = self.db.remove(&data_name);
-                    return None;
-                }
-                Some(close_grp) => close_grp.into_iter().collect(),
-            };
-            dms.retain(|elt| close_grp.contains(elt));
-            if dms.is_empty() {
-                error!("Chunk lost - No valid nodes left to retrieve chunk");
-                return None;
-            }
-            Some((data_name, dms))
-        }).collect();
+        self.dm_accounts =
+            dm_accounts.into_iter()
+                       .filter_map(|(data_name, mut dms)| {
+                           // TODO: This switches threads on every close_group() call!
+                           let close_grp: HashSet<_> =
+                               match unwrap_result!(self.node.close_group(data_name)) {
+                                   None => {
+                                       // Remove entry, as we're not part of the NaeManager anymore.
+                                       let _ = self.db.remove(&data_name);
+                                       return None;
+                                   }
+                                   Some(close_grp) => close_grp.into_iter().collect(),
+                               };
+                           dms.retain(|elt| close_grp.contains(elt));
+                           if dms.is_empty() {
+                               error!("Chunk lost - No valid nodes left to retrieve chunk");
+                               return None;
+                           }
+                           Some((data_name, dms))
+                       })
+                       .collect();
         for (data_name, dms) in &self.dm_accounts {
             if dms.len() < STORE_REDUNDANCY {
                 trace!("Node({:?}) Recovering data {:?}",
                        unwrap_result!(self.node.name()),
-                       data_name.clone());
-                let src = Authority::NaeManager(data_name.clone());
+                       data_name);
+                let src = Authority::NaeManager(*data_name);
                 // Find the remaining places where the data is stored and send a `Get` there.
                 for dm in dms {
-                    if let Err(err) =
-                           self.node
-                               .send_get_request(src.clone(),
-                                                 Authority::ManagedNode(dm.clone()),
-                                                 DataRequest::PlainData(data_name.clone()),
-                                                 id.clone()) {
+                    if let Err(err) = self.node
+                                          .send_get_request(src.clone(),
+                                                            Authority::ManagedNode(*dm),
+                                                            DataRequest::Plain(*data_name),
+                                                            id) {
                         error!("Failed to send get request to retrieve chunk - {:?}", err);
                     }
                 }
@@ -385,7 +386,7 @@ impl ExampleNode {
     /// data's `NaeManager`, so that the whole group has the same information on where the copies
     /// reside.
     fn send_data_manager_refresh_messages(&self, id: MessageId) {
-        for (data_name, managed_nodes) in self.dm_accounts.iter() {
+        for (data_name, managed_nodes) in &self.dm_accounts {
             self.send_data_manager_refresh_message(data_name, managed_nodes, id);
         }
     }
@@ -394,16 +395,16 @@ impl ExampleNode {
     /// the whole group has the same information on where the copies reside.
     fn send_data_manager_refresh_message(&self,
                                          data_name: &XorName,
-                                         managed_nodes: &Vec<XorName>,
+                                         managed_nodes: &[XorName],
                                          id: MessageId) {
-        let refresh_content = RefreshContent::ForNaeManager {
-            id: id.clone(),
-            data_name: data_name.clone(),
-            pmid_nodes: managed_nodes.clone(),
+        let refresh_content = RefreshContent::Nae {
+            id: id,
+            data_name: *data_name,
+            pmid_nodes: managed_nodes.to_vec(),
         };
 
         let content = unwrap_result!(serialise(&refresh_content));
-        let src = Authority::NaeManager(data_name.clone());
+        let src = Authority::NaeManager(*data_name);
         unwrap_result!(self.node.send_refresh_request(src, content));
     }
 
@@ -411,13 +412,13 @@ impl ExampleNode {
     /// the group agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>) {
         match unwrap_result!(deserialise(&content)) {
-            RefreshContent::ForClientManager { client_name, data, .. } => {
+            RefreshContent::Client { client_name, data, .. } => {
                 trace!("{:?} handle_refresh for ClientManager. client - {:?}",
                        self,
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::ForNaeManager { data_name, pmid_nodes, .. } => {
+            RefreshContent::Nae { data_name, pmid_nodes, .. } => {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
                 if old_val != Some(pmid_nodes.clone()) {
                     trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",
@@ -442,13 +443,13 @@ impl ::std::fmt::Debug for ExampleNode {
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
-    ForClientManager {
+    Client {
         id: MessageId,
         client_name: XorName,
         data: u64,
     },
     /// A message to an `NaeManager` to add a new data chunk.
-    ForNaeManager {
+    Nae {
         id: MessageId,
         data_name: XorName,
         pmid_nodes: Vec<XorName>,

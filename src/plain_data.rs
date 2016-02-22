@@ -47,7 +47,7 @@ impl PlainData {
 
     /// Returns the name.
     pub fn name(&self) -> XorName {
-        self.name.clone()
+        self.name
     }
 
     /// Returns the size of the contained data. Equivalent to `value().len()`.

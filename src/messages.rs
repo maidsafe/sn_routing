@@ -34,9 +34,9 @@ use rustc_serialize::{Decoder, Encoder};
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum Message {
     /// A message sent between two nodes directly
-    DirectMessage(DirectMessage),
+    Direct(DirectMessage),
     /// A message sent across the network (in transit)
-    HopMessage(HopMessage),
+    Hop(HopMessage),
 }
 
 /// Messages sent via a direct connection.
@@ -153,7 +153,7 @@ impl SignedMessage {
         let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
         Ok(SignedMessage {
             content: content,
-            public_id: full_id.public_id().clone(),
+            public_id: *full_id.public_id(),
             signature: sign::sign_detached(&bytes_to_sign, full_id.signing_private_key()),
         })
     }
@@ -389,12 +389,8 @@ impl fmt::Debug for DirectMessage {
             DirectMessage::ClientIdentify { client_restriction: false, .. } => {
                 write!(formatter, "ClientIdentify (joining node)")
             }
-            DirectMessage::NodeIdentify { .. } => {
-                write!(formatter, "NodeIdentify {{ .. }}")
-            }
-            DirectMessage::NewNode(ref public_id) => {
-                write!(formatter, "NewNode({:?})", public_id)
-            }
+            DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
+            DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
         }
     }
 }
@@ -421,20 +417,14 @@ impl fmt::Debug for RequestContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             RequestContent::GetNetworkName { ref current_id } => {
-                write!(formatter,
-                       "GetNetworkName {{ {:?} }}",
-                       current_id)
+                write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
             }
             RequestContent::ExpectCloseNode { ref expect_id } => {
-                write!(formatter,
-                       "ExpectCloseNode {{ {:?} }}",
-                       expect_id)
+                write!(formatter, "ExpectCloseNode {{ {:?} }}", expect_id)
             }
             RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
             RequestContent::Connect => write!(formatter, "Connect"),
-            RequestContent::ConnectionInfo { .. } => {
-                write!(formatter, "ConnectionInfo {{ .. }}")
-            }
+            RequestContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
             RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
             RequestContent::GetPublicIdWithConnectionInfo { .. } => {
                 write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
@@ -482,10 +472,16 @@ impl fmt::Debug for ResponseContent {
                 write!(formatter, "PutSuccess {{ {:?}, {:?} }}", digest, message_id)
             }
             ResponseContent::PostSuccess(ref digest, ref message_id) => {
-                write!(formatter, "PostSuccess {{ {:?}, {:?} }}", digest, message_id)
+                write!(formatter,
+                       "PostSuccess {{ {:?}, {:?} }}",
+                       digest,
+                       message_id)
             }
             ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
-                write!(formatter, "DeleteSuccess {{ {:?}, {:?} }}", digest, message_id)
+                write!(formatter,
+                       "DeleteSuccess {{ {:?}, {:?} }}",
+                       digest,
+                       message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
@@ -538,7 +534,7 @@ mod test {
         assert!(check_integrity_result.is_ok());
 
         let full_id = FullId::new();
-        let bytes_to_sign = serialise(&(&routing_message, full_id.public_id())).unwrap();
+        let bytes_to_sign = unwrap_result!(serialise(&(&routing_message, full_id.public_id())));
         let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
 
         signed_message.signature = signature;
@@ -561,7 +557,7 @@ mod test {
 
         assert!(signed_message_result.is_ok());
 
-        let signed_message = signed_message_result.unwrap();
+        let signed_message = unwrap_result!(signed_message_result);
         let hop_name: XorName = rand::random();
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result = HopMessage::new(signed_message.clone(),

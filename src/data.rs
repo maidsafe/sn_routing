@@ -26,29 +26,29 @@ use xor_name::XorName;
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
     /// StructuredData Data type.
-    StructuredData(StructuredData),
+    Structured(StructuredData),
     /// ImmutableData Data type.
-    ImmutableData(ImmutableData),
+    Immutable(ImmutableData),
     /// PlainData Data type.
-    PlainData(PlainData),
+    Plain(PlainData),
 }
 
 impl Data {
     /// Return data name.
     pub fn name(&self) -> XorName {
         match *self {
-            Data::StructuredData(ref d) => d.name(),
-            Data::ImmutableData(ref d) => d.name(),
-            Data::PlainData(ref d) => d.name(),
+            Data::Structured(ref d) => d.name(),
+            Data::Immutable(ref d) => d.name(),
+            Data::Plain(ref d) => d.name(),
         }
     }
 
     /// Return data size.
     pub fn payload_size(&self) -> usize {
         match *self {
-            Data::StructuredData(ref d) => d.payload_size(),
-            Data::ImmutableData(ref d) => d.payload_size(),
-            Data::PlainData(ref d) => d.payload_size(),
+            Data::Structured(ref d) => d.payload_size(),
+            Data::Immutable(ref d) => d.payload_size(),
+            Data::Plain(ref d) => d.payload_size(),
         }
     }
 }
@@ -57,19 +57,19 @@ impl Data {
 /// DataRequest.
 pub enum DataRequest {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
-    StructuredData(XorName, u64),
+    Structured(XorName, u64),
     /// Data request, (Identifier, Type), for ImmutableData types.
-    ImmutableData(XorName, ImmutableDataType),
+    Immutable(XorName, ImmutableDataType),
     /// Request for PlainData.
-    PlainData(XorName),
+    Plain(XorName),
 }
 
 impl fmt::Debug for Data {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            Data::StructuredData(ref d) => d.fmt(formatter),
-            Data::ImmutableData(ref d) => d.fmt(formatter),
-            Data::PlainData(ref d) => d.fmt(formatter),
+            Data::Structured(ref d) => d.fmt(formatter),
+            Data::Immutable(ref d) => d.fmt(formatter),
+            Data::Plain(ref d) => d.fmt(formatter),
         }
     }
 }
@@ -78,9 +78,8 @@ impl DataRequest {
     /// DataRequest name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataRequest::StructuredData(ref name, tag) => StructuredData::compute_name(tag, name),
-            DataRequest::ImmutableData(ref name, _) => name.clone(),
-            DataRequest::PlainData(ref name) => name.clone(),
+            DataRequest::Structured(name, tag) => StructuredData::compute_name(tag, &name),
+            DataRequest::Immutable(name, _) | DataRequest::Plain(name) => name,
         }
     }
 }
@@ -89,40 +88,40 @@ impl DataRequest {
 mod test {
     extern crate rand;
 
+    use super::*;
+    use sodiumoxide::crypto::sign;
+    use sodiumoxide::crypto::hash::sha512;
     use xor_name::XorName;
 
     #[test]
     fn data_name() {
         // name() resolves correctly for StructuredData
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys = sign::gen_keypair();
         let owner_keys = vec![keys.0];
-        match ::structured_data::StructuredData::new(0,
-                                                     rand::random(),
-                                                     0,
-                                                     vec![],
-                                                     owner_keys.clone(),
-                                                     vec![],
-                                                     Some(&keys.1)) {
+        match StructuredData::new(0,
+                                  rand::random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1)) {
             Ok(structured_data) => {
                 assert_eq!(structured_data.name(),
-                           ::data::Data::StructuredData(structured_data).name());
+                           Data::Structured(structured_data).name());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         // name() resolves correctly for ImmutableData
-        let value = "immutable data value".to_string().into_bytes();
-        let immutable_data =
-            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
-                                                 value);
+        let value = "immutable data value".to_owned().into_bytes();
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
         assert_eq!(immutable_data.name(),
-                   ::data::Data::ImmutableData(immutable_data).name());
+                   Data::Immutable(immutable_data).name());
 
         // name() resolves correctly for PlainData
-        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
-        let plain_data = ::plain_data::PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(),
-                   ::data::Data::PlainData(plain_data).name());
+        let name = XorName(sha512::hash(&[]).0);
+        let plain_data = PlainData::new(name, vec![]);
+        assert_eq!(plain_data.name(), Data::Plain(plain_data).name());
     }
 
     #[test]
@@ -130,51 +129,47 @@ mod test {
         // payload_size() resolves correctly for StructuredData
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
-        match ::structured_data::StructuredData::new(0,
-                                                     rand::random(),
-                                                     0,
-                                                     vec![],
-                                                     owner_keys.clone(),
-                                                     vec![],
-                                                     Some(&keys.1)) {
+        match StructuredData::new(0,
+                                  rand::random(),
+                                  0,
+                                  vec![],
+                                  owner_keys.clone(),
+                                  vec![],
+                                  Some(&keys.1)) {
             Ok(structured_data) => {
                 assert_eq!(structured_data.payload_size(),
-                           ::data::Data::StructuredData(structured_data).payload_size());
+                           Data::Structured(structured_data).payload_size());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         // payload_size() resolves correctly for ImmutableData
-        let value = "immutable data value".to_string().into_bytes();
-        let immutable_data =
-            ::immutable_data::ImmutableData::new(::immutable_data::ImmutableDataType::Normal,
-                                                 value);
+        let value = "immutable data value".to_owned().into_bytes();
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
         assert_eq!(immutable_data.payload_size(),
-                   ::data::Data::ImmutableData(immutable_data).payload_size());
+                   Data::Immutable(immutable_data).payload_size());
 
         // payload_size() resolves correctly for PlainData
-        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
-        let plain_data = ::plain_data::PlainData::new(name, vec![]);
+        let name = XorName(sha512::hash(&[]).0);
+        let plain_data = PlainData::new(name, vec![]);
         assert_eq!(plain_data.payload_size(),
-                   ::data::Data::PlainData(plain_data).payload_size());
+                   Data::Plain(plain_data).payload_size());
     }
 
     #[test]
     fn data_request_name() {
-        let name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&vec![]).0);
+        let name = XorName(sha512::hash(&[]).0);
 
         // name() resolves correctly for StructuedData
         let tag = 0;
-        assert_eq!(::structured_data::StructuredData::compute_name(tag, &name),
-                   ::data::DataRequest::StructuredData(name, tag).name());
+        assert_eq!(StructuredData::compute_name(tag, &name),
+                   DataRequest::Structured(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name =
-            ::data::DataRequest::ImmutableData(name, ::immutable_data::ImmutableDataType::Normal)
-                .name();
-        assert_eq!(name.clone(), actual_name);
+        let actual_name = DataRequest::Immutable(name, ImmutableDataType::Normal).name();
+        assert_eq!(name, actual_name);
 
         // name() resolves correctly for PlainData
-        assert_eq!(name.clone(), ::data::DataRequest::PlainData(name).name());
+        assert_eq!(name, DataRequest::Plain(name).name());
     }
 }

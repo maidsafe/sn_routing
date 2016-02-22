@@ -288,7 +288,10 @@ impl Node {
     /// Returns the names of the nodes in the routing table which are closest to the given one.
     pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
         let (result_tx, result_rx) = channel();
-        try!(self.action_sender.send(Action::CloseGroup { name: name, result_tx: result_tx }));
+        try!(self.action_sender.send(Action::CloseGroup {
+            name: name,
+            result_tx: result_tx,
+        }));
         Ok(try!(result_rx.recv()))
     }
 

@@ -30,6 +30,7 @@ pub type RoutingActionSender = MaidSafeObserver<::action::Action>;
 #[derive(Ord, PartialOrd, Debug, Clone, Copy, Eq, PartialEq, RustcEncodable, RustcDecodable, Hash)]
 pub struct MessageId(XorName);
 
+#[cfg_attr(feature="clippy", allow(char_lit_as_u8))] // 'A' and 'L' are ASCII.
 impl MessageId {
     /// Generate a new `MessageId` with random content.
     pub fn new() -> MessageId {

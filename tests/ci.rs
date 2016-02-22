@@ -35,6 +35,7 @@
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", allow(shadow_unrelated, use_debug))]
 
 extern crate itertools;
 extern crate kademlia_routing_table;
@@ -204,19 +205,16 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
         if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
-            match test_event {
-                TestEvent(index, Event::NodeAdded(_)) => {
-                    connection_counts[index] += 1;
+            if let TestEvent(index, Event::NodeAdded(_)) = test_event {
+                connection_counts[index] += 1;
 
-                    let k = nodes.len();
-                    if (0..k).map(|i| connection_counts[i]).all(|n| {
-                        n >= k - 1 || n >= GROUP_SIZE - 1
-                    }) {
-                        break;
-                    }
+                let k = nodes.len();
+                let all_events_received = (0..k)
+                                              .map(|i| connection_counts[i])
+                                              .all(|n| n >= k - 1 || n >= GROUP_SIZE - 1);
+                if all_events_received {
+                    break;
                 }
-
-                _ => (),
             }
         } else {
             panic!("Timeout");
@@ -255,10 +253,10 @@ fn gen_plain_data() -> Data {
     let name = XorName::new(sha512::hash(key.as_bytes()).0);
     let data = unwrap_result!(serialisation::serialise(&(key, value)));
 
-    Data::PlainData(PlainData::new(name.clone(), data))
+    Data::Plain(PlainData::new(name, data))
 }
 
-fn closest_nodes(node_names: &Vec<XorName>, target: &XorName) -> Vec<XorName> {
+fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
     node_names.iter()
               .sorted_by(|a, b| {
                   if xor_name::closer_to_target(a, b, target) {
@@ -273,6 +271,8 @@ fn closest_nodes(node_names: &Vec<XorName>, target: &XorName) -> Vec<XorName> {
               .collect()
 }
 
+// TODO: Extract the individual tests into their own functions.
+#[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
@@ -295,7 +295,7 @@ fn core() {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, ref id) = message.content {
                             let encoded = unwrap_result!(serialisation::serialise(&message));
-                            let ref node = nodes[index].node;
+                            let node = &nodes[index].node;
 
                             unwrap_result!(node.send_put_success(message.dst,
                                                                  message.src,
@@ -322,7 +322,7 @@ fn core() {
 
     {
         // request to group authority
-        let node_names = nodes.iter().map(|node| node.name()).collect();
+        let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
         let mut close_group = closest_nodes(&node_names, client.name());
@@ -353,7 +353,7 @@ fn core() {
 
     {
         // response from group authority
-        let node_names = nodes.iter().map(|node| node.name()).collect();
+        let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
         let mut close_group = closest_nodes(&node_names, client.name());
@@ -406,15 +406,15 @@ fn core() {
         // leaving nodes cause churn
         let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
         // a node leaves...
-        let node = nodes.pop().unwrap();
+        let node = unwrap_option!(nodes.pop(), "No more nodes left.");
         let name = node.name();
         drop(node);
 
         loop {
             if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name))
-                        if index < nodes.len() && lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
+                                                                    lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -459,42 +459,38 @@ fn core() {
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
 
-        loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
-                match test_event {
-                    TestEvent(index, Event::Connected) if index == client.index => {
-                        unwrap_result!(client.client
-                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
-                    }
-                    TestEvent(index,
-                              Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                                    dst: Authority::ClientManager(name),
-                                                                    content: RequestContent::Put(data, id) })) => {
-                        unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
-                                                                          Authority::NaeManager(data.name().clone()),
-                                                                          data.clone(),
-                                                                          id.clone()));
-                    }
-                    TestEvent(index, Event::Request(ref msg)) => {
-                        if let RequestContent::Put(_, ref id) = msg.content {
-                            if index < QUORUM_SIZE - 1 {
-                                unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
-                                                                                  msg.src.clone(),
-                                                                                  msg.clone(),
-                                                                                  vec![],
-                                                                                  id.clone()));
-                            }
+        while let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+            match test_event {
+                TestEvent(index, Event::Connected) if index == client.index => {
+                    unwrap_result!(client.client
+                                         .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                }
+                TestEvent(index,
+                          Event::Request(RequestMessage{ src: Authority::Client{ .. },
+                                                                dst: Authority::ClientManager(name),
+                                                                content: RequestContent::Put(data, id) })) => {
+                    unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
+                                                                      Authority::NaeManager(data.name().clone()),
+                                                                      data.clone(),
+                                                                      id.clone()));
+                }
+                TestEvent(index, Event::Request(ref msg)) => {
+                    if let RequestContent::Put(_, ref id) = msg.content {
+                        if index < QUORUM_SIZE - 1 {
+                            unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
+                                                                              msg.src.clone(),
+                                                                              msg.clone(),
+                                                                              vec![],
+                                                                              id.clone()));
                         }
                     }
-                    TestEvent(_index,
-                              Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
-                                                                      .. })) => {
-                        panic!("Unexpected response.");
-                    }
-                    _ => (),
                 }
-            } else {
-                break;
+                TestEvent(_index,
+                          Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
+                                                                  .. })) => {
+                    panic!("Unexpected response.");
+                }
+                _ => (),
             }
         }
     }

@@ -40,7 +40,7 @@ impl Timer {
     /// used to identify the timeout event.
     pub fn schedule(&mut self, duration: Duration) -> u64 {
         let sender = self.sender.clone();
-        let token  = self.next_token();
+        let token = self.next_token();
 
         let _ = thread::spawn(move || {
             thread::sleep(duration);

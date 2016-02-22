@@ -36,6 +36,7 @@
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", allow(print_stdout, shadow_unrelated, use_debug))]
 
 #[macro_use]
 extern crate log;
@@ -119,9 +120,9 @@ fn parse_user_command(cmd: String) -> Option<UserCommand> {
     } else if cmds.len() == 1 && cmds[0] == "exit" {
         return Some(UserCommand::Exit);
     } else if cmds.len() == 2 && cmds[0] == "get" {
-        return Some(UserCommand::Get(cmds[1].to_string()));
+        return Some(UserCommand::Get(cmds[1].to_owned()));
     } else if cmds.len() == 3 && cmds[0] == "put" {
-        return Some(UserCommand::Put(cmds[1].to_string(), cmds[2].to_string()));
+        return Some(UserCommand::Put(cmds[1].to_owned(), cmds[2].to_owned()));
     }
 
     None
@@ -174,17 +175,14 @@ impl KeyValueStore {
             let _ = io::stdout().flush();
             let _ = stdin.read_line(&mut command);
 
-            match parse_user_command(command) {
-                Some(cmd) => {
-                    let _ = command_sender.send(cmd.clone());
-                    if cmd == UserCommand::Exit {
-                        break;
-                    }
+            if let Some(cmd) = parse_user_command(command) {
+                let _ = command_sender.send(cmd.clone());
+                if cmd == UserCommand::Exit {
+                    break;
                 }
-                None => {
-                    println!("Unrecognised command");
-                    continue;
-                }
+            } else {
+                println!("Unrecognised command");
+                continue;
             }
         }
     }
@@ -206,24 +204,21 @@ impl KeyValueStore {
     /// Get data from the network.
     pub fn get(&mut self, what: String) {
         let name = KeyValueStore::calculate_key_name(&what);
-        let data = self.example_client.get(DataRequest::PlainData(name));
+        let data = self.example_client.get(DataRequest::Plain(name));
         match data {
             Some(data) => {
-                let plain_data = match data {
-                    Data::PlainData(plain_data) => plain_data,
-                    _ => {
-                        error!("KeyValueStore: Only storing plain data in this example");
-                        return;
-                    }
+                let plain_data = if let Data::Plain(plain_data) = data {
+                    plain_data
+                } else {
+                    error!("KeyValueStore: Only storing plain data in this example");
+                    return;
                 };
-                let (key, value): (String, String) = match deserialise(plain_data.value()) {
-                    Ok((key, value)) => (key, value),
-                    Err(_) => {
-                        error!("Failed to decode get response.");
-                        return;
-                    }
+                if let Ok((key, value)) = deserialise::<(String, String)>(plain_data.value()) {
+                    println!("Got value {:?} on key {:?}", value, key);
+                } else {
+                    error!("Failed to decode get response.");
+                    return;
                 };
-                println!("Got value {:?} on key {:?}", value, key);
             }
             None => println!("Failed to get {:?}", what),
         }
@@ -233,10 +228,10 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap_result!(serialise(&(put_where, put_what)));
-        self.example_client.put(Data::PlainData(PlainData::new(name, data)));
+        self.example_client.put(Data::Plain(PlainData::new(name, data)));
     }
 
-    fn calculate_key_name(key: &String) -> XorName {
+    fn calculate_key_name(key: &str) -> XorName {
         XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }

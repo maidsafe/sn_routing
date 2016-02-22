@@ -70,7 +70,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
         }
     });
     close_nodes.truncate(2usize);
-    close_nodes.insert(0, original_name.clone());
+    close_nodes.insert(0, *original_name);
 
     let mut combined: Vec<u8> = Vec::new();
     for node_id in close_nodes {
@@ -104,8 +104,8 @@ mod test {
         assert!(original_name != actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
-        combined_one_node_vec.push(original_name.clone());
-        combined_one_node_vec.push(close_nodes_one_entry[0].clone());
+        combined_one_node_vec.push(original_name);
+        combined_one_node_vec.push(close_nodes_one_entry[0]);
 
         let mut combined_one_node: Vec<u8> = Vec::new();
         for node_id in combined_one_node_vec {
@@ -135,8 +135,8 @@ mod test {
                 ::std::cmp::Ordering::Greater
             }
         });
-        let first_closest = close_nodes[0].clone();
-        let second_closest = close_nodes[1].clone();
+        let first_closest = close_nodes[0];
+        let second_closest = close_nodes[1];
         let mut combined: Vec<u8> = Vec::new();
 
         for i in original_name.get_id().into_iter() {
