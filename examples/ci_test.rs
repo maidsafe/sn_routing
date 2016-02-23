@@ -277,8 +277,7 @@ fn init(file_name: String) {
     builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
 }
 
-// TODO: Replace the `Mutex` with an `AtomicBool`.
-#[cfg_attr(feature="clippy", allow(mutex_atomic))]
+#[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())

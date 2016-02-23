@@ -214,8 +214,8 @@ pub struct Core {
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
 impl Core {
-    /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
-    /// in.
+    /// A Core instance for a client or node with the given ID. Sends events to upper layer via the
+    /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
