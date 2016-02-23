@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::{group_size, optimal_table_size};
+use kademlia_routing_table::{GROUP_SIZE, ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage};
+use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent,
+              RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::cmp::{Ordering, min};
 use std::sync::mpsc;
@@ -27,9 +27,19 @@ use std::thread::sleep;
 use std::time::Duration;
 use xor_name::{XorName, closer_to_target};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NodeInfo(XorName);
+
+impl ContactInfo for NodeInfo {
+    fn name(&self) -> &XorName {
+        &self.0
+    }
+}
+
 pub struct MockRoutingNodeImpl {
     name: XorName,
-    peers: Vec<XorName>,
+    // TODO: Use RT crate instead of this Vec<XorName> (provides realistic result for `close_nodes`)
+    routing_table: RoutingTable<NodeInfo>,
     sender: mpsc::Sender<Event>,
     client_sender: mpsc::Sender<Event>,
     simulated_latency: Duration,
@@ -53,20 +63,14 @@ impl MockRoutingNodeImpl {
     pub fn new(sender: mpsc::Sender<Event>) -> MockRoutingNodeImpl {
         let (client_sender, _) = mpsc::channel();
         let name: XorName = random();
-        let mut peers = Vec::with_capacity(optimal_table_size());
-        for _ in 0..optimal_table_size() {
-            peers.push(random());
+        let mut routing_table = RoutingTable::new(NodeInfo(name));
+        for _ in 0..1000 {
+            let _ = routing_table.add(NodeInfo(random()));
         }
-        peers.sort_by(|a, b| {
-            match closer_to_target(&a, &b, &name) {
-                true => Ordering::Less,
-                false => Ordering::Greater,
-            }
-        });
 
         MockRoutingNodeImpl {
             name: name,
-            peers: peers,
+            routing_table: routing_table,
             sender: sender,
             client_sender: client_sender,
             simulated_latency: Duration::from_millis(200),
@@ -122,13 +126,17 @@ impl MockRoutingNodeImpl {
                                   "Mock Client Delete Request");
     }
 
-    pub fn churn_event(&mut self, event_id: MessageId, lost_close_node: Option<XorName>) {
+    pub fn node_added_event(&mut self, node_added: XorName) {
         let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock Churn Event", move || {
-            let _ = cloned_sender.send(Event::Churn {
-                id: event_id,
-                lost_close_node: lost_close_node,
-            });
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeAdded Event", move || {
+            let _ = cloned_sender.send(Event::NodeAdded(node_added));
+        })));
+    }
+
+    pub fn node_lost_event(&mut self, node_lost: XorName) {
+        let cloned_sender = self.sender.clone();
+        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeLost Event", move || {
+            let _ = cloned_sender.send(Event::NodeLost(node_lost));
         })));
     }
 
@@ -337,18 +345,23 @@ impl MockRoutingNodeImpl {
         Ok(self.delete_failures_given.push(message))
     }
 
-    pub fn send_refresh_request(&mut self, src: Authority, content: Vec<u8>) -> Result<(), InterfaceError> {
+    pub fn send_refresh_request(&mut self,
+                                src: Authority,
+                                content: Vec<u8>)
+                                -> Result<(), InterfaceError> {
         let content = RequestContent::Refresh(content);
         let message = self.send_request(src.clone(), src, content, "Mock Refresh Request");
         Ok(self.refresh_requests_given.push(message))
     }
 
-    pub fn name(&self) -> Result<XorName, InterfaceError> {
-        Ok(self.name.clone())
+    pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+        Ok(self.routing_table
+               .close_nodes(&name)
+               .map(|infos| infos.iter().map(|info| &info.0).cloned().collect()))
     }
 
-    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
-        Ok(self.peers.iter().take(group_size()).cloned().collect())
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        Ok(self.name.clone())
     }
 
     fn send_request(&mut self,

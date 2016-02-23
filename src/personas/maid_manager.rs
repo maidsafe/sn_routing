@@ -23,6 +23,7 @@ use sodiumoxide::crypto::hash::sha512;
 use std::collections::HashMap;
 use time::Duration;
 use types::{Refresh, RefreshValue};
+use utils;
 use vault::RoutingNode;
 use xor_name::XorName;
 
@@ -80,10 +81,17 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
         match request.content {
-            RequestContent::Put(Data::ImmutableData(_), _) => self.handle_put_immutable_data(routing_node, request),
-            RequestContent::Put(Data::StructuredData(_), _) => self.handle_put_structured_data(routing_node, request),
+            RequestContent::Put(Data::Immutable(_), _) => {
+                self.handle_put_immutable_data(routing_node, request)
+            }
+            RequestContent::Put(Data::Structured(_), _) => {
+                self.handle_put_structured_data(routing_node, request)
+            }
             _ => unreachable!("Error in vault demuxing"),
         }
     }
@@ -95,7 +103,8 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Send success response back to client
-                let message_hash = sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
+                let message_hash =
+                    sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = routing_node.send_put_success(src, dst, message_hash, message_id.clone());
@@ -113,14 +122,20 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Refund account
-                match self.accounts.get_mut(client_request.src.get_name()) {
-                    Some(account) => account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */),
+                match self.accounts.get_mut(client_request.dst.name()) {
+                    Some(account) => {
+                        account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                    }
                     None => return Ok(()),
                 }
 
                 // Send failure response back to client
-                let error = try!(serialisation::deserialise::<ClientError>(external_error_indicator));
-                self.reply_with_put_failure(routing_node, client_request, message_id.clone(), &error)
+                let error =
+                    try!(serialisation::deserialise::<ClientError>(external_error_indicator));
+                self.reply_with_put_failure(routing_node,
+                                            client_request,
+                                            message_id.clone(),
+                                            &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
         }
@@ -130,17 +145,12 @@ impl MaidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, churn_event_id: &MessageId) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (maid_name, account) in self.accounts.iter() {
             let src = Authority::ClientManager(maid_name.clone());
-            let refresh = Refresh {
-                id: churn_event_id.clone(),
-                name: maid_name.clone(),
-                value: RefreshValue::MaidManager(account.clone()),
-            };
+            let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("MaidManager sending refresh for account {:?}",
-                       src.get_name());
+                debug!("MaidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
@@ -154,16 +164,17 @@ impl MaidManager {
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
-                (Data::ImmutableData(data.clone()), message_id.clone())
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (Data::Immutable(data.clone()), message_id.clone())
             }
             _ => unreachable!("Logic error"),
         };
 
         // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
         // account
+        let client_name = utils::client_name(&request.src);
         let result = self.accounts
-                         .get_mut(request.src.get_name())
+                         .get_mut(&client_name)
                          .ok_or(ClientError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
@@ -192,8 +203,8 @@ impl MaidManager {
                                   request: &RequestMessage)
                                   -> Result<(), InternalError> {
         let (data, type_tag, message_id) = match request.content {
-            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
-                (Data::StructuredData(data.clone()),
+            RequestContent::Put(Data::Structured(ref data), ref message_id) => {
+                (Data::Structured(data.clone()),
                  data.get_type_tag(),
                  message_id.clone())
             }
@@ -201,25 +212,32 @@ impl MaidManager {
         };
 
         // If the type_tag is 0, the account must not exist, else it must exist.
+        let client_name = utils::client_name(&request.src);
         if type_tag == 0 {
-            if self.accounts.contains_key(request.src.get_name()) {
+            if self.accounts.contains_key(&client_name) {
                 let error = ClientError::AccountExists;
-                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
+                try!(self.reply_with_put_failure(routing_node,
+                                                 request.clone(),
+                                                 message_id,
+                                                 &error));
                 return Err(InternalError::Client(error));
             }
 
             // Create the account
-            let _ = self.accounts.insert(*request.src.get_name(), Account::default());
+            let _ = self.accounts.insert(client_name, Account::default());
         } else {
             // Update the account
             let result = self.accounts
-                             .get_mut(request.src.get_name())
+                             .get_mut(&client_name)
                              .ok_or(ClientError::NoSuchAccount)
                              .and_then(|account| {
                                  account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                              });
             if let Err(error) = result {
-                try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
+                try!(self.reply_with_put_failure(routing_node,
+                                                 request.clone(),
+                                                 message_id,
+                                                 &error));
                 return Err(InternalError::Client(error));
             }
         };
@@ -231,7 +249,8 @@ impl MaidManager {
             let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
         }
 
-        if let Some(prior_request) = self.request_cache.insert(message_id.clone(), request.clone()) {
+        if let Some(prior_request) = self.request_cache
+                                         .insert(message_id.clone(), request.clone()) {
             error!("Overwrote existing cached request: {:?}", prior_request);
         }
         Ok(())
@@ -246,7 +265,11 @@ impl MaidManager {
         let src = request.dst.clone();
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
-        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
+        let _ = routing_node.send_put_failure(src,
+                                              dst,
+                                              request,
+                                              external_error_indicator,
+                                              message_id);
         Ok(())
     }
 }
@@ -258,8 +281,8 @@ mod test {
     use error::{ClientError, InternalError};
     use maidsafe_utilities::serialisation;
     use rand::random;
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
-                  ResponseContent};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+                  RequestMessage, ResponseContent};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -292,12 +315,13 @@ mod test {
         let mut env = environment_setup();
 
         // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::ImmutableData(immutable_data), message_id.clone()),
+            content: RequestContent::Put(Data::Immutable(immutable_data), message_id.clone()),
         };
 
         match env.maid_manager.handle_put(&env.routing, &valid_request) {
@@ -326,13 +350,13 @@ mod test {
         // assert_eq!(::utils::HANDLED,
         //            maid_manager.handle_put(&our_authority,
         //                                    &client,
-        //                                    &::routing::data::Data::ImmutableData(data.clone()),
+        //                                    &::routing::data::Data::Immutable(data.clone()),
         //                                    &None));
         // let put_requests = routing.put_requests_given();
         // assert_eq!(put_requests.len(), 1);
         // assert_eq!(put_requests[0].our_authority, our_authority);
         // assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
-        // assert_eq!(put_requests[0].data, Data::ImmutableData(data));
+        // assert_eq!(put_requests[0].data, Data::Immutable(data));
     }
 
     // #[test]
@@ -342,14 +366,14 @@ mod test {
     //     assert_eq!(::utils::HANDLED,
     //                maid_manager.handle_put(&our_authority,
     //                                        &client,
-    //                                        &::routing::data::Data::ImmutableData(data.clone()),
+    //                                        &::routing::data::Data::Immutable(data.clone()),
     //                                        &None));
     //     maid_manager.handle_churn(&churn_node);
     //     let refresh_requests = routing.refresh_requests_given();
     //     assert_eq!(refresh_requests.len(), 1);
     //     assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-    //     assert_eq!(refresh_requests[0].our_authority.get_name(),
-    //                client.get_name());
+    //     assert_eq!(refresh_requests[0].our_authority.name(),
+    //                client.name());
 
     //     let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
     //     if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {

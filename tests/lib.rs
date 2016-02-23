@@ -170,7 +170,7 @@
 //     let duration = ::std::time::Duration::from_millis(5000);
 //     ::std::thread::sleep(duration);
 
-//     let mut new_vault_process = start_vaults(1);
+// let mut new_vault_process = start_vaults(1);
 
 //     client_routing.get_request(::routing::Authority::NaeManager(im_data.name()),
 //                                ::routing::data::DataRequest::ImmutableData(im_data.name(),
@@ -224,7 +224,7 @@
 //     let duration = ::std::time::Duration::from_millis(5000);
 //     ::std::thread::sleep(duration);
 
-//     let mut new_vault_process = start_vaults(1);
+// let mut new_vault_process = start_vaults(1);
 
 //     client_routing.get_request(::routing::Authority::NaeManager(sd.name()),
 //                                ::routing::data::DataRequest::StructuredData(sd.name(), 0));

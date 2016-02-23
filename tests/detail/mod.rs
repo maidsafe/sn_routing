@@ -17,19 +17,24 @@
 
 mod client;
 mod setup_network;
+mod simulate_churn;
 mod test_cases;
+mod test_group;
+mod vault_process;
 
-pub use self::client::Client;
+pub use self::client::{Client, ClientError};
 pub use self::setup_network::setup_network;
+pub use self::simulate_churn::simulate_churn;
+pub use self::test_cases::immutable_data::test as immutable_data_test;
+pub use self::test_cases::structured_data::test as structured_data_test;
 pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
 pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
+pub use self::test_cases::messaging::test as messaging_test;
+pub use self::test_group::TestGroup;
+pub use self::vault_process::VaultProcess;
 
-use rand::random;
+use rand::{Rng, thread_rng};
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
+    thread_rng().gen_iter().take(size).collect()
 }

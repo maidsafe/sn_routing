@@ -22,8 +22,9 @@
 mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingNodeImpl;
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType, InterfaceError, MessageId,
-              RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingError};
+use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType,
+              InterfaceError, MessageId, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, RoutingError};
 use sodiumoxide::crypto::hash::sha512;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
@@ -38,30 +39,41 @@ impl MockRoutingNode {
         Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
-    pub fn get_client_receiver(&mut self) -> mpsc::Receiver<Event> {
+    pub fn get_client_receiver(&self) -> mpsc::Receiver<Event> {
         unwrap_result!(self.pimpl.lock()).get_client_receiver()
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&self, client_address: XorName, client_pub_key: PublicKey, data_request: DataRequest) {
-        unwrap_result!(self.pimpl.lock()).client_get(Self::client_authority(client_address, client_pub_key),
-                                                     data_request)
+    pub fn client_get(&self,
+                      client_address: XorName,
+                      client_pub_key: PublicKey,
+                      data_request: DataRequest) {
+        unwrap_result!(self.pimpl.lock())
+            .client_get(Self::client_authority(client_address, client_pub_key),
+                        data_request)
     }
 
     pub fn client_put(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_put(Self::client_authority(client_address, client_pub_key), data)
+        unwrap_result!(self.pimpl.lock())
+            .client_put(Self::client_authority(client_address, client_pub_key), data)
     }
 
     pub fn client_post(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_post(Self::client_authority(client_address, client_pub_key), data)
+        unwrap_result!(self.pimpl.lock())
+            .client_post(Self::client_authority(client_address, client_pub_key), data)
     }
 
     pub fn client_delete(&self, client_address: XorName, client_pub_key: PublicKey, data: Data) {
-        unwrap_result!(self.pimpl.lock()).client_delete(Self::client_authority(client_address, client_pub_key), data)
+        unwrap_result!(self.pimpl.lock())
+            .client_delete(Self::client_authority(client_address, client_pub_key), data)
     }
 
-    pub fn churn_event(&self, event_id: MessageId, lost_close_node: Option<XorName>) {
-        unwrap_result!(self.pimpl.lock()).churn_event(event_id, lost_close_node)
+    pub fn node_added_event(&self, node_added: XorName) {
+        unwrap_result!(self.pimpl.lock()).node_added_event(node_added)
+    }
+
+    pub fn node_lost_event(&self, node_lost: XorName) {
+        unwrap_result!(self.pimpl.lock()).node_lost_event(node_lost)
     }
 
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
@@ -171,7 +183,8 @@ impl MockRoutingNode {
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_get_failure(src, dst, request, external_error_indicator, id)
+        unwrap_result!(self.pimpl.lock())
+            .send_get_failure(src, dst, request, external_error_indicator, id)
     }
 
     pub fn send_put_success(&self,
@@ -190,7 +203,8 @@ impl MockRoutingNode {
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_failure(src, dst, request, external_error_indicator, id)
+        unwrap_result!(self.pimpl.lock())
+            .send_put_failure(src, dst, request, external_error_indicator, id)
     }
 
     pub fn send_post_success(&self,
@@ -209,7 +223,8 @@ impl MockRoutingNode {
                              external_error_indicator: Vec<u8>,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_failure(src, dst, request, external_error_indicator, id)
+        unwrap_result!(self.pimpl.lock())
+            .send_post_failure(src, dst, request, external_error_indicator, id)
     }
 
     pub fn send_delete_success(&self,
@@ -228,19 +243,23 @@ impl MockRoutingNode {
                                external_error_indicator: Vec<u8>,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_failure(src, dst, request, external_error_indicator, id)
+        unwrap_result!(self.pimpl.lock())
+            .send_delete_failure(src, dst, request, external_error_indicator, id)
     }
 
-    pub fn send_refresh_request(&self, src: Authority, content: Vec<u8>) -> Result<(), InterfaceError> {
+    pub fn send_refresh_request(&self,
+                                src: Authority,
+                                content: Vec<u8>)
+                                -> Result<(), InterfaceError> {
         unwrap_result!(self.pimpl.lock()).send_refresh_request(src, content)
+    }
+
+    pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).close_group(name)
     }
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         unwrap_result!(self.pimpl.lock()).name()
-    }
-
-    pub fn close_group(&self) -> Result<Vec<XorName>, InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).close_group()
     }
 
     fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {

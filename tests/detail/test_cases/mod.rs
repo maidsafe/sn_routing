@@ -15,7 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+pub mod immutable_data;
+pub mod structured_data;
 pub mod immutable_data_churn;
 pub mod structured_data_churn;
+pub mod messaging;
 
 pub use super::*;

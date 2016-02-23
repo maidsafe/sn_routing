@@ -36,42 +36,84 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 
 // To avoid multiple cfg statements before each import.
-#![allow(unused_extern_crates)]
+#![cfg_attr(feature="use-mock-routing", allow(unused, unused_extern_crates))]
 
+extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+extern crate mpid_messaging;
 extern crate rand;
 extern crate routing;
+extern crate rustc_serialize;
 extern crate sodiumoxide;
 extern crate xor_name;
 
 #[cfg(not(feature = "use-mock-routing"))]
 mod detail;
+
+const VAULT_COUNT: u32 = 10;
+// TODO This is a current limitation but once responses are coded this can ideally be close to 0
+const CHURN_MIN_WAIT_SEC: u64 = 10;
+const CHURN_MAX_WAIT_SEC: u64 = 20;
+// The number of requests to send during the churn phase of the tests.  This will result in
+// `REQUEST_COUNT` Puts for ImmutableData, then `REQUEST_COUNT` Gets, then similarly for
+// StructuredData and MPID messages.
+const REQUEST_COUNT: u32 = 30;
+
+use std::process;
+use std::sync::{Arc, Mutex, Condvar};
 #[cfg(not(feature = "use-mock-routing"))]
-use xor_name::XorName;
-#[cfg(not(feature = "use-mock-routing"))]
-use routing::StructuredData;
-#[cfg(not(feature = "use-mock-routing"))]
-use routing::Data;
+use detail::*;
 
 #[cfg(not(feature = "use-mock-routing"))]
 fn main() {
-    use detail::*;
-    maidsafe_utilities::log::init(false);
-    let vault_count = 10;
-    let processes = setup_network(vault_count);
-    let mut client = Client::new();
+    let mut failed = false;
+    {
+        maidsafe_utilities::log::init(true);
+        let vault_count = VAULT_COUNT;
+        let min_wait = CHURN_MIN_WAIT_SEC;
+        let max_wait = CHURN_MAX_WAIT_SEC;
+        let request_count = REQUEST_COUNT;
+        let processes = setup_network(vault_count);
 
-    let sd = unwrap_result!(StructuredData::new(0, rand::random::<XorName>(), 0, vec![], vec![], vec![], None));
-    let _ = client.put(Data::StructuredData(sd));
+        let mut is_err = thread!("ImmutableData test", move || immutable_data_test())
+                             .join()
+                             .is_err();
+        failed = failed || is_err;
+        is_err = thread!("StructuredData test", move || structured_data_test()).join().is_err();
+        failed = failed || is_err;
+        is_err = thread!("Messaging test", move || messaging_test()).join().is_err();
+        failed = failed || is_err;
 
-    immutable_data_churn_test(&mut client);
-    structured_data_churn_test(&mut client);
+        let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
+        let _joiner = simulate_churn(processes,
+                                     stop_flag.clone(),
+                                     vault_count,
+                                     min_wait,
+                                     max_wait);
+        is_err = thread!("ImmutableData churn test",
+                         move || immutable_data_churn_test(request_count))
+                     .join()
+                     .is_err();
+        failed = failed || is_err;
+        is_err = thread!("StructuredData churn test",
+                         move || structured_data_churn_test(request_count))
+                     .join()
+                     .is_err();
+        failed = failed || is_err;
 
-    for mut process in processes {
-        let _ = process.kill();
+        // Stop churn thread
+        let &(ref lock, ref cond_var) = &*stop_flag;
+        *unwrap_result!(lock.lock()) = true;
+        cond_var.notify_one();
+    }
+    if failed {
+        println!("OVERALL FAILED\n");
+        process::exit(101);
+    } else {
+        println!("OVERALL PASSED\n");
     }
 }
 

@@ -17,11 +17,28 @@
 
 #![allow(unused)]
 
-use std::sync::mpsc;
-
-use routing::{self, Authority, Data, DataRequest, Event, FullId, ResponseContent, ResponseMessage};
+use std::fmt::{self, Debug, Formatter};
+use std::sync::mpsc::{self, TryRecvError};
+use std::thread;
+use std::time::Duration;
 use sodiumoxide::crypto;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
+use rand::{random, Rng, thread_rng};
+use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage,
+              RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
+use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
+
+// TODO: These are a duplicate of those in src/error.rs until we get a crate for the types which are
+// common to Vaults and Core.
+#[derive(Debug, RustcEncodable, RustcDecodable)]
+pub enum ClientError {
+    NoSuchAccount,
+    AccountExists,
+    NoSuchData,
+    DataExists,
+    LowBalance,
+}
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct Client {
@@ -36,7 +53,6 @@ pub struct Client {
 impl Client {
     /// Creates a new client and attempts to establish a connection to the network.
     pub fn new() -> Client {
-        println!("Starting Client");
         let (sender, receiver) = mpsc::channel::<Event>();
 
         // Generate new key pairs. The client's name will be computed from them. This is a
@@ -45,83 +61,224 @@ impl Client {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
+        info!("Creating Client({:?})", full_id.public_id().name());
         let routing_client = routing::Client::new(sender, Some(full_id)).unwrap();
 
-        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
-        // requests to the network.
-        println!("Waiting for Client to connect");
-        for it in receiver.iter() {
-            if let Event::Connected = it {
-                println!("Client Connected to network");
-                break;
-            }
-        }
-
-        Client {
+        let client = Client {
             routing_client: routing_client,
             receiver: receiver,
             full_id: FullId::with_keys(encrypt_keys, sign_keys),
+        };
+
+        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
+        // requests to the network.
+        info!("Waiting for {:?} to connect to network", client);
+        if let Some(Event::Connected) = client.wait_for_event() {
+            return client
+        }
+        panic!("{:?} failed to connect.");
+    }
+
+    /// Create an account
+    pub fn create_account(&mut self) {
+        let account = unwrap_result!(StructuredData::new(0,
+                                                         random::<XorName>(),
+                                                         0,
+                                                         vec![],
+                                                         vec![],
+                                                         vec![],
+                                                         None));
+        match unwrap_option!(self.put(Data::Structured(account)), "") {
+            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
+                info!("{:?} created account", self);
+            }
+            _ => panic!("{:?} failed to create account", self),
         }
     }
 
-    /// Send a `Get` request to the network and return the data received in the response.
-    ///
-    /// This is a blocking call and will wait indefinitely for the response.
-    pub fn get(&mut self, request: DataRequest) -> Option<Data> {
+    /// Send a `Get` request to the network and return the received response.
+    pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
         unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()), request.clone()));
+                           .send_get_request(Authority::NaeManager(request.name()),
+                                             request.clone()));
+        self.wait_for_response()
+    }
 
-        // Wait for Get success event from Routing
-        for it in self.receiver.iter() {
-            match it {
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(data, _), .. }) => return Some(data),
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure { external_error_indicator, .. }, .. }) => {
-                    error!("Failed to Get {:?}: {:?}",
-                           request.name(),
-                           unwrap_result!(String::from_utf8(external_error_indicator)));
-                    return None;
-                }
+    /// Send a `Put` request to the network.
+    pub fn put(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        self.wait_for_response()
+    }
+
+    /// Post data onto the network.
+    pub fn post(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::NaeManager(data.name()), data));
+        self.wait_for_response()
+    }
+
+    /// Delete data from the network.
+    pub fn delete(&self, _data: Data) {
+        unimplemented!()
+    }
+
+    /// Register client online.
+    pub fn register_online(&self) {
+        let wrapper = MpidMessageWrapper::Online;
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::Plain(PlainData::new(*self.name(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
+
+        match unwrap_option!(self.wait_for_response(), "") {
+            ResponseMessage { content: ResponseContent::PostSuccess(..), .. } => {
+                trace!("{:?} successfully sent online message", self);
+            }
+            _ => panic!("{:?} failed to send online message", self),
+        }
+    }
+
+    /// Generate an `MpidMessage` targeting the specified recipient, and its corresponding
+    /// PutMessage wrapper.
+    pub fn generate_mpid_message(&self, receiver: &XorName) -> (MpidMessage, Data) {
+        let metadata = super::generate_random_vec_u8(128);
+        let body = super::generate_random_vec_u8(128);
+        let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
+                                                           metadata,
+                                                           receiver.clone(),
+                                                           body,
+                                                           &self.full_id.signing_private_key()));
+        let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
+        let name = unwrap_result!(mpid_message.header().name());
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
+        (mpid_message, data)
+    }
+
+    /// Wait to receive an `MpidMessage`.
+    pub fn get_mpid_message(&self) -> Option<MpidMessage> {
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::PutMessage(mpid_message) => {
+                trace!("{:?} received message {:?}", self, mpid_message);
+                Some(mpid_message)
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+
+    /// Query outbox.
+    pub fn query_outbox(&self) -> Vec<MpidHeader> {
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
+                trace!("{:?} outbox has following mpid_headers {:?}",
+                       self,
+                       mpid_headers);
+                mpid_headers
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+
+    /// Query whether outbox has particular message.
+    pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        match self.wait_for_wrapper() {
+            MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
+                trace!("{:?} outbox has following mpid_headers {:?}",
+                       self,
+                       mpid_headers);
+                mpid_headers
+            }
+            _ => panic!("{:?} unexpected message"),
+        }
+    }
+    /// Return network name.
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
+    /// Return public signing key.
+    pub fn signing_public_key(&self) -> crypto::sign::PublicKey {
+        self.full_id.public_id().signing_public_key().clone()
+    }
+
+    /// Return secret signing key.
+    pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
+        self.full_id.signing_private_key()
+    }
+
+    fn send_wrapper(&self, wrapper: MpidMessageWrapper) {
+        let name = self.name().clone();
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()), data));
+    }
+
+    fn wait_for_wrapper(&self) -> MpidMessageWrapper {
+        match unwrap_option!(self.wait_for_request(), "") {
+            RequestMessage { src, dst, content: RequestContent::Post(Data::Plain(msg), _) } => {
+                let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
+                wrapper
+            }
+            _ => panic!("{:?} failed to receive outbox query response", self),
+        }
+    }
+
+    fn wait_for_request(&self) -> Option<RequestMessage> {
+        self.wait_for_event().and_then(|event| {
+            match event {
+                Event::Request(request_message) => Some(request_message),
+                _ => panic!("{:?} unexpected event {:?}", self, event),
+            }
+        })
+    }
+
+    fn wait_for_response(&self) -> Option<ResponseMessage> {
+        self.wait_for_event().and_then(|event| {
+            match event {
+                Event::Response(response_message) => Some(response_message),
+                _ => panic!("{:?} unexpected event {:?}", self, event),
+            }
+        })
+    }
+
+    fn wait_for_event(&self) -> Option<Event> {
+        let timeout = Duration::from_secs(10);
+        let interval = Duration::from_millis(100);
+        let mut elapsed = Duration::new(0, 0);
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(value) => return Some(value),
+                Err(TryRecvError::Disconnected) => break,
                 _ => (),
+            }
+
+            thread::sleep(interval);
+            elapsed = elapsed + interval;
+
+            if elapsed > timeout {
+                break;
             }
         }
 
         None
     }
+}
 
-    /// Send a `Put` request to the network.
-    ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
-    pub fn put(&self, data: Data) {
-        let data_name = data.name();
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
-
-        // Wait for Put success event from Routing
-        for it in self.receiver.iter() {
-            if let Event::Response(ResponseMessage {
-                content: ResponseContent::PutSuccess(..), .. }) = it {
-                println!("Successfully stored {:?}", data_name);
-                break;
-            } else {
-                panic!("Failed to store {:?}", data_name);
-            }
-        }
-    }
-
-    /// Post data onto the network.
-    pub fn post(&self) {
-        unimplemented!()
-    }
-
-    /// Delete data from the network.
-    pub fn delete(&self) {
-        unimplemented!()
-    }
-
-    /// Return network name.
-    pub fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
+impl Debug for Client {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Client({:?})", self.name())
     }
 }

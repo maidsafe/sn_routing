@@ -47,11 +47,10 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate mpid_messaging;
 extern crate chunk_store;
-extern crate crust;
+extern crate config_file_handler;
 extern crate ctrlc;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
-extern crate itertools;
 extern crate lru_time_cache;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
