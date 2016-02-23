@@ -1,5 +1,15 @@
 # Routing - Change Log
 
+## [0.7.0]
+- Migrate to the new Crust API.
+- Add some timeouts to check for stale connections.
+- Limit proxy connections to one.
+- Make node discovery more efficient.
+- Shorten log messages and debug formats to make the logs clearer.
+- Some updates to churn handling in the example.
+- Fix lots of Clippy warnings.
+- Fix lots of bugs.
+
 ## [0.6.3]
 - Added several tests
 - Further documentation improvements
