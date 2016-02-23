@@ -23,6 +23,7 @@ use xor_name::XorName;
 use error::RoutingError;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha512;
+use utils;
 use authority::Authority;
 use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
@@ -33,9 +34,9 @@ use rustc_serialize::{Decoder, Encoder};
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub enum Message {
     /// A message sent between two nodes directly
-    DirectMessage(DirectMessage),
+    Direct(DirectMessage),
     /// A message sent across the network (in transit)
-    HopMessage(HopMessage),
+    Hop(HopMessage),
 }
 
 /// Messages sent via a direct connection.
@@ -69,6 +70,9 @@ pub enum DirectMessage {
         /// Signature of the originator of this message.
         signature: sign::Signature,
     },
+    /// Sent from a client that became a full routing node. The recipient can remove it from its
+    /// client map.
+    ClientToNode,
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
@@ -149,7 +153,7 @@ impl SignedMessage {
         let bytes_to_sign = try!(serialise(&(&content, full_id.public_id())));
         Ok(SignedMessage {
             content: content,
-            public_id: full_id.public_id().clone(),
+            public_id: *full_id.public_id(),
             signature: sign::sign_detached(&bytes_to_sign, full_id.signing_private_key()),
         })
     }
@@ -250,19 +254,19 @@ pub enum RequestContent {
     GetCloseGroup,
     /// Request a direct connection to the recipient.
     Connect,
-    /// Send our endpoints encrypted to a node we wish to connect to and have the keys for.
-    Endpoints {
-        /// Encrypted crust endpoints (socket address and protocol).
-        encrypted_endpoints: Vec<u8>,
+    /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
+    ConnectionInfo {
+        /// Encrypted Crust connection info.
+        encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Ask each member of a group near a node address for the `PublicId`.
     GetPublicId,
-    /// Ask for a `PublicId` but provide our endpoints encrytped.
-    GetPublicIdWithEndpoints {
-        /// Encrypted crust endpoints (socket address and protocol).
-        encrypted_endpoints: Vec<u8>,
+    /// Ask for a `PublicId` but provide our connection_info encrytped.
+    GetPublicIdWithConnectionInfo {
+        /// Encrypted crust connection_info (socket address and protocol).
+        encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
@@ -300,14 +304,14 @@ pub enum ResponseContent {
         /// The requested `PublicId`
         public_id: PublicId,
     },
-    /// Reply with the `PublicId` along with the sender's encrypted endpoints
+    /// Reply with the `PublicId` along with the sender's encrypted connection_info
     ///
     /// Sent from a `ManagedNode` to another node or client.
-    GetPublicIdWithEndpoints {
+    GetPublicIdWithConnectionInfo {
         /// Our `PublicId`
         public_id: PublicId,
-        /// Their endpoints
-        encrypted_endpoints: Vec<u8>,
+        /// Their connection_info
+        encrypted_connection_info: Vec<u8>,
         /// Message salt
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
@@ -373,22 +377,20 @@ impl fmt::Debug for DirectMessage {
         match *self {
             DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
                 write!(formatter,
-                       "DirectMessage {{ BootstrapIdentify {{ {:?}, {:?} }} }}",
+                       "BootstrapIdentify {{ {:?}, {:?} }}",
                        public_id,
                        current_quorum_size)
             }
-            DirectMessage::BootstrapDeny => write!(formatter, "DirectMessage {{ BootstrapDeny }}"),
-            DirectMessage::ClientIdentify { ref client_restriction, .. } => {
-                write!(formatter,
-                       "DirectMessage {{ ClientIdentify {{ .., {:?} }} }}",
-                       client_restriction)
+            DirectMessage::BootstrapDeny => write!(formatter, "BootstrapDeny"),
+            DirectMessage::ClientToNode => write!(formatter, "ClientToNode"),
+            DirectMessage::ClientIdentify { client_restriction: true, .. } => {
+                write!(formatter, "ClientIdentify (client only)")
             }
-            DirectMessage::NodeIdentify { .. } => {
-                write!(formatter, "DirectMessage {{ NodeIdentify {{ .. }} }}")
+            DirectMessage::ClientIdentify { client_restriction: false, .. } => {
+                write!(formatter, "ClientIdentify (joining node)")
             }
-            DirectMessage::NewNode(ref public_id) => {
-                write!(formatter, "DirectMessage {{ NewNode({:?}) }}", public_id)
-            }
+            DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
+            DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
         }
     }
 }
@@ -415,51 +417,32 @@ impl fmt::Debug for RequestContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             RequestContent::GetNetworkName { ref current_id } => {
-                write!(formatter,
-                       "RequestContent {{ GetNetworkName {{ {:?} }} }}",
-                       current_id)
+                write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
             }
             RequestContent::ExpectCloseNode { ref expect_id } => {
-                write!(formatter,
-                       "RequestContent {{ ExpectCloseNode {{ {:?} }} }}",
-                       expect_id)
+                write!(formatter, "ExpectCloseNode {{ {:?} }}", expect_id)
             }
-            RequestContent::GetCloseGroup => {
-                write!(formatter, "RequestContent {{ GetCloseGroup }}")
+            RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
+            RequestContent::Connect => write!(formatter, "Connect"),
+            RequestContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
+            RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
+            RequestContent::GetPublicIdWithConnectionInfo { .. } => {
+                write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
             }
-            RequestContent::Connect => write!(formatter, "RequestContent {{ Connect }}"),
-            RequestContent::Endpoints { .. } => {
-                write!(formatter, "RequestContent {{ Endpoints {{ .. }} }}")
+            RequestContent::Refresh(ref data) => {
+                write!(formatter, "Refresh({:?})", utils::format_binary_array(data))
             }
-            RequestContent::GetPublicId => write!(formatter, "RequestContent {{ GetPublicId }}"),
-            RequestContent::GetPublicIdWithEndpoints { .. } => {
-                write!(formatter,
-                       "RequestContent {{ GetPublicIdWithEndpoints {{ .. }} }}")
-            }
-            RequestContent::Refresh(..) => write!(formatter, "RequestContent {{ Refresh(..) }}"),
             RequestContent::Get(ref data_request, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Get( {:?}, {:?} ) }}",
-                       data_request,
-                       message_id)
+                write!(formatter, "Get({:?}, {:?})", data_request, message_id)
             }
             RequestContent::Put(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Put( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Put({:?}, {:?})", data, message_id)
             }
             RequestContent::Post(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Post( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Post({:?}, {:?})", data, message_id)
             }
             RequestContent::Delete(ref data, ref message_id) => {
-                write!(formatter,
-                       "RequestContent {{ Delete( {:?}, {:?} ) }}",
-                       data,
-                       message_id)
+                write!(formatter, "Delete({:?}, {:?})", data, message_id)
             }
         }
     }
@@ -469,72 +452,48 @@ impl fmt::Debug for ResponseContent {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
             ResponseContent::GetNetworkName { ref relocated_id } => {
-                write!(formatter,
-                       "ResponseContent {{ GetNetworkName {{ {:?} }} }}",
-                       relocated_id)
+                write!(formatter, "GetNetworkName {{ {:?} }}", relocated_id)
             }
             ResponseContent::GetPublicId { ref public_id } => {
-                write!(formatter,
-                       "ResponseContent {{ GetPublicId {{ {:?} }} }}",
-                       public_id)
+                write!(formatter, "GetPublicId {{ {:?} }}", public_id)
             }
-            ResponseContent::GetPublicIdWithEndpoints { ref public_id, .. } => {
+            ResponseContent::GetPublicIdWithConnectionInfo { ref public_id, .. } => {
                 write!(formatter,
-                       "ResponseContent {{ GetPublicIdWithEndpoints {{ {:?}, .. }} }}",
+                       "GetPublicIdWithConnectionInfo {{ {:?}, .. }}",
                        public_id)
             }
             ResponseContent::GetCloseGroup { ref close_group_ids } => {
-                write!(formatter,
-                       "ResponseContent {{ GetCloseGroup {{ {:?} }} }}",
-                       close_group_ids)
+                write!(formatter, "GetCloseGroup {{ {:?} }}", close_group_ids)
             }
             ResponseContent::GetSuccess(ref data, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ GetSuccess {{ {:?}, {:?} }} }}",
-                       data,
-                       message_id)
+                write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
             }
             ResponseContent::PutSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "ResponseContent {{ PutSuccess {{ {:?}, {:?} }} }}",
-                       digest,
-                       message_id)
+                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", digest, message_id)
             }
             ResponseContent::PostSuccess(ref digest, ref message_id) => {
                 write!(formatter,
-                       "ResponseContent {{ PostSuccess {{ {:?}, {:?} }} }}",
+                       "PostSuccess {{ {:?}, {:?} }}",
                        digest,
                        message_id)
             }
             ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
                 write!(formatter,
-                       "ResponseContent {{ DeleteSuccess {{ {:?}, {:?} }} }}",
+                       "DeleteSuccess {{ {:?}, {:?} }}",
                        digest,
                        message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ GetFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::PutFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ PutFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::PostFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ PostFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, request)
             }
             ResponseContent::DeleteFailure { ref id, ref request, .. } => {
-                write!(formatter,
-                       "ResponseContent {{ DeleteFailure {{ {:?}, {:?}, .. }} }}",
-                       id,
-                       request)
+                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, request)
             }
         }
     }
@@ -575,7 +534,7 @@ mod test {
         assert!(check_integrity_result.is_ok());
 
         let full_id = FullId::new();
-        let bytes_to_sign = serialise(&(&routing_message, full_id.public_id())).unwrap();
+        let bytes_to_sign = unwrap_result!(serialise(&(&routing_message, full_id.public_id())));
         let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
 
         signed_message.signature = signature;
@@ -598,7 +557,7 @@ mod test {
 
         assert!(signed_message_result.is_ok());
 
-        let signed_message = signed_message_result.unwrap();
+        let signed_message = unwrap_result!(signed_message_result);
         let hop_name: XorName = rand::random();
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result = HopMessage::new(signed_message.clone(),

@@ -45,6 +45,7 @@ pub enum Action {
     Name {
         result_tx: Sender<XorName>,
     },
+    Timeout(u64),
     Terminate,
 }
 
@@ -62,6 +63,7 @@ impl ::std::fmt::Debug for Action {
             }
             Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
             Action::Name{ .. } => write!(f, "Action::Name"),
+            Action::Timeout(token) => write!(f, "Action::Timeout({})", token),
             Action::Terminate => write!(f, "Action::Terminate"),
         }
     }

@@ -50,20 +50,19 @@ impl Authority {
     /// Returns true if group authority, otherwise false.
     pub fn is_group(&self) -> bool {
         match *self {
-            Authority::ClientManager(_) => true,
-            Authority::NaeManager(_) => true,
+            Authority::ClientManager(_) |
+            Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) => false,
-            Authority::Client { .. } => false,
+            Authority::ManagedNode(_) | Authority::Client { .. } => false,
         }
     }
 
     /// Returns the name of authority.
     pub fn name(&self) -> &XorName {
         match *self {
-            Authority::ClientManager(ref name) => name,
-            Authority::NaeManager(ref name) => name,
-            Authority::NodeManager(ref name) => name,
+            Authority::ClientManager(ref name) |
+            Authority::NaeManager(ref name) |
+            Authority::NodeManager(ref name) |
             Authority::ManagedNode(ref name) => name,
             Authority::Client { ref proxy_node_name, .. } => proxy_node_name,
         }

@@ -56,7 +56,7 @@ fn local_network(nodes: usize, requests: usize) -> ExitStatus {
         .arg(nodes.to_string())
         .arg(requests.to_string())
         .status()
-        .unwrap_or_else(|e| { panic!("Failed to execute process: {}", e) })
+        .unwrap_or_else(|e| panic!("Failed to execute process: {}", e))
 }
 
 #[cfg(test)]

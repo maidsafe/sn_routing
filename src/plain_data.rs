@@ -47,7 +47,7 @@ impl PlainData {
 
     /// Returns the name.
     pub fn name(&self) -> XorName {
-        self.name.clone()
+        self.name
     }
 
     /// Returns the size of the contained data. Equivalent to `value().len()`.
@@ -59,7 +59,7 @@ impl PlainData {
 impl fmt::Debug for PlainData {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(formatter,
-               "PlainData {{ name: {:?}, value: {:?} }}",
+               "PlainData {{ name: {}, value: {} }}",
                self.name,
                utils::format_binary_array(&self.value))
     }

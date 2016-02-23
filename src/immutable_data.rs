@@ -110,7 +110,7 @@ mod test {
     #[test]
     fn deterministic_test() {
 
-        let value = "immutable data value".to_string().into_bytes();
+        let value = "immutable data value".to_owned().into_bytes();
         // Normal
         let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();

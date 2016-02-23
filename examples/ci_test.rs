@@ -34,6 +34,7 @@
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", allow(shadow_unrelated, print_stdout, use_debug))]
 
 #[macro_use]
 extern crate log;
@@ -46,12 +47,13 @@ extern crate docopt;
 extern crate sodiumoxide;
 extern crate routing;
 extern crate xor_name;
+extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate time;
 
 mod utils;
 
-use log::LogRecord;
+use log::{LogRecord, LogLevel};
 
 use std::fs::OpenOptions;
 use std::time::Duration;
@@ -66,16 +68,18 @@ use sodiumoxide::crypto::hash;
 use utils::{ExampleNode, ExampleClient};
 use routing::{Data, DataRequest, PlainData};
 
+use kademlia_routing_table::GROUP_SIZE;
+
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
-const GROUP_SIZE: usize = 8;
 // TODO This is a current limitation but once responses are coded this can ideally be close to 0
-const CHURN_MIN_WAIT_SEC: u64 = 30;
-const CHURN_MAX_WAIT_SEC: u64 = 35;
+const CHURN_MIN_WAIT_SEC: u64 = 10;
+const CHURN_MAX_WAIT_SEC: u64 = 15;
+const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 
@@ -97,27 +101,27 @@ impl Drop for NodeProcess {
 fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     println!("--------- Starting {} nodes -----------", count);
 
-    let mut nodes = Vec::with_capacity(count);
     let current_exe_path = unwrap_result!(env::current_exe());
 
-    for i in 0..count {
-        let mut args = vec![format!("--node=Node_{}.log", i + 1)];
-        if i == 0 {
-            args.push("-d".to_owned());
-        }
+    let nodes = try!((0..count)
+                         .map(|i| {
+                             let mut args = vec![format!("--node=Node_{}.log", i + 1)];
+                             if i == 0 {
+                                 args.push("-d".to_owned());
+                             }
 
-        nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
-                                        .args(&args)
-                                        .stdout(Stdio::null())
-                                        .stderr(Stdio::null())
-                                        .spawn())));
+                             let node = NodeProcess(try!(Command::new(current_exe_path.clone())
+                                                             .args(&args)
+                                                             .stdout(Stdio::null())
+                                                             .stderr(Stdio::null())
+                                                             .spawn()));
 
-        println!("Started Node #{} with Process ID {}",
-                 i + 1,
-                 nodes[i].0.id());
-        // Let Routing properly stabilise and populate its routing-table
-        thread::sleep(Duration::from_secs(3 + i as u64));
-    }
+                             println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
+                             // Let Routing properly stabilise and populate its routing-table
+                             thread::sleep(Duration::from_secs(3));
+                             Ok(node)
+                         })
+                         .collect::<io::Result<Vec<NodeProcess>>>());
 
     println!("Waiting 10 seconds to let the network stabilise");
     thread::sleep(Duration::from_secs(10));
@@ -172,7 +176,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        log_file_number: &mut usize,
                        network_size: usize)
                        -> Result<(), io::Error> {
-    println!("About to churn on #{} active nodes...", nodes.len());
+    println!("About to churn on {} active nodes...", nodes.len());
 
     let kill_node = match nodes.len() {
         size if size == GROUP_SIZE => false,
@@ -186,7 +190,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         println!("Killing Node #{}", kill_at_index + 1);
         let _ = nodes.remove(kill_at_index);
     } else {
-        let arg = format!("--node=Node_{}.log", log_file_number);
+        let arg = format!("--node=Node_{:02}.log", log_file_number);
         *log_file_number += 1;
 
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
@@ -226,10 +230,31 @@ struct Args {
 
 fn init(file_name: String) {
     let mut log_path = unwrap_result!(env::current_exe());
-    log_path.set_file_name(file_name.clone());
+    log_path.set_file_name(file_name);
 
     let format = move |record: &LogRecord| {
-        let log_message = format!("[{}:{}] {}\n",
+        let now = ::time::now();
+        let thread_name = " ".to_owned();
+        let log_message = format!("{} {}.{:06} {}[{}:{}:{:4}] {}\n",
+                                  match record.level() {
+                                      LogLevel::Error => 'E',
+                                      LogLevel::Warn => 'W',
+                                      LogLevel::Info => 'I',
+                                      LogLevel::Debug => 'D',
+                                      LogLevel::Trace => 'T',
+                                  },
+                                  if let Ok(time_txt) = ::time::strftime("%T", &now) {
+                                      time_txt
+                                  } else {
+                                      "".to_owned()
+                                  },
+                                  now.tm_nsec / 1000,
+                                  thread_name,
+                                  record.location()
+                                        .module_path()
+                                        .splitn(2, "::")
+                                        .next()
+                                        .unwrap_or(""),
                                   record.location().file(),
                                   record.location().line(),
                                   record.args());
@@ -252,6 +277,7 @@ fn init(file_name: String) {
     builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
 }
 
+#[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
@@ -290,24 +316,25 @@ fn main() {
             let value: String = (0..10).map(|_| random::<u8>() as char).collect();
             let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
             let data = unwrap_result!(serialise(&(key, value)));
-            let data = Data::PlainData(PlainData::new(name.clone(), data));
+            let data = Data::Plain(PlainData::new(name, data));
 
             println!("Putting Data: count #{} - Data {:?}", i + 1, name);
             example_client.put(data.clone());
             stored_data.push(data);
         }
 
+        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
+        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
+
         println!("--------- Getting Data -----------");
-        for i in 0..requests {
-            println!("Get attempt #{} - Data {:?}", i + 1, stored_data[i].name());
-            let data = match example_client.get(DataRequest::PlainData(stored_data[i].name())) {
-                Some(data) => data,
-                None => {
-                    println!("Failed to recover stored data: {}.", stored_data[i].name());
-                    break;
-                }
+        for (i, data_item) in stored_data.iter().enumerate().take(requests) {
+            println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
+            if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
+                assert_eq!(data, stored_data[i]);
+            } else {
+                println!("Failed to recover stored data: {}.", data_item.name());
+                break;
             };
-            assert_eq!(data, stored_data[i]);
         }
 
         // Graceful exit

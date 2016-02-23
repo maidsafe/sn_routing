@@ -207,7 +207,7 @@ impl StructuredData {
 
     /// Get the type_tag
     pub fn get_type_tag(&self) -> u64 {
-        self.type_tag.clone()
+        self.type_tag
     }
 
     /// Get the identifier
@@ -457,7 +457,7 @@ mod test {
 
         // Owned by keys1 keys2 and keys3
         match super::StructuredData::new(0,
-                                         identifier.clone(),
+                                         identifier,
                                          0,
                                          vec![],
                                          vec![keys1.0, keys2.0, keys3.0],
@@ -467,7 +467,7 @@ mod test {
                 assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
                 // Transfer ownership and update to new owner
                 match super::StructuredData::new(0,
-                                                 identifier.clone(),
+                                                 identifier,
                                                  1,
                                                  vec![],
                                                  vec![new_owner.0],
