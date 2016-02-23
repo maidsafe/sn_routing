@@ -15,8 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
-
+use std::cmp;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -25,6 +24,7 @@ use action::Action;
 use core::Core;
 use crust_mock::{Config, Device, Endpoint, Network};
 use event::Event;
+use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::log;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use test_utils;
@@ -54,76 +54,100 @@ impl TestNode {
             _joiner: joiner,
         }
     }
-
-    // Wait until we receive Event::NodeAdded at least `min` times.
-    fn wait_for_node_added_events(&self, min: usize) {
-        let mut num = 0;
-
-        for event in test_utils::iter_with_timeout(&self.event_rx, Duration::from_secs(1)) {
-            match event {
-                Event::NodeAdded(..) => {
-                    num += 1;
-                    if num >= min {
-                        break;
-                    }
-                }
-
-                _ => (),
-            }
-        }
-
-        assert!(num >= min, "Expected {} events, received only {}", min, num);
-    }
 }
 
 impl Drop for TestNode {
     fn drop(&mut self) {
-        self.action_tx.send(Action::Terminate);
+        let _ = self.action_tx.send(Action::Terminate).unwrap();
     }
 }
 
-#[test]
-fn smoke() {
-    log::init(true);
+fn wait_for_events<F>(node: &TestNode, min: usize, pred: F)
+    where F: Fn(Event) -> bool
+{
+    let mut num = 0;
 
-    let network = Network::new();
+    for event in test_utils::iter_with_timeout(&node.event_rx, Duration::from_secs(1)) {
+        if pred(event) {
+            num += 1;
+            if num >= min {
+                break;
+            }
+        }
+    }
+
+    assert!(num >= min,
+            "{:?} expected {} events, received only {}",
+            node.device.endpoint(),
+            min,
+            num);
+}
+
+fn wait_for_node_added_events(node: &TestNode, min: usize) {
+    wait_for_events(node, min, |event| {
+        if let Event::NodeAdded(..) = event {
+            true
+        } else {
+            false
+        }
+    })
+}
+
+fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(&network, false, None, None));
-    // Let the seed node finish bootstrapping.
-    // TODO: would be great if nodes raised a BootstrapFinished event, then we
-    // would know precisely how long to wait here.
-    thread::sleep(Duration::from_secs(1));
+    nodes.push(TestNode::new(network, false, None, None));
+    thread::sleep(Duration::from_millis(500));
 
     let config = Config::new_with_contacts(&[nodes[0].device.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
-    for _ in 0..8 {
-        nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
+    for _ in 1..size {
+        nodes.push(TestNode::new(network, false, Some(config.clone()), None));
     }
 
-    // Wait until every node connects to at least one other node
-    // TODO: should wait until it connects to all nodes instead?
+    let n = cmp::min(GROUP_SIZE, nodes.len()) - 1;
+
     for node in nodes.iter() {
-        node.wait_for_node_added_events(1);
+        wait_for_node_added_events(&node, n);
     }
+
+    nodes
+}
+
+#[test]
+fn two_nodes() {
+    let network = Network::new();
+    let _ = create_connected_nodes(&network, 2);
+}
+
+#[test]
+fn few_nodes() {
+    log::init(true);
+
+    let network = Network::new();
+    let _ = create_connected_nodes(&network, 3);
+}
+
+#[test]
+fn group_size_nodes() {
+    let network = Network::new();
+    let _ = create_connected_nodes(&network, GROUP_SIZE);
+}
+
+#[test]
+fn client_connects_to_nodes() {
+    log::init(true);
+
+    let network = Network::new();
+    let nodes = create_connected_nodes(&network, GROUP_SIZE);
 
     // Create one client that tries to connect to the network.
-    let client = TestNode::new(&network, true, Some(config.clone()), None);
+    let client = TestNode::new(&network,
+                               true,
+                               Some(Config::new_with_contacts(&[nodes[0].device.endpoint()])),
+                               None);
 
-    let mut connected = false;
-
-    for event in test_utils::iter_with_timeout(&client.event_rx, Duration::from_secs(1)) {
-        match event {
-            Event::Connected => {
-                connected = true;
-                break;
-            }
-
-            _ => panic!("Unexpected event {:?}", event),
-        }
-    }
-
-    assert!(connected);
+    wait_for_events(&client, 1, |event| Event::Connected == event);
 }
