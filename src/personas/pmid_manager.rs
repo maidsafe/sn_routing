@@ -108,7 +108,7 @@ impl PmidManager {
         let dst = Authority::ManagedNode(pmid_node);
         let _ = routing_node.send_put_request(src,
                                               dst,
-                                              Data::ImmutableData(data.clone()),
+                                              Data::Immutable(data.clone()),
                                               message_id.clone());
         Ok(())
     }
@@ -125,11 +125,11 @@ impl PmidManager {
         // ::routing::error::ResponseError::FailedRequestForData(data) => {
         // let payload_size = data.payload_size() as u64;
         // match data {
-        // ::routing::data::Data::ImmutableData(immutable_data) => {
+        // ::routing::data::Data::Immutable(immutable_data) => {
         // self.database.delete_data(&from_address, payload_size);
         // let location = ::immutable_data_manager::Authority(immutable_data.name());
         // let response = ::routing::error::ResponseError::FailedRequestForData(
-        // ::routing::data::Data::ImmutableData(immutable_data));
+        // ::routing::data::Data::Immutable(immutable_data));
         // self.routing
         // .put_response(our_authority, location, response, response_token);
         // }
@@ -167,7 +167,7 @@ impl PmidManager {
             }
 
             let src = Authority::NodeManager(pmid_node.clone());
-            let refresh = Refresh::new(pmid_node, RefreshValue::PmidManager(account.clone()));
+            let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("PmidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -233,14 +233,14 @@ impl PmidManager {
 // assert_eq!(::utils::HANDLED,
 // pmid_manager.handle_put(&our_authority,
 // &from_authority,
-// &::routing::data::Data::ImmutableData(data.clone())));
+// &::routing::data::Data::Immutable(data.clone())));
 // let put_requests = routing.put_requests_given();
 // assert_eq!(put_requests.len(), 1);
 // assert_eq!(put_requests[0].our_authority, our_authority);
 // assert_eq!(put_requests[0].location,
 // Authority::ManagedNode(our_authority.name().clone()));
 // assert_eq!(put_requests[0].data,
-// ::routing::data::Data::ImmutableData(data));
+// ::routing::data::Data::Immutable(data));
 // }
 //
 // #[test]
@@ -253,7 +253,7 @@ impl PmidManager {
 // assert_eq!(::utils::HANDLED,
 // pmid_manager.handle_put(&our_authority,
 // &from_authority,
-// &::routing::data::Data::ImmutableData(data.clone())));
+// &::routing::data::Data::Immutable(data.clone())));
 // let close_group = vec![XorName::new([1u8; 64]),
 // XorName::new([2u8; 64]),
 // XorName::new([3u8; 64]),

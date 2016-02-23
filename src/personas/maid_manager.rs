@@ -86,10 +86,10 @@ impl MaidManager {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         match request.content {
-            RequestContent::Put(Data::ImmutableData(_), _) => {
+            RequestContent::Put(Data::Immutable(_), _) => {
                 self.handle_put_immutable_data(routing_node, request)
             }
-            RequestContent::Put(Data::StructuredData(_), _) => {
+            RequestContent::Put(Data::Structured(_), _) => {
                 self.handle_put_structured_data(routing_node, request)
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -148,7 +148,7 @@ impl MaidManager {
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (maid_name, account) in self.accounts.iter() {
             let src = Authority::ClientManager(maid_name.clone());
-            let refresh = Refresh::new(maid_name, RefreshValue::MaidManager(account.clone()));
+            let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("MaidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -164,8 +164,8 @@ impl MaidManager {
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data), ref message_id) => {
-                (Data::ImmutableData(data.clone()), message_id.clone())
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (Data::Immutable(data.clone()), message_id.clone())
             }
             _ => unreachable!("Logic error"),
         };
@@ -203,8 +203,8 @@ impl MaidManager {
                                   request: &RequestMessage)
                                   -> Result<(), InternalError> {
         let (data, type_tag, message_id) = match request.content {
-            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
-                (Data::StructuredData(data.clone()),
+            RequestContent::Put(Data::Structured(ref data), ref message_id) => {
+                (Data::Structured(data.clone()),
                  data.get_type_tag(),
                  message_id.clone())
             }
@@ -321,7 +321,7 @@ mod test {
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::ImmutableData(immutable_data), message_id.clone()),
+            content: RequestContent::Put(Data::Immutable(immutable_data), message_id.clone()),
         };
 
         match env.maid_manager.handle_put(&env.routing, &valid_request) {
@@ -350,13 +350,13 @@ mod test {
         // assert_eq!(::utils::HANDLED,
         //            maid_manager.handle_put(&our_authority,
         //                                    &client,
-        //                                    &::routing::data::Data::ImmutableData(data.clone()),
+        //                                    &::routing::data::Data::Immutable(data.clone()),
         //                                    &None));
         // let put_requests = routing.put_requests_given();
         // assert_eq!(put_requests.len(), 1);
         // assert_eq!(put_requests[0].our_authority, our_authority);
         // assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
-        // assert_eq!(put_requests[0].data, Data::ImmutableData(data));
+        // assert_eq!(put_requests[0].data, Data::Immutable(data));
     }
 
     // #[test]
@@ -366,7 +366,7 @@ mod test {
     //     assert_eq!(::utils::HANDLED,
     //                maid_manager.handle_put(&our_authority,
     //                                        &client,
-    //                                        &::routing::data::Data::ImmutableData(data.clone()),
+    //                                        &::routing::data::Data::Immutable(data.clone()),
     //                                        &None));
     //     maid_manager.handle_churn(&churn_node);
     //     let refresh_requests = routing.refresh_requests_given();

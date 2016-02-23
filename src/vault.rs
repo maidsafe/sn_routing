@@ -144,74 +144,74 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
+             &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
                 self.immutable_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::StructuredData(_, _), _)) => {
+             &RequestContent::Get(DataRequest::Structured(_, _), _)) => {
                 self.structured_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Get(DataRequest::ImmutableData(_, _), _)) => {
+             &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
                 self.pmid_node.handle_get(routing_node, &request)
             }
             // ================== Put ==================
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::ImmutableData(_), _)) |
+             &RequestContent::Put(Data::Immutable(_), _)) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::StructuredData(_), _)) => {
+             &RequestContent::Put(Data::Structured(_), _)) => {
                 self.maid_manager.handle_put(routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::PlainData(_), _)) |
+             &RequestContent::Put(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::PlainData(_), _)) => {
+             &RequestContent::Put(Data::Plain(_), _)) => {
                 self.mpid_manager.handle_put(routing_node, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
+             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
                 self.immutable_data_manager.handle_put(routing_node, data, message_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::StructuredData(_), _)) => {
+             &RequestContent::Put(Data::Structured(_), _)) => {
                 self.structured_data_manager.handle_put(routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::NodeManager(pmid_node_name),
-             &RequestContent::Put(Data::ImmutableData(ref data), ref message_id)) => {
+             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
                 self.pmid_manager.handle_put(routing_node, data, message_id, pmid_node_name)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::ImmutableData(_), _)) => {
+             &RequestContent::Put(Data::Immutable(_), _)) => {
                 self.pmid_node.handle_put(&request)
             }
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::StructuredData(_), _)) => {
+             &RequestContent::Post(Data::Structured(_), _)) => {
                 self.structured_data_manager.handle_post(routing_node, &request)
             }
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Post(Data::PlainData(_), _)) |
+             &RequestContent::Post(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Post(Data::PlainData(_), _)) => {
+             &RequestContent::Post(Data::Plain(_), _)) => {
                 self.mpid_manager.handle_post(routing_node, &request)
             }
             // ================== Delete ==================
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Delete(Data::PlainData(_), _)) => {
+             &RequestContent::Delete(Data::Plain(_), _)) => {
                 self.mpid_manager.handle_delete(routing_node, &request)
             }
             // ================== Refresh ==================
@@ -231,7 +231,7 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(Data::ImmutableData(_), _)) => {
+             &ResponseContent::GetSuccess(Data::Immutable(_), _)) => {
                 self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
             // ================== GetFailure ==================
@@ -307,18 +307,18 @@ impl Vault {
         match (src, dst, &refresh.value) {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RefreshValue::MaidManager(ref account)) => {
+             &RefreshValue::MaidManagerAccount(ref account)) => {
                 Ok(self.maid_manager.handle_refresh(refresh.name, account.clone()))
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RefreshValue::MpidManager(ref account, ref stored_messages, ref received_headers)) => {
+             &RefreshValue::MpidManagerAccount(ref account, ref stored_messages, ref received_headers)) => {
                 Ok(self.mpid_manager
                        .handle_refresh(refresh.name, account, stored_messages, received_headers))
             }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             &RefreshValue::ImmutableDataManager(ref account)) => {
+             &RefreshValue::ImmutableDataManagerAccount(ref account)) => {
                 Ok(self.immutable_data_manager.handle_refresh(refresh.name, account.clone()))
             }
             (&Authority::NaeManager(_),
@@ -328,7 +328,7 @@ impl Vault {
             }
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),
-             &RefreshValue::PmidManager(ref account)) => {
+             &RefreshValue::PmidManagerAccount(ref account)) => {
                 Ok(self.pmid_manager.handle_refresh(refresh.name, account.clone()))
             }
             _ => Err(InternalError::UnknownRefreshType(src.clone(), dst.clone(), refresh.clone())),
@@ -650,17 +650,17 @@ impl Vault {
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::ImmutableData(im_data.clone())));
+//                                                            Data::Immutable(im_data.clone())));
 //         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                              3,
 //                                              immutable_data_manager::REPLICANTS,
 //                                              ::time::Duration::minutes(3)));
 //         println!("Getting data");
 //         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
-//                                                            DataRequest::ImmutableData(im_data.name(),
+//                                                            DataRequest::Immutable(im_data.name(),
 //                                                                                       ImmutableDataType::Normal)));
 //         wait_for_client_get(&env.client.receiver,
-//                             Data::ImmutableData(im_data),
+//                             Data::Immutable(im_data),
 //                             Duration::minutes(1));
 //         env.consume_vaults_events(Duration::seconds(10));
 
@@ -678,7 +678,7 @@ impl Vault {
 //                                                     Some(&sign_keys.1)));
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::StructuredData(sd.clone())));
+//                                                            Data::Structured(sd.clone())));
 //         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                              1,
 //                                              GROUP_SIZE as usize,
@@ -694,7 +694,7 @@ impl Vault {
 //                                                         Some(&sign_keys.1)));
 //         println!("Posting data");
 //         unwrap_result!(env.client.routing.send_post_request(Authority::NaeManager(sd.name()),
-//                                                             Data::StructuredData(sd_new.clone())));
+//                                                             Data::Structured(sd_new.clone())));
 //         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                              1,
 //                                              GROUP_SIZE as usize,
@@ -702,9 +702,9 @@ impl Vault {
 
 //         println!("Getting data");
 //         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
-//                                                            DataRequest::StructuredData(name, 0)));
+//                                                            DataRequest::Structured(name, 0)));
 //         wait_for_client_get(&env.client.receiver,
-//                             Data::StructuredData(sd_new),
+//                             Data::Structured(sd_new),
 //                             Duration::minutes(1));
 
 //         // ======================= Churn (node down) ImmutableData test ============================
@@ -713,7 +713,7 @@ impl Vault {
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::ImmutableData(im_data.clone())));
+//                                                            Data::Immutable(im_data.clone())));
 //         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                                       3,
 //                                                       immutable_data_manager::REPLICANTS,
@@ -734,7 +734,7 @@ impl Vault {
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::ImmutableData(im_data.clone())));
+//                                                            Data::Immutable(im_data.clone())));
 //         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                              3,
 //                                              immutable_data_manager::REPLICANTS,
@@ -746,10 +746,10 @@ impl Vault {
 
 //         println!("Getting data");
 //         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(im_data.name()),
-//                                                            DataRequest::ImmutableData(im_data.name(),
+//                                                            DataRequest::Immutable(im_data.name(),
 //                                                                                       ImmutableDataType::Normal)));
 //         wait_for_client_get(&env.client.receiver,
-//                             Data::ImmutableData(im_data),
+//                             Data::Immutable(im_data),
 //                             Duration::minutes(1));
 //         env.consume_vaults_events(Duration::seconds(10));
 
@@ -759,7 +759,7 @@ impl Vault {
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::ImmutableData(im_data.clone())));
+//                                                            Data::Immutable(im_data.clone())));
 //         let pmid_nodes = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                                       3,
 //                                                       immutable_data_manager::REPLICANTS,
@@ -786,7 +786,7 @@ impl Vault {
 //                                                     Some(&sign_keys.1)));
 //         println!("Putting data");
 //         unwrap_result!(env.client.routing.send_put_request(Authority::ClientManager(env.client.name),
-//                                                            Data::StructuredData(sd.clone())));
+//                                                            Data::Structured(sd.clone())));
 //         let _ = unwrap_result!(wait_for_hits(&env.vaults_comms,
 //                                              1,
 //                                              GROUP_SIZE as usize - 2,
@@ -798,9 +798,9 @@ impl Vault {
 
 //         println!("Getting data");
 //         unwrap_result!(env.client.routing.send_get_request(Authority::NaeManager(sd.name()),
-//                                                            DataRequest::StructuredData(name, 0)));
+//                                                            DataRequest::Structured(name, 0)));
 //         wait_for_client_get(&env.client.receiver,
-//                             Data::StructuredData(sd),
+//                             Data::Structured(sd),
 //                             Duration::minutes(1));
 //     }
 // }
@@ -856,14 +856,14 @@ impl Vault {
 //         let im_data = ImmutableData::new(ImmutableDataType::Normal, value);
 //         routing.client_put(client_name,
 //                            sign_keys.0,
-//                            ::routing::data::Data::ImmutableData(im_data.clone()));
+//                            ::routing::data::Data::Immutable(im_data.clone()));
 //         let duration = ::std::time::Duration::from_millis(2000);
 //         ::std::thread::sleep(duration);
 
-//         let data_request = ::routing::data::DataRequest::ImmutableData(im_data.name(), ImmutableDataType::Normal);
+//         let data_request = ::routing::data::DataRequest::Immutable(im_data.name(), ImmutableDataType::Normal);
 //         routing.client_get(client_name, sign_keys.0, data_request);
 //         for it in vault_comms.receiver.iter() {
-//             assert_eq!(it, ::routing::data::Data::ImmutableData(im_data));
+//             assert_eq!(it, ::routing::data::Data::Immutable(im_data));
 //             break;
 //         }
 //     }
@@ -886,7 +886,7 @@ impl Vault {
 //         let client_name = random();
 //         routing.client_put(client_name,
 //                            sign_keys.0,
-//                            ::routing::data::Data::StructuredData(sd.clone()));
+//                            ::routing::data::Data::Structured(sd.clone()));
 //         let duration = ::std::time::Duration::from_millis(2000);
 //         ::std::thread::sleep(duration);
 
@@ -900,14 +900,14 @@ impl Vault {
 //                                                                                     Some(&sign_keys.1)));
 //         routing.client_post(client_name,
 //                             sign_keys.0,
-//                             ::routing::data::Data::StructuredData(sd_new.clone()));
+//                             ::routing::data::Data::Structured(sd_new.clone()));
 //         let duration = ::std::time::Duration::from_millis(2000);
 //         ::std::thread::sleep(duration);
 
-//         let data_request = ::routing::data::DataRequest::StructuredData(name, 0);
+//         let data_request = ::routing::data::DataRequest::Structured(name, 0);
 //         routing.client_get(client_name, sign_keys.0, data_request);
 //         for it in vault_comms.receiver.iter() {
-//             assert_eq!(it, ::routing::data::Data::StructuredData(sd_new));
+//             assert_eq!(it, ::routing::data::Data::Structured(sd_new));
 //             break;
 //         }
 //     }

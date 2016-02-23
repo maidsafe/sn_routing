@@ -26,7 +26,7 @@ pub fn test() {
 
     test_group.start_case("Put with no account");
     let mut client1 = Client::new();
-    let data = Data::StructuredData(unwrap_result!(
+    let data = Data::Structured(unwrap_result!(
             StructuredData::new(1,
                                 rand::random::<XorName>(),
                                 0,
@@ -54,14 +54,14 @@ pub fn test() {
                                                 vec![client1.signing_public_key()],
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd.clone());
+    let data = Data::Structured(sd.clone());
     match unwrap_option!(client1.put(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
         _ => panic!("Received unexpected response"),
     }
 
     test_group.start_case("Get");
-    let data_request = DataRequest::StructuredData(*sd.get_identifier(), sd.get_type_tag());
+    let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
     match unwrap_option!(client1.get(data_request.clone()), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
@@ -79,7 +79,7 @@ pub fn test() {
     }
 
     test_group.start_case("Get for non-existent data");
-    let data_request = DataRequest::StructuredData(rand::random::<XorName>(), 1);
+    let data_request = DataRequest::Structured(rand::random::<XorName>(), 1);
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
@@ -98,7 +98,7 @@ pub fn test() {
                                                 sd.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client2.signing_private_key())));
-    let data = Data::StructuredData(sd.clone());
+    let data = Data::Structured(sd.clone());
     match client2.post(data) {
         None => {}
         _ => panic!("Received unexpected response"),
@@ -112,7 +112,7 @@ pub fn test() {
                                                 sd.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd.clone());
+    let data = Data::Structured(sd.clone());
     match unwrap_option!(client1.post(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
         _ => panic!("Received unexpected response"),
@@ -120,7 +120,7 @@ pub fn test() {
 
 
     test_group.start_case("Get updated");
-    let data_request = DataRequest::StructuredData(*sd.get_identifier(), sd.get_type_tag());
+    let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
@@ -136,7 +136,7 @@ pub fn test() {
                                                 vec![client1.signing_public_key()],
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd);
+    let data = Data::Structured(sd);
     match unwrap_option!(client1.post(data), "") {
         ResponseMessage { content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } => {
             // structured_data_manager hasn't implemented a proper external_error_indicator in PostFailure

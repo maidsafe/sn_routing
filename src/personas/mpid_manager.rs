@@ -183,7 +183,7 @@ impl MpidManager {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::PlainData(ref data), ref message_id) => {
+            RequestContent::Put(Data::Plain(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -205,7 +205,7 @@ impl MpidManager {
                         let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
                         let value = try!(serialise(&wrapper));
                         let name = try!(mpid_header.name());
-                        let data = Data::PlainData(PlainData::new(name, value));
+                        let data = Data::Plain(PlainData::new(name, value));
                         try!(routing_node.send_post_request(request.dst.clone(),
                                                             dst,
                                                             data,
@@ -259,7 +259,7 @@ impl MpidManager {
                     let wrapper = MpidMessageWrapper::PutHeader(mpid_message.header().clone());
                     let serialised_wrapper = try!(serialise(&wrapper));
                     let name = try!(mpid_message.header().name());
-                    let notification = Data::PlainData(PlainData::new(name, serialised_wrapper));
+                    let notification = Data::Plain(PlainData::new(name, serialised_wrapper));
                     try!(routing_node.send_put_request(src, dst, notification, message_id.clone()));
                     // Send put success to Client.
                     let src = request.dst.clone();
@@ -290,7 +290,7 @@ impl MpidManager {
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::PlainData(ref data), ref message_id) => {
+            RequestContent::Put(Data::Plain(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -324,7 +324,7 @@ impl MpidManager {
                        request: &RequestMessage)
                        -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Post(Data::PlainData(ref data), ref message_id) => {
+            RequestContent::Post(Data::Plain(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -359,7 +359,7 @@ impl MpidManager {
                                 }
                             };
                             let name = try!(mpid_header.name());
-                            let data = Data::PlainData(PlainData::new(name, serialised_request));
+                            let data = Data::Plain(PlainData::new(name, serialised_request));
                             let _ = routing_node.send_post_request(request.dst.clone(),
                                                                    target,
                                                                    data,
@@ -379,7 +379,7 @@ impl MpidManager {
                            (mpid_message.recipient() == request.src.name()) {
                             let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                             let serialised_wrapper = try!(serialise(&wrapper));
-                            let data = Data::PlainData(PlainData::new(message_name,
+                            let data = Data::Plain(PlainData::new(message_name,
                                                                       serialised_wrapper));
                             try!(routing_node.send_post_request(request.dst.clone(),
                                                                 request.src.clone(),
@@ -405,7 +405,7 @@ impl MpidManager {
                                 let _ =
                                     routing_node.send_post_request(request.dst.clone(),
                                                                    client.clone(),
-                                                                   Data::PlainData(data.clone()),
+                                                                   Data::Plain(data.clone()),
                                                                    message_id.clone());
                             }
                         }
@@ -437,8 +437,8 @@ impl MpidManager {
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
                         let serialised_wrapper = try!(serialise(&wrapper));
-                        let data = Data::PlainData(PlainData::new(request.dst.name().clone(),
-                                                                  serialised_wrapper));
+                        let data = Data::Plain(PlainData::new(request.dst.name().clone(),
+                                                              serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
                 }
@@ -461,8 +461,7 @@ impl MpidManager {
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
                         let serialised_wrapper = try!(serialise(&wrapper));
-                        let data = Data::PlainData(PlainData::new(request.dst.name().clone(),
-                                                                  serialised_wrapper));
+                        let data = Data::Plain(PlainData::new(request.dst.name().clone(), serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
                 }
@@ -478,7 +477,7 @@ impl MpidManager {
                          request: &RequestMessage)
                          -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Delete(Data::PlainData(ref data), ref message_id) => {
+            RequestContent::Delete(Data::Plain(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -565,9 +564,9 @@ impl MpidManager {
 
             let src = Authority::ClientManager(mpid_name.clone());
             let refresh = Refresh::new(mpid_name,
-                                       RefreshValue::MpidManager(account.clone(),
-                                                                 stored_messages,
-                                                                 received_headers));
+                                       RefreshValue::MpidManagerAccount(account.clone(),
+                                                                        stored_messages,
+                                                                        received_headers));
             if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("MpidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -641,7 +640,7 @@ mod test {
         let request = RequestMessage {
             src: src.clone(),
             dst: dst.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Post(Data::Plain(plain_data.clone()), message_id.clone()),
         };
 
         match env.mpid_manager.handle_post(&env.routing, &request) {
@@ -665,7 +664,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), id.clone()),
+            content: RequestContent::Put(Data::Plain(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {
@@ -686,7 +685,7 @@ mod test {
         let request = RequestMessage {
             src: src.clone(),
             dst: dst.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), id.clone()),
+            content: RequestContent::Put(Data::Plain(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {
@@ -707,7 +706,7 @@ mod test {
         let request = RequestMessage {
             src: src.clone(),
             dst: dst.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), id.clone()),
+            content: RequestContent::Post(Data::Plain(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_post(&env.routing, &request) {
@@ -727,7 +726,7 @@ mod test {
         let request = RequestMessage {
             src: src.clone(),
             dst: dst.clone(),
-            content: RequestContent::Delete(Data::PlainData(plain_data.clone()), id.clone()),
+            content: RequestContent::Delete(Data::Plain(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_delete(&env.routing, &request) {
@@ -747,7 +746,7 @@ mod test {
         let request = RequestMessage {
             src: src.clone(),
             dst: dst.clone(),
-            content: RequestContent::Delete(Data::PlainData(plain_data.clone()), id.clone()),
+            content: RequestContent::Delete(Data::Plain(plain_data.clone()), id.clone()),
         };
 
         match env.mpid_manager.handle_delete(&env.routing, &request) {
@@ -792,7 +791,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -855,7 +854,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Put(Data::Plain(plain_data.clone()), message_id.clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {
@@ -873,7 +872,7 @@ mod test {
             &RequestContent::Put(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -895,7 +894,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::PlainData(plain_data.clone()),
+            content: RequestContent::Put(Data::Plain(plain_data.clone()),
                                          MessageId::new().clone()),
         };
 
@@ -914,7 +913,7 @@ mod test {
             &RequestContent::Put(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header);
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -965,7 +964,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -989,7 +988,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1032,7 +1031,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1050,7 +1049,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Post(Data::Plain(plain_data.clone()), message_id.clone()),
         };
 
         match env.mpid_manager.handle_post(&env.routing, &request) {
@@ -1066,7 +1065,7 @@ mod test {
             &RequestContent::Post(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::OutboxHasResponse(vec![mpid_header]);
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1109,7 +1108,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1125,7 +1124,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Post(Data::Plain(plain_data.clone()), message_id.clone()),
         };
 
         match env.mpid_manager.handle_post(&env.routing, &request) {
@@ -1142,7 +1141,7 @@ mod test {
                 let mpid_header = mpid_message.header().clone();
                 let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(vec![mpid_header]);
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1186,7 +1185,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1218,7 +1217,7 @@ mod test {
                 let get_request = RequestMessage {
                     src: src,
                     dst: dst,
-                    content: RequestContent::Post(Data::PlainData(plain_data.clone()),
+                    content: RequestContent::Post(Data::Plain(plain_data.clone()),
                                                   message_id.clone()),
                 };
                 assert_eq!(*id, message_id);
@@ -1265,7 +1264,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1312,7 +1311,7 @@ mod test {
                 let delete_request = RequestMessage {
                     src: receiver.clone(),
                     dst: dst,
-                    content: RequestContent::Delete(Data::PlainData(plain_data.clone()), message_id.clone()),
+                    content: RequestContent::Delete(Data::Plain(plain_data.clone()), message_id.clone()),
                 };
                 assert_eq!(*id, message_id);
                 assert_eq!(*request, delete_request);
@@ -1358,7 +1357,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutHeader(mpid_header.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1386,7 +1385,7 @@ mod test {
                 let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
                 let name = unwrap_result!(mpid_header.name());
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }
@@ -1402,7 +1401,7 @@ mod test {
         let request = RequestMessage {
             src: Authority::ClientManager(receiver_name.clone()),
             dst: receiver.clone(),
-            content: RequestContent::Post(Data::PlainData(plain_data.clone()), message_id.clone()),
+            content: RequestContent::Post(Data::Plain(plain_data.clone()), message_id.clone()),
         };
 
         match env.mpid_manager.handle_post(&env.routing, &request) {
@@ -1418,7 +1417,7 @@ mod test {
             &RequestContent::Post(ref data, ref id) => {
                 let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                 let value = unwrap_result!(serialisation::serialise(&wrapper));
-                let expected_data = Data::PlainData(PlainData::new(name, value));
+                let expected_data = Data::Plain(PlainData::new(name, value));
                 assert_eq!(*data, expected_data);
                 assert_eq!(*id, message_id);
             }

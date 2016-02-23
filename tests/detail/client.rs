@@ -88,7 +88,7 @@ impl Client {
                                                          vec![],
                                                          vec![],
                                                          None));
-        match unwrap_option!(self.put(Data::StructuredData(account)), "") {
+        match unwrap_option!(self.put(Data::Structured(account)), "") {
             ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
                 info!("{:?} created account", self);
             }
@@ -127,7 +127,7 @@ impl Client {
     pub fn register_online(&self) {
         let wrapper = MpidMessageWrapper::Online;
         let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::PlainData(PlainData::new(*self.name(), value));
+        let data = Data::Plain(PlainData::new(*self.name(), value));
         unwrap_result!(self.routing_client
                            .send_post_request(Authority::ClientManager(*self.name()), data));
 
@@ -152,7 +152,7 @@ impl Client {
         let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
         let name = unwrap_result!(mpid_message.header().name());
         let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
         (mpid_message, data)
     }
 
@@ -171,7 +171,7 @@ impl Client {
     pub fn query_outbox(&self) -> Vec<MpidHeader> {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
-        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
         unwrap_result!(self.routing_client
                            .send_post_request(Authority::ClientManager(*self.name()), data));
         match self.wait_for_wrapper() {
@@ -189,7 +189,7 @@ impl Client {
     pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
-        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
         unwrap_result!(self.routing_client
                            .send_post_request(Authority::ClientManager(*self.name()), data));
         match self.wait_for_wrapper() {
@@ -220,14 +220,14 @@ impl Client {
     fn send_wrapper(&self, wrapper: MpidMessageWrapper) {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::PlainData(PlainData::new(name.clone(), value));
+        let data = Data::Plain(PlainData::new(name.clone(), value));
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     fn wait_for_wrapper(&self) -> MpidMessageWrapper {
         match unwrap_option!(self.wait_for_request(), "") {
-            RequestMessage { src, dst, content: RequestContent::Post(Data::PlainData(msg), _) } => {
+            RequestMessage { src, dst, content: RequestContent::Post(Data::Plain(msg), _) } => {
                 let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
                 wrapper
             }

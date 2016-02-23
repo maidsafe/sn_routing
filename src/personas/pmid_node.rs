@@ -41,7 +41,7 @@ impl PmidNode {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data_name, message_id) = match &request.content {
-            &RequestContent::Get(DataRequest::ImmutableData(ref name, _), ref message_id) => {
+            &RequestContent::Get(DataRequest::Immutable(ref name, _), ref message_id) => {
                 (name, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -51,18 +51,18 @@ impl PmidNode {
         let decoded = try!(serialisation::deserialise::<ImmutableData>(&data));
         debug!("As {:?} sending data {:?} to {:?}",
                request.dst,
-               Data::ImmutableData(decoded.clone()),
+               Data::Immutable(decoded.clone()),
                request.src);
         let _ = routing_node.send_get_success(request.dst.clone(),
                                               request.src.clone(),
-                                              Data::ImmutableData(decoded),
+                                              Data::Immutable(decoded),
                                               message_id.clone());
         Ok(())
     }
 
     pub fn handle_put(&mut self, request: &RequestMessage) -> Result<(), InternalError> {
         let data = match request.content {
-            RequestContent::Put(Data::ImmutableData(ref data), _) => data.clone(),
+            RequestContent::Put(Data::Immutable(ref data), _) => data.clone(),
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
@@ -177,7 +177,7 @@ impl PmidNode {
 // assert_eq!(::utils::HANDLED,
 // pmid_node.handle_put(&our_authority,
 // &from_authority,
-// &::routing::data::Data::ImmutableData(data.clone()),
+// &::routing::data::Data::Immutable(data.clone()),
 // &None));
 // assert_eq!(0, routing.put_requests_given().len());
 // assert_eq!(0, routing.put_responses_given().len());
@@ -187,7 +187,7 @@ impl PmidNode {
 // let from_authority = Authority::NaeManager(from.clone());
 //
 // let request =
-// ::routing::data::DataRequest::ImmutableData(data.name().clone(),
+// ::routing::data::DataRequest::Immutable(data.name().clone(),
 // ImmutableDataType::Normal);
 //
 // assert_eq!(::utils::HANDLED,
@@ -197,7 +197,7 @@ impl PmidNode {
 // assert_eq!(get_responses[0].our_authority, our_authority);
 // assert_eq!(get_responses[0].location, from_authority);
 // assert_eq!(get_responses[0].data,
-// ::routing::data::Data::ImmutableData(data.clone()));
+// ::routing::data::Data::Immutable(data.clone()));
 // assert_eq!(get_responses[0].data_request, request);
 // assert_eq!(get_responses[0].response_token, None);
 // }
