@@ -22,6 +22,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
 use std::time::Duration;
 
+#[derive(Debug)]
 pub enum RecvWithTimeoutError {
     Disconnected,
     Timeout,
