@@ -25,7 +25,6 @@ use core::Core;
 use crust_mock::{self, Config, Device, Endpoint, Network};
 use event::Event;
 use kademlia_routing_table::GROUP_SIZE;
-use maidsafe_utilities::log;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use test_utils;
 use types::RoutingActionSender;
@@ -71,6 +70,8 @@ fn wait_for_events<F>(node: &TestNode, min: usize, pred: F)
     let mut num = 0;
 
     for event in test_utils::iter_with_timeout(&node.event_rx, Duration::from_secs(1)) {
+        println!("{:?}: {:?}", node.device.endpoint(), event);
+
         if pred(event) {
             num += 1;
             if num >= min {
@@ -103,7 +104,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     nodes.push(TestNode::new(network, false, None, None));
     thread::sleep(Duration::from_millis(500));
 
-    let config = Config::new_with_contacts(&[nodes[0].device.endpoint()]);
+    let config = Config::with_contacts(&[nodes[0].device.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
@@ -127,8 +128,6 @@ fn two_nodes() {
 
 #[test]
 fn few_nodes() {
-    log::init(true);
-
     let network = Network::new();
     let _ = create_connected_nodes(&network, 3);
 }
@@ -141,7 +140,7 @@ fn group_size_nodes() {
 
 #[test]
 fn client_connects_to_nodes() {
-    log::init(true);
+    // log::init(true);
 
     let network = Network::new();
     let nodes = create_connected_nodes(&network, GROUP_SIZE);
@@ -149,7 +148,7 @@ fn client_connects_to_nodes() {
     // Create one client that tries to connect to the network.
     let client = TestNode::new(&network,
                                true,
-                               Some(Config::new_with_contacts(&[nodes[0].device.endpoint()])),
+                               Some(Config::with_contacts(&[nodes[0].device.endpoint()])),
                                None);
 
     wait_for_events(&client, 1, |event| Event::Connected == event);

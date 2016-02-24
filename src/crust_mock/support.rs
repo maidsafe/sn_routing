@@ -81,6 +81,8 @@ impl Drop for Network {
 
 impl NetworkImp {
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+        // trace!("send {:?} -> {:?}: {:?}", sender, receiver, packet);
+
         self.queue.0.lock().unwrap().push_front((sender, receiver, packet));
         self.queue.1.notify_one();
     }
@@ -149,7 +151,7 @@ impl NetworkImp {
 }
 
 /// Device represents a mock version of a real machine connected to the network.
-pub struct Device(Arc<Mutex<ServiceImp>>);
+pub struct Device(pub Arc<Mutex<ServiceImp>>);
 
 impl Device {
     fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
@@ -174,7 +176,6 @@ pub struct ServiceImp {
     pub listening_udp: bool,
     event_sender: Option<CrustEventSender>,
     pending_bootstraps: u64,
-    pending_connects: HashMap<PeerId, ConnectState>,
     connections: Vec<(PeerId, Endpoint)>,
 }
 
@@ -189,7 +190,6 @@ impl ServiceImp {
             listening_udp: false,
             event_sender: None,
             pending_bootstraps: 0,
-            pending_connects: HashMap::new(),
             connections: Vec::new(),
         }
     }
@@ -198,6 +198,8 @@ impl ServiceImp {
         let mut pending_bootstraps = 0;
 
         for endpoint in self.config.hard_coded_contacts.iter() {
+            if *endpoint == self.endpoint { continue; }
+
             self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
             pending_bootstraps += 1;
         }
@@ -244,7 +246,7 @@ impl ServiceImp {
     }
 
     pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        self.send_packet(their_info.1, Packet::ConnectRequest(their_info.0));
+        self.send_packet(their_info.1, Packet::ConnectRequest(self.peer_id));
     }
 
     fn send_packet(&self, receiver: Endpoint, packet: Packet) {
@@ -292,17 +294,14 @@ impl ServiceImp {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, our_peer_id: PeerId) {
-        assert!(our_peer_id == self.peer_id);
-        self.send_packet(peer_endpoint, Packet::ConnectSuccess(our_peer_id));
-        self.update_connect_state(our_peer_id, ConnectState::TheyToUs);
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
+        self.add_connection(peer_id, peer_endpoint);
+        self.send_packet(peer_endpoint, Packet::ConnectSuccess(self.peer_id));
     }
 
     fn handle_connect_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        // TODO: ignore if we are already connected
-
         self.add_connection(peer_id, peer_endpoint);
-        self.update_connect_state(peer_id, ConnectState::WeToThem);
+        self.send_event(Event::NewPeer(Ok(()), peer_id));
     }
 
     fn handle_connect_failure(&self, _peer_endpoint: Endpoint, peer_id: PeerId) {
@@ -326,7 +325,7 @@ impl ServiceImp {
     }
 
     fn send_event(&self, event: Event) {
-        let _ = self.event_sender.as_ref().unwrap().send(event).unwrap();
+        let _ = self.event_sender.as_ref().unwrap().send(event);
     }
 
     fn is_listening(&self) -> bool {
@@ -342,17 +341,6 @@ impl ServiceImp {
 
         if self.pending_bootstraps == 0 {
             self.send_event(Event::BootstrapFinished);
-        }
-    }
-
-    fn update_connect_state(&mut self, peer_id: PeerId, new_state: ConnectState) {
-        let state = *self.pending_connects
-                         .entry(peer_id)
-                         .or_insert(new_state);
-
-        if state != new_state {
-            self.pending_connects.remove(&peer_id).is_some();
-            self.send_event(Event::NewPeer(Ok(()), peer_id));
         }
     }
 
@@ -405,7 +393,7 @@ impl ServiceImp {
         }
     }
 
-    fn disconnect_all(&mut self) {
+    pub fn disconnect_all(&mut self) {
         let endpoints = self.connections
                             .drain(..)
                             .map(|(_, ep)| ep)
@@ -435,10 +423,10 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        Self::new_with_contacts(&[])
+        Self::with_contacts(&[])
     }
 
-    pub fn new_with_contacts(contacts: &[Endpoint]) -> Self {
+    pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
     }
 }
@@ -472,15 +460,6 @@ impl Packet {
             _ => None,
         }
     }
-}
-
-#[derive(Copy, Clone, Eq, PartialEq)]
-enum ConnectState {
-    // We are connected to them
-    WeToThem,
-
-    // They are connected to us
-    TheyToUs,
 }
 
 // The following evil code facilitates passing Devices to mock Services, so we
