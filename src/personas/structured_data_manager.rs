@@ -169,7 +169,9 @@ impl StructuredDataManager {
             if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
                 debug!("StructuredDataManager deleting {:?} with requested new version {:?}", existing_data, data);
                 if existing_data.validate_self_against_successor(&data).is_ok() {
-                    if let Ok(()) = self.chunk_store.delete(&data.name()) {
+                    // Reducing content to empty to avoid later on put bearing the same name
+                    // chunk_store::put() deletes the old data automatically
+                    if let Ok(()) = self.chunk_store.put(&data.name(), &[]) {
                         if let Ok(serialised_request) = serialisation::serialise(request) {
                             let digest = sha512::hash(&serialised_request[..]);
                             let _ = routing_node.send_delete_success(request.dst.clone(),
