@@ -19,4 +19,4 @@ pub mod crust;
 mod support;
 
 pub use self::support::{Config, Device, Endpoint, Network};
-
+pub use self::support::make_current;

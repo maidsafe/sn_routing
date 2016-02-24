@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -28,10 +27,7 @@ use event::Event;
 use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
 use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
-use types::{MessageId, RoutingActionSender};
-
-#[cfg(test)]
-use crust_mock::Device;
+use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -46,8 +42,8 @@ type RoutingResult = Result<(), RoutingError>;
 pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: RoutingActionSender,
-    _raii_joiner: RaiiThreadJoiner,
+    action_sender: ::types::RoutingActionSender,
+    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
 impl Node {
@@ -57,30 +53,18 @@ impl Node {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The intial `Node` object will have newly generated keys.
-    #[cfg(not(test))]
     pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        Self::new_imp(try!(Core::new(event_sender, false, None)))
-    }
+        let (action_sender, raii_joiner) = try!(Core::new(event_sender, false, None));
 
-    #[cfg(test)]
-    pub fn new(device: &Device, event_sender: Sender<Event>) -> Result<Self, RoutingError> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
-        // start the handler for routing without a restriction to become a full node
-        Self::new_imp(try!(Core::new(device, event_sender, false, None)))
-    }
-
-    fn new_imp(core: (RoutingActionSender, RaiiThreadJoiner)) -> Result<Self, RoutingError> {
         let (tx, rx) = channel();
-
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            action_sender: core.0,
-            _raii_joiner: core.1,
+            action_sender: action_sender,
+            _raii_joiner: raii_joiner,
         })
     }
 

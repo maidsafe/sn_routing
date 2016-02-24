@@ -22,8 +22,6 @@ use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, Thei
 
 #[cfg(test)]
 use crust_mock::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
-#[cfg(test)]
-use crust_mock::Device;
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
@@ -224,37 +222,11 @@ pub struct Core {
 impl Core {
     /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
     /// in.
-    #[cfg(not(test))]
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
-               -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
-        Self::new_impl(event_sender, client_restriction, keys, |sender| {
-            match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
-                Ok(service) => service,
-                Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
-            }
-        })
-    }
-
-    #[cfg(test)]
-    pub fn new(device: &Device,
-               event_sender: mpsc::Sender<Event>,
-               client_restriction: bool,
-               keys: Option<FullId>)
-               -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError> {
-        Self::new_impl(event_sender, client_restriction, keys, |sender| {
-            device.make_service(sender, CRUST_DEFAULT_BEACON_PORT)
-        })
-    }
-
-    fn new_impl<F>(event_sender: mpsc::Sender<Event>,
-                   client_restriction: bool,
-                   keys: Option<FullId>,
-                   gen_crust_service: F)
         -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError>
-        where F: FnOnce(crust::CrustEventSender) -> Service
-        {
+    {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
@@ -271,7 +243,10 @@ impl Core {
                                                         category_tx);
 
         // TODO(afck): Add the listening port to the Service constructor.
-        let crust_service = gen_crust_service(crust_sender.clone());
+        let crust_service = match Service::new(crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT) {
+            Ok(service) => service,
+            Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
+        };
 
         let full_id = match keys {
             Some(full_id) => full_id,
@@ -572,7 +547,6 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
-        // trace!("{:?}Handling hop message: {:?}", self, hop_msg);
         if self.state == State::Node {
             let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
@@ -873,7 +847,6 @@ impl Core {
     fn dispatch_request_response(&mut self,
                                  routing_msg: RoutingMessage)
                                  -> Result<(), RoutingError> {
-        trace!("{:?}Handling - {:?}", self, routing_msg);
         match routing_msg {
             RoutingMessage::Request(msg) => self.handle_request_message(msg),
             RoutingMessage::Response(msg) => self.handle_response_message(msg),
@@ -1214,10 +1187,6 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        trace!("{:?}Rxd BootstrapIdentify - Quorum size: {}",
-               self,
-               current_quorum_size);
-
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
