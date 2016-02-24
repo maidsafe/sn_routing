@@ -169,6 +169,14 @@ impl Client {
         }
     }
 
+    /// Expect nothing.
+    pub fn expect_timeout(&self) -> Option<MpidMessage> {
+        match self.wait_for_event() {
+            Some(_) => panic!("Unexpected event."),
+            None => None
+        }
+    }
+
     /// Delete mpid_header.
     pub fn delete_mpid_header(&self, header_name: XorName) {
         self.messaging_delete_request(self.name().clone(), header_name.clone(),

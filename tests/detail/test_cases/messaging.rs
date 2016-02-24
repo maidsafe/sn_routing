@@ -65,7 +65,7 @@ pub fn test() {
     test_group.start_case("Receiver delete mpid_header from inbox");
     receiver.delete_mpid_header(msg_name.clone());
     receiver.register_online();
-    let optional_message = receiver.get_mpid_message();
+    let optional_message = receiver.expect_timeout();
     assert_eq!(None, optional_message);
 
     test_group.start_case("Receiver delete message from sender's outbox");
