@@ -193,5 +193,24 @@ pub fn test() {
         _ => panic!("Received unexpected response"),
     }
 
+    test_group.start_case("Further put with the same name of delete shall be blocked");
+    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
+                                                sd_posted.get_identifier().clone(),
+                                                0,
+                                                generate_random_vec_u8(10),
+                                                vec![client1.signing_public_key()],
+                                                vec![],
+                                                Some(client1.signing_private_key())));
+    let data = Data::Structured(sd.clone());
+    match unwrap_option!(client1.put(data.clone()), "") {
+        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
+            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
+                ClientError::DataExists => {}
+                _ => panic!("Received unexpected external_error_indicator"),
+            }
+        }
+        _ => panic!("Received unexpected response"),
+    }
+
     test_group.release();
 }
