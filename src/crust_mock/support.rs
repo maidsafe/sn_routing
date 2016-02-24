@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#![allow(unused)]
+
 use rand;
 use std::collections::{HashMap, VecDeque};
 use std::io;
@@ -215,6 +217,8 @@ impl ServiceImp {
     }
 
     pub fn restart(&mut self, event_sender: CrustEventSender, beacon_port: u16) {
+        trace!("{:?} restart", self.endpoint);
+
         self.disconnect_all();
 
         self.peer_id = gen_peer_id(self.endpoint);
@@ -261,7 +265,7 @@ impl ServiceImp {
             Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
             Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
-            Packet::ConnectRequest(our_peer_id) => self.handle_connect_request(sender, our_peer_id),
+            Packet::ConnectRequest(peer_id) => self.handle_connect_request(sender, peer_id),
             Packet::ConnectSuccess(peer_id) => self.handle_connect_success(sender, peer_id),
             Packet::ConnectFailure(peer_id) => self.handle_connect_failure(sender, peer_id),
             Packet::Message(data) => self.handle_message(sender, data),
@@ -344,8 +348,16 @@ impl ServiceImp {
         }
     }
 
-    fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
-        self.connections.push((peer_id, peer_endpoint))
+    fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) -> bool {
+        if self.connections.iter().any(|&(id, ep)| {
+            id == peer_id && ep == peer_endpoint
+        }) {
+            // Connection already exists
+            return false;
+        }
+
+        self.connections.push((peer_id, peer_endpoint));
+        true
     }
 
     // Remove connected peer with the given peer id and return its endpoint,
