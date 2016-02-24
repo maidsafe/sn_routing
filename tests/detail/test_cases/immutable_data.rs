@@ -27,8 +27,7 @@ pub fn test() {
 
     test_group.start_case("Put with no account");
     let mut client1 = Client::new();
-    let data = Data::ImmutableData(ImmutableData::new(ImmutableDataType::Normal,
-                                                      generate_random_vec_u8(1024)));
+    let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024)));
     match unwrap_option!(client1.put(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
@@ -47,7 +46,7 @@ pub fn test() {
     }
 
     test_group.start_case("Get");
-    let mut data_request = DataRequest::ImmutableData(data.name(), ImmutableDataType::Normal);
+    let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request.clone()), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
@@ -65,7 +64,7 @@ pub fn test() {
     }
 
     test_group.start_case("Get for non-existent data");
-    data_request = DataRequest::ImmutableData(rand::random::<XorName>(), ImmutableDataType::Normal);
+    data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {

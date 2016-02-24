@@ -36,7 +36,7 @@ pub fn test(request_count: u32) {
                                                     vec![client.signing_public_key()],
                                                     vec![],
                                                     Some(client.signing_private_key())));
-        let data = Data::StructuredData(sd.clone());
+        let data = Data::Structured(sd.clone());
         match unwrap_option!(client.put(data), "") {
             ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
             _ => panic!("Received unexpected response"),
@@ -46,10 +46,10 @@ pub fn test(request_count: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get StructuredData {}", i));
-        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(),
-                                                       stored_data[i].get_type_tag());
+        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
+                                                    stored_data[i].get_type_tag());
         match unwrap_option!(client.get(data_request.clone()), "") {
-            ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
+            ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
             }
             _ => panic!("Received unexpected response"),
@@ -65,7 +65,7 @@ pub fn test(request_count: u32) {
                                                     stored_data[i].get_owner_keys().clone(),
                                                     vec![],
                                                     Some(client.signing_private_key())));
-        let data = Data::StructuredData(sd.clone());
+        let data = Data::Structured(sd.clone());
         match unwrap_option!(client.post(data), "") {
             ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
             _ => panic!("Received unexpected response"),
@@ -75,10 +75,10 @@ pub fn test(request_count: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
-        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(),
-                                                       stored_data[i].get_type_tag());
+        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
+                                                    stored_data[i].get_type_tag());
         match unwrap_option!(client.get(data_request.clone()), "") {
-            ResponseMessage { content: ResponseContent::GetSuccess(Data::StructuredData(sd), _), .. } => {
+            ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
             }
             _ => panic!("Received unexpected response"),

@@ -44,9 +44,8 @@ pub enum DataHolder {
 
 impl DataHolder {
     pub fn name(&self) -> &XorName {
-        match self {
-            &DataHolder::Good(ref name) => name,
-            &DataHolder::Failed(ref name) => name,
+        match *self {
+            DataHolder::Good(ref name) | DataHolder::Failed(ref name) => name,
         }
     }
 }
@@ -62,9 +61,9 @@ enum QueriedDataHolder {
 
 impl QueriedDataHolder {
     pub fn name(&self) -> &XorName {
-        match self {
-            &QueriedDataHolder::PendingResponse(ref name) => name,
-            &QueriedDataHolder::Responded(ref data_holder) => data_holder.name(),
+        match *self {
+            QueriedDataHolder::PendingResponse(ref name) => name,
+            QueriedDataHolder::Responded(ref data_holder) => data_holder.name(),
         }
     }
 }
@@ -85,11 +84,11 @@ impl MetadataForGetRequest {
         // We only want to try and get data from "good" holders
         let good_nodes = pmid_nodes.iter()
                                    .filter_map(|data_holder| {
-                                       match data_holder {
-                                           &DataHolder::Good(pmid_node) => {
+                                       match *data_holder {
+                                           DataHolder::Good(pmid_node) => {
                                                Some(QueriedDataHolder::PendingResponse(pmid_node))
                                            }
-                                           &DataHolder::Failed(_) => None,
+                                           DataHolder::Failed(_) => None,
                                        }
                                    })
                                    .collect();
@@ -129,8 +128,8 @@ impl ImmutableDataManager {
                       routing_node: &RoutingNode,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
-        let (data_name, message_id) = match &request.content {
-            &RequestContent::Get(DataRequest::ImmutableData(ref data_name, _), ref message_id) => {
+        let (data_name, message_id) = match request.content {
+            RequestContent::Get(DataRequest::Immutable(ref data_name, _), ref message_id) => {
                 (data_name.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -168,8 +167,8 @@ impl ImmutableDataManager {
         for good_node in entry.pmid_nodes.iter() {
             let src = request.dst.clone();
             let dst = Authority::ManagedNode(good_node.name().clone());
-            let data_request = DataRequest::ImmutableData(data_name.clone(),
-                                                          ImmutableDataType::Normal);
+            let data_request = DataRequest::Immutable(data_name.clone(),
+                                                      ImmutableDataType::Normal);
             debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
                    routing_node.name(),
                    data_name,
@@ -207,7 +206,7 @@ impl ImmutableDataManager {
             let dst = Authority::NodeManager(pmid_node.name().clone());
             let _ = routing_node.send_put_request(src,
                                                   dst,
-                                                  Data::ImmutableData(data.clone()),
+                                                  Data::Immutable(data.clone()),
                                                   message_id.clone());
         }
         Ok(())
@@ -218,7 +217,7 @@ impl ImmutableDataManager {
                               response: &ResponseMessage)
                               -> Result<(), InternalError> {
         let (data, message_id) = match response.content {
-            ResponseContent::GetSuccess(Data::ImmutableData(ref data), ref message_id) => {
+            ResponseContent::GetSuccess(Data::Immutable(ref data), ref message_id) => {
                 (data, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -234,7 +233,7 @@ impl ImmutableDataManager {
                 let dst = request.src;
                 let _ = routing_node.send_get_success(src,
                                                       dst,
-                                                      Data::ImmutableData(data.clone()),
+                                                      Data::Immutable(data.clone()),
                                                       message_id.clone());
             }
 
@@ -326,7 +325,7 @@ impl ImmutableDataManager {
         for (data_name, pmid_nodes) in self.accounts.iter() {
             let src = Authority::NaeManager(data_name.clone());
             let refresh = Refresh::new(data_name,
-                                       RefreshValue::ImmutableDataManager(pmid_nodes.clone()));
+                                       RefreshValue::ImmutableDataManagerAccount(pmid_nodes.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("ImmutableDataManager sending refresh for account {:?}",
                        src.name());
@@ -376,7 +375,7 @@ impl ImmutableDataManager {
                 let dst = request.src.clone();
                 let _ = routing_node.send_get_success(src,
                                                       dst,
-                                                      Data::ImmutableData(data.clone()),
+                                                      Data::Immutable(data.clone()),
                                                       message_id.clone());
             }
             None => {
@@ -431,7 +430,7 @@ impl ImmutableDataManager {
                     new_pmid_nodes.insert(new_pmid_node.clone());
                     let _ = routing_node.send_put_request(src,
                                                           dst,
-                                                          Data::ImmutableData(data.clone()),
+                                                          Data::Immutable(data.clone()),
                                                           message_id.clone());
                 }
                 finished = true;
@@ -514,7 +513,7 @@ impl ImmutableDataManager {
     //                                   our_authority: Authority) {
     //     // Validate that the Data is ImmutableData.
     //     let immutable_data = match data {
-    //         ::routing::data::Data::ImmutableData(immutable_data) => immutable_data,
+    //         ::routing::data::Data::Immutable(immutable_data) => immutable_data,
     //         _ => return,
     //     };
 
@@ -530,7 +529,7 @@ impl ImmutableDataManager {
     //                 Some(pmid_node) => {
     //                     self.database.add_pmid_node(&data_name, pmid_node.clone());
     //                     let location = Authority::NodeManager(pmid_node);
-    //                     let content = ::routing::data::Data::ImmutableData(immutable_data);
+    //                     let content = ::routing::data::Data::Immutable(immutable_data);
     //                     self.routing.send_put_request(our_authority, location, content);
     //                 }
     //                 None => {
@@ -600,7 +599,7 @@ mod test {
             for i in 0..put_requests.len() {
                 assert_eq!(put_requests[i].src, env.our_authority);
                 assert_eq!(put_requests[i].content,
-                           RequestContent::Put(Data::ImmutableData(env.data.clone()),
+                           RequestContent::Put(Data::Immutable(env.data.clone()),
                                                message_id.clone()));
             }
         }
@@ -614,8 +613,8 @@ mod test {
 
             let message_id = MessageId::new();
             let content =
-                RequestContent::Get(DataRequest::ImmutableData(env.data.name().clone(),
-                                                               ImmutableDataType::Normal),
+                RequestContent::Get(DataRequest::Immutable(env.data.name().clone(),
+                                                           ImmutableDataType::Normal),
                                     message_id);
             let request = RequestMessage {
                 src: client.clone(),

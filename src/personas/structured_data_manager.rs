@@ -44,7 +44,7 @@ impl StructuredDataManager {
                       -> Result<(), InternalError> {
         // TODO - handle type_tag from name too
         let (data_name, message_id) = match request.content {
-            RequestContent::Get(ref data_request @ DataRequest::StructuredData(_, _),
+            RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
                                 ref message_id) => (data_request.name(), message_id),
             _ => unreachable!("Error in vault demuxing"),
         };
@@ -53,20 +53,22 @@ impl StructuredDataManager {
             if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
                 debug!("As {:?} sending data {:?} to {:?}",
                        request.dst,
-                       Data::StructuredData(decoded.clone()),
+                       Data::Structured(decoded.clone()),
                        request.src);
                 let _ = routing_node.send_get_success(request.dst.clone(),
                                                       request.src.clone(),
-                                                      Data::StructuredData(decoded),
+                                                      Data::Structured(decoded),
                                                       message_id.clone());
                 return Ok(());
             }
         }
 
+        let error = ClientError::NoSuchData;
+        let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
                                            request.src.clone(),
                                            request.clone(),
-                                           Vec::new(),
+                                           external_error_indicator,
                                            message_id.clone()));
         Ok(())
     }
@@ -79,7 +81,7 @@ impl StructuredDataManager {
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::StructuredData(ref data), ref message_id) => {
+            RequestContent::Put(Data::Structured(ref data), ref message_id) => {
                 (data, message_id.clone())
             }
             _ => unreachable!("Logic error"),
@@ -111,7 +113,7 @@ impl StructuredDataManager {
                        request: &RequestMessage)
                        -> Result<(), InternalError> {
         let (new_data, message_id) = match &request.content {
-            &RequestContent::Post(Data::StructuredData(ref structured_data), ref message_id) => {
+            &RequestContent::Post(Data::Structured(ref structured_data), ref message_id) => {
                 (structured_data, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
@@ -269,7 +271,7 @@ impl StructuredDataManager {
 // identifier: identifier,
 // keys: keys,
 // structured_data: structured_data.clone(),
-// data: ::routing::data::Data::StructuredData(structured_data),
+// data: ::routing::data::Data::Structured(structured_data),
 // us: Authority::NaeManager(data_name),
 // client: Authority::Client(random(),
 // ::sodiumoxide::crypto::sign::gen_keypair().0),
@@ -295,7 +297,7 @@ impl StructuredDataManager {
 // assert_eq!(0, env.routing.put_requests_given().len());
 // assert_eq!(0, env.routing.put_responses_given().len());
 //
-// let request = ::routing::data::DataRequest::StructuredData(env.identifier.clone(), 0);
+// let request = ::routing::data::DataRequest::Structured(env.identifier.clone(), 0);
 // assert_eq!(::utils::HANDLED,
 // env.structured_data_manager.handle_get(&env.us, &env.client, &request, &None));
 // let get_responses = env.routing.get_responses_given();
@@ -335,7 +337,7 @@ impl StructuredDataManager {
 // assert_eq!(::utils::HANDLED,
 // env.structured_data_manager.handle_post(&env.us,
 // &env.client,
-// &::routing::data::Data::StructuredData(sd_new_bad)));
+// &::routing::data::Data::Structured(sd_new_bad)));
 // assert_eq!(env.structured_data,
 // unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get original data."));
 //
@@ -354,7 +356,7 @@ impl StructuredDataManager {
 // env.structured_data_manager
 // .handle_post(&env.us,
 // &env.client,
-// &::routing::data::Data::StructuredData(sd_new.clone())));
+// &::routing::data::Data::Structured(sd_new.clone())));
 // assert_eq!(sd_new,
 // unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
 //
@@ -374,7 +376,7 @@ impl StructuredDataManager {
 // env.structured_data_manager
 // .handle_post(&env.us,
 // &env.client,
-// &::routing::data::Data::StructuredData(sd_new_bad.clone())));
+// &::routing::data::Data::Structured(sd_new_bad.clone())));
 // assert_eq!(sd_new,
 // unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
 //
@@ -393,7 +395,7 @@ impl StructuredDataManager {
 // env.structured_data_manager
 // .handle_post(&env.us,
 // &env.client,
-// &::routing::data::Data::StructuredData(sd_new.clone())));
+// &::routing::data::Data::Structured(sd_new.clone())));
 // assert_eq!(sd_new,
 // unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get re-updated data"));
 // }

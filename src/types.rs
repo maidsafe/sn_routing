@@ -36,10 +36,10 @@ impl Refresh {
 
 #[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
 pub enum RefreshValue {
-    MaidManager(maid_manager::Account),
-    ImmutableDataManager(immutable_data_manager::Account),
+    MaidManagerAccount(maid_manager::Account),
+    ImmutableDataManagerAccount(immutable_data_manager::Account),
     StructuredDataManager(StructuredData),
-    PmidManager(pmid_manager::Account),
+    PmidManagerAccount(pmid_manager::Account),
     // mpid_manager: account, outbox messages, inbox headers
-    MpidManager(mpid_manager::Account, Vec<PlainData>, Vec<PlainData>),
+    MpidManagerAccount(mpid_manager::Account, Vec<PlainData>, Vec<PlainData>),
 }
