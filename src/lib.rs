@@ -164,7 +164,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate accumulator;
 extern crate cbor;
-#[cfg(not(test))]
+#[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
@@ -194,7 +194,7 @@ mod types;
 mod utils;
 
 #[cfg(test)] mod core_tests;
-#[cfg(test)] mod crust_mock;
+mod crust_mock;
 
 // TODO: move this to maidsafe_utilities or to a separate crate
 #[allow(missing_docs)]
