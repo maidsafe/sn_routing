@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#![allow(unused)]
+
 use maidsafe_utilities::event_sender;
 use std::fmt;
 use std::io;

@@ -17,10 +17,10 @@
 
 use accumulator::Accumulator;
 
-#[cfg(not(test))]
+#[cfg(not(feature = "use-mock-crust"))]
 use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
 
-#[cfg(test)]
+#[cfg(feature = "use-mock-crust")]
 use crust_mock::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
 
 use itertools::Itertools;
@@ -435,7 +435,7 @@ impl Core {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
-        trace!("Received BootstrapAccept from {:?}.", peer_id);
+        trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
@@ -455,7 +455,7 @@ impl Core {
 
     fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
         if self.client_restriction {
-            warn!("Received NewPeer event as a client.");
+            warn!("{:?} Received NewPeer event as a client.", self);
         } else {
             match result {
                 Ok(()) => {
@@ -465,7 +465,7 @@ impl Core {
                     // _before_ the NewPeer event.
                     if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
                         warn!("Received NewPeer from {:?}, but node {:?} is already in our \
-                               routing table.",
+                              routing table.",
                               peer_id,
                               node.name());
                         return;
@@ -475,7 +475,7 @@ impl Core {
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
-                    error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
+                    error!("{:?} Failed to connect to peer {:?}: {:?}", self, peer_id, err);
                 }
             }
         }
@@ -486,7 +486,7 @@ impl Core {
                                        result: io::Result<OurConnectionInfo>) {
         let our_connection_info = match result {
             Err(err) => {
-                error!("Failed to prepare connection info: {:?}", err);
+                error!("{:?} Failed to prepare connection info: {:?}", self, err);
                 return;
             }
             Ok(connection_info) => connection_info,
@@ -876,7 +876,8 @@ impl Core {
         let msg_content = request_msg.content.clone();
         let msg_src = request_msg.src.clone();
         let msg_dst = request_msg.dst.clone();
-        trace!("Got request {:?} from {:?} to {:?}.",
+        trace!("{:?} Got request {:?} from {:?} to {:?}.",
+               self,
                msg_content,
                msg_src,
                msg_dst);
@@ -994,11 +995,11 @@ impl Core {
     }
 
     fn handle_bootstrap_finished(&mut self) {
-        debug!("Finished bootstrapping.");
+        debug!("{:?} Finished bootstrapping.", self);
         // If we have no connections, we should start listening to allow incoming connections
         if self.state == State::Disconnected {
-            debug!("Bootstrap finished with no connections. Start Listening to allow incoming \
-                    connections.");
+            debug!("{:?} Bootstrap finished with no connections. Start Listening to allow incoming \
+                    connections.", self);
             self.start_listening();
         }
     }
@@ -1269,7 +1270,7 @@ impl Core {
                    peer_id);
         }
 
-        trace!("Accepted client {:?}.", public_id.name());
+        trace!("{:?} Accepted client {:?}.", self, public_id.name());
 
         let _ = self.bootstrap_identify(peer_id);
         Ok(())
@@ -1315,7 +1316,7 @@ impl Core {
             return Ok(());
         }
 
-        trace!("Handling NodeIdentify from {:?}.", public_id.name());
+        trace!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
         if !self.node_in_cache(&public_id, &peer_id) {
             self.crust_service.disconnect(&peer_id);
             return Ok(());
@@ -1338,20 +1339,20 @@ impl Core {
 
         match self.routing_table.add(info) {
             None => {
-                error!("Peer was not added to the routing table: {:?}", peer_id);
+                error!("{:?} Peer was not added to the routing table: {:?}", self, peer_id);
                 self.crust_service.disconnect(&peer_id);
                 let _ = self.node_id_cache.remove(&name);
                 return Ok(());
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
-                trace!("Added {:?} to routing table.", name);
+                trace!("{:?} Added {:?} to routing table.", self, name);
                 for notify_info in must_notify {
                     try!(self.notify_about_new_node(notify_info, public_id));
                 }
                 if common_groups {
                     let event = Event::NodeAdded(name);
                     if let Err(err) = self.event_sender.send(event) {
-                        error!("Error sending event to routing user - {:?}", err);
+                        error!("{:?} Error sending event to routing user - {:?}", self, err);
                     }
                 }
             }
@@ -1364,14 +1365,14 @@ impl Core {
         }
 
         if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
-            trace!("Routing table reached group size. Dropping proxy.");
+            trace!("{:?} Routing table reached group size. Dropping proxy.", self);
             try!(self.drop_proxies());
             // We have all close contacts now and know which bucket addresses to
             // request IDs from: All buckets up to the one containing the furthest
             // close node might still be not maximally filled.
             for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
                 if let Err(e) = self.request_bucket_ids(i) {
-                    trace!("Failed to request public IDs from bucket {}: {:?}.", i, e);
+                    trace!("{:?} Failed to request public IDs from bucket {}: {:?}.", self, i, e);
                 }
             }
         }
@@ -2137,7 +2138,7 @@ fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(feature = "use-mock-crust"))]
 fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
     use std::mem;
 
@@ -2147,7 +2148,7 @@ fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender)
     });
 }
 
-#[cfg(test)]
+#[cfg(feature = "use-mock-crust")]
 fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
     service.restart(sender, CRUST_DEFAULT_BEACON_PORT)
 }
