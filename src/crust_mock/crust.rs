@@ -20,17 +20,33 @@ use std::fmt;
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use super::support::{self, Endpoint, ServiceImp};
+use super::support::{self, Device, Endpoint, ServiceImp};
 
 /// Mock version of crust::Service
-pub struct Service(pub Arc<Mutex<ServiceImp>>);
+pub struct Service(Arc<Mutex<ServiceImp>>);
 
 impl Service {
+    /// Create new mock Service using the make_current/get_current mechanism to
+    /// get the associated mock Device.
     pub fn new(event_sender: CrustEventSender, beacon_port: u16) -> Result<Self, Error> {
-        let imp = support::get_current();
-        imp.lock().unwrap().start(event_sender, beacon_port);
+        Self::with_imp(support::get_current(), event_sender, beacon_port)
+    }
 
-        Ok(Service(imp))
+    /// Create new mock Service by explicitly passing the mock device to associate
+    /// with.
+    pub fn with_device(device: &Device,
+                       event_sender: CrustEventSender,
+                       beacon_port: u16) -> Result<Self, Error> {
+        Self::with_imp(device.0.clone(), event_sender, beacon_port)
+    }
+
+    fn with_imp(imp: Arc<Mutex<ServiceImp>>,
+                event_sender: CrustEventSender,
+                beacon_port: u16) -> Result<Self, Error> {
+        let service = Service(imp);
+        service.imp().start(event_sender, beacon_port);
+
+        Ok(service)
     }
 
     /// This method is used instead of dropping the service and creating a new
@@ -43,21 +59,21 @@ impl Service {
         // Nothing to do here, as mock bootstrapping is not interruptible.
     }
 
-    pub fn start_service_discovery(&self) {
+    pub fn start_service_discovery(&mut self) {
         trace!("[MOCK] start_service_discovery not implemented in mock");
     }
 
-    pub fn start_listening_tcp(&self) -> io::Result<()> {
+    pub fn start_listening_tcp(&mut self) -> io::Result<()> {
         self.imp().listening_tcp = true;
         Ok(())
     }
 
-    pub fn start_listening_utp(&self) -> io::Result<()> {
+    pub fn start_listening_utp(&mut self) -> io::Result<()> {
         self.imp().listening_udp = true;
         Ok(())
     }
 
-    pub fn prepare_connection_info(&self, result_token: u32) {
+    pub fn prepare_connection_info(&mut self, result_token: u32) {
         self.imp().prepare_connection_info(result_token);
     }
 
@@ -84,6 +100,12 @@ impl Service {
 
     fn imp(&self) -> MutexGuard<ServiceImp> {
         self.0.lock().unwrap()
+    }
+}
+
+impl Drop for Service {
+    fn drop(&mut self) {
+        self.imp().disconnect_all();
     }
 }
 
@@ -135,3 +157,4 @@ pub struct ConnectionInfoResult {
 
 #[derive(Debug)]
 pub struct Error;
+
