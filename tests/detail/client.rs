@@ -183,7 +183,7 @@ impl Client {
 
     fn messaging_delete_request(&self, target_account: XorName, name: XorName, wrapper: MpidMessageWrapper) {
         let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::PlainData(PlainData::new(name, value));
+        let data = Data::Plain(PlainData::new(name, value));
         let _ = unwrap_result!(self.routing_client
                            .send_delete_request(Authority::ClientManager(target_account), data));
     }

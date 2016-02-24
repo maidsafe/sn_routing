@@ -153,7 +153,7 @@ pub fn test() {
                                                 sd_posted.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client2.signing_private_key())));
-    let data = Data::StructuredData(sd);
+    let data = Data::Structured(sd);
     match unwrap_option!(client1.delete(data), "") {
         ResponseMessage { content: ResponseContent::DeleteFailure { ref external_error_indicator, .. }, .. } => {
             // structured_data_manager hasn't implemented a proper external_error_indicator in DeleteFailure
@@ -161,7 +161,7 @@ pub fn test() {
         }
         _ => panic!("Received unexpected response"),
     }
-    let data_request = DataRequest::StructuredData(*sd_posted.get_identifier(), sd_posted.get_type_tag());
+    let data_request = DataRequest::Structured(*sd_posted.get_identifier(), sd_posted.get_type_tag());
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data_posted, response_data);
@@ -177,12 +177,12 @@ pub fn test() {
                                                 sd_posted.get_owner_keys().clone(),
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::StructuredData(sd);
+    let data = Data::Structured(sd);
     match unwrap_option!(client1.delete(data), "") {
         ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
         _ => panic!("Received unexpected response"),
     }
-    let data_request = DataRequest::StructuredData(*sd_posted.get_identifier(), sd_posted.get_type_tag());
+    let data_request = DataRequest::Structured(*sd_posted.get_identifier(), sd_posted.get_type_tag());
     match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {

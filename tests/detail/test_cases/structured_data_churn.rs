@@ -94,12 +94,12 @@ pub fn test(request_count: u32) {
                                                     stored_data[i].get_owner_keys().clone(),
                                                     vec![],
                                                     Some(client.signing_private_key())));
-        let data = Data::StructuredData(sd);
+        let data = Data::Structured(sd);
         match unwrap_option!(client.delete(data), "") {
             ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
             _ => panic!("Received unexpected response"),
         }
-        let data_request = DataRequest::StructuredData(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
+        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
         match unwrap_option!(client.get(data_request), "") {
             ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
                 match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {

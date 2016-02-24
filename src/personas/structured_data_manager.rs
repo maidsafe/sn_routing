@@ -159,7 +159,7 @@ impl StructuredDataManager {
                          request: &RequestMessage)
                          -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Delete(Data::StructuredData(ref data), ref message_id) => {
+            RequestContent::Delete(Data::Structured(ref data), ref message_id) => {
                 (data.clone(), message_id.clone())
             }
             _ => unreachable!("Error in vault demuxing"),

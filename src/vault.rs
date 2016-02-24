@@ -216,7 +216,7 @@ impl Vault {
             }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
-             &RequestContent::Delete(Data::StructuredData(_), _)) => {
+             &RequestContent::Delete(Data::Structured(_), _)) => {
                 self.structured_data_manager.handle_delete(routing_node, &request)
             }
             // ================== Refresh ==================
