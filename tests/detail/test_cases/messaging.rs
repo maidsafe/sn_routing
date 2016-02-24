@@ -62,5 +62,16 @@ pub fn test() {
     assert_eq!(1, mpid_headers.len());
     assert_eq!(message_sent.header().clone(), mpid_headers[0]);
 
+    test_group.start_case("Receiver delete mpid_header from inbox");
+    receiver.delete_mpid_header(msg_name.clone());
+    receiver.register_online();
+    let optional_message = receiver.get_mpid_message();
+    assert_eq!(None, optional_message);
+
+    test_group.start_case("Receiver delete message from sender's outbox");
+    receiver.delete_mpid_message(sender.name().clone(), msg_name.clone());
+    let sender_mpid_headers = sender.query_outbox();
+    assert_eq!(0, sender_mpid_headers.len());
+
     test_group.release();
 }

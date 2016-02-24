@@ -119,8 +119,10 @@ impl Client {
     }
 
     /// Delete data from the network.
-    pub fn delete(&self, _data: Data) {
-        unimplemented!()
+    pub fn delete(&self, data: Data) -> Option<ResponseMessage> {
+        unwrap_result!(self.routing_client
+                           .send_delete_request(Authority::NaeManager(data.name()), data));
+        self.wait_for_response()
     }
 
     /// Register client online.
@@ -165,6 +167,25 @@ impl Client {
             }
             _ => panic!("{:?} unexpected message"),
         }
+    }
+
+    /// Delete mpid_header.
+    pub fn delete_mpid_header(&self, header_name: XorName) {
+        self.messaging_delete_request(self.name().clone(), header_name.clone(),
+                                      MpidMessageWrapper::DeleteHeader(header_name))
+    }
+
+    /// Delete mpid_message.
+    pub fn delete_mpid_message(&self, target_account: XorName, msg_name: XorName) {
+        self.messaging_delete_request(target_account, msg_name.clone(),
+                                      MpidMessageWrapper::DeleteMessage(msg_name))
+    }
+
+    fn messaging_delete_request(&self, target_account: XorName, name: XorName, wrapper: MpidMessageWrapper) {
+        let value = unwrap_result!(serialise(&wrapper));
+        let data = Data::Plain(PlainData::new(name, value));
+        let _ = unwrap_result!(self.routing_client
+                           .send_delete_request(Authority::ClientManager(target_account), data));
     }
 
     /// Query outbox.

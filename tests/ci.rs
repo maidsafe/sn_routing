@@ -103,6 +103,11 @@ fn main() {
                      .join()
                      .is_err();
         failed = failed || is_err;
+        is_err = thread!("Messaging churn test",
+                         move || messaging_churn_test(request_count))
+                     .join()
+                     .is_err();
+        failed = failed || is_err;
 
         // Stop churn thread
         let &(ref lock, ref cond_var) = &*stop_flag;

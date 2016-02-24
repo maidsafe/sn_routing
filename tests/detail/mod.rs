@@ -30,6 +30,7 @@ pub use self::test_cases::structured_data::test as structured_data_test;
 pub use self::test_cases::immutable_data_churn::test as immutable_data_churn_test;
 pub use self::test_cases::structured_data_churn::test as structured_data_churn_test;
 pub use self::test_cases::messaging::test as messaging_test;
+pub use self::test_cases::messaging_churn::test as messaging_churn_test;
 pub use self::test_group::TestGroup;
 pub use self::vault_process::VaultProcess;
 
