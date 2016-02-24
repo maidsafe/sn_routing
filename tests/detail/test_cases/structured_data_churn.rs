@@ -89,7 +89,7 @@ pub fn test(request_count: u32) {
         test_group.start_case(&format!("Delete StructuredData {}", i));
         let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
                                                     *stored_data[i].get_identifier(),
-                                                    stored_data[i].get_version() + 2,
+                                                    stored_data[i].get_version() + 1,
                                                     generate_random_vec_u8(10),
                                                     stored_data[i].get_owner_keys().clone(),
                                                     vec![],
