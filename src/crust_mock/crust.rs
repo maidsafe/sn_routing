@@ -20,12 +20,19 @@ use std::fmt;
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use super::support::{Endpoint, ServiceImp};
+use super::support::{self, Endpoint, ServiceImp};
 
 /// Mock version of crust::Service
 pub struct Service(pub Arc<Mutex<ServiceImp>>);
 
 impl Service {
+    pub fn new(event_sender: CrustEventSender, beacon_port: u16) -> Result<Self, Error> {
+        let imp = support::get_current();
+        imp.lock().unwrap().start(event_sender, beacon_port);
+
+        Ok(Service(imp))
+    }
+
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
     pub fn restart(&self, event_sender: CrustEventSender, beacon_port: u16) {
@@ -125,3 +132,6 @@ pub struct ConnectionInfoResult {
     pub result_token: u32,
     pub result: io::Result<OurConnectionInfo>,
 }
+
+#[derive(Debug)]
+pub struct Error;
