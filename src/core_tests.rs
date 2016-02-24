@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use action::Action;
 use core::Core;
-use crust_mock::{Config, Device, Endpoint, Network};
+use crust_mock::{self, Config, Device, Endpoint, Network};
 use event::Event;
 use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::log;
@@ -45,7 +45,10 @@ impl TestNode {
            -> Self {
         let device = network.new_device(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
-        let (action_tx, joiner) = Core::new(&device, event_tx, client_restriction, None).unwrap();
+
+        let (action_tx, joiner) = crust_mock::make_current(&device, || {
+            Core::new(event_tx, client_restriction, None).unwrap()
+        });
 
         TestNode {
             device: device,

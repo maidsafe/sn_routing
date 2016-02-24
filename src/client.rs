@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -27,10 +26,7 @@ use data::{Data, DataRequest};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::RequestContent;
-use types::{MessageId, RoutingActionSender};
-
-#[cfg(test)]
-use crust_mock::Device;
+use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -42,8 +38,8 @@ type RoutingResult = Result<(), RoutingError>;
 pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
-    action_sender: RoutingActionSender,
-    _raii_joiner: RaiiThreadJoiner,
+    action_sender: ::types::RoutingActionSender,
+    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
 impl Client {
@@ -57,30 +53,19 @@ impl Client {
     /// Keys will be exchanged with the `ClientAuthority` so that communication with the network is
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
-    #[cfg(not(test))]
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        Self::new_imp(try!(Core::new(event_sender, true, keys)))
-    }
+        let (action_sender, raii_joiner) = try!(Core::new(event_sender, true, keys));
 
-    #[cfg(test)]
-    pub fn new(device: &Device, event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
-        // start the handler for routing with a restriction to become a full node
-        Self::new_imp(try!(Core::new(device, event_sender, true, keys)))
-    }
-
-    fn new_imp(core: (RoutingActionSender, RaiiThreadJoiner)) -> Result<Self, RoutingError> {
         let (tx, rx) = channel();
 
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
-            action_sender: core.0,
-            _raii_joiner: core.1,
+            action_sender: action_sender,
+            _raii_joiner: raii_joiner,
         })
     }
 
