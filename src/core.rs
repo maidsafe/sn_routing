@@ -381,6 +381,7 @@ impl Core {
             }
             if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
                 cur_routing_table_size = self.routing_table.len();
+
                 trace!(" ---------------------------------------");
                 trace!("| {:?} - Routing Table size: {:3} |",
                        self,
