@@ -224,13 +224,13 @@ impl Core {
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
 
-        let routing_event_category = MaidSafeEventCategory::RoutingEvent;
+        let routing_event_category = MaidSafeEventCategory::Routing;
         let action_sender = RoutingActionSender::new(action_tx,
                                                      routing_event_category,
                                                      category_tx.clone());
         let action_sender2 = action_sender.clone();
 
-        let crust_event_category = MaidSafeEventCategory::CrustEvent;
+        let crust_event_category = MaidSafeEventCategory::Crust;
         let crust_sender = crust::CrustEventSender::new(crust_tx,
                                                         crust_event_category,
                                                         category_tx);
@@ -288,7 +288,7 @@ impl Core {
         let mut cur_routing_table_size = 0;
         for it in category_rx.iter() {
             match it {
-                MaidSafeEventCategory::RoutingEvent => {
+                MaidSafeEventCategory::Routing => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::NodeSendMessage { content, result_tx, } => {
@@ -350,7 +350,7 @@ impl Core {
                         }
                     }
                 }
-                MaidSafeEventCategory::CrustEvent => {
+                MaidSafeEventCategory::Crust => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         self.handle_crust_event(crust_event);
                     }
