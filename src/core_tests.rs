@@ -32,10 +32,21 @@ use maidsafe_utilities::log;
 use test_utils::{recv_with_timeout, iter_with_timeout};
 use types::RoutingActionSender;
 
+#[cfg(feature = "use-mock-crust")]
+const TIMEOUT_MS : u64 = 200;
+
+#[cfg(not(feature = "use-mock-crust"))]
+const TIMEOUT_MS : u64 = 2500;
+
+fn timeout() -> Duration {
+    Duration::from_millis(TIMEOUT_MS)
+}
+
 struct TestNode {
     device: Device,
     action_tx: RoutingActionSender,
     event_rx: mpsc::Receiver<Event>,
+    num_connections: usize,
     _core_joiner: RaiiThreadJoiner,
 }
 
@@ -56,8 +67,33 @@ impl TestNode {
             device: device,
             action_tx: action_tx,
             event_rx: event_rx,
+            num_connections: 0,
             _core_joiner: core_joiner,
         }
+    }
+
+    fn wait_for_connections(&mut self, goal: usize) {
+        if self.num_connections >= goal {
+            return;
+        }
+
+        for event in iter_with_timeout(&self.event_rx, timeout()) {
+            match event {
+                Event::NodeAdded(..) => self.num_connections += 1,
+                Event::NodeLost(..) => self.num_connections -= 1,
+                _ => (),
+            }
+
+            if self.num_connections >= goal {
+                break;
+            }
+        }
+
+        assert!(self.num_connections >= goal,
+                "{:?} connected to only {} out of {} required nodes",
+                self.device.endpoint(),
+                self.num_connections,
+                goal);
     }
 }
 
@@ -67,29 +103,11 @@ impl Drop for TestNode {
     }
 }
 
-fn wait_for_nodes_to_connect(nodes: &[TestNode]) {
-    let needed_connections = cmp::min(GROUP_SIZE, nodes.len()) - 1;
+fn wait_for_nodes_to_connect(nodes: &mut [TestNode]) {
+    let goal = cmp::min(GROUP_SIZE, nodes.len()) - 1;
 
-    for node in nodes.iter() {
-        let mut num = 0;
-
-        for event in iter_with_timeout(&node.event_rx, Duration::from_millis(500)) {
-            match event {
-                Event::NodeAdded(..) => num += 1,
-                Event::NodeLost(..) => num -= 1,
-                _ => (),
-            }
-
-            if num >= needed_connections {
-                break;
-            }
-        }
-
-        assert!(num >= needed_connections,
-                "{:?} connected to only {} out of {} required nodes",
-                node.device.endpoint(),
-                num,
-                needed_connections);
+    for node in nodes.iter_mut() {
+        node.wait_for_connections(goal);
     }
 }
 
@@ -98,16 +116,20 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
     // Create the seed node.
     nodes.push(TestNode::new(network, false, None, None));
-    thread::sleep(Duration::from_millis(500));
+    thread::sleep(timeout());
 
     let config = Config::with_contacts(&[nodes[0].device.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::new(network, false, Some(config.clone()), None));
+
+        // Wait for the new node to connect to the previous nodes.
+        let num = nodes.len() - 1;
+        nodes[i].wait_for_connections(num);
     }
 
-    wait_for_nodes_to_connect(&nodes);
+    wait_for_nodes_to_connect(&mut nodes);
 
     nodes
 }
@@ -120,8 +142,6 @@ fn two_nodes() {
 
 #[test]
 fn few_nodes() {
-    log::init(true);
-
     let network = Network::new();
     let _ = create_connected_nodes(&network, 3);
 }
@@ -130,6 +150,12 @@ fn few_nodes() {
 fn group_size_nodes() {
     let network = Network::new();
     let _ = create_connected_nodes(&network, GROUP_SIZE);
+}
+
+#[test]
+fn more_than_group_size_nodes() {
+    let network = Network::new();
+    let _ = create_connected_nodes(&network, 2 * GROUP_SIZE);
 }
 
 #[test]
@@ -145,7 +171,7 @@ fn client_connects_to_nodes() {
 
     let mut connected = false;
 
-    for event in iter_with_timeout(&client.event_rx, Duration::from_secs(1)) {
+    for event in iter_with_timeout(&client.event_rx, timeout()) {
         if Event::Connected == event {
             connected = true;
             break;
