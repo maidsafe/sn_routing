@@ -18,7 +18,7 @@
 #![allow(unused)]
 
 use rand;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
@@ -178,6 +178,7 @@ pub struct ServiceImp {
     pub listening_udp: bool,
     event_sender: Option<CrustEventSender>,
     pending_bootstraps: u64,
+    pending_connects: HashSet<PeerId>,
     connections: Vec<(PeerId, Endpoint)>,
 }
 
@@ -192,6 +193,7 @@ impl ServiceImp {
             listening_udp: false,
             event_sender: None,
             pending_bootstraps: 0,
+            pending_connects: HashSet::new(),
             connections: Vec::new(),
         }
     }
@@ -250,7 +252,8 @@ impl ServiceImp {
     }
 
     pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        self.send_packet(their_info.1, Packet::ConnectRequest(self.peer_id));
+        let TheirConnectionInfo(peer_id, peer_endpoint) = their_info;
+        self.send_packet(peer_endpoint, Packet::ConnectRequest(self.peer_id));
     }
 
     fn send_packet(&self, receiver: Endpoint, packet: Packet) {
@@ -299,13 +302,13 @@ impl ServiceImp {
     }
 
     fn handle_connect_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        self.add_connection(peer_id, peer_endpoint);
+        // TODO: ignore if already connected?
+        self.add_rendezvous_connection(peer_id, peer_endpoint);
         self.send_packet(peer_endpoint, Packet::ConnectSuccess(self.peer_id));
     }
 
     fn handle_connect_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::NewPeer(Ok(()), peer_id));
+        self.add_rendezvous_connection(peer_id, peer_endpoint);
     }
 
     fn handle_connect_failure(&self, _peer_endpoint: Endpoint, peer_id: PeerId) {
@@ -358,6 +361,15 @@ impl ServiceImp {
 
         self.connections.push((peer_id, peer_endpoint));
         true
+    }
+
+    fn add_rendezvous_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
+        self.add_connection(peer_id, peer_endpoint);
+
+        if !self.pending_connects.insert(peer_id) {
+            self.pending_connects.remove(&peer_id);
+            self.send_event(Event::NewPeer(Ok(()), peer_id));
+        }
     }
 
     // Remove connected peer with the given peer id and return its endpoint,
