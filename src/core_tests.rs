@@ -32,16 +32,6 @@ use maidsafe_utilities::log;
 use test_utils::{recv_with_timeout, iter_with_timeout};
 use types::RoutingActionSender;
 
-#[cfg(feature = "use-mock-crust")]
-const TIMEOUT_MS : u64 = 200;
-
-#[cfg(not(feature = "use-mock-crust"))]
-const TIMEOUT_MS : u64 = 2500;
-
-fn timeout() -> Duration {
-    Duration::from_millis(TIMEOUT_MS)
-}
-
 struct TestNode {
     device: Device,
     action_tx: RoutingActionSender,
@@ -72,12 +62,16 @@ impl TestNode {
         }
     }
 
+    // Wait until this node raises at least `goal` `Event::NodeAdded` events.
+    // `goal` is clamped to GROUP_SIZE - 1.
     fn wait_for_connections(&mut self, goal: usize) {
+        let goal = cmp::min(GROUP_SIZE - 1, goal);
+
         if self.num_connections >= goal {
             return;
         }
 
-        for event in iter_with_timeout(&self.event_rx, timeout()) {
+        for event in iter_with_timeout(&self.event_rx, Duration::from_secs(10)) {
             match event {
                 Event::NodeAdded(..) => self.num_connections += 1,
                 Event::NodeLost(..) => self.num_connections -= 1,
@@ -104,10 +98,10 @@ impl Drop for TestNode {
 }
 
 fn wait_for_nodes_to_connect(nodes: &mut [TestNode]) {
-    let goal = cmp::min(GROUP_SIZE, nodes.len()) - 1;
+    let n = nodes.len() - 1;
 
     for node in nodes.iter_mut() {
-        node.wait_for_connections(goal);
+        node.wait_for_connections(n);
     }
 }
 
@@ -116,7 +110,9 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
     // Create the seed node.
     nodes.push(TestNode::new(network, false, None, None));
-    thread::sleep(timeout());
+    // We have wait until the seed node starts accepting. As there is currently
+    // no notification about it, we are forced to thread::sleep :(
+    thread::sleep(Duration::from_millis(500));
 
     let config = Config::with_contacts(&[nodes[0].device.endpoint()]);
 
@@ -155,7 +151,7 @@ fn group_size_nodes() {
 #[test]
 fn more_than_group_size_nodes() {
     let network = Network::new();
-    let _ = create_connected_nodes(&network, 2 * GROUP_SIZE);
+    let _ = create_connected_nodes(&network, GROUP_SIZE + 2);
 }
 
 #[test]
@@ -171,7 +167,7 @@ fn client_connects_to_nodes() {
 
     let mut connected = false;
 
-    for event in iter_with_timeout(&client.event_rx, timeout()) {
+    for event in iter_with_timeout(&client.event_rx, Duration::from_secs(10)) {
         if Event::Connected == event {
             connected = true;
             break;
