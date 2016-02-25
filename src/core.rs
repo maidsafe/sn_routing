@@ -432,14 +432,20 @@ impl Core {
         } else {
             match result {
                 Ok(()) => {
-                    trace!("Received NewPeer with Ok from {:?}.", peer_id);
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
                     // TODO(afck): Make sure it cannot happen that we receive their NodeIdentify
                     // _before_ the NewPeer event.
-                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
-                        let _ = self.node_identify(peer_id);
+                    if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
+                        warn!("Received NewPeer from {:?}, but node {:?} is already in our \
+                              routing table.",
+                              peer_id,
+                              node.name());
+                        return;
                     }
+                    trace!("Received NewPeer with Ok from {:?}. Sending NodeIdentify.",
+                           peer_id);
+                    let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
                     error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
@@ -481,13 +487,9 @@ impl Core {
 
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
+            trace!("Trying to connect to {:?}.", their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
-            if self.our_connection_info_map.contains_key(&their_public_id) {
-                error!("Prepared more than one connection info for {:?}.",
-                       their_public_id.name());
-                return;
-            }
             let _ = self.our_connection_info_map.insert(their_public_id, our_connection_info);
         }
 
@@ -1867,6 +1869,7 @@ impl Core {
         let their_connection_info = try!(serialisation::deserialise(&serialised_connection_info));
 
         if let Some(our_connection_info) = self.our_connection_info_map.remove(&their_public_id) {
+            trace!("Received connection info. Trying to connect to {:?}.", their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
             Ok(())
         } else {
