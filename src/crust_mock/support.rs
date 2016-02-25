@@ -21,7 +21,7 @@ use rand;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
-use std::sync::atomic::{AtomicBool, ATOMIC_BOOL_INIT, AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::thread::{Builder, JoinHandle};
 
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
@@ -252,7 +252,7 @@ impl ServiceImp {
     }
 
     pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        let TheirConnectionInfo(peer_id, peer_endpoint) = their_info;
+        let TheirConnectionInfo(_, peer_endpoint) = their_info;
         self.send_packet(peer_endpoint, Packet::ConnectRequest(self.peer_id));
     }
 
@@ -489,65 +489,23 @@ impl Packet {
 // The following evil code facilitates passing Devices to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
 
-#[allow(unused)]
-struct Current(*const Arc<Mutex<ServiceImp>>);
-
-// HACK: thick rust into thinking this is thread safe.
-#[allow(unsafe_code)]
-unsafe impl Sync for Current {}
-
-static mut CURRENT : Current = Current(0 as *const Arc<Mutex<ServiceImp>>);
-// TODO: replace this with StaticMutex once those become stable.
-static CURRENT_LOCK: SpinLock = SPIN_LOCK_INIT;
+lazy_static! {
+    static ref MAKE_CURRENT_LOCK: Mutex<()> = Mutex::new(());
+    static ref CURRENT: Mutex<Option<Arc<Mutex<ServiceImp>>>> = Mutex::new(None);
+}
 
 /// Make the device current so it can be picked up by mock Services created
 /// inside the passed-in lambda.
-#[allow(unsafe_code)]
 pub fn make_current<F, R>(device: &Device, f: F) -> R where F: FnOnce() -> R {
-    unsafe {
-        CURRENT_LOCK.lock();
-        CURRENT.0 = &device.0;
-        CURRENT_LOCK.unlock();
-    }
+    let _guard = MAKE_CURRENT_LOCK.lock().unwrap();
 
+    *CURRENT.lock().unwrap() = Some(device.0.clone());
     let result = f();
-
-    unsafe {
-        CURRENT_LOCK.lock();
-        CURRENT.0 = 0 as *const Arc<Mutex<ServiceImp>>;
-        CURRENT_LOCK.unlock();
-    }
+    *CURRENT.lock().unwrap() = None;
 
     result
 }
 
-#[allow(unsafe_code)]
 pub fn get_current() -> Arc<Mutex<ServiceImp>> {
-    unsafe {
-        CURRENT_LOCK.lock();
-        assert!(!CURRENT.0.is_null());
-        let result = (&*CURRENT.0).clone();
-        CURRENT_LOCK.unlock();
-
-        result
-    }
-}
-
-// This quick & dirty implementation of a spin lock is used as a workaround for
-// the fact that there doesn't seem to be a way to create static mutexes in
-// the current stable rust.
-struct SpinLock {
-    lock: AtomicBool,
-}
-
-const SPIN_LOCK_INIT: SpinLock = SpinLock { lock: ATOMIC_BOOL_INIT };
-
-impl SpinLock {
-    pub fn lock(&self) {
-        while self.lock.compare_and_swap(false, true, Ordering::Relaxed) {}
-    }
-
-    pub fn unlock(&self) {
-        self.lock.store(false, Ordering::Relaxed);
-    }
+    CURRENT.lock().unwrap().as_ref().unwrap().clone()
 }

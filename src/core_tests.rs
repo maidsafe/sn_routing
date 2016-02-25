@@ -157,7 +157,7 @@ fn more_than_group_size_nodes() {
 #[test]
 fn client_connects_to_nodes() {
     let network = Network::new();
-    let nodes = create_connected_nodes(&network, GROUP_SIZE);
+    let nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
 
     // Create one client that tries to connect to the network.
     let client = TestNode::new(&network,
