@@ -435,6 +435,8 @@ impl Core {
                     trace!("Received NewPeer with Ok from {:?}.", peer_id);
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
+                    // TODO(afck): Make sure it cannot happen that we receive their NodeIdentify
+                    // _before_ the NewPeer event.
                     if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
                         let _ = self.node_identify(peer_id);
                     }
@@ -526,9 +528,15 @@ impl Core {
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
                 }
+            } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
+                try!(hop_msg.verify(pub_id.signing_public_key()));
             } else {
-                // TODO drop peer?
-                return Err(RoutingError::UnknownConnection);
+                // TODO: Drop peer?
+                // error!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
+                //        hop_msg.name(),
+                //        peer_id);
+                // self.crust_service.disconnect(&peer_id);
+                return Err(RoutingError::UnknownConnection(*hop_msg.name()));
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1796,8 +1804,8 @@ impl Core {
                             dst: Authority)
                             -> Result<(), RoutingError> {
         if let Some(peer_id) = self.get_proxy_or_client_peer_id(&their_public_id) {
-            try!(self.handle_node_identify(their_public_id, peer_id));
-            self.node_identify(peer_id)
+            try!(self.node_identify(peer_id));
+            self.handle_node_identify(their_public_id, peer_id)
         } else if !self.routing_table.contains(their_public_id.name()) &&
            self.routing_table.allow_connection(their_public_id.name()) {
             if self.connection_token_map
