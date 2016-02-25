@@ -18,6 +18,7 @@
 #![allow(unused)]
 
 use rand;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
@@ -486,26 +487,26 @@ impl Packet {
     }
 }
 
-// The following evil code facilitates passing Devices to mock Services, so we
+// The following code facilitates passing Devices to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
 
-lazy_static! {
-    static ref MAKE_CURRENT_LOCK: Mutex<()> = Mutex::new(());
-    static ref CURRENT: Mutex<Option<Arc<Mutex<ServiceImp>>>> = Mutex::new(None);
+thread_local! {
+    static CURRENT: RefCell<Option<Arc<Mutex<ServiceImp>>>> = RefCell::new(None)
 }
 
 /// Make the device current so it can be picked up by mock Services created
 /// inside the passed-in lambda.
 pub fn make_current<F, R>(device: &Device, f: F) -> R where F: FnOnce() -> R {
-    let _guard = MAKE_CURRENT_LOCK.lock().unwrap();
-
-    *CURRENT.lock().unwrap() = Some(device.0.clone());
-    let result = f();
-    *CURRENT.lock().unwrap() = None;
-
-    result
+    CURRENT.with(|current| {
+        *current.borrow_mut() = Some(device.0.clone());
+        let result = f();
+        *current.borrow_mut() = None;
+        result
+    })
 }
 
 pub fn get_current() -> Arc<Mutex<ServiceImp>> {
-    CURRENT.lock().unwrap().as_ref().unwrap().clone()
+    CURRENT.with(|current| {
+        current.borrow().as_ref().unwrap().clone()
+    })
 }
