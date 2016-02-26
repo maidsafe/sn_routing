@@ -550,9 +550,12 @@ impl MpidManager {
                           account: &Account,
                           stored_messages: &Vec<PlainData>,
                           received_headers: &Vec<PlainData>) {
-        let _ = self.accounts.insert(name.clone(), account.clone());
-        Self::insert_chunks(&mut self.chunk_store_outbox, stored_messages);
-        Self::insert_chunks(&mut self.chunk_store_inbox, received_headers);
+        // avoiding a refreshing of old version of account comes in after a deletion
+        if !self.accounts.contains_key(name) {
+            let _ = self.accounts.insert(name.clone(), account.clone());
+            Self::insert_chunks(&mut self.chunk_store_outbox, stored_messages);
+            Self::insert_chunks(&mut self.chunk_store_inbox, received_headers);
+        }
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
