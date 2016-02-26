@@ -398,12 +398,16 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        trace!("Received BootstrapConnect from {:?}.", peer_id);
+        self.crust_service.stop_bootstrap();
         if self.state == State::Disconnected {
+            trace!("Received BootstrapConnect from {:?}.", peer_id);
             // Established connection. Pending Validity checks
             self.state = State::Bootstrapping;
             let _ = self.client_identify(peer_id);
             return;
+        } else {
+            warn!("Got more than one bootstrap connection. Disconnecting {:?}.", peer_id);
+            self.crust_service.disconnect(&peer_id);
         }
     }
 
@@ -1641,7 +1645,10 @@ impl Core {
                                  proxy_node_name: proxy_name,
                              })
             }
-            None => Err(RoutingError::RejectedPublicId),
+            None => {
+                warn!("Client with key {:?} not found in node_id_cache.", client_key);
+                Err(RoutingError::RejectedPublicId)
+            }
         }
     }
 
@@ -1721,7 +1728,7 @@ impl Core {
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
         if !self.routing_table.is_close(&dst_name) {
-            error!("Handling RejectedPublicId, but not close to the target!");
+            error!("Handling GetPublicId, but not close to the target!");
             Err(RoutingError::RejectedPublicId)
         } else {
             let msg = if let Some(info) = self.routing_table.get(&dst_name) {
@@ -1733,6 +1740,7 @@ impl Core {
                     content: response_content,
                 }
             } else {
+                error!("Cannot answer GetPublicId: {:?} not found in the routing table.", dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
@@ -1761,6 +1769,7 @@ impl Core {
                                                  dst_name: XorName)
                                                  -> Result<(), RoutingError> {
         if !self.routing_table.is_close(&dst_name) {
+            error!("Handling GetPublicIdWithConnectionInfo, but not close to the target!");
             Err(RoutingError::RejectedPublicId)
         } else {
             let msg = if let Some(info) = self.routing_table.get(&dst_name) {
@@ -1776,6 +1785,8 @@ impl Core {
                     content: response_content,
                 }
             } else {
+                error!("Cannot answer GetPublicIdWithConnectionInfo: {:?} not found in the \
+                       routing table.", dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
