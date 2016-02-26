@@ -1243,11 +1243,11 @@ impl Core {
         self.remove_stale_joining_nodes();
 
         if client_restriction {
-            if self.routing_table.len() < GROUP_SIZE {
+            if self.routing_table.len() < GROUP_SIZE - 1 {
                 trace!("Client {:?} rejected: Routing table has {} entries. {} required.",
                        public_id.name(),
                        self.routing_table.len(),
-                       GROUP_SIZE);
+                       GROUP_SIZE - 1);
                 return self.bootstrap_deny(peer_id);
             }
         } else {
