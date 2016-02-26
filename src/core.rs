@@ -1365,7 +1365,8 @@ impl Core {
             // We have all close contacts now and know which bucket addresses to
             // request IDs from: All buckets up to the one containing the furthest
             // close node might still be not maximally filled.
-            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+            // TODO: +1 should be enough here in theory.
+            for i in 0..(self.routing_table.furthest_close_bucket() + 3) {
                 if let Err(e) = self.request_bucket_ids(i) {
                     trace!("Failed to request public IDs from bucket {}: {:?}.", i, e);
                 }
@@ -1404,6 +1405,9 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+        if bucket_index >= xor_name::XOR_NAME_BITS {
+            return Ok(());
+        }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
