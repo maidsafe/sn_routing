@@ -210,6 +210,7 @@ pub struct Core {
     connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
     our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
     their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
+    get_request_count: usize,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -275,6 +276,7 @@ impl Core {
                 connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
                 our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
                 their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+                get_request_count: 0,
             };
 
             core.run(category_rx);
@@ -286,6 +288,8 @@ impl Core {
     /// Run the event loop for sending and receiving messages.
     pub fn run(&mut self, category_rx: mpsc::Receiver<MaidSafeEventCategory>) {
         let mut cur_routing_table_size = 0;
+        let mut cur_client_num = 0;
+        let mut cumulative_client_num = 0;
         for it in category_rx.iter() {
             match it {
                 MaidSafeEventCategory::Routing => {
@@ -357,6 +361,19 @@ impl Core {
                 }
             } // Category Match
 
+            if self.state == State::Node {
+                let old_client_num = cur_client_num;
+                cur_client_num = self.client_map.len() - self.joining_nodes_num();
+                if cur_client_num != old_client_num {
+                    if cur_client_num > old_client_num {
+                        cumulative_client_num += cur_client_num - old_client_num;
+                    }
+                    trace!("{:?} - Connected clients: {}, cumulative: {}",
+                           self,
+                           cur_client_num,
+                           cumulative_client_num);
+                }
+            }
             if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
                 cur_routing_table_size = self.routing_table.len();
                 trace!(" ---------------------------------------");
@@ -526,6 +543,7 @@ impl Core {
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
         if self.state == State::Node {
+            let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
@@ -533,6 +551,12 @@ impl Core {
                 try!(hop_msg.verify(pub_key));
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
+                }
+                if let RoutingMessage::Request(RequestMessage {
+                    content: RequestContent::Get(_, _),
+                    ..
+                }) = *hop_msg.content().content() {
+                    relayed_get_request = true;
                 }
             } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
@@ -543,6 +567,10 @@ impl Core {
                 //        peer_id);
                 // self.crust_service.disconnect(&peer_id);
                 return Err(RoutingError::UnknownConnection(*hop_msg.name()));
+            }
+            if relayed_get_request {
+                self.get_request_count += 1;
+                trace!("Total get request count: {}", self.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
