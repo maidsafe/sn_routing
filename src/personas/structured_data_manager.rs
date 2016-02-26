@@ -194,7 +194,7 @@ impl StructuredDataManager {
     }
 
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
-        let _ = self.chunk_store.delete(&structured_data.name());
+        // chunk_store::put function removes existing data automatically
         Ok(try!(self.chunk_store.put(&structured_data.name(),
                                      &try!(serialisation::serialise(&structured_data)))))
     }
@@ -217,7 +217,7 @@ impl StructuredDataManager {
             let refresh = Refresh::new(&data_name,
                                        RefreshValue::StructuredDataManager(structured_data));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("SD Manager sending refresh for account {:?}", src.name());
+                debug!("SD Manager sending refresh for data {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
