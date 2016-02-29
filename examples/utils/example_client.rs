@@ -91,6 +91,7 @@ impl ExampleClient {
                         return None;
                     }
                 }
+                Event::Disconnected => self.disconnected(),
                 _ => (),
             }
         }
@@ -108,12 +109,22 @@ impl ExampleClient {
 
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
-            if let Event::Response(ResponseMessage {
-                content: ResponseContent::PutSuccess(..), .. }) = it {
-                println!("Successfully stored {:?}", data_name);
-                break;
+            match it {
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::PutSuccess(..),
+                    ..
+                }) => {
+                    println!("Successfully stored {:?}", data_name);
+                    break;
+                }
+                Event::Disconnected => self.disconnected(),
+                _ => (),
             }
         }
+    }
+
+    fn disconnected(&self) {
+        panic!("Disconnected from the network.");
     }
 
     /// Post data onto the network.

@@ -37,4 +37,6 @@ pub enum Event {
     NodeLost(XorName),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
+    /// We have disconnected from the network.
+    Disconnected,
 }

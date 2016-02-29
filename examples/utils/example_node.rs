@@ -82,10 +82,13 @@ impl ExampleNode {
                     trace!("{:?} Received NodeLost event {:?}", self, name);
                     self.handle_node_lost(name);
                 }
-                // Event::Bootstrapped => trace!("Received bootstrapped event"),
                 Event::Connected => {
                     trace!("{:?} Received connected event", self);
                     self.connected = true;
+                }
+                Event::Disconnected => {
+                    trace!("{:?} Received disconnected event", self);
+                    self.connected = false;
                 }
             }
         }
