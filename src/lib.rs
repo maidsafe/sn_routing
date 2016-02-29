@@ -194,7 +194,7 @@ mod types;
 mod utils;
 
 #[cfg(test)] mod core_tests;
-mod crust_mock;
+mod mock_crust;
 
 // TODO: move this to maidsafe_utilities or to a separate crate
 #[allow(missing_docs)]
