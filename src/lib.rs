@@ -196,10 +196,6 @@ mod utils;
 #[cfg(test)] mod core_tests;
 mod mock_crust;
 
-// TODO: move this to maidsafe_utilities or to a separate crate
-#[allow(missing_docs)]
-pub mod test_utils;
-
 pub use authority::Authority;
 pub use client::Client;
 pub use data::{Data, DataRequest};

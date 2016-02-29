@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
@@ -57,9 +58,12 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, raii_joiner) = try!(Core::new(event_sender, true, keys));
-
+        let (action_sender, mut core) = Core::new(event_sender, true, keys);
         let (tx, rx) = channel();
+
+        let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
+            core.run();
+        }));
 
         Ok(Client {
             interface_result_tx: tx,

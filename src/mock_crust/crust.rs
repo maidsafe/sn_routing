@@ -22,16 +22,16 @@ use std::fmt;
 use std::io;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use super::support::{self, Device, Endpoint, ServiceImp};
+use super::support::{self, Device, Endpoint, NetworkImp, ServiceImp};
 
 /// Mock version of crust::Service
-pub struct Service(Arc<Mutex<ServiceImp>>);
+pub struct Service(Arc<Mutex<ServiceImp>>, Arc<NetworkImp>);
 
 impl Service {
     /// Create new mock Service using the make_current/get_current mechanism to
     /// get the associated mock Device.
     pub fn new(event_sender: CrustEventSender, beacon_port: u16) -> Result<Self, Error> {
-        Self::with_imp(support::get_current(), event_sender, beacon_port)
+        Self::with_device(&support::get_current(), event_sender, beacon_port)
     }
 
     /// Create new mock Service by explicitly passing the mock device to associate
@@ -39,14 +39,9 @@ impl Service {
     pub fn with_device(device: &Device,
                        event_sender: CrustEventSender,
                        beacon_port: u16) -> Result<Self, Error> {
-        Self::with_imp(device.0.clone(), event_sender, beacon_port)
-    }
-
-    fn with_imp(imp: Arc<Mutex<ServiceImp>>,
-                event_sender: CrustEventSender,
-                beacon_port: u16) -> Result<Self, Error> {
-        let service = Service(imp);
-        service.imp().start(event_sender, beacon_port);
+        let network = device.0.lock().unwrap().network.clone();
+        let service = Service(device.0.clone(), network);
+        service.lock_and_poll(|imp| imp.start(event_sender, beacon_port));
 
         Ok(service)
     }
@@ -54,7 +49,7 @@ impl Service {
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
     pub fn restart(&self, event_sender: CrustEventSender, beacon_port: u16) {
-        self.imp().restart(event_sender, beacon_port);
+        self.lock_and_poll(|imp| imp.restart(event_sender, beacon_port))
     }
 
     pub fn stop_bootstrap(&self) {
@@ -66,29 +61,29 @@ impl Service {
     }
 
     pub fn start_listening_tcp(&mut self) -> io::Result<()> {
-        self.imp().listening_tcp = true;
+        self.lock().listening_tcp = true;
         Ok(())
     }
 
     pub fn start_listening_utp(&mut self) -> io::Result<()> {
-        self.imp().listening_udp = true;
+        self.lock().listening_udp = true;
         Ok(())
     }
 
     pub fn prepare_connection_info(&mut self, result_token: u32) {
-        self.imp().prepare_connection_info(result_token);
+        self.lock_and_poll(|imp| imp.prepare_connection_info(result_token))
     }
 
     pub fn connect(&self, our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        self.imp().connect(our_info, their_info)
+        self.lock_and_poll(|imp| imp.connect(our_info, their_info))
     }
 
     pub fn disconnect(&self, peer_id: &PeerId) -> bool {
-        self.imp().disconnect(peer_id)
+        self.lock_and_poll(|imp| imp.disconnect(peer_id))
     }
 
     pub fn send(&self, id: &PeerId, data: Vec<u8>) -> io::Result<()> {
-        if self.imp().send_message(id, data) {
+        if self.lock_and_poll(|imp| imp.send_message(id, data)) {
             Ok(())
         } else {
             let msg = format!("No connection to peer {:?}", id);
@@ -97,17 +92,23 @@ impl Service {
     }
 
     pub fn id(&self) -> PeerId {
-        self.imp().peer_id
+        self.lock().peer_id
     }
 
-    fn imp(&self) -> MutexGuard<ServiceImp> {
+    fn lock(&self) -> MutexGuard<ServiceImp> {
         self.0.lock().unwrap()
+    }
+
+    fn lock_and_poll<F, R>(&self, f: F) -> R where F: FnOnce(&mut ServiceImp) -> R {
+        let result = f(&mut *self.lock());
+        self.1.poll();
+        result
     }
 }
 
 impl Drop for Service {
     fn drop(&mut self) {
-        self.imp().disconnect_all();
+        self.lock_and_poll(|imp| imp.disconnect_all());
     }
 }
 

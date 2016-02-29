@@ -15,44 +15,36 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
-
 use rand;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
-use std::thread::{Builder, JoinHandle};
 
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
                    TheirConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `Device`s.
-pub struct Network(Arc<NetworkImp>, Option<JoinHandle<()>>);
+#[allow(unused)]
+pub struct Network(Arc<NetworkImp>);
 
+#[allow(unused)]
 pub struct NetworkImp {
     services: Mutex<HashMap<Endpoint, Weak<Mutex<ServiceImp>>>>,
     next_endpoint: AtomicUsize,
-    queue: (Mutex<VecDeque<(Endpoint, Endpoint, Packet)>>, Condvar),
+    queue: Mutex<VecDeque<(Endpoint, Endpoint, Packet)>>,
 }
 
+#[allow(unused)]
 impl Network {
     /// Create new mock Network.
     pub fn new() -> Self {
-        let imp = Arc::new(NetworkImp {
+        Network(Arc::new(NetworkImp {
             services: Mutex::new(HashMap::new()),
             next_endpoint: ATOMIC_USIZE_INIT,
-            queue: (Mutex::new(VecDeque::new()), Condvar::new()),
-        });
-
-        let imp2 = imp.clone();
-        let handle = Builder::new()
-                         .name("mock network thread".to_owned())
-                         .spawn(move || while imp2.wait_and_process_packets() {})
-                         .unwrap();
-
-        Network(imp, Some(handle))
+            queue: Mutex::new(VecDeque::new()),
+        }))
     }
 
     /// Create new Device.
@@ -73,60 +65,33 @@ impl Network {
     pub fn gen_endpoint(&self) -> Endpoint {
         Endpoint(self.0.next_endpoint.fetch_add(1, Ordering::AcqRel))
     }
-}
 
-impl Drop for Network {
-    fn drop(&mut self) {
-        self.0.send(Endpoint(0), Endpoint(0), Packet::Terminate);
-        self.1.take().map(JoinHandle::join).is_some();
+    pub fn poll(&self) {
+        self.0.poll();
     }
 }
 
+#[allow(unused)]
 impl NetworkImp {
+    pub fn poll(&self) {
+        while let Some((sender, receiver, packet)) = self.pop_packet() {
+            self.process_packet(sender, receiver, packet);
+        }
+    }
+
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
-        // trace!("send {:?} -> {:?}: {:?}", sender, receiver, packet);
-
-        self.queue.0.lock().unwrap().push_front((sender, receiver, packet));
-        self.queue.1.notify_one();
-    }
-
-    fn wait_and_process_packets(&self) -> bool {
-        self.wait_for_packets();
-        self.process_packets()
-    }
-
-    fn wait_for_packets(&self) {
-        let mut guard = self.queue.0.lock().unwrap();
-
-        while guard.is_empty() {
-            guard = self.queue.1.wait(guard).unwrap();
-        }
-    }
-
-    fn process_packets(&self) -> bool {
-        loop {
-            match self.pop_packet() {
-                Some((_, _, Packet::Terminate)) => return false,
-
-                Some((sender, receiver, packet)) => {
-                    self.process_packet(sender, receiver, packet);
-                }
-
-                None => return true,
-            }
-        }
+        self.queue.lock().unwrap().push_back((sender, receiver, packet));
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
-        let mut queue = self.queue.0.lock().unwrap();
-        queue.pop_back()
+        self.queue.lock().unwrap().pop_front()
     }
 
     fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
         if let Some(service) = self.find_service(receiver) {
             service.lock().unwrap().receive_packet(sender, packet);
         } else {
-            // Event sent to a non-existing peer.
+            // Packet was sent to a non-existing receiver.
             if let Some(failure) = packet.to_failure() {
                 self.send(receiver, sender, failure);
             }
@@ -154,24 +119,24 @@ impl NetworkImp {
 }
 
 /// Device represents a mock version of a real machine connected to the network.
+#[allow(unused)]
+#[derive(Clone)]
 pub struct Device(pub Arc<Mutex<ServiceImp>>);
 
+#[allow(unused)]
 impl Device {
     fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
         Device(Arc::new(Mutex::new(ServiceImp::new(network, config, endpoint))))
     }
 
     pub fn endpoint(&self) -> Endpoint {
-        self.imp().endpoint
-    }
-
-    fn imp(&self) -> MutexGuard<ServiceImp> {
-        self.0.lock().unwrap()
+        self.0.lock().unwrap().endpoint
     }
 }
 
+#[allow(unused)]
 pub struct ServiceImp {
-    network: Arc<NetworkImp>,
+    pub network: Arc<NetworkImp>,
     endpoint: Endpoint,
     pub peer_id: PeerId,
     config: Config,
@@ -183,6 +148,7 @@ pub struct ServiceImp {
     connections: Vec<(PeerId, Endpoint)>,
 }
 
+#[allow(unused)]
 impl ServiceImp {
     fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
         ServiceImp {
@@ -262,7 +228,6 @@ impl ServiceImp {
     }
 
     fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
-
         // TODO: filter packets
 
         match packet {
@@ -274,7 +239,6 @@ impl ServiceImp {
             Packet::ConnectFailure(peer_id) => self.handle_connect_failure(sender, peer_id),
             Packet::Message(data) => self.handle_message(sender, data),
             Packet::Disconnect => self.handle_disconnect(sender),
-            Packet::Terminate => unreachable!(),
         }
     }
 
@@ -446,6 +410,7 @@ pub struct Config {
     pub hard_coded_contacts: Vec<Endpoint>,
 }
 
+#[allow(unused)]
 impl Config {
     pub fn new() -> Self {
         Self::with_contacts(&[])
@@ -461,6 +426,7 @@ impl Config {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(usize);
 
+#[allow(unused)]
 #[derive(Clone, Debug)]
 enum Packet {
     BootstrapRequest(PeerId),
@@ -473,9 +439,9 @@ enum Packet {
 
     Message(Vec<u8>),
     Disconnect,
-    Terminate,
 }
 
+#[allow(unused)]
 impl Packet {
     // Given a request packet, returns the corresponding failure packet.
     fn to_failure(&self) -> Option<Packet> {
@@ -491,22 +457,23 @@ impl Packet {
 // don't need separate test and non-test version of `routing::Core::new`.
 
 thread_local! {
-    static CURRENT: RefCell<Option<Arc<Mutex<ServiceImp>>>> = RefCell::new(None)
+    static CURRENT: RefCell<Option<Device>> = RefCell::new(None)
 }
 
 /// Make the device current so it can be picked up by mock Services created
 /// inside the passed-in lambda.
+#[allow(unused)]
 pub fn make_current<F, R>(device: &Device, f: F) -> R where F: FnOnce() -> R {
     CURRENT.with(|current| {
-        *current.borrow_mut() = Some(device.0.clone());
+        *current.borrow_mut() = Some(device.clone());
         let result = f();
         *current.borrow_mut() = None;
         result
     })
 }
 
-pub fn get_current() -> Arc<Mutex<ServiceImp>> {
+pub fn get_current() -> Device {
     CURRENT.with(|current| {
-        current.borrow().as_ref().unwrap().clone()
+        current.borrow_mut().take().unwrap()
     })
 }
