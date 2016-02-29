@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.8.0]
+- Send a Disconnected event if the network connection is lost.
+- Log disconnecting clients.
+
 ## [0.7.1]
 - Several bug fixes.
 
