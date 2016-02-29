@@ -1365,8 +1365,7 @@ impl Core {
             // We have all close contacts now and know which bucket addresses to
             // request IDs from: All buckets up to the one containing the furthest
             // close node might still be not maximally filled.
-            // TODO: +1 should be enough here in theory.
-            for i in 0..(self.routing_table.furthest_close_bucket() + 3) {
+            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
                 if let Err(e) = self.request_bucket_ids(i) {
                     trace!("Failed to request public IDs from bucket {}: {:?}.", i, e);
                 }
