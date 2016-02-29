@@ -20,9 +20,6 @@
 use maidsafe_utilities::event_sender::{MaidSafeObserver, MaidSafeEventCategory};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
-
-use test_utils::recv_with_timeout;
 
 use super::crust::{CrustEventSender, Event, Service};
 use super::support::{Config, Network};
@@ -43,8 +40,6 @@ fn get_event_sender()
 
 #[test]
 fn start_two_services_bootstrap_communicate_exit() {
-    let timeout = Duration::from_millis(500);
-
     let network = Network::new();
     let endpoint0 = network.gen_endpoint();
     let endpoint1 = network.gen_endpoint();
@@ -64,7 +59,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_0, timeout));
+        let event_rxd = unwrap_result!(event_rx_0.try_recv());
         match event_rxd {
             Event::BootstrapFinished => (),
             _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -80,7 +75,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // let service_1 finish bootstrap - it should bootstrap off service_0
     let id_0 = {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+        let event_rxd = unwrap_result!(event_rx_1.try_recv());
         match event_rxd {
             Event::BootstrapConnect(their_id) => their_id,
             _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -89,7 +84,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // now service_1 should get BootstrapFinished
     {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+        let event_rxd = unwrap_result!(event_rx_1.try_recv());
         match event_rxd {
             Event::BootstrapFinished => (),
             _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -97,7 +92,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     }
 
     // service_0 should have received service_1's bootstrap connection by now
-    let id_1 = match unwrap_result!(recv_with_timeout(&event_rx_0, timeout)) {
+    let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
         Event::BootstrapAccept(their_id) => their_id,
         _ => panic!("0 Should have got a new connection from 1."),
     };
@@ -111,7 +106,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
         // 1 should rx data
         let (data_rxd, peer_id) = {
-            let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+            let event_rxd = unwrap_result!(event_rx_1.try_recv());
             match event_rxd {
                 Event::NewMessage(their_id, msg) => (msg, their_id),
                 _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -129,7 +124,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
         // 0 should rx data
         let (data_rxd, peer_id) = {
-            let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_0, timeout));
+            let event_rxd = unwrap_result!(event_rx_0.try_recv());
             match event_rxd {
                 Event::NewMessage(their_id, msg) => (msg, their_id),
                 _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -142,7 +137,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     assert!(service_0.disconnect(&id_1));
 
-    match unwrap_result!(recv_with_timeout(&event_rx_1, timeout)) {
+    match unwrap_result!(event_rx_1.try_recv()) {
         Event::LostPeer(id) => assert_eq!(id, id_0),
         e => panic!("Received unexpected event: {:?}", e),
     }
@@ -150,8 +145,6 @@ fn start_two_services_bootstrap_communicate_exit() {
 
 #[test]
 fn start_two_services_rendezvous_connect() {
-    let timeout = Duration::from_millis(500);
-
     let network = Network::new();
     let device0 = network.new_device(None, None);
     let device1 = network.new_device(None, None);
@@ -163,7 +156,7 @@ fn start_two_services_rendezvous_connect() {
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_0, timeout));
+        let event_rxd = unwrap_result!(event_rx_0.try_recv());
         match event_rxd {
             Event::BootstrapFinished => (),
             _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -174,7 +167,7 @@ fn start_two_services_rendezvous_connect() {
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+        let event_rxd = unwrap_result!(event_rx_1.try_recv());
         match event_rxd {
             Event::BootstrapFinished => (),
             _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -185,7 +178,7 @@ fn start_two_services_rendezvous_connect() {
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_0, timeout));
+        let event_rxd = unwrap_result!(event_rx_0.try_recv());
         match event_rxd {
             Event::ConnectionInfoPrepared(cir) => {
                 assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
@@ -197,7 +190,7 @@ fn start_two_services_rendezvous_connect() {
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_1 = {
-        let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+        let event_rxd = unwrap_result!(event_rx_1.try_recv());
         match event_rxd {
             Event::ConnectionInfoPrepared(cir) => {
                 assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
@@ -213,12 +206,12 @@ fn start_two_services_rendezvous_connect() {
     service_0.connect(our_ci_0, their_ci_1);
     service_1.connect(our_ci_1, their_ci_0);
 
-    let id_1 = match unwrap_result!(recv_with_timeout(&event_rx_0, timeout)) {
+    let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
         Event::NewPeer(Ok(()), their_id) => their_id,
         m => panic!("0 Should have connected to 1. Got message {:?}", m),
     };
 
-    let id_0 = match unwrap_result!(recv_with_timeout(&event_rx_1, timeout)) {
+    let id_0 = match unwrap_result!(event_rx_1.try_recv()) {
         Event::NewPeer(Ok(()), their_id) => their_id,
         m => panic!("1 Should have connected to 0. Got message {:?}", m),
     };
@@ -230,7 +223,7 @@ fn start_two_services_rendezvous_connect() {
 
         // 1 should rx data
         let (data_rxd, peer_id) = {
-            let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_1, timeout));
+            let event_rxd = unwrap_result!(event_rx_1.try_recv());
             match event_rxd {
                 Event::NewMessage(their_id, msg) => (msg, their_id),
                 _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -248,7 +241,7 @@ fn start_two_services_rendezvous_connect() {
 
         // 0 should rx data
         let (data_rxd, peer_id) = {
-            let event_rxd = unwrap_result!(recv_with_timeout(&event_rx_0, timeout));
+            let event_rxd = unwrap_result!(event_rx_0.try_recv());
             match event_rxd {
                 Event::NewMessage(their_id, msg) => (msg, their_id),
                 _ => panic!("Received unexpected event: {:?}", event_rxd),
@@ -262,8 +255,6 @@ fn start_two_services_rendezvous_connect() {
 
 #[test]
 fn drop() {
-    let timeout = Duration::from_millis(500);
-
     let network = Network::new();
     let device0 = network.new_device(None, None);
 
@@ -278,7 +269,7 @@ fn drop() {
     unwrap_result!(service_0.start_listening_tcp());
 
     // Let service_0 finish bootstrap - it should not find any peer.
-    match unwrap_result!(recv_with_timeout(&event_rx_0, timeout)) {
+    match unwrap_result!(event_rx_0.try_recv()) {
         Event::BootstrapFinished => (),
         event_rxd => panic!("Received unexpected event: {:?}", event_rxd),
     }
@@ -287,26 +278,26 @@ fn drop() {
     unwrap_result!(service_1.start_listening_tcp());
 
     // Let service_1 finish bootstrap - it should bootstrap off service_0.
-    let id_0 = match unwrap_result!(recv_with_timeout(&event_rx_1, timeout)) {
+    let id_0 = match unwrap_result!(event_rx_1.try_recv()) {
         Event::BootstrapConnect(their_id) => their_id,
         event => panic!("Received unexpected event: {:?}", event),
     };
 
     // Now service_1 should get BootstrapFinished.
-    match unwrap_result!(recv_with_timeout(&event_rx_1, timeout)) {
+    match unwrap_result!(event_rx_1.try_recv()) {
         Event::BootstrapFinished => (),
         event => panic!("Received unexpected event: {:?}", event),
     }
 
     // service_0 should have received service_1's bootstrap connection by now.
-    match unwrap_result!(recv_with_timeout(&event_rx_0, timeout)) {
+    match unwrap_result!(event_rx_0.try_recv()) {
         Event::BootstrapAccept(..) => (),
         _ => panic!("0 Should have got a new connection from 1."),
     };
 
     // Dropping service_0 should make service_1 receive a LostPeer event.
     mem::drop(service_0);
-    match unwrap_result!(recv_with_timeout(&event_rx_1, timeout)) {
+    match unwrap_result!(event_rx_1.try_recv()) {
         Event::LostPeer(id) => assert_eq!(id, id_0),
         event => panic!("Received unexpected event: {:?}", event),
     }
