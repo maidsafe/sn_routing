@@ -55,7 +55,7 @@
 //! to the network through any node, and exchange public keys with it. That node becomes a
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
-//! ```
+//! ```no_run
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
@@ -74,7 +74,7 @@
 //!
 //! Creating a node looks even simpler:
 //!
-//! ```
+//! ```no_run
 //! use std::sync::mpsc;
 //! use routing::{Node, Event};
 //!
