@@ -952,9 +952,7 @@ impl Core {
         match (msg_content, msg_src, msg_dst) {
             (ResponseContent::GetNetworkName { relocated_id, },
              Authority::NaeManager(_),
-             Authority::Client { client_key, proxy_node_name, }) => {
-                self.handle_get_network_name_response(relocated_id, client_key, proxy_node_name)
-            }
+             Authority::Client { .. }) => self.handle_get_network_name_response(relocated_id),
             (ResponseContent::GetPublicId { public_id, },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
@@ -1359,6 +1357,10 @@ impl Core {
 
         self.state = State::Node;
 
+        if self.routing_table.len() == GROUP_SIZE {
+            let _ = self.event_sender.send(Event::Connected);
+        }
+
         if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
             trace!("Routing table reached group size. Dropping proxy.");
             try!(self.drop_proxies());
@@ -1549,22 +1551,19 @@ impl Core {
     }
 
     // Received by A; From X -> A
-    fn handle_get_network_name_response(&mut self,
-                                        relocated_id: PublicId,
-                                        client_key: sign::PublicKey,
-                                        proxy_name: XorName)
+    fn handle_get_network_name_response(&mut self, relocated_id: PublicId)
                                         -> Result<(), RoutingError> {
         self.set_self_node_name(*relocated_id.name());
+        self.request_close_group_as_client()
+    }
 
+    fn request_close_group_as_client(&mut self) -> Result<(), RoutingError> {
         let request_content = RequestContent::GetCloseGroup;
 
         // From A -> Y
         let request_msg = RequestMessage {
-            src: Authority::Client {
-                client_key: client_key,
-                proxy_node_name: proxy_name,
-            },
-            dst: Authority::NaeManager(*relocated_id.name()),
+            src: try!(self.get_client_authority()),
+            dst: Authority::NaeManager(*self.full_id.public_id().name()),
             content: request_content,
         };
 
@@ -2036,8 +2035,11 @@ impl Core {
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
         if let Some((&public_key, _)) = self.client_by_peer_id(peer_id) {
             if let Some(info) = self.client_map.remove(&public_key) {
-                if !info.client_restriction {
-                    trace!("Joining node dropped. {} remaining.",
+                if info.client_restriction {
+                    trace!("Client disconnected: {:?}", peer_id);
+                } else {
+                    trace!("Joining node {:?} dropped. {} remaining.",
+                           peer_id,
                            self.joining_nodes_num());
                 }
             }
@@ -2046,10 +2048,15 @@ impl Core {
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if let Some(public_id) = self.proxy_map.remove(peer_id) {
-            trace!("Lost bootstrap connection to {:?}.", public_id.name());
-        } else if self.state == State::Bootstrapping {
-            trace!("Lost connection to candidate for proxy node {:?}", peer_id);
-            self.retry_bootstrap_with_blacklist(peer_id);
+            trace!("Lost bootstrap connection to {:?} (peer ID {:?}).",
+            public_id.name(),
+            peer_id);
+        }
+        if self.proxy_map.is_empty() {
+            trace!("Lost connection to last proxy node {:?}", peer_id);
+            if self.client_restriction || self.routing_table.len() < GROUP_SIZE {
+                let _ = self.event_sender.send(Event::Disconnected);
+            }
         }
     }
 
@@ -2071,6 +2078,14 @@ impl Core {
                                 {:?}.",
                                bucket_index,
                                e);
+                    }
+                }
+                if self.routing_table.len() < GROUP_SIZE {
+                    if self.proxy_map.is_empty() {
+                        trace!("Routing table size fell below {}.", GROUP_SIZE);
+                        let _ = self.event_sender.send(Event::Disconnected);
+                    } else {
+                        let _ = self.request_close_group_as_client();
                     }
                 }
             }
