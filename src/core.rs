@@ -2035,8 +2035,11 @@ impl Core {
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
         if let Some((&public_key, _)) = self.client_by_peer_id(peer_id) {
             if let Some(info) = self.client_map.remove(&public_key) {
-                if !info.client_restriction {
-                    trace!("Joining node dropped. {} remaining.",
+                if info.client_restriction {
+                    trace!("Client disconnected: {:?}", peer_id);
+                } else {
+                    trace!("Joining node {:?} dropped. {} remaining.",
+                           peer_id,
                            self.joining_nodes_num());
                 }
             }
@@ -2045,7 +2048,9 @@ impl Core {
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if let Some(public_id) = self.proxy_map.remove(peer_id) {
-            trace!("Lost bootstrap connection to {:?}.", public_id.name());
+            trace!("Lost bootstrap connection to {:?} (peer ID {:?}).",
+            public_id.name(),
+            peer_id);
         }
         if self.proxy_map.is_empty() {
             trace!("Lost connection to last proxy node {:?}", peer_id);
