@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.7.1]
+- Several bug fixes.
+
 ## [0.7.0]
 - Migrate to the new Crust API.
 - Add some timeouts to check for stale connections.
