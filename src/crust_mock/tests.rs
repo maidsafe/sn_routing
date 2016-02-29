@@ -33,7 +33,7 @@ fn get_event_sender()
         Receiver<Event>)
 {
     let (category_tx, category_rx) = mpsc::channel();
-    let event_category = MaidSafeEventCategory::CrustEvent;
+    let event_category = MaidSafeEventCategory::Crust;
     let (event_tx, event_rx) = mpsc::channel();
 
     (MaidSafeObserver::new(event_tx, event_category, category_tx),
