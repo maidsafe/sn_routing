@@ -21,7 +21,8 @@ use accumulator::Accumulator;
 use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
 
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
+use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service,
+                        TheirConnectionInfo};
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
@@ -29,7 +30,6 @@ use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, 
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
-use maidsafe_utilities::thread::RaiiThreadJoiner;
 use message_filter::MessageFilter;
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
@@ -129,6 +129,22 @@ impl ClientInfo {
     }
 }
 
+struct DebugStats {
+    cur_routing_table_size: usize,
+    cur_client_num: usize,
+    cumulative_client_num: usize,
+}
+
+impl DebugStats {
+    fn new() -> Self {
+        DebugStats {
+            cur_routing_table_size: 0,
+            cur_client_num: 0,
+            cumulative_client_num: 0,
+        }
+    }
+}
+
 /// An interface for clients and nodes that handles routing and connecting to the network.
 ///
 ///
@@ -188,6 +204,7 @@ pub struct Core {
     // for Core
     client_restriction: bool,
     is_listening: bool,
+    category_rx: mpsc::Receiver<MaidSafeEventCategory>,
     crust_rx: mpsc::Receiver<crust::Event>,
     action_rx: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
@@ -216,6 +233,8 @@ pub struct Core {
     our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
     their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
     get_request_count: usize,
+
+    debug_stats: DebugStats,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -225,8 +244,7 @@ impl Core {
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
-        -> Result<(RoutingActionSender, RaiiThreadJoiner), RoutingError>
-    {
+               -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
@@ -255,147 +273,192 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
-        let joiner = thread!("RoutingThread", move || {
-            let mut core = Core {
-                crust_service: crust_service,
-                client_restriction: client_restriction,
-                is_listening: false,
-                crust_rx: crust_rx,
-                action_rx: action_rx,
-                event_sender: event_sender,
-                crust_sender: crust_sender,
-                timer: Timer::new(action_sender2),
-                signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                // TODO Needs further discussion on interval
-                bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
-                node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-                message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
-                grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
-                full_id: full_id,
-                state: State::Disconnected,
-                routing_table: RoutingTable::new(our_info),
-                proxy_candidates: Vec::new(),
-                proxy_map: HashMap::new(),
-                client_map: HashMap::new(),
-                data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-                connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-                our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-                their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-                get_request_count: 0,
-            };
+        let core = Core {
+            crust_service: crust_service,
+            client_restriction: client_restriction,
+            is_listening: false,
+            category_rx: category_rx,
+            crust_rx: crust_rx,
+            action_rx: action_rx,
+            event_sender: event_sender,
+            crust_sender: crust_sender,
+            timer: Timer::new(action_sender2),
+            signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            // TODO Needs further discussion on interval
+            bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
+            node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+            message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
+            grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            full_id: full_id,
+            state: State::Disconnected,
+            routing_table: RoutingTable::new(our_info),
+            proxy_candidates: Vec::new(),
+            proxy_map: HashMap::new(),
+            client_map: HashMap::new(),
+            data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
+            connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+            our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+            their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+            get_request_count: 0,
+            debug_stats: DebugStats::new(),
+        };
 
-            core.run(category_rx);
-        });
-
-        Ok((action_sender, RaiiThreadJoiner::new(joiner)))
+        (action_sender, core)
     }
 
-    /// Run the event loop for sending and receiving messages.
-    pub fn run(&mut self, category_rx: mpsc::Receiver<MaidSafeEventCategory>) {
-        let mut cur_routing_table_size = 0;
-        let mut cur_client_num = 0;
-        let mut cumulative_client_num = 0;
-        for it in category_rx.iter() {
-            match it {
-                MaidSafeEventCategory::Routing => {
-                    if let Ok(action) = self.action_rx.try_recv() {
-                        match action {
-                            Action::NodeSendMessage { content, result_tx, } => {
-                                if result_tx.send(match self.send_message(content) {
-                                                Err(RoutingError::Interface(err)) => Err(err),
-                                                Err(_err) => Ok(()),
-                                                Ok(()) => Ok(()),
-                                            })
-                                            .is_err() {
-                                    return;
-                                }
-                            }
-                            Action::ClientSendRequest { content, dst, result_tx, } => {
-                                if result_tx.send(if let Ok(src) = self.get_client_authority() {
-                                                let request_msg = RequestMessage {
-                                                    content: content,
-                                                    src: src,
-                                                    dst: dst,
-                                                };
+    /// Wait for event and process it. Returns true if an event was
+    /// received and processed, false if core was terminated.
+    #[allow(unused)]
+    pub fn wait(&mut self) -> bool {
+        match self.category_rx.recv() {
+            Ok(category) => self.handle_event(category),
+            _ => false,
+        }
+    }
 
-                                                match self.send_request(request_msg) {
-                                                    Err(RoutingError::Interface(err)) => Err(err),
-                                                    Err(_err) => Ok(()),
-                                                    Ok(()) => Ok(()),
-                                                }
-                                            } else {
-                                                Err(InterfaceError::NotConnected)
-                                            })
-                                            .is_err() {
-                                    return;
-                                }
-                            }
-                            Action::CloseGroup { name, result_tx, } => {
-                                let close_group = self.routing_table
-                                                      .close_nodes(&name)
-                                                      .map(|infos| {
-                                                          infos.iter()
-                                                               .map(NodeInfo::name)
-                                                               .cloned()
-                                                               .collect()
-                                                      });
+    /// If there is an event in the queue, processes it and returns true.
+    /// otherwise returns false. Never blocks.
+    #[allow(unused)]
+    pub fn poll(&mut self) -> bool {
+        match self.category_rx.try_recv() {
+            Ok(category) => self.handle_event(category),
+            _ => false,
+        }
+    }
 
-                                if result_tx.send(close_group).is_err() {
-                                    return;
-                                }
-                            }
+    /// Run the event loop for sending and receiving messages. Blocks until
+    /// the core is terminated, so call it in a separate thread.
+    pub fn run(&mut self) {
+        // Note: can't use self.category_rx.iter()... because of borrow checker.
+        loop {
+            let run = self.category_rx
+                          .recv()
+                          .map(|category| self.handle_event(category))
+                          .unwrap_or(false);
 
-                            Action::Name { result_tx, } => {
-                                if result_tx.send(*self.name()).is_err() {
-                                    return;
-                                }
-                            }
-
-                            Action::Timeout(token) => self.handle_timeout(token),
-
-                            Action::Terminate => {
-                                break;
-                            }
-                        }
-                    }
-                }
-                MaidSafeEventCategory::Crust => {
-                    if let Ok(crust_event) = self.crust_rx.try_recv() {
-                        self.handle_crust_event(crust_event);
-                    }
-                }
-            } // Category Match
-
-            if self.state == State::Node {
-                let old_client_num = cur_client_num;
-                cur_client_num = self.client_map.len() - self.joining_nodes_num();
-                if cur_client_num != old_client_num {
-                    if cur_client_num > old_client_num {
-                        cumulative_client_num += cur_client_num - old_client_num;
-                    }
-                    trace!("{:?} - Connected clients: {}, cumulative: {}",
-                           self,
-                           cur_client_num,
-                           cumulative_client_num);
-                }
+            if !run {
+                break;
             }
-            if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
-                cur_routing_table_size = self.routing_table.len();
+        }
+    }
 
-                trace!(" ---------------------------------------");
-                trace!("| {:?} - Routing Table size: {:3} |",
+    fn update_debug_stats(&mut self) {
+        if self.state == State::Node {
+            let old_client_num = self.debug_stats.cur_client_num;
+            self.debug_stats.cur_client_num = self.client_map.len() - self.joining_nodes_num();
+            if self.debug_stats.cur_client_num != old_client_num {
+                if self.debug_stats.cur_client_num > old_client_num {
+                    self.debug_stats.cumulative_client_num += self.debug_stats.cur_client_num -
+                                                              old_client_num;
+                }
+                trace!("{:?} - Connected clients: {}, cumulative: {}",
                        self,
-                       self.routing_table.len());
-                // self.routing_table.our_close_group().iter().all(|elt| {
-                //     trace!("Name: {:?} Connections {:?}  -- {:?}",
-                //            elt.public_id.name(),
-                //            elt.connections.len(),
-                //            elt.connections);
-                //     true
-                // });
-                trace!(" ---------------------------------------");
+                       self.debug_stats.cur_client_num,
+                       self.debug_stats.cumulative_client_num);
             }
-        } // Category Rx
+        }
+
+        if self.state == State::Node &&
+           self.debug_stats.cur_routing_table_size != self.routing_table.len() {
+            self.debug_stats.cur_routing_table_size = self.routing_table.len();
+
+            trace!(" ---------------------------------------");
+            trace!("| {:?} - Routing Table size: {:3} |",
+                   self,
+                   self.routing_table.len());
+            // self.routing_table.our_close_group().iter().all(|elt| {
+            //     trace!("Name: {:?} Connections {:?}  -- {:?}",
+            //            elt.public_id.name(),
+            //            elt.connections.len(),
+            //            elt.connections);
+            //     true
+            // });
+            trace!(" ---------------------------------------");
+        }
+    }
+
+    fn handle_event(&mut self, category: MaidSafeEventCategory) -> bool {
+        match category {
+            MaidSafeEventCategory::Routing => {
+                if let Ok(action) = self.action_rx.try_recv() {
+                    if !self.handle_action(action) {
+                        return false;
+                    }
+                }
+            }
+            MaidSafeEventCategory::Crust => {
+                if let Ok(crust_event) = self.crust_rx.try_recv() {
+                    self.handle_crust_event(crust_event);
+                }
+            }
+        } // Category Match
+
+        self.update_debug_stats();
+
+        true
+    }
+
+    fn handle_action(&mut self, action: Action) -> bool {
+        match action {
+            Action::NodeSendMessage { content, result_tx, } => {
+                if result_tx.send(match self.send_message(content) {
+                                Err(RoutingError::Interface(err)) => Err(err),
+                                Err(_err) => Ok(()),
+                                Ok(()) => Ok(()),
+                            })
+                            .is_err() {
+                    return false;
+                }
+            }
+            Action::ClientSendRequest { content, dst, result_tx, } => {
+                if result_tx.send(if let Ok(src) = self.get_client_authority() {
+                                let request_msg = RequestMessage {
+                                    content: content,
+                                    src: src,
+                                    dst: dst,
+                                };
+
+                                match self.send_request(request_msg) {
+                                    Err(RoutingError::Interface(err)) => Err(err),
+                                    Err(_err) => Ok(()),
+                                    Ok(()) => Ok(()),
+                                }
+                            } else {
+                                Err(InterfaceError::NotConnected)
+                            })
+                            .is_err() {
+                    return false;
+                }
+            }
+            Action::CloseGroup { name, result_tx, } => {
+                let close_group = self.routing_table
+                                      .close_nodes(&name)
+                                      .map(|infos| {
+                                          infos.iter()
+                                               .map(NodeInfo::name)
+                                               .cloned()
+                                               .collect()
+                                      });
+
+                if result_tx.send(close_group).is_err() {
+                    return false;
+                }
+            }
+
+            Action::Name { result_tx, } => {
+                if result_tx.send(*self.name()).is_err() {
+                    return false;
+                }
+            }
+
+            Action::Timeout(token) => self.handle_timeout(token),
+
+            Action::Terminate => {
+                return false;
+            }
+        }
+
+        true
     }
 
     fn handle_crust_event(&mut self, crust_event: crust::Event) {
@@ -429,7 +492,8 @@ impl Core {
             let _ = self.client_identify(peer_id);
             return;
         } else {
-            warn!("Got more than one bootstrap connection. Disconnecting {:?}.", peer_id);
+            warn!("Got more than one bootstrap connection. Disconnecting {:?}.",
+                  peer_id);
             self.crust_service.disconnect(&peer_id);
         }
     }
@@ -465,7 +529,7 @@ impl Core {
                     // _before_ the NewPeer event.
                     if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
                         warn!("Received NewPeer from {:?}, but node {:?} is already in our \
-                              routing table.",
+                               routing table.",
                               peer_id,
                               node.name());
                         return;
@@ -475,7 +539,10 @@ impl Core {
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
-                    error!("{:?} Failed to connect to peer {:?}: {:?}", self, peer_id, err);
+                    error!("{:?} Failed to connect to peer {:?}: {:?}",
+                           self,
+                           peer_id,
+                           err);
                 }
             }
         }
@@ -996,8 +1063,9 @@ impl Core {
         debug!("{:?} Finished bootstrapping.", self);
         // If we have no connections, we should start listening to allow incoming connections
         if self.state == State::Disconnected {
-            debug!("{:?} Bootstrap finished with no connections. Start Listening to allow incoming \
-                    connections.", self);
+            debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
+                    incoming connections.",
+                   self);
             self.start_listening();
         }
     }
@@ -1271,7 +1339,8 @@ impl Core {
                                      .insert(*public_id.signing_public_key(),
                                              ClientInfo::new(peer_id, client_restriction)) {
             debug!("{:?} Found previous Crust ID associated with client key - Dropping {:?}",
-                   self, prev_info.peer_id);
+                   self,
+                   prev_info.peer_id);
             self.crust_service.disconnect(&prev_info.peer_id);
         }
 
@@ -1321,7 +1390,9 @@ impl Core {
             return Ok(());
         }
 
-        trace!("{:?} Handling NodeIdentify from {:?}.", self, public_id.name());
+        trace!("{:?} Handling NodeIdentify from {:?}.",
+               self,
+               public_id.name());
         if !self.node_in_cache(&public_id, &peer_id) {
             self.crust_service.disconnect(&peer_id);
             return Ok(());
@@ -1344,7 +1415,9 @@ impl Core {
 
         match self.routing_table.add(info) {
             None => {
-                error!("{:?} Peer was not added to the routing table: {:?}", self, peer_id);
+                error!("{:?} Peer was not added to the routing table: {:?}",
+                       self,
+                       peer_id);
                 self.crust_service.disconnect(&peer_id);
                 let _ = self.node_id_cache.remove(&name);
                 return Ok(());
@@ -1370,14 +1443,18 @@ impl Core {
         }
 
         if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
-            trace!("{:?} Routing table reached group size. Dropping proxy.", self);
+            trace!("{:?} Routing table reached group size. Dropping proxy.",
+                   self);
             try!(self.drop_proxies());
             // We have all close contacts now and know which bucket addresses to
             // request IDs from: All buckets up to the one containing the furthest
             // close node might still be not maximally filled.
             for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
                 if let Err(e) = self.request_bucket_ids(i) {
-                    trace!("{:?} Failed to request public IDs from bucket {}: {:?}.", self, i, e);
+                    trace!("{:?} Failed to request public IDs from bucket {}: {:?}.",
+                           self,
+                           i,
+                           e);
                 }
             }
         }
@@ -1680,7 +1757,8 @@ impl Core {
                              })
             }
             None => {
-                warn!("Client with key {:?} not found in node_id_cache.", client_key);
+                warn!("Client with key {:?} not found in node_id_cache.",
+                      client_key);
                 Err(RoutingError::RejectedPublicId)
             }
         }
@@ -1774,7 +1852,8 @@ impl Core {
                     content: response_content,
                 }
             } else {
-                error!("Cannot answer GetPublicId: {:?} not found in the routing table.", dst_name);
+                error!("Cannot answer GetPublicId: {:?} not found in the routing table.",
+                       dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
@@ -1820,7 +1899,8 @@ impl Core {
                 }
             } else {
                 error!("Cannot answer GetPublicIdWithConnectionInfo: {:?} not found in the \
-                       routing table.", dst_name);
+                        routing table.",
+                       dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
@@ -1914,7 +1994,8 @@ impl Core {
         let their_connection_info = try!(serialisation::deserialise(&serialised_connection_info));
 
         if let Some(our_connection_info) = self.our_connection_info_map.remove(&their_public_id) {
-            trace!("Received connection info. Trying to connect to {:?}.", their_public_id.name());
+            trace!("Received connection info. Trying to connect to {:?}.",
+                   their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
             Ok(())
         } else {
@@ -2133,10 +2214,13 @@ fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
 fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
     use std::mem;
 
-    let _ = mem::replace(service, match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
-        Ok(service) => service,
-        Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
-    });
+    let _ = mem::replace(service,
+                         match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
+                             Ok(service) => service,
+                             Err(err) => {
+                                 panic!(format!("Unable to restart crust::Service {:?}", err))
+                             }
+                         });
 }
 
 #[cfg(feature = "use-mock-crust")]
