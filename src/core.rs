@@ -21,7 +21,7 @@ use accumulator::Accumulator;
 use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
 
 #[cfg(feature = "use-mock-crust")]
-use crust_mock::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
+use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
