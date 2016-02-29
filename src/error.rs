@@ -19,6 +19,7 @@ use action::Action;
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
+use xor_name::XorName;
 
 #[derive(Debug)]
 /// InterfaceError.
@@ -97,7 +98,7 @@ pub enum RoutingError {
     /// Asymmetric Decryption Failure
     AsymmetricDecryptionFailure,
     /// Unknown Connection
-    UnknownConnection,
+    UnknownConnection(XorName),
     /// The message is not getting closer to the target
     DirectionCheckFailed,
     /// Density mismatch

@@ -210,6 +210,7 @@ pub struct Core {
     connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
     our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
     their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
+    get_request_count: usize,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -224,13 +225,13 @@ impl Core {
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
 
-        let routing_event_category = MaidSafeEventCategory::RoutingEvent;
+        let routing_event_category = MaidSafeEventCategory::Routing;
         let action_sender = RoutingActionSender::new(action_tx,
                                                      routing_event_category,
                                                      category_tx.clone());
         let action_sender2 = action_sender.clone();
 
-        let crust_event_category = MaidSafeEventCategory::CrustEvent;
+        let crust_event_category = MaidSafeEventCategory::Crust;
         let crust_sender = crust::CrustEventSender::new(crust_tx,
                                                         crust_event_category,
                                                         category_tx);
@@ -275,6 +276,7 @@ impl Core {
                 connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
                 our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
                 their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+                get_request_count: 0,
             };
 
             core.run(category_rx);
@@ -286,9 +288,11 @@ impl Core {
     /// Run the event loop for sending and receiving messages.
     pub fn run(&mut self, category_rx: mpsc::Receiver<MaidSafeEventCategory>) {
         let mut cur_routing_table_size = 0;
+        let mut cur_client_num = 0;
+        let mut cumulative_client_num = 0;
         for it in category_rx.iter() {
             match it {
-                MaidSafeEventCategory::RoutingEvent => {
+                MaidSafeEventCategory::Routing => {
                     if let Ok(action) = self.action_rx.try_recv() {
                         match action {
                             Action::NodeSendMessage { content, result_tx, } => {
@@ -350,13 +354,26 @@ impl Core {
                         }
                     }
                 }
-                MaidSafeEventCategory::CrustEvent => {
+                MaidSafeEventCategory::Crust => {
                     if let Ok(crust_event) = self.crust_rx.try_recv() {
                         self.handle_crust_event(crust_event);
                     }
                 }
             } // Category Match
 
+            if self.state == State::Node {
+                let old_client_num = cur_client_num;
+                cur_client_num = self.client_map.len() - self.joining_nodes_num();
+                if cur_client_num != old_client_num {
+                    if cur_client_num > old_client_num {
+                        cumulative_client_num += cur_client_num - old_client_num;
+                    }
+                    trace!("{:?} - Connected clients: {}, cumulative: {}",
+                           self,
+                           cur_client_num,
+                           cumulative_client_num);
+                }
+            }
             if self.state == State::Node && cur_routing_table_size != self.routing_table.len() {
                 cur_routing_table_size = self.routing_table.len();
                 trace!(" ---------------------------------------");
@@ -398,12 +415,16 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        trace!("Received BootstrapConnect from {:?}.", peer_id);
+        self.crust_service.stop_bootstrap();
         if self.state == State::Disconnected {
+            trace!("Received BootstrapConnect from {:?}.", peer_id);
             // Established connection. Pending Validity checks
             self.state = State::Bootstrapping;
             let _ = self.client_identify(peer_id);
             return;
+        } else {
+            warn!("Got more than one bootstrap connection. Disconnecting {:?}.", peer_id);
+            self.crust_service.disconnect(&peer_id);
         }
     }
 
@@ -432,12 +453,20 @@ impl Core {
         } else {
             match result {
                 Ok(()) => {
-                    trace!("Received NewPeer with Ok from {:?}.", peer_id);
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
-                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
-                        let _ = self.node_identify(peer_id);
+                    // TODO(afck): Make sure it cannot happen that we receive their NodeIdentify
+                    // _before_ the NewPeer event.
+                    if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
+                        warn!("Received NewPeer from {:?}, but node {:?} is already in our \
+                              routing table.",
+                              peer_id,
+                              node.name());
+                        return;
                     }
+                    trace!("Received NewPeer with Ok from {:?}. Sending NodeIdentify.",
+                           peer_id);
+                    let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
                     error!("Failed to connect to peer {:?}: {:?}", peer_id, err);
@@ -479,13 +508,9 @@ impl Core {
 
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
+            trace!("Trying to connect to {:?}.", their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
-            if self.our_connection_info_map.contains_key(&their_public_id) {
-                error!("Prepared more than one connection info for {:?}.",
-                       their_public_id.name());
-                return;
-            }
             let _ = self.our_connection_info_map.insert(their_public_id, our_connection_info);
         }
 
@@ -518,6 +543,7 @@ impl Core {
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
         if self.state == State::Node {
+            let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.get(hop_msg.name()) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
@@ -526,9 +552,25 @@ impl Core {
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
                 }
+                if let RoutingMessage::Request(RequestMessage {
+                    content: RequestContent::Get(_, _),
+                    ..
+                }) = *hop_msg.content().content() {
+                    relayed_get_request = true;
+                }
+            } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
+                try!(hop_msg.verify(pub_id.signing_public_key()));
             } else {
-                // TODO drop peer?
-                return Err(RoutingError::UnknownConnection);
+                // TODO: Drop peer?
+                // error!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
+                //        hop_msg.name(),
+                //        peer_id);
+                // self.crust_service.disconnect(&peer_id);
+                return Err(RoutingError::UnknownConnection(*hop_msg.name()));
+            }
+            if relayed_get_request {
+                self.get_request_count += 1;
+                trace!("Total get request count: {}", self.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1201,11 +1243,11 @@ impl Core {
         self.remove_stale_joining_nodes();
 
         if client_restriction {
-            if self.routing_table.len() < GROUP_SIZE {
+            if self.routing_table.len() < GROUP_SIZE - 1 {
                 trace!("Client {:?} rejected: Routing table has {} entries. {} required.",
                        public_id.name(),
                        self.routing_table.len(),
-                       GROUP_SIZE);
+                       GROUP_SIZE - 1);
                 return self.bootstrap_deny(peer_id);
             }
         } else {
@@ -1362,6 +1404,9 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
+        if bucket_index >= xor_name::XOR_NAME_BITS {
+            return Ok(());
+        }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
         let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
         let request_msg = RequestMessage {
@@ -1631,7 +1676,10 @@ impl Core {
                                  proxy_node_name: proxy_name,
                              })
             }
-            None => Err(RoutingError::RejectedPublicId),
+            None => {
+                warn!("Client with key {:?} not found in node_id_cache.", client_key);
+                Err(RoutingError::RejectedPublicId)
+            }
         }
     }
 
@@ -1711,7 +1759,7 @@ impl Core {
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
         if !self.routing_table.is_close(&dst_name) {
-            error!("Handling RejectedPublicId, but not close to the target!");
+            error!("Handling GetPublicId, but not close to the target!");
             Err(RoutingError::RejectedPublicId)
         } else {
             let msg = if let Some(info) = self.routing_table.get(&dst_name) {
@@ -1723,6 +1771,7 @@ impl Core {
                     content: response_content,
                 }
             } else {
+                error!("Cannot answer GetPublicId: {:?} not found in the routing table.", dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
@@ -1751,6 +1800,7 @@ impl Core {
                                                  dst_name: XorName)
                                                  -> Result<(), RoutingError> {
         if !self.routing_table.is_close(&dst_name) {
+            error!("Handling GetPublicIdWithConnectionInfo, but not close to the target!");
             Err(RoutingError::RejectedPublicId)
         } else {
             let msg = if let Some(info) = self.routing_table.get(&dst_name) {
@@ -1766,6 +1816,8 @@ impl Core {
                     content: response_content,
                 }
             } else {
+                error!("Cannot answer GetPublicIdWithConnectionInfo: {:?} not found in the \
+                       routing table.", dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
 
@@ -1796,8 +1848,8 @@ impl Core {
                             dst: Authority)
                             -> Result<(), RoutingError> {
         if let Some(peer_id) = self.get_proxy_or_client_peer_id(&their_public_id) {
-            try!(self.handle_node_identify(their_public_id, peer_id));
-            self.node_identify(peer_id)
+            try!(self.node_identify(peer_id));
+            self.handle_node_identify(their_public_id, peer_id)
         } else if !self.routing_table.contains(their_public_id.name()) &&
            self.routing_table.allow_connection(their_public_id.name()) {
             if self.connection_token_map
@@ -1859,6 +1911,7 @@ impl Core {
         let their_connection_info = try!(serialisation::deserialise(&serialised_connection_info));
 
         if let Some(our_connection_info) = self.our_connection_info_map.remove(&their_public_id) {
+            trace!("Received connection info. Trying to connect to {:?}.", their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
             Ok(())
         } else {
