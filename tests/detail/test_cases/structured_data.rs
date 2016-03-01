@@ -62,7 +62,8 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Get");
     let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
-    match unwrap_option!(client1.get(data_request.clone(), max_get_attempts), "") {
+    match unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
+                         "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -72,8 +73,7 @@ pub fn test(max_get_attempts: u32) {
     test_group.start_case("Get via different Client");
     let mut client2 = Client::new();
     // Should succeed on first attempt if previous Client was able to Get already.
-    let single_attempt = 1;
-    match unwrap_option!(client2.get(data_request, single_attempt), "") {
+    match unwrap_option!(client2.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -82,7 +82,7 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Get for non-existent data");
     let data_request = DataRequest::Structured(rand::random::<XorName>(), 1);
-    match unwrap_option!(client1.get(data_request, single_attempt), "") {
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
                 ClientError::NoSuchData => {}
@@ -108,12 +108,12 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Post");
     let sd_posted = unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                *sd.get_identifier(),
-                                                sd.get_version(),
-                                                generate_random_vec_u8(10),
-                                                sd.get_owner_keys().clone(),
-                                                vec![],
-                                                Some(client1.signing_private_key())));
+                                                       *sd.get_identifier(),
+                                                       sd.get_version(),
+                                                       generate_random_vec_u8(10),
+                                                       sd.get_owner_keys().clone(),
+                                                       vec![],
+                                                       Some(client1.signing_private_key())));
     let data_posted = Data::Structured(sd_posted.clone());
     match unwrap_option!(client1.post(data_posted.clone()), "") {
         ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
@@ -124,7 +124,7 @@ pub fn test(max_get_attempts: u32) {
     test_group.start_case("Get updated");
     let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
     // Should succeed on first attempt if previous Post message returned success.
-    match unwrap_option!(client1.get(data_request, single_attempt), "") {
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data_posted, response_data);
         }
@@ -164,8 +164,9 @@ pub fn test(max_get_attempts: u32) {
         }
         _ => panic!("Received unexpected response"),
     }
-    let data_request = DataRequest::Structured(*sd_posted.get_identifier(), sd_posted.get_type_tag());
-    match unwrap_option!(client1.get(data_request, single_attempt), "") {
+    let data_request = DataRequest::Structured(*sd_posted.get_identifier(),
+                                               sd_posted.get_type_tag());
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data_posted, response_data);
         }
@@ -185,8 +186,9 @@ pub fn test(max_get_attempts: u32) {
         ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
         _ => panic!("Received unexpected response"),
     }
-    let data_request = DataRequest::Structured(*sd_posted.get_identifier(), sd_posted.get_type_tag());
-    match unwrap_option!(client1.get(data_request, single_attempt), "") {
+    let data_request = DataRequest::Structured(*sd_posted.get_identifier(),
+                                               sd_posted.get_type_tag());
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
                 ClientError::NoSuchData => {}

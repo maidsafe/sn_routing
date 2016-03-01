@@ -27,7 +27,8 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Put with no account");
     let mut client1 = Client::new();
-    let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024)));
+    let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
+                                                  generate_random_vec_u8(1024)));
     match unwrap_option!(client1.put(data.clone()), "") {
         ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
@@ -47,7 +48,8 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Get");
     let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
-    match unwrap_option!(client1.get(data_request.clone(), max_get_attempts), "") {
+    match unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
+                         "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -57,8 +59,7 @@ pub fn test(max_get_attempts: u32) {
     test_group.start_case("Get via different Client");
     let mut client2 = Client::new();
     // Should succeed on first attempt if previous Client was able to Get already.
-    let single_attempt = 1;
-    match unwrap_option!(client2.get(data_request, single_attempt), "") {
+    match unwrap_option!(client2.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -67,7 +68,7 @@ pub fn test(max_get_attempts: u32) {
 
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);
-    match unwrap_option!(client1.get(data_request, single_attempt), "") {
+    match unwrap_option!(client1.get(data_request), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
                 ClientError::NoSuchData => {}

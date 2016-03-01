@@ -27,7 +27,8 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
     let mut stored_data = Vec::with_capacity(request_count as usize);
     for i in 0..request_count {
         test_group.start_case(&format!("Put ImmutableData {}", i));
-        let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024)));
+        let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
+                                                      generate_random_vec_u8(1024)));
         match unwrap_option!(client.put(data.clone()), "") {
             ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
             _ => panic!("Received unexpected response"),
@@ -38,7 +39,8 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get ImmutableData {}", i));
         let data_request = DataRequest::Immutable(stored_data[i].name(), ImmutableDataType::Normal);
-        match unwrap_option!(client.get(data_request.clone(), max_get_attempts), "") {
+        match unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
+                             "") {
             ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
                 assert_eq!(stored_data[i], response_data);
             }

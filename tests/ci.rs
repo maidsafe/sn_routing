@@ -81,11 +81,15 @@ fn main() {
         let max_get_attempts = MAX_GET_ATTEMPTS;
         let processes = setup_network(vault_count);
 
-        let mut is_err = thread!("ImmutableData test", move || immutable_data_test(max_get_attempts))
+        let mut is_err = thread!("ImmutableData test",
+                                 move || immutable_data_test(max_get_attempts))
                              .join()
                              .is_err();
         failed = failed || is_err;
-        is_err = thread!("StructuredData test", move || structured_data_test(max_get_attempts)).join().is_err();
+        is_err = thread!("StructuredData test",
+                         move || structured_data_test(max_get_attempts))
+                     .join()
+                     .is_err();
         failed = failed || is_err;
         is_err = thread!("Messaging test", move || messaging_test()).join().is_err();
         failed = failed || is_err;

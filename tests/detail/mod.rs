@@ -35,7 +35,30 @@ pub use self::test_group::TestGroup;
 pub use self::vault_process::VaultProcess;
 
 use rand::{Rng, thread_rng};
+use routing::{DataRequest, ResponseContent, ResponseMessage};
 
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     thread_rng().gen_iter().take(size).collect()
+}
+
+// Retries to Get data up to `max_attempts` times.
+pub fn get_with_retry(client: &mut Client,
+                      request: DataRequest,
+                      max_attempts: u32)
+                      -> Option<ResponseMessage> {
+    let mut attempt = 1;
+    loop {
+        let result = unwrap_option!(client.get(request.clone()), "");
+        match &result {
+            &ResponseMessage { content: ResponseContent::GetSuccess(..), .. } => {
+                return Some(result);
+            }
+            _ => {
+                if attempt == max_attempts {
+                    return Some(result);
+                }
+            }
+        }
+        attempt += 1;
+    }
 }
