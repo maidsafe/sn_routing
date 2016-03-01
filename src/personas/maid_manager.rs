@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use error::{ClientError, InternalError};
 use lru_time_cache::LruCache;
@@ -85,9 +86,12 @@ impl Account {
 impl Encodable for Account {
     fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
         e.emit_struct("AccountDetails", 3, |e| {
-            try!(e.emit_struct_field("data_stored", 0, |e| self.data_stored.encode(e)));
-            try!(e.emit_struct_field("space_available", 1, |e| self.space_available.encode(e)));
-            try!(e.emit_struct_field("request_cache_pairs", 2, |e| self.request_cache.clone().retrieve_all().encode(e)));
+            try!(e.emit_struct_field("data_stored", 0,
+                    |e| self.data_stored.encode(e)));
+            try!(e.emit_struct_field("space_available", 1,
+                    |e| self.space_available.encode(e)));
+            try!(e.emit_struct_field("request_cache_pairs", 2,
+                    |e| self.request_cache.clone().retrieve_all().encode(e)));
 
             Ok(())
         })
@@ -97,10 +101,13 @@ impl Encodable for Account {
 impl Decodable for Account {
     fn decode<D: Decoder>(d: &mut D) -> Result<Account, D::Error> {
         d.read_struct("AccountDetails", 3, |d| {
-            let data_stored = try!(d.read_struct_field("data_stored", 0, |d| Decodable::decode(d)));
-            let space_available = try!(d.read_struct_field("space_available", 1, |d| Decodable::decode(d)));
+            let data_stored = try!(d.read_struct_field("data_stored", 0,
+                    |d| Decodable::decode(d)));
+            let space_available = try!(d.read_struct_field("space_available", 1,
+                    |d| Decodable::decode(d)));
             let request_cache_pairs: Vec<(MessageId, RequestMessage)> =
-                    try!(d.read_struct_field("request_cache_pairs", 2, |d| Decodable::decode(d)));
+                try!(d.read_struct_field("request_cache_pairs", 2,
+                    |d| Decodable::decode(d)));
             let mut request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
 
             for (key, value) in request_cache_pairs {
@@ -116,8 +123,8 @@ impl Decodable for Account {
     }
 }
 
-impl ::std::fmt::Debug for Account {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+impl fmt::Debug for Account {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         formatter.write_str(&format!(" {:?}, {:?} ", self.data_stored, self.space_available))
     }
 }
@@ -269,34 +276,26 @@ impl MaidManager {
 
             // Create the account
             let _ = self.accounts.insert(client_name, Account::default());
-            if let Err(error) = self.accounts
-                                    .get_mut(&client_name)
-                                    .ok_or(ClientError::NoSuchAccount)
-                                    .and_then(|account| {
+        }
+
+        // Update the account
+        if let Err(error) = self.accounts
+                                .get_mut(&client_name)
+                                .ok_or(ClientError::NoSuchAccount)
+                                .and_then(|account| {
+                                    if type_tag != 0 {
+                                        try!(account.cache_request(message_id.clone(), &request));
+                                        account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                                    } else {
                                         account.cache_request(message_id.clone(), &request)
-                                    }) {
-                try!(self.reply_with_put_failure(routing_node,
-                                                 request.clone(),
-                                                 message_id,
-                                                 &error));
-                return Err(InternalError::Client(error));
-            }
-        } else {
-            // Update the account
-            if let Err(error) = self.accounts
-                                    .get_mut(&client_name)
-                                    .ok_or(ClientError::NoSuchAccount)
-                                    .and_then(|account| {
-                                        try!(account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */));
-                                        account.cache_request(message_id.clone(), &request)
-                                    }) {
-                try!(self.reply_with_put_failure(routing_node,
-                                                 request.clone(),
-                                                 message_id,
-                                                 &error));
-                return Err(InternalError::Client(error));
-            }
-        };
+                                    }
+                                }) {
+            try!(self.reply_with_put_failure(routing_node,
+                                             request.clone(),
+                                             message_id,
+                                             &error));
+            return Err(InternalError::Client(error));
+        }
 
         {
             // Send data on to NAE Manager
