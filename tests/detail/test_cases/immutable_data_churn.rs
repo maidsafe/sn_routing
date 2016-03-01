@@ -19,7 +19,7 @@ use super::*;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
               ResponseMessage};
 
-pub fn test(request_count: u32) {
+pub fn test(request_count: u32, max_get_attempts: u32) {
     let mut test_group = TestGroup::new("ImmutableData churn test");
 
     let mut client = Client::new();
@@ -38,7 +38,7 @@ pub fn test(request_count: u32) {
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Get ImmutableData {}", i));
         let data_request = DataRequest::Immutable(stored_data[i].name(), ImmutableDataType::Normal);
-        match unwrap_option!(client.get(data_request.clone()), "") {
+        match unwrap_option!(client.get(data_request.clone(), max_get_attempts), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
                 assert_eq!(stored_data[i], response_data);
             }

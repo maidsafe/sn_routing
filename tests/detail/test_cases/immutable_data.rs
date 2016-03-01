@@ -22,7 +22,7 @@ use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseConte
               ResponseMessage};
 use xor_name::XorName;
 
-pub fn test() {
+pub fn test(max_get_attempts: u32) {
     let mut test_group = TestGroup::new("ImmutableData test");
 
     test_group.start_case("Put with no account");
@@ -47,7 +47,7 @@ pub fn test() {
 
     test_group.start_case("Get");
     let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
-    match unwrap_option!(client1.get(data_request.clone()), "") {
+    match unwrap_option!(client1.get(data_request.clone(), max_get_attempts), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -56,7 +56,9 @@ pub fn test() {
 
     test_group.start_case("Get via different Client");
     let mut client2 = Client::new();
-    match unwrap_option!(client2.get(data_request), "") {
+    // Should succeed on first attempt if previous Client was able to Get already.
+    let single_attempt = 1;
+    match unwrap_option!(client2.get(data_request, single_attempt), "") {
         ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
             assert_eq!(data, response_data);
         }
@@ -65,7 +67,7 @@ pub fn test() {
 
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);
-    match unwrap_option!(client1.get(data_request), "") {
+    match unwrap_option!(client1.get(data_request, single_attempt), "") {
         ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
             match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
                 ClientError::NoSuchData => {}

@@ -21,7 +21,7 @@ use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 
-pub fn test(request_count: u32) {
+pub fn test(request_count: u32, max_get_attempts: u32) {
     let mut test_group = TestGroup::new("StructuredData churn test");
 
     let mut client = Client::new();
@@ -48,7 +48,7 @@ pub fn test(request_count: u32) {
         test_group.start_case(&format!("Get StructuredData {}", i));
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
                                                     stored_data[i].get_type_tag());
-        match unwrap_option!(client.get(data_request.clone()), "") {
+        match unwrap_option!(client.get(data_request.clone(), max_get_attempts), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
             }
@@ -77,7 +77,7 @@ pub fn test(request_count: u32) {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
                                                     stored_data[i].get_type_tag());
-        match unwrap_option!(client.get(data_request.clone()), "") {
+        match unwrap_option!(client.get(data_request.clone(), 1), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
             }
@@ -100,7 +100,7 @@ pub fn test(request_count: u32) {
             _ => panic!("Received unexpected response"),
         }
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(), stored_data[i].get_type_tag());
-        match unwrap_option!(client.get(data_request), "") {
+        match unwrap_option!(client.get(data_request, 1), "") {
             ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
                 match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
                     ClientError::NoSuchData => {}

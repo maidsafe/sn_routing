@@ -98,11 +98,16 @@ impl Client {
     }
 
     /// Send a `Get` request to the network and return the received response.
-    pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone()));
-        self.wait_for_response()
+    pub fn get(&mut self, request: DataRequest, max_attempts: u32) -> Option<ResponseMessage> {
+        for i in 0..max_attempts {
+            unwrap_result!(self.routing_client
+                               .send_get_request(Authority::NaeManager(request.name()),
+                                                 request.clone()));
+            if let Some(response) = self.wait_for_response() {
+                return Some(response)
+            }
+        }
+        None
     }
 
     /// Send a `Put` request to the network.
