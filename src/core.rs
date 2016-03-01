@@ -2051,11 +2051,11 @@ impl Core {
             trace!("Lost bootstrap connection to {:?} (peer ID {:?}).",
             public_id.name(),
             peer_id);
-        }
-        if self.proxy_map.is_empty() {
-            trace!("Lost connection to last proxy node {:?}", peer_id);
-            if self.client_restriction || self.routing_table.len() < GROUP_SIZE {
-                let _ = self.event_sender.send(Event::Disconnected);
+            if self.proxy_map.is_empty() {
+                trace!("Lost connection to last proxy node {:?}", peer_id);
+                if self.client_restriction || self.routing_table.len() < GROUP_SIZE {
+                    let _ = self.event_sender.send(Event::Disconnected);
+                }
             }
         }
     }
