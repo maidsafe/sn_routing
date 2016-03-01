@@ -70,13 +70,14 @@ impl Client {
             full_id: FullId::with_keys(encrypt_keys, sign_keys),
         };
 
-        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
-        // requests to the network.
+        // Wait for a `Connected` event, notifying us that we are now ready to send requests to the
+        // network.
         info!("Waiting for {:?} to connect to network", client);
-        if let Some(Event::Connected) = client.wait_for_event() {
+        let event = client.wait_for_event();
+        if let Some(Event::Connected) = event {
             return client
         }
-        panic!("{:?} failed to connect.");
+        panic!("{:?} failed to connect: {:?}", client, event);
     }
 
     /// Create an account
