@@ -174,27 +174,33 @@ impl Client {
     pub fn expect_timeout(&self) -> Option<MpidMessage> {
         match self.wait_for_event() {
             Some(_) => panic!("Unexpected event."),
-            None => None
+            None => None,
         }
     }
 
     /// Delete mpid_header.
     pub fn delete_mpid_header(&self, header_name: XorName) {
-        self.messaging_delete_request(self.name().clone(), header_name.clone(),
+        self.messaging_delete_request(self.name().clone(),
+                                      header_name.clone(),
                                       MpidMessageWrapper::DeleteHeader(header_name))
     }
 
     /// Delete mpid_message.
     pub fn delete_mpid_message(&self, target_account: XorName, msg_name: XorName) {
-        self.messaging_delete_request(target_account, msg_name.clone(),
+        self.messaging_delete_request(target_account,
+                                      msg_name.clone(),
                                       MpidMessageWrapper::DeleteMessage(msg_name))
     }
 
-    fn messaging_delete_request(&self, target_account: XorName, name: XorName, wrapper: MpidMessageWrapper) {
+    fn messaging_delete_request(&self,
+                                target_account: XorName,
+                                name: XorName,
+                                wrapper: MpidMessageWrapper) {
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(name, value));
         let _ = unwrap_result!(self.routing_client
-                           .send_delete_request(Authority::ClientManager(target_account), data));
+                                   .send_delete_request(Authority::ClientManager(target_account),
+                                                        data));
     }
 
     /// Query outbox.
