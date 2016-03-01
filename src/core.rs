@@ -306,16 +306,6 @@ impl Core {
         (action_sender, core)
     }
 
-    /// Wait for event and process it. Returns true if an event was
-    /// received and processed, false if core was terminated.
-    #[allow(unused)]
-    pub fn wait(&mut self) -> bool {
-        match self.category_rx.recv() {
-            Ok(category) => self.handle_event(category),
-            _ => false,
-        }
-    }
-
     /// If there is an event in the queue, processes it and returns true.
     /// otherwise returns false. Never blocks.
     #[allow(unused)]
@@ -327,7 +317,8 @@ impl Core {
     }
 
     /// Run the event loop for sending and receiving messages. Blocks until
-    /// the core is terminated, so call it in a separate thread.
+    /// the core is terminated, so it must be called in a separate thread.
+    #[allow(unused)]
     pub fn run(&mut self) {
         // Note: can't use self.category_rx.iter()... because of borrow checker.
         loop {

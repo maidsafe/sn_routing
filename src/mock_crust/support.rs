@@ -15,35 +15,34 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// It seems that code used only in tests is considered unused by rust.
+#![allow(unused)]
+
 use rand;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
-use std::sync::{Arc, Mutex, Weak};
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use std::rc::{Rc, Weak};
 
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
                    TheirConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `Device`s.
-#[allow(unused)]
-pub struct Network(Arc<NetworkImp>);
+pub struct Network(Rc<NetworkImp>);
 
-#[allow(unused)]
 pub struct NetworkImp {
-    services: Mutex<HashMap<Endpoint, Weak<Mutex<ServiceImp>>>>,
-    next_endpoint: AtomicUsize,
-    queue: Mutex<VecDeque<(Endpoint, Endpoint, Packet)>>,
+    services: RefCell<HashMap<Endpoint, Weak<RefCell<ServiceImp>>>>,
+    next_endpoint: Cell<usize>,
+    queue: RefCell<VecDeque<(Endpoint, Endpoint, Packet)>>,
 }
 
-#[allow(unused)]
 impl Network {
     /// Create new mock Network.
     pub fn new() -> Self {
-        Network(Arc::new(NetworkImp {
-            services: Mutex::new(HashMap::new()),
-            next_endpoint: ATOMIC_USIZE_INIT,
-            queue: Mutex::new(VecDeque::new()),
+        Network(Rc::new(NetworkImp {
+            services: RefCell::new(HashMap::new()),
+            next_endpoint: Cell::new(0),
+            queue: RefCell::new(VecDeque::new()),
         }))
     }
 
@@ -55,15 +54,17 @@ impl Network {
         let device = Device::new(self.0.clone(), config, endpoint);
         let _ = self.0
                     .services
-                    .lock()
-                    .unwrap()
-                    .insert(endpoint, Arc::downgrade(&device.0));
+                    .borrow_mut()
+                    .insert(endpoint, Rc::downgrade(&device.0));
 
         device
     }
 
     pub fn gen_endpoint(&self) -> Endpoint {
-        Endpoint(self.0.next_endpoint.fetch_add(1, Ordering::AcqRel))
+        let num = self.0.next_endpoint.get();
+        self.0.next_endpoint.set(num + 1);
+
+        Endpoint(num)
     }
 
     pub fn poll(&self) {
@@ -71,7 +72,6 @@ impl Network {
     }
 }
 
-#[allow(unused)]
 impl NetworkImp {
     pub fn poll(&self) {
         while let Some((sender, receiver, packet)) = self.pop_packet() {
@@ -80,16 +80,16 @@ impl NetworkImp {
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
-        self.queue.lock().unwrap().push_back((sender, receiver, packet));
+        self.queue.borrow_mut().push_back((sender, receiver, packet));
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
-        self.queue.lock().unwrap().pop_front()
+        self.queue.borrow_mut().pop_front()
     }
 
     fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
         if let Some(service) = self.find_service(receiver) {
-            service.lock().unwrap().receive_packet(sender, packet);
+            service.borrow_mut().receive_packet(sender, packet);
         } else {
             // Packet was sent to a non-existing receiver.
             if let Some(failure) = packet.to_failure() {
@@ -98,45 +98,27 @@ impl NetworkImp {
         }
     }
 
-    fn find_service(&self, endpoint: Endpoint) -> Option<Arc<Mutex<ServiceImp>>> {
-        let mut services = self.services.lock().unwrap();
-        let mut remove = false;
-
-        if let Some(service) = services.get(&endpoint) {
-            if let Some(service) = service.upgrade() {
-                return Some(service);
-            } else {
-                remove = true;
-            }
-        }
-
-        if remove {
-            let _ = services.remove(&endpoint);
-        }
-
-        None
+    fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImp>>> {
+        self.services.borrow().get(&endpoint).and_then(|s| s.upgrade())
     }
 }
 
 /// Device represents a mock version of a real machine connected to the network.
-#[allow(unused)]
 #[derive(Clone)]
-pub struct Device(pub Arc<Mutex<ServiceImp>>);
+pub struct Device(pub Rc<RefCell<ServiceImp>>);
 
-#[allow(unused)]
 impl Device {
-    fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
-        Device(Arc::new(Mutex::new(ServiceImp::new(network, config, endpoint))))
+    fn new(network: Rc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
+        Device(Rc::new(RefCell::new(ServiceImp::new(network, config, endpoint))))
     }
 
     pub fn endpoint(&self) -> Endpoint {
-        self.0.lock().unwrap().endpoint
+        self.0.borrow().endpoint
     }
 }
 
-#[allow(unused)]
 pub struct ServiceImp {
-    pub network: Arc<NetworkImp>,
+    pub network: Rc<NetworkImp>,
     endpoint: Endpoint,
     pub peer_id: PeerId,
     config: Config,
@@ -148,9 +130,8 @@ pub struct ServiceImp {
     connections: Vec<(PeerId, Endpoint)>,
 }
 
-#[allow(unused)]
 impl ServiceImp {
-    fn new(network: Arc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
+    fn new(network: Rc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
         ServiceImp {
             network: network,
             endpoint: endpoint,
@@ -410,7 +391,6 @@ pub struct Config {
     pub hard_coded_contacts: Vec<Endpoint>,
 }
 
-#[allow(unused)]
 impl Config {
     pub fn new() -> Self {
         Self::with_contacts(&[])
@@ -426,7 +406,6 @@ impl Config {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(usize);
 
-#[allow(unused)]
 #[derive(Clone, Debug)]
 enum Packet {
     BootstrapRequest(PeerId),
@@ -441,7 +420,6 @@ enum Packet {
     Disconnect,
 }
 
-#[allow(unused)]
 impl Packet {
     // Given a request packet, returns the corresponding failure packet.
     fn to_failure(&self) -> Option<Packet> {
@@ -455,14 +433,12 @@ impl Packet {
 
 // The following code facilitates passing Devices to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
-
 thread_local! {
     static CURRENT: RefCell<Option<Device>> = RefCell::new(None)
 }
 
 /// Make the device current so it can be picked up by mock Services created
 /// inside the passed-in lambda.
-#[allow(unused)]
 pub fn make_current<F, R>(device: &Device, f: F) -> R where F: FnOnce() -> R {
     CURRENT.with(|current| {
         *current.borrow_mut() = Some(device.clone());

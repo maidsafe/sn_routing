@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -44,6 +45,11 @@ pub struct Node {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: ::types::RoutingActionSender,
+
+    #[cfg(feature = "use-mock-crust")]
+    core: Core,
+
+    #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
 }
 
@@ -54,6 +60,7 @@ impl Node {
     /// request a new name and integrate itself into the network using the new name.
     ///
     /// The intial `Node` object will have newly generated keys.
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
@@ -71,6 +78,29 @@ impl Node {
             action_sender: action_sender,
             _raii_joiner: raii_joiner,
         })
+    }
+
+    /// Create a new `Node` for unit testing.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+
+        // start the handler for routing without a restriction to become a full node
+        let (action_sender, core) = Core::new(event_sender, false, None);
+        let (tx, rx) = channel();
+
+        Ok(Node {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            core: core,
+        })
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    #[allow(missing_docs)]
+    pub fn poll(&mut self) -> bool {
+        self.core.poll()
     }
 
     /// Send a `Get` request to `dst` to retrieve data from the network.

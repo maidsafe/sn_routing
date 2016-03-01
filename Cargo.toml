@@ -37,9 +37,11 @@ use-mock-crust = []
 
 [[example]]
 bench = false
+test = false
 name = "key_value_store"
 
 [[example]]
 bench = false
+test = false
 name = "ci_test"
 
