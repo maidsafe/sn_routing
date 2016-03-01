@@ -125,6 +125,7 @@ impl Vault {
                 Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
                 Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
                 Event::Connected => self.on_connected(),
+                Event::Disconnected => self.on_disconnected(),
             } {
                 warn!("Failed to handle event: {:?}", error);
             }
@@ -300,6 +301,12 @@ impl Vault {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
         // assert_eq!(kademlia_routing_table::GROUP_SIZE, self.immutable_data_manager.nodes_in_table_len());
+        Ok(())
+    }
+
+    fn on_disconnected(&self) -> Result<(), InternalError> {
+        // TODO: what is expected to be done here?
+        debug!("Vault disconnected");
         Ok(())
     }
 
