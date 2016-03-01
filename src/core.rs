@@ -1265,7 +1265,9 @@ impl Core {
                                              ClientInfo::new(peer_id, client_restriction)) {
             debug!("Found previous Crust ID associated with client key - Dropping {:?}",
                    prev_info.peer_id);
-            self.crust_service.disconnect(&prev_info.peer_id);
+            if prev_info.peer_id != peer_id {
+                self.crust_service.disconnect(&prev_info.peer_id);
+            }
         }
 
         trace!("Accepted client {:?}.", public_id.name());
@@ -1436,6 +1438,7 @@ impl Core {
             if let Some(info) = self.client_map.remove(&key) {
                 trace!("Removing stale joining node with Crust ID {:?}",
                        info.peer_id);
+                self.crust_service.disconnect(&info.peer_id);
             }
         }
     }
