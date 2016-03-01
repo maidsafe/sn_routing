@@ -153,7 +153,7 @@ impl MaidManager {
                               routing_node: &RoutingNode,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
-        for (_, mut account) in self.accounts.iter_mut() {
+        for (_, account) in self.accounts.iter_mut() {
             if let Some(client_request) = account.remove_cached_request(message_id) {
                 // Send success response back to client
                 let message_hash = sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
