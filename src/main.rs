@@ -41,6 +41,8 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 
+extern crate docopt;
+extern crate env_logger;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -68,9 +70,66 @@ mod types;
 mod utils;
 mod vault;
 
+use docopt::Docopt;
+use log::LogRecord;
+use std::fs::OpenOptions;
+use std::env;
+use std::io::Write;
+
+// ==========================   Program Options   =================================
+#[cfg_attr(rustfmt, rustfmt_skip)]
+static USAGE: &'static str = "
+Usage:
+  safe_vault (--node=<log_file>)
+Options:
+  --node=<log_file>      Logging to the file.
+";
+// ================================================================================
+
+#[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
+struct Args {
+    flag_node: Option<String>,
+}
+
+fn init(file_name: String) {
+    let mut log_path = unwrap_result!(env::current_exe());
+    log_path.set_file_name(file_name.clone());
+
+    let format = move |record: &LogRecord| {
+        let log_message = format!("[{}:{}] {}\n",
+                                  record.location().file(),
+                                  record.location().line(),
+                                  record.args());
+        let mut logfile = unwrap_result!(OpenOptions::new()
+                                             .write(true)
+                                             .create(true)
+                                             .append(true)
+                                             .open(log_path.clone()));
+        unwrap_result!(logfile.write_all(&log_message.clone().into_bytes()[..]));
+        log_message
+    };
+
+    let mut builder = ::env_logger::LogBuilder::new();
+    let _ = builder.format(format);
+
+    if let Ok(rust_log) = ::std::env::var("RUST_LOG") {
+        let _ = builder.parse(&rust_log);
+    }
+
+    builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
+}
+
 /// Runs a SAFE Network vault.
 pub fn main() {
-    maidsafe_utilities::log::init(false);
     utils::handle_version();
+    let args: Args = Docopt::new(USAGE)
+                         .and_then(|docopt| docopt.decode())
+                         .unwrap_or_else(|e| e.exit());
+    if let Some(log_file) = args.flag_node {
+        init(log_file);
+    } else {
+        maidsafe_utilities::log::init(false);
+    }
+
     vault::Vault::run();
 }
