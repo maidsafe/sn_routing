@@ -21,7 +21,7 @@ use std::sync::mpsc;
 use core::Core;
 use event::Event;
 use kademlia_routing_table::GROUP_SIZE;
-// use maidsafe_utilities::log;
+use maidsafe_utilities::log;
 use mock_crust::{self, Config, Device, Endpoint, Network};
 
 struct TestNode {
@@ -99,9 +99,8 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
         nodes.push(TestNode::new(network, false, Some(config.clone()), None));
+        poll_all(&mut nodes);
     }
-
-    poll_all(&mut nodes);
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
@@ -122,6 +121,7 @@ fn two_nodes() {
 
 #[test]
 fn few_nodes() {
+    log::init(true);
     let network = Network::new();
     let _ = create_connected_nodes(&network, 3);
 }
@@ -141,14 +141,17 @@ fn more_than_group_size_nodes() {
 #[test]
 fn client_connects_to_nodes() {
     let network = Network::new();
-    let nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
 
     // Create one client that tries to connect to the network.
-    let mut client = TestNode::new(&network,
-                                   true,
-                                   Some(Config::with_contacts(&[nodes[0].device.endpoint()])),
-                                   None);
+    let client = TestNode::new(&network,
+                               true,
+                               Some(Config::with_contacts(&[nodes[0].device.endpoint()])),
+                               None);
 
-    client.poll();
-    expect_event!(client, Event::Connected);
+    nodes.push(client);
+
+    poll_all(&mut nodes);
+
+    expect_event!(nodes.iter().last().unwrap(), Event::Connected);
 }
