@@ -15,10 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use crust::PeerId;
 use kademlia_routing_table::Destination;
-use xor_name::XorName;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{Debug, Formatter};
+use xor_name::XorName;
 
 /// An entity that can act as a source or destination of a message.
 ///
@@ -40,6 +41,8 @@ pub enum Authority {
         /// The client's public signing key.  The hash of this specifies the location of the Client
         /// in the network address space.
         client_key: sign::PublicKey,
+        /// The Crust peer ID of the client.
+        peer_id: PeerId,
         /// The name of the single ManagedNode which the Client connects to and proxies all messages
         /// through.
         proxy_node_name: XorName,
@@ -85,11 +88,12 @@ impl Debug for Authority {
             Authority::NaeManager(ref name) => write!(f, "NaeManager(name:{:?})", name),
             Authority::NodeManager(ref name) => write!(f, "NodeManager(name:{:?})", name),
             Authority::ManagedNode(ref name) => write!(f, "ManagedNode(name:{:?})", name),
-            Authority::Client { ref client_key, ref proxy_node_name, } => {
+            Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
                 write!(f,
-                       "Client {{ client_name: {:?}, proxy_node_name: {:?} }}",
+                       "Client {{ client_name: {:?}, proxy_node_name: {:?}, peer_id: {:?} }}",
                        XorName::new(hash::sha512::hash(&client_key[..]).0),
-                       proxy_node_name)
+                       proxy_node_name,
+                       peer_id)
             }
         }
     }
