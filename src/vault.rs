@@ -305,7 +305,7 @@ impl Vault {
     }
 
     fn on_disconnected(&self) -> Result<(), InternalError> {
-        // TODO: what is expected to be done here?
+        // TODO: restart event loop with new routing object, discarding all current data
         debug!("Vault disconnected");
         Ok(())
     }

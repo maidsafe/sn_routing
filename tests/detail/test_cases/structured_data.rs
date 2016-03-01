@@ -193,7 +193,7 @@ pub fn test() {
         _ => panic!("Received unexpected response"),
     }
 
-    test_group.start_case("Further put with the same name of delete shall be blocked");
+    test_group.start_case("Try to Put recently deleted");
     let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
                                                 sd_posted.get_identifier().clone(),
                                                 0,

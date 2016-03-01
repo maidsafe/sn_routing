@@ -34,17 +34,16 @@ pub fn test(request_count: u32) {
         _ => panic!("Failed to send message {:?}", message_sent),
     }
 
-    test_group.start_case("Receiver registered and receiving message");
-    for _i in 0..request_count {
-        test_group.start_case("Receiver registered and receiving message");
+    for i in 0..request_count {
+        test_group.start_case(&format!("Receiver registered and receiving message {}", i));
         receiver.register_online();
         let optional_message = receiver.get_mpid_message();
         let message_received = unwrap_option!(optional_message, "");
         assert_eq!(message_received, message_sent);
     }
 
-    for _i in 0..request_count {
-        test_group.start_case("Sender query own outbox");
+    for i in 0..request_count {
+        test_group.start_case(&format!("Sender query own outbox {}", i));
         let sender_mpid_headers = sender.query_outbox();
         assert_eq!(1, sender_mpid_headers.len());
         assert_eq!(message_sent.header().clone(), sender_mpid_headers[0]);
