@@ -21,10 +21,10 @@ use std::fmt;
 use std::io;
 use std::rc::Rc;
 
-use super::support::{self, Device, Endpoint, NetworkImp, ServiceImp};
+use super::support::{self, Device, Endpoint, Network, ServiceImpl};
 
 /// Mock version of crust::Service
-pub struct Service(Rc<RefCell<ServiceImp>>, Rc<NetworkImp>);
+pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
 
 impl Service {
     /// Create new mock Service using the make_current/get_current mechanism to
@@ -94,11 +94,11 @@ impl Service {
         self.lock().peer_id
     }
 
-    fn lock(&self) -> RefMut<ServiceImp> {
+    fn lock(&self) -> RefMut<ServiceImpl> {
         self.0.borrow_mut()
     }
 
-    fn lock_and_poll<F, R>(&self, f: F) -> R where F: FnOnce(&mut ServiceImp) -> R {
+    fn lock_and_poll<F, R>(&self, f: F) -> R where F: FnOnce(&mut ServiceImpl) -> R {
         let result = f(&mut *self.lock());
         self.1.poll();
         result

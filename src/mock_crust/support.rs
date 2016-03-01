@@ -28,22 +28,23 @@ use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionI
                    TheirConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `Device`s.
-pub struct Network(Rc<NetworkImp>);
+#[derive(Clone)]
+pub struct Network(Rc<RefCell<NetworkImpl>>);
 
-pub struct NetworkImp {
-    services: RefCell<HashMap<Endpoint, Weak<RefCell<ServiceImp>>>>,
-    next_endpoint: Cell<usize>,
-    queue: RefCell<VecDeque<(Endpoint, Endpoint, Packet)>>,
+pub struct NetworkImpl {
+    services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
+    next_endpoint: usize,
+    queue: VecDeque<(Endpoint, Endpoint, Packet)>,
 }
 
 impl Network {
     /// Create new mock Network.
     pub fn new() -> Self {
-        Network(Rc::new(NetworkImp {
-            services: RefCell::new(HashMap::new()),
-            next_endpoint: Cell::new(0),
-            queue: RefCell::new(VecDeque::new()),
-        }))
+        Network(Rc::new(RefCell::new(NetworkImpl {
+            services: HashMap::new(),
+            next_endpoint: 0,
+            queue: VecDeque::new(),
+        })))
     }
 
     /// Create new Device.
@@ -51,28 +52,21 @@ impl Network {
         let config = config.unwrap_or_else(|| Config::new());
         let endpoint = endpoint.unwrap_or_else(|| self.gen_endpoint());
 
-        let device = Device::new(self.0.clone(), config, endpoint);
-        let _ = self.0
-                    .services
-                    .borrow_mut()
-                    .insert(endpoint, Rc::downgrade(&device.0));
+        let device = Device::new(self.clone(), config, endpoint);
+        let _ = self.0.borrow_mut().services
+                                   .insert(endpoint, Rc::downgrade(&device.0));
 
         device
     }
 
     pub fn gen_endpoint(&self) -> Endpoint {
-        let num = self.0.next_endpoint.get();
-        self.0.next_endpoint.set(num + 1);
+        let mut imp = self.0.borrow_mut();
+        let num = imp.next_endpoint;
+        imp.next_endpoint += 1;
 
         Endpoint(num)
     }
 
-    pub fn poll(&self) {
-        self.0.poll();
-    }
-}
-
-impl NetworkImp {
     pub fn poll(&self) {
         while let Some((sender, receiver, packet)) = self.pop_packet() {
             self.process_packet(sender, receiver, packet);
@@ -80,11 +74,11 @@ impl NetworkImp {
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
-        self.queue.borrow_mut().push_back((sender, receiver, packet));
+        self.0.borrow_mut().queue.push_back((sender, receiver, packet));
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
-        self.queue.borrow_mut().pop_front()
+        self.0.borrow_mut().queue.pop_front()
     }
 
     fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
@@ -98,18 +92,18 @@ impl NetworkImp {
         }
     }
 
-    fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImp>>> {
-        self.services.borrow().get(&endpoint).and_then(|s| s.upgrade())
+    fn find_service(&self, endpoint: Endpoint) -> Option<Rc<RefCell<ServiceImpl>>> {
+        self.0.borrow().services.get(&endpoint).and_then(|s| s.upgrade())
     }
 }
 
 /// Device represents a mock version of a real machine connected to the network.
 #[derive(Clone)]
-pub struct Device(pub Rc<RefCell<ServiceImp>>);
+pub struct Device(pub Rc<RefCell<ServiceImpl>>);
 
 impl Device {
-    fn new(network: Rc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
-        Device(Rc::new(RefCell::new(ServiceImp::new(network, config, endpoint))))
+    fn new(network: Network, config: Config, endpoint: Endpoint) -> Self {
+        Device(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
     pub fn endpoint(&self) -> Endpoint {
@@ -117,8 +111,8 @@ impl Device {
     }
 }
 
-pub struct ServiceImp {
-    pub network: Rc<NetworkImp>,
+pub struct ServiceImpl {
+    pub network: Network,
     endpoint: Endpoint,
     pub peer_id: PeerId,
     config: Config,
@@ -130,9 +124,9 @@ pub struct ServiceImp {
     connections: Vec<(PeerId, Endpoint)>,
 }
 
-impl ServiceImp {
-    fn new(network: Rc<NetworkImp>, config: Config, endpoint: Endpoint) -> Self {
-        ServiceImp {
+impl ServiceImpl {
+    fn new(network: Network, config: Config, endpoint: Endpoint) -> Self {
+        ServiceImpl {
             network: network,
             endpoint: endpoint,
             peer_id: gen_peer_id(endpoint),
@@ -375,7 +369,7 @@ impl ServiceImp {
     }
 }
 
-impl Drop for ServiceImp {
+impl Drop for ServiceImpl {
     fn drop(&mut self) {
         self.disconnect_all();
     }
