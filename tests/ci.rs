@@ -50,6 +50,8 @@ extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
 
+mod utils;
+
 use std::cmp::Ordering::{Greater, Less};
 #[cfg(target_os = "macos")]
 use std::io;
@@ -65,9 +67,8 @@ use routing::{Authority, Client, Data, Event, FullId, Node, PlainData, RequestCo
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
+use utils::recv_with_timeout;
 use xor_name::XorName;
-
-use routing::test_utils::recv_with_timeout;
 
 const QUORUM_SIZE: usize = 5;
 

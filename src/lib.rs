@@ -179,6 +179,7 @@ extern crate xor_name;
 mod action;
 mod authority;
 mod client;
+
 mod core;
 mod data;
 mod error;
@@ -193,7 +194,10 @@ mod timer;
 mod types;
 mod utils;
 
-#[cfg(test)] mod core_tests;
+#[cfg(all(test, feature = "use-mock-crust"))]
+mod core_tests;
+
+#[cfg(feature = "use-mock-crust")]
 mod mock_crust;
 
 pub use authority::Authority;

@@ -15,17 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
-
 use maidsafe_utilities::event_sender;
+use std::cell::{RefCell, RefMut};
 use std::fmt;
 use std::io;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::rc::Rc;
 
 use super::support::{self, Device, Endpoint, NetworkImp, ServiceImp};
 
 /// Mock version of crust::Service
-pub struct Service(Arc<Mutex<ServiceImp>>, Arc<NetworkImp>);
+pub struct Service(Rc<RefCell<ServiceImp>>, Rc<NetworkImp>);
 
 impl Service {
     /// Create new mock Service using the make_current/get_current mechanism to
@@ -39,7 +38,7 @@ impl Service {
     pub fn with_device(device: &Device,
                        event_sender: CrustEventSender,
                        beacon_port: u16) -> Result<Self, Error> {
-        let network = device.0.lock().unwrap().network.clone();
+        let network = device.0.borrow().network.clone();
         let service = Service(device.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender, beacon_port));
 
@@ -95,8 +94,8 @@ impl Service {
         self.lock().peer_id
     }
 
-    fn lock(&self) -> MutexGuard<ServiceImp> {
-        self.0.lock().unwrap()
+    fn lock(&self) -> RefMut<ServiceImp> {
+        self.0.borrow_mut()
     }
 
     fn lock_and_poll<F, R>(&self, f: F) -> R where F: FnOnce(&mut ServiceImp) -> R {

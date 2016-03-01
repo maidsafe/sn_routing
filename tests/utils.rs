@@ -30,6 +30,7 @@ pub enum RecvWithTimeoutError {
 
 /// Blocks until something is received on the Receiver, or timeout, whichever
 /// hapens sooner.
+#[allow(unused)]
 pub fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration)
     -> Result<T, RecvWithTimeoutError> {
     let interval = Duration::from_millis(100);
@@ -52,6 +53,7 @@ pub fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration)
 }
 
 /// Keep receiving on the receiver until it closes or timeout occurs.
+#[allow(unused)]
 pub fn iter_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Iter<T> {
     Iter {
         rx: receiver,
@@ -59,6 +61,7 @@ pub fn iter_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Iter<T
     }
 }
 
+#[allow(unused)]
 pub struct Iter<'a, T: 'a> {
     rx: &'a Receiver<T>,
     timeout: Duration,
