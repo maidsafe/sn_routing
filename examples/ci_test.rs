@@ -103,7 +103,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 
     let nodes = try!((0..count)
                          .map(|i| {
-                             log_path.set_file_name(&format!("Node_{}.log", i + 1));
+                             log_path.set_file_name(&format!("Node_{:02}.log", i + 1));
                              let mut args = vec![format!("--output={}", log_path.display())];
                              if i == 0 {
                                  args.push("-d".to_owned());
@@ -183,16 +183,20 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         _ => random(),
     };
 
+    let current_exe_path = unwrap_result!(env::current_exe());
+    let mut log_path = current_exe_path.clone();
+
     if kill_node {
         // Never kill the bootstrap (0th) node
         let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
         println!("Killing Node #{}", kill_at_index + 1);
         let _ = nodes.remove(kill_at_index);
     } else {
-        let arg = format!("--output=Node_{:02}.log", log_file_number);
+        log_path.set_file_name(&format!("Node_{:02}.log", log_file_number));
+        let arg = format!("--output=Node_{:02}.log", log_path.display());
         *log_file_number += 1;
 
-        nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
+        nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
                                         .arg(arg)
                                         .stdout(Stdio::null())
                                         .stderr(Stdio::null())
