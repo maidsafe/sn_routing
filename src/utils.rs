@@ -28,10 +28,6 @@ pub fn client_name(authority: &Authority) -> XorName {
 
 #[cfg(all(test, feature = "use-mock-routing"))]
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::random;
-    let mut vec: Vec<u8> = Vec::with_capacity(size);
-    for _ in 0..size {
-        vec.push(random::<u8>());
-    }
-    vec
+    use rand::{self, Rng};
+    rand::thread_rng().gen_iter().take(size).collect()
 }
