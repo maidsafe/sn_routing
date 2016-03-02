@@ -202,6 +202,10 @@ mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
+#[cfg(not(feature = "use-mock-crust"))]
+pub use crust::PeerId;
+#[cfg(feature = "use-mock-crust")]
+pub use mock_crust::PeerId;
 pub use data::{Data, DataRequest};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;

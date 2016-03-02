@@ -22,5 +22,6 @@ mod support;
 #[cfg(test)]
 mod tests;
 
+pub use self::crust::PeerId;
 pub use self::support::{Config, Endpoint, Network, ServiceHandle};
 pub use self::support::make_current;
