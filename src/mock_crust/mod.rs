@@ -15,9 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 pub mod crust;
 mod support;
-#[cfg(test)] mod tests;
 
-pub use self::support::{Config, Device, Endpoint, Network};
+#[cfg(test)]
+mod tests;
+
+pub use self::support::{Config, Endpoint, Network, ServiceHandle};
 pub use self::support::make_current;

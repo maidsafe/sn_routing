@@ -22,10 +22,10 @@ use core::Core;
 use event::Event;
 use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::log;
-use mock_crust::{self, Config, Device, Endpoint, Network};
+use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 
 struct TestNode {
-    device: Device,
+    handle: ServiceHandle,
     core: Core,
     event_rx: mpsc::Receiver<Event>,
 }
@@ -36,15 +36,15 @@ impl TestNode {
            config: Option<Config>,
            endpoint: Option<Endpoint>)
            -> Self {
-        let device = network.new_device(config, endpoint);
+        let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (_, core) = mock_crust::make_current(&device, || {
+        let (_, core) = mock_crust::make_current(&handle, || {
             Core::new(event_tx, client_restriction, None)
         });
 
         TestNode {
-            device: device,
+            handle: handle,
             core: core,
             event_rx: event_rx,
         }
@@ -74,17 +74,7 @@ macro_rules! expect_event {
 
 /// Process all events
 fn poll_all(nodes: &mut [TestNode]) {
-    let mut run = true;
-
-    while run {
-        run = false;
-
-        for node in nodes.iter_mut() {
-            if node.poll() {
-                run = true;
-            }
-        }
-    }
+    while nodes.iter_mut().any(TestNode::poll) {}
 }
 
 fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
@@ -94,7 +84,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     nodes.push(TestNode::new(network, false, None, None));
     nodes[0].poll();
 
-    let config = Config::with_contacts(&[nodes[0].device.endpoint()]);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
@@ -146,7 +136,7 @@ fn client_connects_to_nodes() {
     // Create one client that tries to connect to the network.
     let client = TestNode::new(&network,
                                true,
-                               Some(Config::with_contacts(&[nodes[0].device.endpoint()])),
+                               Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
                                None);
 
     nodes.push(client);

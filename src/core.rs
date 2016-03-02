@@ -133,6 +133,7 @@ struct DebugStats {
     cur_routing_table_size: usize,
     cur_client_num: usize,
     cumulative_client_num: usize,
+    get_request_count: usize,
 }
 
 impl DebugStats {
@@ -141,6 +142,7 @@ impl DebugStats {
             cur_routing_table_size: 0,
             cur_client_num: 0,
             cumulative_client_num: 0,
+            get_request_count: 0,
         }
     }
 }
@@ -232,7 +234,6 @@ pub struct Core {
     connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
     our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
     their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
-    get_request_count: usize,
 
     debug_stats: DebugStats,
 }
@@ -299,7 +300,6 @@ impl Core {
             connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-            get_request_count: 0,
             debug_stats: DebugStats::new(),
         };
 
@@ -308,7 +308,7 @@ impl Core {
 
     /// If there is an event in the queue, processes it and returns true.
     /// otherwise returns false. Never blocks.
-    #[allow(unused)]
+    #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
         match self.category_rx.try_recv() {
             Ok(category) => self.handle_event(category),
@@ -318,7 +318,7 @@ impl Core {
 
     /// Run the event loop for sending and receiving messages. Blocks until
     /// the core is terminated, so it must be called in a separate thread.
-    #[allow(unused)]
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) {
         // Note: can't use self.category_rx.iter()... because of borrow checker.
         loop {
@@ -633,8 +633,8 @@ impl Core {
                 return Err(RoutingError::UnknownConnection(*hop_msg.name()));
             }
             if relayed_get_request {
-                self.get_request_count += 1;
-                trace!("Total get request count: {}", self.get_request_count);
+                self.debug_stats.get_request_count += 1;
+                trace!("Total get request count: {}", self.debug_stats.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1522,7 +1522,7 @@ impl Core {
         }
         self.proxy_map.clear();
         thread::sleep(StdDuration::from_secs(5));
-        restart_crust_service(&mut self.crust_service, self.crust_sender.clone());
+        self.restart_crust_service();
         // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
         //               Currently, ci_test's nodes all connect via the same beacon.
         // self.crust_service
@@ -2186,6 +2186,19 @@ impl Core {
     fn name(&self) -> &XorName {
         self.full_id.public_id().name()
     }
+
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn restart_crust_service(&mut self) {
+        self.crust_service = match Service::new(self.crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT) {
+            Ok(service) => service,
+            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err))
+        };
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn restart_crust_service(&mut self) {
+        self.crust_service.restart(self.crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT)
+    }
 }
 
 impl Debug for Core {
@@ -2203,22 +2216,4 @@ fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
     } else {
         None
     }
-}
-
-#[cfg(not(feature = "use-mock-crust"))]
-fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
-    use std::mem;
-
-    let _ = mem::replace(service,
-                         match Service::new(sender, CRUST_DEFAULT_BEACON_PORT) {
-                             Ok(service) => service,
-                             Err(err) => {
-                                 panic!(format!("Unable to restart crust::Service {:?}", err))
-                             }
-                         });
-}
-
-#[cfg(feature = "use-mock-crust")]
-fn restart_crust_service(service: &mut Service, sender: crust::CrustEventSender) {
-    service.restart(sender, CRUST_DEFAULT_BEACON_PORT)
 }

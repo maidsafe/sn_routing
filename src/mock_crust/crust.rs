@@ -21,25 +21,26 @@ use std::fmt;
 use std::io;
 use std::rc::Rc;
 
-use super::support::{self, Device, Endpoint, Network, ServiceImpl};
+use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 /// Mock version of crust::Service
 pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
 
 impl Service {
     /// Create new mock Service using the make_current/get_current mechanism to
-    /// get the associated mock Device.
+    /// get the associated ServiceHandle.
     pub fn new(event_sender: CrustEventSender, beacon_port: u16) -> Result<Self, Error> {
-        Self::with_device(&support::get_current(), event_sender, beacon_port)
+        Self::with_handle(&support::get_current(), event_sender, beacon_port)
     }
 
     /// Create new mock Service by explicitly passing the mock device to associate
     /// with.
-    pub fn with_device(device: &Device,
+    pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender,
-                       beacon_port: u16) -> Result<Self, Error> {
-        let network = device.0.borrow().network.clone();
-        let service = Service(device.0.clone(), network);
+                       beacon_port: u16)
+                       -> Result<Self, Error> {
+        let network = handle.0.borrow().network.clone();
+        let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender, beacon_port));
 
         Ok(service)
@@ -98,7 +99,9 @@ impl Service {
         self.0.borrow_mut()
     }
 
-    fn lock_and_poll<F, R>(&self, f: F) -> R where F: FnOnce(&mut ServiceImpl) -> R {
+    fn lock_and_poll<F, R>(&self, f: F) -> R
+        where F: FnOnce(&mut ServiceImpl) -> R
+    {
         let result = f(&mut *self.lock());
         self.1.poll();
         result
@@ -159,4 +162,3 @@ pub struct ConnectionInfoResult {
 
 #[derive(Debug)]
 pub struct Error;
-

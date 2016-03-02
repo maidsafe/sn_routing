@@ -19,7 +19,7 @@
 #![allow(unused)]
 
 use rand;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::rc::{Rc, Weak};
@@ -27,7 +27,7 @@ use std::rc::{Rc, Weak};
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
                    TheirConnectionInfo};
 
-/// Mock network. Create one before testing with mocks. Use it to create `Device`s.
+/// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
 pub struct Network(Rc<RefCell<NetworkImpl>>);
 
@@ -47,16 +47,18 @@ impl Network {
         })))
     }
 
-    /// Create new Device.
-    pub fn new_device(&self, config: Option<Config>, endpoint: Option<Endpoint>) -> Device {
-        let config = config.unwrap_or_else(|| Config::new());
+    /// Create new ServiceHandle.
+    pub fn new_service_handle(&self, config: Option<Config>, endpoint: Option<Endpoint>) -> ServiceHandle {
+        let config = config.unwrap_or_else(Config::new);
         let endpoint = endpoint.unwrap_or_else(|| self.gen_endpoint());
 
-        let device = Device::new(self.clone(), config, endpoint);
-        let _ = self.0.borrow_mut().services
-                                   .insert(endpoint, Rc::downgrade(&device.0));
+        let handle = ServiceHandle::new(self.clone(), config, endpoint);
+        let _ = self.0
+                    .borrow_mut()
+                    .services
+                    .insert(endpoint, Rc::downgrade(&handle.0));
 
-        device
+        handle
     }
 
     pub fn gen_endpoint(&self) -> Endpoint {
@@ -97,13 +99,14 @@ impl Network {
     }
 }
 
-/// Device represents a mock version of a real machine connected to the network.
+/// ServiceHandle is associated with the mock Service and allows to configrue
+/// and instrument it.
 #[derive(Clone)]
-pub struct Device(pub Rc<RefCell<ServiceImpl>>);
+pub struct ServiceHandle(pub Rc<RefCell<ServiceImpl>>);
 
-impl Device {
+impl ServiceHandle {
     fn new(network: Network, config: Config, endpoint: Endpoint) -> Self {
-        Device(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
+        ServiceHandle(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
     pub fn endpoint(&self) -> Endpoint {
@@ -144,7 +147,9 @@ impl ServiceImpl {
         let mut pending_bootstraps = 0;
 
         for endpoint in self.config.hard_coded_contacts.iter() {
-            if *endpoint == self.endpoint { continue; }
+            if *endpoint == self.endpoint {
+                continue;
+            }
 
             self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
             pending_bootstraps += 1;
@@ -242,7 +247,10 @@ impl ServiceImpl {
     }
 
     fn handle_connect_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        // TODO: ignore if already connected?
+        if self.is_connected(&peer_endpoint, &peer_id) && !self.pending_connects.contains(&peer_id) {
+            warn!("Connection already exist");
+        }
+
         self.add_rendezvous_connection(peer_id, peer_endpoint);
         self.send_packet(peer_endpoint, Packet::ConnectSuccess(self.peer_id));
     }
@@ -260,8 +268,7 @@ impl ServiceImpl {
         if let Some(peer_id) = self.find_peer_id_by_endpoint(&peer_endpoint) {
             self.send_event(Event::NewMessage(peer_id, data));
         } else {
-            unreachable!("Received message from non-connected {:?}",
-                         peer_endpoint);
+            unreachable!("Received message from non-connected {:?}", peer_endpoint);
         }
     }
 
@@ -292,9 +299,7 @@ impl ServiceImpl {
     }
 
     fn add_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) -> bool {
-        if self.connections.iter().any(|&(id, ep)| {
-            id == peer_id && ep == peer_endpoint
-        }) {
+        if self.connections.iter().any(|&(id, ep)| id == peer_id && ep == peer_endpoint) {
             // Connection already exists
             return false;
         }
@@ -348,6 +353,10 @@ impl ServiceImpl {
             .map(|&(id, _)| id)
     }
 
+    fn is_connected(&self, endpoint: &Endpoint, peer_id: &PeerId) -> bool {
+        self.connections.iter().any(|&conn| conn == (*peer_id, *endpoint))
+    }
+
     pub fn disconnect(&mut self, peer_id: &PeerId) -> bool {
         if let Some(endpoint) = self.remove_connection_by_peer_id(peer_id) {
             self.send_packet(endpoint, Packet::Disconnect);
@@ -396,7 +405,7 @@ impl Config {
 }
 
 /// Simulated network endpoint (socket address). This is used to identify and
-/// address Devices in the mock network.
+/// address Services in the mock network.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(usize);
 
@@ -425,25 +434,25 @@ impl Packet {
     }
 }
 
-// The following code facilitates passing Devices to mock Services, so we
+// The following code facilitates passing ServiceHandles to mock Services, so we
 // don't need separate test and non-test version of `routing::Core::new`.
 thread_local! {
-    static CURRENT: RefCell<Option<Device>> = RefCell::new(None)
+    static CURRENT: RefCell<Option<ServiceHandle>> = RefCell::new(None)
 }
 
-/// Make the device current so it can be picked up by mock Services created
+/// Make the ServiceHandle current so it can be picked up by mock Services created
 /// inside the passed-in lambda.
-pub fn make_current<F, R>(device: &Device, f: F) -> R where F: FnOnce() -> R {
+pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
+    where F: FnOnce() -> R
+{
     CURRENT.with(|current| {
-        *current.borrow_mut() = Some(device.clone());
+        *current.borrow_mut() = Some(handle.clone());
         let result = f();
         *current.borrow_mut() = None;
         result
     })
 }
 
-pub fn get_current() -> Device {
-    CURRENT.with(|current| {
-        current.borrow_mut().take().unwrap()
-    })
+pub fn get_current() -> ServiceHandle {
+    CURRENT.with(|current| current.borrow_mut().take().unwrap())
 }

@@ -29,8 +29,7 @@ pub enum RecvWithTimeoutError {
 }
 
 /// Blocks until something is received on the Receiver, or timeout, whichever
-/// hapens sooner.
-#[allow(unused)]
+/// happens sooner.
 pub fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration)
     -> Result<T, RecvWithTimeoutError> {
     let interval = Duration::from_millis(100);

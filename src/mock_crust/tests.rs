@@ -18,7 +18,6 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use maidsafe_utilities::event_sender::{MaidSafeObserver, MaidSafeEventCategory};
-use std::mem;
 use std::sync::mpsc::{self, Receiver};
 
 use super::crust::{CrustEventSender, Event, Service};
@@ -45,13 +44,13 @@ fn start_two_services_bootstrap_communicate_exit() {
     let endpoint1 = network.gen_endpoint();
     let config = Config::with_contacts(&[endpoint0, endpoint1]);
 
-    let device0 = network.new_device(Some(config.clone()), Some(endpoint0));
-    let device1 = network.new_device(Some(config.clone()), Some(endpoint1));
+    let handle0 = network.new_service_handle(Some(config.clone()), Some(endpoint0));
+    let handle1 = network.new_service_handle(Some(config.clone()), Some(endpoint1));
 
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_device(&device0, event_sender_0, 0));
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, 0));
 
     unwrap_result!(service_0.start_listening_tcp());
     unwrap_result!(service_0.start_listening_utp());
@@ -68,7 +67,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     service_0.start_service_discovery();
 
-    let mut service_1 = unwrap_result!(Service::with_device(&device1, event_sender_1, 0));
+    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, 0));
 
     unwrap_result!(service_1.start_listening_tcp());
     unwrap_result!(service_1.start_listening_utp());
@@ -146,13 +145,13 @@ fn start_two_services_bootstrap_communicate_exit() {
 #[test]
 fn start_two_services_rendezvous_connect() {
     let network = Network::new();
-    let device0 = network.new_device(None, None);
-    let device1 = network.new_device(None, None);
+    let handle0 = network.new_service_handle(None, None);
+    let handle1 = network.new_service_handle(None, None);
 
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_device(&device0, event_sender_0, 1234));
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, 1234));
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
@@ -163,7 +162,7 @@ fn start_two_services_rendezvous_connect() {
         }
     }
 
-    let mut service_1 = unwrap_result!(Service::with_device(&device1, event_sender_1, 1234));
+    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, 1234));
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
@@ -255,17 +254,19 @@ fn start_two_services_rendezvous_connect() {
 
 #[test]
 fn drop() {
-    let network = Network::new();
-    let device0 = network.new_device(None, None);
+    use std::mem;
 
-    let config = Config::with_contacts(&[device0.endpoint()]);
-    let device1 = network.new_device(Some(config), None);
+    let network = Network::new();
+    let handle0 = network.new_service_handle(None, None);
+
+    let config = Config::with_contacts(&[handle0.endpoint()]);
+    let handle1 = network.new_service_handle(Some(config), None);
 
     let port = 45669;
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_device(&device0, event_sender_0, port));
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, port));
     unwrap_result!(service_0.start_listening_tcp());
 
     // Let service_0 finish bootstrap - it should not find any peer.
@@ -274,7 +275,7 @@ fn drop() {
         event_rxd => panic!("Received unexpected event: {:?}", event_rxd),
     }
 
-    let mut service_1 = unwrap_result!(Service::with_device(&device1, event_sender_1, port));
+    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, port));
     unwrap_result!(service_1.start_listening_tcp());
 
     // Let service_1 finish bootstrap - it should bootstrap off service_0.
