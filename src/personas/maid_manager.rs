@@ -284,8 +284,11 @@ impl MaidManager {
                                 .ok_or(ClientError::NoSuchAccount)
                                 .and_then(|account| {
                                     if type_tag != 0 {
-                                        try!(account.cache_request(message_id.clone(), &request));
-                                        account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                                        if let Err(error) = account.cache_request(message_id.clone(), &request) {
+                                            Err(error)
+                                        } else {
+                                            account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                                        }
                                     } else {
                                         account.cache_request(message_id.clone(), &request)
                                     }
