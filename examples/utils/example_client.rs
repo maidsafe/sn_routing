@@ -73,7 +73,7 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataRequest) -> Option<Data> {
-        unwrap_result!(self.routing_client
+        let message_id = unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
                                              request.clone()));
 
@@ -81,15 +81,25 @@ impl ExampleClient {
         for it in self.receiver.iter() {
             match it {
                 Event::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(data, _), .. }) => return Some(data),
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure { external_error_indicator, .. }, .. }) => {
-                    {
-                        error!("Failed to Get {:?}: {:?}",
-                               request.name(),
-                               unwrap_result!(String::from_utf8(external_error_indicator)));
-                        return None;
+                    content: ResponseContent::GetSuccess(data, id), .. }) => {
+                    if message_id != id {
+                        error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
+                                {:?}.",
+                               data.name(),
+                               id,
+                               message_id);
                     }
+                    return Some(data);
+                }
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::GetFailure {
+                        external_error_indicator,
+                        ..
+                    }, .. }) => {
+                    error!("Failed to Get {:?}: {:?}",
+                           request.name(),
+                           unwrap_result!(String::from_utf8(external_error_indicator)));
+                    return None;
                 }
                 Event::Disconnected => self.disconnected(),
                 _ => (),
@@ -104,17 +114,24 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
     pub fn put(&self, data: Data) {
         let data_name = data.name();
-        unwrap_result!(self.routing_client
+        let message_id = unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()), data));
 
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
             match it {
                 Event::Response(ResponseMessage {
-                    content: ResponseContent::PutSuccess(..),
+                    content: ResponseContent::PutSuccess(_, id),
                     ..
                 }) => {
-                    println!("Successfully stored {:?}", data_name);
+                    if message_id == id {
+                        println!("Successfully stored {:?}", data_name);
+                    } else {
+                        println!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
+                                 data_name,
+                                 id,
+                                 message_id);
+                    }
                     break;
                 }
                 Event::Disconnected => self.disconnected(),

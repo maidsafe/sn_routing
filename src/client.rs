@@ -107,23 +107,34 @@ impl Client {
     pub fn send_get_request(&mut self,
                             dst: Authority,
                             data_request: DataRequest)
-                            -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, MessageId::new()), dst)
+                            -> Result<MessageId, InterfaceError> {
+        let message_id = MessageId::new();
+        try!(self.send_action(RequestContent::Get(data_request, message_id), dst));
+        Ok(message_id)
     }
 
     /// Add something to the network
-    pub fn send_put_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Put(data, MessageId::new()), dst)
+    pub fn send_put_request(&self, dst: Authority, data: Data)
+        -> Result<MessageId, InterfaceError> {
+        let message_id = MessageId::new();
+        try!(self.send_action(RequestContent::Put(data, message_id), dst));
+        Ok(message_id)
     }
 
     /// Change something already on the network
-    pub fn send_post_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Post(data, MessageId::new()), dst)
+    pub fn send_post_request(&self, dst: Authority, data: Data)
+        -> Result<MessageId, InterfaceError> {
+        let message_id = MessageId::new();
+        try!(self.send_action(RequestContent::Post(data, message_id), dst));
+        Ok(message_id)
     }
 
     /// Remove something from the network
-    pub fn send_delete_request(&self, dst: Authority, data: Data) -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Delete(data, MessageId::new()), dst)
+    pub fn send_delete_request(&self, dst: Authority, data: Data)
+        -> Result<MessageId, InterfaceError> {
+        let message_id = MessageId::new();
+        try!(self.send_action(RequestContent::Delete(data, message_id), dst));
+        Ok(message_id)
     }
 
     fn send_action(&self, content: RequestContent, dst: Authority) -> Result<(), InterfaceError> {

@@ -53,6 +53,7 @@ extern crate xor_name;
 mod utils;
 
 use std::cmp::Ordering::{Greater, Less};
+use std::collections::HashSet;
 #[cfg(target_os = "macos")]
 use std::io;
 use std::{iter, thread};
@@ -264,14 +265,16 @@ fn core() {
         // request and response
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
+        let mut message_id = None;
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
-                        unwrap_result!(client.client
-                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                        let src = Authority::ClientManager(*client.name());
+                        let result = client.client.send_put_request(src, data.clone());
+                        message_id = Some(unwrap_result!(result));
                     }
 
                     TestEvent(index, Event::Request(message)) => {
@@ -289,9 +292,10 @@ fn core() {
 
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(..), .. }))
+                                content: ResponseContent::PutSuccess(_, id), .. }))
                         if index == client.index => {
                         // The client received response to its request. We are done.
+                        assert_eq!(message_id, Some(id));
                         break;
                     }
 
@@ -314,10 +318,14 @@ fn core() {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
-                        unwrap_result!(client.client
-                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                        assert!(client.client
+                                      .send_put_request(Authority::ClientManager(*client.name()),
+                                                        data.clone())
+                                      .is_ok());
                     }
-                    TestEvent(index, Event::Request(RequestMessage{ content: RequestContent::Put(..), .. })) => {
+                    TestEvent(index, Event::Request(RequestMessage{
+                        content: RequestContent::Put(..), ..
+                    })) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -345,15 +353,20 @@ fn core() {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
-                        unwrap_result!(client.client
-                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                        assert!(client.client
+                                      .send_put_request(Authority::ClientManager(*client.name()),
+                                                        data.clone())
+                                      .is_ok());
                     }
-                    TestEvent(index,
-                              Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                                    dst: Authority::ClientManager(name),
-                                                                    content: RequestContent::Put(data, id) })) => {
-                        unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
-                                                                          Authority::NaeManager(data.name().clone()),
+                    TestEvent(index, Event::Request(RequestMessage{
+                        src: Authority::Client{ .. },
+                        dst: Authority::ClientManager(name),
+                        content: RequestContent::Put(data, id),
+                    })) => {
+                        let src = Authority::ClientManager(name);
+                        let dst = Authority::NaeManager(data.name().clone());
+                        unwrap_result!(nodes[index].node.send_put_request(src,
+                                                                          dst,
                                                                           data.clone(),
                                                                           id.clone()));
                     }
@@ -366,9 +379,10 @@ fn core() {
                                                                               id.clone()));
                         }
                     }
-                    TestEvent(index,
-                              Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
-                                                                      .. })) => {
+                    TestEvent(index, Event::Response(ResponseMessage{
+                                  content: ResponseContent::PutFailure{ .. },
+                                  ..
+                              })) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -445,15 +459,20 @@ fn core() {
         while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
-                    unwrap_result!(client.client
-                                         .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                    assert!(client.client
+                                  .send_put_request(Authority::ClientManager(*client.name()),
+                                                    data.clone())
+                                  .is_ok());
                 }
                 TestEvent(index,
                           Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                                dst: Authority::ClientManager(name),
-                                                                content: RequestContent::Put(data, id) })) => {
-                    unwrap_result!(nodes[index].node.send_put_request(Authority::ClientManager(name),
-                                                                      Authority::NaeManager(data.name().clone()),
+                                                        dst: Authority::ClientManager(name),
+                                                        content: RequestContent::Put(data, id)
+                          })) => {
+                    let src = Authority::ClientManager(name);
+                    let dst = Authority::NaeManager(data.name().clone());
+                    unwrap_result!(nodes[index].node.send_put_request(src,
+                                                                      dst,
                                                                       data.clone(),
                                                                       id.clone()));
                 }
@@ -469,8 +488,10 @@ fn core() {
                     }
                 }
                 TestEvent(_index,
-                          Event::Response(ResponseMessage{ content: ResponseContent::PutFailure{ .. },
-                                                                  .. })) => {
+                          Event::Response(ResponseMessage{
+                              content: ResponseContent::PutFailure{ .. },
+                              ..
+                          })) => {
                     panic!("Unexpected response.");
                 }
                 _ => (),
@@ -482,19 +503,21 @@ fn core() {
         // message from more than quorum group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
-        let mut number_of_events = 0;
+        let mut sent_ids = HashSet::new();
+        let mut received_ids = HashSet::new();
 
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
-                        unwrap_result!(client.client
-                                             .send_put_request(Authority::ClientManager(*client.name()), data.clone()));
+                        let src = Authority::ClientManager(*client.name());
+                        let result = client.client.send_put_request(src, data.clone());
+                        sent_ids.insert(unwrap_result!(result));
                     }
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
-                        if let RequestContent::Put(_, ref id) = message.content {
+                        if let RequestContent::Put(_, id) = message.content {
                             let encoded = unwrap_result!(serialisation::serialise(&message));
 
                             unwrap_result!(nodes[index]
@@ -502,19 +525,20 @@ fn core() {
                                                .send_put_success(message.dst,
                                                                  message.src,
                                                                  sha512::hash(&encoded),
-                                                                 id.clone()));
+                                                                 id));
                         }
                     }
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(..), .. }))
+                                content: ResponseContent::PutSuccess(_, id), .. }))
                         if index == client.index => {
-                        number_of_events += 1;
+                        assert!(received_ids.insert(id));
                     }
                     _ => (),
                 }
             } else {
-                assert_eq!(number_of_events, 1);
+                assert_eq!(1, received_ids.len());
+                assert_eq!(sent_ids, received_ids);
                 break;
             }
         }
