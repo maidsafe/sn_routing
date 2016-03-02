@@ -2202,8 +2202,8 @@ impl Core {
 }
 
 impl Debug for Core {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}({:?})", self.state, self.name())
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "{:?}({})", self.state, self.name())
     }
 }
 

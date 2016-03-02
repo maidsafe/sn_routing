@@ -18,6 +18,7 @@
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
+use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
 /// Mutable structured data.
@@ -36,7 +37,6 @@ pub struct StructuredData {
     current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
     previous_owner_signatures: Vec<::sodiumoxide::crypto::sign::Signature>,
 }
-
 
 impl StructuredData {
     /// Creates a new `StructuredData` signed with `signing_key`.
@@ -246,52 +246,36 @@ impl StructuredData {
     }
 }
 
-impl ::std::fmt::Debug for StructuredData {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
-        try!(write!(formatter,
-                    " type_tag: {:?} , name: {:?} , version: {:?} , data: {:?}",
-                    self.type_tag,
-                    self.name(),
-                    self.version,
-                    ::utils::format_binary_array(&self.data[..])));
-
-        let prev_owner_keys: Vec<String> = self.previous_owner_keys
-                                               .iter()
-                                               .map(|pub_key| {
-                                                   ::utils::format_binary_array(&pub_key.0)
-                                               })
-                                               .collect();
-        try!(write!(formatter, " , previous_owner_keys : ("));
-        for itr in &prev_owner_keys {
-            try!(write!(formatter, "{:?} ", itr));
-        }
-        try!(write!(formatter, ")"));
-
+impl Debug for StructuredData {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        let previous_owner_keys: Vec<String> = self.previous_owner_keys
+                                                   .iter()
+                                                   .map(|pub_key| {
+                                                       ::utils::format_binary_array(&pub_key.0)
+                                                   })
+                                                   .collect();
         let current_owner_keys: Vec<String> = self.current_owner_keys
                                                   .iter()
                                                   .map(|pub_key| {
                                                       ::utils::format_binary_array(&pub_key.0)
                                                   })
                                                   .collect();
-        try!(write!(formatter, " , current_owner_keys : ("));
-        for itr in &current_owner_keys {
-            try!(write!(formatter, "{:?} ", itr));
-        }
-        try!(write!(formatter, ") "));
-
-        let prev_owner_signatures: Vec<String> =
+        let previous_owner_signatures: Vec<String> =
             self.previous_owner_signatures
                 .iter()
                 .map(|signature| ::utils::format_binary_array(&signature.0[..]))
                 .collect();
-        try!(write!(formatter, " , prev_owner_signatures : ("));
-        for itr in &prev_owner_signatures {
-            try!(write!(formatter, "{:?} ", itr));
-        }
-        write!(formatter, ") ")
+        write!(formatter,
+               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               self.type_tag,
+               self.name(),
+               ::utils::format_binary_array(&self.data[..]),
+               previous_owner_keys,
+               self.version,
+               current_owner_keys,
+               previous_owner_signatures)
     }
 }
-
 
 #[cfg(test)]
 mod test {

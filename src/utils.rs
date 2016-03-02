@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt::Write;
 use xor_name::XorName;
 
-/// Format a vector of bytes as a hexadecimal number, ellipsizing all but the first and last three.
+/// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
 ///
-/// For three bytes with values 1, 2, 3, the output will be "010203". For more than six bytes, e.g. for fifteen bytes
-/// with values 1, 2, ..., 15, the output will be "010203..0D0E0F".
+/// For three bytes with values 1, 2, 3, the output will be "010203".  For more than six bytes, e.g.
+/// for fifteen bytes with values 1, 2, ..., 15, the output will be "010203..0d0e0f".
 pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
-    use std::fmt::Write;
     let input_ref = input.as_ref();
     if input_ref.len() <= 6 {
         let mut ret = String::new();
@@ -39,7 +39,6 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
             input_ref[input_ref.len() - 2],
             input_ref[input_ref.len() - 1])
 }
-
 
 /// Compute the relocated name of a client with the given original name.
 ///

@@ -40,7 +40,6 @@
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
@@ -55,12 +54,8 @@ extern crate time;
 
 mod utils;
 
-use log::{LogRecord, LogLevel};
-
-use std::fs::OpenOptions;
 use std::time::Duration;
 use std::{io, env, thread};
-use std::io::Write;
 use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
@@ -104,10 +99,12 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     println!("--------- Starting {} nodes -----------", count);
 
     let current_exe_path = unwrap_result!(env::current_exe());
+    let mut log_path = current_exe_path.clone();
 
     let nodes = try!((0..count)
                          .map(|i| {
-                             let mut args = vec![format!("--node=Node_{}.log", i + 1)];
+                             log_path.set_file_name(&format!("Node_{}.log", i + 1));
+                             let mut args = vec![format!("--output={}", log_path.display())];
                              if i == 0 {
                                  args.push("-d".to_owned());
                              }
@@ -192,7 +189,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         println!("Killing Node #{}", kill_at_index + 1);
         let _ = nodes.remove(kill_at_index);
     } else {
-        let arg = format!("--node=Node_{:02}.log", log_file_number);
+        let arg = format!("--output=Node_{:02}.log", log_file_number);
         *log_file_number += 1;
 
         nodes.push(NodeProcess(try!(Command::new(try!(env::current_exe()))
@@ -212,10 +209,10 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  local_network [(<nodes> <requests>) | (--node=<log_file> | --node=<log_file> -d | -h)]
+  local_network [(<nodes> <requests>) | (--output=<log_file> | --output=<log_file> -d | -h)]
 
 Options:
-  --node=<log_file>             Run individual CI node.
+  -o, --output=<log_file>       Run individual CI node.
   -d, --delete-bootstrap-cache  Delete existing bootstrap-cache.
   -h, --help                    Display this help message.
 ";
@@ -225,67 +222,18 @@ Options:
 struct Args {
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
-    flag_node: Option<String>,
+    flag_output: Option<String>,
     flag_delete_bootstrap_cache: Option<bool>,
     flag_help: Option<bool>,
-}
-
-fn init(file_name: String) {
-    let mut log_path = unwrap_result!(env::current_exe());
-    log_path.set_file_name(file_name);
-
-    let format = move |record: &LogRecord| {
-        let now = ::time::now();
-        let thread_name = " ".to_owned();
-        let log_message = format!("{} {}.{:06} {}[{}:{}:{:4}] {}\n",
-                                  match record.level() {
-                                      LogLevel::Error => 'E',
-                                      LogLevel::Warn => 'W',
-                                      LogLevel::Info => 'I',
-                                      LogLevel::Debug => 'D',
-                                      LogLevel::Trace => 'T',
-                                  },
-                                  if let Ok(time_txt) = ::time::strftime("%T", &now) {
-                                      time_txt
-                                  } else {
-                                      "".to_owned()
-                                  },
-                                  now.tm_nsec / 1000,
-                                  thread_name,
-                                  record.location()
-                                        .module_path()
-                                        .splitn(2, "::")
-                                        .next()
-                                        .unwrap_or(""),
-                                  record.location().file(),
-                                  record.location().line(),
-                                  record.args());
-        let mut logfile = unwrap_result!(OpenOptions::new()
-                                             .write(true)
-                                             .create(true)
-                                             .append(true)
-                                             .open(log_path.clone()));
-        unwrap_result!(logfile.write_all(&log_message.clone().into_bytes()[..]));
-        log_message
-    };
-
-    let mut builder = ::env_logger::LogBuilder::new();
-    let _ = builder.format(format);
-
-    if let Ok(rust_log) = ::std::env::var("RUST_LOG") {
-        let _ = builder.parse(&rust_log);
-    }
-
-    builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
 }
 
 #[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|e| e.exit());
+                         .unwrap_or_else(|error| error.exit());
 
-    let run_network_test = !(args.flag_node.is_some() ||
+    let run_network_test = !(args.flag_output.is_some() ||
                              args.flag_delete_bootstrap_cache.is_some());
 
     if run_network_test {
@@ -345,8 +293,8 @@ fn main() {
             *unwrap_result!(lock.lock()) = true;
             cvar.notify_one();
         }
-    } else if let Some(log_file) = args.flag_node {
-        init(log_file);
+    } else if let Some(log_file) = args.flag_output {
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file
