@@ -119,7 +119,7 @@ impl Drop for Service {
 /// First element is the endpoint number of the peer (for easier log
 /// diagnostics), second one is some random number so the PeerId is different
 /// after restart.
-#[derive(Clone, Copy, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct PeerId(pub usize, pub u64);
 
 impl fmt::Debug for PeerId {

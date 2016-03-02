@@ -15,7 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
+
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::crust::PeerId;
+
 use kademlia_routing_table::Destination;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{Debug, Formatter};
