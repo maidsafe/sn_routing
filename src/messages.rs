@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt;
+use std::fmt::{self, Debug, Formatter};
 use data::{Data, DataRequest};
 use id::{FullId, PublicId};
 use types::MessageId;
@@ -372,8 +372,8 @@ pub enum ResponseContent {
     },
 }
 
-impl fmt::Debug for DirectMessage {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for DirectMessage {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             DirectMessage::BootstrapIdentify { ref public_id, ref current_quorum_size } => {
                 write!(formatter,
@@ -395,8 +395,8 @@ impl fmt::Debug for DirectMessage {
     }
 }
 
-impl fmt::Debug for HopMessage {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for HopMessage {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
                "HopMessage {{ content: {:?}, name: {:?}, signature: .. }}",
                self.content,
@@ -404,8 +404,8 @@ impl fmt::Debug for HopMessage {
     }
 }
 
-impl fmt::Debug for SignedMessage {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for SignedMessage {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
                "SignedMessage {{ content: {:?}, public_id: {:?}, signature: .. }}",
                self.content,
@@ -413,8 +413,8 @@ impl fmt::Debug for SignedMessage {
     }
 }
 
-impl fmt::Debug for RequestContent {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for RequestContent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             RequestContent::GetNetworkName { ref current_id } => {
                 write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
@@ -430,7 +430,7 @@ impl fmt::Debug for RequestContent {
                 write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
             }
             RequestContent::Refresh(ref data) => {
-                write!(formatter, "Refresh({:?})", utils::format_binary_array(data))
+                write!(formatter, "Refresh({})", utils::format_binary_array(data))
             }
             RequestContent::Get(ref data_request, ref message_id) => {
                 write!(formatter, "Get({:?}, {:?})", data_request, message_id)
@@ -448,8 +448,8 @@ impl fmt::Debug for RequestContent {
     }
 }
 
-impl fmt::Debug for ResponseContent {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for ResponseContent {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             ResponseContent::GetNetworkName { ref relocated_id } => {
                 write!(formatter, "GetNetworkName {{ {:?} }}", relocated_id)
@@ -469,18 +469,21 @@ impl fmt::Debug for ResponseContent {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
             }
             ResponseContent::PutSuccess(ref digest, ref message_id) => {
-                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", digest, message_id)
+                write!(formatter,
+                       "PutSuccess {{ Digest({}), {:?} }}",
+                       utils::format_binary_array(digest),
+                       message_id)
             }
             ResponseContent::PostSuccess(ref digest, ref message_id) => {
                 write!(formatter,
-                       "PostSuccess {{ {:?}, {:?} }}",
-                       digest,
+                       "PostSuccess {{ Digest({}), {:?} }}",
+                       utils::format_binary_array(digest),
                        message_id)
             }
             ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
                 write!(formatter,
-                       "DeleteSuccess {{ {:?}, {:?} }}",
-                       digest,
+                       "DeleteSuccess {{ Digest({}), {:?} }}",
+                       utils::format_binary_array(digest),
                        message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {

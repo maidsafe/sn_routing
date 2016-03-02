@@ -15,9 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt::{self, Debug, Formatter};
+use std::sync::mpsc::Sender;
 use authority::Authority;
 use error::InterfaceError;
-use std::sync::mpsc::Sender;
 use messages::{RequestContent, RoutingMessage};
 use xor_name::XorName;
 
@@ -49,22 +50,22 @@ pub enum Action {
     Terminate,
 }
 
-impl ::std::fmt::Debug for Action {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+impl Debug for Action {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Action::NodeSendMessage { ref content, .. } => {
-                write!(f, "Action::NodeSendMessage {{ {:?}, result_tx }}", content)
+                write!(formatter, "Action::NodeSendMessage {{ {:?}, result_tx }}", content)
             }
             Action::ClientSendRequest { ref content, ref dst, .. } => {
-                write!(f,
+                write!(formatter,
                        "Action::ClientSendRequest {{ {:?}, dst: {:?}, result_tx }}",
                        content,
                        dst)
             }
-            Action::CloseGroup { .. } => write!(f, "Action::CloseGroup"),
-            Action::Name{ .. } => write!(f, "Action::Name"),
-            Action::Timeout(token) => write!(f, "Action::Timeout({})", token),
-            Action::Terminate => write!(f, "Action::Terminate"),
+            Action::CloseGroup { .. } => write!(formatter, "Action::CloseGroup"),
+            Action::Name{ .. } => write!(formatter, "Action::Name"),
+            Action::Timeout(token) => write!(formatter, "Action::Timeout({})", token),
+            Action::Terminate => write!(formatter, "Action::Terminate"),
         }
     }
 }

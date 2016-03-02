@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{Debug, Error, Formatter};
+use std::fmt::{self, Debug, Formatter};
 
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::XorName;
@@ -82,11 +82,10 @@ impl ImmutableData {
 }
 
 impl Debug for ImmutableData {
-    fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-        formatter.write_str(&format!(" {:?}, {:?} ", self.type_tag, self.name()))
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "ImmutableData {{ {:?}, {} }}", self.type_tag, self.name())
     }
 }
-
 
 #[cfg(test)]
 mod test {
