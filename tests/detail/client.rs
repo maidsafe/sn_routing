@@ -99,30 +99,30 @@ impl Client {
 
     /// Send a `Get` request to the network and return the received response.
     pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone()));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_get_request(Authority::NaeManager(request.name()),
+                                                     request.clone()));
         self.wait_for_response()
     }
 
     /// Send a `Put` request to the network.
     pub fn put(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_put_request(Authority::ClientManager(*self.name()), data));
         self.wait_for_response()
     }
 
     /// Post data onto the network.
     pub fn post(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::NaeManager(data.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::NaeManager(data.name()), data));
         self.wait_for_response()
     }
 
     /// Delete data from the network.
     pub fn delete(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_delete_request(Authority::NaeManager(data.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_delete_request(Authority::NaeManager(data.name()), data));
         self.wait_for_response()
     }
 
@@ -131,8 +131,9 @@ impl Client {
         let wrapper = MpidMessageWrapper::Online;
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(*self.name(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
 
         match unwrap_option!(self.wait_for_response(), "") {
             ResponseMessage { content: ResponseContent::PostSuccess(..), .. } => {
@@ -208,8 +209,9 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -226,8 +228,9 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -257,8 +260,8 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     fn wait_for_wrapper(&self) -> MpidMessageWrapper {

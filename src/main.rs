@@ -45,10 +45,10 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate docopt;
 extern crate chunk_store;
 extern crate config_file_handler;
 extern crate ctrlc;
+extern crate docopt;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;

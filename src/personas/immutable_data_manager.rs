@@ -608,6 +608,7 @@ mod test {
             let from = random();
             let client = Authority::Client {
                 client_key: keys.0,
+                peer_id: random(),
                 proxy_node_name: from,
             };
 

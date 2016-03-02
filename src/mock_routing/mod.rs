@@ -22,6 +22,7 @@
 mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingNodeImpl;
+use rand::random;
 use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType,
               InterfaceError, MessageId, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage, RoutingError};
@@ -265,6 +266,7 @@ impl MockRoutingNode {
     fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {
         Authority::Client {
             client_key: client_pub_key,
+            peer_id: random(),
             proxy_node_name: client_address,
         }
     }

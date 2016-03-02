@@ -304,6 +304,7 @@ mod test {
             our_authority: Authority::ClientManager(from.clone()),
             client: Authority::Client {
                 client_key: keys.0,
+                peer_id: random(),
                 proxy_node_name: from.clone(),
             },
             routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
