@@ -167,7 +167,8 @@ impl PmidManager {
             }
 
             let src = Authority::NodeManager(pmid_node.clone());
-            let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
+            let refresh = Refresh::new(pmid_node,
+                                       RefreshValue::PmidManagerAccount(account.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("PmidManager sending refresh for account {:?}", src.name());
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);

@@ -380,7 +380,7 @@ impl MpidManager {
                             let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
                             let serialised_wrapper = try!(serialise(&wrapper));
                             let data = Data::Plain(PlainData::new(message_name,
-                                                                      serialised_wrapper));
+                                                                  serialised_wrapper));
                             try!(routing_node.send_post_request(request.dst.clone(),
                                                                 request.src.clone(),
                                                                 data,
@@ -402,11 +402,10 @@ impl MpidManager {
                         if mpid_message.recipient() == request.dst.name() {
                             let clients = receiver.registered_clients();
                             for client in clients.iter() {
-                                let _ =
-                                    routing_node.send_post_request(request.dst.clone(),
-                                                                   client.clone(),
-                                                                   Data::Plain(data.clone()),
-                                                                   message_id.clone());
+                                let _ = routing_node.send_post_request(request.dst.clone(),
+                                                                       client.clone(),
+                                                                       Data::Plain(data.clone()),
+                                                                       message_id.clone());
                             }
                         }
                     }
@@ -461,7 +460,8 @@ impl MpidManager {
                         let dst = request.src.clone();
                         let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
                         let serialised_wrapper = try!(serialise(&wrapper));
-                        let data = Data::Plain(PlainData::new(request.dst.name().clone(), serialised_wrapper));
+                        let data = Data::Plain(PlainData::new(request.dst.name().clone(),
+                                                              serialised_wrapper));
                         try!(routing_node.send_post_request(src, dst, data, message_id.clone()));
                     }
                 }
@@ -897,8 +897,7 @@ mod test {
         let request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::Plain(plain_data.clone()),
-                                         MessageId::new().clone()),
+            content: RequestContent::Put(Data::Plain(plain_data.clone()), MessageId::new().clone()),
         };
 
         match env.mpid_manager.handle_put(&env.routing, &request) {

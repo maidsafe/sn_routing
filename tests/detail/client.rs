@@ -75,7 +75,7 @@ impl Client {
         info!("Waiting for {:?} to connect to network", client);
         let event = client.wait_for_event();
         if let Some(Event::Connected) = event {
-            return client
+            return client;
         }
         panic!("{:?} failed to connect: {:?}", client, event);
     }
