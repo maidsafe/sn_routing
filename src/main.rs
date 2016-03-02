@@ -41,19 +41,18 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 
-extern crate docopt;
-extern crate env_logger;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate mpid_messaging;
+extern crate docopt;
 extern crate chunk_store;
 extern crate config_file_handler;
 extern crate ctrlc;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
+extern crate mpid_messaging;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
 extern crate routing;
@@ -70,66 +69,52 @@ mod types;
 mod utils;
 mod vault;
 
+use std::ffi::OsString;
+use std::process;
 use docopt::Docopt;
-use log::LogRecord;
-use std::fs::OpenOptions;
-use std::env;
-use std::io::Write;
 
-// ==========================   Program Options   =================================
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  safe_vault (--node=<log_file>)
+  safe_vault [options]
+
 Options:
-  --node=<log_file>      Logging to the file.
+  -o <file>, --output=<file>    Direct log output to stderr _and_ <file>.  If
+                                <file> does not exist it will be created,
+                                otherwise it will be truncated.
+  -V, --version                 Display version info and exit.
+  -h, --help                    Display this help message and exit.
 ";
-// ================================================================================
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
-    flag_node: Option<String>,
-}
-
-fn init(file_name: String) {
-    let mut log_path = unwrap_result!(env::current_exe());
-    log_path.set_file_name(file_name.clone());
-
-    let format = move |record: &LogRecord| {
-        let log_message = format!("[{}:{}] {}\n",
-                                  record.location().file(),
-                                  record.location().line(),
-                                  record.args());
-        let mut logfile = unwrap_result!(OpenOptions::new()
-                                             .write(true)
-                                             .create(true)
-                                             .append(true)
-                                             .open(log_path.clone()));
-        unwrap_result!(logfile.write_all(&log_message.clone().into_bytes()[..]));
-        log_message
-    };
-
-    let mut builder = ::env_logger::LogBuilder::new();
-    let _ = builder.format(format);
-
-    if let Ok(rust_log) = ::std::env::var("RUST_LOG") {
-        let _ = builder.parse(&rust_log);
-    }
-
-    builder.init().unwrap_or_else(|error| println!("Error initialising logger: {}", error));
+    flag_output: Option<String>,
+    flag_version: bool,
+    flag_help: bool,
 }
 
 /// Runs a SAFE Network vault.
 pub fn main() {
-    utils::handle_version();
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|e| e.exit());
-    if let Some(log_file) = args.flag_node {
-        init(log_file);
+                         .unwrap_or_else(|error| error.exit());
+
+    let name = config_file_handler::exe_file_stem().unwrap_or(OsString::new());
+    let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
+    if args.flag_version {
+        println!("{}", name_and_version);
+        process::exit(0);
+    }
+
+    if let Some(log_file) = args.flag_output {
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
     } else {
         maidsafe_utilities::log::init(false);
     }
+
+    let message = String::from("Running ") + &name_and_version;
+    let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
+    info!("\n\n{}\n{}", message, underline);
 
     vault::Vault::run();
 }
