@@ -19,7 +19,7 @@ use personas::{immutable_data_manager, maid_manager, pmid_manager, mpid_manager}
 use routing::{PlainData, StructuredData};
 use xor_name::XorName;
 
-#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
 pub struct Refresh {
     pub name: XorName,
     pub value: RefreshValue,
@@ -34,7 +34,7 @@ impl Refresh {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, RustcEncodable, RustcDecodable)]
+#[derive(Debug, Clone, RustcEncodable, RustcDecodable)]
 pub enum RefreshValue {
     MaidManagerAccount(maid_manager::Account),
     ImmutableDataManagerAccount(immutable_data_manager::Account),
