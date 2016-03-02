@@ -23,7 +23,7 @@ use mock_crust::crust::PeerId;
 
 use kademlia_routing_table::Destination;
 use sodiumoxide::crypto::{hash, sign};
-use std::fmt::{Debug, Formatter};
+use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
 /// An entity that can act as a source or destination of a message.
@@ -87,15 +87,15 @@ impl Authority {
 }
 
 impl Debug for Authority {
-    fn fmt(&self, f: &mut Formatter) -> ::std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Authority::ClientManager(ref name) => write!(f, "ClientManager(name:{:?})", name),
-            Authority::NaeManager(ref name) => write!(f, "NaeManager(name:{:?})", name),
-            Authority::NodeManager(ref name) => write!(f, "NodeManager(name:{:?})", name),
-            Authority::ManagedNode(ref name) => write!(f, "ManagedNode(name:{:?})", name),
+            Authority::ClientManager(ref name) => write!(formatter, "ClientManager(name: {})", name),
+            Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
+            Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
+            Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),
             Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
-                write!(f,
-                       "Client {{ client_name: {:?}, proxy_node_name: {:?}, peer_id: {:?} }}",
+                write!(formatter,
+                       "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
                        XorName::new(hash::sha512::hash(&client_key[..]).0),
                        proxy_node_name,
                        peer_id)

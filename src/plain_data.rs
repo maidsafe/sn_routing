@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt;
+use std::fmt::{self, Debug, Formatter};
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::XorName;
 use utils;
@@ -56,15 +56,14 @@ impl PlainData {
     }
 }
 
-impl fmt::Debug for PlainData {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for PlainData {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
                "PlainData {{ name: {}, value: {} }}",
                self.name,
                utils::format_binary_array(&self.value))
     }
 }
-
 
 #[cfg(test)]
 mod test {

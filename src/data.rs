@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt;
+use std::fmt::{self, Debug, Formatter};
 use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataType};
@@ -37,18 +37,18 @@ impl Data {
     /// Return data name.
     pub fn name(&self) -> XorName {
         match *self {
-            Data::Structured(ref d) => d.name(),
-            Data::Immutable(ref d) => d.name(),
-            Data::Plain(ref d) => d.name(),
+            Data::Structured(ref data) => data.name(),
+            Data::Immutable(ref data) => data.name(),
+            Data::Plain(ref data) => data.name(),
         }
     }
 
     /// Return data size.
     pub fn payload_size(&self) -> usize {
         match *self {
-            Data::Structured(ref d) => d.payload_size(),
-            Data::Immutable(ref d) => d.payload_size(),
-            Data::Plain(ref d) => d.payload_size(),
+            Data::Structured(ref data) => data.payload_size(),
+            Data::Immutable(ref data) => data.payload_size(),
+            Data::Plain(ref data) => data.payload_size(),
         }
     }
 }
@@ -64,12 +64,12 @@ pub enum DataRequest {
     Plain(XorName),
 }
 
-impl fmt::Debug for Data {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl Debug for Data {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Data::Structured(ref d) => d.fmt(formatter),
-            Data::Immutable(ref d) => d.fmt(formatter),
-            Data::Plain(ref d) => d.fmt(formatter),
+            Data::Structured(ref data) => data.fmt(formatter),
+            Data::Immutable(ref data) => data.fmt(formatter),
+            Data::Plain(ref data) => data.fmt(formatter),
         }
     }
 }

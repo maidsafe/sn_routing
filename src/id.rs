@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
 /// Network identity component containing name, and public and private keys.
@@ -80,9 +81,9 @@ pub struct PublicId {
     name: XorName,
 }
 
-impl ::std::fmt::Debug for PublicId {
-    fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(formatter, "PublicId(name: {:?})", self.name)
+impl Debug for PublicId {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "PublicId(name: {})", self.name)
     }
 }
 
