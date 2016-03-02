@@ -36,6 +36,8 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(shadow_unrelated, print_stdout, use_debug))]
 
+#![cfg(not(feature = "use-mock-crust"))]
+
 #[macro_use]
 extern crate log;
 #[macro_use]

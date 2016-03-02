@@ -32,6 +32,8 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations)]
 
+#![cfg(not(feature = "use-mock-crust"))]
+
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
@@ -48,11 +50,13 @@ extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
 
+mod utils;
+
 use std::cmp::Ordering::{Greater, Less};
 #[cfg(target_os = "macos")]
 use std::io;
 use std::{iter, thread};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use itertools::Itertools;
@@ -63,6 +67,7 @@ use routing::{Authority, Client, Data, Event, FullId, Node, PlainData, RequestCo
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
+use utils::recv_with_timeout;
 use xor_name::XorName;
 
 const QUORUM_SIZE: usize = 5;
@@ -177,34 +182,12 @@ fn spawn_select_thread(index: usize,
     (sender, RaiiThreadJoiner::new(thread_handle))
 }
 
-fn recv_with_timeout<T>(receiver: &Receiver<T>, timeout: Duration) -> Option<T> {
-    let interval = Duration::from_millis(100);
-    let mut elapsed = Duration::from_millis(0);
-
-    loop {
-        match receiver.try_recv() {
-            Ok(value) => return Some(value),
-            Err(TryRecvError::Disconnected) => break,
-            _ => (),
-        }
-
-        thread::sleep(interval);
-        elapsed = elapsed + interval;
-
-        if elapsed > timeout {
-            break;
-        }
-    }
-
-    None
-}
-
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              connection_counts: &mut [usize],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
+        if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
             if let TestEvent(index, Event::NodeAdded(_)) = test_event {
                 connection_counts[index] += 1;
 
@@ -283,7 +266,7 @@ fn core() {
         let data = gen_plain_data();
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
@@ -328,7 +311,7 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         unwrap_result!(client.client
@@ -359,7 +342,7 @@ fn core() {
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         unwrap_result!(client.client
@@ -411,7 +394,7 @@ fn core() {
         drop(node);
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
                                                                     lost_name == name => {
@@ -437,7 +420,7 @@ fn core() {
         nodes.push(TestNode::new(nodes_len, event_sender.clone()));
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
                     TestEvent(index, Event::NodeAdded(_)) if index < nodes.len() => {
                         churns[index] = true;
@@ -459,7 +442,7 @@ fn core() {
         let client = TestClient::new(nodes.len(), event_sender.clone());
         let data = gen_plain_data();
 
-        while let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+        while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     unwrap_result!(client.client
@@ -502,7 +485,7 @@ fn core() {
         let mut number_of_events = 0;
 
         loop {
-            if let Some(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
+            if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         // The client is connected now. Send some request.
@@ -538,6 +521,7 @@ fn core() {
     }
 }
 
+#[test]
 fn main() {
     init();
     core();
