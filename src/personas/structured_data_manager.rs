@@ -166,8 +166,11 @@ impl StructuredDataManager {
         };
 
         if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
-            if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
-                debug!("StructuredDataManager deleting {:?} with requested new version {:?}", existing_data, data);
+            if let Ok(existing_data) =
+                   serialisation::deserialise::<StructuredData>(&serialised_data) {
+                debug!("StructuredDataManager deleting {:?} with requested new version {:?}",
+                       existing_data,
+                       data);
                 if existing_data.validate_self_against_successor(&data).is_ok() {
                     // Reducing content to empty to avoid later on put bearing the same name
                     // chunk_store::put() deletes the old data automatically
@@ -196,7 +199,8 @@ impl StructuredDataManager {
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
         if self.chunk_store.has_chunk(&structured_data.name()) {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
-                if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
+                if let Ok(existing_data) =
+                       serialisation::deserialise::<StructuredData>(&serialised_data) {
                     if existing_data.validate_self_against_successor(&structured_data).is_ok() {
                         // chunk_store::put() deletes the old data automatically
                         return Ok(try!(self.chunk_store.put(&structured_data.name(),
@@ -205,8 +209,9 @@ impl StructuredDataManager {
                 }
             }
         } else {
-            return Ok(try!(self.chunk_store.put(&structured_data.name(),
-                                                &try!(serialisation::serialise(&structured_data)))));
+            return Ok(try!(self.chunk_store
+                               .put(&structured_data.name(),
+                                    &try!(serialisation::serialise(&structured_data)))));
         }
         Ok(())
     }

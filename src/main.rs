@@ -45,13 +45,14 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate mpid_messaging;
 extern crate chunk_store;
 extern crate config_file_handler;
 extern crate ctrlc;
+extern crate docopt;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
+extern crate mpid_messaging;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
 extern crate routing;
@@ -68,9 +69,52 @@ mod types;
 mod utils;
 mod vault;
 
+use std::ffi::OsString;
+use std::process;
+use docopt::Docopt;
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+static USAGE: &'static str = "
+Usage:
+  safe_vault [options]
+
+Options:
+  -o <file>, --output=<file>    Direct log output to stderr _and_ <file>.  If
+                                <file> does not exist it will be created,
+                                otherwise it will be truncated.
+  -V, --version                 Display version info and exit.
+  -h, --help                    Display this help message and exit.
+";
+
+#[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
+struct Args {
+    flag_output: Option<String>,
+    flag_version: bool,
+    flag_help: bool,
+}
+
 /// Runs a SAFE Network vault.
 pub fn main() {
-    maidsafe_utilities::log::init(false);
-    utils::handle_version();
+    let args: Args = Docopt::new(USAGE)
+                         .and_then(|docopt| docopt.decode())
+                         .unwrap_or_else(|error| error.exit());
+
+    let name = config_file_handler::exe_file_stem().unwrap_or(OsString::new());
+    let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
+    if args.flag_version {
+        println!("{}", name_and_version);
+        process::exit(0);
+    }
+
+    if let Some(log_file) = args.flag_output {
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
+    } else {
+        maidsafe_utilities::log::init(false);
+    }
+
+    let message = String::from("Running ") + &name_and_version;
+    let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
+    info!("\n\n{}\n{}", message, underline);
+
     vault::Vault::run();
 }

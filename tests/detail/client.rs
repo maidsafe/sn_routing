@@ -70,13 +70,14 @@ impl Client {
             full_id: FullId::with_keys(encrypt_keys, sign_keys),
         };
 
-        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
-        // requests to the network.
+        // Wait for a `Connected` event, notifying us that we are now ready to send requests to the
+        // network.
         info!("Waiting for {:?} to connect to network", client);
-        if let Some(Event::Connected) = client.wait_for_event() {
-            return client
+        let event = client.wait_for_event();
+        if let Some(Event::Connected) = event {
+            return client;
         }
-        panic!("{:?} failed to connect.");
+        panic!("{:?} failed to connect: {:?}", client, event);
     }
 
     /// Create an account
@@ -98,30 +99,30 @@ impl Client {
 
     /// Send a `Get` request to the network and return the received response.
     pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone()));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_get_request(Authority::NaeManager(request.name()),
+                                                     request.clone()));
         self.wait_for_response()
     }
 
     /// Send a `Put` request to the network.
     pub fn put(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_put_request(Authority::ClientManager(*self.name()), data));
         self.wait_for_response()
     }
 
     /// Post data onto the network.
     pub fn post(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::NaeManager(data.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::NaeManager(data.name()), data));
         self.wait_for_response()
     }
 
     /// Delete data from the network.
     pub fn delete(&self, data: Data) -> Option<ResponseMessage> {
-        unwrap_result!(self.routing_client
-                           .send_delete_request(Authority::NaeManager(data.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_delete_request(Authority::NaeManager(data.name()), data));
         self.wait_for_response()
     }
 
@@ -130,8 +131,9 @@ impl Client {
         let wrapper = MpidMessageWrapper::Online;
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(*self.name(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
 
         match unwrap_option!(self.wait_for_response(), "") {
             ResponseMessage { content: ResponseContent::PostSuccess(..), .. } => {
@@ -173,27 +175,33 @@ impl Client {
     pub fn expect_timeout(&self) -> Option<MpidMessage> {
         match self.wait_for_event() {
             Some(_) => panic!("Unexpected event."),
-            None => None
+            None => None,
         }
     }
 
     /// Delete mpid_header.
     pub fn delete_mpid_header(&self, header_name: XorName) {
-        self.messaging_delete_request(self.name().clone(), header_name.clone(),
+        self.messaging_delete_request(self.name().clone(),
+                                      header_name.clone(),
                                       MpidMessageWrapper::DeleteHeader(header_name))
     }
 
     /// Delete mpid_message.
     pub fn delete_mpid_message(&self, target_account: XorName, msg_name: XorName) {
-        self.messaging_delete_request(target_account, msg_name.clone(),
+        self.messaging_delete_request(target_account,
+                                      msg_name.clone(),
                                       MpidMessageWrapper::DeleteMessage(msg_name))
     }
 
-    fn messaging_delete_request(&self, target_account: XorName, name: XorName, wrapper: MpidMessageWrapper) {
+    fn messaging_delete_request(&self,
+                                target_account: XorName,
+                                name: XorName,
+                                wrapper: MpidMessageWrapper) {
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(name, value));
         let _ = unwrap_result!(self.routing_client
-                           .send_delete_request(Authority::ClientManager(target_account), data));
+                                   .send_delete_request(Authority::ClientManager(target_account),
+                                                        data));
     }
 
     /// Query outbox.
@@ -201,8 +209,9 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -219,8 +228,9 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_post_request(Authority::ClientManager(*self.name()),
+                                                      data));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -250,8 +260,8 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(name.clone(), value));
-        unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        let _ = unwrap_result!(self.routing_client
+                                   .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     fn wait_for_wrapper(&self) -> MpidMessageWrapper {

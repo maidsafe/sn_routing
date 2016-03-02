@@ -15,28 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use config_file_handler;
 use routing::Authority;
 use sodiumoxide::crypto::hash::sha512;
-use std::{env, process, sync};
-use std::ffi::OsString;
 use xor_name::XorName;
-
-static HANDLE_VERSION: sync::Once = sync::ONCE_INIT;
-
-pub fn handle_version() {
-    HANDLE_VERSION.call_once(|| {
-        let name = config_file_handler::exe_file_stem().unwrap_or(OsString::new());
-        let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
-        if env::args().any(|arg| arg == "--version") {
-            println!("{}", name_and_version);
-            process::exit(0);
-        }
-        let message = String::from("Running ") + &name_and_version;
-        let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
-        info!("\n\n{}\n{}", message, underline);
-    });
-}
 
 pub fn client_name(authority: &Authority) -> XorName {
     match authority {

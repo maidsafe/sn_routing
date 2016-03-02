@@ -167,8 +167,7 @@ impl ImmutableDataManager {
         for good_node in entry.pmid_nodes.iter() {
             let src = request.dst.clone();
             let dst = Authority::ManagedNode(good_node.name().clone());
-            let data_request = DataRequest::Immutable(data_name.clone(),
-                                                      ImmutableDataType::Normal);
+            let data_request = DataRequest::Immutable(data_name.clone(), ImmutableDataType::Normal);
             debug!("ImmutableDataManager {:?} sending get {:?} to {:?}",
                    routing_node.name(),
                    data_name,
@@ -324,8 +323,9 @@ impl ImmutableDataManager {
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (data_name, pmid_nodes) in self.accounts.iter() {
             let src = Authority::NaeManager(data_name.clone());
-            let refresh = Refresh::new(data_name,
-                                       RefreshValue::ImmutableDataManagerAccount(pmid_nodes.clone()));
+            let refresh =
+                Refresh::new(data_name,
+                             RefreshValue::ImmutableDataManagerAccount(pmid_nodes.clone()));
             if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
                 debug!("ImmutableDataManager sending refresh for account {:?}",
                        src.name());
@@ -608,14 +608,14 @@ mod test {
             let from = random();
             let client = Authority::Client {
                 client_key: keys.0,
+                peer_id: random(),
                 proxy_node_name: from,
             };
 
             let message_id = MessageId::new();
-            let content =
-                RequestContent::Get(DataRequest::Immutable(env.data.name().clone(),
-                                                           ImmutableDataType::Normal),
-                                    message_id);
+            let content = RequestContent::Get(DataRequest::Immutable(env.data.name().clone(),
+                                                                     ImmutableDataType::Normal),
+                                              message_id);
             let request = RequestMessage {
                 src: client.clone(),
                 dst: env.our_authority.clone(),

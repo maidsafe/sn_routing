@@ -1,24 +1,25 @@
 [package]
-name = "safe_vault"
-version = "0.2.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://maidsafe.net/safe_vault/latest"
-repository = "https://github.com/maidsafe/safe_vault"
-readme = "README.md"
-license = "GPL-3.0"
 homepage = "http://maidsafe.net"
+license = "GPL-3.0"
+name = "safe_vault"
+readme = "README.md"
+repository = "https://github.com/maidsafe/safe_vault"
+version = "0.2.0"
 
 [dependencies]
 chunk_store = "~0.2.0"
 clippy = {version = "~0.0.44", optional = true}
 config_file_handler = "~0.0.1"
 ctrlc = "~1.1.1"
+docopt = "~0.6.78"
 log = "~0.3.5"
 lru_time_cache = "~0.2.6"
-maidsafe_utilities = "~0.2.1"
+maidsafe_utilities = "~0.3.0"
 mpid_messaging = "~0.1.0"
-routing = "~0.8.0"
+routing = "~0.9.0"
 rustc-serialize = "~0.3.18"
 sodiumoxide = "~0.0.9"
 time = "~0.1.34"
