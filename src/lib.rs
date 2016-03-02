@@ -55,7 +55,7 @@
 //! to the network through any node, and exchange public keys with it. That node becomes a
 //! bootstrap node for the client, and messages to and from the client will be routed over it.
 //!
-//! ```
+//! ```no_run
 //! use std::sync::mpsc;
 //! use routing::{Client, Event, FullId};
 //!
@@ -74,7 +74,7 @@
 //!
 //! Creating a node looks even simpler:
 //!
-//! ```
+//! ```no_run
 //! use std::sync::mpsc;
 //! use routing::{Node, Event};
 //!
@@ -164,6 +164,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate accumulator;
 extern crate cbor;
+#[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
@@ -178,6 +179,7 @@ extern crate xor_name;
 mod action;
 mod authority;
 mod client;
+
 mod core;
 mod data;
 mod error;
@@ -191,6 +193,12 @@ mod structured_data;
 mod timer;
 mod types;
 mod utils;
+
+#[cfg(all(test, feature = "use-mock-crust"))]
+mod core_tests;
+
+#[cfg(feature = "use-mock-crust")]
+mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
