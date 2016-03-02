@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.9.0]
+- Add mock Crust and network-less tests for `Core`.
+- Return `MessageId`s from Client methods.
+- Allow a user to connect to the same proxy node with several clients.
+
 ## [0.8.0]
 - Send a Disconnected event if the network connection is lost.
 - Log disconnecting clients.
