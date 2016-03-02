@@ -192,9 +192,7 @@ impl Vault {
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => {
-                self.pmid_node.handle_put(&request)
-            }
+             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(&request),
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -324,7 +322,9 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RefreshValue::MpidManagerAccount(ref account, ref stored_messages, ref received_headers)) => {
+             &RefreshValue::MpidManagerAccount(ref account,
+                                               ref stored_messages,
+                                               ref received_headers)) => {
                 Ok(self.mpid_manager
                        .handle_refresh(refresh.name, account, stored_messages, received_headers))
             }

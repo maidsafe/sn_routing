@@ -18,7 +18,7 @@
 use std::env;
 use std::fmt::{self, Debug, Formatter};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
 pub struct VaultProcess {
@@ -26,22 +26,17 @@ pub struct VaultProcess {
     child: Child,
 }
 
-fn get_path(filename: &str) -> PathBuf {
-    match env::current_exe() {
-        Ok(mut exe_path) => {
-            exe_path.pop();
-            Path::new("./target")
-                .join(unwrap_option!(exe_path.iter().last(), ""))
-                .join(filename)
-        }
-        Err(e) => panic!("Failed to get current integration test path: {}", e),
-    }
+fn get_path(file_name: &str) -> PathBuf {
+    let mut path = unwrap_result!(env::current_exe());
+    path.set_file_name(file_name);
+    path
 }
 
 impl VaultProcess {
     pub fn new(index: u32) -> VaultProcess {
         let executable_path = get_path("safe_vault");
-        let args = vec![format!("--node=vault_{}.log", index)];
+        let logfile_path = get_path(&format!("vault_{}.log", index));
+        let args = vec![format!("--output={}", logfile_path.display())];
         trace!("Starting vault {}", index);
         match Command::new(executable_path.to_path_buf())
                   .args(&args)
