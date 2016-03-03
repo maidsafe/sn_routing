@@ -17,8 +17,10 @@
 
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, ImmutableData, MessageId, ResponseMessage};
+use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
+use sodiumoxide::crypto::hash::sha512;
 use std::collections::HashMap;
+use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -82,77 +84,115 @@ impl Account {
 }
 
 
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct MetadataForPutRequest {
+    pub request: RequestMessage,
+    pub creation_timestamp: SteadyTime,
+}
+
+impl MetadataForPutRequest {
+    pub fn new(request: RequestMessage) -> MetadataForPutRequest {
+        MetadataForPutRequest {
+            request: request,
+            creation_timestamp: SteadyTime::now(),
+        }
+    }
+}
+
 
 pub struct PmidManager {
     accounts: HashMap<XorName, Account>,
+    // key -- (message_id, targeted pmid_node)
+    ongoing_puts: HashMap<(MessageId, XorName), MetadataForPutRequest>,
 }
 
 impl PmidManager {
     pub fn new() -> PmidManager {
-        PmidManager { accounts: HashMap::new() }
+        PmidManager {
+            accounts: HashMap::new(),
+            ongoing_puts: HashMap::new(),
+        }
     }
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
-                      data: &ImmutableData,
-                      message_id: &MessageId,
-                      pmid_node: XorName)
-                      -> Result<(), InternalError> {
+                      request: &RequestMessage) -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
+                    (data.clone(), message_id.clone()),
+            _ => unreachable!("Error in vault demuxing"),
+        };
         // Put data always being allowed, i.e. no early alert
         self.accounts
-            .entry(pmid_node.clone())
+            .entry(request.dst.name().clone())
             .or_insert(Account::default())
             .put_data(data.payload_size() as u64);
 
-        let src = Authority::NodeManager(pmid_node.clone());
-        let dst = Authority::ManagedNode(pmid_node);
+        let src = Authority::NodeManager(request.dst.name().clone());
+        let dst = Authority::ManagedNode(request.dst.name().clone());
         let _ = routing_node.send_put_request(src,
                                               dst,
                                               Data::Immutable(data.clone()),
                                               message_id.clone());
+        let _ = self.ongoing_puts.insert((message_id, request.dst.name().clone()),
+                                         MetadataForPutRequest::new(request.clone()));
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn handle_put_failure(&mut self, _response: ResponseMessage) {
-        //        match from_authority {
-        // &Authority::ManagedNode(from_address) => {
-        // self.handle_put_response_from_pmid_node(our_authority.clone(),
-        //                                         from_address,
-        //                                         response.clone(),
-        //                                         response_token.clone());
-        // match response {
-        // ::routing::error::ResponseError::FailedRequestForData(data) => {
-        // let payload_size = data.payload_size() as u64;
-        // match data {
-        // ::routing::data::Data::Immutable(immutable_data) => {
-        // self.database.delete_data(&from_address, payload_size);
-        // let location = ::immutable_data_manager::Authority(immutable_data.name());
-        // let response = ::routing::error::ResponseError::FailedRequestForData(
-        // ::routing::data::Data::Immutable(immutable_data));
-        // self.routing
-        // .put_response(our_authority, location, response, response_token);
-        // }
-        // _ => warn!("Invalid data type for PUT RESPONSE at PmidManager: {:?}", data),
-        // }
-        // }
-        // ::routing::error::ResponseError::HadToClearSacrificial(data_name, data_size) => {
-        // self.database.delete_data(&from_address, data_size as u64);
-        // let location = ::immutable_data_manager::Authority(data_name.clone());
-        // let response = ::routing::error::ResponseError::HadToClearSacrificial(data_name,
-        // data_size);
-        // self.routing.put_response(our_authority, location, response, response_token);
-        // }
-        // _ => warn!("Invalid response type from PmidNode for PUT RESPONSE at PmidManager"),
-        // }
-        // }
-        // &::immutable_data_manager::Authority(_) => {
-        //     self.handle_put_response_from_data_manager(pmid_node, response.clone());
-        // }
-        // _ => warn!("Invalid authority for PUT RESPONSE at PmidManager: {:?}", from_authority),
-        // }
-        // ::utils::HANDLED
-        //
+    pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
+        let time_limit = Duration::minutes(1);
+        let mut timed_out_puts = Vec::<(MessageId, XorName)>::new();
+        for (key, metadata_for_put) in &self.ongoing_puts {
+            if metadata_for_put.creation_timestamp + time_limit < SteadyTime::now() {
+                timed_out_puts.push(key.clone());
+            }
+        }
+        for key in &timed_out_puts {
+            match self.ongoing_puts.remove(key) {
+                Some(metadata_for_put) => {
+                    let _ = self.handle_put_failure(routing_node, &metadata_for_put.request);
+                }
+                None => continue,
+            }
+        }
+    }
+
+    pub fn handle_put_success(&mut self,
+                              routing_node: &RoutingNode,
+                              pmid_node: &XorName,
+                              message_id: &MessageId) -> Result<(), InternalError> {
+        match self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
+            Some(metadata_for_put) => {
+                let message_hash = sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
+                let src = metadata_for_put.request.dst.clone();
+                let dst = metadata_for_put.request.src.clone();
+                trace!("As {:?} sending put success to {:?}", src, dst);
+                let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
+            }
+            None => {},
+        }
+        Ok(())
+    }
+
+    pub fn handle_put_failure(&mut self,
+                              routing_node: &RoutingNode,
+                              request: &RequestMessage) -> Result<(), InternalError> {
+        let (data, message_id) = match request.content {
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
+                    (data.clone(), message_id.clone()),
+            _ => unreachable!("Error in vault demuxing"),
+        };
+
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        trace!("As {:?} sending Put failure to {:?} of data {}", src, dst, data.name());
+        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
+
+        self.accounts
+            .entry(request.dst.name().clone())
+            .or_insert(Account::default())
+            .delete_data(data.payload_size() as u64);
+        Ok(())
     }
 
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
@@ -176,16 +216,6 @@ impl PmidManager {
         }
     }
 
-    // fn handle_put_response_from_data_manager(&mut self,
-    //                                          pmid_node: XorName,
-    //                                          response: ::routing::error::ResponseError) {
-    //     match response {
-    //         ::routing::error::ResponseError::FailedRequestForData(data) => {
-    //             self.database.delete_data(&pmid_node, data.payload_size() as u64);
-    //         }
-    //         _ => warn!("Invalid response type from ImmutableDataManager for PUT RESPONSE at PmidManager"),
-    //     }
-    // }
 }
 
 
