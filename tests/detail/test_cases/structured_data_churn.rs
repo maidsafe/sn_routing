@@ -36,6 +36,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
                                                     vec![client.signing_public_key()],
                                                     vec![],
                                                     Some(client.signing_private_key())));
+        trace!("Putting StructuredData {} - {}", i, sd.name());
         let data = Data::Structured(sd.clone());
         match unwrap_option!(client.put(data), "") {
             ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
@@ -48,6 +49,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         test_group.start_case(&format!("Get StructuredData {}", i));
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
                                                    stored_data[i].get_type_tag());
+        trace!("Getting StructuredData {} - {}", i, stored_data[i].name());
         match unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
                              "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
@@ -66,6 +68,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
                                                     stored_data[i].get_owner_keys().clone(),
                                                     vec![],
                                                     Some(client.signing_private_key())));
+        trace!("Posting StructuredData {} - {}", i, stored_data[i].name());
         let data = Data::Structured(sd.clone());
         match unwrap_option!(client.post(data), "") {
             ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
@@ -78,6 +81,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
                                                    stored_data[i].get_type_tag());
+        trace!("Getting updated StructuredData {} - {}", i, stored_data[i].name());
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);
@@ -88,6 +92,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
 
     for i in 0..request_count as usize {
         test_group.start_case(&format!("Delete StructuredData {}", i));
+        trace!("Deleting StructuredData {} - {}", i, stored_data[i].name());
         let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
                                                     *stored_data[i].get_identifier(),
                                                     stored_data[i].get_version() + 1,
