@@ -891,9 +891,8 @@ impl Core {
             if let RoutingMessage::Response(ResponseMessage {
                     content: ResponseContent::GetCloseGroup { .. }, ..
             }) = routing_msg {
-                ()
-            }
-            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+                let _ = self.grp_msg_filter.insert(&routing_msg);
+            } else if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                 let _ = self.grp_msg_filter.insert(&output_msg);
             } else {
                 return Ok(());

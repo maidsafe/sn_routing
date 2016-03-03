@@ -46,7 +46,7 @@ pub struct ExampleNode {
     connected: bool,
     /// A cache that contains for each data chunk name the list of client authorities that recently
     /// asked for that data.
-    client_request_cache: LruCache<XorName, Vec<Authority>>,
+    client_request_cache: LruCache<XorName, Vec<(Authority, MessageId)>>,
 }
 
 #[allow(unused)]
@@ -142,11 +142,17 @@ impl ExampleNode {
         match dst {
             Authority::NaeManager(_) => {
                 if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
-                    self.client_request_cache
-                        .entry(data_request.name())
-                        .or_insert(Vec::new())
-                        .push(src);
-
+                    {
+                        let requests = self.client_request_cache
+                                           .entry(data_request.name())
+                                           .or_insert_with(Vec::new);
+                        requests.push((src, id));
+                        if requests.len() > 1 {
+                            trace!("Added Get request to request cache: data {:?}.",
+                                   data_request.name());
+                            return;
+                        }
+                    }
                     for it in managed_nodes.iter() {
                         trace!("{:?} Handle Get request for NaeManager: data {:?} from {:?}",
                                self,
@@ -251,14 +257,14 @@ impl ExampleNode {
 
     fn handle_get_success(&mut self, data: Data, id: MessageId, dst: Authority) {
         // If the request came from a client, relay the retrieved data to them.
-        if let Some(client_auths) = self.client_request_cache.remove(&data.name()) {
+        if let Some(requests) = self.client_request_cache.remove(&data.name()) {
             trace!("{:?} Sending GetSuccess to Client for data {:?}",
                    self,
                    data.name());
             let src = dst.clone();
-            for client_auth in client_auths {
+            for (client_auth, message_id) in requests {
                 let _ = self.node
-                            .send_get_success(src.clone(), client_auth, data.clone(), id);
+                            .send_get_success(src.clone(), client_auth, data.clone(), message_id);
             }
         }
 
