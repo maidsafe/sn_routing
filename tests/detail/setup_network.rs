@@ -25,7 +25,7 @@ pub fn setup_network(vault_count: u32) -> Vec<VaultProcess> {
     let mut processes = vec![];
     for i in 0..vault_count {
         processes.push(VaultProcess::new(i));
-        thread::sleep(Duration::from_secs(1 + i as u64));
+        thread::sleep(Duration::from_secs(3 + i as u64));
     }
     info!("Waiting 10 seconds to let the network stabilise");
     thread::sleep(Duration::from_secs(10));
