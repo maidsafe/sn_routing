@@ -255,6 +255,11 @@ impl Vault {
              &ResponseContent::PutSuccess(_, ref message_id)) => {
                 self.maid_manager.handle_put_success(routing_node, message_id)
             }
+            (&Authority::NodeManager(_),
+             &Authority::NaeManager(_),
+             &ResponseContent::PutSuccess(_, ref message_id)) => {
+                self.immutable_data_manager.handle_put_success(routing_node, message_id, &response)
+            }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),

@@ -41,12 +41,13 @@ pub const MIN_REPLICANTS: usize = 6;
 pub enum DataHolder {
     Good(XorName),
     Failed(XorName),
+    Pending(XorName),
 }
 
 impl DataHolder {
     pub fn name(&self) -> &XorName {
         match *self {
-            DataHolder::Good(ref name) | DataHolder::Failed(ref name) => name,
+            DataHolder::Good(ref name) | DataHolder::Failed(ref name) | DataHolder::Pending(ref name) => name,
         }
     }
 }
@@ -114,7 +115,7 @@ impl MetadataForGetRequest {
                                            DataHolder::Good(pmid_node) => {
                                                Some(QueriedDataHolder::PendingResponse(pmid_node))
                                            }
-                                           DataHolder::Failed(_) => None,
+                                           DataHolder::Failed(_) | DataHolder::Pending(_) => None,
                                        }
                                    })
                                    .collect();
@@ -139,6 +140,7 @@ pub struct ImmutableDataManager {
     accounts: HashMap<XorName, Account>,
     // key is chunk_name
     ongoing_gets: LruCache<XorName, MetadataForGetRequest>,
+    ongoing_puts: HashMap<MessageId, ImmutableData>,
 }
 
 impl ImmutableDataManager {
@@ -147,6 +149,7 @@ impl ImmutableDataManager {
             accounts: HashMap::new(),
             ongoing_gets: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5),
                                                                       LRU_CACHE_SIZE),
+            ongoing_puts: HashMap::new(),
         }
     }
 
@@ -214,6 +217,7 @@ impl ImmutableDataManager {
                target_pmid_nodes,
                data_name);
         let _ = self.accounts.insert(data_name, target_pmid_nodes.clone());
+        let _ = self.ongoing_puts.insert(*message_id, data.clone());
 
         // Send the message on to the PmidNodes' managers.
         for pmid_node in target_pmid_nodes {
@@ -331,6 +335,42 @@ impl ImmutableDataManager {
             try!(self.check_and_replicate(routing_node, &data_name));
         }
         result
+    }
+
+    pub fn handle_put_success(&mut self,
+                              routing_node: &RoutingNode,
+                              message_id: &MessageId,
+                              response: &ResponseMessage)
+                              -> Result<(), InternalError> {
+        let mut all_good = false;
+
+        {
+            if let Some(immutable_data) = self.ongoing_puts.get(message_id) {
+                if let Some(pmid_nodes) = self.accounts.get_mut(&immutable_data.name()) {
+                    if pmid_nodes.remove(&DataHolder::Pending(*response.src.name())) {
+                        pmid_nodes.insert(DataHolder::Good(*response.src.name()));
+                        all_good = pmid_nodes.iter().all(|pmid_node|
+                            match pmid_node {
+                                &DataHolder::Good(_) => true,
+                                _ => false,
+                            });
+
+                    } else {
+                        return Err(InternalError::InvalidResponse);
+                    }
+                } else {
+                    return Err(InternalError::InvalidResponse);
+                }
+            } else {
+                return Err(InternalError::FailedToFindCachedRequest(*message_id));
+            }
+        }
+
+        if all_good {
+            let _ = self.ongoing_puts.remove(message_id);
+        }
+
+        Ok(())
     }
 
     pub fn handle_refresh(&mut self, data_name: XorName, account: Account) {
@@ -459,7 +499,8 @@ impl ImmutableDataManager {
                 match queried_data_holder {
                     &QueriedDataHolder::PendingResponse(_) => return Ok(()),
                     &QueriedDataHolder::Responded(DataHolder::Good(_)) => good_holder_count += 1,
-                    &QueriedDataHolder::Responded(DataHolder::Failed(_)) => (),
+                    &QueriedDataHolder::Responded(DataHolder::Failed(_)) |
+                    &QueriedDataHolder::Responded(DataHolder::Pending(_)) => (),
                 }
             }
             trace!("Have {} good holders for {}", good_holder_count, data_name);
@@ -553,7 +594,7 @@ impl ImmutableDataManager {
                 Self::sort_from_target(&mut target_pmid_nodes, data_name);
                 target_pmid_nodes.truncate(REPLICANTS);
                 Ok(target_pmid_nodes.into_iter()
-                                    .map(|pmid_node| DataHolder::Good(pmid_node))
+                                    .map(|pmid_node| DataHolder::Pending(pmid_node))
                                     .collect::<HashSet<DataHolder>>())
             }
             None => Err(InternalError::NotInCloseGroup),
