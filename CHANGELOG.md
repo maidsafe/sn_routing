@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.10.0]
+- Take `MessageId`s as an argument in the Client methods.
+
 ## [0.9.0]
 - Add mock Crust and network-less tests for `Core`.
 - Return `MessageId`s from Client methods.
