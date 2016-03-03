@@ -29,7 +29,6 @@ pub enum ClientError {
     NoSuchData,
     DataExists,
     LowBalance,
-    DuplicateRequest,
 }
 
 #[derive(Debug)]

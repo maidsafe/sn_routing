@@ -17,7 +17,7 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::InternalError;
+use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage};
 use vault::RoutingNode;
@@ -47,16 +47,28 @@ impl PmidNode {
             _ => unreachable!("Error in vault demuxing"),
         };
 
-        let data = try!(self.chunk_store.get(data_name));
-        let decoded = try!(serialisation::deserialise::<ImmutableData>(&data));
-        debug!("As {:?} sending data {:?} to {:?}",
-               request.dst,
-               Data::Immutable(decoded.clone()),
-               request.src);
-        let _ = routing_node.send_get_success(request.dst.clone(),
+        if let Ok(data) = self.chunk_store.get(data_name) {
+            if let Ok(decoded) = serialisation::deserialise::<ImmutableData>(&data) {
+                let immutable_data = Data::Immutable(decoded);
+                trace!("As {:?} sending data {:?} to {:?}",
+                       request.dst,
+                       immutable_data,
+                       request.src);
+                let _ = routing_node.send_get_success(request.dst.clone(),
+                                                      request.src.clone(),
+                                                      immutable_data,
+                                                      message_id.clone());
+                return Ok(());
+            }
+        }
+        let error = ClientError::NoSuchData;
+        let external_error_indicator = try!(serialisation::serialise(&error));
+        trace!("As {:?} sending get failure of data {:?} to {:?}", request.dst, data_name, request.src);
+        let _ = routing_node.send_get_failure(request.dst.clone(),
                                               request.src.clone(),
-                                              Data::Immutable(decoded),
-                                              message_id.clone());
+                                              request.clone(),
+                                              external_error_indicator,
+                                              *message_id);
         Ok(())
     }
 

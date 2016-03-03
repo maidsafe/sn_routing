@@ -95,6 +95,7 @@ impl StructuredDataManager {
             debug!("Already have SD {:?}", data_name);
             let error = ClientError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
+            trace!("SDM sending PutFailure for data {}", data_name);
             let _ = routing_node.send_put_failure(response_src,
                                                   response_dst,
                                                   request.clone(),
@@ -104,6 +105,7 @@ impl StructuredDataManager {
         }
 
         try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
+        trace!("SDM sending PutSuccess for data {}", data_name);
         let _ = routing_node.send_put_success(response_src, response_dst, message_hash, message_id);
         Ok(())
     }
