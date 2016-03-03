@@ -145,7 +145,7 @@ impl PmidNode {
         // We failed to make room for it - replication needs to be carried out.
         let src = request.dst.clone();
         let dst = request.src.clone();
-        trace!("As {:?} sending Put failure to {:?} of data {}", src, dst, data_name);
+        trace!("As {:?} sending Put failure of data {} to {:?} ", src, data_name, dst);
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
         Ok(())
     }

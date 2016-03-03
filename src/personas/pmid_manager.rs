@@ -188,10 +188,10 @@ impl PmidManager {
         trace!("As {:?} sending Put failure to {:?} of data {}", src, dst, data.name());
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
 
-        self.accounts
-            .entry(request.dst.name().clone())
-            .or_insert(Account::default())
-            .delete_data(data.payload_size() as u64);
+        if let Some(account) = self.accounts.get_mut(request.dst.name()) {
+            account.delete_data(data.payload_size() as u64);
+        }
+
         Ok(())
     }
 
