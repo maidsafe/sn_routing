@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fmt;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use error::{ClientError, InternalError};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
@@ -30,10 +32,11 @@ use xor_name::XorName;
 const DEFAULT_ACCOUNT_SIZE: u64 = 1_073_741_824;  // 1 GB
 const DEFAULT_PAYMENT: u64 = 1_048_576;  // 1 MB
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+#[derive(Clone)]
 pub struct Account {
     data_stored: u64,
     space_available: u64,
+    request_cache: LruCache<MessageId, RequestMessage>,
 }
 
 impl Default for Account {
@@ -41,6 +44,7 @@ impl Default for Account {
         Account {
             data_stored: 0,
             space_available: DEFAULT_ACCOUNT_SIZE,
+            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
         }
     }
 }
@@ -64,20 +68,76 @@ impl Account {
             self.space_available += size;
         }
     }
+
+    fn cache_request(&mut self, message_id: MessageId, request: &RequestMessage) -> Result<(), ClientError> {
+        if self.request_cache.contains_key(&message_id) {
+            return Err(ClientError::DuplicateRequest)
+        }
+
+        let _ = self.request_cache.insert(message_id, request.clone());
+        Ok(())
+    }
+
+    fn remove_cached_request(&mut self, message_id: &MessageId) -> Option<RequestMessage> {
+        self.request_cache.remove(&message_id)
+    }
 }
 
+impl Encodable for Account {
+    fn encode<E: Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
+        e.emit_struct("AccountDetails", 3, |e| {
+            try!(e.emit_struct_field("data_stored", 0,
+                    |e| self.data_stored.encode(e)));
+            try!(e.emit_struct_field("space_available", 1,
+                    |e| self.space_available.encode(e)));
+            try!(e.emit_struct_field("request_cache_pairs", 2,
+                    |e| self.request_cache.clone().retrieve_all().encode(e)));
+
+            Ok(())
+        })
+    }
+}
+
+impl Decodable for Account {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Account, D::Error> {
+        d.read_struct("AccountDetails", 3, |d| {
+            let data_stored = try!(d.read_struct_field("data_stored", 0,
+                    |d| Decodable::decode(d)));
+            let space_available = try!(d.read_struct_field("space_available", 1,
+                    |d| Decodable::decode(d)));
+            let request_cache_pairs: Vec<(MessageId, RequestMessage)> =
+                try!(d.read_struct_field("request_cache_pairs", 2,
+                    |d| Decodable::decode(d)));
+            let mut request_cache = LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000);
+
+            for (key, value) in request_cache_pairs {
+                let _ = request_cache.insert(key, value);
+            }
+
+            Ok(Account {
+                data_stored: data_stored,
+                space_available: space_available,
+                request_cache: request_cache,
+            })
+        })
+    }
+}
+
+impl fmt::Debug for Account {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        formatter.write_str(&format!(" {:?}, {:?} ", self.data_stored, self.space_available))
+    }
+}
 
 
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
-    request_cache: LruCache<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
         MaidManager {
             accounts: HashMap::new(),
-            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
         }
     }
 
@@ -100,18 +160,18 @@ impl MaidManager {
                               routing_node: &RoutingNode,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
-        match self.request_cache.remove(message_id) {
-            Some(client_request) => {
+        for (_, account) in self.accounts.iter_mut() {
+            if let Some(client_request) = account.remove_cached_request(message_id) {
                 // Send success response back to client
-                let message_hash =
-                    sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
+                let message_hash = sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, message_hash, message_id.clone());
-                Ok(())
+                let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
+                return Ok(())
             }
-            None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
         }
+
+        Err(InternalError::FailedToFindCachedRequest(*message_id))
     }
 
     pub fn handle_put_failure(&mut self,
@@ -119,26 +179,17 @@ impl MaidManager {
                               message_id: &MessageId,
                               external_error_indicator: &Vec<u8>)
                               -> Result<(), InternalError> {
-        match self.request_cache.remove(message_id) {
-            Some(client_request) => {
+        for (_, account) in self.accounts.clone().iter_mut() {
+            if let Some(client_request) = account.remove_cached_request(&message_id) {
                 // Refund account
-                match self.accounts.get_mut(client_request.dst.name()) {
-                    Some(account) => {
-                        account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
-                    }
-                    None => return Ok(()),
-                }
-
+                account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */);
                 // Send failure response back to client
-                let error =
-                    try!(serialisation::deserialise::<ClientError>(external_error_indicator));
-                self.reply_with_put_failure(routing_node,
-                                            client_request,
-                                            message_id.clone(),
-                                            &error)
+                let error = try!(serialisation::deserialise::<ClientError>(external_error_indicator));
+                return self.reply_with_put_failure(routing_node, client_request, *message_id, &error)
             }
-            None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
         }
+
+        Err(InternalError::FailedToFindCachedRequest(*message_id))
     }
 
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
@@ -146,7 +197,7 @@ impl MaidManager {
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
-        for (maid_name, account) in self.accounts.iter() {
+        for (maid_name, account) in &self.accounts {
             let src = Authority::ClientManager(maid_name.clone());
             let refresh = Refresh::new(maid_name,
                                        RefreshValue::MaidManagerAccount(account.clone()));
@@ -226,22 +277,29 @@ impl MaidManager {
 
             // Create the account
             let _ = self.accounts.insert(client_name, Account::default());
-        } else {
-            // Update the account
-            let result = self.accounts
-                             .get_mut(&client_name)
-                             .ok_or(ClientError::NoSuchAccount)
-                             .and_then(|account| {
-                                 account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
-                             });
-            if let Err(error) = result {
-                try!(self.reply_with_put_failure(routing_node,
-                                                 request.clone(),
-                                                 message_id,
-                                                 &error));
-                return Err(InternalError::Client(error));
-            }
-        };
+        }
+
+        // Update the account
+        if let Err(error) = self.accounts
+                                .get_mut(&client_name)
+                                .ok_or(ClientError::NoSuchAccount)
+                                .and_then(|account| {
+                                    if type_tag != 0 {
+                                        if let Err(error) = account.cache_request(message_id.clone(), &request) {
+                                            Err(error)
+                                        } else {
+                                            account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                                        }
+                                    } else {
+                                        account.cache_request(message_id.clone(), &request)
+                                    }
+                                }) {
+            try!(self.reply_with_put_failure(routing_node,
+                                             request.clone(),
+                                             message_id,
+                                             &error));
+            return Err(InternalError::Client(error));
+        }
 
         {
             // Send data on to NAE Manager
@@ -250,10 +308,6 @@ impl MaidManager {
             let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
         }
 
-        if let Some(prior_request) = self.request_cache
-                                         .insert(message_id.clone(), request.clone()) {
-            error!("Overwrote existing cached request: {:?}", prior_request);
-        }
         Ok(())
     }
 
