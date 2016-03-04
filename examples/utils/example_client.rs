@@ -26,7 +26,7 @@ use std::sync::mpsc;
 use self::sodiumoxide::crypto;
 use self::xor_name::XorName;
 use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
-                    Client};
+                    Client, MessageId};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -73,9 +73,11 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataRequest) -> Option<Data> {
-        let message_id = unwrap_result!(self.routing_client
+        let message_id = MessageId::new();
+        unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone()));
+                                             request.clone(),
+                                             message_id));
 
         // Wait for Get success event from Routing
         for it in self.receiver.iter() {
@@ -114,8 +116,11 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
     pub fn put(&self, data: Data) {
         let data_name = data.name();
-        let message_id = unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()), data));
+        let message_id = MessageId::new();
+        unwrap_result!(self.routing_client
+                           .send_put_request(Authority::ClientManager(*self.name()),
+                                             data,
+                                             message_id));
 
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {

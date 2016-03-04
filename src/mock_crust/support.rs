@@ -16,7 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 // It seems that code used only in tests is considered unused by rust.
-#![allow(unused)]
+// TODO: Remove `unsafe_code` here again, once these changes are in stable:
+//       https://github.com/rust-lang/rust/issues/30756
+#![allow(unused, unsafe_code)]
 
 use rand;
 use std::cell::RefCell;
