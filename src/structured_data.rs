@@ -15,11 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-/// Maximum allowed size for a Structured Data to grow to
-pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
-
+use maidsafe_utilities::serialisation::serialise;
+use sodiumoxide::crypto::sign::{PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
+
+/// Maximum allowed size for a Structured Data to grow to
+pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
 
 /// Mutable structured data.
 ///
@@ -32,10 +34,10 @@ pub struct StructuredData {
     type_tag: u64,
     identifier: XorName,
     data: Vec<u8>,
-    previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
+    previous_owner_keys: Vec<PublicKey>,
     version: u64,
-    current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
-    previous_owner_signatures: Vec<::sodiumoxide::crypto::sign::Signature>,
+    current_owner_keys: Vec<PublicKey>,
+    previous_owner_signatures: Vec<Signature>,
 }
 
 impl StructuredData {
@@ -44,9 +46,9 @@ impl StructuredData {
                identifier: XorName,
                version: u64,
                data: Vec<u8>,
-               current_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
-               previous_owner_keys: Vec<::sodiumoxide::crypto::sign::PublicKey>,
-               signing_key: Option<&::sodiumoxide::crypto::sign::SecretKey>)
+               current_owner_keys: Vec<PublicKey>,
+               previous_owner_keys: Vec<PublicKey>,
+               signing_key: Option<&SecretKey>)
                -> Result<StructuredData, ::error::RoutingError> {
 
         let mut structured_data = StructuredData {
@@ -172,14 +174,16 @@ impl StructuredData {
     fn data_to_sign(&self) -> Result<Vec<u8>, ::error::RoutingError> {
         // Seems overkill to use serialisation here, but done to ensure cross platform signature
         // handling is OK
-        let mut enc = ::cbor::Encoder::from_memory();
-        try!(enc.encode(self.type_tag.to_string().as_bytes()));
-        try!(enc.encode(&[self.identifier]));
-        try!(enc.encode(&self.data));
-        try!(enc.encode(&self.previous_owner_keys));
-        try!(enc.encode(&self.current_owner_keys));
-        try!(enc.encode(self.version.to_string().as_bytes()));
-        Ok(enc.into_bytes())
+        let sd = SerialisableStructuredData {
+            type_tag: self.type_tag.to_string().as_bytes().to_vec(),
+            identifier: self.identifier,
+            data: &self.data,
+            previous_owner_keys: &self.previous_owner_keys,
+            current_owner_keys: &self.current_owner_keys,
+            version: self.version.to_string().as_bytes().to_vec(),
+        };
+
+        serialise(&sd).map_err(From::from)
     }
 
     /// Adds a signature with the given `secret_key` to the `previous_owner_signatures` and returns
@@ -275,6 +279,16 @@ impl Debug for StructuredData {
                current_owner_keys,
                previous_owner_signatures)
     }
+}
+
+#[derive(RustcEncodable)]
+struct SerialisableStructuredData<'a> {
+    type_tag: Vec<u8>,
+    identifier: XorName,
+    data: &'a [u8],
+    previous_owner_keys: &'a [PublicKey],
+    current_owner_keys: &'a [PublicKey],
+    version: Vec<u8>,
 }
 
 #[cfg(test)]

@@ -85,8 +85,6 @@ pub enum RoutingError {
     Interface(InterfaceError),
     /// i/o error
     Io(::std::io::Error),
-    /// Serialisation error
-    Cbor(::cbor::CborError),
     /// Channel sending error
     SendEventError(SendError<Event>),
     /// The bit index for a `XorName` was out of bounds.
@@ -116,12 +114,6 @@ pub enum RoutingError {
 impl From<::std::str::Utf8Error> for RoutingError {
     fn from(error: ::std::str::Utf8Error) -> RoutingError {
         RoutingError::Utf8(error)
-    }
-}
-
-impl From<::cbor::CborError> for RoutingError {
-    fn from(error: ::cbor::CborError) -> RoutingError {
-        RoutingError::Cbor(error)
     }
 }
 
