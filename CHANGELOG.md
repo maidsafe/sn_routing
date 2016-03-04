@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.11.0]
+- Replace CBOR usage with maidsafe_utilites::serialisation.
+- Updated dependencies.
+
 ## [0.10.0]
 - Take `MessageId`s as an argument in the Client methods.
 
