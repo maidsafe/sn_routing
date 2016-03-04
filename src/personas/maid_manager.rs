@@ -161,42 +161,14 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        // Take a hash of the message anticipating sending this as a success response to the client.
-        let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
-
         let (data, message_id) = match request.content {
             RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
                 (Data::Immutable(data.clone()), message_id.clone())
             }
             _ => unreachable!("Logic error"),
         };
-
-        // Account must already exist to Put ImmutableData.  If so, then try to add the data to the
-        // account
         let client_name = utils::client_name(&request.src);
-        let result = self.accounts
-                         .get_mut(&client_name)
-                         .ok_or(ClientError::NoSuchAccount)
-                         .and_then(|account| {
-                             account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
-                         });
-        if let Err(error) = result {
-            try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
-            return Err(InternalError::Client(error));
-        }
-
-        {
-            // Send data on to NAE Manager
-            let src = request.dst.clone();
-            let dst = Authority::NaeManager(data.name());
-            let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
-        }
-
-        if let Some(prior_request) = self.request_cache
-                                         .insert(message_id.clone(), request.clone()) {
-            error!("Overwrote existing cached request: {:?}", prior_request);
-        }
-        Ok(())
+        self.forward_put_request(routing_node, client_name, data, message_id, request)
     }
 
     fn handle_put_structured_data(&mut self,
@@ -224,30 +196,39 @@ impl MaidManager {
                 return Err(InternalError::Client(error));
             }
 
-            // Create the account
+            // Create the account, the SD incurs charge later on
             let _ = self.accounts.insert(client_name, Account::default());
-        } else {
-            // Update the account
-            let result = self.accounts
-                             .get_mut(&client_name)
-                             .ok_or(ClientError::NoSuchAccount)
-                             .and_then(|account| {
-                                 account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
-                             });
-            if let Err(error) = result {
-                try!(self.reply_with_put_failure(routing_node,
-                                                 request.clone(),
-                                                 message_id,
-                                                 &error));
-                return Err(InternalError::Client(error));
-            }
-        };
+        }
+        self.forward_put_request(routing_node, client_name, data, message_id, request)
+    }
+
+    fn forward_put_request(&mut self,
+                           routing_node: &RoutingNode,
+                           client_name: XorName,
+                           data: Data,
+                           message_id: MessageId,
+                           request: &RequestMessage)
+                           -> Result<(), InternalError> {
+        // Account must already exist to Put Data.
+        let result = self.accounts
+                         .get_mut(&client_name)
+                         .ok_or(ClientError::NoSuchAccount)
+                         .and_then(|account| {
+                             account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                         });
+        if let Err(error) = result {
+            try!(self.reply_with_put_failure(routing_node,
+                                             request.clone(),
+                                             message_id,
+                                             &error));
+            return Err(InternalError::Client(error));
+        }
 
         {
-            // Send data on to NAE Manager
+            // forwarding data_request to NAE Manager
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
-            let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
+            let _ = routing_node.send_put_request(src, dst, data, message_id.clone());
         }
 
         if let Some(prior_request) = self.request_cache
