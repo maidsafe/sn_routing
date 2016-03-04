@@ -520,7 +520,7 @@ impl Core {
                     // _before_ the NewPeer event.
                     if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
                         warn!("Received NewPeer from {:?}, but node {:?} is already in our \
-                              routing table.",
+                               routing table.",
                               peer_id,
                               node.name());
                         return;
@@ -634,7 +634,8 @@ impl Core {
             }
             if relayed_get_request {
                 self.debug_stats.get_request_count += 1;
-                trace!("Total get request count: {}", self.debug_stats.get_request_count);
+                trace!("Total get request count: {}",
+                       self.debug_stats.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1091,26 +1092,7 @@ impl Core {
             public_id: *self.full_id.public_id(),
             current_quorum_size: self.routing_table.dynamic_quorum_size(),
         };
-
-        let message = Message::Direct(direct_message);
-        let raw_bytes = try!(serialisation::serialise(&message));
-
-        try!(self.crust_service.send(&peer_id, raw_bytes));
-        Ok(())
-    }
-
-    fn bootstrap_deny(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let message = Message::Direct(DirectMessage::BootstrapDeny);
-        let raw_bytes = try!(serialisation::serialise(&message));
-        try!(self.crust_service.send(&peer_id, raw_bytes));
-        Ok(())
-    }
-
-    fn client_to_node(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        let message = Message::Direct(DirectMessage::ClientToNode);
-        let raw_bytes = try!(serialisation::serialise(&message));
-        try!(self.crust_service.send(&peer_id, raw_bytes));
-        Ok(())
+        self.send_direct_message(&peer_id, direct_message)
     }
 
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
@@ -1133,29 +1115,27 @@ impl Core {
             signature: signature,
             client_restriction: self.client_restriction,
         };
-
-        let message = Message::Direct(direct_message);
-        let raw_bytes = try!(serialisation::serialise(&message));
-
-        try!(self.crust_service.send(&peer_id, raw_bytes));
-        Ok(())
+        self.send_direct_message(&peer_id, direct_message)
     }
 
     fn node_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
-                                            self.full_id
-                                                .signing_private_key());
-
+                                            self.full_id.signing_private_key());
         let direct_message = DirectMessage::NodeIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
         };
+        self.send_direct_message(&peer_id, direct_message)
+    }
 
+    fn send_direct_message(&mut self,
+                           peer_id: &PeerId,
+                           direct_message: DirectMessage)
+                           -> Result<(), RoutingError> {
         let message = Message::Direct(direct_message);
         let raw_bytes = try!(serialisation::serialise(&message));
-
-        try!(self.crust_service.send(&peer_id, raw_bytes));
+        try!(self.crust_service.send(peer_id, raw_bytes));
         Ok(())
     }
 
@@ -1308,7 +1288,7 @@ impl Core {
                        public_id.name(),
                        self.routing_table.len(),
                        GROUP_SIZE - 1);
-                return self.bootstrap_deny(peer_id);
+                return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
             }
         } else {
             let joining_nodes_num = self.joining_nodes_num();
@@ -1319,7 +1299,7 @@ impl Core {
                joining_nodes_num >= MAX_JOINING_NODES {
                 trace!("No additional joining nodes allowed. Denying {:?} to join.",
                        public_id.name());
-                return self.bootstrap_deny(peer_id);
+                return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
             }
         }
         let client_info = ClientInfo::new(*public_id.signing_public_key(), client_restriction);
@@ -1330,8 +1310,7 @@ impl Core {
 
         trace!("{:?} Accepted client {:?}.", self, public_id.name());
 
-        let _ = self.bootstrap_identify(peer_id);
-        Ok(())
+        self.bootstrap_identify(peer_id)
     }
 
     /// Returns whether the given node is in the cache with the given public ID.
@@ -1409,7 +1388,8 @@ impl Core {
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 for notify_info in must_notify {
-                    try!(self.notify_about_new_node(notify_info, public_id));
+                    try!(self.send_direct_message(&notify_info.peer_id,
+                                                  DirectMessage::NewNode(public_id)));
                 }
                 if common_groups {
                     let event = Event::NodeAdded(name);
@@ -1446,25 +1426,12 @@ impl Core {
         Ok(())
     }
 
-    /// Send `NewNode` messages to the given contacts.
-    fn notify_about_new_node(&mut self,
-                             notify_info: NodeInfo,
-                             public_id: PublicId)
-                             -> Result<(), RoutingError> {
-        let notify_id = notify_info.peer_id;
-        let direct_message = DirectMessage::NewNode(public_id);
-        let message = Message::Direct(direct_message);
-        let raw_bytes = try!(serialisation::serialise(&message));
-        try!(self.crust_service.send(&notify_id, raw_bytes));
-        Ok(())
-    }
-
     /// Removes all proxy map entries and notifies or disconnects from them.
     fn drop_proxies(&mut self) -> Result<(), RoutingError> {
         let former_proxies = self.proxy_map.drain().collect_vec();
         for (peer_id, public_id) in former_proxies {
             if self.routing_table.contains(public_id.name()) {
-                try!(self.client_to_node(peer_id));
+                try!(self.send_direct_message(&peer_id, DirectMessage::ClientToNode));
             } else {
                 self.crust_service.disconnect(&peer_id);
             }
@@ -2188,9 +2155,10 @@ impl Core {
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn restart_crust_service(&mut self) {
-        self.crust_service = match Service::new(self.crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT) {
+        self.crust_service = match Service::new(self.crust_sender.clone(),
+                                                CRUST_DEFAULT_BEACON_PORT) {
             Ok(service) => service,
-            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err))
+            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
         };
     }
 
