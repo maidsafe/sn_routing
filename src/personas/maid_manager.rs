@@ -192,10 +192,10 @@ impl MaidManager {
             let _ = routing_node.send_put_request(src, dst, data.clone(), message_id.clone());
         }
 
-        // Send success response back to client but log client request in case SD Put fails at SDMs
-        let src = request.dst.clone();
-        let dst = request.src.clone();
-        let _ = routing_node.send_put_success(src, dst, message_hash, message_id);
+        if let Some(prior_request) = self.request_cache
+                                         .insert(message_id.clone(), request.clone()) {
+            error!("Overwrote existing cached request: {:?}", prior_request);
+        }
         Ok(())
     }
 
