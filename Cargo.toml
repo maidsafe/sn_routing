@@ -12,9 +12,8 @@ version = "0.10.0"
 [dependencies]
 accumulator = "~0.1.4"
 cbor = "~0.3.16"
-clippy = {version = "~0.0.44", optional = true}
+clippy = {version = "~0.0.45", optional = true}
 crust = "~0.8.3"
-ip = "~1.1.0"
 itertools = "~0.4.10"
 kademlia_routing_table = "~0.3.3"
 log = "~0.3.5"
