@@ -163,7 +163,6 @@ extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate accumulator;
-extern crate cbor;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
 extern crate itertools;
