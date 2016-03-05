@@ -178,7 +178,7 @@ impl Vault {
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
-                self.immutable_data_manager.handle_put(routing_node, data, message_id)
+                self.immutable_data_manager.handle_put(routing_node, data, message_id, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
@@ -258,7 +258,7 @@ impl Vault {
             (&Authority::NodeManager(_),
              &Authority::NaeManager(_),
              &ResponseContent::PutSuccess(_, ref message_id)) => {
-                self.immutable_data_manager.handle_put_success(routing_node, message_id, &response)
+                self.immutable_data_manager.handle_put_success(message_id, &response)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
