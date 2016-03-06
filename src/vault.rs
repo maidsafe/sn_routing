@@ -129,6 +129,8 @@ impl Vault {
             } {
                 warn!("Failed to handle event: {:?}", error);
             }
+
+            self.pmid_manager.check_timeout(routing_node);
         }
 
         // Return the stop_receiver back to self, in case we want to call do_run again.
@@ -186,13 +188,13 @@ impl Vault {
                 self.structured_data_manager.handle_put(routing_node, &request)
             }
             (&Authority::NaeManager(_),
-             &Authority::NodeManager(pmid_node_name),
-             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
-                self.pmid_manager.handle_put(routing_node, data, message_id, pmid_node_name)
+             &Authority::NodeManager(_),
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.pmid_manager.handle_put(routing_node, &request)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(&request),
+             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(routing_node, &request),
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -260,11 +262,21 @@ impl Vault {
              &ResponseContent::PutSuccess(_, ref message_id)) => {
                 self.immutable_data_manager.handle_put_success(message_id, &response)
             }
+            (&Authority::ManagedNode(pmid_node),
+             &Authority::NodeManager(_),
+             &ResponseContent::PutSuccess(_, ref message_id)) => {
+                self.pmid_manager.handle_put_success(routing_node, &pmid_node, message_id)
+            }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
              &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
                 self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
+            }
+            (&Authority::ManagedNode(_),
+             &Authority::NodeManager(_),
+             &ResponseContent::PutFailure{ ref request, .. }) => {
+                self.pmid_manager.handle_put_failure(routing_node, request)
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
