@@ -181,6 +181,18 @@ impl ImmutableDataManager {
             }
         };
 
+        for immutable_data in self.ongoing_puts.values() {
+            if immutable_data.name() == data_name {
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let _ = routing_node.send_get_success(src,
+                                                      dst,
+                                                      Data::Immutable(immutable_data.clone()),
+                                                      message_id.clone());
+                return Ok(())
+            }
+        }
+
         {
             // If there's already a cached get request, handle it here and return
             if let Some(metadata) = self.ongoing_gets.get_mut(&data_name) {
@@ -217,7 +229,7 @@ impl ImmutableDataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes_for_put(routing_node,
+        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
                                                                     &data_name,
                                                                     vec![]));
         debug!("ImmutableDataManager chosen {:?} as pmid_nodes for chunk {:?}",
@@ -390,7 +402,7 @@ impl ImmutableDataManager {
                     pmid_nodes.insert(DataHolder::Failed(*response.src.name()));
 
                     let nodes_to_exclude = vec![response.src.name()];
-                    let mut target_pmid_nodes = try!(Self::choose_target_pmid_nodes_for_put(routing_node,
+                    let mut target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
                                                                                     &immutable_data.name(),
                                                                                     nodes_to_exclude));
                     for pmid_node in pmid_nodes.iter() {
@@ -642,25 +654,6 @@ impl ImmutableDataManager {
                 Self::sort_from_target(&mut target_pmid_nodes, data_name);
                 target_pmid_nodes.truncate(REPLICANTS);
                 Ok(target_pmid_nodes.into_iter()
-                                    .map(|pmid_node| DataHolder::Good(pmid_node))
-                                    .collect::<HashSet<DataHolder>>())
-            }
-            None => Err(InternalError::NotInCloseGroup),
-        }
-    }
-
-    fn choose_target_pmid_nodes_for_put(routing_node: &RoutingNode,
-                                data_name: &XorName,
-                                nodes_to_exclude: Vec<&XorName>)
-                                -> Result<HashSet<DataHolder>, InternalError> {
-        match try!(routing_node.close_group(data_name.clone())) {
-            Some(mut target_pmid_nodes) => {
-                target_pmid_nodes.retain(|elt| {
-                    !nodes_to_exclude.iter().any(|exclude| elt == *exclude)
-                });
-                Self::sort_from_target(&mut target_pmid_nodes, data_name);
-                target_pmid_nodes.truncate(REPLICANTS);
-                Ok(target_pmid_nodes.into_iter()
                                     .map(|pmid_node| DataHolder::Pending(pmid_node))
                                     .collect::<HashSet<DataHolder>>())
             }
@@ -760,11 +753,7 @@ mod test {
             };
             env.immutable_data_manager.handle_get(&env.routing, &request);
             let get_requests = env.routing.get_requests_given();
-            assert_eq!(get_requests.len(), REPLICANTS);
-            for i in 0..get_requests.len() {
-                assert_eq!(get_requests[i].src, env.our_authority);
-                assert_eq!(get_requests[i].content, content);
-            }
+            assert_eq!(get_requests.len(), 0);
         }
     }
 
