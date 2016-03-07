@@ -109,6 +109,8 @@ pub enum RoutingError {
     ClientConnectionNotFound,
     /// Invalid Source
     InvalidSource,
+    /// Attempted to use a node as a tunnel that is not directly connected
+    CannotTunnelThroughTunnel,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {

@@ -34,7 +34,7 @@ use message_filter::MessageFilter;
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::io;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
@@ -64,6 +64,9 @@ const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 /// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
 /// the same time.
 const MAX_JOINING_NODES: usize = 1;
+
+/// The maximum number of pairs of nodes that this node will act as a tunnel for.
+const MAX_TUNNEL_CLIENT_PAIRS: usize = 3;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
@@ -134,6 +137,8 @@ struct DebugStats {
     cur_client_num: usize,
     cumulative_client_num: usize,
     get_request_count: usize,
+    tunnel_client_pairs: usize,
+    tunnel_connections: usize,
 }
 
 impl DebugStats {
@@ -143,6 +148,8 @@ impl DebugStats {
             cur_client_num: 0,
             cumulative_client_num: 0,
             get_request_count: 0,
+            tunnel_client_pairs: 0,
+            tunnel_connections: 0,
         }
     }
 }
@@ -235,13 +242,20 @@ pub struct Core {
     our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
     their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
 
+    /// Maps the ID of a peer we are currently trying to connect to to their name.
+    connecting_peers: LruCache<PeerId, XorName>,
+    /// Maps the peer we failed to directly connect to to the one that acts as a tunnel.
+    tunnel_nodes: HashMap<PeerId, PeerId>,
+    /// Contains all pairs of names we act as a tunnel node for. This is symmetric: If it has an
+    /// entry `(x, y)`, then also `(y, x)`.
+    tunnel_clients: HashSet<(PeerId, PeerId)>,
     debug_stats: DebugStats,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
 impl Core {
-    /// A Core instance for a client or node with the given id. Sends events to upper layer via the mpsc sender passed
-    /// in.
+    /// A Core instance for a client or node with the given id. Sends events to upper layer via the
+    /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
                keys: Option<FullId>)
@@ -300,6 +314,9 @@ impl Core {
             connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
+            connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
+            tunnel_nodes: HashMap::new(),
+            tunnel_clients: HashSet::new(),
             debug_stats: DebugStats::new(),
         };
 
@@ -346,6 +363,15 @@ impl Core {
                        self,
                        self.debug_stats.cur_client_num,
                        self.debug_stats.cumulative_client_num);
+            }
+            if self.debug_stats.tunnel_connections != self.tunnel_nodes.len() ||
+                self.debug_stats.tunnel_client_pairs != self.tunnel_clients.len() / 2 {
+                self.debug_stats.tunnel_connections = self.tunnel_nodes.len();
+                self.debug_stats.tunnel_client_pairs = self.tunnel_clients.len() / 2;
+                trace!("{:?} - Indirect connections: {}, tunneling for: {}",
+                       self,
+                       self.debug_stats.tunnel_connections,
+                       self.debug_stats.tunnel_client_pairs);
             }
         }
 
@@ -514,10 +540,14 @@ impl Core {
         } else {
             match result {
                 Ok(()) => {
+                    if self.connecting_peers.remove(&peer_id).is_none() {
+                        warn!("Received NewPeer from {:?}, but was not expecting connection.",
+                              peer_id);
+                        // TODO: Crust should not connect before both sides have called connect.
+                        // return;
+                    }
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
-                    // TODO(afck): Make sure it cannot happen that we receive their NodeIdentify
-                    // _before_ the NewPeer event.
                     if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
                         warn!("Received NewPeer from {:?}, but node {:?} is already in our \
                                routing table.",
@@ -530,10 +560,25 @@ impl Core {
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
-                    error!("{:?} Failed to connect to peer {:?}: {:?}",
-                           self,
-                           peer_id,
-                           err);
+                    if let Some(&name) = self.connecting_peers.get(&peer_id) {
+                        if let Some(&node) = self.routing_table
+                                                .closest_nodes_to(&name, 1, false)
+                                                .last() {
+                            warn!("{:?} Failed to connect to peer {:?}: {:?}. Asking {:?} to help \
+                                   as a tunnel.",
+                                  self,
+                                  peer_id,
+                                  err,
+                                  node.name());
+                            let tunnel_request = DirectMessage::TunnelRequest(peer_id);
+                            let _ = self.send_direct_message(&node.peer_id, tunnel_request);
+                            return;
+                        }
+                    }
+                    error!("{:?} Failed to connect to peer {:?}: {:?}. No tunnel candidate found.",
+                          self,
+                          peer_id,
+                          err);
                 }
             }
         }
@@ -572,7 +617,15 @@ impl Core {
 
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
-            trace!("Trying to connect to {:?}.", their_public_id.name());
+            let peer_id = their_connection_info.id();
+            let their_name = *their_public_id.name();
+            if let Some(name) = self.connecting_peers.insert(peer_id, their_name) {
+                warn!("Prepared connection info for {:?} as {:?}, but already tried as {:?}.",
+                      peer_id,
+                      their_name,
+                      name);
+            }
+            trace!("Trying to connect to {:?} as {:?}.", peer_id, their_name);
             self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
             let _ = self.our_connection_info_map.insert(their_public_id, our_connection_info);
@@ -598,6 +651,26 @@ impl Core {
         match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
+            Ok(Message::TunnelDirect { content, src, dst }) => {
+                if dst == self.crust_service.id() && self.tunnel_nodes.get(&src) == Some(&peer_id) {
+                    self.handle_direct_message(content, src)
+                } else if self.tunnel_clients.contains(&(src, dst)) {
+                    try!(self.crust_service.send(&dst, bytes));
+                    Ok(())
+                } else {
+                    Err(RoutingError::InvalidDestination)
+                }
+            }
+            Ok(Message::TunnelHop { content, src, dst }) => {
+                if dst == self.crust_service.id() && self.tunnel_nodes.get(&src) == Some(&peer_id) {
+                    self.handle_hop_message(&content, src)
+                } else if self.tunnel_clients.contains(&(src, dst)) {
+                    try!(self.crust_service.send(&dst, bytes));
+                    Ok(())
+                } else {
+                    Err(RoutingError::InvalidDestination)
+                }
+            }
             Err(error) => Err(RoutingError::SerialisationError(error)),
         }
     }
@@ -629,7 +702,7 @@ impl Core {
                 // error!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
                 //        hop_msg.name(),
                 //        peer_id);
-                // self.crust_service.disconnect(&peer_id);
+                // self.disconnect_node(&peer_id);
                 return Err(RoutingError::UnknownConnection(*hop_msg.name()));
             }
             if relayed_get_request {
@@ -1134,10 +1207,19 @@ impl Core {
     }
 
     fn send_direct_message(&mut self,
-                           peer_id: &PeerId,
+                           dst_id: &PeerId,
                            direct_message: DirectMessage)
                            -> Result<(), RoutingError> {
-        let message = Message::Direct(direct_message);
+        let (message, peer_id) = if let Some(tunnel_id) = self.tunnel_nodes.get(dst_id) {
+            let message = Message::TunnelDirect {
+                content: direct_message,
+                src: self.crust_service.id(),
+                dst: *dst_id,
+            };
+            (message, tunnel_id)
+        } else {
+            (Message::Direct(direct_message), dst_id)
+        };
         let raw_bytes = try!(serialisation::serialise(&message));
         try!(self.crust_service.send(peer_id, raw_bytes));
         Ok(())
@@ -1209,8 +1291,7 @@ impl Core {
                 } else {
                     warn!("Signature check failed in NodeIdentify - Dropping peer {:?}",
                           peer_id);
-                    self.crust_service.disconnect(&peer_id);
-                    Ok(())
+                    self.disconnect_node(&peer_id)
                 }
             }
             DirectMessage::NewNode(public_id) => {
@@ -1219,6 +1300,13 @@ impl Core {
                     return self.send_connect_request(public_id.name());
                 }
                 Ok(())
+            }
+            DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
+            DirectMessage::TunnelFail(dst_id) => self.handle_tunnel_fail(peer_id, dst_id),
+            DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
+            DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
+            DirectMessage::TunnelDisconnect(dst_id) => {
+                self.handle_tunnel_disconnect(peer_id, dst_id)
             }
         }
     }
@@ -1361,8 +1449,7 @@ impl Core {
                self,
                public_id.name());
         if !self.node_in_cache(&public_id, &peer_id) {
-            self.crust_service.disconnect(&peer_id);
-            return Ok(());
+            return self.disconnect_node(&peer_id);
         }
 
         self.add_to_routing_table(public_id, peer_id)
@@ -1385,9 +1472,8 @@ impl Core {
                 error!("{:?} Peer was not added to the routing table: {:?}",
                        self,
                        peer_id);
-                self.crust_service.disconnect(&peer_id);
                 let _ = self.node_id_cache.remove(&name);
-                return Ok(());
+                return self.disconnect_node(&peer_id);
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
@@ -1484,12 +1570,8 @@ impl Core {
 
     fn retry_bootstrap_with_blacklist(&mut self, peer_id: &PeerId) {
         trace!("Retry bootstrap without {:?}.", peer_id);
-        self.crust_service.disconnect(peer_id);
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
-        for &proxy_peer_id in self.proxy_map.keys() {
-            self.crust_service.disconnect(&proxy_peer_id);
-        }
         self.proxy_map.clear();
         thread::sleep(StdDuration::from_secs(5));
         self.restart_crust_service();
@@ -1497,6 +1579,94 @@ impl Core {
         //               Currently, ci_test's nodes all connect via the same beacon.
         // self.crust_service
         //    .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
+    }
+
+    /// Handle a request by `peer_id` to act as a tunnel connecting it with `dst_id`.
+    fn handle_tunnel_request(&mut self, peer_id: PeerId, dst_id: PeerId)
+        -> Result<(), RoutingError> {
+        if self.tunnel_clients.len() < 2 * MAX_TUNNEL_CLIENT_PAIRS &&
+            self.routing_table.find(|node| node.peer_id == peer_id).is_some() &&
+            self.routing_table.find(|node| node.peer_id == dst_id).is_some() &&
+            !self.tunnel_nodes.contains_key(&peer_id) &&
+            !self.tunnel_nodes.contains_key(&dst_id) {
+            trace!("Accepted tunnel request from {:?} for {:?}.", peer_id, dst_id);
+            if self.tunnel_clients.insert((peer_id, dst_id)) &&
+                self.tunnel_clients.insert((dst_id, peer_id)) {
+                try!(self.send_direct_message(&peer_id, DirectMessage::TunnelSuccess(dst_id)));
+                try!(self.send_direct_message(&dst_id, DirectMessage::TunnelSuccess(peer_id)));
+            }
+            return Ok(());
+        }
+        trace!("Rejected tunnel request from {:?} for {:?}.", peer_id, dst_id);
+        self.send_direct_message(&peer_id, DirectMessage::TunnelFail(dst_id))
+    }
+
+    /// Handle a `TunnelSuccess` response from `peer_id`: It will act as a tunnel to `dst_id`.
+    fn handle_tunnel_success(&mut self, peer_id: PeerId, dst_id: PeerId)
+        -> Result<(), RoutingError> {
+        if let Some(&name) = self.connecting_peers.get(&dst_id) {
+            trace!("Adding {:?} as a tunnel node for {:?}.", peer_id, name);
+            let _ = self.tunnel_nodes.insert(dst_id, peer_id);
+            self.node_identify(dst_id)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Handle a `TunnelFail` response from `peer_id`: It cannot act as a tunnel to `dst_id`.
+    fn handle_tunnel_fail(&mut self, peer_id: PeerId, dst_id: PeerId)
+        -> Result<(), RoutingError> {
+        if let Some(&name) = self.connecting_peers.get(&dst_id) {
+            if let Some(node) = self.routing_table
+                                    .closest_nodes_to(&name, GROUP_SIZE, false)
+                                    .into_iter()
+                                    .skip_while(|node| node.peer_id != peer_id)
+                                    .next() {
+                trace!("{:?} Failed to connect to {:?} ({:?}) via tunnel {:?}. Asking {:?} ({:?}) \
+                        to help as a tunnel.",
+                       self,
+                       dst_id,
+                       name,
+                       peer_id,
+                       node.peer_id,
+                       node.name());
+                let tunnel_request = DirectMessage::TunnelRequest(dst_id);
+                return self.send_direct_message(&node.peer_id, tunnel_request);
+            }
+        }
+        warn!("Failed to establish tunnel to {:?}.", dst_id);
+        let _ = self.connecting_peers.remove(&dst_id);
+        Ok(())
+    }
+
+    /// Handle a `TunnelClosed` message from `peer_id`: `dst_id` disconnected.
+    fn handle_tunnel_closed(&mut self, peer_id: PeerId, dst_id: PeerId)
+        -> Result<(), RoutingError> {
+        warn!("Tunnel to {:?} via {:?} closed.", dst_id, peer_id);
+        self.dropped_routing_node_connection(&dst_id);
+        Ok(())
+    }
+
+    /// Handle a `TunnelDisconnect` message from `peer_id` who wants to disconnect `dst_id`.
+    fn handle_tunnel_disconnect(&mut self, peer_id: PeerId, dst_id: PeerId)
+        -> Result<(), RoutingError> {
+        warn!("Closing tunnel connecting {:?} and {:?}.", dst_id, peer_id);
+        if self.tunnel_clients.remove(&(peer_id, dst_id)) &&
+            self.tunnel_clients.remove(&(dst_id, peer_id)) {
+            self.send_direct_message(&dst_id, DirectMessage::TunnelClosed(peer_id))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Disconnects from the given peer, via Crust or by dropping the tunnel node.
+    fn disconnect_node(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
+        if let Some(tunnel_id) = self.tunnel_nodes.remove(peer_id) {
+            self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id))
+        } else {
+            let _ = self.crust_service.disconnect(peer_id);
+            Ok(())
+        }
     }
 
     // Constructed by A; From A -> X
@@ -1957,10 +2127,20 @@ impl Core {
         let serialised_connection_info = try!(decipher_result.map_err(|()| {
             RoutingError::AsymmetricDecryptionFailure
         }));
-        let their_connection_info = try!(serialisation::deserialise(&serialised_connection_info));
+        let their_connection_info: TheirConnectionInfo =
+            try!(serialisation::deserialise(&serialised_connection_info));
 
         if let Some(our_connection_info) = self.our_connection_info_map.remove(&their_public_id) {
-            trace!("Received connection info. Trying to connect to {:?}.",
+            let peer_id = their_connection_info.id();
+            let their_name = *their_public_id.name();
+            if let Some(name) = self.connecting_peers.insert(peer_id, their_name) {
+                warn!("Prepared connection info for {:?} as {:?}, but already tried as {:?}.",
+                      peer_id,
+                      their_name,
+                      name);
+            }
+            trace!("Received connection info. Trying to connect to {:?} as {:?}.",
+                   peer_id,
                    their_public_id.name());
             self.crust_service.connect(our_connection_info, their_connection_info);
             Ok(())
@@ -2015,6 +2195,19 @@ impl Core {
         Ok(try!(serialisation::serialise(&message)))
     }
 
+    fn to_tunnel_hop_bytes(&self, signed_msg: SignedMessage, src: PeerId, dst:PeerId)
+        -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+                                           *self.name(),
+                                           self.full_id.signing_private_key()));
+        let message = Message::TunnelHop {
+            content: hop_msg,
+            src: src,
+            dst: dst,
+        };
+        Ok(try!(serialisation::serialise(&message)))
+    }
+
     fn send(&mut self,
             signed_msg: SignedMessage,
             hop: &XorName,
@@ -2046,7 +2239,14 @@ impl Core {
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table.target_nodes(destination, hop, count);
         for target in targets {
-            try!(self.crust_service.send(&target.peer_id, raw_bytes.clone()));
+            if let Some(tunnel_id) = self.tunnel_nodes.get(&target.peer_id) {
+                let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
+                                                          self.crust_service.id(),
+                                                          target.peer_id));
+                try!(self.crust_service.send(tunnel_id, bytes));
+            } else {
+                try!(self.crust_service.send(&target.peer_id, raw_bytes.clone()));
+            }
         }
 
         // If we need to handle this message, handle it.
