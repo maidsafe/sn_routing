@@ -260,12 +260,22 @@ fn main() {
         let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
 
+        // Start churn on put's at request `request`.
+        let mut rng = thread_rng();
+        let range = Range::new(0, requests);
+        let request = range.ind_sample(&mut rng);
+
         println!("--------- Starting Client -----------");
         let mut example_client = ExampleClient::new();
 
         println!("--------- Putting Data -----------");
         let mut stored_data = Vec::with_capacity(requests);
         for i in 0..requests {
+            if request == i {
+                println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
+                thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
+            }
+
             let key: String = (0..10).map(|_| random::<u8>() as char).collect();
             let value: String = (0..10).map(|_| random::<u8>() as char).collect();
             let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
@@ -274,12 +284,18 @@ fn main() {
 
             println!("Putting Data: count #{} - Data {:?}", i + 1, name);
             example_client.put(data.clone());
-            stored_data.push(data);
+            stored_data.push(data.clone());
+
+            println!("Getting Data: count #{} - Data {:?}", i + 1, name);
+            if let Some(data) = example_client.get(DataRequest::Plain(data.name())) {
+                assert_eq!(data, stored_data[i]);
+            } else {
+                println!("Failed to recover stored data: {}.", data.name());
+                break;
+            };
         }
 
-        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
-        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
-
+        // Get the data again.
         println!("--------- Getting Data -----------");
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
