@@ -150,7 +150,16 @@ impl PmidManager {
         for key in &timed_out_puts {
             match self.ongoing_puts.remove(key) {
                 Some(metadata_for_put) => {
-                    let _ = self.handle_put_failure(routing_node, &metadata_for_put.request);
+                    // The put_failure notification shall only be sent out to the NAE when this
+                    // PM is still in the close_group to the pmid_node.
+                    // There is chance the timeout is reached due to the fact that this PM is
+                    // no longer in the close_group of target pmid_node anymore.
+                    // Checking it in churn will be costly and improper as the request cache
+                    // is not refreshed out. This leaves a chance if this PM churned out then
+                    // churned in, the record will be lost.
+                    if routing_node.close_group(*metadata_for_put.request.dst.name()).ok().is_some() {
+                        let _ = self.handle_put_failure(routing_node, &metadata_for_put.request);
+                    }
                 }
                 None => continue,
             }
@@ -174,6 +183,7 @@ impl PmidManager {
         Ok(())
     }
 
+    // The `request` is the original request from NAE to PM 
     pub fn handle_put_failure(&mut self,
                               routing_node: &RoutingNode,
                               request: &RequestMessage) -> Result<(), InternalError> {
