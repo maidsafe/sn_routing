@@ -1056,10 +1056,14 @@ impl Core {
         debug!("{:?} Finished bootstrapping.", self);
         // If we have no connections, we should start listening to allow incoming connections
         if self.state == State::Disconnected {
-            debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
-                    incoming connections.",
-                   self);
-            self.start_listening();
+            if self.client_restriction {
+                let _ = self.event_sender.send(Event::Disconnected);
+            } else {
+                debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
+                        incoming connections.",
+                       self);
+                self.start_listening();
+            }
         }
     }
 
