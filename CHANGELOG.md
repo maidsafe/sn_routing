@@ -1,5 +1,10 @@
 # Safe Vault - Change Log
 
+## [0.4.0]
+- Accommodated updates to dependencies' APIs
+- Ensured that the network can correctly handle Clients doing a Get for ImmutableData immediately after doing a Put
+- Reduced `REPLICANTS` and `MIN_REPLICANTS` to 4
+
 ## [0.3.0]
 - Major refactor to accommodate changed Routing
 
