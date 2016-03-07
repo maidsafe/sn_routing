@@ -24,8 +24,8 @@ use std::time::Duration;
 use sodiumoxide::crypto;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand::{random, Rng, thread_rng};
-use routing::{self, Authority, Data, DataRequest, Event, FullId, PlainData, RequestMessage,
-              RequestContent, ResponseContent, ResponseMessage, StructuredData};
+use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PlainData,
+              RequestMessage, RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
@@ -99,30 +99,41 @@ impl Client {
 
     /// Send a `Get` request to the network and return the received response.
     pub fn get(&mut self, request: DataRequest) -> Option<ResponseMessage> {
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
                                    .send_get_request(Authority::NaeManager(request.name()),
-                                                     request.clone()));
+                                                     request.clone(),
+                                                     message_id));
         self.wait_for_response()
     }
 
     /// Send a `Put` request to the network.
     pub fn put(&self, data: Data) -> Option<ResponseMessage> {
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
-                                   .send_put_request(Authority::ClientManager(*self.name()), data));
+                                   .send_put_request(Authority::ClientManager(*self.name()),
+                                                     data,
+                                                     message_id));
         self.wait_for_response()
     }
 
     /// Post data onto the network.
     pub fn post(&self, data: Data) -> Option<ResponseMessage> {
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
-                                   .send_post_request(Authority::NaeManager(data.name()), data));
+                                   .send_post_request(Authority::NaeManager(data.name()),
+                                                      data,
+                                                      message_id));
         self.wait_for_response()
     }
 
     /// Delete data from the network.
     pub fn delete(&self, data: Data) -> Option<ResponseMessage> {
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
-                                   .send_delete_request(Authority::NaeManager(data.name()), data));
+                                   .send_delete_request(Authority::NaeManager(data.name()),
+                                                        data,
+                                                        message_id));
         self.wait_for_response()
     }
 
@@ -131,9 +142,11 @@ impl Client {
         let wrapper = MpidMessageWrapper::Online;
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(*self.name(), value));
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
                                    .send_post_request(Authority::ClientManager(*self.name()),
-                                                      data));
+                                                      data,
+                                                      message_id));
 
         match unwrap_option!(self.wait_for_response(), "") {
             ResponseMessage { content: ResponseContent::PostSuccess(..), .. } => {
@@ -199,9 +212,11 @@ impl Client {
                                 wrapper: MpidMessageWrapper) {
         let value = unwrap_result!(serialise(&wrapper));
         let data = Data::Plain(PlainData::new(name, value));
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
                                    .send_delete_request(Authority::ClientManager(target_account),
-                                                        data));
+                                                        data,
+                                                        message_id));
     }
 
     /// Query outbox.
@@ -209,9 +224,11 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
         let data = Data::Plain(PlainData::new(name.clone(), value));
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
                                    .send_post_request(Authority::ClientManager(*self.name()),
-                                                      data));
+                                                      data,
+                                                      message_id));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -228,9 +245,11 @@ impl Client {
         let name = self.name().clone();
         let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
         let data = Data::Plain(PlainData::new(name.clone(), value));
+        let message_id = MessageId::new();
         let _ = unwrap_result!(self.routing_client
                                    .send_post_request(Authority::ClientManager(*self.name()),
-                                                      data));
+                                                      data,
+                                                      message_id));
         match self.wait_for_wrapper() {
             MpidMessageWrapper::OutboxHasResponse(mpid_headers) => {
                 trace!("{:?} outbox has following mpid_headers {:?}",
@@ -254,14 +273,6 @@ impl Client {
     /// Return secret signing key.
     pub fn signing_private_key(&self) -> &crypto::sign::SecretKey {
         self.full_id.signing_private_key()
-    }
-
-    fn send_wrapper(&self, wrapper: MpidMessageWrapper) {
-        let name = self.name().clone();
-        let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::Plain(PlainData::new(name.clone(), value));
-        let _ = unwrap_result!(self.routing_client
-                                   .send_put_request(Authority::ClientManager(*self.name()), data));
     }
 
     fn wait_for_wrapper(&self) -> MpidMessageWrapper {

@@ -179,8 +179,8 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
-                self.immutable_data_manager.handle_put(routing_node, data, message_id)
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.immutable_data_manager.handle_put(routing_node, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
@@ -194,7 +194,9 @@ impl Vault {
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.pmid_node.handle_put(routing_node, &request)
+            }
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -257,16 +259,26 @@ impl Vault {
              &ResponseContent::PutSuccess(_, ref message_id)) => {
                 self.maid_manager.handle_put_success(routing_node, message_id)
             }
-            (&Authority::ManagedNode(pmid_node),
+            (&Authority::NodeManager(ref pmid_node),
+             &Authority::NaeManager(_),
+             &ResponseContent::PutSuccess(_, ref message_id)) => {
+                self.immutable_data_manager.handle_put_success(pmid_node, message_id)
+            }
+            (&Authority::ManagedNode(ref pmid_node),
              &Authority::NodeManager(_),
              &ResponseContent::PutSuccess(_, ref message_id)) => {
-                self.pmid_manager.handle_put_success(routing_node, &pmid_node, message_id)
+                self.pmid_manager.handle_put_success(routing_node, pmid_node, message_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
              &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
                 self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
+            }
+            (&Authority::NodeManager(ref pmid_node),
+             &Authority::NaeManager(_),
+             &ResponseContent::PutFailure{ ref id, .. }) => {
+                self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, id)
             }
             (&Authority::ManagedNode(_),
              &Authority::NodeManager(_),
