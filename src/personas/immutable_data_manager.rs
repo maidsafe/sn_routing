@@ -47,7 +47,9 @@ pub enum DataHolder {
 impl DataHolder {
     pub fn name(&self) -> &XorName {
         match *self {
-            DataHolder::Good(ref name) | DataHolder::Failed(ref name) | DataHolder::Pending(ref name) => name,
+            DataHolder::Good(ref name) |
+            DataHolder::Failed(ref name) |
+            DataHolder::Pending(ref name) => name,
         }
     }
 }
@@ -67,7 +69,10 @@ impl MetadataForGetRequest {
         Self::construct(vec![], pmid_nodes)
     }
 
-    pub fn with_message(message_id: &MessageId, request: &RequestMessage, pmid_nodes: &Account) -> MetadataForGetRequest {
+    pub fn with_message(message_id: &MessageId,
+                        request: &RequestMessage,
+                        pmid_nodes: &Account)
+                        -> MetadataForGetRequest {
         Self::construct(vec![(message_id.clone(), request.clone()); 1], pmid_nodes)
     }
 
@@ -87,7 +92,9 @@ impl MetadataForGetRequest {
         }
     }
 
-    fn construct(requests: Vec<(MessageId, RequestMessage)>, pmid_nodes: &Account) -> MetadataForGetRequest {
+    fn construct(requests: Vec<(MessageId, RequestMessage)>,
+                 pmid_nodes: &Account)
+                 -> MetadataForGetRequest {
         // We only want to try and get data from "good" holders
         let good_nodes = pmid_nodes.iter()
                                    .filter_map(|data_holder| {
@@ -162,14 +169,16 @@ impl ImmutableDataManager {
         };
 
         // If there's an ongoing Put operation, get the data from the cached copy there and return
-        if let Some(immutable_data) = self.ongoing_puts.values().find(|&value| value.name() == data_name) {
+        if let Some(immutable_data) = self.ongoing_puts
+                                          .values()
+                                          .find(|&value| value.name() == data_name) {
             let src = request.dst.clone();
             let dst = request.src.clone();
             let _ = routing_node.send_get_success(src,
                                                   dst,
                                                   Data::Immutable(immutable_data.clone()),
                                                   message_id);
-            return Ok(())
+            return Ok(());
         }
 
         {
@@ -194,8 +203,9 @@ impl ImmutableDataManager {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
-                    (data.clone(), message_id.clone()),
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
@@ -267,9 +277,9 @@ impl ImmutableDataManager {
             };
             if let Some(pmid_node_index) = metadata.pmid_nodes.iter().position(predicate) {
                 let good_holder = DataHolder::Good(metadata.pmid_nodes
-                                                         .remove(pmid_node_index)
-                                                         .name()
-                                                         .clone());
+                                                           .remove(pmid_node_index)
+                                                           .name()
+                                                           .clone());
                 let _ = metadata.pmid_nodes.push(good_holder);
             }
 
@@ -316,9 +326,9 @@ impl ImmutableDataManager {
             };
             if let Some(pmid_node_index) = metadata.pmid_nodes.iter().position(predicate) {
                 let failed_holder = DataHolder::Failed(metadata.pmid_nodes
-                                                             .remove(pmid_node_index)
-                                                             .name()
-                                                             .clone());
+                                                               .remove(pmid_node_index)
+                                                               .name()
+                                                               .clone());
                 let _ = metadata.pmid_nodes.push(failed_holder);
             }
             trace!("Metadata for Get {} updated to {:?}", data_name, metadata);
@@ -470,7 +480,9 @@ impl ImmutableDataManager {
 
         for (data_name, pmid_nodes) in self.accounts.iter() {
             if pmid_nodes.len() < MIN_REPLICANTS {
-                trace!("Need to replicate {} as only {} holders left", data_name, pmid_nodes.len());
+                trace!("Need to replicate {} as only {} holders left",
+                       data_name,
+                       pmid_nodes.len());
                 {
                     if let Some(mut metadata) = self.ongoing_gets.get_mut(&data_name) {
                         trace!("Already getting {} - {:?}", data_name, metadata);
@@ -570,14 +582,20 @@ impl ImmutableDataManager {
                     }
                 }
                 trace!("Replicating {} - good nodes: {:?}", data_name, good_nodes);
-                trace!("Replicating {} - nodes to be excluded: {:?}", data_name, nodes_to_exclude);
+                trace!("Replicating {} - nodes to be excluded: {:?}",
+                       data_name,
+                       nodes_to_exclude);
                 let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
                                                                             data_name,
                                                                             nodes_to_exclude));
-                trace!("Replicating {} - target nodes: {:?}", data_name, target_pmid_nodes);
+                trace!("Replicating {} - target nodes: {:?}",
+                       data_name,
+                       target_pmid_nodes);
                 let message_id = MessageId::new();
                 for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
-                    trace!("Replicating {} - sending Put to {}", data_name, new_pmid_node.name());
+                    trace!("Replicating {} - sending Put to {}",
+                           data_name,
+                           new_pmid_node.name());
                     let src = Authority::NaeManager(data_name.clone());
                     let dst = Authority::NodeManager(new_pmid_node.name().clone());
                     new_pmid_nodes.insert(new_pmid_node.clone());
@@ -606,7 +624,8 @@ impl ImmutableDataManager {
                 }
             }
         } else {
-            warn!("Failed to find metadata for check_and_replicate of {}", data_name);
+            warn!("Failed to find metadata for check_and_replicate of {}",
+                  data_name);
         }
 
         if finished {
@@ -614,11 +633,17 @@ impl ImmutableDataManager {
         }
 
         if !new_pmid_nodes.is_empty() {
-            trace!("Replicating {} - new holders: {:?}", data_name, new_pmid_nodes);
+            trace!("Replicating {} - new holders: {:?}",
+                   data_name,
+                   new_pmid_nodes);
             if let Some(pmid_nodes) = self.accounts.get_mut(data_name) {
-                trace!("Replicating {} - account before: {:?}", data_name, pmid_nodes);
+                trace!("Replicating {} - account before: {:?}",
+                       data_name,
+                       pmid_nodes);
                 *pmid_nodes = pmid_nodes.union(&new_pmid_nodes).cloned().collect();
-                trace!("Replicating {} - account after:  {:?}", data_name, pmid_nodes);
+                trace!("Replicating {} - account after:  {:?}",
+                       data_name,
+                       pmid_nodes);
             }
             if let Some(pmid_nodes) = self.accounts.get(data_name) {
                 self.send_refresh(routing_node, data_name, pmid_nodes);

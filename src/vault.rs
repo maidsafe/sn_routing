@@ -194,7 +194,9 @@ impl Vault {
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.pmid_node.handle_put(routing_node, &request)
+            }
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
