@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.11.1]
+- Send a Disconnected event if client fails to bootstrap.
+
 ## [0.11.0]
 - Replace CBOR usage with maidsafe_utilites::serialisation.
 - Updated dependencies.
