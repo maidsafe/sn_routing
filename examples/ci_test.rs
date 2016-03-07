@@ -274,12 +274,21 @@ fn main() {
 
             println!("Putting Data: count #{} - Data {:?}", i + 1, name);
             example_client.put(data.clone());
-            stored_data.push(data);
+            stored_data.push(data.clone());
+
+            println!("Getting Data: count #{} - Data {:?}", i + 1, name);
+            if let Some(data) = example_client.get(DataRequest::Plain(data.name())) {
+                assert_eq!(data, stored_data[i]);
+            } else {
+                println!("Failed to recover stored data: {}.", data.name());
+                break;
+            };
         }
 
         println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
         thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
+        // Get the data again.
         println!("--------- Getting Data -----------");
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
