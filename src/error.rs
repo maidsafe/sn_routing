@@ -39,6 +39,7 @@ pub enum InternalError {
     UnknownRefreshType(Authority, Authority, Refresh),
     InvalidResponse,
     NotInCloseGroup,
+    UnableToAllocateNewPmidNode,
     ChunkStore(chunk_store::Error),
     MpidMessaging(mpid_messaging::Error),
     Serialisation(SerialisationError),
