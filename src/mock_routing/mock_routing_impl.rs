@@ -15,17 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::{GROUP_SIZE, ContactInfo, RoutingTable};
+use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
 use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
-use std::cmp::{Ordering, min};
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
-use xor_name::{XorName, closer_to_target};
+use xor_name::XorName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NodeInfo(XorName);

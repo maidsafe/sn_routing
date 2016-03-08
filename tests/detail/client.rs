@@ -15,15 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
-
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::Duration;
 use sodiumoxide::crypto;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use rand::{random, Rng, thread_rng};
+use rand::random;
 use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PlainData,
               RequestMessage, RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
@@ -277,7 +275,7 @@ impl Client {
 
     fn wait_for_wrapper(&self) -> MpidMessageWrapper {
         match unwrap_option!(self.wait_for_request(), "") {
-            RequestMessage { src, dst, content: RequestContent::Post(Data::Plain(msg), _) } => {
+            RequestMessage { content: RequestContent::Post(Data::Plain(msg), _), .. } => {
                 let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
                 wrapper
             }

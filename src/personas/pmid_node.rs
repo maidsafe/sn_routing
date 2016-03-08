@@ -19,8 +19,8 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType,
-              MessageId, RequestContent, RequestMessage};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+              RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -66,7 +66,10 @@ impl PmidNode {
         }
         let error = ClientError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
-        trace!("As {:?} sending get failure of data {} to {:?}", request.dst, data_name, request.src);
+        trace!("As {:?} sending get failure of data {} to {:?}",
+               request.dst,
+               data_name,
+               request.src);
         let _ = routing_node.send_get_failure(request.dst.clone(),
                                               request.src.clone(),
                                               request.clone(),
@@ -77,10 +80,12 @@ impl PmidNode {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
-                      request: &RequestMessage) -> Result<(), InternalError> {
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
-                    (data.clone(), message_id.clone()),
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
         let data_name = data.name();
@@ -134,7 +139,10 @@ impl PmidNode {
                     // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                     if emptied_space > required_space {
                         try!(self.chunk_store.put(&data_name, &serialised_data));
-                        let _ = self.notify_managers_of_success(routing_node, &data_name, &message_id, request);
+                        let _ = self.notify_managers_of_success(routing_node,
+                                                                &data_name,
+                                                                &message_id,
+                                                                request);
                         return Ok(());
                     }
                 }
@@ -145,20 +153,45 @@ impl PmidNode {
         // We failed to make room for it - replication needs to be carried out.
         let src = request.dst.clone();
         let dst = request.src.clone();
-        trace!("As {:?} sending Put failure of data {} to {:?} ", src, data_name, dst);
+        trace!("As {:?} sending Put failure of data {} to {:?} ",
+               src,
+               data_name,
+               dst);
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
         Ok(())
     }
 
-    pub fn notify_managers_of_success(&mut self,
-                                      routing_node: &RoutingNode,
-                                      data_name: &XorName,
-                                      message_id: &MessageId,
-                                      request: &RequestMessage) -> Result<(), InternalError> {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+        // Only retain chunks for which we're still in the close group
+        let chunk_names = self.chunk_store.names();
+        for chunk_name in chunk_names {
+            match routing_node.close_group(chunk_name) {
+                Ok(None) => {
+                    trace!("No longer a PN for {}", chunk_name);
+                    let _ = self.chunk_store.delete(&chunk_name);
+                }
+                Ok(Some(_)) => (),
+                Err(error) => {
+                    error!("Failed to get close group: {:?} for {}", error, chunk_name);
+                    let _ = self.chunk_store.delete(&chunk_name);
+                }
+            }
+        }
+    }
+
+    fn notify_managers_of_success(&mut self,
+                                  routing_node: &RoutingNode,
+                                  data_name: &XorName,
+                                  message_id: &MessageId,
+                                  request: &RequestMessage)
+                                  -> Result<(), InternalError> {
         let message_hash = sha512::hash(&try!(serialisation::serialise(&request))[..]);
         let src = request.dst.clone();
         let dst = request.src.clone();
-        trace!("As {:?} sending put success of data {} to {:?}", src, data_name, dst);
+        trace!("As {:?} sending put success of data {} to {:?}",
+               src,
+               data_name,
+               dst);
         let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
         Ok(())
     }
