@@ -40,6 +40,7 @@
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", allow(use_debug))]
 
 #[macro_use]
 extern crate log;
@@ -113,7 +114,7 @@ pub fn main() {
     }
 
     let message = String::from("Running ") + &name_and_version;
-    let underline = String::from_utf8(vec!['=' as u8; message.len()]).unwrap();
+    let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
     vault::Vault::run();

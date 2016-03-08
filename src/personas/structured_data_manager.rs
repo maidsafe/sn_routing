@@ -23,6 +23,7 @@ use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, Stru
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
+use xor_name::XorName;
 
 pub struct StructuredDataManager {
     chunk_store: ChunkStore,
@@ -219,29 +220,45 @@ impl StructuredDataManager {
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+        // Only retain data for which we're still in the close group
         let data_names = self.chunk_store.names();
         for data_name in data_names {
-            let serialised_data = match self.chunk_store.get(&data_name) {
-                Ok(data) => data,
-                _ => continue,
-            };
-
-            let structured_data =
-                match serialisation::deserialise::<StructuredData>(&serialised_data) {
-                    Ok(parsed_data) => parsed_data,
-                    Err(_) => continue,
-                };
-
-            let src = Authority::NaeManager(data_name.clone());
-            let refresh = Refresh::new(&data_name,
-                                       RefreshValue::StructuredDataManager(structured_data));
-            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("SD Manager sending refresh for data {:?}", src.name());
-                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            match routing_node.close_group(data_name) {
+                Ok(None) => {
+                    trace!("No longer a SDM for {}", data_name);
+                    let _ = self.chunk_store.delete(&data_name);
+                }
+                Ok(Some(_)) => self.send_refresh(routing_node, &data_name),
+                Err(error) => {
+                    error!("Failed to get close group: {:?} for {}", error, data_name);
+                    let _ = self.chunk_store.delete(&data_name);
+                }
             }
         }
     }
+
+    fn send_refresh(&self, routing_node: &RoutingNode, data_name: &XorName) {
+        let serialised_data = match self.chunk_store.get(data_name) {
+            Ok(data) => data,
+            _ => return,
+        };
+
+        let structured_data =
+            match serialisation::deserialise::<StructuredData>(&serialised_data) {
+                Ok(parsed_data) => parsed_data,
+                Err(_) => return,
+            };
+
+        let src = Authority::NaeManager(data_name.clone());
+        let refresh = Refresh::new(data_name,
+                                   RefreshValue::StructuredDataManager(structured_data));
+        if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
+            trace!("SD Manager sending refresh for data {:?}", src.name());
+            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+        }
+    }
 }
+
 
 
 // #[cfg(all(test, feature = "use-mock-routing"))]

@@ -15,12 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::HashMap;
+use std::mem;
+
 use error::{ClientError, InternalError};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use std::collections::HashMap;
 use time::Duration;
 use types::{Refresh, RefreshValue};
 use utils;
@@ -146,14 +148,36 @@ impl MaidManager {
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
-        for (maid_name, account) in self.accounts.iter() {
-            let src = Authority::ClientManager(maid_name.clone());
-            let refresh = Refresh::new(maid_name,
-                                       RefreshValue::MaidManagerAccount(account.clone()));
-            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("MaidManager sending refresh for account {:?}", src.name());
-                let _ = routing_node.send_refresh_request(src, serialised_refresh);
-            }
+        // Only retain accounts for which we're still in the close group
+        let accounts = mem::replace(&mut self.accounts, HashMap::new());
+        self.accounts = accounts.into_iter()
+                                .filter(|&(ref maid_name, ref account)| {
+                                    match routing_node.close_group(*maid_name) {
+                                        Ok(None) => {
+                                            trace!("No longer a MM for {}", maid_name);
+                                            false
+                                        }
+                                        Ok(Some(_)) => {
+                                            self.send_refresh(routing_node, maid_name, account);
+                                            true
+                                        }
+                                        Err(error) => {
+                                            error!("Failed to get close group: {:?} for {}",
+                                                   error,
+                                                   maid_name);
+                                            false
+                                        }
+                                    }
+                                })
+                                .collect();
+    }
+
+    fn send_refresh(&self, routing_node: &RoutingNode, maid_name: &XorName, account: &Account) {
+        let src = Authority::ClientManager(maid_name.clone());
+        let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
+        if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
+            trace!("MaidManager sending refresh for account {}", src.name());
+            let _ = routing_node.send_refresh_request(src, serialised_refresh);
         }
     }
 
@@ -217,10 +241,7 @@ impl MaidManager {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
         if let Err(error) = result {
-            try!(self.reply_with_put_failure(routing_node,
-                                             request.clone(),
-                                             message_id,
-                                             &error));
+            try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
             return Err(InternalError::Client(error));
         }
 

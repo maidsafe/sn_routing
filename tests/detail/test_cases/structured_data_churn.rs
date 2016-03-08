@@ -81,7 +81,9 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
         let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
                                                    stored_data[i].get_type_tag());
-        trace!("Getting updated StructuredData {} - {}", i, stored_data[i].name());
+        trace!("Getting updated StructuredData {} - {}",
+               i,
+               stored_data[i].name());
         match unwrap_option!(client.get(data_request.clone()), "") {
             ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
                 assert_eq!(stored_data[i], sd);

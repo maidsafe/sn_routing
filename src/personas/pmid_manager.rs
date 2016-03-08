@@ -15,11 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::HashMap;
+use std::mem;
+
 use error::InternalError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use std::collections::HashMap;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -116,10 +118,12 @@ impl PmidManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
-                      request: &RequestMessage) -> Result<(), InternalError> {
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
-                    (data.clone(), message_id.clone()),
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
         // Put data always being allowed, i.e. no early alert
@@ -157,7 +161,9 @@ impl PmidManager {
                     // Checking it in churn will be costly and improper as the request cache
                     // is not refreshed out. This leaves a chance if this PM churned out then
                     // churned in, the record will be lost.
-                    if routing_node.close_group(*metadata_for_put.request.dst.name()).ok().is_some() {
+                    if routing_node.close_group(*metadata_for_put.request.dst.name())
+                                   .ok()
+                                   .is_some() {
                         let _ = self.handle_put_failure(routing_node, &metadata_for_put.request);
                     }
                 }
@@ -169,33 +175,40 @@ impl PmidManager {
     pub fn handle_put_success(&mut self,
                               routing_node: &RoutingNode,
                               pmid_node: &XorName,
-                              message_id: &MessageId) -> Result<(), InternalError> {
+                              message_id: &MessageId)
+                              -> Result<(), InternalError> {
         match self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
             Some(metadata_for_put) => {
-                let message_hash = sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
+                let message_hash =
+                    sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
                 let src = metadata_for_put.request.dst.clone();
                 let dst = metadata_for_put.request.src.clone();
                 trace!("As {:?} sending put success to {:?}", src, dst);
                 let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
             }
-            None => {},
+            None => {}
         }
         Ok(())
     }
 
-    // The `request` is the original request from NAE to PM 
+    // The `request` is the original request from NAE to PM
     pub fn handle_put_failure(&mut self,
                               routing_node: &RoutingNode,
-                              request: &RequestMessage) -> Result<(), InternalError> {
+                              request: &RequestMessage)
+                              -> Result<(), InternalError> {
         let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) =>
-                    (data.clone(), message_id.clone()),
+            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
+                (data.clone(), message_id.clone())
+            }
             _ => unreachable!("Error in vault demuxing"),
         };
 
         let src = request.dst.clone();
         let dst = request.src.clone();
-        trace!("As {:?} sending Put failure to {:?} of data {}", src, dst, data.name());
+        trace!("As {:?} sending Put failure to {:?} of data {}",
+               src,
+               dst,
+               data.name());
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
 
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
@@ -210,22 +223,38 @@ impl PmidManager {
     }
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
-        for (pmid_node, account) in self.accounts.iter() {
-            // Only refresh accounts for PmidNodes to which we are still close
-            if routing_node.close_group(pmid_node.clone()).ok().is_none() {
-                continue;
-            }
-
-            let src = Authority::NodeManager(pmid_node.clone());
-            let refresh = Refresh::new(pmid_node,
-                                       RefreshValue::PmidManagerAccount(account.clone()));
-            if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-                debug!("PmidManager sending refresh for account {:?}", src.name());
-                let _ = routing_node.send_refresh_request(src, serialised_refresh);
-            }
-        }
+        // Only retain accounts for which we're still in the close group
+        let accounts = mem::replace(&mut self.accounts, HashMap::new());
+        self.accounts = accounts.into_iter()
+                                .filter(|&(ref pmid_node, ref account)| {
+                                    match routing_node.close_group(*pmid_node) {
+                                        Ok(None) => {
+                                            trace!("No longer a PM for {}", pmid_node);
+                                            false
+                                        }
+                                        Ok(Some(_)) => {
+                                            self.send_refresh(routing_node, pmid_node, account);
+                                            true
+                                        }
+                                        Err(error) => {
+                                            error!("Failed to get close group: {:?} for {}",
+                                                   error,
+                                                   pmid_node);
+                                            false
+                                        }
+                                    }
+                                })
+                                .collect();
     }
 
+    fn send_refresh(&self, routing_node: &RoutingNode, pmid_node: &XorName, account: &Account) {
+        let src = Authority::NodeManager(pmid_node.clone());
+        let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
+        if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
+            trace!("PmidManager sending refresh for account {}", src.name());
+            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+        }
+    }
 }
 
 
