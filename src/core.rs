@@ -1220,6 +1220,13 @@ impl Core {
                 }
                 Ok(())
             }
+            DirectMessage::ConnectionNotNeeded(ref name) => {
+                trace!("Received ConnectionNotNeeded from {:?}.", peer_id);
+                if !self.routing_table.need_to_keep(name) {
+                    self.crust_service.disconnect(&peer_id);
+                }
+                Ok(())
+            }
         }
     }
 
@@ -1389,12 +1396,19 @@ impl Core {
                 let _ = self.node_id_cache.remove(&name);
                 return Ok(());
             }
-            Some(AddedNodeDetails { must_notify, common_groups }) => {
+            Some(AddedNodeDetails { must_notify, not_needed, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 for notify_info in must_notify {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
                 }
+
+                for node_info in not_needed {
+                    let our_name = self.name().clone();
+                    try!(self.send_direct_message(&node_info.peer_id,
+                                                  DirectMessage::ConnectionNotNeeded(our_name)));
+                }
+
                 if common_groups {
                     let event = Event::NodeAdded(name);
                     if let Err(err) = self.event_sender.send(event) {
