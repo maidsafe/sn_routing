@@ -154,6 +154,12 @@ impl OurConnectionInfo {
 #[derive(Debug, RustcEncodable, RustcDecodable)]
 pub struct TheirConnectionInfo(pub PeerId, pub Endpoint);
 
+impl TheirConnectionInfo {
+    pub fn id(&self) -> PeerId {
+        self.0
+    }
+}
+
 #[derive(Debug)]
 pub struct ConnectionInfoResult {
     pub result_token: u32,
