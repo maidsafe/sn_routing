@@ -453,6 +453,19 @@ impl ImmutableDataManager {
                                 Ok(None) => {
                                     trace!("No longer a DM for {}", data_name);
                                     // Remove entry, as we're not part of the NaeManager any more
+                                    let mut message_id = None;
+
+                                    for (id, immutable_data) in self.ongoing_puts.iter() {
+                                        if immutable_data.name() == data_name {
+                                            message_id = Some(id.clone());
+                                            break;
+                                        }
+                                    }
+
+                                    if let Some(message_id) = message_id {
+                                        let _ = self.ongoing_puts.remove(&message_id);
+                                    }
+
                                     return None;
                                 }
                                 Ok(Some(close_group)) => close_group.into_iter().collect(),
