@@ -333,6 +333,21 @@ impl Core {
         }
     }
 
+    /// Returns the `XorName` of this node.
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
+    /// Returns the names of all nodes in the close group of this node.
+    #[allow(unused)]
+    pub fn close_group(&self) -> Vec<XorName> {
+        self.routing_table.other_close_nodes(self.name())
+                          .unwrap_or_else(Vec::new)
+                          .into_iter()
+                          .map(|info| info.name().clone())
+                          .collect()
+    }
+
     fn update_debug_stats(&mut self) {
         if self.state == State::Node {
             let old_client_num = self.debug_stats.cur_client_num;
@@ -2150,11 +2165,6 @@ impl Core {
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
         }
-    }
-
-    /// Returns the `XorName` of this node.
-    fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
     }
 
     #[cfg(not(feature = "use-mock-crust"))]

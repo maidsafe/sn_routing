@@ -17,6 +17,7 @@
 
 use std::cmp;
 use std::sync::mpsc;
+use xor_name::XorName;
 
 use core::Core;
 use event::Event;
@@ -58,6 +59,16 @@ impl TestNode {
         }
 
         result
+    }
+
+    #[allow(unused)]
+    fn name(&self) -> &XorName {
+        self.core.name()
+    }
+
+    #[allow(unused)]
+    fn close_group(&self) -> Vec<XorName> {
+        self.core.close_group()
     }
 }
 
@@ -104,13 +115,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 }
 
 #[test]
-fn two_nodes() {
-    let network = Network::new();
-    let _ = create_connected_nodes(&network, 2);
-}
-
-#[test]
-fn few_nodes() {
+fn less_than_group_size_nodes() {
     log::init(true);
     let network = Network::new();
     let _ = create_connected_nodes(&network, 3);
@@ -144,4 +149,28 @@ fn client_connects_to_nodes() {
     poll_all(&mut nodes);
 
     expect_event!(nodes.iter().last().unwrap(), Event::Connected);
+}
+
+#[test]
+fn node_drops() {
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
+
+    let node = nodes.pop().unwrap();
+    let name = node.name().clone();
+    let close_names = node.close_group();
+
+    drop(node);
+
+    poll_all(&mut nodes);
+
+    for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
+                Ok(_) => (),
+                _ => panic!("Event::NodeLost({:?}) not received", name),
+            }
+        }
+    }
 }
