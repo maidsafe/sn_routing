@@ -429,15 +429,17 @@ impl ImmutableDataManager {
         let _ = self.accounts.insert(data_name, account);
     }
 
-    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, _node_added: XorName) {
-        self.handle_churn(routing_node)
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_added: XorName) {
+        let churn_message_id = MessageId::from_added_node(node_added);
+        self.handle_churn(routing_node, churn_message_id)
     }
 
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, _node_lost: XorName) {
-        self.handle_churn(routing_node)
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_lost: XorName) {
+        let churn_message_id = MessageId::from_lost_node(node_lost);
+        self.handle_churn(routing_node, churn_message_id)
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    fn handle_churn(&mut self, routing_node: &RoutingNode, churn_message_id: MessageId) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
         self.accounts =
@@ -513,8 +515,7 @@ impl ImmutableDataManager {
                 // Create a new entry and send Get requests to each of the current holders
                 let entry = MetadataForGetRequest::new(pmid_nodes);
                 trace!("Created ongoing get entry for {} - {:?}", data_name, entry);
-                let message_id = MessageId::new();
-                entry.send_get_requests(routing_node, data_name, &message_id);
+                entry.send_get_requests(routing_node, data_name, &churn_message_id);
                 let _ = self.ongoing_gets.insert(data_name.clone(), entry);
             }
             self.send_refresh(routing_node, data_name, pmid_nodes);
