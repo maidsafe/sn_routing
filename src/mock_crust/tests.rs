@@ -40,8 +40,8 @@ fn get_event_sender()
 #[test]
 fn start_two_services_bootstrap_communicate_exit() {
     let network = Network::new();
-    let endpoint0 = network.gen_endpoint();
-    let endpoint1 = network.gen_endpoint();
+    let endpoint0 = network.gen_endpoint(None);
+    let endpoint1 = network.gen_endpoint(None);
     let config = Config::with_contacts(&[endpoint0, endpoint1]);
 
     let handle0 = network.new_service_handle(Some(config.clone()), Some(endpoint0));

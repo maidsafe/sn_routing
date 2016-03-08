@@ -39,9 +39,8 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (_, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None)
-        });
+        let (_, core) = mock_crust::make_current(&handle,
+                                                 || Core::new(event_tx, client_restriction, None));
 
         TestNode {
             handle: handle,
@@ -81,14 +80,14 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, false, None, None));
+    nodes.push(TestNode::new(network, false, None, Some(Endpoint(0))));
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
-    for _ in 1..size {
-        nodes.push(TestNode::new(network, false, Some(config.clone()), None));
+    for i in 1..size {
+        nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
         poll_all(&mut nodes);
     }
 
@@ -126,6 +125,16 @@ fn group_size_nodes() {
 fn more_than_group_size_nodes() {
     let network = Network::new();
     let _ = create_connected_nodes(&network, GROUP_SIZE + 2);
+}
+
+#[test]
+fn failing_connections() {
+    log::init(true);
+    let network = Network::new();
+    network.block_connection(Endpoint(1), Endpoint(2));
+    network.block_connection(Endpoint(1), Endpoint(3));
+    network.block_connection(Endpoint(2), Endpoint(3));
+    let _ = create_connected_nodes(&network, 5);
 }
 
 #[test]
