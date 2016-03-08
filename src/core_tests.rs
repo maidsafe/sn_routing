@@ -204,13 +204,22 @@ fn more_than_group_size_nodes() {
 }
 
 #[test]
-fn failing_connections() {
-    log::init(true);
+fn failing_connections_group_of_three() {
     let network = Network::new();
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(1), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
     let _ = create_connected_nodes(&network, 5);
+}
+
+#[test]
+fn failing_connections_ring() {
+    let network = Network::new();
+    let len = 2 * GROUP_SIZE;
+    for i in 0..(len - 1) {
+        network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
+    }
+    let _ = create_connected_nodes(&network, len);
 }
 
 #[test]

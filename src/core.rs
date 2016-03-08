@@ -1639,7 +1639,7 @@ impl Core {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if let Some(&name) = self.connecting_peers.get(&dst_id) {
+        if let Some(name) = self.connecting_peers.remove(&dst_id) {
             trace!("Adding {:?} as a tunnel node for {:?}.", peer_id, name);
             let _ = self.tunnel_nodes.insert(dst_id, peer_id);
             self.node_identify(dst_id)
