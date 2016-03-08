@@ -54,11 +54,11 @@ impl Network {
 
     /// Create new ServiceHandle.
     pub fn new_service_handle(&self,
-                              config: Option<Config>,
-                              endpoint: Option<Endpoint>)
+                              opt_config: Option<Config>,
+                              opt_endpoint: Option<Endpoint>)
                               -> ServiceHandle {
-        let config = config.unwrap_or_else(Config::new);
-        let endpoint = self.gen_endpoint(endpoint);
+        let config = opt_config.unwrap_or_else(Config::new);
+        let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
         let _ = self.0
@@ -174,7 +174,7 @@ impl ServiceImpl {
     pub fn start(&mut self, event_sender: CrustEventSender, _beacon_port: u16) {
         let mut pending_bootstraps = 0;
 
-        for endpoint in self.config.hard_coded_contacts.iter() {
+        for endpoint in &self.config.hard_coded_contacts {
             if *endpoint == self.endpoint {
                 continue;
             }
@@ -186,7 +186,7 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFinished
         // immediately.
         if pending_bootstraps == 0 {
-            let _ = event_sender.send(Event::BootstrapFinished).unwrap();
+            unwrap_result!(event_sender.send(Event::BootstrapFinished));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -336,7 +336,8 @@ impl ServiceImpl {
     }
 
     fn send_event(&self, event: Event) {
-        let _ = self.event_sender.as_ref().unwrap().send(event);
+        let sender = unwrap_option!(self.event_sender.as_ref(), "Could not get event sender.");
+        unwrap_result!(sender.send(event));
     }
 
     fn is_listening(&self) -> bool {
@@ -513,5 +514,5 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
 }
 
 pub fn get_current() -> ServiceHandle {
-    CURRENT.with(|current| current.borrow_mut().take().unwrap())
+    CURRENT.with(|current| unwrap_option!(current.borrow_mut().take(), "Couldn't borrow service."))
 }
