@@ -283,12 +283,43 @@ mod test {
     use maidsafe_utilities::serialisation;
     use rand::random;
     use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
-                  RequestMessage, ResponseContent};
+                  RequestMessage, ResponseContent, StructuredData};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
+
+    #[test]
+    fn account_ok() {
+        let mut account = Account::default();
+
+        assert_eq!(0, account.data_stored);
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
+        assert!(account.put_data(super::DEFAULT_ACCOUNT_SIZE).is_ok());
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
+        assert_eq!(0, account.space_available);
+
+        account.delete_data(super::DEFAULT_ACCOUNT_SIZE);
+
+        assert_eq!(0, account.data_stored);
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
+    }
+
+    #[test]
+    fn account_err() {
+        let mut account = Account::default();
+
+        assert_eq!(0, account.data_stored);
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
+        assert!(account.put_data(super::DEFAULT_ACCOUNT_SIZE).is_ok());
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
+        assert_eq!(0, account.space_available);
+        assert!(account.put_data(1).is_err());
+        assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
+        assert_eq!(0, account.space_available);
+    }
+
 
     struct Environment {
         our_authority: Authority,
@@ -312,13 +343,29 @@ mod test {
         }
     }
 
+    fn create_account(env: &mut Environment) {
+        if let Authority::Client { client_key, .. } = env.client {
+            let identifier = random::<XorName>();
+            let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
+            let message_id = MessageId::new();
+            let request = RequestMessage {
+                src: env.client.clone(),
+                dst: env.our_authority.clone(),
+                content: RequestContent::Put(Data::Structured(sd), message_id),
+            };
+
+            if let Ok(()) = env.maid_manager.handle_put(&env.routing, &request) {} else {
+                unreachable!()
+            }
+        };
+    }
+
     #[test]
     fn handle_put_without_account() {
         let mut env = environment_setup();
 
         // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
-                                                generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -330,12 +377,17 @@ mod test {
                env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
             unreachable!()
         }
+
         let put_requests = env.routing.put_requests_given();
+
         assert!(put_requests.is_empty());
+
         let put_failures = env.routing.put_failures_given();
+
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
+
         if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
@@ -347,17 +399,42 @@ mod test {
         } else {
             unreachable!()
         }
+    }
 
-        // assert_eq!(::utils::HANDLED,
-        //            maid_manager.handle_put(&our_authority,
-        //                                    &client,
-        //                                    &::routing::data::Data::Immutable(data.clone()),
-        //                                    &None));
-        // let put_requests = routing.put_requests_given();
-        // assert_eq!(put_requests.len(), 1);
-        // assert_eq!(put_requests[0].our_authority, our_authority);
-        // assert_eq!(put_requests[0].location, Authority::NaeManager(data.name()));
-        // assert_eq!(put_requests[0].data, Data::Immutable(data));
+    #[test]
+    fn handle_put_with_account() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        // Try with valid ImmutableData before account is created
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+
+        let put_requests = env.routing.put_requests_given();
+
+        // put_requests[0] - account creation.
+        assert_eq!(put_requests.len(), 2);
+        assert_eq!(put_requests[1].src, env.our_authority);
+        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
     }
 
     // #[test]
