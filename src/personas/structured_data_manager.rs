@@ -51,10 +51,10 @@ impl StructuredDataManager {
             } else {
                 unreachable!("Error in vault demuxing")
             };
-
+        trace!("SDM received get_request of sd {}", data_name);
         if let Ok(data) = self.chunk_store.get(&data_name) {
             if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
-                debug!("As {:?} sending data {:?} to {:?}",
+                trace!("As {:?} sending data {:?} to {:?}",
                        request.dst,
                        Data::Structured(decoded.clone()),
                        request.src);
@@ -65,7 +65,7 @@ impl StructuredDataManager {
                 return Ok(());
             }
         }
-
+        trace!("SDM sending get_failure of sd {}", data_name);
         let error = ClientError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
@@ -127,17 +127,17 @@ impl StructuredDataManager {
             } else {
                 unreachable!("Error in vault demuxing")
             };
-
+        trace!("SDM received post_request of sd {}", new_data.name());
         if let Ok(serialised_data) = self.chunk_store.get(&new_data.name()) {
             if let Ok(mut existing_data) =
                    serialisation::deserialise::<StructuredData>(&serialised_data) {
-                debug!("StructuredDataManager updating {:?} to {:?}",
-                       existing_data,
-                       new_data);
                 if existing_data.replace_with_other(new_data.clone()).is_ok() {
                     if let Ok(serialised_data) = serialisation::serialise(&existing_data) {
                         if let Ok(()) = self.chunk_store
                                             .put(&existing_data.name(), &serialised_data) {
+                            trace!("StructuredDataManager updated {:?} to {:?}",
+                                   existing_data,
+                                   new_data);
                             if let Ok(serialised_request) = serialisation::serialise(request) {
                                 let digest = sha512::hash(&serialised_request[..]);
                                 let _ = routing_node.send_post_success(request.dst.clone(),
@@ -153,7 +153,7 @@ impl StructuredDataManager {
                 }
             }
         }
-
+        trace!("StructuredDataManager sending post_failure of sd {}", new_data.name());
         try!(routing_node.send_post_failure(request.dst.clone(),
                                             request.src.clone(),
                                             request.clone(),
@@ -177,13 +177,13 @@ impl StructuredDataManager {
         if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
             if let Ok(existing_data) =
                    serialisation::deserialise::<StructuredData>(&serialised_data) {
-                debug!("StructuredDataManager deleting {:?} with requested new version {:?}",
-                       existing_data,
-                       data);
                 if existing_data.validate_self_against_successor(&data).is_ok() {
                     // Reducing content to empty to avoid later on put bearing the same name
                     // chunk_store::put() deletes the old data automatically
                     if let Ok(()) = self.chunk_store.put(&data.name(), &[]) {
+                        trace!("StructuredDataManager deleted {:?} with requested new version {:?}",
+                               existing_data,
+                               data);
                         if let Ok(serialised_request) = serialisation::serialise(request) {
                             let digest = sha512::hash(&serialised_request[..]);
                             let _ = routing_node.send_delete_success(request.dst.clone(),
@@ -196,7 +196,7 @@ impl StructuredDataManager {
                 }
             }
         }
-
+        trace!("StructuredDataManager sending delete_failure of sd {}", data.name());
         try!(routing_node.send_delete_failure(request.dst.clone(),
                                               request.src.clone(),
                                               request.clone(),
@@ -206,6 +206,7 @@ impl StructuredDataManager {
     }
 
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
+        trace!("StructuredDataManager accepting sd {} during refresh", structured_data.name());
         if self.chunk_store.has_chunk(&structured_data.name()) {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
                 if let Ok(existing_data) =

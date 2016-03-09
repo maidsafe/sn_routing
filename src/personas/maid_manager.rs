@@ -189,6 +189,7 @@ impl MaidManager {
             unreachable!("Logic error")
         };
         let client_name = utils::client_name(&request.src);
+        trace!("MM received put request of data {} from client {}", data.name(), client_name);
         self.forward_put_request(routing_node, client_name, data, *message_id, request)
     }
 
@@ -239,6 +240,7 @@ impl MaidManager {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
         if let Err(error) = result {
+            trace!("MM responds put_failure of data {}, due to error {:?}", data.name(), error);
             try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
             return Err(InternalError::Client(error));
         }
@@ -247,6 +249,7 @@ impl MaidManager {
             // forwarding data_request to NAE Manager
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
+            trace!("MM forwarding put request to {:?}", dst);
             let _ = routing_node.send_put_request(src, dst, data, message_id);
         }
 

@@ -126,6 +126,9 @@ impl PmidManager {
         } else {
             unreachable!("Error in vault demuxing")
         };
+        trace!("PM handling put request of data {} targeting PN {}",
+               data.name(),
+               request.dst.name());
         // Put data always being allowed, i.e. no early alert
         self.accounts
             .entry(*request.dst.name())
