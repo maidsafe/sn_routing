@@ -95,12 +95,13 @@ struct Args {
 }
 
 /// Runs a SAFE Network vault.
+#[cfg_attr(feature="clippy", allow(print_stdout))]
 pub fn main() {
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|error| error.exit());
 
-    let name = config_file_handler::exe_file_stem().unwrap_or(OsString::new());
+    let name = config_file_handler::exe_file_stem().unwrap_or_else(|_| OsString::new());
     let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
     if args.flag_version {
         println!("{}", name_and_version);
@@ -113,7 +114,8 @@ pub fn main() {
         maidsafe_utilities::log::init(false);
     }
 
-    let message = String::from("Running ") + &name_and_version;
+    let mut message = String::from("Running ");
+    message.push_str(&name_and_version);
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 

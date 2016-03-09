@@ -71,6 +71,7 @@ use std::sync::{Arc, Mutex, Condvar};
 use detail::*;
 
 #[cfg(not(feature = "use-mock-routing"))]
+#[cfg_attr(feature="clippy", allow(mutex_atomic, print_stdout))]
 fn main() {
     let mut failed = false;
     {
@@ -92,7 +93,7 @@ fn main() {
                      .join()
                      .is_err();
         failed = failed || is_err;
-        is_err = thread!("Messaging test", move || messaging_test()).join().is_err();
+        is_err = thread!("Messaging test", messaging_test).join().is_err();
         failed = failed || is_err;
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));

@@ -30,23 +30,23 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
                                                       generate_random_vec_u8(1024)));
         trace!("Putting ImmutableData {} - {}", i, data.name());
-        match unwrap_option!(client.put(data.clone()), "") {
-            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
-            _ => panic!("Received unexpected response"),
+        if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
+               unwrap_option!(client.put(data.clone()), "") {} else {
+            panic!("Received unexpected response")
         }
         stored_data.push(data);
     }
 
-    for i in 0..request_count as usize {
+    for (i, data) in stored_data.iter().enumerate() {
         test_group.start_case(&format!("Get ImmutableData {}", i));
-        let data_request = DataRequest::Immutable(stored_data[i].name(), ImmutableDataType::Normal);
-        trace!("Getting ImmutableData {} - {}", i, stored_data[i].name());
-        match unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
-                             "") {
-            ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-                assert_eq!(stored_data[i], response_data);
-            }
-            _ => panic!("Received unexpected response"),
+        let data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
+        trace!("Getting ImmutableData {} - {}", i, data.name());
+        if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+               unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
+                              "") {
+            assert_eq!(*data, response_data)
+        } else {
+            panic!("Received unexpected response")
         }
     }
 

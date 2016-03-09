@@ -120,25 +120,22 @@ impl PmidManager {
                       routing_node: &RoutingNode,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
-            _ => unreachable!("Error in vault demuxing"),
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
+            (data.clone(), message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
         };
         // Put data always being allowed, i.e. no early alert
         self.accounts
-            .entry(request.dst.name().clone())
-            .or_insert(Account::default())
+            .entry(*request.dst.name())
+            .or_insert_with(Account::default)
             .put_data(data.payload_size() as u64);
 
-        let src = Authority::NodeManager(request.dst.name().clone());
-        let dst = Authority::ManagedNode(request.dst.name().clone());
-        let _ = routing_node.send_put_request(src,
-                                              dst,
-                                              Data::Immutable(data.clone()),
-                                              message_id.clone());
-        let _ = self.ongoing_puts.insert((message_id, request.dst.name().clone()),
+        let src = Authority::NodeManager(*request.dst.name());
+        let dst = Authority::ManagedNode(*request.dst.name());
+        let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
+        let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()),
                                          MetadataForPutRequest::new(request.clone()));
         Ok(())
     }
@@ -148,7 +145,7 @@ impl PmidManager {
         let mut timed_out_puts = Vec::<(MessageId, XorName)>::new();
         for (key, metadata_for_put) in &self.ongoing_puts {
             if metadata_for_put.creation_timestamp + time_limit < SteadyTime::now() {
-                timed_out_puts.push(key.clone());
+                timed_out_puts.push(*key);
             }
         }
         for key in &timed_out_puts {
@@ -177,17 +174,14 @@ impl PmidManager {
                               pmid_node: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
-        match self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
-            Some(metadata_for_put) => {
-                let message_hash =
-                    sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
-                let src = metadata_for_put.request.dst.clone();
-                let dst = metadata_for_put.request.src.clone();
-                trace!("As {:?} sending put success to {:?}", src, dst);
-                let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
-            }
-            None => {}
-        }
+        if let Some(metadata_for_put) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
+            let message_hash =
+                sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
+            let src = metadata_for_put.request.dst.clone();
+            let dst = metadata_for_put.request.src.clone();
+            trace!("As {:?} sending put success to {:?}", src, dst);
+            let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
+        } else {}
         Ok(())
     }
 
@@ -196,11 +190,11 @@ impl PmidManager {
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
-            _ => unreachable!("Error in vault demuxing"),
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
+            (data.clone(), message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
         };
 
         let src = request.dst.clone();
@@ -209,7 +203,7 @@ impl PmidManager {
                src,
                dst,
                data.name());
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], message_id);
+        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], *message_id);
 
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
             account.delete_data(data.payload_size() as u64);
@@ -248,7 +242,7 @@ impl PmidManager {
     }
 
     fn send_refresh(&self, routing_node: &RoutingNode, pmid_node: &XorName, account: &Account) {
-        let src = Authority::NodeManager(pmid_node.clone());
+        let src = Authority::NodeManager(*pmid_node);
         let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("PmidManager sending refresh for account {}", src.name());
@@ -264,8 +258,8 @@ impl PmidManager {
 // use lru_time_cache::LruCache;
 // use maidsafe_utilities::serialisation::serialise;
 // use rand::random;
-// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-// ResponseContent, ResponseMessage};
+// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent,
+// RequestMessage, ResponseContent, ResponseMessage};
 // use std::cmp::{max, min, Ordering};
 // use std::collections::BTreeSet;
 // use time::{Duration, SteadyTime};

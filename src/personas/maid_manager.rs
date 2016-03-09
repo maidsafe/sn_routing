@@ -109,17 +109,17 @@ impl MaidManager {
                     sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, message_hash, message_id.clone());
+                let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
                 Ok(())
             }
-            None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
+            None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
         }
     }
 
     pub fn handle_put_failure(&mut self,
                               routing_node: &RoutingNode,
                               message_id: &MessageId,
-                              external_error_indicator: &Vec<u8>)
+                              external_error_indicator: &[u8])
                               -> Result<(), InternalError> {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
@@ -134,12 +134,9 @@ impl MaidManager {
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<ClientError>(external_error_indicator));
-                self.reply_with_put_failure(routing_node,
-                                            client_request,
-                                            message_id.clone(),
-                                            &error)
+                self.reply_with_put_failure(routing_node, client_request, *message_id, &error)
             }
-            None => Err(InternalError::FailedToFindCachedRequest(message_id.clone())),
+            None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
         }
     }
 
@@ -173,7 +170,7 @@ impl MaidManager {
     }
 
     fn send_refresh(&self, routing_node: &RoutingNode, maid_name: &XorName, account: &Account) {
-        let src = Authority::ClientManager(maid_name.clone());
+        let src = Authority::ClientManager(*maid_name);
         let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MaidManager sending refresh for account {}", src.name());
@@ -185,27 +182,28 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Immutable(ref data), ref message_id) => {
-                (Data::Immutable(data.clone()), message_id.clone())
-            }
-            _ => unreachable!("Logic error"),
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
+            (Data::Immutable(data.clone()), message_id)
+        } else {
+            unreachable!("Logic error")
         };
         let client_name = utils::client_name(&request.src);
-        self.forward_put_request(routing_node, client_name, data, message_id, request)
+        self.forward_put_request(routing_node, client_name, data, *message_id, request)
     }
 
     fn handle_put_structured_data(&mut self,
                                   routing_node: &RoutingNode,
                                   request: &RequestMessage)
                                   -> Result<(), InternalError> {
-        let (data, type_tag, message_id) = match request.content {
-            RequestContent::Put(Data::Structured(ref data), ref message_id) => {
-                (Data::Structured(data.clone()),
-                 data.get_type_tag(),
-                 message_id.clone())
-            }
-            _ => unreachable!("Logic error"),
+        let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
+                                                                      ref message_id) =
+                                                  request.content {
+            (Data::Structured(data.clone()),
+             data.get_type_tag(),
+             message_id)
+        } else {
+            unreachable!("Logic error")
         };
 
         // If the type_tag is 0, the account must not exist, else it must exist.
@@ -215,7 +213,7 @@ impl MaidManager {
                 let error = ClientError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node,
                                                  request.clone(),
-                                                 message_id,
+                                                 *message_id,
                                                  &error));
                 return Err(InternalError::Client(error));
             }
@@ -223,7 +221,7 @@ impl MaidManager {
             // Create the account, the SD incurs charge later on
             let _ = self.accounts.insert(client_name, Account::default());
         }
-        self.forward_put_request(routing_node, client_name, data, message_id, request)
+        self.forward_put_request(routing_node, client_name, data, *message_id, request)
     }
 
     fn forward_put_request(&mut self,
@@ -249,11 +247,11 @@ impl MaidManager {
             // forwarding data_request to NAE Manager
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
-            let _ = routing_node.send_put_request(src, dst, data, message_id.clone());
+            let _ = routing_node.send_put_request(src, dst, data, message_id);
         }
 
         if let Some(prior_request) = self.request_cache
-                                         .insert(message_id.clone(), request.clone()) {
+                                         .insert(message_id, request.clone()) {
             error!("Overwrote existing cached request: {:?}", prior_request);
         }
         Ok(())
@@ -303,11 +301,11 @@ mod test {
         let from = random::<XorName>();
         let keys = sign::gen_keypair();
         Environment {
-            our_authority: Authority::ClientManager(from.clone()),
+            our_authority: Authority::ClientManager(from),
             client: Authority::Client {
                 client_key: keys.0,
                 peer_id: random(),
-                proxy_node_name: from.clone(),
+                proxy_node_name: from,
             },
             routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
             maid_manager: MaidManager::new(),
@@ -325,12 +323,12 @@ mod test {
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::Immutable(immutable_data), message_id.clone()),
+            content: RequestContent::Put(Data::Immutable(immutable_data), message_id),
         };
 
-        match env.maid_manager.handle_put(&env.routing, &valid_request) {
-            Err(InternalError::Client(ClientError::NoSuchAccount)) => (),
-            _ => unreachable!(),
+        if let Err(InternalError::Client(ClientError::NoSuchAccount)) =
+               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
         }
         let put_requests = env.routing.put_requests_given();
         assert!(put_requests.is_empty());
@@ -338,17 +336,16 @@ mod test {
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
-        match &put_failures[0].content {
-            &ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } => {
-                assert_eq!(*id, message_id);
-                assert_eq!(*request, valid_request);
-                match unwrap_result!(serialisation::deserialise::<ClientError>(external_error_indicator)) {
-                    ClientError::NoSuchAccount => (),
-                    _ => unreachable!(),
-                }
-
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            if let ClientError::NoSuchAccount =
+                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+                unreachable!()
             }
-            _ => unreachable!(),
+        } else {
+            unreachable!()
         }
 
         // assert_eq!(::utils::HANDLED,

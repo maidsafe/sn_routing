@@ -37,7 +37,6 @@ impl ContactInfo for NodeInfo {
 
 pub struct MockRoutingNodeImpl {
     name: XorName,
-    // TODO: Use RT crate instead of this Vec<XorName> (provides realistic result for `close_nodes`)
     routing_table: RoutingTable<NodeInfo>,
     sender: mpsc::Sender<Event>,
     client_sender: mpsc::Sender<Event>,
@@ -348,8 +347,8 @@ impl MockRoutingNodeImpl {
                                 src: Authority,
                                 content: Vec<u8>)
                                 -> Result<(), InterfaceError> {
-        let content = RequestContent::Refresh(content);
-        let message = self.send_request(src.clone(), src, content, "Mock Refresh Request");
+        let refresh = RequestContent::Refresh(content);
+        let message = self.send_request(src.clone(), src, refresh, "Mock Refresh Request");
         Ok(self.refresh_requests_given.push(message))
     }
 
@@ -360,7 +359,7 @@ impl MockRoutingNodeImpl {
     }
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
-        Ok(self.name.clone())
+        Ok(self.name)
     }
 
     fn send_request(&mut self,
@@ -375,7 +374,7 @@ impl MockRoutingNodeImpl {
             content: content,
         };
         let cloned_message = message.clone();
-        let simulated_latency = self.simulated_latency.clone();
+        let simulated_latency = self.simulated_latency;
         let sender = self.sender.clone();
         self.thread_joiners.push(RaiiThreadJoiner::new(thread!(thread_name, move || {
             sleep(simulated_latency);
@@ -390,8 +389,8 @@ impl MockRoutingNodeImpl {
                      content: ResponseContent,
                      thread_name: &str)
                      -> ResponseMessage {
-        let sender = match &dst {
-            &Authority::Client{ .. } => self.client_sender.clone(),
+        let sender = match dst {
+            Authority::Client{ .. } => self.client_sender.clone(),
             _ => self.sender.clone(),
         };
         let message = ResponseMessage {
@@ -400,7 +399,7 @@ impl MockRoutingNodeImpl {
             content: content,
         };
         let cloned_message = message.clone();
-        let simulated_latency = self.simulated_latency.clone();
+        let simulated_latency = self.simulated_latency;
         self.thread_joiners.push(RaiiThreadJoiner::new(thread!(thread_name, move || {
             sleep(simulated_latency);
             let _ = sender.send(Event::Response(cloned_message));
