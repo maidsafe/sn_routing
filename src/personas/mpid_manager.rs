@@ -22,7 +22,7 @@ use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
-use routing::{Authority, Data, PlainData, RequestContent, RequestMessage};
+use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
 use sodiumoxide::crypto::sign::PublicKey;
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
@@ -177,112 +177,26 @@ impl MpidManager {
     // The name of the PlainData is expected to be the mpidheader or mpidmessage name
     // The content of the PlainData is execpted to be the serialised MpidMessageWrapper
     // holding mpidheader or mpidmessage
-
-    // TODO - re-enable lint
-    #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Put(Data::Plain(ref data),
                                                             ref message_id) = request.content {
-            (data.clone(), message_id)
+            (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::PutHeader(mpid_header) => {
-                if self.chunk_store_inbox.has_chunk(&data.name()) {
-                    return Err(InternalError::Client(ClientError::DataExists));
-                }
-
-                let serialised_header = try!(serialise(&mpid_header));
-                if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
-                    // Client is online.
-                    // TODO: how the sender's public key get retained?
-                    if account.put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
-                        try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
-                        let dst = Authority::ClientManager(*mpid_header.sender());
-                        let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
-                        let value = try!(serialise(&wrapper));
-                        let name = try!(mpid_header.name());
-                        let plain_data = Data::Plain(PlainData::new(name, value));
-                        try!(routing_node.send_post_request(request.dst.clone(),
-                                                            dst,
-                                                            plain_data,
-                                                            message_id.clone()));
-                        return Ok(());
-                    } else {
-                        try!(routing_node.send_put_failure(request.dst.clone(),
-                                                           request.src.clone(),
-                                                           request.clone(),
-                                                           Vec::new(),
-                                                           *message_id));
-                        return Ok(());
-                    }
-                }
-
-                if self.accounts
-                       .entry(*request.dst.name())
-                       .or_insert_with(Account::default)
-                       .put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
-                    try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
-                } else {
-                    try!(routing_node.send_put_failure(request.dst.clone(),
-                                                       request.src.clone(),
-                                                       request.clone(),
-                                                       Vec::new(),
-                                                       *message_id));
-                }
+                self.handle_put_for_header(routing_node, request, mpid_header, data, message_id)
             }
             MpidMessageWrapper::PutMessage(mpid_message) => {
-                if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
-                    if self.chunk_store_outbox.has_chunk(&data.name()) {
-                        return Err(InternalError::Client(ClientError::DataExists));
-                    }
-                    let serialised_message = try!(serialise(&mpid_message));
-                    if let Authority::Client { client_key, .. } = request.src {
-                        if !account.put_into_outbox(serialised_message.len() as u64,
-                                                    &data.name(),
-                                                    &Some(client_key)) {
-                            try!(routing_node.send_put_failure(request.dst.clone(),
-                                                               request.src.clone(),
-                                                               request.clone(),
-                                                               Vec::new(),
-                                                               *message_id));
-                            return Ok(());
-                        }
-                    };
-                    try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
-                    // Send notification to receiver's MpidManager
-                    let src = request.dst.clone();
-                    let mut dst = Authority::ClientManager(*mpid_message.recipient());
-                    let wrapper = MpidMessageWrapper::PutHeader(mpid_message.header().clone());
-                    let serialised_wrapper = try!(serialise(&wrapper));
-                    let name = try!(mpid_message.header().name());
-                    let notification = Data::Plain(PlainData::new(name, serialised_wrapper));
-                    try!(routing_node.send_put_request(src.clone(),
-                                                       dst,
-                                                       notification,
-                                                       message_id.clone()));
-                    // Send put success to Client.
-                    dst = request.src.clone();
-                    let digest = sha512::hash(&try!(serialise(request))[..]);
-                    let _ = routing_node.send_put_success(src, dst, digest, *message_id);
-                } else {
-                    // Client not registered online.
-                    try!(routing_node.send_put_failure(request.dst.clone(),
-                                                       request.src.clone(),
-                                                       request.clone(),
-                                                       Vec::new(),
-                                                       *message_id));
-                }
+                self.handle_put_for_message(routing_node, request, mpid_message, data, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
         }
-
-        Ok(())
     }
 
     // PutFailure only happens from receiver's MpidManager to sender's MpidManager to
@@ -299,256 +213,94 @@ impl MpidManager {
         } else {
             unreachable!("Error in vault demuxing")
         };
-        let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
-        if let MpidMessageWrapper::PutHeader(mpid_header) = mpid_message_wrapper {
-            if mpid_header.sender() == request.src.name() {
-                if let Some(ref account) = self.accounts.get(request.src.name()) {
-                    let ori_msg_name = try!(mpid_header.name());
-                    if account.has_in_outbox(&ori_msg_name) {
-                        let clients = account.registered_clients();
-                        for client in clients.iter() {
-                            let _ = routing_node.send_put_failure(request.src.clone(),
-                                                                  client.clone(),
-                                                                  request.clone(),
-                                                                  Vec::new(),
-                                                                  *message_id);
-                        }
-                    }
-                }
-            }
+        let wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
+        let mpid_header = if let MpidMessageWrapper::PutHeader(mpid_header) = wrapper {
+            mpid_header
         } else {
             unreachable!("Error in vault demuxing")
+        };
+
+        if mpid_header.sender() != request.src.name() {
+            // TODO - is this not an error?  Shouldn't we at least log an error?
+            return Ok(());
+        }
+
+        let account = if let Some(account) = self.accounts.get(request.src.name()) {
+            account
+        } else {
+            warn!("Mpid Manager: no account for {}", request.src.name());
+            return Ok(());
+        };
+
+        let original_msg_name = try!(mpid_header.name());
+        if !account.has_in_outbox(&original_msg_name) {
+            return Ok(());
+        }
+
+        let clients = account.registered_clients();
+        for client in clients {
+            let _ = routing_node.send_put_failure(request.src.clone(),
+                                                  client.clone(),
+                                                  request.clone(),
+                                                  Vec::new(),
+                                                  *message_id);
         }
         Ok(())
     }
 
-    // TODO - re-enable lint
-    #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
     pub fn handle_post(&mut self,
                        routing_node: &RoutingNode,
                        request: &RequestMessage)
                        -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Post(Data::Plain(ref data),
                                                              ref message_id) = request.content {
-            (data.clone(), message_id)
+            (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
             MpidMessageWrapper::Online => {
-                let account = self.accounts
-                                  .entry(*request.dst.name())
-                                  .or_insert_with(Account::default);
-                account.register_online(&request.src);
-                // Send post success to client.
-                let src = request.dst.clone();
-                let dst = request.src.clone();
-                let digest = sha512::hash(&try!(serialise(request))[..]);
-                let _ = routing_node.send_post_success(src, dst, digest, *message_id);
-                // For each received header in the inbox, fetch the full message from the sender
-                let received_headers = account.received_headers();
-                for header in &received_headers {
-                    if let Ok(serialised_header) = self.chunk_store_inbox.get(&header) {
-                        let mpid_header: MpidHeader = try!(deserialise(&serialised_header));
-                        // fetch full message from the sender
-                        let target = Authority::ClientManager(*mpid_header.sender());
-                        let request_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
-                        let serialised_request = match serialise(&request_wrapper) {
-                            Ok(encoded) => encoded,
-                            Err(error) => {
-                                error!("Failed to serialise GetMessage wrapper: {:?}", error);
-                                continue;
-                            }
-                        };
-                        let name = try!(mpid_header.name());
-                        let data = Data::Plain(PlainData::new(name, serialised_request));
-                        let _ = routing_node.send_post_request(request.dst.clone(),
-                                                               target,
-                                                               data,
-                                                               *message_id);
-                    } else {}
-                }
+                self.handle_post_for_online(routing_node, request, message_id)
             }
-            MpidMessageWrapper::GetMessage(mpid_header) => {
-                let header_name = try!(mpid_header.name());
-                if let Ok(serialised_message) = self.chunk_store_outbox.get(&header_name) {
-                    let mpid_message: MpidMessage = try!(deserialise(&serialised_message));
-                    let message_name = try!(mpid_message.header().name());
-                    if (message_name == header_name) &&
-                       (mpid_message.recipient() == request.src.name()) {
-                        let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
-                        let serialised_wrapper = try!(serialise(&wrapper));
-                        let plain_data = Data::Plain(PlainData::new(message_name,
-                                                                    serialised_wrapper));
-                        try!(routing_node.send_post_request(request.dst.clone(),
-                                                            request.src.clone(),
-                                                            plain_data,
-                                                            message_id.clone()));
-                    }
-                } else {
-                    try!(routing_node.send_post_failure(request.dst.clone(),
-                                                        request.src.clone(),
-                                                        request.clone(),
-                                                        Vec::new(),
-                                                        *message_id))
-                }
+            MpidMessageWrapper::GetMessage(header) => {
+                self.handle_post_for_get_message(routing_node, request, header, message_id)
             }
-            MpidMessageWrapper::PutMessage(mpid_message) => {
-                if let Some(receiver) = self.accounts.get(request.dst.name()) {
-                    if mpid_message.recipient() == request.dst.name() {
-                        let clients = receiver.registered_clients();
-                        for client in clients.iter() {
-                            let _ = routing_node.send_post_request(request.dst.clone(),
-                                                                   client.clone(),
-                                                                   Data::Plain(data.clone()),
-                                                                   *message_id);
-                        }
-                    }
-                } else {
-                    warn!("can not find the account {:?}", request.dst.name().clone())
-                }
+            MpidMessageWrapper::PutMessage(message) => {
+                self.handle_post_for_put_message(routing_node, request, message, data, message_id)
             }
             MpidMessageWrapper::OutboxHas(header_names) => {
-                if let Some(ref account) = self.accounts.get(request.dst.name()) {
-                    if account.registered_clients()
-                              .iter()
-                              .any(|authority| *authority == request.src) {
-                        let names_in_outbox = header_names.iter()
-                                                          .filter(|name| {
-                                                              account.has_in_outbox(name)
-                                                          })
-                                                          .cloned()
-                                                          .collect::<Vec<XorName>>();
-                        let mut mpid_headers = vec![];
-
-                        for name in &names_in_outbox {
-                            if let Ok(data) = self.chunk_store_outbox.get(name) {
-                                let mpid_message: MpidMessage = try!(deserialise(&data));
-                                mpid_headers.push(mpid_message.header().clone());
-                            }
-                        }
-
-                        let src = request.dst.clone();
-                        let dst = request.src.clone();
-                        let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
-                        let serialised_wrapper = try!(serialise(&wrapper));
-                        let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
-                                                                    serialised_wrapper));
-                        try!(routing_node.send_post_request(src,
-                                                            dst,
-                                                            plain_data,
-                                                            message_id.clone()));
-                    }
-                }
+                self.handle_post_for_outbox_has(routing_node, request, header_names, message_id)
             }
             MpidMessageWrapper::GetOutboxHeaders => {
-                if let Some(ref account) = self.accounts.get(request.dst.name()) {
-                    if account.registered_clients()
-                              .iter()
-                              .any(|authority| *authority == request.src) {
-                        let mut mpid_headers = vec![];
-
-                        for name in &account.stored_messages() {
-                            if let Ok(data) = self.chunk_store_outbox.get(name) {
-                                let mpid_message: MpidMessage = try!(deserialise(&data));
-                                mpid_headers.push(mpid_message.header().clone());
-                            }
-                        }
-
-                        let src = request.dst.clone();
-                        let dst = request.src.clone();
-                        let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
-                        let serialised_wrapper = try!(serialise(&wrapper));
-                        let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
-                                                                    serialised_wrapper));
-                        try!(routing_node.send_post_request(src,
-                                                            dst,
-                                                            plain_data,
-                                                            message_id.clone()));
-                    }
-                }
+                self.handle_post_for_get_outbox_headers(routing_node, request, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
         }
-
-        Ok(())
     }
 
-    // TODO - re-enable lint
-    #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
     pub fn handle_delete(&mut self,
                          routing_node: &RoutingNode,
                          request: &RequestMessage)
                          -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Delete(Data::Plain(ref data),
                                                                ref message_id) = request.content {
-            (data.clone(), message_id)
+            (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
-            MpidMessageWrapper::DeleteMessage(message_name) => {
-                if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
-                    let mut registered = false;
-
-                    if account.registered_clients()
-                              .iter()
-                              .any(|authority| *authority == request.src) {
-                        registered = true;
-                    }
-
-                    if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
-                        if !registered {
-                            let mpid_message: MpidMessage = try!(deserialise(&data));
-                            if *mpid_message.recipient() != utils::client_name(&request.src) {
-                                return Ok(()); // !
-                            }
-                        }
-
-                        let data_size = data.len() as u64;
-                        try!(self.chunk_store_outbox.delete(&message_name));
-                        if !account.remove_from_outbox(data_size, &message_name) {
-                            warn!("Failed to remove message name from outbox.");
-                        }
-                    } else {
-                        error!("Failed to get from chunk store.");
-                        try!(routing_node.send_delete_failure(request.dst.clone(),
-                                                              request.src.clone(),
-                                                              request.clone(),
-                                                              Vec::new(),
-                                                              *message_id))
-                    }
-                }
-            }
             MpidMessageWrapper::DeleteHeader(header_name) => {
-                if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
-                    if account.registered_clients()
-                              .iter()
-                              .any(|authority| *authority == request.src) {
-                        if let Ok(data) = self.chunk_store_inbox.get(&header_name) {
-                            let data_size = data.len() as u64;
-                            try!(self.chunk_store_inbox.delete(&header_name));
-                            if !account.remove_from_inbox(data_size, &header_name) {
-                                warn!("Failed to remove header name from inbox.");
-                            }
-                        } else {
-                            error!("Failed to get from chunk store.");
-                            try!(routing_node.send_delete_failure(request.dst.clone(),
-                                                                  request.src.clone(),
-                                                                  request.clone(),
-                                                                  Vec::new(),
-                                                                  *message_id))
-                        }
-                    }
-                }
+                self.handle_delete_for_header(routing_node, request, header_name, message_id)
+            }
+            MpidMessageWrapper::DeleteMessage(message_name) => {
+                self.handle_delete_for_message(routing_node, request, message_name, message_id)
             }
             _ => unreachable!("Error in vault demuxing"),
         }
-
-        Ok(())
     }
+
 
     #[cfg_attr(feature="clippy", allow(map_entry))]
     pub fn handle_refresh(&mut self,
@@ -581,6 +333,332 @@ impl MpidManager {
                 let _ = routing_node.send_refresh_request(src, serialised_refresh);
             }
         }
+    }
+
+    fn handle_put_for_header(&mut self,
+                             routing_node: &RoutingNode,
+                             request: &RequestMessage,
+                             mpid_header: MpidHeader,
+                             data: &PlainData,
+                             message_id: &MessageId)
+                             -> Result<(), InternalError> {
+        if self.chunk_store_inbox.has_chunk(&data.name()) {
+            return Err(InternalError::Client(ClientError::DataExists));
+        }
+
+        let serialised_header = try!(serialise(&mpid_header));
+        if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
+            // Client is online.
+            // TODO: how the sender's public key get retained?
+            if account.put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
+                try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
+                let dst = Authority::ClientManager(*mpid_header.sender());
+                let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                let value = try!(serialise(&wrapper));
+                let name = try!(mpid_header.name());
+                let plain_data = Data::Plain(PlainData::new(name, value));
+                try!(routing_node.send_post_request(request.dst.clone(),
+                                                    dst,
+                                                    plain_data,
+                                                    message_id.clone()));
+                return Ok(());
+            } else {
+                try!(routing_node.send_put_failure(request.dst.clone(),
+                                                   request.src.clone(),
+                                                   request.clone(),
+                                                   Vec::new(),
+                                                   *message_id));
+                return Ok(());
+            }
+        }
+
+        if self.accounts
+               .entry(*request.dst.name())
+               .or_insert_with(Account::default)
+               .put_into_inbox(serialised_header.len() as u64, &data.name(), &None) {
+            try!(self.chunk_store_inbox.put(&data.name(), &serialised_header[..]));
+        } else {
+            try!(routing_node.send_put_failure(request.dst.clone(),
+                                               request.src.clone(),
+                                               request.clone(),
+                                               Vec::new(),
+                                               *message_id));
+        }
+        Ok(())
+    }
+
+    fn handle_put_for_message(&mut self,
+                              routing_node: &RoutingNode,
+                              request: &RequestMessage,
+                              mpid_message: MpidMessage,
+                              data: &PlainData,
+                              message_id: &MessageId)
+                              -> Result<(), InternalError> {
+        if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
+            if self.chunk_store_outbox.has_chunk(&data.name()) {
+                return Err(InternalError::Client(ClientError::DataExists));
+            }
+            let serialised_message = try!(serialise(&mpid_message));
+            if let Authority::Client { client_key, .. } = request.src {
+                if !account.put_into_outbox(serialised_message.len() as u64,
+                                            &data.name(),
+                                            &Some(client_key)) {
+                    try!(routing_node.send_put_failure(request.dst.clone(),
+                                                       request.src.clone(),
+                                                       request.clone(),
+                                                       Vec::new(),
+                                                       *message_id));
+                    return Ok(());
+                }
+            };
+            try!(self.chunk_store_outbox.put(&data.name(), &serialised_message[..]));
+            // Send notification to receiver's MpidManager
+            let src = request.dst.clone();
+            let mut dst = Authority::ClientManager(*mpid_message.recipient());
+            let wrapper = MpidMessageWrapper::PutHeader(mpid_message.header().clone());
+            let serialised_wrapper = try!(serialise(&wrapper));
+            let name = try!(mpid_message.header().name());
+            let notification = Data::Plain(PlainData::new(name, serialised_wrapper));
+            try!(routing_node.send_put_request(src.clone(), dst, notification, message_id.clone()));
+            // Send put success to Client.
+            dst = request.src.clone();
+            let digest = sha512::hash(&try!(serialise(request))[..]);
+            let _ = routing_node.send_put_success(src, dst, digest, *message_id);
+        } else {
+            // Client not registered online.
+            try!(routing_node.send_put_failure(request.dst.clone(),
+                                               request.src.clone(),
+                                               request.clone(),
+                                               Vec::new(),
+                                               *message_id));
+        }
+        Ok(())
+    }
+
+    fn handle_post_for_online(&mut self,
+                              routing_node: &RoutingNode,
+                              request: &RequestMessage,
+                              message_id: &MessageId)
+                              -> Result<(), InternalError> {
+        let account = self.accounts
+                          .entry(*request.dst.name())
+                          .or_insert_with(Account::default);
+        account.register_online(&request.src);
+        // Send post success to client.
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        let digest = sha512::hash(&try!(serialise(request))[..]);
+        let _ = routing_node.send_post_success(src, dst, digest, *message_id);
+        // For each received header in the inbox, fetch the full message from the sender
+        let received_headers = account.received_headers();
+        for header in &received_headers {
+            if let Ok(serialised_header) = self.chunk_store_inbox.get(&header) {
+                let mpid_header: MpidHeader = try!(deserialise(&serialised_header));
+                // fetch full message from the sender
+                let target = Authority::ClientManager(*mpid_header.sender());
+                let request_wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
+                let serialised_request = match serialise(&request_wrapper) {
+                    Ok(encoded) => encoded,
+                    Err(error) => {
+                        error!("Failed to serialise GetMessage wrapper: {:?}", error);
+                        continue;
+                    }
+                };
+                let name = try!(mpid_header.name());
+                let data = Data::Plain(PlainData::new(name, serialised_request));
+                let _ = routing_node.send_post_request(request.dst.clone(),
+                                                       target,
+                                                       data,
+                                                       *message_id);
+            } else {}
+        }
+        Ok(())
+    }
+
+    fn handle_post_for_get_message(&mut self,
+                                   routing_node: &RoutingNode,
+                                   request: &RequestMessage,
+                                   mpid_header: MpidHeader,
+                                   message_id: &MessageId)
+                                   -> Result<(), InternalError> {
+        let header_name = try!(mpid_header.name());
+        if let Ok(serialised_message) = self.chunk_store_outbox.get(&header_name) {
+            let mpid_message: MpidMessage = try!(deserialise(&serialised_message));
+            let message_name = try!(mpid_message.header().name());
+            if (message_name == header_name) && (mpid_message.recipient() == request.src.name()) {
+                let wrapper = MpidMessageWrapper::PutMessage(mpid_message);
+                let serialised_wrapper = try!(serialise(&wrapper));
+                let plain_data = Data::Plain(PlainData::new(message_name, serialised_wrapper));
+                try!(routing_node.send_post_request(request.dst.clone(),
+                                                    request.src.clone(),
+                                                    plain_data,
+                                                    message_id.clone()));
+            }
+        } else {
+            try!(routing_node.send_post_failure(request.dst.clone(),
+                                                request.src.clone(),
+                                                request.clone(),
+                                                Vec::new(),
+                                                *message_id))
+        }
+        Ok(())
+    }
+
+    fn handle_post_for_put_message(&mut self,
+                                   routing_node: &RoutingNode,
+                                   request: &RequestMessage,
+                                   mpid_message: MpidMessage,
+                                   data: &PlainData,
+                                   message_id: &MessageId)
+                                   -> Result<(), InternalError> {
+        if let Some(receiver) = self.accounts.get(request.dst.name()) {
+            if mpid_message.recipient() == request.dst.name() {
+                let clients = receiver.registered_clients();
+                for client in clients.iter() {
+                    let _ = routing_node.send_post_request(request.dst.clone(),
+                                                           client.clone(),
+                                                           Data::Plain(data.clone()),
+                                                           *message_id);
+                }
+            }
+        } else {
+            warn!("can not find the account {:?}", request.dst.name().clone())
+        }
+        Ok(())
+    }
+
+    fn handle_post_for_outbox_has(&mut self,
+                                  routing_node: &RoutingNode,
+                                  request: &RequestMessage,
+                                  header_names: Vec<XorName>,
+                                  message_id: &MessageId)
+                                  -> Result<(), InternalError> {
+        if let Some(ref account) = self.accounts.get(request.dst.name()) {
+            if account.registered_clients()
+                      .iter()
+                      .any(|authority| *authority == request.src) {
+                let names_in_outbox = header_names.iter()
+                                                  .filter(|name| account.has_in_outbox(name))
+                                                  .cloned()
+                                                  .collect::<Vec<XorName>>();
+                let mut mpid_headers = vec![];
+
+                for name in &names_in_outbox {
+                    if let Ok(data) = self.chunk_store_outbox.get(name) {
+                        let mpid_message: MpidMessage = try!(deserialise(&data));
+                        mpid_headers.push(mpid_message.header().clone());
+                    }
+                }
+
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
+                let serialised_wrapper = try!(serialise(&wrapper));
+                let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
+                                                            serialised_wrapper));
+                try!(routing_node.send_post_request(src, dst, plain_data, message_id.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_post_for_get_outbox_headers(&mut self,
+                                          routing_node: &RoutingNode,
+                                          request: &RequestMessage,
+                                          message_id: &MessageId)
+                                          -> Result<(), InternalError> {
+        if let Some(ref account) = self.accounts.get(request.dst.name()) {
+            if account.registered_clients()
+                      .iter()
+                      .any(|authority| *authority == request.src) {
+                let mut mpid_headers = vec![];
+
+                for name in &account.stored_messages() {
+                    if let Ok(data) = self.chunk_store_outbox.get(name) {
+                        let mpid_message: MpidMessage = try!(deserialise(&data));
+                        mpid_headers.push(mpid_message.header().clone());
+                    }
+                }
+
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
+                let serialised_wrapper = try!(serialise(&wrapper));
+                let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
+                                                            serialised_wrapper));
+                try!(routing_node.send_post_request(src, dst, plain_data, message_id.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_delete_for_header(&mut self,
+                                routing_node: &RoutingNode,
+                                request: &RequestMessage,
+                                header_name: XorName,
+                                message_id: &MessageId)
+                                -> Result<(), InternalError> {
+        if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
+            if account.registered_clients()
+                      .iter()
+                      .any(|authority| *authority == request.src) {
+                if let Ok(data) = self.chunk_store_inbox.get(&header_name) {
+                    let data_size = data.len() as u64;
+                    try!(self.chunk_store_inbox.delete(&header_name));
+                    if !account.remove_from_inbox(data_size, &header_name) {
+                        warn!("Failed to remove header name from inbox.");
+                    }
+                } else {
+                    error!("Failed to get from chunk store.");
+                    try!(routing_node.send_delete_failure(request.dst.clone(),
+                                                          request.src.clone(),
+                                                          request.clone(),
+                                                          Vec::new(),
+                                                          *message_id))
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_delete_for_message(&mut self,
+                                 routing_node: &RoutingNode,
+                                 request: &RequestMessage,
+                                 message_name: XorName,
+                                 message_id: &MessageId)
+                                 -> Result<(), InternalError> {
+        if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
+            let mut registered = false;
+
+            if account.registered_clients()
+                      .iter()
+                      .any(|authority| *authority == request.src) {
+                registered = true;
+            }
+
+            if let Ok(data) = self.chunk_store_outbox.get(&message_name) {
+                if !registered {
+                    let mpid_message: MpidMessage = try!(deserialise(&data));
+                    if *mpid_message.recipient() != utils::client_name(&request.src) {
+                        return Ok(()); // !
+                    }
+                }
+
+                let data_size = data.len() as u64;
+                try!(self.chunk_store_outbox.delete(&message_name));
+                if !account.remove_from_outbox(data_size, &message_name) {
+                    warn!("Failed to remove message name from outbox.");
+                }
+            } else {
+                error!("Failed to get from chunk store.");
+                try!(routing_node.send_delete_failure(request.dst.clone(),
+                                                      request.src.clone(),
+                                                      request.clone(),
+                                                      Vec::new(),
+                                                      *message_id))
+            }
+        }
+        Ok(())
     }
 
     fn fetch_chunks(storage: &ChunkStore, names: &[XorName]) -> Vec<PlainData> {
