@@ -26,7 +26,7 @@ use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, S
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE,
-                             PARALLELISM, RoutingTable};
+                             PARALLELISM};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
@@ -85,9 +85,11 @@ enum State {
     Node,
 }
 
+pub type RoutingTable = ::kademlia_routing_table::RoutingTable<NodeInfo>;
+
 /// Info about nodes in the routing table.
 #[derive(Copy, Clone, Eq, PartialEq)]
-struct NodeInfo {
+pub struct NodeInfo {
     public_id: PublicId,
     peer_id: PeerId,
 }
@@ -220,7 +222,7 @@ pub struct Core {
     grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
     state: State,
-    routing_table: RoutingTable<NodeInfo>,
+    routing_table: RoutingTable,
 
     // nodes we are trying to bootstrap against
     proxy_candidates: Vec<(PeerId, u64)>,
@@ -331,6 +333,27 @@ impl Core {
                 break;
             }
         }
+    }
+
+    /// Returns the `XorName` of this node.
+    pub fn name(&self) -> &XorName {
+        self.full_id.public_id().name()
+    }
+
+    /// Returns the names of all nodes in the close group of this node.
+    #[allow(unused)]
+    pub fn close_group(&self) -> Vec<XorName> {
+        self.routing_table.other_close_nodes(self.name())
+                          .unwrap_or_else(Vec::new)
+                          .into_iter()
+                          .map(|info| info.name().clone())
+                          .collect()
+    }
+
+    /// Routing table of this node.
+    #[allow(unused)]
+    pub fn routing_table(&self) -> &RoutingTable {
+        &self.routing_table
     }
 
     fn update_debug_stats(&mut self) {
@@ -2150,11 +2173,6 @@ impl Core {
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
         }
-    }
-
-    /// Returns the `XorName` of this node.
-    fn name(&self) -> &XorName {
-        self.full_id.public_id().name()
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
