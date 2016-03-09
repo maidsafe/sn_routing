@@ -41,9 +41,8 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (_, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None)
-        });
+        let (_, core) = mock_crust::make_current(&handle,
+                                                 || Core::new(event_tx, client_restriction, None));
 
         TestNode {
             handle: handle,
@@ -153,7 +152,10 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
 // routing table.
-fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize) -> HashSet<XorName> {
+fn node_names_in_bucket(nodes: &[TestNode],
+                        name: &XorName,
+                        bucket_index: usize)
+                        -> HashSet<XorName> {
     nodes.iter()
          .filter(|node| name.bucket_index(node.name()) == bucket_index)
          .map(|node| node.name().clone())
@@ -165,10 +167,19 @@ fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
     let node = &nodes[index];
 
     for bucket_index in 0..XOR_NAME_BITS {
-        let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
+        let table_names = entry_names_in_bucket(node.routing_table(), bucket_index);
+        if table_names.len() >= GROUP_SIZE {
+            continue;
+        }
 
-        assert!(entries.len() >= GROUP_SIZE ||
-                entries == node_names_in_bucket(nodes, node.name(), bucket_index))
+        let network_names = node_names_in_bucket(nodes, node.name(), bucket_index);
+        if network_names != table_names {
+            panic!("Kademlia invariant broken: bucket #{} has only {} out of {} entries in the \
+                    routing table",
+                   bucket_index,
+                   table_names.len(),
+                   network_names.len());
+        }
     }
 }
 
