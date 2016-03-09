@@ -291,7 +291,7 @@ impl ImmutableDataManager {
             return Err(InternalError::FailedToFindCachedRequest(*message_id));
         }
 
-        try!(self.check_and_replicate(routing_node, &data_name));
+        try!(self.check_and_replicate(routing_node, &data_name, message_id));
         Ok(())
     }
 
@@ -341,7 +341,7 @@ impl ImmutableDataManager {
         }
 
         if result.is_ok() {
-            try!(self.check_and_replicate(routing_node, &data_name));
+            try!(self.check_and_replicate(routing_node, &data_name, message_id));
         }
         result
     }
@@ -548,7 +548,8 @@ impl ImmutableDataManager {
 
     fn check_and_replicate(&mut self,
                            routing_node: &RoutingNode,
-                           data_name: &XorName)
+                           data_name: &XorName,
+                           message_id: &MessageId)
                            -> Result<(), InternalError> {
         let mut finished = false;
         let mut new_pmid_nodes = HashSet::<DataHolder>::new();
@@ -571,7 +572,10 @@ impl ImmutableDataManager {
             } else if let Some(ref data) = metadata.data {
                 assert_eq!(*data_name, data.name());
                 // Put to new close peers and delete this cached get request
-                new_pmid_nodes = try!(Self::replicate(routing_node, data, &metadata.pmid_nodes));
+                new_pmid_nodes = try!(Self::replicate(routing_node,
+                                                      data,
+                                                      &metadata.pmid_nodes,
+                                                      message_id));
                 finished = true;
             } else {
                 // Recover the data from backup and/or sacrificial locations
@@ -609,7 +613,8 @@ impl ImmutableDataManager {
 
     fn replicate(routing_node: &RoutingNode,
                  data: &ImmutableData,
-                 queried_pmid_nodes: &[DataHolder])
+                 queried_pmid_nodes: &[DataHolder],
+                 message_id: &MessageId)
                  -> Result<HashSet<DataHolder>, InternalError> {
         let mut good_nodes = HashSet::<DataHolder>::new();
         let mut nodes_to_exclude = vec![];
@@ -636,7 +641,6 @@ impl ImmutableDataManager {
         trace!("Replicating {} - target nodes: {:?}",
                data_name,
                target_pmid_nodes);
-        let message_id = MessageId::new();
         for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
             trace!("Replicating {} - sending Put to {}",
                    data_name,
@@ -647,7 +651,7 @@ impl ImmutableDataManager {
             let _ = routing_node.send_put_request(src,
                                                   dst,
                                                   Data::Immutable(data.clone()),
-                                                  message_id);
+                                                  *message_id);
         }
         Ok(new_pmid_nodes)
     }
