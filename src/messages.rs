@@ -78,7 +78,7 @@ pub enum DirectMessage {
     NewNode(PublicId),
     /// Sent to a node that, on the addition of a node at a given bucket index, we no longer need to
     /// be connected to.
-    ConnectionNotNeeded(XorName),
+    ConnectionUnneeded(XorName),
 }
 
 /// And individual hop message that represents a part of the route of a message in transit.
@@ -394,7 +394,7 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
-            DirectMessage::ConnectionNotNeeded(ref name) => write!(formatter, "ConnectionNotNeeded({:?})", name),
+            DirectMessage::ConnectionUnneeded(ref name) => write!(formatter, "ConnectionUnneeded({:?})", name),
         }
     }
 }

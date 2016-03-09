@@ -1220,9 +1220,9 @@ impl Core {
                 }
                 Ok(())
             }
-            DirectMessage::ConnectionNotNeeded(ref name) => {
-                trace!("Received ConnectionNotNeeded from {:?}.", peer_id);
-                if !self.routing_table.need_to_keep(name) {
+            DirectMessage::ConnectionUnneeded(ref name) => {
+                trace!("Received ConnectionUnneeded from {:?}.", peer_id);
+                if self.routing_table.remove_if_unneeded(name) {
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
@@ -1406,7 +1406,7 @@ impl Core {
                 for node_info in not_needed {
                     let our_name = self.name().clone();
                     try!(self.send_direct_message(&node_info.peer_id,
-                                                  DirectMessage::ConnectionNotNeeded(our_name)));
+                                                  DirectMessage::ConnectionUnneeded(our_name)));
                 }
 
                 if common_groups {
