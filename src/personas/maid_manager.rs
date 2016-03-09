@@ -173,7 +173,7 @@ impl MaidManager {
         let src = Authority::ClientManager(*maid_name);
         let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-            trace!("MaidManager sending refresh for account {}", src.name());
+            trace!("MM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src, serialised_refresh);
         }
     }
@@ -189,7 +189,6 @@ impl MaidManager {
             unreachable!("Logic error")
         };
         let client_name = utils::client_name(&request.src);
-        trace!("MM received put request of data {} from client {}", data.name(), client_name);
         self.forward_put_request(routing_node, client_name, data, *message_id, request)
     }
 
