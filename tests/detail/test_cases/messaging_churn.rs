@@ -27,11 +27,11 @@ pub fn test(request_count: u32) {
 
     test_group.start_case("Sender registered and sent a message");
     sender.register_online();
-    match unwrap_option!(sender.put(request.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {
-            trace!("Successfully sent message {:?}", message_sent);
-        }
-        _ => panic!("Failed to send message {:?}", message_sent),
+    if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
+           unwrap_option!(sender.put(request.clone()), "") {
+        trace!("Successfully sent message {:?}", message_sent)
+    } else {
+        panic!("Failed to send message {:?}", message_sent)
     }
 
     for i in 0..request_count {

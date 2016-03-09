@@ -21,32 +21,18 @@ use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 
+struct Fixture {
+    pub test_group: TestGroup,
+    pub client1: Client,
+    pub client2: Client,
+    pub sd: StructuredData,
+    pub max_get_attempts: u32,
+}
+
 pub fn test(max_get_attempts: u32) {
-    let mut test_group = TestGroup::new("StructuredData test");
-
-    test_group.start_case("Put with no account");
-    let mut client1 = Client::new();
-    let data = Data::Structured(unwrap_result!(
-            StructuredData::new(1,
-                                rand::random::<XorName>(),
-                                0,
-                                generate_random_vec_u8(10),
-                                vec![client1.signing_public_key()],
-                                vec![],
-                                Some(client1.signing_private_key()))));
-
-    match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::NoSuchAccount => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
-        }
-        _ => panic!("Received unexpected response"),
-    }
-
-    test_group.start_case("Put");
-    client1.create_account();
+    let test_group = TestGroup::new("StructuredData test");
+    let client1 = Client::new();
+    let client2 = Client::new();
     let sd = unwrap_result!(StructuredData::new(1,
                                                 rand::random::<XorName>(),
                                                 0,
@@ -54,168 +40,215 @@ pub fn test(max_get_attempts: u32) {
                                                 vec![client1.signing_public_key()],
                                                 vec![],
                                                 Some(client1.signing_private_key())));
-    let data = Data::Structured(sd.clone());
-    match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
-        _ => panic!("Received unexpected response"),
-    }
+    let mut fixture = Fixture {
+        test_group: test_group,
+        client1: client1,
+        client2: client2,
+        sd: sd,
+        max_get_attempts: max_get_attempts,
+    };
 
-    test_group.start_case("Get");
-    let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
-    match unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
-                         "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data, response_data);
+    put(&mut fixture);
+    get(&mut fixture);
+    post(&mut fixture);
+    delete(&mut fixture);
+
+    fixture.test_group.release();
+}
+
+fn put(fixture: &mut Fixture) {
+    fixture.test_group.start_case("Put with no account");
+    let data = Data::Structured(fixture.sd.clone());
+    if let ResponseMessage {
+           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.put(data.clone()), "") {
+        if let ClientError::NoSuchAccount = unwrap_result!(deserialise(external_error_indicator)) {
+        } else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Get via different Client");
-    let mut client2 = Client::new();
+    fixture.test_group.start_case("Put");
+    fixture.client1.create_account();
+    if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
+           unwrap_option!(fixture.client1.put(data), "") {} else {
+        panic!("Received unexpected response")
+    }
+}
+
+fn get(fixture: &mut Fixture) {
+    fixture.test_group.start_case("Get");
+    let mut data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
+                                                   fixture.sd.get_type_tag());
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(get_with_retry(&mut fixture.client1,
+                                         data_request.clone(),
+                                         fixture.max_get_attempts),
+                          "") {
+        assert_eq!(Data::Structured(fixture.sd.clone()), response_data)
+    } else {
+        panic!("Received unexpected response")
+    }
+
+    fixture.test_group.start_case("Get via different Client");
     // Should succeed on first attempt if previous Client was able to Get already.
-    match unwrap_option!(client2.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data, response_data);
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(fixture.client2.get(data_request), "") {
+        assert_eq!(Data::Structured(fixture.sd.clone()), response_data)
+    } else {
+        panic!("Received unexpected response")
+    }
+
+    fixture.test_group.start_case("Get for non-existent data");
+    data_request = DataRequest::Structured(rand::random::<XorName>(), 1);
+    if let ResponseMessage {
+           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.get(data_request), "") {
+        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
+        if let ClientError::NoSuchData = parsed_error {} else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
+    }
+}
+
+fn post(fixture: &mut Fixture) {
+    fixture.test_group.start_case("Post from non-authorised Client");
+    let unauthorised_sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
+                                                             *fixture.sd.get_identifier(),
+                                                             fixture.sd.get_version() + 1,
+                                                             generate_random_vec_u8(10),
+                                                             fixture.sd.get_owner_keys().clone(),
+                                                             vec![],
+                                                             Some(fixture.client2
+                                                                         .signing_private_key())));
+    let mut data = Data::Structured(unauthorised_sd.clone());
+    if let None = fixture.client2.post(data) {} else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Get for non-existent data");
-    let data_request = DataRequest::Structured(rand::random::<XorName>(), 1);
-    match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::NoSuchData => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
-        }
-        _ => panic!("Received unexpected response"),
+    fixture.test_group.start_case("Post");
+    fixture.sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
+                                                    *fixture.sd.get_identifier(),
+                                                    fixture.sd.get_version() + 1,
+                                                    generate_random_vec_u8(10),
+                                                    fixture.sd.get_owner_keys().clone(),
+                                                    vec![],
+                                                    Some(fixture.client1.signing_private_key())));
+    data = Data::Structured(fixture.sd.clone());
+    if let ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } =
+           unwrap_option!(fixture.client1.post(data.clone()), "") {} else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Post from non-authorised Client");
-    let sd = unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                *sd.get_identifier(),
-                                                sd.get_version() + 1,
-                                                generate_random_vec_u8(10),
-                                                sd.get_owner_keys().clone(),
-                                                vec![],
-                                                Some(client2.signing_private_key())));
-    let data = Data::Structured(sd.clone());
-    match client2.post(data) {
-        None => {}
-        _ => panic!("Received unexpected response"),
-    }
-
-    test_group.start_case("Post");
-    let sd_posted = unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                       *sd.get_identifier(),
-                                                       sd.get_version(),
-                                                       generate_random_vec_u8(10),
-                                                       sd.get_owner_keys().clone(),
-                                                       vec![],
-                                                       Some(client1.signing_private_key())));
-    let data_posted = Data::Structured(sd_posted.clone());
-    match unwrap_option!(client1.post(data_posted.clone()), "") {
-        ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
-        _ => panic!("Received unexpected response"),
-    }
-
-
-    test_group.start_case("Get updated");
-    let data_request = DataRequest::Structured(*sd.get_identifier(), sd.get_type_tag());
+    fixture.test_group.start_case("Get updated");
+    let data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
+                                               fixture.sd.get_type_tag());
     // Should succeed on first attempt if previous Post message returned success.
-    match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data_posted, response_data);
-        }
-        _ => panic!("Received unexpected response"),
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(fixture.client1.get(data_request), "") {
+        assert_eq!(data, response_data)
+    } else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Post for non-existent data");
-    let sd = unwrap_result!(StructuredData::new(2,
-                                                rand::random::<XorName>(),
-                                                0,
-                                                generate_random_vec_u8(10),
-                                                vec![client1.signing_public_key()],
-                                                vec![],
-                                                Some(client1.signing_private_key())));
-    let data = Data::Structured(sd);
-    match unwrap_option!(client1.post(data), "") {
-        ResponseMessage { content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } => {
-            // structured_data_manager hasn't implemented a proper external_error_indicator in PostFailure
-            assert_eq!(0, external_error_indicator.len());
-        }
-        _ => panic!("Received unexpected response"),
+    fixture.test_group.start_case("Post for non-existent data");
+    let bad_sd = unwrap_result!(StructuredData::new(2,
+                                                    rand::random::<XorName>(),
+                                                    0,
+                                                    generate_random_vec_u8(10),
+                                                    vec![fixture.client1.signing_public_key()],
+                                                    vec![],
+                                                    Some(fixture.client1.signing_private_key())));
+    data = Data::Structured(bad_sd);
+    if let ResponseMessage {
+           content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.post(data), "") {
+        // structured_data_manager hasn't implemented a proper external_error_indicator in
+        // PostFailure
+        assert_eq!(0, external_error_indicator.len())
+    } else {
+        panic!("Received unexpected response")
+    }
+}
+
+fn delete(fixture: &mut Fixture) {
+    fixture.test_group.start_case("Delete improperly");
+    let invalid_sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
+                                                        *fixture.sd.get_identifier(),
+                                                        fixture.sd.get_version(),
+                                                        generate_random_vec_u8(10),
+                                                        fixture.sd.get_owner_keys().clone(),
+                                                        vec![],
+                                                        Some(fixture.client2
+                                                                    .signing_private_key())));
+    let mut data = Data::Structured(invalid_sd);
+    if let ResponseMessage {
+           content: ResponseContent::DeleteFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.delete(data), "") {
+        // structured_data_manager hasn't implemented a proper external_error_indicator in
+        // DeleteFailure
+        assert_eq!(0, external_error_indicator.len())
+    } else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Delete improperly");
-    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
-                                                *sd_posted.get_identifier(),
-                                                sd_posted.get_version(),
-                                                generate_random_vec_u8(10),
-                                                sd_posted.get_owner_keys().clone(),
-                                                vec![],
-                                                Some(client2.signing_private_key())));
-    let data = Data::Structured(sd);
-    match unwrap_option!(client1.delete(data), "") {
-        ResponseMessage { content: ResponseContent::DeleteFailure { ref external_error_indicator, .. }, .. } => {
-            // structured_data_manager hasn't implemented a proper external_error_indicator in DeleteFailure
-            assert_eq!(0, external_error_indicator.len());
-        }
-        _ => panic!("Received unexpected response"),
-    }
-    let data_request = DataRequest::Structured(*sd_posted.get_identifier(),
-                                               sd_posted.get_type_tag());
-    match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data_posted, response_data);
-        }
-        _ => panic!("Received unexpected response"),
+    let mut data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
+                                                   fixture.sd.get_type_tag());
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(fixture.client1.get(data_request.clone()), "") {
+        assert_eq!(Data::Structured(fixture.sd.clone()), response_data);
+    } else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Delete properly");
-    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
-                                                *sd_posted.get_identifier(),
-                                                sd_posted.get_version() + 1,
-                                                generate_random_vec_u8(10),
-                                                sd_posted.get_owner_keys().clone(),
-                                                vec![],
-                                                Some(client1.signing_private_key())));
-    let data = Data::Structured(sd);
-    match unwrap_option!(client1.delete(data), "") {
-        ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
-        _ => panic!("Received unexpected response"),
+    fixture.test_group.start_case("Delete properly");
+    fixture.sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
+                                                    *fixture.sd.get_identifier(),
+                                                    fixture.sd.get_version() + 1,
+                                                    generate_random_vec_u8(10),
+                                                    fixture.sd.get_owner_keys().clone(),
+                                                    vec![],
+                                                    Some(fixture.client1.signing_private_key())));
+    data = Data::Structured(fixture.sd.clone());
+    if let ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } =
+           unwrap_option!(fixture.client1.delete(data), "") {} else {
+        panic!("Received unexpected response")
     }
-    let data_request = DataRequest::Structured(*sd_posted.get_identifier(),
-                                               sd_posted.get_type_tag());
-    match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::NoSuchData => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
+    data_request = DataRequest::Structured(*fixture.sd.get_identifier(), fixture.sd.get_type_tag());
+    if let ResponseMessage {
+           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.get(data_request), "") {
+        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
+        if let ClientError::NoSuchData = parsed_error {} else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
     }
 
-    test_group.start_case("Try to Put recently deleted");
-    let sd = unwrap_result!(StructuredData::new(sd_posted.get_type_tag(),
-                                                sd_posted.get_identifier().clone(),
-                                                0,
-                                                generate_random_vec_u8(10),
-                                                vec![client1.signing_public_key()],
-                                                vec![],
-                                                Some(client1.signing_private_key())));
-    let data = Data::Structured(sd.clone());
-    match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::DataExists => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
+    fixture.test_group.start_case("Try to Put recently deleted");
+    let deleted_sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
+                                                        fixture.sd.get_identifier().clone(),
+                                                        0,
+                                                        generate_random_vec_u8(10),
+                                                        vec![fixture.client1
+                                                                    .signing_public_key()],
+                                                        vec![],
+                                                        Some(fixture.client1
+                                                                    .signing_private_key())));
+    data = Data::Structured(deleted_sd);
+    if let ResponseMessage {
+           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client1.put(data.clone()), "") {
+        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
+        if let ClientError::DataExists = parsed_error {} else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
     }
-
-    test_group.release();
 }

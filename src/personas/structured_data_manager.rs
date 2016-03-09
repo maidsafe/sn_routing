@@ -35,7 +35,7 @@ impl StructuredDataManager {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1370
-            chunk_store: default_chunk_store::new().unwrap(),
+            chunk_store: unwrap_result!(default_chunk_store::new()),
         }
     }
 
@@ -44,11 +44,13 @@ impl StructuredDataManager {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         // TODO - handle type_tag from name too
-        let (data_name, message_id) = match request.content {
-            RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
-                                ref message_id) => (data_request.name(), message_id),
-            _ => unreachable!("Error in vault demuxing"),
-        };
+        let (data_name, message_id) =
+            if let RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
+                                       ref message_id) = request.content {
+                (data_request.name(), message_id)
+            } else {
+                unreachable!("Error in vault demuxing")
+            };
 
         if let Ok(data) = self.chunk_store.get(&data_name) {
             if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
@@ -59,7 +61,7 @@ impl StructuredDataManager {
                 let _ = routing_node.send_get_success(request.dst.clone(),
                                                       request.src.clone(),
                                                       Data::Structured(decoded),
-                                                      message_id.clone());
+                                                      *message_id);
                 return Ok(());
             }
         }
@@ -81,11 +83,11 @@ impl StructuredDataManager {
         // Take a hash of the message anticipating sending this as a success response to the MM.
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
-        let (data, message_id) = match request.content {
-            RequestContent::Put(Data::Structured(ref data), ref message_id) => {
-                (data, message_id.clone())
-            }
-            _ => unreachable!("Logic error"),
+        let (data, message_id) = if let RequestContent::Put(Data::Structured(ref data),
+                                                            ref message_id) = request.content {
+            (data, message_id)
+        } else {
+            unreachable!("Logic error")
         };
 
         let data_name = data.name();
@@ -101,13 +103,16 @@ impl StructuredDataManager {
                                                   response_dst,
                                                   request.clone(),
                                                   external_error_indicator,
-                                                  message_id);
+                                                  *message_id);
             return Err(InternalError::Client(error));
         }
 
         try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
         trace!("SDM sending PutSuccess for data {}", data_name);
-        let _ = routing_node.send_put_success(response_src, response_dst, message_hash, message_id);
+        let _ = routing_node.send_put_success(response_src,
+                                              response_dst,
+                                              message_hash,
+                                              *message_id);
         Ok(())
     }
 
@@ -115,12 +120,13 @@ impl StructuredDataManager {
                        routing_node: &RoutingNode,
                        request: &RequestMessage)
                        -> Result<(), InternalError> {
-        let (new_data, message_id) = match &request.content {
-            &RequestContent::Post(Data::Structured(ref structured_data), ref message_id) => {
+        let (new_data, message_id) =
+            if let RequestContent::Post(Data::Structured(ref structured_data), ref message_id) =
+                   request.content {
                 (structured_data, message_id)
-            }
-            _ => unreachable!("Error in vault demuxing"),
-        };
+            } else {
+                unreachable!("Error in vault demuxing")
+            };
 
         if let Ok(serialised_data) = self.chunk_store.get(&new_data.name()) {
             if let Ok(mut existing_data) =
@@ -137,7 +143,7 @@ impl StructuredDataManager {
                                 let _ = routing_node.send_post_success(request.dst.clone(),
                                                                        request.src.clone(),
                                                                        digest,
-                                                                       message_id.clone());
+                                                                       *message_id);
                                 return Ok(());
                             }
                         }
@@ -152,7 +158,7 @@ impl StructuredDataManager {
                                             request.src.clone(),
                                             request.clone(),
                                             Vec::new(),
-                                            message_id.clone()));
+                                            *message_id));
         Ok(())
     }
 
@@ -161,11 +167,11 @@ impl StructuredDataManager {
                          routing_node: &RoutingNode,
                          request: &RequestMessage)
                          -> Result<(), InternalError> {
-        let (data, message_id) = match request.content {
-            RequestContent::Delete(Data::Structured(ref data), ref message_id) => {
-                (data.clone(), message_id.clone())
-            }
-            _ => unreachable!("Error in vault demuxing"),
+        let (data, message_id) = if let RequestContent::Delete(Data::Structured(ref data),
+                                                               ref message_id) = request.content {
+            (data.clone(), message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
         };
 
         if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
@@ -183,7 +189,7 @@ impl StructuredDataManager {
                             let _ = routing_node.send_delete_success(request.dst.clone(),
                                                                      request.src.clone(),
                                                                      digest,
-                                                                     message_id.clone());
+                                                                     *message_id);
                             return Ok(());
                         }
                     }
@@ -195,7 +201,7 @@ impl StructuredDataManager {
                                               request.src.clone(),
                                               request.clone(),
                                               Vec::new(),
-                                              message_id.clone()));
+                                              *message_id));
         Ok(())
     }
 
@@ -206,8 +212,9 @@ impl StructuredDataManager {
                        serialisation::deserialise::<StructuredData>(&serialised_data) {
                     if existing_data.validate_self_against_successor(&structured_data).is_ok() {
                         // chunk_store::put() deletes the old data automatically
-                        return Ok(try!(self.chunk_store.put(&structured_data.name(),
-                                                            &try!(serialisation::serialise(&structured_data)))));
+                        let serialised_data = try!(serialisation::serialise(&structured_data));
+                        return Ok(try!(self.chunk_store
+                                           .put(&structured_data.name(), &serialised_data)));
                     }
                 }
             }
@@ -249,7 +256,7 @@ impl StructuredDataManager {
                 Err(_) => return,
             };
 
-        let src = Authority::NaeManager(data_name.clone());
+        let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,
                                    RefreshValue::StructuredDataManager(structured_data));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
@@ -268,8 +275,8 @@ impl StructuredDataManager {
 // use maidsafe_utilities::log;
 // use maidsafe_utilities::serialisation::deserialise;
 // use rand::random;
-// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent, RequestMessage,
-// ResponseContent, ResponseMessage, StructuredData};
+// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent,
+// RequestMessage, ResponseContent, ResponseMessage, StructuredData};
 // use std::cmp::{max, min, Ordering};
 // use std::collections::BTreeSet;
 // use time::{Duration, SteadyTime};
@@ -298,7 +305,8 @@ impl StructuredDataManager {
 // let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
 // let identifier = random();
 // let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let structured_data = unwrap_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
+// let structured_data =
+// unwrap_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
 // generate_random_vec_u8(1024), vec![keys.0],
 // vec![], Some(&keys.1)));
 // let data_name = structured_data.name();
@@ -317,7 +325,8 @@ impl StructuredDataManager {
 // }
 // }
 //
-// pub fn get_from_chunkstore(&self, data_name: &XorName) -> Option<::routing::structured_data::StructuredData> {
+// pub fn get_from_chunkstore(&self, data_name: &XorName)
+// -> Option<::routing::structured_data::StructuredData> {
 // let data = self.structured_data_manager.chunk_store.get(data_name);
 // if data.len() == 0 {
 // return None;

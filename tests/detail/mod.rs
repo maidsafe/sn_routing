@@ -49,14 +49,11 @@ pub fn get_with_retry(client: &mut Client,
     let mut attempt = 1;
     loop {
         let result = unwrap_option!(client.get(request.clone()), "");
-        match &result {
-            &ResponseMessage { content: ResponseContent::GetSuccess(..), .. } => {
+        if let ResponseMessage { content: ResponseContent::GetSuccess(..), .. } = result {
+            return Some(result);
+        } else {
+            if attempt == max_attempts {
                 return Some(result);
-            }
-            _ => {
-                if attempt == max_attempts {
-                    return Some(result);
-                }
             }
         }
         attempt += 1;

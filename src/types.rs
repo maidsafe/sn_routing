@@ -28,7 +28,7 @@ pub struct Refresh {
 impl Refresh {
     pub fn new(name: &XorName, value: RefreshValue) -> Refresh {
         Refresh {
-            name: name.clone(),
+            name: *name,
             value: value,
         }
     }

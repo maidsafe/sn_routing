@@ -29,53 +29,56 @@ pub fn test(max_get_attempts: u32) {
     let mut client1 = Client::new();
     let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
                                                   generate_random_vec_u8(1024)));
-    match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::NoSuchAccount => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
+    if let ResponseMessage {
+           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(client1.put(data.clone()), "") {
+        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
+        if let ClientError::NoSuchAccount = parsed_error {} else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
     }
 
     test_group.start_case("Put");
     client1.create_account();
-    match unwrap_option!(client1.put(data.clone()), "") {
-        ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
-        _ => panic!("Received unexpected response"),
+    if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
+           unwrap_option!(client1.put(data.clone()), "") {
+    } else {
+        panic!("Received unexpected response")
     }
 
     test_group.start_case("Get");
     let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
-    match unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
-                         "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data, response_data);
-        }
-        _ => panic!("Received unexpected response"),
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
+                          "") {
+        assert_eq!(data, response_data)
+    } else {
+        panic!("Received unexpected response")
     }
 
     test_group.start_case("Get via different Client");
     let mut client2 = Client::new();
     // Should succeed on first attempt if previous Client was able to Get already.
-    match unwrap_option!(client2.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } => {
-            assert_eq!(data, response_data);
-        }
-        _ => panic!("Received unexpected response"),
+    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
+           unwrap_option!(client2.get(data_request), "") {
+        assert_eq!(data, response_data)
+    } else {
+        panic!("Received unexpected response")
     }
 
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);
-    match unwrap_option!(client1.get(data_request), "") {
-        ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
-            match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                ClientError::NoSuchData => {}
-                _ => panic!("Received unexpected external_error_indicator"),
-            }
+    if let ResponseMessage {
+           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(client1.get(data_request), "") {
+        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
+        if let ClientError::NoSuchData = parsed_error {} else {
+            panic!("Received unexpected external_error_indicator")
         }
-        _ => panic!("Received unexpected response"),
+    } else {
+        panic!("Received unexpected response")
     }
 
     test_group.release();

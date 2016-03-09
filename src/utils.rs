@@ -20,9 +20,10 @@ use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
 
 pub fn client_name(authority: &Authority) -> XorName {
-    match authority {
-        &Authority::Client{ ref client_key, ..} => XorName(sha512::hash(&client_key.0[..]).0),
-        _ => unreachable!("Logic error"),
+    if let Authority::Client{ ref client_key, ..} = *authority {
+        XorName(sha512::hash(&client_key.0[..]).0)
+    } else {
+        unreachable!("Logic error")
     }
 }
 

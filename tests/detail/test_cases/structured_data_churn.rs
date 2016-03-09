@@ -38,85 +38,88 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
                                                     Some(client.signing_private_key())));
         trace!("Putting StructuredData {} - {}", i, sd.name());
         let data = Data::Structured(sd.clone());
-        match unwrap_option!(client.put(data), "") {
-            ResponseMessage { content: ResponseContent::PutSuccess(..), .. } => {}
-            _ => panic!("Received unexpected response"),
+        if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
+               unwrap_option!(client.put(data), "") {} else {
+            panic!("Received unexpected response")
         }
         stored_data.push(sd);
     }
 
-    for i in 0..request_count as usize {
+    for (i, stored_item) in stored_data.iter().enumerate() {
         test_group.start_case(&format!("Get StructuredData {}", i));
-        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
-                                                   stored_data[i].get_type_tag());
-        trace!("Getting StructuredData {} - {}", i, stored_data[i].name());
-        match unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
-                             "") {
-            ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
-                assert_eq!(stored_data[i], sd);
-            }
-            _ => panic!("Received unexpected response"),
+        let data_request = DataRequest::Structured(*stored_item.get_identifier(),
+                                                   stored_item.get_type_tag());
+        trace!("Getting StructuredData {} - {}", i, stored_item.name());
+        if let ResponseMessage {
+               content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } =
+               unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
+                              "") {
+            assert_eq!(*stored_item, sd)
+        } else {
+            panic!("Received unexpected response")
         }
     }
 
-    for i in 0..request_count as usize {
+    for (i, stored_item) in stored_data.iter_mut().enumerate() {
         test_group.start_case(&format!("Post StructuredData {}", i));
-        let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
-                                                    *stored_data[i].get_identifier(),
-                                                    stored_data[i].get_version() + 1,
+        let sd = unwrap_result!(StructuredData::new(stored_item.get_type_tag(),
+                                                    *stored_item.get_identifier(),
+                                                    stored_item.get_version() + 1,
                                                     generate_random_vec_u8(10),
-                                                    stored_data[i].get_owner_keys().clone(),
+                                                    stored_item.get_owner_keys().clone(),
                                                     vec![],
                                                     Some(client.signing_private_key())));
-        trace!("Posting StructuredData {} - {}", i, stored_data[i].name());
+        trace!("Posting StructuredData {} - {}", i, stored_item.name());
         let data = Data::Structured(sd.clone());
-        match unwrap_option!(client.post(data), "") {
-            ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } => {}
-            _ => panic!("Received unexpected response"),
+        if let ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } =
+               unwrap_option!(client.post(data), "") {} else {
+            panic!("Received unexpected response")
         }
-        stored_data[i] = sd;
+        *stored_item = sd;
     }
 
-    for i in 0..request_count as usize {
+    for (i, stored_item) in stored_data.iter().enumerate() {
         test_group.start_case(&format!("Get updated StructuredData {}", i));
-        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
-                                                   stored_data[i].get_type_tag());
+        let data_request = DataRequest::Structured(*stored_item.get_identifier(),
+                                                   stored_item.get_type_tag());
         trace!("Getting updated StructuredData {} - {}",
                i,
-               stored_data[i].name());
-        match unwrap_option!(client.get(data_request.clone()), "") {
-            ResponseMessage { content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } => {
-                assert_eq!(stored_data[i], sd);
-            }
-            _ => panic!("Received unexpected response"),
+               stored_item.name());
+        if let ResponseMessage {
+               content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } =
+               unwrap_option!(client.get(data_request.clone()), "") {
+            assert_eq!(*stored_item, sd)
+        } else {
+            panic!("Received unexpected response")
         }
     }
 
-    for i in 0..request_count as usize {
+    for (i, stored_item) in stored_data.iter().enumerate() {
         test_group.start_case(&format!("Delete StructuredData {}", i));
-        trace!("Deleting StructuredData {} - {}", i, stored_data[i].name());
-        let sd = unwrap_result!(StructuredData::new(stored_data[i].get_type_tag(),
-                                                    *stored_data[i].get_identifier(),
-                                                    stored_data[i].get_version() + 1,
+        trace!("Deleting StructuredData {} - {}", i, stored_item.name());
+        let sd = unwrap_result!(StructuredData::new(stored_item.get_type_tag(),
+                                                    *stored_item.get_identifier(),
+                                                    stored_item.get_version() + 1,
                                                     generate_random_vec_u8(10),
-                                                    stored_data[i].get_owner_keys().clone(),
+                                                    stored_item.get_owner_keys().clone(),
                                                     vec![],
                                                     Some(client.signing_private_key())));
         let data = Data::Structured(sd);
-        match unwrap_option!(client.delete(data), "") {
-            ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } => {}
-            _ => panic!("Received unexpected response"),
+        if let ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } =
+               unwrap_option!(client.delete(data), "") {} else {
+            panic!("Received unexpected response")
         }
-        let data_request = DataRequest::Structured(*stored_data[i].get_identifier(),
-                                                   stored_data[i].get_type_tag());
-        match unwrap_option!(client.get(data_request), "") {
-            ResponseMessage { content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } => {
-                match unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {
-                    ClientError::NoSuchData => {}
-                    _ => panic!("Received unexpected external_error_indicator"),
-                }
+        let data_request = DataRequest::Structured(*stored_item.get_identifier(),
+                                                   stored_item.get_type_tag());
+        if let ResponseMessage {
+               content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
+               unwrap_option!(client.get(data_request), "") {
+            if let ClientError::NoSuchData =
+                   unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {} else {
+                panic!("Received unexpected external_error_indicator")
             }
-            _ => panic!("Received unexpected response"),
+        } else {
+            panic!("Received unexpected response")
         }
     }
 

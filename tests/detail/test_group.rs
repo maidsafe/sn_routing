@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#![cfg_attr(feature="clippy", allow(print_stdout))]
+
 pub struct TestGroup {
     name: Option<String>,
     case: Option<String>,
