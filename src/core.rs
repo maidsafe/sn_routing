@@ -1396,14 +1396,14 @@ impl Core {
                 let _ = self.node_id_cache.remove(&name);
                 return Ok(());
             }
-            Some(AddedNodeDetails { must_notify, not_needed, common_groups }) => {
+            Some(AddedNodeDetails { must_notify, unneeded, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 for notify_info in must_notify {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
                 }
 
-                for node_info in not_needed {
+                for node_info in unneeded {
                     let our_name = self.name().clone();
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
