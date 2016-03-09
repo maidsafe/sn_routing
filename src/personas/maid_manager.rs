@@ -173,7 +173,7 @@ impl MaidManager {
         let src = Authority::ClientManager(*maid_name);
         let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-            trace!("MaidManager sending refresh for account {}", src.name());
+            trace!("MM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src, serialised_refresh);
         }
     }
@@ -239,6 +239,7 @@ impl MaidManager {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
         if let Err(error) = result {
+            trace!("MM responds put_failure of data {}, due to error {:?}", data.name(), error);
             try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
             return Err(InternalError::Client(error));
         }
@@ -247,6 +248,7 @@ impl MaidManager {
             // forwarding data_request to NAE Manager
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
+            trace!("MM forwarding put request to {:?}", dst);
             let _ = routing_node.send_put_request(src, dst, data, message_id);
         }
 
