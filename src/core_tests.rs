@@ -16,13 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use std::cmp;
+use std::collections::HashSet;
 use std::sync::mpsc;
-use xor_name::XorName;
+use xor_name::{XorName, XOR_NAME_BITS};
 
-use core::Core;
+use core::{Core, RoutingTable};
 use event::Event;
-use kademlia_routing_table::GROUP_SIZE;
-use maidsafe_utilities::log;
+use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
+// use maidsafe_utilities::log;
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 
 struct TestNode {
@@ -61,14 +62,16 @@ impl TestNode {
         result
     }
 
-    #[allow(unused)]
     fn name(&self) -> &XorName {
         self.core.name()
     }
 
-    #[allow(unused)]
     fn close_group(&self) -> Vec<XorName> {
         self.core.close_group()
+    }
+
+    fn routing_table(&self) -> &RoutingTable {
+        self.core.routing_table()
     }
 }
 
@@ -114,23 +117,87 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     nodes
 }
 
+// Drop node at index and verify its close group receives NodeLost.
+fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+    let node = nodes.remove(index);
+    let name = node.name().clone();
+    let close_names = node.close_group();
+
+    drop(node);
+
+    poll_all(nodes);
+
+    for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
+                Ok(_) => (),
+                _ => panic!("Event::NodeLost({:?}) not received", name),
+            }
+        }
+    }
+}
+
+// Get names of all entries in the `bucket_index`-th bucket in the routing table.
+fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<XorName> {
+    let our_name = table.our_name();
+    let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
+
+    table.close_nodes(&far_name)
+         .unwrap_or_else(Vec::new)
+         .into_iter()
+         .map(|info| info.name().clone())
+         .filter(|name| our_name.bucket_index(name) == bucket_index)
+         .collect()
+}
+
+// Get names of all nodes that belong to the `index`-th bucket in the `name`s
+// routing table.
+fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize) -> HashSet<XorName> {
+    nodes.iter()
+         .filter(|node| name.bucket_index(node.name()) == bucket_index)
+         .map(|node| node.name().clone())
+         .collect()
+}
+
+// Verify that the kademlia invariant is upheld for the node at `index`.
+fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
+    let node = &nodes[index];
+
+    for bucket_index in 0..XOR_NAME_BITS {
+        let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
+
+        assert!(entries.len() >= GROUP_SIZE ||
+                entries == node_names_in_bucket(nodes, node.name(), bucket_index))
+    }
+}
+
+// Verify that the kademlia invariant is upheld for all nodes.
+fn verify_kademlia_invariant_for_all_nodes(nodes: &[TestNode]) {
+    for node_index in 0..nodes.len() {
+        verify_kademlia_invariant_for_node(nodes, node_index);
+    }
+}
+
+fn test_nodes(size: usize) {
+    let network = Network::new();
+    let nodes = create_connected_nodes(&network, size);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
 #[test]
 fn less_than_group_size_nodes() {
-    log::init(true);
-    let network = Network::new();
-    let _ = create_connected_nodes(&network, 3);
+    test_nodes(3)
 }
 
 #[test]
 fn group_size_nodes() {
-    let network = Network::new();
-    let _ = create_connected_nodes(&network, GROUP_SIZE);
+    test_nodes(GROUP_SIZE);
 }
 
 #[test]
 fn more_than_group_size_nodes() {
-    let network = Network::new();
-    let _ = create_connected_nodes(&network, GROUP_SIZE + 2);
+    test_nodes(GROUP_SIZE + 2);
 }
 
 #[test]
@@ -155,22 +222,7 @@ fn client_connects_to_nodes() {
 fn node_drops() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
+    drop_node(&mut nodes, 0);
 
-    let node = nodes.pop().unwrap();
-    let name = node.name().clone();
-    let close_names = node.close_group();
-
-    drop(node);
-
-    poll_all(&mut nodes);
-
-    for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
-        loop {
-            match node.event_rx.try_recv() {
-                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
-                Ok(_) => (),
-                _ => panic!("Event::NodeLost({:?}) not received", name),
-            }
-        }
-    }
+    verify_kademlia_invariant_for_all_nodes(&nodes);
 }
