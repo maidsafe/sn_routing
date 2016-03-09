@@ -800,7 +800,7 @@ impl Core {
         match *routing_msg {
             RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
                 let i = self.name().bucket_index(name);
-                if self.bucket_filter.insert(&i) == 0 && self.routing_table.need_to_add(name) {
+                if self.routing_table.need_to_add(name) {
                     trace!("Harvesting on {:?} in bucket index {}.", name, i);
                     self.request_bucket_ids(i)
                 } else {
@@ -1469,7 +1469,7 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
-        if bucket_index >= xor_name::XOR_NAME_BITS {
+        if bucket_index >= xor_name::XOR_NAME_BITS || self.bucket_filter.insert(&bucket_index) > 0 {
             return Ok(());
         }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
@@ -1825,18 +1825,20 @@ impl Core {
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
         if self.routing_table.is_close(&dst_name) {
-            let msg = if let Some(info) = self.routing_table.get(&dst_name) {
-                let response_content = ResponseContent::GetPublicId { public_id: info.public_id };
-
-                ResponseMessage {
-                    src: Authority::NodeManager(dst_name),
-                    dst: Authority::ManagedNode(src_name),
-                    content: response_content,
-                }
+            let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
+                info.public_id
+            } else if let Some(&public_id) = self.node_id_cache.get(&dst_name) {
+                public_id
             } else {
                 error!("Cannot answer GetPublicId: {:?} not found in the routing table.",
                        dst_name);
                 return Err(RoutingError::RejectedPublicId);
+            };
+
+            let msg = ResponseMessage {
+                src: Authority::NodeManager(dst_name),
+                dst: Authority::ManagedNode(src_name),
+                content: ResponseContent::GetPublicId { public_id: public_id },
             };
 
             self.send_response(msg)
@@ -1867,18 +1869,10 @@ impl Core {
                                                  dst_name: XorName)
                                                  -> Result<(), RoutingError> {
         if self.routing_table.is_close(&dst_name) {
-            let msg = if let Some(info) = self.routing_table.get(&dst_name) {
-                let response_content = ResponseContent::GetPublicIdWithConnectionInfo {
-                    public_id: info.public_id,
-                    encrypted_connection_info: encrypted_connection_info,
-                    nonce_bytes: nonce_bytes,
-                };
-
-                ResponseMessage {
-                    src: Authority::NodeManager(dst_name),
-                    dst: Authority::ManagedNode(src_name),
-                    content: response_content,
-                }
+            let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
+                info.public_id
+            } else if let Some(public_id) = self.node_id_cache.get(&dst_name) {
+                *public_id
             } else {
                 error!("Cannot answer GetPublicIdWithConnectionInfo: {:?} not found in the \
                         routing table.",
@@ -1886,6 +1880,17 @@ impl Core {
                 return Err(RoutingError::RejectedPublicId);
             };
 
+            let response_content = ResponseContent::GetPublicIdWithConnectionInfo {
+                public_id: public_id,
+                encrypted_connection_info: encrypted_connection_info,
+                nonce_bytes: nonce_bytes,
+            };
+
+            let msg = ResponseMessage {
+                src: Authority::NodeManager(dst_name),
+                dst: Authority::ManagedNode(src_name),
+                content: response_content,
+            };
             self.send_response(msg)
         } else {
             error!("Handling GetPublicIdWithConnectionInfo, but not close to the target!");

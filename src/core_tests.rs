@@ -18,12 +18,11 @@
 use std::cmp;
 use std::collections::HashSet;
 use std::sync::mpsc;
-use xor_name::{XorName, XOR_NAME_BITS};
+use xor_name::XorName;
 
 use core::{Core, RoutingTable};
 use event::Event;
 use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
-// use maidsafe_utilities::log;
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 
 struct TestNode {
@@ -143,8 +142,7 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
     let our_name = table.our_name();
     let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
 
-    table.close_nodes(&far_name)
-         .unwrap_or_else(Vec::new)
+    table.closest_nodes_to(&far_name, GROUP_SIZE, false)
          .into_iter()
          .map(|info| info.name().clone())
          .filter(|name| our_name.bucket_index(name) == bucket_index)
@@ -163,12 +161,17 @@ fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize)
 // Verify that the kademlia invariant is upheld for the node at `index`.
 fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
     let node = &nodes[index];
+    let mut count = nodes.len() - 1;
+    let mut bucket_index = 0;
 
-    for bucket_index in 0..XOR_NAME_BITS {
+    while count > 0 {
         let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
-
-        assert!(entries.len() >= GROUP_SIZE ||
-                entries == node_names_in_bucket(nodes, node.name(), bucket_index))
+        let actual_bucket = node_names_in_bucket(nodes, node.name(), bucket_index);
+        if entries.len() < GROUP_SIZE {
+            assert_eq!(actual_bucket, entries);
+        }
+        count -= actual_bucket.len();
+        bucket_index += 1;
     }
 }
 
@@ -197,6 +200,7 @@ fn group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
+    // TODO(afck): With 2 * GROUP_SIZE, this _occasionally_ fails. Need to investigate.
     test_nodes(GROUP_SIZE + 2);
 }
 
