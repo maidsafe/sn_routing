@@ -131,9 +131,9 @@ impl PmidManager {
             .entry(*request.dst.name())
             .or_insert_with(Account::default)
             .put_data(data.payload_size() as u64);
-
         let src = Authority::NodeManager(*request.dst.name());
         let dst = Authority::ManagedNode(*request.dst.name());
+        trace!("PM forwarding put request of data {} targeting PN {}", data.name(), dst.name());
         let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
         let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()),
                                          MetadataForPutRequest::new(request.clone()));
@@ -245,7 +245,7 @@ impl PmidManager {
         let src = Authority::NodeManager(*pmid_node);
         let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-            trace!("PmidManager sending refresh for account {}", src.name());
+            trace!("PM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src, serialised_refresh);
         }
     }
