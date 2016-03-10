@@ -59,9 +59,9 @@ fn start_two_services_bootstrap_communicate_exit() {
     // to bootstrap
     {
         let event_rxd = unwrap_result!(event_rx_0.try_recv());
-        match event_rxd {
-            Event::BootstrapFinished => (),
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::BootstrapFinished = event_rxd {
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd);
         }
     }
 
@@ -75,25 +75,27 @@ fn start_two_services_bootstrap_communicate_exit() {
     // let service_1 finish bootstrap - it should bootstrap off service_0
     let id_0 = {
         let event_rxd = unwrap_result!(event_rx_1.try_recv());
-        match event_rxd {
-            Event::BootstrapConnect(their_id) => their_id,
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::BootstrapConnect(their_id) = event_rxd {
+            their_id
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd);
         }
     };
 
     // now service_1 should get BootstrapFinished
     {
         let event_rxd = unwrap_result!(event_rx_1.try_recv());
-        match event_rxd {
-            Event::BootstrapFinished => (),
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::BootstrapFinished = event_rxd {
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd);
         }
     }
 
     // service_0 should have received service_1's bootstrap connection by now
-    let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapAccept(their_id) => their_id,
-        _ => panic!("0 Should have got a new connection from 1."),
+    let id_1 = if let Event::BootstrapAccept(their_id) = unwrap_result!(event_rx_0.try_recv()) {
+        their_id
+    } else {
+        panic!("0 Should have got a new connection from 1.")
     };
 
     assert!(id_0 != id_1);
@@ -106,9 +108,10 @@ fn start_two_services_bootstrap_communicate_exit() {
         // 1 should rx data
         let (data_rxd, peer_id) = {
             let event_rxd = unwrap_result!(event_rx_1.try_recv());
-            match event_rxd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_rxd),
+            if let Event::NewMessage(their_id, msg) = event_rxd {
+                (msg, their_id)
+            } else {
+                panic!("Received unexpected event: {:?}", event_rxd)
             }
         };
 
@@ -124,9 +127,10 @@ fn start_two_services_bootstrap_communicate_exit() {
         // 0 should rx data
         let (data_rxd, peer_id) = {
             let event_rxd = unwrap_result!(event_rx_0.try_recv());
-            match event_rxd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_rxd),
+            if let Event::NewMessage(their_id, msg) = event_rxd {
+                (msg, their_id)
+            } else {
+                panic!("Received unexpected event: {:?}", event_rxd)
             }
         };
 
@@ -144,6 +148,8 @@ fn start_two_services_bootstrap_communicate_exit() {
 
 #[test]
 fn start_two_services_rendezvous_connect() {
+    const PREPARE_CI_TOKEN: u32 = 1234;
+
     let network = Network::new();
     let handle0 = network.new_service_handle(None, None);
     let handle1 = network.new_service_handle(None, None);
@@ -156,9 +162,9 @@ fn start_two_services_rendezvous_connect() {
     // to bootstrap
     {
         let event_rxd = unwrap_result!(event_rx_0.try_recv());
-        match event_rxd {
-            Event::BootstrapFinished => (),
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::BootstrapFinished = event_rxd {
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd)
         }
     }
 
@@ -167,35 +173,31 @@ fn start_two_services_rendezvous_connect() {
     // to bootstrap
     {
         let event_rxd = unwrap_result!(event_rx_1.try_recv());
-        match event_rxd {
-            Event::BootstrapFinished => (),
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::BootstrapFinished = event_rxd {
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd)
         }
     }
-
-    const PREPARE_CI_TOKEN: u32 = 1234;
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = {
         let event_rxd = unwrap_result!(event_rx_0.try_recv());
-        match event_rxd {
-            Event::ConnectionInfoPrepared(cir) => {
-                assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-                unwrap_result!(cir.result)
-            }
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::ConnectionInfoPrepared(cir) = event_rxd {
+            assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
+            unwrap_result!(cir.result)
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd)
         }
     };
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_1 = {
         let event_rxd = unwrap_result!(event_rx_1.try_recv());
-        match event_rxd {
-            Event::ConnectionInfoPrepared(cir) => {
-                assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-                unwrap_result!(cir.result)
-            }
-            _ => panic!("Received unexpected event: {:?}", event_rxd),
+        if let Event::ConnectionInfoPrepared(cir) = event_rxd {
+            assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
+            unwrap_result!(cir.result)
+        } else {
+            panic!("Received unexpected event: {:?}", event_rxd)
         }
     };
 
@@ -223,9 +225,10 @@ fn start_two_services_rendezvous_connect() {
         // 1 should rx data
         let (data_rxd, peer_id) = {
             let event_rxd = unwrap_result!(event_rx_1.try_recv());
-            match event_rxd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_rxd),
+            if let Event::NewMessage(their_id, msg) = event_rxd {
+                (msg, their_id)
+            } else {
+                panic!("Received unexpected event: {:?}", event_rxd)
             }
         };
 
@@ -241,9 +244,10 @@ fn start_two_services_rendezvous_connect() {
         // 0 should rx data
         let (data_rxd, peer_id) = {
             let event_rxd = unwrap_result!(event_rx_0.try_recv());
-            match event_rxd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_rxd),
+            if let Event::NewMessage(their_id, msg) = event_rxd {
+                (msg, their_id)
+            } else {
+                panic!("Received unexpected event: {:?}", event_rxd)
             }
         };
 
@@ -291,10 +295,10 @@ fn drop() {
     }
 
     // service_0 should have received service_1's bootstrap connection by now.
-    match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapAccept(..) => (),
-        _ => panic!("0 Should have got a new connection from 1."),
-    };
+    if let Event::BootstrapAccept(..) = unwrap_result!(event_rx_0.try_recv()) {
+    } else {
+        panic!("0 Should have got a new connection from 1.")
+    }
 
     // Dropping service_0 should make service_1 receive a LostPeer event.
     mem::drop(service_0);

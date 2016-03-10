@@ -131,6 +131,7 @@ impl ClientInfo {
     }
 }
 
+#[derive(Default)]
 struct DebugStats {
     cur_routing_table_size: usize,
     cur_client_num: usize,
@@ -140,12 +141,7 @@ struct DebugStats {
 
 impl DebugStats {
     fn new() -> Self {
-        DebugStats {
-            cur_routing_table_size: 0,
-            cur_client_num: 0,
-            cumulative_client_num: 0,
-            get_request_count: 0,
-        }
+        Default::default()
     }
 }
 
@@ -346,7 +342,7 @@ impl Core {
         self.routing_table.other_close_nodes(self.name())
                           .unwrap_or_else(Vec::new)
                           .into_iter()
-                          .map(|info| info.name().clone())
+                          .map(|info| *info.name())
                           .collect()
     }
 

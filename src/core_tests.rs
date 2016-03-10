@@ -40,9 +40,8 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (_, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None)
-        });
+        let (_, core) = mock_crust::make_current(&handle,
+                                                 || Core::new(event_tx, client_restriction, None));
 
         TestNode {
             handle: handle,
@@ -107,7 +106,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
-    for node in nodes.iter() {
+    for node in &nodes {
         for _ in 0..n {
             expect_event!(node, Event::NodeAdded(..))
         }
@@ -119,7 +118,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 // Drop node at index and verify its close group receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
-    let name = node.name().clone();
+    let name = *node.name();
     let close_names = node.close_group();
 
     drop(node);
@@ -140,21 +139,24 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 // Get names of all entries in the `bucket_index`-th bucket in the routing table.
 fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<XorName> {
     let our_name = table.our_name();
-    let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
+    let far_name = our_name.with_flipped_bit(bucket_index).expect("bucket_index is out of range");
 
     table.closest_nodes_to(&far_name, GROUP_SIZE, false)
          .into_iter()
-         .map(|info| info.name().clone())
+         .map(|info| *info.name())
          .filter(|name| our_name.bucket_index(name) == bucket_index)
          .collect()
 }
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
 // routing table.
-fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize) -> HashSet<XorName> {
+fn node_names_in_bucket(nodes: &[TestNode],
+                        name: &XorName,
+                        bucket_index: usize)
+                        -> HashSet<XorName> {
     nodes.iter()
          .filter(|node| name.bucket_index(node.name()) == bucket_index)
-         .map(|node| node.name().clone())
+         .map(|node| *node.name())
          .collect()
 }
 
