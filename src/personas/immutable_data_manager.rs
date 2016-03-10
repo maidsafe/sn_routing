@@ -95,8 +95,8 @@ impl MetadataForGetRequest {
                  -> MetadataForGetRequest {
         // We only want to try and get data from "good" holders
         let good_nodes = pmid_nodes.iter()
-                                   .filter_map(|data_holder| {
-                                       match *data_holder {
+                                   .filter_map(|pmid_node| {
+                                       match *pmid_node {
                                            DataHolder::Good(pmid_node) => {
                                                Some(DataHolder::Pending(pmid_node))
                                            }
@@ -291,7 +291,7 @@ impl ImmutableDataManager {
             return Err(InternalError::FailedToFindCachedRequest(*message_id));
         }
 
-        try!(self.check_and_replicate(routing_node, &data_name));
+        try!(self.check_and_replicate(routing_node, &data_name, message_id));
         Ok(())
     }
 
@@ -341,7 +341,7 @@ impl ImmutableDataManager {
         }
 
         if result.is_ok() {
-            try!(self.check_and_replicate(routing_node, &data_name));
+            try!(self.check_and_replicate(routing_node, &data_name, message_id));
         }
         result
     }
@@ -546,11 +546,10 @@ impl ImmutableDataManager {
         }
     }
 
-    // TODO - re-enable lint
-    #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
     fn check_and_replicate(&mut self,
                            routing_node: &RoutingNode,
-                           data_name: &XorName)
+                           data_name: &XorName,
+                           message_id: &MessageId)
                            -> Result<(), InternalError> {
         let mut finished = false;
         let mut new_pmid_nodes = HashSet::<DataHolder>::new();
@@ -558,8 +557,8 @@ impl ImmutableDataManager {
             // Count the good holders, but just return from this function if any queried holders
             // haven't responded yet
             let mut good_holder_count = 0;
-            for queried_data_holder in &metadata.pmid_nodes {
-                match *queried_data_holder {
+            for queried_pmid_node in &metadata.pmid_nodes {
+                match *queried_pmid_node {
                     DataHolder::Pending(_) => return Ok(()),
                     DataHolder::Good(_) => good_holder_count += 1,
                     DataHolder::Failed(_) => (),
@@ -571,61 +570,16 @@ impl ImmutableDataManager {
                 // We can now delete this cached get request with no need for further action
                 finished = true;
             } else if let Some(ref data) = metadata.data {
+                assert_eq!(*data_name, data.name());
                 // Put to new close peers and delete this cached get request
-                let mut good_nodes = HashSet::<DataHolder>::new();
-                let mut nodes_to_exclude = vec![];
-                for queried_data_holder in &metadata.pmid_nodes {
-                    match *queried_data_holder {
-                        DataHolder::Good(ref name) => {
-                            let _ = good_nodes.insert(DataHolder::Good(*name));
-                        }
-                        DataHolder::Failed(ref name) => {
-                            nodes_to_exclude.push(name);
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                trace!("Replicating {} - good nodes: {:?}", data_name, good_nodes);
-                trace!("Replicating {} - nodes to be excluded: {:?}",
-                       data_name,
-                       nodes_to_exclude);
-                let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
-                                                                            data_name,
-                                                                            nodes_to_exclude));
-                trace!("Replicating {} - target nodes: {:?}",
-                       data_name,
-                       target_pmid_nodes);
-                let message_id = MessageId::new();
-                for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
-                    trace!("Replicating {} - sending Put to {}",
-                           data_name,
-                           new_pmid_node.name());
-                    let src = Authority::NaeManager(*data_name);
-                    let dst = Authority::NodeManager(*new_pmid_node.name());
-                    new_pmid_nodes.insert(new_pmid_node.clone());
-                    let _ = routing_node.send_put_request(src,
-                                                          dst,
-                                                          Data::Immutable(data.clone()),
-                                                          message_id);
-                }
+                new_pmid_nodes = try!(Self::replicate(routing_node,
+                                                      data,
+                                                      &metadata.pmid_nodes,
+                                                      message_id));
                 finished = true;
             } else {
                 // Recover the data from backup and/or sacrificial locations
-                metadata.pmid_nodes.clear();
-                // TODO - actually retrieve the data.  For now we'll just return failure to the
-                // clients waiting for responses, and they'll have to retry.
-                while let Some((original_message_id, request)) = metadata.requests.pop() {
-                    let src = request.dst.clone();
-                    let dst = request.src.clone();
-                    trace!("Sending GetFailure back to {:?}", dst);
-                    let error = ClientError::NoSuchData;
-                    let external_error_indicator = try!(serialisation::serialise(&error));
-                    let _ = routing_node.send_get_failure(src,
-                                                          dst,
-                                                          request,
-                                                          external_error_indicator,
-                                                          original_message_id);
-                }
+                try!(Self::recover_from_backup(routing_node, metadata));
             }
         } else {
             warn!("Failed to find metadata for check_and_replicate of {}",
@@ -654,6 +608,72 @@ impl ImmutableDataManager {
             }
         }
 
+        Ok(())
+    }
+
+    fn replicate(routing_node: &RoutingNode,
+                 data: &ImmutableData,
+                 queried_pmid_nodes: &[DataHolder],
+                 message_id: &MessageId)
+                 -> Result<HashSet<DataHolder>, InternalError> {
+        let mut good_nodes = HashSet::<DataHolder>::new();
+        let mut nodes_to_exclude = vec![];
+        let mut new_pmid_nodes = HashSet::<DataHolder>::new();
+        for queried_pmid_node in queried_pmid_nodes {
+            match *queried_pmid_node {
+                DataHolder::Good(ref name) => {
+                    let _ = good_nodes.insert(DataHolder::Good(*name));
+                }
+                DataHolder::Failed(ref name) => {
+                    nodes_to_exclude.push(name);
+                }
+                _ => unreachable!(),
+            }
+        }
+        let data_name = data.name();
+        trace!("Replicating {} - good nodes: {:?}", data_name, good_nodes);
+        trace!("Replicating {} - nodes to be excluded: {:?}",
+               data_name,
+               nodes_to_exclude);
+        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
+                                                                    &data_name,
+                                                                    nodes_to_exclude));
+        trace!("Replicating {} - target nodes: {:?}",
+               data_name,
+               target_pmid_nodes);
+        for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
+            trace!("Replicating {} - sending Put to {}",
+                   data_name,
+                   new_pmid_node.name());
+            let src = Authority::NaeManager(data_name);
+            let dst = Authority::NodeManager(*new_pmid_node.name());
+            new_pmid_nodes.insert(new_pmid_node.clone());
+            let _ = routing_node.send_put_request(src,
+                                                  dst,
+                                                  Data::Immutable(data.clone()),
+                                                  *message_id);
+        }
+        Ok(new_pmid_nodes)
+    }
+
+    fn recover_from_backup(routing_node: &RoutingNode,
+                           metadata: &mut MetadataForGetRequest)
+                           -> Result<(), InternalError> {
+        metadata.pmid_nodes.clear();
+        // TODO - actually retrieve the data.  For now we'll just return failure to the clients
+        // waiting for responses, and they'll have to retry.
+        while let Some((original_message_id, request)) = metadata.requests.pop() {
+            let src = request.dst.clone();
+            let dst = request.src.clone();
+            trace!("Sending GetFailure back to {:?}", dst);
+            let error = ClientError::NoSuchData;
+            let external_error_indicator = try!(serialisation::serialise(&error));
+            let _ = routing_node.send_get_failure(src,
+                                                  dst,
+                                                  request,
+                                                  external_error_indicator,
+                                                  original_message_id);
+        }
         Ok(())
     }
 
