@@ -486,10 +486,8 @@ impl ImmutableDataManager {
                     .collect();
 
         for (data_name, pmid_nodes) in &self.accounts {
-            if pmid_nodes.len() < MIN_REPLICANTS {
-                trace!("Need to replicate {} as only {} holders left",
-                       data_name,
-                       pmid_nodes.len());
+            if Self::should_replicate(pmid_nodes) {
+                trace!("Need to replicate {}", data_name);
                 {
                     if let Some(mut metadata) = self.ongoing_gets.get_mut(&data_name) {
                         trace!("Already getting {} - {:?}", data_name, metadata);
@@ -515,6 +513,17 @@ impl ImmutableDataManager {
             }
             self.send_refresh(routing_node, data_name, pmid_nodes);
         }
+    }
+
+    fn should_replicate(account: &Account) -> bool {
+        let mut holder_count = 0;
+        for pmid_node in account {
+            match *pmid_node {
+                DataHolder::Pending(_) | DataHolder::Good(_) => holder_count += 1,
+                DataHolder::Failed(_) => (),
+            }
+        }
+        holder_count < MIN_REPLICANTS
     }
 
     fn send_refresh(&self, routing_node: &RoutingNode, data_name: &XorName, pmid_nodes: &Account) {
