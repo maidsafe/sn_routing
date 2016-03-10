@@ -124,13 +124,12 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Refund account
-                match self.accounts.get_mut(client_request.dst.name()) {
+                match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
                     Some(account) => {
                         account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                     }
                     None => return Ok(()),
                 }
-
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<ClientError>(external_error_indicator));
@@ -143,6 +142,7 @@ impl MaidManager {
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
         let _ = self.accounts.insert(name, account);
     }
+
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         // Only retain accounts for which we're still in the close group
@@ -284,6 +284,7 @@ mod test {
     use rand::random;
     use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
                   RequestMessage, ResponseContent, StructuredData};
+    use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -406,7 +407,6 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        // Try with valid ImmutableData before account is created
         let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
@@ -432,6 +432,217 @@ mod test {
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
             assert_eq!(*data, immutable_data);
             assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn invalid_put_for_previously_created_account() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 2);
+        assert_eq!(put_requests[1].src, env.our_authority);
+        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        let client_key = if let Authority::Client { client_key, .. } = env.client { client_key } else {
+            unreachable!()
+        };
+
+        let identifier = random::<XorName>();
+        let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Structured(sd), message_id),
+        };
+
+        if let Err(InternalError::Client(ClientError::AccountExists)) =
+               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.client);
+
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            if let ClientError::AccountExists =
+                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn handle_put_success() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 2);
+        assert_eq!(put_requests[1].src, env.our_authority);
+        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        // Valid case.
+        if let Ok(()) = env.maid_manager.handle_put_success(&env.routing, &message_id) {} else {
+            unreachable!()
+        }
+
+        let put_successes = env.routing.put_successes_given();
+
+        assert_eq!(put_successes.len(), 1);
+        assert_eq!(put_successes[0].src, env.our_authority);
+        assert_eq!(put_successes[0].dst, env.client);
+
+        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
+            if let Ok(serialised_request) = serialisation::serialise(&valid_request) {
+                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
+            }
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        // Invalid case.
+        let message_id = MessageId::new();
+
+        if let Err(InternalError::FailedToFindCachedRequest(id)) =
+                env.maid_manager.handle_put_success(&env.routing, &message_id) {
+            assert_eq!(message_id, id);
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn handle_put_failure() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+        assert!(put_failures.is_empty());
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 2);
+        assert_eq!(put_requests[1].src, env.our_authority);
+        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        // Valid case.
+        let error = ClientError::NoSuchData;
+        if let Ok(error_indicator) = serialisation::serialise(&error) {
+            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {}
+            else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.client);
+
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            if let Ok(error_indicator) = serialisation::serialise(&error) {
+                assert_eq!(*external_error_indicator, error_indicator);
+            } else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+
+        // Invalid case.
+        let message_id = MessageId::new();
+        if let Ok(error_indicator) = serialisation::serialise(&error) {
+            if let Err(InternalError::FailedToFindCachedRequest(id)) =
+                    env.maid_manager.handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {
+                assert_eq!(message_id, id);
+            } else {
+                unreachable!()
+            }
         } else {
             unreachable!()
         }
