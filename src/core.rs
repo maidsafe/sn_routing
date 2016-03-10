@@ -2073,18 +2073,22 @@ impl Core {
         let count = self.signed_message_filter.count(&signed_msg).saturating_sub(1);
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table.target_nodes(destination, hop, count);
+        let mut result = Ok(());
         for target in targets {
-            try!(self.crust_service.send(&target.peer_id, raw_bytes.clone()));
+            if let Err(err) = self.crust_service.send(&target.peer_id, raw_bytes.clone()) {
+                error!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                result = Err(From::from(err));
+            }
         }
 
         // If we need to handle this message, handle it.
         if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
             let hop_name = *self.name();
-            return self.handle_signed_message_for_node(&signed_msg, &hop_name, false);
+            try!(self.handle_signed_message_for_node(&signed_msg, &hop_name, false));
         }
 
-        Ok(())
+        result
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
