@@ -331,3 +331,9 @@ impl Debug for Client {
         write!(formatter, "Client({:?})", self.name())
     }
 }
+
+impl Default for Client {
+    fn default() -> Client {
+        Client::new()
+    }
+}

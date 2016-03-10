@@ -86,6 +86,7 @@ impl Account {
 }
 
 
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct MetadataForPutRequest {
     pub request: RequestMessage,
@@ -100,6 +101,7 @@ impl MetadataForPutRequest {
         }
     }
 }
+
 
 
 pub struct PmidManager {
@@ -133,7 +135,9 @@ impl PmidManager {
             .put_data(data.payload_size() as u64);
         let src = Authority::NodeManager(*request.dst.name());
         let dst = Authority::ManagedNode(*request.dst.name());
-        trace!("PM forwarding put request of data {} targeting PN {}", data.name(), dst.name());
+        trace!("PM forwarding put request of data {} targeting PN {}",
+               data.name(),
+               dst.name());
         let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
         let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()),
                                          MetadataForPutRequest::new(request.clone()));
@@ -250,6 +254,13 @@ impl PmidManager {
         }
     }
 }
+
+impl Default for PmidManager {
+    fn default() -> PmidManager {
+        PmidManager::new()
+    }
+}
+
 
 
 // #[cfg(all(test, feature = "use-mock-routing"))]

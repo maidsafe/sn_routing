@@ -707,6 +707,12 @@ impl ImmutableDataManager {
     }
 }
 
+impl Default for ImmutableDataManager {
+    fn default() -> ImmutableDataManager {
+        ImmutableDataManager::new()
+    }
+}
+
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
