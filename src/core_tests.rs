@@ -150,7 +150,10 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
 // routing table.
-fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize) -> HashSet<XorName> {
+fn node_names_in_bucket(nodes: &[TestNode],
+                        name: &XorName,
+                        bucket_index: usize)
+                        -> HashSet<XorName> {
     nodes.iter()
          .filter(|node| name.bucket_index(node.name()) == bucket_index)
          .map(|node| node.name().clone())
@@ -209,7 +212,12 @@ fn failing_connections_group_of_three() {
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(1), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
-    let _ = create_connected_nodes(&network, 5);
+    let mut nodes = create_connected_nodes(&network, 5);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 4 should replace it.
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+    drop_node(&mut nodes, 1); // Drop a tunnel client. The others should be notified.
+    verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
 #[test]
@@ -219,7 +227,8 @@ fn failing_connections_ring() {
     for i in 0..(len - 1) {
         network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
     }
-    let _ = create_connected_nodes(&network, len);
+    let nodes = create_connected_nodes(&network, len);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
 #[test]

@@ -270,7 +270,8 @@ impl Debug for StructuredData {
                 .map(|signature| ::utils::format_binary_array(&signature.0[..]))
                 .collect();
         write!(formatter,
-               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, \
+                version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
                self.type_tag,
                self.name(),
                ::utils::format_binary_array(&self.data[..]),

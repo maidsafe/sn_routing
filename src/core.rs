@@ -598,24 +598,28 @@ impl Core {
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
-                    if self.routing_table.find(|node| node.peer_id == peer_id).is_some() {
-                        return; // Connected in the meantime.
-                    }
-                    if let Some(&(name, ConnectState::Crust)) = self.connecting_peers
-                                                                    .get(&peer_id) {
-                        let _ = self.connecting_peers.insert(peer_id, (name, ConnectState::Tunnel));
-                        for node in self.routing_table.closest_nodes_to(&name, GROUP_SIZE, false) {
-                            warn!("{:?} Failed to connect to peer {:?}: {:?}. Asking {:?} to \
-                                   help as a tunnel.",
-                                  self,
-                                  peer_id,
-                                  err,
-                                  node.name());
-                            let tunnel_request = DirectMessage::TunnelRequest(peer_id);
-                            let _ = self.send_direct_message(&node.peer_id, tunnel_request);
+                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                        warn!("{:?} Failed to connect to peer {:?}: {:?}.",
+                              self,
+                              peer_id,
+                              err);
+                        if let Some(&(name, ConnectState::Crust)) = self.connecting_peers
+                                                                        .get(&peer_id) {
+                            self.find_tunnel_for_peer(peer_id, name);
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn find_tunnel_for_peer(&mut self, peer_id: PeerId, name: XorName) {
+        let _ = self.connecting_peers.insert(peer_id, (name, ConnectState::Tunnel));
+        for node in self.routing_table.closest_nodes_to(&name, GROUP_SIZE, false) {
+            warn!("Asking {:?} to serve as a tunnel.", node.name());
+            let tunnel_request = DirectMessage::TunnelRequest(peer_id);
+            if let Err(err) = self.send_direct_message(&node.peer_id, tunnel_request) {
+                error!("Failed to send tunnel request: {:?}.", err);
             }
         }
     }
@@ -1201,8 +1205,10 @@ impl Core {
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) {
         if !self.client_restriction {
+            self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
             self.dropped_client_connection(&peer_id);
+            self.dropped_tunnel_node(&peer_id);
         }
         self.dropped_bootstrap_connection(&peer_id);
     }
@@ -1687,7 +1693,9 @@ impl Core {
                             dst_id: PeerId)
                             -> Result<(), RoutingError> {
         warn!("Tunnel to {:?} via {:?} closed.", dst_id, peer_id);
-        self.dropped_routing_node_connection(&dst_id);
+        if self.tunnel_nodes.remove(&dst_id).is_some() {
+            self.dropped_routing_node_connection(&dst_id);
+        }
         Ok(())
     }
 
@@ -2368,6 +2376,44 @@ impl Core {
                 if self.client_restriction || self.routing_table.len() < GROUP_SIZE {
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
+            }
+        }
+    }
+
+    fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
+        let other_ids = self.tunnel_clients
+                            .iter()
+                            .filter(|&&(_, id)| id == *peer_id)
+                            .map(|&(id, _)| id)
+                            .collect_vec();
+        for other_id in other_ids {
+            self.tunnel_clients.remove(&(*peer_id, other_id));
+            self.tunnel_clients.remove(&(other_id, *peer_id));
+            let message = DirectMessage::TunnelClosed(*peer_id);
+            if let Err(err) = self.send_direct_message(&other_id, message) {
+                error!("Error sending TunnelClosed info to {:?}: {:?}.",
+                       other_id,
+                       err);
+            }
+        }
+        // TODO(afck): Handle new_tunnel_clients once message_filter supports remove.
+    }
+
+    fn dropped_tunnel_node(&mut self, peer_id: &PeerId) {
+        let dst_ids = self.tunnel_nodes
+                          .iter()
+                          .filter(|&(_, tunnel_id)| tunnel_id == peer_id)
+                          .map(|(&dst_id, _)| dst_id)
+                          .collect_vec();
+        for dst_id in dst_ids {
+            if let Some(&node) = self.routing_table.find(|node| node.peer_id == dst_id) {
+                let _ = self.tunnel_nodes.remove(&dst_id);
+                self.dropped_routing_node_connection(&dst_id);
+                warn!("Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
+                      dst_id,
+                      node.name());
+                let _ = self.node_id_cache.insert(*node.public_id.name(), node.public_id);
+                self.find_tunnel_for_peer(dst_id, *node.public_id.name());
             }
         }
     }
