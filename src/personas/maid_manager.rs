@@ -143,7 +143,6 @@ impl MaidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
@@ -258,6 +257,7 @@ impl MaidManager {
                                          .insert(message_id, request.clone()) {
             error!("Overwrote existing cached request: {:?}", prior_request);
         }
+
         Ok(())
     }
 
@@ -587,12 +587,16 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let client_key = if let Authority::Client { client_key, .. } = env.client { client_key } else {
+            unreachable!()
+        };
+        let identifier = random::<XorName>();
+        let sd = unwrap_result!(StructuredData::new(1, identifier, 0, vec![], vec![client_key], vec![], None));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+            content: RequestContent::Put(Data::Structured(sd.clone()), message_id),
         };
 
         if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
@@ -606,10 +610,10 @@ mod test {
 
         assert_eq!(put_requests.len(), 2);
         assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+        assert_eq!(put_requests[1].dst, Authority::NaeManager(sd.name()));
 
-        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
-            assert_eq!(*data, immutable_data);
+        if let RequestContent::Put(Data::Structured(ref data), ref id) = put_requests[1].content {
+            assert_eq!(*data, sd);
             assert_eq!(*id, message_id);
         } else {
             unreachable!()
@@ -658,30 +662,4 @@ mod test {
             unreachable!()
         }
     }
-
-    // #[test]
-    // fn handle_churn_and_account_transfer() {
-    //     let churn_node = random();
-    //     let (our_authority, routing, mut maid_manager, client, data) = env_setup();
-    //     assert_eq!(::utils::HANDLED,
-    //                maid_manager.handle_put(&our_authority,
-    //                                        &client,
-    //                                        &::routing::data::Data::Immutable(data.clone()),
-    //                                        &None));
-    //     maid_manager.handle_churn(&churn_node);
-    //     let refresh_requests = routing.refresh_requests_given();
-    //     assert_eq!(refresh_requests.len(), 1);
-    //     assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-    //     assert_eq!(refresh_requests[0].our_authority.name(),
-    //                client.name());
-
-    //     let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
-    //     if let Some(mm_account) = d.decode().next().and_then(|result| result.ok()) {
-    //         maid_manager.database.handle_account_transfer(mm_account);
-    //     }
-    //     maid_manager.handle_churn(&churn_node);
-    //     let refresh_requests = routing.refresh_requests_given();
-    //     assert_eq!(refresh_requests.len(), 2);
-    //     assert_eq!(refresh_requests[0], refresh_requests[1]);
-    // }
 }

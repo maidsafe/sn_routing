@@ -271,7 +271,10 @@ impl Vault {
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutFailure{ ref id, ref external_error_indicator, .. }) => {
+             &ResponseContent::PutFailure{
+                    ref id,
+                    request: RequestMessage { content: RequestContent::Put(Data::Structured(_), _), .. },
+                    ref external_error_indicator }) => {
                 self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
             }
             (&Authority::NodeManager(ref pmid_node),
