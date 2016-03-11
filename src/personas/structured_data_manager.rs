@@ -146,8 +146,6 @@ impl StructuredDataManager {
                             }
                         }
                     }
-                } else {
-                    return Ok(());
                 }
             }
         }
