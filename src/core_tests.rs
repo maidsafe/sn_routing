@@ -204,7 +204,6 @@ fn more_than_group_size_nodes() {
 }
 
 #[test]
-#[ignore] // TODO(afck): This also works _almost_ every time. Need to investigate.
 fn failing_connections_group_of_three() {
     let network = Network::new();
     network.block_connection(Endpoint(1), Endpoint(2));

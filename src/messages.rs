@@ -101,8 +101,6 @@ pub enum DirectMessage {
     NewNode(PublicId),
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),
-    /// Sent as a response to `TunnelRequest` if the node cannot act as a tunnel.
-    TunnelFail(PeerId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
     TunnelSuccess(PeerId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
@@ -427,7 +425,6 @@ impl Debug for DirectMessage {
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
             }
-            DirectMessage::TunnelFail(peer_id) => write!(formatter, "TunnelFail({:?})", peer_id),
             DirectMessage::TunnelSuccess(peer_id) => {
                 write!(formatter, "TunnelSuccess({:?})", peer_id)
             }
