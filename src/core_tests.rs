@@ -202,8 +202,7 @@ fn group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
-    // TODO(afck): With 2 * GROUP_SIZE, this _occasionally_ fails. Need to investigate.
-    test_nodes(GROUP_SIZE + 2);
+    test_nodes(GROUP_SIZE * 2);
 }
 
 #[test]
@@ -223,7 +222,7 @@ fn failing_connections_group_of_three() {
 #[test]
 fn failing_connections_ring() {
     let network = Network::new();
-    let len = GROUP_SIZE + 2;
+    let len = GROUP_SIZE * 2;
     for i in 0..(len - 1) {
         network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
     }

@@ -1533,7 +1533,12 @@ impl Core {
             let _ = self.event_sender.send(Event::Connected);
         }
 
-        if self.routing_table.len() >= GROUP_SIZE && !self.proxy_map.is_empty() {
+        if self.routing_table.len() == 1 {
+            let our_name = *self.name();
+            try!(self.request_close_group(our_name));
+        }
+
+        if self.routing_table.len() >= GROUP_SIZE - 1 && !self.proxy_map.is_empty() {
             trace!("{:?} Routing table reached group size. Dropping proxy.",
                    self);
             try!(self.drop_proxies());
@@ -1586,10 +1591,14 @@ impl Core {
             return Ok(());
         }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
-        let bucket_address = try!(self.routing_table.our_name().with_flipped_bit(bucket_index));
+        let bucket_address = try!(self.name().with_flipped_bit(bucket_index));
+        self.request_close_group(bucket_address)
+    }
+
+    fn request_close_group(&mut self, name: XorName) -> Result<(), RoutingError> {
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(*self.name()),
-            dst: Authority::NaeManager(bucket_address),
+            dst: Authority::NaeManager(name),
             content: RequestContent::GetCloseGroup,
         };
         self.send_request(request_msg)
@@ -1860,7 +1869,7 @@ impl Core {
 
     // Received by A; From Y -> A, or from any node close to one of the sender's bucket addresses.
     fn handle_get_close_group_response(&mut self,
-                                       close_group_ids: Vec<PublicId>,
+                                       mut close_group_ids: Vec<PublicId>,
                                        dst: Authority)
                                        -> Result<(), RoutingError> {
         if self.state == State::Client {
@@ -1869,6 +1878,7 @@ impl Core {
                 _ => return Err(RoutingError::BadAuthority),
             }
             self.start_listening();
+            close_group_ids.truncate(PARALLELISM);
         } else {
             match dst {
                 Authority::ManagedNode(..) | Authority::Client { .. } => (),
