@@ -262,98 +262,373 @@ impl Default for PmidManager {
 }
 
 
+#[cfg(all(test, feature = "use-mock-routing"))]
+mod test {
+    use super::*;
+    use maidsafe_utilities::serialisation;
+    use rand::{thread_rng, random};
+    use rand::distributions::{IndependentSample, Range};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
+                  ResponseContent};
+    use sodiumoxide::crypto::hash::sha512;
+    use std::sync::mpsc;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use types::Refresh;
+    use utils::generate_random_vec_u8;
+    use vault::RoutingNode;
+    use xor_name::XorName;
 
-// #[cfg(all(test, feature = "use-mock-routing"))]
-// mod test {
-// use super::*;
-// use lru_time_cache::LruCache;
-// use maidsafe_utilities::serialisation::serialise;
-// use rand::random;
-// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent,
-// RequestMessage, ResponseContent, ResponseMessage};
-// use std::cmp::{max, min, Ordering};
-// use std::collections::BTreeSet;
-// use time::{Duration, SteadyTime};
-// use types::Refreshable;
-// use utils::{median, merge, HANDLED, NOT_HANDLED};
-// use vault::Routing;
-// use xor_name::{XorName, closer_to_target};
-//
-// fn env_setup()
-// -> (::routing::Authority,
-// ::vault::Routing,
-// PmidManager,
-// ::routing::Authority,
-// ImmutableData)
-// {
-// let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-// let pmid_manager = PmidManager::new(routing.clone());
-// let value = generate_random_vec_u8(1024);
-// let data =
-// ImmutableData::new(ImmutableDataType::Normal, value);
-// (Authority::NodeManager(random()),
-// routing,
-// pmid_manager,
-// Authority::NaeManager(random()),
-// data)
-// }
-//
-// #[test]
-// fn handle_put() {
-// let (our_authority,
-// routing,
-// mut pmid_manager,
-// from_authority,
-// data) = env_setup();
-// assert_eq!(::utils::HANDLED,
-// pmid_manager.handle_put(&our_authority,
-// &from_authority,
-// &::routing::data::Data::Immutable(data.clone())));
-// let put_requests = routing.put_requests_given();
-// assert_eq!(put_requests.len(), 1);
-// assert_eq!(put_requests[0].our_authority, our_authority);
-// assert_eq!(put_requests[0].location,
-// Authority::ManagedNode(our_authority.name().clone()));
-// assert_eq!(put_requests[0].data,
-// ::routing::data::Data::Immutable(data));
-// }
-//
-// #[test]
-// fn handle_churn_and_account_transfer() {
-// let (our_authority,
-// routing,
-// mut pmid_manager,
-// from_authority,
-// data) = env_setup();
-// assert_eq!(::utils::HANDLED,
-// pmid_manager.handle_put(&our_authority,
-// &from_authority,
-// &::routing::data::Data::Immutable(data.clone())));
-// let close_group = vec![XorName::new([1u8; 64]),
-// XorName::new([2u8; 64]),
-// XorName::new([3u8; 64]),
-// XorName::new([4u8; 64]),
-// our_authority.name().clone(),
-// XorName::new([5u8; 64]),
-// XorName::new([6u8; 64]),
-// XorName::new([7u8; 64]),
-// XorName::new([8u8; 64])];
-// let churn_node = random();
-// pmid_manager.handle_churn(&close_group, &churn_node);
-// let refresh_requests = routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 1);
-// assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-// assert_eq!(refresh_requests[0].our_authority.name(),
-// our_authority.name());
-//
-// let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
-// if let Some(pm_account) = d.decode().next().and_then(|result| result.ok()) {
-// pmid_manager.database.handle_account_transfer(pm_account);
-// }
-// pmid_manager.handle_churn(&close_group, &churn_node);
-// let refresh_requests = routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 2);
-// assert_eq!(refresh_requests[0], refresh_requests[1]);
-// }
-// }
-//
+
+    struct Environment {
+        our_authority: Authority,
+        from_authority: Authority,
+        routing: RoutingNode,
+        pmid_manager: PmidManager,
+    }
+
+    fn environment_setup() -> Environment {
+        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
+        let mut our_name = random::<XorName>();
+        let mut from_name = random::<XorName>();
+
+        loop {
+            if let Ok(Some(_)) = routing.close_group(our_name) {
+                break;
+            } else {
+                our_name = random::<XorName>();
+            }
+        }
+
+        loop {
+            if let Ok(Some(_)) = routing.close_group(from_name) {
+                break;
+            } else {
+                from_name = random::<XorName>();
+            }
+        }
+
+        Environment {
+            our_authority: Authority::NodeManager(our_name),
+            from_authority: Authority::NaeManager(from_name),
+            routing: routing,
+            pmid_manager: PmidManager::default(),
+        }
+    }
+
+    fn get_close_data(env: &Environment) -> ImmutableData {
+        let mut data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+
+        loop {
+            if let Ok(Some(_)) = env.routing.close_group(data.name()) {
+                return data
+            } else {
+                data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+            }
+        }
+    }
+
+    fn get_close_node(env: &Environment) -> XorName {
+        let mut name = random::<XorName>();
+
+        loop {
+            if let Ok(Some(_)) = env.routing.close_group(name) {
+                return name
+            } else {
+                name = random::<XorName>();
+            }
+        }
+    }
+
+    fn lose_close_node(env: &Environment) -> XorName {
+        loop {
+            if let Ok(Some(close_group)) = env.routing.close_group(env.our_authority.name().clone()) {
+                let mut rng = thread_rng();
+                let range = Range::new(0, close_group.len());
+                let our_name = if let Ok(ref name) = env.routing.name() {
+                    name.clone()
+                } else {
+                    unreachable!()
+                };
+                loop {
+                    let index = range.ind_sample(&mut rng);
+                    if close_group[index] != our_name {
+                        return close_group[index]
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn handle_put() {
+        let mut env = environment_setup();
+
+        let immutable_data = get_close_data(&env);
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.from_authority.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.pmid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn check_timeout() {
+        let mut env = environment_setup();
+
+        let immutable_data = get_close_data(&env);
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.from_authority.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.pmid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        sleep(Duration::from_millis(60000));
+
+        env.pmid_manager.check_timeout(&env.routing);
+
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.from_authority);
+
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            assert_eq!(*external_error_indicator, Vec::<u8>::new());
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn handle_put_success() {
+        let mut env = environment_setup();
+
+        let immutable_data = get_close_data(&env);
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.from_authority.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.pmid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        // Valid case.
+        let pmid_node = env.our_authority.name().clone();
+        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
+            unreachable!()
+        }
+
+        let put_successes = env.routing.put_successes_given();
+
+        assert_eq!(put_successes.len(), 1);
+        assert_eq!(put_successes[0].src, env.our_authority);
+        assert_eq!(put_successes[0].dst, env.from_authority);
+
+        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
+            if let Ok(serialised_request) = serialisation::serialise(&valid_request) {
+                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
+            }
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        // Invalid case.
+        let pmid_node = get_close_node(&env);
+        let message_id = MessageId::new();
+
+        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
+            unreachable!()
+        }
+
+        let put_successes = env.routing.put_successes_given();
+        // unchanged...
+        assert_eq!(put_successes.len(), 1);
+    }
+
+    #[test]
+    fn handle_put_failure() {
+        let mut env = environment_setup();
+
+        let immutable_data = get_close_data(&env);
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.from_authority.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.pmid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        if let Ok(()) = env.pmid_manager.handle_put_failure(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.from_authority);
+
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            assert_eq!(*external_error_indicator, Vec::<u8>::new());
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn churn_refresh() {
+        let mut env = environment_setup();
+
+        let immutable_data = get_close_data(&env);
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.from_authority.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        if let Ok(()) = env.pmid_manager.handle_put(&env.routing, &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_requests = env.routing.put_requests_given();
+
+        assert_eq!(put_requests.len(), 1);
+        assert_eq!(put_requests[0].src, env.our_authority);
+        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+
+        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
+            assert_eq!(*data, immutable_data);
+            assert_eq!(*id, message_id);
+        } else {
+            unreachable!()
+        }
+
+        env.routing.node_added_event(get_close_node(&env));
+        env.pmid_manager.handle_churn(&env.routing);
+
+        let mut refresh_count = 0;
+        let refresh_requests = env.routing.refresh_requests_given();
+
+        if let Ok(Some(_)) = env.routing.close_group(env.our_authority.name().clone()) {
+            assert_eq!(refresh_requests.len(), 1);
+            assert_eq!(refresh_requests[0].src, env.our_authority);
+            assert_eq!(refresh_requests[0].dst, env.our_authority);
+
+            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[0].content {
+               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                    let refresh: Refresh = refresh;
+                    assert_eq!(refresh.name, env.our_authority.name().clone());
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+            refresh_count += 1;
+        } else {
+            assert_eq!(refresh_requests.len(), 0);
+        }
+
+        env.routing.node_lost_event(lose_close_node(&env));
+        env.pmid_manager.handle_churn(&env.routing);
+
+        let refresh_requests = env.routing.refresh_requests_given();
+
+        if let Ok(Some(_)) = env.routing.close_group(env.our_authority.name().clone()) {
+            assert_eq!(refresh_requests.len(), refresh_count + 1);
+            assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
+            assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
+
+            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
+               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                    let refresh: Refresh = refresh;
+                    assert_eq!(refresh.name, env.our_authority.name().clone());
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+            // refresh_count += 1;
+        } else {
+            assert_eq!(refresh_requests.len(), refresh_count);
+        }
+    }
+}
