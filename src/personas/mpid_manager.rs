@@ -1306,7 +1306,7 @@ mod test {
             };
             assert_eq!(*id, message_id);
             assert_eq!(*request, get_request);
-            assert_eq!(*external_error_indicator, vec![]);
+            assert_eq!(*external_error_indicator, Vec::<u8>::new());
         } else {
             unreachable!()
         }
@@ -1398,7 +1398,7 @@ mod test {
             };
             assert_eq!(*id, message_id);
             assert_eq!(*request, delete_request);
-            assert_eq!(*external_error_indicator, vec![]);
+            assert_eq!(*external_error_indicator, Vec::<u8>::new());
         } else {
             unreachable!()
         }
