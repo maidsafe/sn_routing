@@ -264,6 +264,12 @@ impl StructuredDataManager {
     }
 }
 
+impl Default for StructuredDataManager {
+    fn default() -> StructuredDataManager {
+        StructuredDataManager::new()
+    }
+}
+
 
 
 // #[cfg(all(test, feature = "use-mock-routing"))]

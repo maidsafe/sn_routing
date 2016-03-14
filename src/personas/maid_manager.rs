@@ -238,7 +238,9 @@ impl MaidManager {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
         if let Err(error) = result {
-            trace!("MM responds put_failure of data {}, due to error {:?}", data.name(), error);
+            trace!("MM responds put_failure of data {}, due to error {:?}",
+                   data.name(),
+                   error);
             try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
             return Err(InternalError::Client(error));
         }
@@ -276,6 +278,13 @@ impl MaidManager {
         Ok(())
     }
 }
+
+impl Default for MaidManager {
+    fn default() -> MaidManager {
+        MaidManager::new()
+    }
+}
+
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]

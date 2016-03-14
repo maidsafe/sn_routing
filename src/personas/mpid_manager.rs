@@ -680,6 +680,12 @@ impl MpidManager {
     }
 }
 
+impl Default for MpidManager {
+    fn default() -> MpidManager {
+        MpidManager::new()
+    }
+}
+
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
