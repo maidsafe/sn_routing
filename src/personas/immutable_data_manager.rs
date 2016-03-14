@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
@@ -28,7 +27,7 @@ use sodiumoxide::crypto::hash::sha512;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
-use xor_name::{self, XorName};
+use xor_name::XorName;
 
 pub const REPLICANTS: usize = 4;
 pub const MIN_REPLICANTS: usize = 4;
@@ -401,8 +400,6 @@ impl ImmutableDataManager {
                         target_pmid_nodes.retain(|elt| {
                             !pmid_nodes.iter().any(|exclude| elt == exclude.name())
                         });
-                        // TODO - confirm if sorting is required
-                        Self::sort_from_target(&mut target_pmid_nodes, &data_name);
                         if let Some(new_holder) = target_pmid_nodes.iter().next() {
                             let src = Authority::NaeManager(immutable_data.name());
                             let dst = Authority::NodeManager(*new_holder);
@@ -519,9 +516,7 @@ impl ImmutableDataManager {
                 trace!("No longer a DM for {}", data_name);
                 None
             }
-            Ok(Some(mut close_group)) => {
-                // TODO - confirm if sorting is required
-                Self::sort_from_target(&mut close_group, data_name);
+            Ok(Some(close_group)) => {
                 Some(close_group)
             }
             Err(error) => {
@@ -771,8 +766,6 @@ impl ImmutableDataManager {
                 target_pmid_nodes.retain(|elt| {
                     !nodes_to_exclude.iter().any(|exclude| elt == *exclude)
                 });
-                // TODO - confirm if sorting is required
-                Self::sort_from_target(&mut target_pmid_nodes, data_name);
                 target_pmid_nodes.truncate(REPLICANTS);
                 Ok(target_pmid_nodes.into_iter()
                                     .map(DataHolder::Pending)
@@ -780,16 +773,6 @@ impl ImmutableDataManager {
             }
             None => Err(InternalError::NotInCloseGroup),
         }
-    }
-
-    fn sort_from_target(names: &mut Vec<XorName>, target: &XorName) {
-        names.sort_by(|a, b| {
-            if xor_name::closer_to_target(&a, &b, target) {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        });
     }
 }
 
