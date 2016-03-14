@@ -93,7 +93,7 @@ pub struct Account {
 }
 
 impl Default for Account {
-    // FIXME: Account Creation process required
+    // TODO: Account Creation process required
     //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> Account {
         Account {
@@ -1387,7 +1387,7 @@ mod test {
                    Authority::ClientManager(receiver_name.clone()));
         assert_eq!(delete_failures[0].dst, receiver);
         if let ResponseContent::DeleteFailure{ ref id, ref request, ref external_error_indicator } =
-               delete_failures[0].content {
+                       delete_failures[0].content {
             let mpid_header_wrapper = MpidMessageWrapper::DeleteHeader(mpid_header_name);
             let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));
             let plain_data = PlainData::new(mpid_header_name, value);
