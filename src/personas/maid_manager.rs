@@ -298,9 +298,11 @@ mod test {
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
+    use utils;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
+    use types::Refresh;
 
     #[test]
     fn account_ok() {
@@ -341,16 +343,27 @@ mod test {
     }
 
     fn environment_setup() -> Environment {
+        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
         let from = random::<XorName>();
-        let keys = sign::gen_keypair();
+        let client;
+
+        loop {
+            let keys = sign::gen_keypair();
+            let name = XorName(sha512::hash(&keys.0[..]).0);
+            if let Ok(Some(_)) = routing.close_group(name) {
+                client = Authority::Client {
+                    client_key: keys.0,
+                    peer_id: random(),
+                    proxy_node_name: from,
+                };
+                break;
+            }
+        }
+
         Environment {
-            our_authority: Authority::ClientManager(from),
-            client: Authority::Client {
-                client_key: keys.0,
-                peer_id: random(),
-                proxy_node_name: from,
-            },
-            routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
+            our_authority: Authority::ClientManager(utils::client_name(&client)),
+            client: client,
+            routing: routing,
             maid_manager: MaidManager::new(),
         }
     }
@@ -371,6 +384,19 @@ mod test {
             }
         };
     }
+
+    fn get_close_node(env: &Environment) -> XorName {
+        let mut name = random::<XorName>();
+
+        loop {
+            if let Ok(Some(_)) = env.routing.close_group(name) {
+                return name
+            } else {
+                name = random::<XorName>();
+            }
+        }
+    }
+
 
     #[test]
     fn handle_put_without_account() {
@@ -660,6 +686,63 @@ mod test {
             }
         } else {
             unreachable!()
+        }
+    }
+
+    #[test]
+    fn churn_refresh() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        env.routing.node_added_event(get_close_node(&env));
+        env.maid_manager.handle_churn(&env.routing);
+
+        let mut refresh_count = 0;
+        let refresh_requests = env.routing.refresh_requests_given();
+
+        if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
+            assert_eq!(refresh_requests.len(), 1);
+            assert_eq!(refresh_requests[0].src, env.our_authority);
+            assert_eq!(refresh_requests[0].dst, env.our_authority);
+
+            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[0].content {
+               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                    let refresh: Refresh = refresh;
+                    assert_eq!(refresh.name, utils::client_name(&env.client));
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+            refresh_count += 1;
+        } else {
+            assert_eq!(refresh_requests.len(), 0);
+        }
+
+        env.routing.node_lost_event(get_close_node(&env));
+        env.maid_manager.handle_churn(&env.routing);
+
+        let refresh_requests = env.routing.refresh_requests_given();
+
+        if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
+            assert_eq!(refresh_requests.len(), refresh_count + 1);
+            assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
+            assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
+
+            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
+               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                    let refresh: Refresh = refresh;
+                    assert_eq!(refresh.name, utils::client_name(&env.client));
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+            // refresh_count += 1;
+        } else {
+            assert_eq!(refresh_requests.len(), refresh_count);
         }
     }
 }
