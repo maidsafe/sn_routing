@@ -34,12 +34,13 @@ use message_filter::MessageFilter;
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::io;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
 use std::thread;
 use time::{Duration, PreciseTime};
+use tunnels::Tunnels;
 use xor_name;
 use xor_name::XorName;
 
@@ -64,9 +65,6 @@ const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
 /// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
 /// the same time.
 const MAX_JOINING_NODES: usize = 1;
-
-/// The maximum number of pairs of nodes that this node will act as a tunnel for.
-const MAX_TUNNEL_CLIENT_PAIRS: usize = 3;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
@@ -255,14 +253,7 @@ pub struct Core {
 
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
-    /// Maps the peer we failed to directly connect to to the one that acts as a tunnel.
-    tunnel_nodes: HashMap<PeerId, PeerId>,
-    /// Contains peers that are looking for a tunnel, with the lower ID first. Only once it sends
-    /// a message to the latter via us, the pair is moved to `tunnel_clients`.
-    new_tunnel_clients: MessageFilter<(PeerId, PeerId)>,
-    /// Contains all pairs of names we act as a tunnel node for. This is symmetric: If it has an
-    /// entry `(x, y)`, then also `(y, x)`.
-    tunnel_clients: HashSet<(PeerId, PeerId)>,
+    tunnels: Tunnels,
     debug_stats: DebugStats,
 }
 
@@ -329,9 +320,7 @@ impl Core {
             our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
-            tunnel_nodes: HashMap::new(),
-            new_tunnel_clients: MessageFilter::with_expiry_duration(Duration::minutes(1)),
-            tunnel_clients: HashSet::new(),
+            tunnels: Default::default(),
             debug_stats: DebugStats::new(),
         };
 
@@ -401,10 +390,10 @@ impl Core {
                        self.debug_stats.cur_client_num,
                        self.debug_stats.cumulative_client_num);
             }
-            if self.debug_stats.tunnel_connections != self.tunnel_nodes.len() ||
-               self.debug_stats.tunnel_client_pairs != self.tunnel_clients.len() / 2 {
-                self.debug_stats.tunnel_connections = self.tunnel_nodes.len();
-                self.debug_stats.tunnel_client_pairs = self.tunnel_clients.len() / 2;
+            if self.debug_stats.tunnel_connections != self.tunnels.tunnel_count() ||
+               self.debug_stats.tunnel_client_pairs != self.tunnels.client_count() {
+                self.debug_stats.tunnel_connections = self.tunnels.tunnel_count();
+                self.debug_stats.tunnel_client_pairs = self.tunnels.client_count();
                 trace!("{:?} - Indirect connections: {}, tunneling for: {}",
                        self,
                        self.debug_stats.tunnel_connections,
@@ -693,14 +682,13 @@ impl Core {
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
             Ok(Message::TunnelDirect { content, src, dst }) => {
-                if dst == self.crust_service.id() && self.tunnel_nodes.get(&src) == Some(&peer_id) {
+                if dst == self.crust_service.id() &&
+                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
                     self.handle_direct_message(content, src)
-                } else if self.tunnel_clients.contains(&(src, dst)) {
+                } else if self.tunnels.has_clients(src, dst) {
                     try!(self.crust_service.send(&dst, bytes));
                     Ok(())
-                } else if self.new_tunnel_clients.contains(&(src, dst)) {
-                    self.tunnel_clients.insert((src, dst));
-                    self.tunnel_clients.insert((dst, src));
+                } else if self.tunnels.accept_clients(src, dst) {
                     try!(self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src)));
                     try!(self.crust_service.send(&dst, bytes));
                     Ok(())
@@ -709,9 +697,10 @@ impl Core {
                 }
             }
             Ok(Message::TunnelHop { content, src, dst }) => {
-                if dst == self.crust_service.id() && self.tunnel_nodes.get(&src) == Some(&peer_id) {
+                if dst == self.crust_service.id() &&
+                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
                     self.handle_hop_message(&content, src)
-                } else if self.tunnel_clients.contains(&(src, dst)) {
+                } else if self.tunnels.has_clients(src, dst) {
                     try!(self.crust_service.send(&dst, bytes));
                     Ok(())
                 } else {
@@ -1259,7 +1248,7 @@ impl Core {
                            dst_id: &PeerId,
                            direct_message: DirectMessage)
                            -> Result<(), RoutingError> {
-        let (message, peer_id) = if let Some(tunnel_id) = self.tunnel_nodes.get(dst_id) {
+        let (message, peer_id) = if let Some(tunnel_id) = self.tunnels.tunnel_for(dst_id) {
             let message = Message::TunnelDirect {
                 content: direct_message,
                 src: self.crust_service.id(),
@@ -1647,20 +1636,12 @@ impl Core {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if self.tunnel_clients.len() < 2 * MAX_TUNNEL_CLIENT_PAIRS &&
-           self.routing_table.find(|node| node.peer_id == peer_id).is_some() &&
-           self.routing_table.find(|node| node.peer_id == dst_id).is_some() &&
-           !self.tunnel_nodes.contains_key(&peer_id) &&
-           !self.tunnel_nodes.contains_key(&dst_id) {
-            trace!("Accepted tunnel request from {:?} for {:?}.",
-                   peer_id,
-                   dst_id);
-            let (id0, id1) = if peer_id < dst_id {
-                (peer_id, dst_id)
-            } else {
-                (dst_id, peer_id)
-            };
-            if self.new_tunnel_clients.insert(&(id0, id1)) == 0 {
+        if self.routing_table.find(|node| node.peer_id == peer_id).is_some() &&
+           self.routing_table.find(|node| node.peer_id == dst_id).is_some() {
+            if let Some((id0, id1)) = self.tunnels.consider_clients(peer_id, dst_id) {
+                trace!("Accepted tunnel request from {:?} for {:?}.",
+                       peer_id,
+                       dst_id);
                 return self.send_direct_message(&id0, DirectMessage::TunnelSuccess(id1));
             }
         } else {
@@ -1677,14 +1658,12 @@ impl Core {
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
         if let Some((name, _)) = self.connecting_peers.remove(&dst_id) {
-            trace!("Adding {:?} as a tunnel node for {:?}.", peer_id, name);
-            if self.tunnel_nodes.insert(dst_id, peer_id).is_some() {
-                warn!("Tunnel node was already in the map!");
+            if self.tunnels.add(dst_id, peer_id) {
+                trace!("Adding {:?} as a tunnel node for {:?}.", peer_id, name);
+                return self.node_identify(dst_id);
             }
-            self.node_identify(dst_id)
-        } else {
-            Ok(())
         }
+        Ok(())
     }
 
     /// Handle a `TunnelClosed` message from `peer_id`: `dst_id` disconnected.
@@ -1692,8 +1671,8 @@ impl Core {
                             peer_id: PeerId,
                             dst_id: PeerId)
                             -> Result<(), RoutingError> {
-        warn!("Tunnel to {:?} via {:?} closed.", dst_id, peer_id);
-        if self.tunnel_nodes.remove(&dst_id).is_some() {
+        if self.tunnels.remove(dst_id, peer_id) {
+            warn!("Tunnel to {:?} via {:?} closed.", dst_id, peer_id);
             self.dropped_routing_node_connection(&dst_id);
         }
         Ok(())
@@ -1705,8 +1684,7 @@ impl Core {
                                 dst_id: PeerId)
                                 -> Result<(), RoutingError> {
         warn!("Closing tunnel connecting {:?} and {:?}.", dst_id, peer_id);
-        if self.tunnel_clients.remove(&(peer_id, dst_id)) &&
-           self.tunnel_clients.remove(&(dst_id, peer_id)) {
+        if self.tunnels.remove(dst_id, peer_id) {
             self.send_direct_message(&dst_id, DirectMessage::TunnelClosed(peer_id))
         } else {
             Ok(())
@@ -1715,7 +1693,7 @@ impl Core {
 
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node.
     fn disconnect_node(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
-        if let Some(tunnel_id) = self.tunnel_nodes.remove(peer_id) {
+        if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
             self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id))
         } else {
             let _ = self.crust_service.disconnect(peer_id);
@@ -2303,7 +2281,7 @@ impl Core {
         let targets = self.routing_table.target_nodes(destination, hop, count);
         let mut result = Ok(());
         for target in targets {
-            if let Some(tunnel_id) = self.tunnel_nodes.get(&target.peer_id) {
+            if let Some(tunnel_id) = self.tunnels.tunnel_for(&target.peer_id) {
                 let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
                                                           self.crust_service.id(),
                                                           target.peer_id));
@@ -2381,14 +2359,7 @@ impl Core {
     }
 
     fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
-        let other_ids = self.tunnel_clients
-                            .iter()
-                            .filter(|&&(_, id)| id == *peer_id)
-                            .map(|&(id, _)| id)
-                            .collect_vec();
-        for other_id in other_ids {
-            self.tunnel_clients.remove(&(*peer_id, other_id));
-            self.tunnel_clients.remove(&(other_id, *peer_id));
+        for other_id in self.tunnels.drop_client(peer_id) {
             let message = DirectMessage::TunnelClosed(*peer_id);
             if let Err(err) = self.send_direct_message(&other_id, message) {
                 error!("Error sending TunnelClosed info to {:?}: {:?}.",
@@ -2396,18 +2367,11 @@ impl Core {
                        err);
             }
         }
-        // TODO(afck): Handle new_tunnel_clients once message_filter supports remove.
     }
 
     fn dropped_tunnel_node(&mut self, peer_id: &PeerId) {
-        let dst_ids = self.tunnel_nodes
-                          .iter()
-                          .filter(|&(_, tunnel_id)| tunnel_id == peer_id)
-                          .map(|(&dst_id, _)| dst_id)
-                          .collect_vec();
-        for dst_id in dst_ids {
+        for dst_id in self.tunnels.remove_tunnel(peer_id) {
             if let Some(&node) = self.routing_table.find(|node| node.peer_id == dst_id) {
-                let _ = self.tunnel_nodes.remove(&dst_id);
                 self.dropped_routing_node_connection(&dst_id);
                 warn!("Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                       dst_id,

@@ -223,7 +223,7 @@ fn failing_connections_group_of_three() {
 #[test]
 fn failing_connections_ring() {
     let network = Network::new();
-    let len = 2 * GROUP_SIZE;
+    let len = GROUP_SIZE + 2;
     for i in 0..(len - 1) {
         network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
     }
