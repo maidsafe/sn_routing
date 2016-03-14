@@ -126,7 +126,13 @@ fn post(fixture: &mut Fixture) {
                                                              Some(fixture.client2
                                                                          .signing_private_key())));
     let mut data = Data::Structured(unauthorised_sd.clone());
-    if let None = fixture.client2.post(data) {} else {
+    if let ResponseMessage {
+           content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } =
+           unwrap_option!(fixture.client2.post(data), "") {
+        // structured_data_manager hasn't implemented a proper external_error_indicator in
+        // PostFailure
+        assert_eq!(0, external_error_indicator.len())
+    } else {
         panic!("Received unexpected response")
     }
 
