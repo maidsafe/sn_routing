@@ -44,7 +44,6 @@ extern crate kademlia_routing_table;
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate mpid_messaging;
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
@@ -88,8 +87,6 @@ fn main() {
                      .join()
                      .is_err();
         failed = failed || is_err;
-        is_err = thread!("Messaging test", messaging_test).join().is_err();
-        failed = failed || is_err;
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
         let _joiner = simulate_churn(processes,
@@ -104,11 +101,6 @@ fn main() {
         failed = failed || is_err;
         is_err = thread!("StructuredData churn test",
                          move || structured_data_churn_test(request_count))
-                     .join()
-                     .is_err();
-        failed = failed || is_err;
-        is_err = thread!("Messaging churn test",
-                         move || messaging_churn_test(request_count))
                      .join()
                      .is_err();
         failed = failed || is_err;
