@@ -398,13 +398,14 @@ mod test {
         }
     }
 
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn lose_close_node(env: &Environment) -> XorName {
         loop {
-            if let Ok(Some(close_group)) = env.routing.close_group(env.our_authority.name().clone()) {
+            if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
                 let mut rng = thread_rng();
                 let range = Range::new(0, close_group.len());
                 let our_name = if let Ok(ref name) = env.routing.name() {
-                    name.clone()
+                    *name
                 } else {
                     unreachable!()
                 };
@@ -420,6 +421,7 @@ mod test {
 
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_without_account() {
         let mut env = environment_setup();
 
@@ -461,6 +463,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_with_account() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -496,6 +499,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn invalid_put_for_previously_created_account() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -566,6 +570,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_success() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -630,6 +635,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_failure() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -711,6 +717,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn churn_refresh() {
         let mut env = environment_setup();
         create_account(&mut env);
