@@ -292,17 +292,18 @@ mod test {
     use super::*;
     use error::{ClientError, InternalError};
     use maidsafe_utilities::serialisation;
-    use rand::random;
+    use rand::{thread_rng, random};
+    use rand::distributions::{IndependentSample, Range};
     use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
                   RequestMessage, ResponseContent, StructuredData};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
+    use types::Refresh;
     use utils;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
-    use types::Refresh;
 
     #[test]
     fn account_ok() {
@@ -397,8 +398,30 @@ mod test {
         }
     }
 
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
+    fn lose_close_node(env: &Environment) -> XorName {
+        loop {
+            if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
+                let mut rng = thread_rng();
+                let range = Range::new(0, close_group.len());
+                let our_name = if let Ok(ref name) = env.routing.name() {
+                    *name
+                } else {
+                    unreachable!()
+                };
+                loop {
+                    let index = range.ind_sample(&mut rng);
+                    if close_group[index] != our_name {
+                        return close_group[index]
+                    }
+                }
+            }
+        }
+    }
+
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_without_account() {
         let mut env = environment_setup();
 
@@ -440,6 +463,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_with_account() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -475,6 +499,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn invalid_put_for_previously_created_account() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -545,6 +570,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_success() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -609,6 +635,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_failure() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -690,6 +717,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn churn_refresh() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -720,7 +748,7 @@ mod test {
             assert_eq!(refresh_requests.len(), 0);
         }
 
-        env.routing.node_lost_event(get_close_node(&env));
+        env.routing.node_lost_event(lose_close_node(&env));
         env.maid_manager.handle_churn(&env.routing);
 
         let refresh_requests = env.routing.refresh_requests_given();

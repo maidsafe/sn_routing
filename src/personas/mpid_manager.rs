@@ -852,6 +852,7 @@ mod test {
 
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn put_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -922,6 +923,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn put_message_and_header_twice() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1021,6 +1023,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn get_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1087,6 +1090,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn outbox_has() {
         let mut env = environment_setup();
         let src = env.client.clone();
@@ -1162,6 +1166,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn get_outbox_headers() {
         let mut env = environment_setup();
         let src = env.client.clone();
@@ -1236,6 +1241,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn delete_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1313,6 +1319,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn delete_header() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1405,6 +1412,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn post_put_message() {
         let mut env = environment_setup();
         // register client sender online...
