@@ -15,18 +15,23 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-use data::{Data, DataRequest};
-use id::{FullId, PublicId};
-use types::MessageId;
-use xor_name::XorName;
-use error::RoutingError;
-use sodiumoxide::crypto::{box_, sign};
-use sodiumoxide::crypto::hash::sha512;
-use utils;
-use authority::Authority;
+#[cfg(not(feature = "use-mock-crust"))]
+use crust::PeerId;
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::crust::PeerId;
 use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
+use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::hash::sha512;
+use std::fmt::{self, Debug, Formatter};
+use xor_name::XorName;
+
+use authority::Authority;
+use data::{Data, DataRequest};
+use error::RoutingError;
+use id::{FullId, PublicId};
+use types::MessageId;
+use utils;
 
 /// Wrapper of all messages.
 ///
@@ -37,6 +42,24 @@ pub enum Message {
     Direct(DirectMessage),
     /// A message sent across the network (in transit)
     Hop(HopMessage),
+    /// A direct message sent via a tunnel because the nodes could not connect directly
+    TunnelDirect {
+        /// The wrapped message
+        content: DirectMessage,
+        /// The sender
+        src: PeerId,
+        /// The receiver
+        dst: PeerId,
+    },
+    /// A hop message sent via a tunnel because the nodes could not connect directly
+    TunnelHop {
+        /// The wrapped message
+        content: HopMessage,
+        /// The sender
+        src: PeerId,
+        /// The receiver
+        dst: PeerId,
+    },
 }
 
 /// Messages sent via a direct connection.
@@ -76,6 +99,14 @@ pub enum DirectMessage {
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
+    /// Sent from a node that needs a tunnel to be able to connect to the given peer.
+    TunnelRequest(PeerId),
+    /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
+    TunnelSuccess(PeerId),
+    /// Sent from a tunnel node to indicate that the given peer has disconnected.
+    TunnelClosed(PeerId),
+    /// Sent to a tunnel node to indicate the tunnel is not needed anymore.
+    TunnelDisconnect(PeerId),
 }
 
 /// And individual hop message that represents a part of the route of a message in transit.
@@ -391,6 +422,18 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
+            DirectMessage::TunnelRequest(peer_id) => {
+                write!(formatter, "TunnelRequest({:?})", peer_id)
+            }
+            DirectMessage::TunnelSuccess(peer_id) => {
+                write!(formatter, "TunnelSuccess({:?})", peer_id)
+            }
+            DirectMessage::TunnelClosed(peer_id) => {
+                write!(formatter, "TunnelClosed({:?})", peer_id)
+            }
+            DirectMessage::TunnelDisconnect(peer_id) => {
+                write!(formatter, "TunnelDisconnect({:?})", peer_id)
+            }
         }
     }
 }

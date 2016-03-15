@@ -40,9 +40,8 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (_, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None)
-        });
+        let (_, core) = mock_crust::make_current(&handle,
+                                                 || Core::new(event_tx, client_restriction, None));
 
         TestNode {
             handle: handle,
@@ -94,14 +93,14 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, false, None, None));
+    nodes.push(TestNode::new(network, false, None, Some(Endpoint(0))));
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
-    for _ in 1..size {
-        nodes.push(TestNode::new(network, false, Some(config.clone()), None));
+    for i in 1..size {
+        nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
         poll_all(&mut nodes);
     }
 
@@ -151,7 +150,10 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
 // routing table.
-fn node_names_in_bucket(nodes: &[TestNode], name: &XorName, bucket_index: usize) -> HashSet<XorName> {
+fn node_names_in_bucket(nodes: &[TestNode],
+                        name: &XorName,
+                        bucket_index: usize)
+                        -> HashSet<XorName> {
     nodes.iter()
          .filter(|node| name.bucket_index(node.name()) == bucket_index)
          .map(|node| node.name().clone())
@@ -200,8 +202,32 @@ fn group_size_nodes() {
 
 #[test]
 fn more_than_group_size_nodes() {
-    // TODO(afck): With 2 * GROUP_SIZE, this _occasionally_ fails. Need to investigate.
-    test_nodes(GROUP_SIZE + 2);
+    test_nodes(GROUP_SIZE * 2);
+}
+
+#[test]
+fn failing_connections_group_of_three() {
+    let network = Network::new();
+    network.block_connection(Endpoint(1), Endpoint(2));
+    network.block_connection(Endpoint(1), Endpoint(3));
+    network.block_connection(Endpoint(2), Endpoint(3));
+    let mut nodes = create_connected_nodes(&network, 5);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+    drop_node(&mut nodes, 0); // Drop the tunnel node. Node 4 should replace it.
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+    drop_node(&mut nodes, 1); // Drop a tunnel client. The others should be notified.
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn failing_connections_ring() {
+    let network = Network::new();
+    let len = GROUP_SIZE * 2;
+    for i in 0..(len - 1) {
+        network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
+    }
+    let nodes = create_connected_nodes(&network, len);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
 #[test]
