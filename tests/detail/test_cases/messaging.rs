@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
+use std::time::Duration;
 use routing::{ResponseContent, ResponseMessage};
 
 pub fn test() {
@@ -66,7 +67,7 @@ pub fn test() {
     test_group.start_case("Receiver delete mpid_header from inbox");
     receiver.delete_mpid_header(msg_name);
     receiver.register_online();
-    optional_message = receiver.expect_timeout();
+    optional_message = receiver.expect_timeout(Duration::from_secs(10));
     assert_eq!(None, optional_message);
 
     test_group.start_case("Receiver delete message from sender's outbox");

@@ -182,8 +182,8 @@ impl Client {
     }
 
     /// Expect nothing.
-    pub fn expect_timeout(&self) -> Option<MpidMessage> {
-        match self.wait_for_event() {
+    pub fn expect_timeout(&self, timeout: Duration) -> Option<MpidMessage> {
+        match self.timed_wait_for_event(timeout) {
             Some(_) => panic!("Unexpected event."),
             None => None,
         }
@@ -303,7 +303,10 @@ impl Client {
     }
 
     fn wait_for_event(&self) -> Option<Event> {
-        let timeout = Duration::from_secs(10);
+        self.receiver.recv().ok()
+    }
+
+    fn timed_wait_for_event(&self, timeout: Duration) -> Option<Event> {
         let interval = Duration::from_millis(100);
         let mut elapsed = Duration::new(0, 0);
 
