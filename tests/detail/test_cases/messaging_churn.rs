@@ -46,7 +46,7 @@ pub fn test(request_count: u32) {
         test_group.start_case(&format!("Sender query own outbox {}", i));
         let sender_mpid_headers = sender.query_outbox();
         assert_eq!(1, sender_mpid_headers.len());
-        assert_eq!(message_sent.header().clone(), sender_mpid_headers[0]);
+        assert_eq!(message_sent.header().clone(), *unwrap_option!(sender_mpid_headers.first(), ""));
     }
 
     test_group.release();

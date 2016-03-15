@@ -83,7 +83,7 @@ fn simulate_churn_impl(processes: &mut Vec<VaultProcess>,
     if kill_node {
         // Never kill the bootstrap (0th) node
         let kill_at_index = Range::new(1, processes.len()).ind_sample(rng);
-        info!("Killing {:?}", processes[kill_at_index]);
+        info!("Killing {:?}", unwrap_option!(processes.get(kill_at_index), ""));
         let _ = processes.remove(kill_at_index);
     } else {
         *vault_index += 1;

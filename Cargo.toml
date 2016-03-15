@@ -11,7 +11,7 @@ version = "0.4.0"
 
 [dependencies]
 chunk_store = "~0.3.0"
-clippy = {version = "~0.0.48", optional = true}
+clippy = {version = "~0.0.51", optional = true}
 config_file_handler = "~0.2.0"
 ctrlc = "~1.1.1"
 docopt = "~0.6.78"

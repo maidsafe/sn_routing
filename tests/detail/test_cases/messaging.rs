@@ -54,7 +54,7 @@ pub fn test() {
     test_group.start_case("Query one's outbox");
     let mut sender_mpid_headers = sender.query_outbox();
     assert_eq!(1, sender_mpid_headers.len());
-    assert_eq!(message_sent.header().clone(), sender_mpid_headers[0]);
+    assert_eq!(message_sent.header().clone(), *unwrap_option!(sender_mpid_headers.first(), ""));
     let receiver_mpid_headers = receiver.query_outbox();
     assert_eq!(0, receiver_mpid_headers.len());
 
@@ -62,7 +62,7 @@ pub fn test() {
     let msg_name = unwrap_result!(message_sent.header().name());
     let mpid_headers = sender.outbox_has(vec![msg_name]);
     assert_eq!(1, mpid_headers.len());
-    assert_eq!(message_sent.header().clone(), mpid_headers[0]);
+    assert_eq!(message_sent.header().clone(), *unwrap_option!(mpid_headers.first(), ""));
 
     test_group.start_case("Receiver delete mpid_header from inbox");
     receiver.delete_mpid_header(msg_name);
