@@ -22,7 +22,7 @@ use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseConte
               ResponseMessage};
 use xor_name::XorName;
 
-pub fn test(max_get_attempts: u32) {
+pub fn test() {
     let mut test_group = TestGroup::new("ImmutableData test");
 
     test_group.start_case("Put with no account");
@@ -51,8 +51,7 @@ pub fn test(max_get_attempts: u32) {
     test_group.start_case("Get");
     let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
     if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(get_with_retry(&mut client1, data_request.clone(), max_get_attempts),
-                          "") {
+           unwrap_option!(client1.get(data_request.clone()), "") {
         assert_eq!(data, response_data)
     } else {
         panic!("Received unexpected response")

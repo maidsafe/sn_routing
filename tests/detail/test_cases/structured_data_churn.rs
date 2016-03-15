@@ -21,7 +21,7 @@ use rand;
 use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
 use xor_name::XorName;
 
-pub fn test(request_count: u32, max_get_attempts: u32) {
+pub fn test(request_count: u32) {
     let mut test_group = TestGroup::new("StructuredData churn test");
 
     let mut client = Client::new();
@@ -52,8 +52,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         trace!("Getting StructuredData {} - {}", i, stored_item.name());
         if let ResponseMessage {
                content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } =
-               unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
-                              "") {
+               unwrap_option!(client.get(data_request), "") {
             assert_eq!(*stored_item, sd)
         } else {
             panic!("Received unexpected response")
