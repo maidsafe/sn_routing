@@ -44,7 +44,6 @@ extern crate kademlia_routing_table;
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate mpid_messaging;
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
@@ -62,8 +61,6 @@ const CHURN_MAX_WAIT_SEC: u64 = 20;
 // `REQUEST_COUNT` Puts for ImmutableData, then `REQUEST_COUNT` Gets, then similarly for
 // StructuredData and MPID messages.
 const REQUEST_COUNT: u32 = 30;
-// The maximum number of Get attempts which can be used to deem a chunk as unavailable.
-const MAX_GET_ATTEMPTS: u32 = 3;
 
 use std::process;
 use std::sync::{Arc, Mutex, Condvar};
@@ -80,20 +77,15 @@ fn main() {
         let min_wait = CHURN_MIN_WAIT_SEC;
         let max_wait = CHURN_MAX_WAIT_SEC;
         let request_count = REQUEST_COUNT;
-        let max_get_attempts = MAX_GET_ATTEMPTS;
         let processes = setup_network(vault_count);
 
-        let mut is_err = thread!("ImmutableData test",
-                                 move || immutable_data_test(max_get_attempts))
+        let mut is_err = thread!("ImmutableData test", move || immutable_data_test)
                              .join()
                              .is_err();
         failed = failed || is_err;
-        is_err = thread!("StructuredData test",
-                         move || structured_data_test(max_get_attempts))
+        is_err = thread!("StructuredData test", move || structured_data_test)
                      .join()
                      .is_err();
-        failed = failed || is_err;
-        is_err = thread!("Messaging test", messaging_test).join().is_err();
         failed = failed || is_err;
 
         let stop_flag = Arc::new((Mutex::new(false), Condvar::new()));
@@ -103,17 +95,12 @@ fn main() {
                                      min_wait,
                                      max_wait);
         is_err = thread!("ImmutableData churn test",
-                         move || immutable_data_churn_test(request_count, max_get_attempts))
+                         move || immutable_data_churn_test(request_count))
                      .join()
                      .is_err();
         failed = failed || is_err;
         is_err = thread!("StructuredData churn test",
-                         move || structured_data_churn_test(request_count, max_get_attempts))
-                     .join()
-                     .is_err();
-        failed = failed || is_err;
-        is_err = thread!("Messaging churn test",
-                         move || messaging_churn_test(request_count))
+                         move || structured_data_churn_test(request_count))
                      .join()
                      .is_err();
         failed = failed || is_err;

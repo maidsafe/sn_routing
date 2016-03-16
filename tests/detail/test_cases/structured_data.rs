@@ -83,10 +83,7 @@ fn get(fixture: &mut Fixture) {
     let mut data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
                                                    fixture.sd.get_type_tag());
     if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(get_with_retry(&mut fixture.client1,
-                                         data_request.clone(),
-                                         fixture.max_get_attempts),
-                          "") {
+           unwrap_option!(fixture.client1.get(data_request.clone()), "") {
         assert_eq!(Data::Structured(fixture.sd.clone()), response_data)
     } else {
         panic!("Received unexpected response")

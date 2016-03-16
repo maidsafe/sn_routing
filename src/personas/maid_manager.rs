@@ -287,7 +287,9 @@ impl Default for MaidManager {
 
 
 
+
 #[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
     use error::{ClientError, InternalError};
@@ -404,7 +406,6 @@ mod test {
         }
     }
 
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn lose_close_node(env: &Environment) -> XorName {
         loop {
             if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
@@ -427,7 +428,6 @@ mod test {
 
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_without_account() {
         let mut env = environment_setup();
 
@@ -470,7 +470,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_with_account() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -508,15 +507,14 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn invalid_put_for_previously_created_account() {
         let mut env = environment_setup();
         create_account(&mut env);
 
         let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
                                                 generate_random_vec_u8(1024));
-        let message_id = MessageId::new();
-        let valid_request = RequestMessage {
+        let mut message_id = MessageId::new();
+        let mut valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
@@ -526,7 +524,7 @@ mod test {
             unreachable!()
         }
 
-        let put_failures = env.routing.put_failures_given();
+        let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
 
         let put_requests = env.routing.put_requests_given();
@@ -557,8 +555,8 @@ mod test {
                                                     vec![client_key],
                                                     vec![],
                                                     None));
-        let message_id = MessageId::new();
-        let valid_request = RequestMessage {
+        message_id = MessageId::new();
+        valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Structured(sd), message_id),
@@ -569,7 +567,7 @@ mod test {
             unreachable!()
         }
 
-        let put_failures = env.routing.put_failures_given();
+        put_failures = env.routing.put_failures_given();
 
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
@@ -589,14 +587,13 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_success() {
         let mut env = environment_setup();
         create_account(&mut env);
 
         let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
                                                 generate_random_vec_u8(1024));
-        let message_id = MessageId::new();
+        let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
@@ -645,7 +642,7 @@ mod test {
         }
 
         // Invalid case.
-        let message_id = MessageId::new();
+        message_id = MessageId::new();
 
         if let Err(InternalError::FailedToFindCachedRequest(id)) =
                env.maid_manager.handle_put_success(&env.routing, &message_id) {
@@ -656,7 +653,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_failure() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -674,7 +670,7 @@ mod test {
                                                     vec![client_key],
                                                     vec![],
                                                     None));
-        let message_id = MessageId::new();
+        let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
             dst: env.our_authority.clone(),
@@ -685,7 +681,7 @@ mod test {
             unreachable!()
         }
 
-        let put_failures = env.routing.put_failures_given();
+        let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
 
         let put_requests = env.routing.put_requests_given();
@@ -713,7 +709,7 @@ mod test {
             unreachable!()
         }
 
-        let put_failures = env.routing.put_failures_given();
+        put_failures = env.routing.put_failures_given();
 
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
@@ -733,7 +729,7 @@ mod test {
         }
 
         // Invalid case.
-        let message_id = MessageId::new();
+        message_id = MessageId::new();
         if let Ok(error_indicator) = serialisation::serialise(&error) {
             if let Err(InternalError::FailedToFindCachedRequest(id)) =
                    env.maid_manager
@@ -748,7 +744,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn churn_refresh() {
         let mut env = environment_setup();
         create_account(&mut env);
@@ -757,7 +752,7 @@ mod test {
         env.maid_manager.handle_churn(&env.routing);
 
         let mut refresh_count = 0;
-        let refresh_requests = env.routing.refresh_requests_given();
+        let mut refresh_requests = env.routing.refresh_requests_given();
 
         if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
             assert_eq!(refresh_requests.len(), 1);
@@ -782,7 +777,7 @@ mod test {
         env.routing.node_lost_event(lose_close_node(&env));
         env.maid_manager.handle_churn(&env.routing);
 
-        let refresh_requests = env.routing.refresh_requests_given();
+        refresh_requests = env.routing.refresh_requests_given();
 
         if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
             assert_eq!(refresh_requests.len(), refresh_count + 1);

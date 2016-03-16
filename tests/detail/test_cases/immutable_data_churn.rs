@@ -19,7 +19,7 @@ use super::*;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
               ResponseMessage};
 
-pub fn test(request_count: u32, max_get_attempts: u32) {
+pub fn test(request_count: u32) {
     let mut test_group = TestGroup::new("ImmutableData churn test");
 
     let mut client = Client::new();
@@ -42,8 +42,7 @@ pub fn test(request_count: u32, max_get_attempts: u32) {
         let data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
         trace!("Getting ImmutableData {} - {}", i, data.name());
         if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-               unwrap_option!(get_with_retry(&mut client, data_request, max_get_attempts),
-                              "") {
+               unwrap_option!(client.get(data_request), "") {
             assert_eq!(*data, response_data)
         } else {
             panic!("Received unexpected response")
