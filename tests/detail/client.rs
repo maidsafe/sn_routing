@@ -16,16 +16,12 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::{self, Debug, Formatter};
-use std::sync::mpsc::{self, TryRecvError};
-use std::thread;
-use std::time::Duration;
+use std::sync::mpsc;
 use sodiumoxide::crypto;
-use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rand::random;
-use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PlainData,
-              RequestMessage, RequestContent, ResponseContent, ResponseMessage, StructuredData};
+use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, ResponseContent,
+              ResponseMessage, StructuredData};
 use xor_name::XorName;
-use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
 // TODO: These are a duplicate of those in src/error.rs until we get a crate for the types which are
 // common to Vaults and Core.
@@ -135,128 +131,6 @@ impl Client {
         self.wait_for_response()
     }
 
-    /// Register client online.
-    pub fn register_online(&self) {
-        let wrapper = MpidMessageWrapper::Online;
-        let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::Plain(PlainData::new(*self.name(), value));
-        let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()),
-                                              data,
-                                              message_id));
-
-        if let ResponseMessage { content: ResponseContent::PostSuccess(..), .. } =
-               unwrap_option!(self.wait_for_response(), "") {
-            trace!("{:?} successfully sent online message", self);
-        } else {
-            panic!("{:?} failed to send online message", self);
-        }
-    }
-
-    /// Generate an `MpidMessage` targeting the specified recipient, and its corresponding
-    /// PutMessage wrapper.
-    pub fn generate_mpid_message(&self, receiver: &XorName) -> (MpidMessage, Data) {
-        let metadata = super::generate_random_vec_u8(128);
-        let body = super::generate_random_vec_u8(128);
-        let mpid_message = unwrap_result!(MpidMessage::new(self.name().clone(),
-                                                           metadata,
-                                                           receiver.clone(),
-                                                           body,
-                                                           &self.full_id.signing_private_key()));
-        let wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
-        let name = unwrap_result!(mpid_message.header().name());
-        let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::Plain(PlainData::new(name, value));
-        (mpid_message, data)
-    }
-
-    /// Wait to receive an `MpidMessage`.
-    pub fn get_mpid_message(&self) -> Option<MpidMessage> {
-        if let MpidMessageWrapper::PutMessage(mpid_message) = self.wait_for_wrapper() {
-            trace!("{:?} received message {:?}", self, mpid_message);
-            Some(mpid_message)
-        } else {
-            panic!("Unexpected message")
-        }
-    }
-
-    /// Expect nothing.
-    pub fn expect_timeout(&self) -> Option<MpidMessage> {
-        match self.wait_for_event() {
-            Some(_) => panic!("Unexpected event."),
-            None => None,
-        }
-    }
-
-    /// Delete mpid_header.
-    pub fn delete_mpid_header(&self, header_name: XorName) {
-        self.messaging_delete_request(*self.name(),
-                                      header_name,
-                                      MpidMessageWrapper::DeleteHeader(header_name))
-    }
-
-    /// Delete mpid_message.
-    pub fn delete_mpid_message(&self, target_account: XorName, msg_name: XorName) {
-        self.messaging_delete_request(target_account,
-                                      msg_name,
-                                      MpidMessageWrapper::DeleteMessage(msg_name))
-    }
-
-    fn messaging_delete_request(&self,
-                                target_account: XorName,
-                                name: XorName,
-                                wrapper: MpidMessageWrapper) {
-        let value = unwrap_result!(serialise(&wrapper));
-        let data = Data::Plain(PlainData::new(name, value));
-        let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
-                           .send_delete_request(Authority::ClientManager(target_account),
-                                                data,
-                                                message_id));
-    }
-
-    /// Query outbox.
-    pub fn query_outbox(&self) -> Vec<MpidHeader> {
-        let name = self.name();
-        let value = unwrap_result!(serialise(&MpidMessageWrapper::GetOutboxHeaders));
-        let data = Data::Plain(PlainData::new(*name, value));
-        let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()),
-                                              data,
-                                              message_id));
-        if let MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers) =
-               self.wait_for_wrapper() {
-            trace!("{:?} outbox has following mpid_headers {:?}",
-                   self,
-                   mpid_headers);
-            mpid_headers
-        } else {
-            panic!("Unexpected message")
-        }
-    }
-
-    /// Query whether outbox has particular message.
-    pub fn outbox_has(&self, msg_names: Vec<XorName>) -> Vec<MpidHeader> {
-        let name = self.name();
-        let value = unwrap_result!(serialise(&MpidMessageWrapper::OutboxHas(msg_names)));
-        let data = Data::Plain(PlainData::new(*name, value));
-        let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
-                           .send_post_request(Authority::ClientManager(*self.name()),
-                                              data,
-                                              message_id));
-        if let MpidMessageWrapper::OutboxHasResponse(mpid_headers) = self.wait_for_wrapper() {
-            trace!("{:?} outbox has following mpid_headers {:?}",
-                   self,
-                   mpid_headers);
-            mpid_headers
-        } else {
-            panic!("Unexpected message")
-        }
-    }
-
     /// Return network name.
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
@@ -272,26 +146,6 @@ impl Client {
         self.full_id.signing_private_key()
     }
 
-    fn wait_for_wrapper(&self) -> MpidMessageWrapper {
-        if let RequestMessage { content: RequestContent::Post(Data::Plain(msg), _), .. } =
-               unwrap_option!(self.wait_for_request(), "") {
-            let wrapper: MpidMessageWrapper = unwrap_result!(deserialise(&msg.value()));
-            wrapper
-        } else {
-            panic!("{:?} failed to receive outbox query response", self)
-        }
-    }
-
-    fn wait_for_request(&self) -> Option<RequestMessage> {
-        self.wait_for_event().and_then(|event| {
-            if let Event::Request(request_message) = event {
-                Some(request_message)
-            } else {
-                panic!("{:?} unexpected event {:?}", self, event)
-            }
-        })
-    }
-
     fn wait_for_response(&self) -> Option<ResponseMessage> {
         self.wait_for_event().and_then(|event| {
             if let Event::Response(response_message) = event {
@@ -303,26 +157,7 @@ impl Client {
     }
 
     fn wait_for_event(&self) -> Option<Event> {
-        let timeout = Duration::from_secs(10);
-        let interval = Duration::from_millis(100);
-        let mut elapsed = Duration::new(0, 0);
-
-        loop {
-            match self.receiver.try_recv() {
-                Ok(value) => return Some(value),
-                Err(TryRecvError::Disconnected) => break,
-                _ => (),
-            }
-
-            thread::sleep(interval);
-            elapsed = elapsed + interval;
-
-            if elapsed > timeout {
-                break;
-            }
-        }
-
-        None
+        self.receiver.recv().ok()
     }
 }
 

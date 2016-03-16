@@ -263,6 +263,7 @@ impl Default for PmidManager {
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
     use maidsafe_utilities::serialisation;
@@ -340,7 +341,6 @@ mod test {
         }
     }
 
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn lose_close_node(env: &Environment) -> XorName {
         loop {
             if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
@@ -362,7 +362,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put() {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
@@ -392,7 +391,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn check_timeout() {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
@@ -441,11 +439,10 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn handle_put_success() {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
-        let message_id = MessageId::new();
+        let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.from_authority.clone(),
             dst: env.our_authority.clone(),
@@ -470,12 +467,12 @@ mod test {
         }
 
         // Valid case.
-        let pmid_node = *env.our_authority.name();
+        let mut pmid_node = *env.our_authority.name();
         if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
             unreachable!()
         }
 
-        let put_successes = env.routing.put_successes_given();
+        let mut put_successes = env.routing.put_successes_given();
 
         assert_eq!(put_successes.len(), 1);
         assert_eq!(put_successes[0].src, env.our_authority);
@@ -491,20 +488,19 @@ mod test {
         }
 
         // Invalid case.
-        let pmid_node = get_close_node(&env);
-        let message_id = MessageId::new();
+        pmid_node = get_close_node(&env);
+        message_id = MessageId::new();
 
         if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
             unreachable!()
         }
 
-        let put_successes = env.routing.put_successes_given();
+        put_successes = env.routing.put_successes_given();
         // unchanged...
         assert_eq!(put_successes.len(), 1);
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn handle_put_failure() {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
@@ -553,7 +549,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing, shadow_unrelated))]
     fn churn_refresh() {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
@@ -585,7 +580,7 @@ mod test {
         env.pmid_manager.handle_churn(&env.routing);
 
         let mut refresh_count = 0;
-        let refresh_requests = env.routing.refresh_requests_given();
+        let mut refresh_requests = env.routing.refresh_requests_given();
 
         if let Ok(Some(_)) = env.routing.close_group(*env.our_authority.name()) {
             assert_eq!(refresh_requests.len(), 1);
@@ -610,7 +605,7 @@ mod test {
         env.routing.node_lost_event(lose_close_node(&env));
         env.pmid_manager.handle_churn(&env.routing);
 
-        let refresh_requests = env.routing.refresh_requests_given();
+        refresh_requests = env.routing.refresh_requests_given();
 
         if let Ok(Some(_)) = env.routing.close_group(*env.our_authority.name()) {
             assert_eq!(refresh_requests.len(), refresh_count + 1);
