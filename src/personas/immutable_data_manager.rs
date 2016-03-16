@@ -811,6 +811,7 @@ mod test {
     struct GetEnvironment {
         pub client: Authority,
         pub message_id: MessageId,
+        pub request: RequestMessage,
     }
 
     struct Environment {
@@ -878,6 +879,7 @@ mod test {
             GetEnvironment {
                 client: client,
                 message_id: message_id,
+                request: request,
             }
         }
     }
@@ -979,6 +981,129 @@ mod test {
             }
             assert_eq!(Authority::NaeManager(put_env.im_data.name()), get_request.src);
             assert!(data_hodlers.contains(get_request.dst.name()));
+        }
+    }
+
+    #[test]
+    fn handle_put_failure() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+            put_request.dst.name().clone()
+        }).collect();
+
+        let mut candidates = data_hodlers.clone();
+        // The current setting is REPLICANTS = MIN_REPLICANTS = 4
+        // which means any failure notification from PM will trigger a replication
+        for data_holder in &data_hodlers {
+            let _ = env.immutable_data_manager.handle_put_failure(&env.routing,
+                                                                  data_holder,
+                                                                  &put_env.message_id);
+            let put_requests = env.routing.put_requests_given();
+            let put_request = unwrap_option!(put_requests.last(), "");
+            assert_eq!(put_requests.len(), candidates.len() + 1);
+            assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
+            assert_eq!(put_request.content,
+                       RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
+                                           put_env.message_id.clone()));
+            let new_holder = put_request.dst.name().clone();
+            assert!(candidates.contains(&new_holder) == false);
+            candidates.push(new_holder);
+        }
+    }
+
+    #[test]
+    fn handle_get_failure() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+            put_request.dst.name().clone()
+        }).collect();
+        for data_holder in &data_hodlers {
+            let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
+        }
+
+        // As there is no available data, no replication happens.
+        // After all data_holders marked as Bad, a get_failure shall be returned.
+        let get_env = env.get_im_data(put_env.im_data.name());
+        let get_requests = env.routing.get_requests_given();
+        assert_eq!(get_requests.len(), REPLICANTS);
+        let mut failure_count = 0;
+        for get_request in &get_requests {
+            let _ = env.immutable_data_manager.handle_get_failure(&env.routing,
+                                                                  get_request.dst.name(),
+                                                                  &get_env.message_id,
+                                                                  &get_request,
+                                                                  &[]);
+            failure_count += 1;
+            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
+            assert_eq!(env.routing.get_requests_given().len(), REPLICANTS);
+            assert_eq!(env.routing.get_successes_given().len(), 0);
+            if failure_count == REPLICANTS {
+                let get_failure = env.routing.get_failures_given();
+                assert_eq!(get_failure.len(), 1);
+                if let ResponseContent::GetFailure{ ref external_error_indicator, ref id, .. } =
+                       get_failure[0].content.clone() {
+                    assert_eq!(get_env.message_id, *id);
+                    let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
+                    if let ClientError::NoSuchData = parsed_error {} else {
+                        panic!("Received unexpected external_error_indicator with parsed error as {:?}",
+                               parsed_error);
+                    }
+                } else {
+                    panic!("Received unexpected response {:?}", get_failure[0]);
+                }
+                assert_eq!(get_env.client, get_failure[0].dst);
+                assert_eq!(Authority::NaeManager(put_env.im_data.name()), get_failure[0].src);
+            } else {
+                assert_eq!(env.routing.get_failures_given().len(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn handle_get_success() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+            put_request.dst.name().clone()
+        }).collect();
+        for data_holder in &data_hodlers {
+            let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
+        }
+
+        let get_env = env.get_im_data(put_env.im_data.name());
+        let get_requests = env.routing.get_requests_given();
+        assert_eq!(get_requests.len(), REPLICANTS);
+        let mut success_count = 0;
+        for get_request in &get_requests {
+            let response = ResponseMessage {
+                src: get_request.dst.clone(),
+                dst: get_request.src.clone(),
+                content: ResponseContent::GetSuccess(Data::Immutable(put_env.im_data.clone()),
+                                                                     get_env.message_id),
+            };
+            let _ = env.immutable_data_manager.handle_get_success(&env.routing, &response);
+            success_count += 1;
+            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
+            assert_eq!(env.routing.get_requests_given().len(), REPLICANTS);
+            assert_eq!(env.routing.get_failures_given().len(), 0);
+            if success_count == 1 {
+                let get_success = env.routing.get_successes_given();
+                assert_eq!(get_success.len(), 1);
+                if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
+                       get_success[0].clone() {
+                    assert_eq!(Data::Immutable(put_env.im_data.clone()), response_data);
+                    assert_eq!(get_env.message_id, id);
+                } else {
+                    panic!("Received unexpected response {:?}", get_success[0]);
+                }
+            } else {
+                assert_eq!(env.routing.get_successes_given().len(), 1);
+            }
         }
     }
 
