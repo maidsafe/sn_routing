@@ -34,7 +34,7 @@ pub struct Account {
 }
 
 impl Default for Account {
-    // FIXME: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
+    // TODO: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
     //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> Account {
         Account {

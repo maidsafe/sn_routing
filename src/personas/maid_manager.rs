@@ -374,7 +374,13 @@ mod test {
     fn create_account(env: &mut Environment) {
         if let Authority::Client { client_key, .. } = env.client {
             let identifier = random::<XorName>();
-            let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
+            let sd = unwrap_result!(StructuredData::new(0,
+                                                        identifier,
+                                                        0,
+                                                        vec![],
+                                                        vec![client_key],
+                                                        vec![],
+                                                        None));
             let message_id = MessageId::new();
             let request = RequestMessage {
                 src: env.client.clone(),
@@ -393,7 +399,7 @@ mod test {
 
         loop {
             if let Ok(Some(_)) = env.routing.close_group(name) {
-                return name
+                return name;
             } else {
                 name = random::<XorName>();
             }
@@ -426,7 +432,8 @@ mod test {
         let mut env = environment_setup();
 
         // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -467,7 +474,8 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -487,7 +495,8 @@ mod test {
         // put_requests[0] - account creation.
         assert_eq!(put_requests.len(), 2);
         assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+        assert_eq!(put_requests[1].dst,
+                   Authority::NaeManager(immutable_data.name()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
             assert_eq!(*data, immutable_data);
@@ -502,7 +511,8 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let mut message_id = MessageId::new();
         let mut valid_request = RequestMessage {
             src: env.client.clone(),
@@ -521,7 +531,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 2);
         assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+        assert_eq!(put_requests[1].dst,
+                   Authority::NaeManager(immutable_data.name()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
             assert_eq!(*data, immutable_data);
@@ -530,12 +541,20 @@ mod test {
             unreachable!()
         }
 
-        let client_key = if let Authority::Client { client_key, .. } = env.client { client_key } else {
+        let client_key = if let Authority::Client { client_key, .. } = env.client {
+            client_key
+        } else {
             unreachable!()
         };
 
         let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
+        let sd = unwrap_result!(StructuredData::new(0,
+                                                    identifier,
+                                                    0,
+                                                    vec![],
+                                                    vec![client_key],
+                                                    vec![],
+                                                    None));
         message_id = MessageId::new();
         valid_request = RequestMessage {
             src: env.client.clone(),
@@ -572,7 +591,8 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
         let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -591,7 +611,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 2);
         assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst, Authority::NaeManager(immutable_data.name()));
+        assert_eq!(put_requests[1].dst,
+                   Authority::NaeManager(immutable_data.name()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
             assert_eq!(*data, immutable_data);
@@ -624,7 +645,7 @@ mod test {
         message_id = MessageId::new();
 
         if let Err(InternalError::FailedToFindCachedRequest(id)) =
-                env.maid_manager.handle_put_success(&env.routing, &message_id) {
+               env.maid_manager.handle_put_success(&env.routing, &message_id) {
             assert_eq!(message_id, id);
         } else {
             unreachable!()
@@ -636,11 +657,19 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let client_key = if let Authority::Client { client_key, .. } = env.client { client_key } else {
+        let client_key = if let Authority::Client { client_key, .. } = env.client {
+            client_key
+        } else {
             unreachable!()
         };
         let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(1, identifier, 0, vec![], vec![client_key], vec![], None));
+        let sd = unwrap_result!(StructuredData::new(1,
+                                                    identifier,
+                                                    0,
+                                                    vec![],
+                                                    vec![client_key],
+                                                    vec![],
+                                                    None));
         let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -671,8 +700,9 @@ mod test {
         // Valid case.
         let error = ClientError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
-            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {}
-            else {
+            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing,
+                                                                &message_id,
+                                                                &error_indicator[..]) {} else {
                 unreachable!()
             }
         } else {
@@ -702,7 +732,8 @@ mod test {
         message_id = MessageId::new();
         if let Ok(error_indicator) = serialisation::serialise(&error) {
             if let Err(InternalError::FailedToFindCachedRequest(id)) =
-                    env.maid_manager.handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {
+                   env.maid_manager
+                      .handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {
                 assert_eq!(message_id, id);
             } else {
                 unreachable!()
@@ -729,7 +760,7 @@ mod test {
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
             if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[0].content {
-               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, utils::client_name(&env.client));
                 } else {
@@ -753,8 +784,9 @@ mod test {
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
-               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+            if let RequestContent::Refresh(ref serialised_refresh) =
+                   refresh_requests[refresh_count].content {
+                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, utils::client_name(&env.client));
                 } else {
