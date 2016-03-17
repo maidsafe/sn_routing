@@ -419,6 +419,7 @@ fn successful_put_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx).is_ok());
+
     poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
@@ -456,6 +457,7 @@ fn successful_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx.clone()).is_ok());
+
     poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
@@ -480,6 +482,7 @@ fn successful_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
+
     poll_all(&mut nodes, &mut clients);
 
     request_received_count = 0;
@@ -509,6 +512,7 @@ fn successful_get_request() {
     }
 
     assert!(request_received_count >= QUORUM_SIZE);
+
     poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
@@ -549,6 +553,7 @@ fn failed_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
+
     poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
@@ -584,6 +589,7 @@ fn failed_get_request() {
     }
 
     assert!(request_received_count >= QUORUM_SIZE);
+
     poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
@@ -605,7 +611,7 @@ fn failed_get_request() {
 }
 
 #[test]
-fn blocked_get_request() {
+fn disconnect_on_get_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = vec![TestClient::new(&network,
@@ -623,11 +629,8 @@ fn blocked_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
-    poll_all(&mut nodes, &mut clients);
 
-    for i in 0..2 * GROUP_SIZE {
-        network.block_connection(nodes[i].handle.endpoint(), clients[0].handle.endpoint());
-    }
+    poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
@@ -656,6 +659,8 @@ fn blocked_get_request() {
     }
 
     assert!(request_received_count >= QUORUM_SIZE);
+
+    clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
     poll_all(&mut nodes, &mut clients);
 
     for client in clients.iter() {
@@ -664,8 +669,7 @@ fn blocked_get_request() {
                 Ok(Event::Response(..)) => {
                     panic!("Unexpected Event::Response(..) received")
                 },
-                Ok(_) => (),
-                _ => (),
+                _ => break,
             }
         }
     }
