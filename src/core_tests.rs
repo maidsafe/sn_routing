@@ -107,7 +107,7 @@ impl TestClient {
         }
     }
 
-    fn poll(&mut self) -> bool {
+    fn _poll(&mut self) -> bool {
         let mut result = false;
 
         while self.core.poll() {
@@ -329,30 +329,11 @@ fn node_drops() {
 #[test]
 fn send_put_request() {
     let network = Network::new();
-    let mut nodes = Vec::new();
-
-    nodes.push(TestNode::new(&network, false, None, Some(Endpoint(0))));
-    nodes[0].poll();
-
-    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-
-    for i in 1..GROUP_SIZE + 2 {
-        nodes.push(TestNode::new(&network, false, Some(config.clone()), Some(Endpoint(i))));
-        poll_all(&mut nodes);
-    }
-
-    assert_eq!(GROUP_SIZE + 2, nodes.len());
-
-    for node in nodes.iter() {
-        for _ in 0..GROUP_SIZE - 1 {
-            expect_event!(node, Event::NodeAdded(..))
-        }
-    }
-
-    let mut client = TestClient::new(&network, Some(config.clone()), Some(Endpoint(GROUP_SIZE + 2)));
-
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
+    let client = TestClient::new(&network,
+                                 Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                 None);
     poll_all(&mut nodes);
-    client.poll();
     expect_event!(client, Event::Connected);
 
     let dst = Authority::ClientManager(client.name().clone());
