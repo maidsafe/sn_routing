@@ -78,8 +78,8 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 enum State {
     /// Not connected to any node.
     Disconnected,
-    /// Transition state while validating proxy node.
-    Bootstrapping,
+    /// Transition state while validating a peer as a proxy node.
+    Bootstrapping(PeerId, u64),
     /// We are bootstrapped and connected to a valid proxy node.
     Client,
     /// We have been Relocated and now a node.
@@ -238,9 +238,6 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
 
-    // nodes we are trying to bootstrap against
-    proxy_candidates: Vec<(PeerId, u64)>,
-
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
@@ -312,7 +309,6 @@ impl Core {
             full_id: full_id,
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
-            proxy_candidates: Vec::new(),
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -529,16 +525,20 @@ impl Core {
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
         self.crust_service.stop_bootstrap();
-        if self.state == State::Disconnected {
-            trace!("Received BootstrapConnect from {:?}.", peer_id);
-            // Established connection. Pending Validity checks
-            self.state = State::Bootstrapping;
-            let _ = self.client_identify(peer_id);
-            return;
-        } else {
-            warn!("Got more than one bootstrap connection. Disconnecting {:?}.",
-                  peer_id);
-            self.crust_service.disconnect(&peer_id);
+        match self.state {
+            State::Disconnected => {
+                trace!("Received BootstrapConnect from {:?}.", peer_id);
+                // Established connection. Pending Validity checks
+                let _ = self.client_identify(peer_id);
+            }
+            State::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
+                warn!("Got more than one BootstrapConnect for peer {:?}.", peer_id);
+            }
+            _ => {
+                if let Err(err) = self.disconnect_peer(&peer_id) {
+                    warn!("Failed to disconnect peer {:?}: {:?}.", peer_id, err);
+                }
+            }
         }
     }
 
@@ -735,7 +735,7 @@ impl Core {
                 // error!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
                 //        hop_msg.name(),
                 //        peer_id);
-                // self.disconnect_node(&peer_id);
+                // self.disconnect_peer(&peer_id);
                 return Err(RoutingError::UnknownConnection(*hop_msg.name()));
             }
             if relayed_get_request {
@@ -1208,15 +1208,10 @@ impl Core {
     }
 
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        if self.proxy_candidates.iter().any(|&(id, _)| id == peer_id) {
-            warn!("Already sent ClientIdentify to this peer {:?}", peer_id);
-            return Ok(());
-        }
-
         trace!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(StdDuration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.proxy_candidates.push((peer_id, token));
+        self.state = State::Bootstrapping(peer_id, token);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -1311,7 +1306,7 @@ impl Core {
                 if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
                     warn!("Client requested ClientToNode, but is not in routing table: {:?}",
                           peer_id);
-                    self.crust_service.disconnect(&peer_id);
+                    try!(self.disconnect_peer(&peer_id));
                 }
                 Ok(())
             }
@@ -1326,8 +1321,7 @@ impl Core {
                 } else {
                     warn!("Signature check failed in ClientIdentify - Dropping connection {:?}",
                           peer_id);
-                    self.crust_service.disconnect(&peer_id);
-                    Ok(())
+                    self.disconnect_peer(&peer_id)
                 }
             }
             DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
@@ -1337,7 +1331,7 @@ impl Core {
                 } else {
                     warn!("Signature check failed in NodeIdentify - Dropping peer {:?}",
                           peer_id);
-                    self.disconnect_node(&peer_id)
+                    self.disconnect_peer(&peer_id)
                 }
             }
             DirectMessage::NewNode(public_id) => {
@@ -1371,25 +1365,18 @@ impl Core {
 
         if self.proxy_map.is_empty() {
             let _ = self.proxy_map.insert(peer_id, public_id);
+        } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
+            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
+                   name: {:?}",
+                  previous_name);
+            warn!("Dropping this peer {:?}", peer_id);
+            let _ = self.proxy_map.remove(&peer_id);
+            return self.disconnect_peer(&peer_id);
         } else {
-            if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-                warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
-                       name: {:?}",
-                      previous_name);
-                warn!("Dropping this peer {:?}", peer_id);
-                self.crust_service.disconnect(&peer_id);
-                let _ = self.proxy_map.remove(&peer_id);
-            } else {
-                trace!("Disconnecting {:?} not accepting further bootstrap connections.",
-                       peer_id);
-                self.crust_service.disconnect(&peer_id);
-            }
-
-            return Ok(());
+            trace!("Disconnecting {:?} not accepting further bootstrap connections.",
+                   peer_id);
+            return self.disconnect_peer(&peer_id);
         }
-
-        // Remove the peer from the list of proxy candidates.
-        let _ = swap_remove_if(&mut self.proxy_candidates, |&(id, _)| id == peer_id);
 
         self.state = State::Client;
         trace!("{:?} - State changed to client, quorum size: {}.",
@@ -1413,8 +1400,7 @@ impl Core {
         if *public_id.name() !=
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper client - dropping");
-            self.crust_service.disconnect(&peer_id);
-            return Ok(());
+            return self.disconnect_peer(&peer_id);
         }
 
         self.remove_stale_joining_nodes();
@@ -1494,7 +1480,9 @@ impl Core {
                self,
                public_id.name());
         if !self.node_in_cache(&public_id, &peer_id) {
-            return self.disconnect_node(&peer_id);
+            warn!("Accepting connection anyway, since node_id_cache is disabled.");
+            // TODO: Re-enable this once Routing stability issues have been resolved.
+            // return self.disconnect_peer(&peer_id);
         }
 
         self.add_to_routing_table(public_id, peer_id)
@@ -1517,8 +1505,7 @@ impl Core {
                 error!("{:?} Peer was not added to the routing table: {:?}",
                        self,
                        peer_id);
-                let _ = self.node_id_cache.remove(&name);
-                return self.disconnect_node(&peer_id);
+                return self.disconnect_peer(&peer_id);
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
@@ -1586,7 +1573,7 @@ impl Core {
             if self.routing_table.contains(public_id.name()) {
                 try!(self.send_direct_message(&peer_id, DirectMessage::ClientToNode));
             } else {
-                self.crust_service.disconnect(&peer_id);
+                try!(self.disconnect_peer(&peer_id));
             }
         }
         Ok(())
@@ -1628,8 +1615,8 @@ impl Core {
         for peer_id in stale_keys {
             if self.client_map.remove(&peer_id).is_some() {
                 trace!("Removing stale joining node with Crust ID {:?}", peer_id);
-                if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
-                    self.crust_service.disconnect(&peer_id);
+                if let Err(err) = self.disconnect_peer(&peer_id) {
+                    warn!("Failed to remove node: {:?}", err);
                 }
             }
         }
@@ -1708,14 +1695,28 @@ impl Core {
         }
     }
 
-    /// Disconnects from the given peer, via Crust or by dropping the tunnel node.
-    fn disconnect_node(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
-        if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
-            self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id))
-        } else {
-            let _ = self.crust_service.disconnect(peer_id);
-            Ok(())
+    /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
+    /// not a proxy, client or routing table entry.
+    fn disconnect_peer(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
+        if let Some(node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
+            warn!("Not disconnecting routing table entry {:?} ({:?}).",
+                  node.name(),
+                  peer_id);
+        } else if let Some(public_id) = self.proxy_map.get(peer_id) {
+            warn!("Not disconnecting proxy node {:?} ({:?}).",
+                  public_id.name(),
+                  peer_id);
+        } else if self.client_map.contains_key(peer_id) {
+            warn!("Not disconnecting client {:?}.", peer_id);
         }
+        if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
+            warn!("Disconnecting {:?} (indirect).", peer_id);
+            try!(self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id)));
+        } else {
+            warn!("Disconnecting {:?}.", peer_id);
+            let _ = self.crust_service.disconnect(peer_id);
+        }
+        Ok(())
     }
 
     // Constructed by A; From A -> X
@@ -1952,10 +1953,7 @@ impl Core {
                                         src_name: XorName,
                                         dst: Authority)
                                         -> Result<(), RoutingError> {
-        if let Err(err) = self.check_address_for_routing_table(&src_name) {
-            let _ = self.node_id_cache.remove(&src_name);
-            return Err(err);
-        }
+        try!(self.check_address_for_routing_table(&src_name));
         if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
             self.connect(encrypted_connection_info,
                          nonce_bytes,
@@ -2141,9 +2139,8 @@ impl Core {
 
     fn handle_timeout(&mut self, token: u64) {
         // We haven't received response from a node we are trying to bootstrap against.
-        if let Some((peer_id, _)) = swap_remove_if(&mut self.proxy_candidates,
-                                                   |&(_, t)| t == token) {
-            if self.state == State::Bootstrapping {
+        if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
+            if bootstrap_token == token {
                 trace!("Timeout when trying to bootstrap against {:?}", peer_id);
                 self.retry_bootstrap_with_blacklist(&peer_id);
             }
@@ -2464,16 +2461,5 @@ impl Core {
 impl Debug for Core {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "{:?}({})", self.state, self.name())
-    }
-}
-
-// Remove and return the first element for which the given predicate returns true.
-fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
-    where F: Fn(&T) -> bool
-{
-    if let Some(pos) = vec.iter().position(pred) {
-        Some(vec.swap_remove(pos))
-    } else {
-        None
     }
 }
