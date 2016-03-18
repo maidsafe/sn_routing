@@ -637,6 +637,8 @@ fn disconnect_on_get_request() {
     assert!(request_received_count >= QUORUM_SIZE);
 
     clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
+    nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
+
     poll_all(&mut nodes, &mut clients);
 
     for client in clients.iter() {
