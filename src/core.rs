@@ -78,8 +78,8 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 enum State {
     /// Not connected to any node.
     Disconnected,
-    /// Transition state while validating proxy node.
-    Bootstrapping,
+    /// Transition state while validating a peer as a proxy node.
+    Bootstrapping(PeerId, u64),
     /// We are bootstrapped and connected to a valid proxy node.
     Client,
     /// We have been Relocated and now a node.
@@ -238,9 +238,6 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
 
-    // nodes we are trying to bootstrap against
-    proxy_candidates: Vec<(PeerId, u64)>,
-
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
@@ -312,7 +309,6 @@ impl Core {
             full_id: full_id,
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
-            proxy_candidates: Vec::new(),
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -529,16 +525,33 @@ impl Core {
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
         self.crust_service.stop_bootstrap();
-        if self.state == State::Disconnected {
-            trace!("Received BootstrapConnect from {:?}.", peer_id);
-            // Established connection. Pending Validity checks
-            self.state = State::Bootstrapping;
-            let _ = self.client_identify(peer_id);
-            return;
-        } else {
-            warn!("Got more than one bootstrap connection. Disconnecting {:?}.",
-                  peer_id);
-            self.crust_service.disconnect(&peer_id);
+        match self.state {
+            State::Disconnected => {
+                trace!("Received BootstrapConnect from {:?}.", peer_id);
+                // Established connection. Pending Validity checks
+                let _ = self.client_identify(peer_id);
+            }
+            State::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
+                warn!("Got more than one BootstrapConnect for peer {:?}.", peer_id);
+            }
+            _ => {
+                if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
+                    warn!("Got unexpected bootstrap connection from routing node {:?} ({:?}).",
+                          node.name(),
+                          peer_id);
+                } else if let Some(public_id) = self.proxy_map.get(&peer_id) {
+                    warn!("Got unexpected bootstrap connection from proxy node {:?} ({:?}).",
+                          public_id.name(),
+                          peer_id);
+                } else if self.client_map.contains_key(&peer_id) {
+                    warn!("Got unexpected bootstrap connection from client {:?}.",
+                          peer_id);
+                } else {
+                    warn!("Got unexpected bootstrap connection. Disconnecting {:?}.",
+                          peer_id);
+                    self.crust_service.disconnect(&peer_id);
+                }
+            }
         }
     }
 
@@ -1208,15 +1221,10 @@ impl Core {
     }
 
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        if self.proxy_candidates.iter().any(|&(id, _)| id == peer_id) {
-            warn!("Already sent ClientIdentify to this peer {:?}", peer_id);
-            return Ok(());
-        }
-
         trace!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(StdDuration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.proxy_candidates.push((peer_id, token));
+        self.state = State::Bootstrapping(peer_id, token);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -1387,9 +1395,6 @@ impl Core {
 
             return Ok(());
         }
-
-        // Remove the peer from the list of proxy candidates.
-        let _ = swap_remove_if(&mut self.proxy_candidates, |&(id, _)| id == peer_id);
 
         self.state = State::Client;
         trace!("{:?} - State changed to client, quorum size: {}.",
@@ -2141,9 +2146,8 @@ impl Core {
 
     fn handle_timeout(&mut self, token: u64) {
         // We haven't received response from a node we are trying to bootstrap against.
-        if let Some((peer_id, _)) = swap_remove_if(&mut self.proxy_candidates,
-                                                   |&(_, t)| t == token) {
-            if self.state == State::Bootstrapping {
+        if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
+            if bootstrap_token == token {
                 trace!("Timeout when trying to bootstrap against {:?}", peer_id);
                 self.retry_bootstrap_with_blacklist(&peer_id);
             }
@@ -2464,16 +2468,5 @@ impl Core {
 impl Debug for Core {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "{:?}({})", self.state, self.name())
-    }
-}
-
-// Remove and return the first element for which the given predicate returns true.
-fn swap_remove_if<T, F>(vec: &mut Vec<T>, pred: F) -> Option<T>
-    where F: Fn(&T) -> bool
-{
-    if let Some(pos) = vec.iter().position(pred) {
-        Some(vec.swap_remove(pos))
-    } else {
-        None
     }
 }
