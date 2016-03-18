@@ -23,7 +23,8 @@ use default_chunk_store;
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
+use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage,
+                                     MpidMessageWrapper};
 use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
 use sodiumoxide::crypto::sign::PublicKey;
 use sodiumoxide::crypto::hash::sha512;
@@ -107,11 +108,19 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_into_outbox(&mut self, size: u64, entry: &XorName, public_key: &Option<PublicKey>) -> bool {
+    fn put_into_outbox(&mut self,
+                       size: u64,
+                       entry: &XorName,
+                       public_key: &Option<PublicKey>)
+                       -> bool {
         self.outbox.put(size, entry, public_key)
     }
 
-    fn put_into_inbox(&mut self, size: u64, entry: &XorName, public_key: &Option<PublicKey>) -> bool {
+    fn put_into_inbox(&mut self,
+                      size: u64,
+                      entry: &XorName,
+                      public_key: &Option<PublicKey>)
+                      -> bool {
         self.inbox.put(size, entry, public_key)
     }
 
@@ -171,8 +180,12 @@ impl MpidManager {
     // The name of the PlainData is expected to be the mpidheader or mpidmessage name
     // The content of the PlainData is execpted to be the serialised MpidMessageWrapper
     // holding mpidheader or mpidmessage
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Plain(ref data), ref message_id) = request.content {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Put(Data::Plain(ref data),
+                                                            ref message_id) = request.content {
             (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -197,7 +210,8 @@ impl MpidManager {
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Plain(ref data), ref message_id) = request.content {
+        let (data, message_id) = if let RequestContent::Put(Data::Plain(ref data),
+                                                            ref message_id) = request.content {
             (data.clone(), message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -237,15 +251,21 @@ impl MpidManager {
         Ok(())
     }
 
-    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Post(Data::Plain(ref data), ref message_id) = request.content {
+    pub fn handle_post(&mut self,
+                       routing_node: &RoutingNode,
+                       request: &RequestMessage)
+                       -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Post(Data::Plain(ref data),
+                                                             ref message_id) = request.content {
             (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
         };
         let mpid_message_wrapper: MpidMessageWrapper = try!(deserialise(&data.value()));
         match mpid_message_wrapper {
-            MpidMessageWrapper::Online => self.handle_post_for_online(routing_node, request, message_id),
+            MpidMessageWrapper::Online => {
+                self.handle_post_for_online(routing_node, request, message_id)
+            }
             MpidMessageWrapper::GetMessage(header) => {
                 self.handle_post_for_get_message(routing_node, request, header, message_id)
             }
@@ -262,9 +282,12 @@ impl MpidManager {
         }
     }
 
-    pub fn handle_delete(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Delete(Data::Plain(ref data), ref message_id) =
-                                        request.content {
+    pub fn handle_delete(&mut self,
+                         routing_node: &RoutingNode,
+                         request: &RequestMessage)
+                         -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Delete(Data::Plain(ref data),
+                                                               ref message_id) = request.content {
             (data, message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -298,8 +321,10 @@ impl MpidManager {
 
     pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
         for (mpid_name, account) in &self.accounts {
-            let received_headers = Self::fetch_chunks(&self.chunk_store_inbox, &account.received_headers());
-            let stored_messages = Self::fetch_chunks(&self.chunk_store_outbox, &account.stored_messages());
+            let received_headers = Self::fetch_chunks(&self.chunk_store_inbox,
+                                                      &account.received_headers());
+            let stored_messages = Self::fetch_chunks(&self.chunk_store_outbox,
+                                                     &account.stored_messages());
 
             let src = Authority::ClientManager(*mpid_name);
             let refresh = Refresh::new(mpid_name,
@@ -335,7 +360,10 @@ impl MpidManager {
                 let value = try!(serialise(&wrapper));
                 let name = try!(mpid_header.name());
                 let plain_data = Data::Plain(PlainData::new(name, value));
-                try!(routing_node.send_post_request(request.dst.clone(), dst, plain_data, message_id.clone()));
+                try!(routing_node.send_post_request(request.dst.clone(),
+                                                    dst,
+                                                    plain_data,
+                                                    message_id.clone()));
                 return Ok(());
             } else {
                 try!(routing_node.send_put_failure(request.dst.clone(),
@@ -441,7 +469,10 @@ impl MpidManager {
                 };
                 let name = try!(mpid_header.name());
                 let data = Data::Plain(PlainData::new(name, serialised_request));
-                let _ = routing_node.send_post_request(request.dst.clone(), target, data, *message_id);
+                let _ = routing_node.send_post_request(request.dst.clone(),
+                                                       target,
+                                                       data,
+                                                       *message_id);
             } else {}
         }
         Ok(())
@@ -526,7 +557,8 @@ impl MpidManager {
                 let dst = request.src.clone();
                 let wrapper = MpidMessageWrapper::OutboxHasResponse(mpid_headers);
                 let serialised_wrapper = try!(serialise(&wrapper));
-                let plain_data = Data::Plain(PlainData::new(*request.dst.name(), serialised_wrapper));
+                let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
+                                                            serialised_wrapper));
                 try!(routing_node.send_post_request(src, dst, plain_data, message_id.clone()));
             }
         }
@@ -555,7 +587,8 @@ impl MpidManager {
                 let dst = request.src.clone();
                 let wrapper = MpidMessageWrapper::GetOutboxHeadersResponse(mpid_headers);
                 let serialised_wrapper = try!(serialise(&wrapper));
-                let plain_data = Data::Plain(PlainData::new(*request.dst.name(), serialised_wrapper));
+                let plain_data = Data::Plain(PlainData::new(*request.dst.name(),
+                                                            serialised_wrapper));
                 try!(routing_node.send_post_request(src, dst, plain_data, message_id.clone()));
             }
         }
@@ -666,7 +699,8 @@ mod test {
     use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand;
-    use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage, ResponseContent};
+    use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage,
+                  ResponseContent};
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -739,7 +773,11 @@ mod test {
         }
     }
 
-    fn put_mpid_header(env: &mut Environment, header: &MpidHeader, src: &Authority, dst: &Authority, id: &MessageId) {
+    fn put_mpid_header(env: &mut Environment,
+                       header: &MpidHeader,
+                       src: &Authority,
+                       dst: &Authority,
+                       id: &MessageId) {
         let wrapper = MpidMessageWrapper::PutHeader(header.clone());
         let name = unwrap_result!(header.name());
         let value = unwrap_result!(serialisation::serialise(&wrapper));
@@ -756,7 +794,11 @@ mod test {
         }
     }
 
-    fn get_mpid_message(env: &mut Environment, header: &MpidHeader, src: &Authority, dst: &Authority, id: &MessageId) {
+    fn get_mpid_message(env: &mut Environment,
+                        header: &MpidHeader,
+                        src: &Authority,
+                        dst: &Authority,
+                        id: &MessageId) {
         let wrapper = MpidMessageWrapper::GetMessage(header.clone());
         let name = unwrap_result!(header.name());
         let value = unwrap_result!(serialisation::serialise(&wrapper));
@@ -773,7 +815,11 @@ mod test {
         }
     }
 
-    fn delete_mpid_header(env: &mut Environment, name: &XorName, src: &Authority, dst: &Authority, id: &MessageId) {
+    fn delete_mpid_header(env: &mut Environment,
+                          name: &XorName,
+                          src: &Authority,
+                          dst: &Authority,
+                          id: &MessageId) {
         let wrapper = MpidMessageWrapper::DeleteHeader(*name);
         let value = unwrap_result!(serialisation::serialise(&wrapper));
         let plain_data = PlainData::new(*name, value);
@@ -789,7 +835,11 @@ mod test {
         }
     }
 
-    fn delete_mpid_message(env: &mut Environment, name: &XorName, src: &Authority, dst: &Authority, id: &MessageId) {
+    fn delete_mpid_message(env: &mut Environment,
+                           name: &XorName,
+                           src: &Authority,
+                           dst: &Authority,
+                           id: &MessageId) {
         let wrapper = MpidMessageWrapper::DeleteMessage(*name);
         let value = unwrap_result!(serialisation::serialise(&wrapper));
         let plain_data = PlainData::new(*name, value);
@@ -821,7 +871,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, *receiver_name, body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           *receiver_name,
+                                                           body,
+                                                           &secret_key));
         let message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -855,7 +909,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, *receiver_name, body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           *receiver_name,
+                                                           body,
+                                                           &secret_key));
         let mpid_header = mpid_message.header().clone();
         let src = env.our_authority.clone();
         let dst = Authority::ClientManager(*receiver_name);
@@ -882,7 +940,11 @@ mod test {
         let metadata: Vec<u8> = generate_random_vec_u8(128);
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = rand::random::<XorName>();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver.clone(), body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           receiver.clone(),
+                                                           body,
+                                                           &secret_key));
         let mpid_header = mpid_message.header().clone();
         let mpid_message_wrapper = MpidMessageWrapper::PutMessage(mpid_message.clone());
         let mut name = unwrap_result!(mpid_message.header().name());
@@ -978,7 +1040,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           receiver_name.clone(),
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -1039,7 +1105,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           receiver_name.clone(),
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -1110,7 +1180,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, *receiver_name, body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           *receiver_name,
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -1181,7 +1255,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, *receiver_name, body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           *receiver_name,
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -1221,8 +1299,8 @@ mod test {
         assert_eq!(post_failures[0].src, env.our_authority);
         assert_eq!(post_failures[0].dst,
                    Authority::ClientManager(receiver_name.clone()));
-        if let ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } = post_failures[0]
-                                                                                                       .content {
+        if let ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } =
+               post_failures[0].content {
             let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
             let value = unwrap_result!(serialisation::serialise(&wrapper));
             let plain_data = PlainData::new(mpid_header_name, value);
@@ -1254,7 +1332,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, *receiver_name, body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           *receiver_name,
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 
@@ -1342,7 +1424,11 @@ mod test {
         let body: Vec<u8> = generate_random_vec_u8(128);
         let receiver = generate_receiver();
         let receiver_name = receiver.name();
-        let mpid_message = unwrap_result!(MpidMessage::new(sender, metadata, receiver_name.clone(), body, &secret_key));
+        let mpid_message = unwrap_result!(MpidMessage::new(sender,
+                                                           metadata,
+                                                           receiver_name.clone(),
+                                                           body,
+                                                           &secret_key));
         let mut message_id = MessageId::new();
         put_mpid_message(&mut env, &mpid_message, &message_id);
 

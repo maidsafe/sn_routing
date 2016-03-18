@@ -118,9 +118,12 @@ impl PmidManager {
         }
     }
 
-    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data), ref message_id) =
-                                        request.content {
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      request: &RequestMessage)
+                      -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
             (data.clone(), message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -176,7 +179,8 @@ impl PmidManager {
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
         if let Some(metadata_for_put) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
-            let message_hash = sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
+            let message_hash =
+                sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
             let src = metadata_for_put.request.dst.clone();
             let dst = metadata_for_put.request.src.clone();
             trace!("As {:?} sending put success to {:?}", src, dst);
@@ -190,8 +194,8 @@ impl PmidManager {
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data), ref message_id) =
-                                        request.content {
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
             (data.clone(), message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -231,7 +235,9 @@ impl PmidManager {
                                             true
                                         }
                                         Err(error) => {
-                                            error!("Failed to get close group: {:?} for {}", error, pmid_node);
+                                            error!("Failed to get close group: {:?} for {}",
+                                                   error,
+                                                   pmid_node);
                                             false
                                         }
                                     }
@@ -263,8 +269,8 @@ mod test {
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
-                  ResponseContent};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+                  RequestMessage, ResponseContent};
     use sodiumoxide::crypto::hash::sha512;
     use std::sync::mpsc;
     use std::thread::sleep;
@@ -424,8 +430,8 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.from_authority);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } = put_failures[0]
-                                                                                                      .content {
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
             assert_eq!(*external_error_indicator, Vec::<u8>::new());
@@ -536,8 +542,8 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.from_authority);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } = put_failures[0]
-                                                                                                      .content {
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
             assert_eq!(*external_error_indicator, Vec::<u8>::new());
@@ -611,7 +617,8 @@ mod test {
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
+            if let RequestContent::Refresh(ref serialised_refresh) =
+                   refresh_requests[refresh_count].content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, *env.our_authority.name());

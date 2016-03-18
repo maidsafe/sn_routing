@@ -17,8 +17,8 @@
 
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
-              RoutingMessage};
+use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage, RoutingMessage};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -65,7 +65,9 @@ impl Vault {
         unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver)).do_run());
     }
 
-    fn new(app_event_sender: Option<Sender<Event>>, stop_receiver: Receiver<()>) -> Result<Vault, InternalError> {
+    fn new(app_event_sender: Option<Sender<Event>>,
+           stop_receiver: Receiver<()>)
+           -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
 
         Ok(Vault {
@@ -136,7 +138,10 @@ impl Vault {
         Ok(())
     }
 
-    fn on_request(&mut self, routing_node: &RoutingNode, request: RequestMessage) -> Result<(), InternalError> {
+    fn on_request(&mut self,
+                  routing_node: &RoutingNode,
+                  request: RequestMessage)
+                  -> Result<(), InternalError> {
         match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
@@ -160,13 +165,17 @@ impl Vault {
              &RequestContent::Put(Data::Immutable(_), _)) |
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Structured(_), _)) => self.maid_manager.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Structured(_), _)) => {
+                self.maid_manager.handle_put(routing_node, &request)
+            }
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Plain(_), _)) => self.mpid_manager.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Plain(_), _)) => {
+                self.mpid_manager.handle_put(routing_node, &request)
+            }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Immutable(_), _)) => {
@@ -179,10 +188,14 @@ impl Vault {
             }
             (&Authority::NaeManager(_),
              &Authority::NodeManager(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_manager.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.pmid_manager.handle_put(routing_node, &request)
+            }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => self.pmid_node.handle_put(routing_node, &request),
+             &RequestContent::Put(Data::Immutable(_), _)) => {
+                self.pmid_node.handle_put(routing_node, &request)
+            }
             // ================== Post ==================
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
@@ -194,11 +207,15 @@ impl Vault {
              &RequestContent::Post(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RequestContent::Post(Data::Plain(_), _)) => self.mpid_manager.handle_post(routing_node, &request),
+             &RequestContent::Post(Data::Plain(_), _)) => {
+                self.mpid_manager.handle_post(routing_node, &request)
+            }
             // ================== Delete ==================
             (&Authority::Client{ .. },
              &Authority::ClientManager(_),
-             &RequestContent::Delete(Data::Plain(_), _)) => self.mpid_manager.handle_delete(routing_node, &request),
+             &RequestContent::Delete(Data::Plain(_), _)) => {
+                self.mpid_manager.handle_delete(routing_node, &request)
+            }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Delete(Data::Structured(_), _)) => {
@@ -213,7 +230,10 @@ impl Vault {
         }
     }
 
-    fn on_response(&mut self, routing_node: &RoutingNode, response: ResponseMessage) -> Result<(), InternalError> {
+    fn on_response(&mut self,
+                   routing_node: &RoutingNode,
+                   response: ResponseMessage)
+                   -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
@@ -278,7 +298,10 @@ impl Vault {
         }
     }
 
-    fn on_node_added(&mut self, routing_node: &RoutingNode, node_added: XorName) -> Result<(), InternalError> {
+    fn on_node_added(&mut self,
+                     routing_node: &RoutingNode,
+                     node_added: XorName)
+                     -> Result<(), InternalError> {
         self.maid_manager.handle_churn(routing_node);
         self.immutable_data_manager.handle_node_added(routing_node, node_added);
         self.structured_data_manager.handle_churn(routing_node);
@@ -288,7 +311,10 @@ impl Vault {
         Ok(())
     }
 
-    fn on_node_lost(&mut self, routing_node: &RoutingNode, node_lost: XorName) -> Result<(), InternalError> {
+    fn on_node_lost(&mut self,
+                    routing_node: &RoutingNode,
+                    node_lost: XorName)
+                    -> Result<(), InternalError> {
         self.maid_manager.handle_churn(routing_node);
         self.immutable_data_manager.handle_node_lost(routing_node, node_lost);
         self.structured_data_manager.handle_churn(routing_node);
@@ -310,7 +336,11 @@ impl Vault {
         Ok(())
     }
 
-    fn on_refresh(&mut self, src: &Authority, dst: &Authority, serialised_refresh: &[u8]) -> Result<(), InternalError> {
+    fn on_refresh(&mut self,
+                  src: &Authority,
+                  dst: &Authority,
+                  serialised_refresh: &[u8])
+                  -> Result<(), InternalError> {
         let refresh = try!(serialisation::deserialise::<Refresh>(serialised_refresh));
         match (src, dst, &refresh.value) {
             (&Authority::ClientManager(_),
@@ -320,7 +350,9 @@ impl Vault {
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &RefreshValue::MpidManagerAccount(ref account, ref stored_messages, ref received_headers)) => {
+             &RefreshValue::MpidManagerAccount(ref account,
+                                               ref stored_messages,
+                                               ref received_headers)) => {
                 Ok(self.mpid_manager
                        .handle_refresh(refresh.name, account, stored_messages, received_headers))
             }
