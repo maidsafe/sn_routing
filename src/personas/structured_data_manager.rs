@@ -39,18 +39,14 @@ impl StructuredDataManager {
         }
     }
 
-    pub fn handle_get(&mut self,
-                      routing_node: &RoutingNode,
-                      request: &RequestMessage)
-                      -> Result<(), InternalError> {
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         // TODO - handle type_tag from name too
-        let (data_name, message_id) =
-            if let RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
-                                       ref message_id) = request.content {
-                (data_request.name(), message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
+        let (data_name, message_id) = if let RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
+                                                                 ref message_id) = request.content {
+            (data_request.name(), message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
+        };
 
         if let Ok(data) = self.chunk_store.get(&data_name) {
             if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
@@ -76,15 +72,12 @@ impl StructuredDataManager {
         Ok(())
     }
 
-    pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
-                      request: &RequestMessage)
-                      -> Result<(), InternalError> {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         // Take a hash of the message anticipating sending this as a success response to the MM.
         let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
 
-        let (data, message_id) = if let RequestContent::Put(Data::Structured(ref data),
-                                                            ref message_id) = request.content {
+        let (data, message_id) = if let RequestContent::Put(Data::Structured(ref data), ref message_id) =
+                                        request.content {
             (data, message_id)
         } else {
             unreachable!("Logic error")
@@ -109,28 +102,20 @@ impl StructuredDataManager {
 
         try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
         trace!("SDM sending PutSuccess for data {}", data_name);
-        let _ = routing_node.send_put_success(response_src,
-                                              response_dst,
-                                              message_hash,
-                                              *message_id);
+        let _ = routing_node.send_put_success(response_src, response_dst, message_hash, *message_id);
         Ok(())
     }
 
-    pub fn handle_post(&mut self,
-                       routing_node: &RoutingNode,
-                       request: &RequestMessage)
-                       -> Result<(), InternalError> {
-        let (new_data, message_id) =
-            if let RequestContent::Post(Data::Structured(ref structured_data), ref message_id) =
-                   request.content {
-                (structured_data, message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
+    pub fn handle_post(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (new_data, message_id) = if let RequestContent::Post(Data::Structured(ref structured_data),
+                                                                 ref message_id) = request.content {
+            (structured_data, message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
+        };
 
         if let Ok(serialised_data) = self.chunk_store.get(&new_data.name()) {
-            if let Ok(mut existing_data) =
-                   serialisation::deserialise::<StructuredData>(&serialised_data) {
+            if let Ok(mut existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
                 if existing_data.replace_with_other(new_data.clone()).is_ok() {
                     if let Ok(serialised_data) = serialisation::serialise(&existing_data) {
                         if let Ok(()) = self.chunk_store
@@ -159,20 +144,16 @@ impl StructuredDataManager {
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
-    pub fn handle_delete(&mut self,
-                         routing_node: &RoutingNode,
-                         request: &RequestMessage)
-                         -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Delete(Data::Structured(ref data),
-                                                               ref message_id) = request.content {
+    pub fn handle_delete(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Delete(Data::Structured(ref data), ref message_id) =
+                                        request.content {
             (data.clone(), message_id)
         } else {
             unreachable!("Error in vault demuxing")
         };
 
         if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
-            if let Ok(existing_data) =
-                   serialisation::deserialise::<StructuredData>(&serialised_data) {
+            if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
                 if existing_data.validate_self_against_successor(&data).is_ok() {
                     // Reducing content to empty to avoid later on put bearing the same name
                     // chunk_store::put() deletes the old data automatically
@@ -204,8 +185,7 @@ impl StructuredDataManager {
     pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
         if self.chunk_store.has_chunk(&structured_data.name()) {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
-                if let Ok(existing_data) =
-                       serialisation::deserialise::<StructuredData>(&serialised_data) {
+                if let Ok(existing_data) = serialisation::deserialise::<StructuredData>(&serialised_data) {
                     if existing_data.validate_self_against_successor(&structured_data).is_ok() {
                         // chunk_store::put() deletes the old data automatically
                         let serialised_data = try!(serialisation::serialise(&structured_data));
@@ -246,11 +226,10 @@ impl StructuredDataManager {
             _ => return,
         };
 
-        let structured_data =
-            match serialisation::deserialise::<StructuredData>(&serialised_data) {
-                Ok(parsed_data) => parsed_data,
-                Err(_) => return,
-            };
+        let structured_data = match serialisation::deserialise::<StructuredData>(&serialised_data) {
+            Ok(parsed_data) => parsed_data,
+            Err(_) => return,
+        };
 
         let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,

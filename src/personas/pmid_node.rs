@@ -19,8 +19,7 @@ use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::{ClientError, InternalError};
 use maidsafe_utilities::serialisation;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
-              RequestMessage};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use vault::RoutingNode;
 use xor_name::XorName;
@@ -34,17 +33,13 @@ impl PmidNode {
         Ok(PmidNode { chunk_store: try!(default_chunk_store::new()) })
     }
 
-    pub fn handle_get(&mut self,
-                      routing_node: &RoutingNode,
-                      request: &RequestMessage)
-                      -> Result<(), InternalError> {
-        let (data_name, message_id) =
-            if let RequestContent::Get(DataRequest::Immutable(ref name, _), ref message_id) =
-                   request.content {
-                (name, message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
+    pub fn handle_get(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (data_name, message_id) = if let RequestContent::Get(DataRequest::Immutable(ref name, _),
+                                                                 ref message_id) = request.content {
+            (name, message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
+        };
 
         if let Ok(data) = self.chunk_store.get(data_name) {
             if let Ok(decoded) = serialisation::deserialise::<ImmutableData>(&data) {
@@ -74,12 +69,9 @@ impl PmidNode {
         Ok(())
     }
 
-    pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
-                      request: &RequestMessage)
-                      -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data), ref message_id) =
+                                        request.content {
             (data.clone(), message_id)
         } else {
             unreachable!("Error in vault demuxing")
@@ -114,8 +106,7 @@ impl PmidNode {
                 _ => continue,
             };
 
-            let parsed_data = if let Ok(data) =
-                                     serialisation::deserialise::<ImmutableData>(&fetched_data) {
+            let parsed_data = if let Ok(data) = serialisation::deserialise::<ImmutableData>(&fetched_data) {
                 data
             } else {
                 // remove corrupted data and notify manager group
@@ -133,10 +124,7 @@ impl PmidNode {
                 // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
                 if emptied_space > required_space {
                     try!(self.chunk_store.put(&data_name, &serialised_data));
-                    let _ = self.notify_managers_of_success(routing_node,
-                                                            &data_name,
-                                                            &message_id,
-                                                            request);
+                    let _ = self.notify_managers_of_success(routing_node, &data_name, &message_id, request);
                     return Ok(());
                 }
             } else {}

@@ -16,20 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store;
-use mpid_messaging;
+use safe_network_common::messaging;
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
 use types::Refresh;
-
-#[derive(Debug, RustcEncodable, RustcDecodable)]
-pub enum ClientError {
-    NoSuchAccount,
-    AccountExists,
-    NoSuchData,
-    DataExists,
-    LowBalance,
-}
 
 #[derive(Debug)]
 pub enum InternalError {
@@ -41,7 +32,7 @@ pub enum InternalError {
     NotInCloseGroup,
     UnableToAllocateNewPmidNode,
     ChunkStore(chunk_store::Error),
-    MpidMessaging(mpid_messaging::Error),
+    MpidMessaging(messaging::Error),
     Serialisation(SerialisationError),
     Routing(InterfaceError),
     RoutingInternal(RoutingError),
@@ -60,8 +51,8 @@ impl From<chunk_store::Error> for InternalError {
     }
 }
 
-impl From<mpid_messaging::Error> for InternalError {
-    fn from(error: mpid_messaging::Error) -> InternalError {
+impl From<messaging::Error> for InternalError {
+    fn from(error: messaging::Error) -> InternalError {
         InternalError::MpidMessaging(error)
     }
 }

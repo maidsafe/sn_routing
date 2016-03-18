@@ -18,7 +18,8 @@
 use std::collections::HashMap;
 use std::mem;
 
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::MutationError;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
@@ -48,9 +49,9 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_data(&mut self, size: u64) -> Result<(), ClientError> {
+    fn put_data(&mut self, size: u64) -> Result<(), MutationError> {
         if size > self.space_available {
-            return Err(ClientError::LowBalance);
+            return Err(MutationError::LowBalance);
         }
         self.data_stored += size;
         self.space_available -= size;
@@ -83,17 +84,10 @@ impl MaidManager {
         }
     }
 
-    pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
-                      request: &RequestMessage)
-                      -> Result<(), InternalError> {
+    pub fn handle_put(&mut self, routing_node: &RoutingNode, request: &RequestMessage) -> Result<(), InternalError> {
         match request.content {
-            RequestContent::Put(Data::Immutable(_), _) => {
-                self.handle_put_immutable_data(routing_node, request)
-            }
-            RequestContent::Put(Data::Structured(_), _) => {
-                self.handle_put_structured_data(routing_node, request)
-            }
+            RequestContent::Put(Data::Immutable(_), _) => self.handle_put_immutable_data(routing_node, request),
+            RequestContent::Put(Data::Structured(_), _) => self.handle_put_structured_data(routing_node, request),
             _ => unreachable!("Error in vault demuxing"),
         }
     }
@@ -105,8 +99,7 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Send success response back to client
-                let message_hash =
-                    sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
+                let message_hash = sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
@@ -131,8 +124,7 @@ impl MaidManager {
                     None => return Ok(()),
                 }
                 // Send failure response back to client
-                let error =
-                    try!(serialisation::deserialise::<ClientError>(external_error_indicator));
+                let error = try!(serialisation::deserialise::<MutationError>(external_error_indicator));
                 self.reply_with_put_failure(routing_node, client_request, *message_id, &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
@@ -158,9 +150,7 @@ impl MaidManager {
                                             true
                                         }
                                         Err(error) => {
-                                            error!("Failed to get close group: {:?} for {}",
-                                                   error,
-                                                   maid_name);
+                                            error!("Failed to get close group: {:?} for {}", error, maid_name);
                                             false
                                         }
                                     }
@@ -181,8 +171,8 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data), ref message_id) =
+                                        request.content {
             (Data::Immutable(data.clone()), message_id)
         } else {
             unreachable!("Logic error")
@@ -195,8 +185,7 @@ impl MaidManager {
                                   routing_node: &RoutingNode,
                                   request: &RequestMessage)
                                   -> Result<(), InternalError> {
-        let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
-                                                                      ref message_id) =
+        let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data), ref message_id) =
                                                   request.content {
             (Data::Structured(data.clone()),
              data.get_type_tag(),
@@ -209,11 +198,8 @@ impl MaidManager {
         let client_name = utils::client_name(&request.src);
         if type_tag == 0 {
             if self.accounts.contains_key(&client_name) {
-                let error = ClientError::AccountExists;
-                try!(self.reply_with_put_failure(routing_node,
-                                                 request.clone(),
-                                                 *message_id,
-                                                 &error));
+                let error = MutationError::AccountExists;
+                try!(self.reply_with_put_failure(routing_node, request.clone(), *message_id, &error));
                 return Err(InternalError::Client(error));
             }
 
@@ -233,7 +219,7 @@ impl MaidManager {
         // Account must already exist to Put Data.
         let result = self.accounts
                          .get_mut(&client_name)
-                         .ok_or(ClientError::NoSuchAccount)
+                         .ok_or(MutationError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
@@ -265,16 +251,12 @@ impl MaidManager {
                               routing_node: &RoutingNode,
                               request: RequestMessage,
                               message_id: MessageId,
-                              error: &ClientError)
+                              error: &MutationError)
                               -> Result<(), InternalError> {
         let src = request.dst.clone();
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
-        let _ = routing_node.send_put_failure(src,
-                                              dst,
-                                              request,
-                                              external_error_indicator,
-                                              message_id);
+        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, message_id);
         Ok(())
     }
 }
@@ -292,12 +274,12 @@ impl Default for MaidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{ClientError, InternalError};
+    use error::{MutationError, InternalError};
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
-                  RequestMessage, ResponseContent, StructuredData};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
+                  ResponseContent, StructuredData};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
     use std::sync::mpsc;
@@ -374,13 +356,7 @@ mod test {
     fn create_account(env: &mut Environment) {
         if let Authority::Client { client_key, .. } = env.client {
             let identifier = random::<XorName>();
-            let sd = unwrap_result!(StructuredData::new(0,
-                                                        identifier,
-                                                        0,
-                                                        vec![],
-                                                        vec![client_key],
-                                                        vec![],
-                                                        None));
+            let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
             let message_id = MessageId::new();
             let request = RequestMessage {
                 src: env.client.clone(),
@@ -419,7 +395,7 @@ mod test {
                 loop {
                     let index = range.ind_sample(&mut rng);
                     if close_group[index] != our_name {
-                        return close_group[index]
+                        return close_group[index];
                     }
                 }
             }
@@ -432,8 +408,7 @@ mod test {
         let mut env = environment_setup();
 
         // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
-                                                generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -441,8 +416,8 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data), message_id),
         };
 
-        if let Err(InternalError::Client(ClientError::NoSuchAccount)) =
-               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::Client(MutationError::NoSuchAccount)) = env.maid_manager
+                                                                             .handle_put(&env.routing, &valid_request) {} else {
             unreachable!()
         }
 
@@ -456,12 +431,11 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } = put_failures[0]
+                                                                                                      .content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
-            if let ClientError::NoSuchAccount =
-                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+            if let MutationError::NoSuchAccount = unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
                 unreachable!()
             }
         } else {
@@ -474,8 +448,7 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
-                                                generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -511,8 +484,7 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
-                                                generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let mut message_id = MessageId::new();
         let mut valid_request = RequestMessage {
             src: env.client.clone(),
@@ -548,13 +520,7 @@ mod test {
         };
 
         let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(0,
-                                                    identifier,
-                                                    0,
-                                                    vec![],
-                                                    vec![client_key],
-                                                    vec![],
-                                                    None));
+        let sd = unwrap_result!(StructuredData::new(0, identifier, 0, vec![], vec![client_key], vec![], None));
         message_id = MessageId::new();
         valid_request = RequestMessage {
             src: env.client.clone(),
@@ -562,8 +528,8 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd), message_id),
         };
 
-        if let Err(InternalError::Client(ClientError::AccountExists)) =
-               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::Client(MutationError::AccountExists)) = env.maid_manager
+                                                                             .handle_put(&env.routing, &valid_request) {} else {
             unreachable!()
         }
 
@@ -573,12 +539,11 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } = put_failures[0]
+                                                                                                      .content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
-            if let ClientError::AccountExists =
-                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+            if let MutationError::AccountExists = unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
                 unreachable!()
             }
         } else {
@@ -591,8 +556,7 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
-                                                generate_random_vec_u8(1024));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
         let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -644,8 +608,8 @@ mod test {
         // Invalid case.
         message_id = MessageId::new();
 
-        if let Err(InternalError::FailedToFindCachedRequest(id)) =
-               env.maid_manager.handle_put_success(&env.routing, &message_id) {
+        if let Err(InternalError::FailedToFindCachedRequest(id)) = env.maid_manager
+                                                                      .handle_put_success(&env.routing, &message_id) {
             assert_eq!(message_id, id);
         } else {
             unreachable!()
@@ -663,13 +627,7 @@ mod test {
             unreachable!()
         };
         let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(1,
-                                                    identifier,
-                                                    0,
-                                                    vec![],
-                                                    vec![client_key],
-                                                    vec![],
-                                                    None));
+        let sd = unwrap_result!(StructuredData::new(1, identifier, 0, vec![], vec![client_key], vec![], None));
         let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
             src: env.client.clone(),
@@ -698,11 +656,9 @@ mod test {
         }
 
         // Valid case.
-        let error = ClientError::NoSuchData;
+        let error = MutationError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
-            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing,
-                                                                &message_id,
-                                                                &error_indicator[..]) {} else {
+            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {} else {
                 unreachable!()
             }
         } else {
@@ -715,8 +671,8 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } = put_failures[0]
+                                                                                                      .content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
             if let Ok(error_indicator) = serialisation::serialise(&error) {
@@ -731,9 +687,10 @@ mod test {
         // Invalid case.
         message_id = MessageId::new();
         if let Ok(error_indicator) = serialisation::serialise(&error) {
-            if let Err(InternalError::FailedToFindCachedRequest(id)) =
-                   env.maid_manager
-                      .handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {
+            if let Err(InternalError::FailedToFindCachedRequest(id)) = env.maid_manager
+                                                                          .handle_put_failure(&env.routing,
+                                                                                              &message_id,
+                                                                                              &error_indicator[..]) {
                 assert_eq!(message_id, id);
             } else {
                 unreachable!()
@@ -784,8 +741,7 @@ mod test {
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) =
-                   refresh_requests[refresh_count].content {
+            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, utils::client_name(&env.client));
