@@ -958,11 +958,11 @@ mod test {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
         let put_requests = env.routing.put_requests_given();
-        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+        let data_holders : Vec<XorName> = put_requests.iter().map(|put_request| {
             put_request.dst.name().clone()
         }).collect();
-        assert_eq!(data_hodlers.len(), REPLICANTS);
-        for data_holder in &data_hodlers {
+        assert_eq!(data_holders.len(), REPLICANTS);
+        for data_holder in &data_holders {
             let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
         }
 
@@ -980,7 +980,7 @@ mod test {
                 panic!("Received unexpected request {:?}", get_request);
             }
             assert_eq!(Authority::NaeManager(put_env.im_data.name()), get_request.src);
-            assert!(data_hodlers.contains(get_request.dst.name()));
+            assert!(data_holders.contains(get_request.dst.name()));
         }
     }
 
@@ -989,27 +989,31 @@ mod test {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
         let put_requests = env.routing.put_requests_given();
-        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+        let data_holders : Vec<XorName> = put_requests.iter().map(|put_request| {
             put_request.dst.name().clone()
         }).collect();
 
-        let mut candidates = data_hodlers.clone();
-        // The current setting is REPLICANTS = MIN_REPLICANTS = 4
-        // which means any failure notification from PM will trigger a replication
-        for data_holder in &data_hodlers {
+        let mut current_holders = data_holders.clone();
+        let mut failure_count = 0;
+        for data_holder in &data_holders {
             let _ = env.immutable_data_manager.handle_put_failure(&env.routing,
                                                                   data_holder,
                                                                   &put_env.message_id);
-            let put_requests = env.routing.put_requests_given();
-            let put_request = unwrap_option!(put_requests.last(), "");
-            assert_eq!(put_requests.len(), candidates.len() + 1);
-            assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
-            assert_eq!(put_request.content,
-                       RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
-                                           put_env.message_id.clone()));
-            let new_holder = put_request.dst.name().clone();
-            assert!(candidates.contains(&new_holder) == false);
-            candidates.push(new_holder);
+            failure_count += 1;
+            if failure_count > (REPLICANTS - MIN_REPLICANTS) {
+                let put_requests = env.routing.put_requests_given();
+                let put_request = unwrap_option!(put_requests.last(), "");
+                assert_eq!(put_requests.len(), current_holders.len() + 1);
+                assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
+                assert_eq!(put_request.content,
+                           RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
+                                               put_env.message_id.clone()));
+                let new_holder = put_request.dst.name().clone();
+                assert!(current_holders.contains(&new_holder) == false);
+                current_holders.push(new_holder);
+            } else {
+                assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
+            }
         }
     }
 
@@ -1018,10 +1022,10 @@ mod test {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
         let put_requests = env.routing.put_requests_given();
-        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+        let data_holders : Vec<XorName> = put_requests.iter().map(|put_request| {
             put_request.dst.name().clone()
         }).collect();
-        for data_holder in &data_hodlers {
+        for data_holder in &data_holders {
             let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
         }
 
@@ -1068,10 +1072,10 @@ mod test {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
         let put_requests = env.routing.put_requests_given();
-        let data_hodlers : Vec<XorName> = put_requests.iter().map(|put_request| {
+        let data_holders : Vec<XorName> = put_requests.iter().map(|put_request| {
             put_request.dst.name().clone()
         }).collect();
-        for data_holder in &data_hodlers {
+        for data_holder in &data_holders {
             let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
         }
 
