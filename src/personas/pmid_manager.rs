@@ -108,6 +108,7 @@ pub struct PmidManager {
     accounts: HashMap<XorName, Account>,
     // key -- (message_id, targeted pmid_node)
     ongoing_puts: HashMap<(MessageId, XorName), MetadataForPutRequest>,
+    put_timeout: Duration,
 }
 
 impl PmidManager {
@@ -115,6 +116,7 @@ impl PmidManager {
         PmidManager {
             accounts: HashMap::new(),
             ongoing_puts: HashMap::new(),
+            put_timeout: Duration::minutes(1),
         }
     }
 
@@ -145,10 +147,9 @@ impl PmidManager {
     }
 
     pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
-        let time_limit = Duration::minutes(1);
         let mut timed_out_puts = Vec::<(MessageId, XorName)>::new();
         for (key, metadata_for_put) in &self.ongoing_puts {
-            if metadata_for_put.creation_timestamp + time_limit < SteadyTime::now() {
+            if metadata_for_put.creation_timestamp + self.put_timeout < SteadyTime::now() {
                 timed_out_puts.push(*key);
             }
         }
@@ -274,7 +275,7 @@ mod test {
     use sodiumoxide::crypto::hash::sha512;
     use std::sync::mpsc;
     use std::thread::sleep;
-    use std::time::Duration;
+    use time::Duration;
     use types::Refresh;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
@@ -420,8 +421,9 @@ mod test {
             unreachable!()
         }
 
-        sleep(Duration::from_millis(60000));
-
+        // Reduce the timeout to speed up the test
+        sleep(::std::time::Duration::from_secs(1));
+        env.pmid_manager.put_timeout = Duration::milliseconds(500);
         env.pmid_manager.check_timeout(&env.routing);
 
         let put_failures = env.routing.put_failures_given();
