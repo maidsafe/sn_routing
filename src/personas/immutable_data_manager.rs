@@ -15,10 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::convert::From;
+use std::collections::{HashMap, HashSet};
 
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::GetError;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
@@ -159,14 +161,14 @@ impl ImmutableDataManager {
         } else {
             let src = request.dst.clone();
             let dst = request.src.clone();
-            let error = ClientError::NoSuchData;
+            let error = GetError::NoSuchData;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = routing_node.send_get_failure(src,
                                                   dst,
                                                   request.clone(),
                                                   external_error_indicator,
                                                   *message_id);
-            return Err(InternalError::Client(error));
+            return Err(From::from(error));
         };
 
         // If there's an ongoing Put operation, get the data from the cached copy there and return
@@ -517,9 +519,7 @@ impl ImmutableDataManager {
                 trace!("No longer a DM for {}", data_name);
                 None
             }
-            Ok(Some(close_group)) => {
-                Some(close_group)
-            }
+            Ok(Some(close_group)) => Some(close_group),
             Err(error) => {
                 error!("Failed to get close group: {:?} for {}", error, data_name);
                 None
@@ -747,7 +747,7 @@ impl ImmutableDataManager {
             let src = request.dst.clone();
             let dst = request.src.clone();
             trace!("Sending GetFailure back to {:?}", dst);
-            let error = ClientError::NoSuchData;
+            let error = GetError::NoSuchData;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = routing_node.send_get_failure(src,
                                                   dst,
@@ -789,13 +789,13 @@ impl Default for ImmutableDataManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::ClientError;
     use maidsafe_utilities::log;
     use maidsafe_utilities::serialisation;
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+    use safe_network_common::client_errors::GetError;
     use std::collections::HashSet;
     use std::mem;
     use std::sync::mpsc;
@@ -957,7 +957,7 @@ mod test {
                get_failure[0].content.clone() {
             assert_eq!(get_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-            if let ClientError::NoSuchData = parsed_error {} else {
+            if let GetError::NoSuchData = parsed_error {} else {
                 panic!("Received unexpected external_error_indicator with parsed error as {:?}",
                        parsed_error);
             }
@@ -1086,7 +1086,7 @@ mod test {
                        get_failure[0].content.clone() {
                     assert_eq!(get_env.message_id, *id);
                     let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-                    if let ClientError::NoSuchData = parsed_error {} else {
+                    if let GetError::NoSuchData = parsed_error {} else {
                         panic!("Received unexpected external_error_indicator with parsed error as {:?}",
                                parsed_error);
                     }

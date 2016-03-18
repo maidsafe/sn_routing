@@ -1,5 +1,15 @@
 # Safe Vault - Change Log
 
+## [0.5.0]
+- Replaced use of local Client errors for those in safe_network_common
+- Swapped dependency on mpid_messaging crate for safe_network_common dependency
+- Removed Mpid tests from CI suite
+- Updated some message flows
+- Completed churn-handling for ImmutableDataManager
+- Added many unit tests
+- Fixed Clippy warnings
+- Several bugfixes
+
 ## [0.4.0]
 - Accommodated updates to dependencies' APIs
 - Ensured that the network can correctly handle Clients doing a Get for ImmutableData immediately after doing a Put

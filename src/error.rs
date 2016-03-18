@@ -16,41 +16,40 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store;
-use mpid_messaging;
+use safe_network_common::messaging;
+use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
 use types::Refresh;
 
-#[derive(Debug, RustcEncodable, RustcDecodable)]
-pub enum ClientError {
-    NoSuchAccount,
-    AccountExists,
-    NoSuchData,
-    DataExists,
-    LowBalance,
-}
-
 #[derive(Debug)]
 pub enum InternalError {
     FailedToFindCachedRequest(MessageId),
-    Client(ClientError),
+    ClientGet(GetError),
+    ClientMutation(MutationError),
     UnknownMessageType(RoutingMessage),
     UnknownRefreshType(Authority, Authority, Refresh),
     InvalidResponse,
     NotInCloseGroup,
     UnableToAllocateNewPmidNode,
     ChunkStore(chunk_store::Error),
-    MpidMessaging(mpid_messaging::Error),
+    MpidMessaging(messaging::Error),
     Serialisation(SerialisationError),
     Routing(InterfaceError),
     RoutingInternal(RoutingError),
     Io(io::Error),
 }
 
-impl From<ClientError> for InternalError {
-    fn from(error: ClientError) -> InternalError {
-        InternalError::Client(error)
+impl From<MutationError> for InternalError {
+    fn from(error: MutationError) -> InternalError {
+        InternalError::ClientMutation(error)
+    }
+}
+
+impl From<GetError> for InternalError {
+    fn from(error: GetError) -> InternalError {
+        InternalError::ClientGet(error)
     }
 }
 
@@ -60,8 +59,8 @@ impl From<chunk_store::Error> for InternalError {
     }
 }
 
-impl From<mpid_messaging::Error> for InternalError {
-    fn from(error: mpid_messaging::Error) -> InternalError {
+impl From<messaging::Error> for InternalError {
+    fn from(error: messaging::Error) -> InternalError {
         InternalError::MpidMessaging(error)
     }
 }

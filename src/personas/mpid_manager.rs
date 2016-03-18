@@ -15,13 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::convert::From;
 use std::collections::HashMap;
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
+use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage,
+                                     MpidMessageWrapper};
 use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
 use sodiumoxide::crypto::sign::PublicKey;
 use sodiumoxide::crypto::hash::sha512;
@@ -343,7 +346,7 @@ impl MpidManager {
                              message_id: &MessageId)
                              -> Result<(), InternalError> {
         if self.chunk_store_inbox.has_chunk(&data.name()) {
-            return Err(InternalError::Client(ClientError::DataExists));
+            return Err(From::from(MutationError::DataExists));
         }
 
         let serialised_header = try!(serialise(&mpid_header));
@@ -396,7 +399,7 @@ impl MpidManager {
                               -> Result<(), InternalError> {
         if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
             if self.chunk_store_outbox.has_chunk(&data.name()) {
-                return Err(InternalError::Client(ClientError::DataExists));
+                return Err(From::from(MutationError::DataExists));
             }
             let serialised_message = try!(serialise(&mpid_message));
             if let Authority::Client { client_key, .. } = request.src {
@@ -692,7 +695,8 @@ impl Default for MpidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{ClientError, InternalError};
+    use error::InternalError;
+    use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand;
     use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage,
@@ -702,7 +706,7 @@ mod test {
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
-    use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
+    use safe_network_common::messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
     struct Environment {
         our_authority: Authority,
@@ -977,7 +981,7 @@ mod test {
         // put message again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::ClientMutation(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
 
@@ -1016,7 +1020,7 @@ mod test {
         // put header again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::ClientMutation(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
     }
@@ -1388,7 +1392,7 @@ mod test {
                    Authority::ClientManager(receiver_name.clone()));
         assert_eq!(delete_failures[0].dst, receiver);
         if let ResponseContent::DeleteFailure{ ref id, ref request, ref external_error_indicator } =
-                       delete_failures[0].content {
+               delete_failures[0].content {
             let mpid_header_wrapper = MpidMessageWrapper::DeleteHeader(mpid_header_name);
             let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));
             let plain_data = PlainData::new(mpid_header_name, value);
