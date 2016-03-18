@@ -1157,7 +1157,7 @@ mod test {
         let mut account = data_holders.clone();
         let mut churn_count = 0;
         let mut replicants = REPLICANTS;
-        let mut put_request_len = env.routing.put_requests_given().len();
+        let mut put_request_len = REPLICANTS;
         let mut replication_put_message_id : MessageId;
         for data_holder in &data_holders {
             churn_count += 1;
@@ -1244,6 +1244,82 @@ mod test {
 
     #[test]
     fn churn_after_put() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_holders : HashSet<DataHolder> = put_requests.iter().map(|put_request| {
+            let _ = env.immutable_data_manager.handle_put_success(put_request.dst.name(),
+                                                                  &put_env.message_id);
+            DataHolder::Good(put_request.dst.name().clone())
+        }).collect();
+
+        let mut account = data_holders.clone();
+        let mut churn_count = 0;
+        let mut get_message_id : MessageId;
+        let mut get_requests_len = REPLICANTS;
+        for _data_holder in &data_holders {
+            churn_count += 1;
+            if churn_count % 2 == 0 {
+                let lost_node = env.lose_close_node(&put_env.im_data.name());
+                env.routing.remove_node_from_routing_table(&lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                get_message_id = MessageId::from_lost_node(lost_node);
+
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if *holder.name() == lost_node {
+                                              None
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+            } else {
+                let new_node = env.get_close_node();
+                env.routing.add_node_into_routing_table(&new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+                get_message_id = MessageId::from_added_node(new_node);
+
+                if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
+                    // No longer being the DM of the data, expecting no refresh request
+                    assert_eq!(env.routing.refresh_requests_given().len(), churn_count - 1);
+                    return;
+                }
+            }
+
+            if churn_count == 1 {
+                get_requests_len = account.len();
+                let get_requests = env.routing.get_requests_given();
+                assert_eq!(get_requests.len(), get_requests_len);
+                for get_request in &get_requests {
+                    assert_eq!(get_request.src, Authority::NaeManager(put_env.im_data.name()));
+                    assert_eq!(get_request.content,
+                               RequestContent::Get(DataRequest::Immutable(put_env.im_data.name(),
+                                                                     ImmutableDataType::Normal),
+                                                   get_message_id));
+                }
+            } else {
+                assert_eq!(env.routing.get_requests_given().len(), get_requests_len);
+            }
+
+            let refreshs = env.routing.refresh_requests_given();
+            assert_eq!(refreshs.len(), churn_count);
+            let received_refresh = unwrap_option!(refreshs.last(), "");
+            if let RequestContent::Refresh(received_serialised_refresh) =
+                    received_refresh.content.clone() {
+                let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                        &received_serialised_refresh[..]));
+                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
+                        parsed_refresh.value.clone() {
+                    assert_eq!(received_account, account);
+                } else {
+                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
+                }
+            } else {
+                panic!("Received unexpected refresh {:?}", received_refresh);
+            }
+        }
     }
 
     #[test]
