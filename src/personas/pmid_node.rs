@@ -17,7 +17,8 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
               RequestMessage};
@@ -60,7 +61,7 @@ impl PmidNode {
                 return Ok(());
             }
         }
-        let error = ClientError::NoSuchData;
+        let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         trace!("As {:?} sending get failure of data {} to {:?}",
                request.dst,

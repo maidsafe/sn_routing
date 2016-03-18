@@ -15,10 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::HashMap;
 use std::mem;
+use std::convert::From;
+use std::collections::HashMap;
 
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::MutationError;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
@@ -48,9 +50,9 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_data(&mut self, size: u64) -> Result<(), ClientError> {
+    fn put_data(&mut self, size: u64) -> Result<(), MutationError> {
         if size > self.space_available {
-            return Err(ClientError::LowBalance);
+            return Err(MutationError::LowBalance);
         }
         self.data_stored += size;
         self.space_available -= size;
@@ -132,7 +134,7 @@ impl MaidManager {
                 }
                 // Send failure response back to client
                 let error =
-                    try!(serialisation::deserialise::<ClientError>(external_error_indicator));
+                    try!(serialisation::deserialise::<MutationError>(external_error_indicator));
                 self.reply_with_put_failure(routing_node, client_request, *message_id, &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
@@ -209,12 +211,12 @@ impl MaidManager {
         let client_name = utils::client_name(&request.src);
         if type_tag == 0 {
             if self.accounts.contains_key(&client_name) {
-                let error = ClientError::AccountExists;
+                let error = MutationError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node,
                                                  request.clone(),
                                                  *message_id,
                                                  &error));
-                return Err(InternalError::Client(error));
+                return Err(From::from(error));
             }
 
             // Create the account, the SD incurs charge later on
@@ -233,7 +235,7 @@ impl MaidManager {
         // Account must already exist to Put Data.
         let result = self.accounts
                          .get_mut(&client_name)
-                         .ok_or(ClientError::NoSuchAccount)
+                         .ok_or(MutationError::NoSuchAccount)
                          .and_then(|account| {
                              account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
                          });
@@ -242,7 +244,7 @@ impl MaidManager {
                    data.name(),
                    error);
             try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
-            return Err(InternalError::Client(error));
+            return Err(From::from(error));
         }
 
         {
@@ -265,7 +267,7 @@ impl MaidManager {
                               routing_node: &RoutingNode,
                               request: RequestMessage,
                               message_id: MessageId,
-                              error: &ClientError)
+                              error: &MutationError)
                               -> Result<(), InternalError> {
         let src = request.dst.clone();
         let dst = request.src.clone();
@@ -292,7 +294,8 @@ impl Default for MaidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{ClientError, InternalError};
+    use error::InternalError;
+    use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
@@ -419,7 +422,7 @@ mod test {
                 loop {
                     let index = range.ind_sample(&mut rng);
                     if close_group[index] != our_name {
-                        return close_group[index]
+                        return close_group[index];
                     }
                 }
             }
@@ -441,8 +444,10 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data), message_id),
         };
 
-        if let Err(InternalError::Client(ClientError::NoSuchAccount)) =
-               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::ClientMutation(MutationError::NoSuchAccount)) =
+               env.maid_manager
+                  .handle_put(&env.routing, &valid_request) {
+        } else {
             unreachable!()
         }
 
@@ -460,8 +465,9 @@ mod test {
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
-            if let ClientError::NoSuchAccount =
-                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+            if let MutationError::NoSuchAccount =
+                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {
+            } else {
                 unreachable!()
             }
         } else {
@@ -562,8 +568,10 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd), message_id),
         };
 
-        if let Err(InternalError::Client(ClientError::AccountExists)) =
-               env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::ClientMutation(MutationError::AccountExists)) =
+               env.maid_manager
+                  .handle_put(&env.routing, &valid_request) {
+        } else {
             unreachable!()
         }
 
@@ -577,7 +585,7 @@ mod test {
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
-            if let ClientError::AccountExists =
+            if let MutationError::AccountExists =
                    unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
                 unreachable!()
             }
@@ -645,7 +653,8 @@ mod test {
         message_id = MessageId::new();
 
         if let Err(InternalError::FailedToFindCachedRequest(id)) =
-               env.maid_manager.handle_put_success(&env.routing, &message_id) {
+               env.maid_manager
+                  .handle_put_success(&env.routing, &message_id) {
             assert_eq!(message_id, id);
         } else {
             unreachable!()
@@ -698,7 +707,7 @@ mod test {
         }
 
         // Valid case.
-        let error = ClientError::NoSuchData;
+        let error = MutationError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
             if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing,
                                                                 &message_id,
