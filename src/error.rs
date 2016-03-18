@@ -17,6 +17,7 @@
 
 use chunk_store;
 use safe_network_common::messaging;
+use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
@@ -25,7 +26,8 @@ use types::Refresh;
 #[derive(Debug)]
 pub enum InternalError {
     FailedToFindCachedRequest(MessageId),
-    Client(ClientError),
+    ClientGet(GetError),
+    ClientMutation(MutationError),
     UnknownMessageType(RoutingMessage),
     UnknownRefreshType(Authority, Authority, Refresh),
     InvalidResponse,
@@ -39,9 +41,15 @@ pub enum InternalError {
     Io(io::Error),
 }
 
-impl From<ClientError> for InternalError {
-    fn from(error: ClientError) -> InternalError {
-        InternalError::Client(error)
+impl From<MutationError> for InternalError {
+    fn from(error: MutationError) -> InternalError {
+        InternalError::ClientMutation(error)
+    }
+}
+
+impl From<GetError> for InternalError {
+    fn from(error: GetError) -> InternalError {
+        InternalError::ClientGet(error)
     }
 }
 

@@ -17,7 +17,8 @@
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
 use sodiumoxide::crypto::hash::sha512;
@@ -62,7 +63,7 @@ impl StructuredDataManager {
             }
         }
         trace!("SDM sending get_failure of sd {}", data_name);
-        let error = ClientError::NoSuchData;
+        let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
                                            request.src.clone(),
@@ -89,7 +90,7 @@ impl StructuredDataManager {
 
         if self.chunk_store.has_chunk(&data_name) {
             debug!("Already have SD {:?}", data_name);
-            let error = ClientError::DataExists;
+            let error = MutationError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
             trace!("SDM sending PutFailure for data {}", data_name);
             let _ = routing_node.send_put_failure(response_src,

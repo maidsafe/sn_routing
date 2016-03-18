@@ -274,7 +274,8 @@ impl Default for MaidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{MutationError, InternalError};
+    use error::InternalError;
+    use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};

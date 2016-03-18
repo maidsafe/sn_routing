@@ -19,7 +19,8 @@ use std::collections::HashMap;
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
 use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
@@ -319,7 +320,7 @@ impl MpidManager {
                              message_id: &MessageId)
                              -> Result<(), InternalError> {
         if self.chunk_store_inbox.has_chunk(&data.name()) {
-            return Err(InternalError::Client(ClientError::DataExists));
+            return Err(InternalError::Client(MutationError::DataExists));
         }
 
         let serialised_header = try!(serialise(&mpid_header));
@@ -369,7 +370,7 @@ impl MpidManager {
                               -> Result<(), InternalError> {
         if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
             if self.chunk_store_outbox.has_chunk(&data.name()) {
-                return Err(InternalError::Client(ClientError::DataExists));
+                return Err(InternalError::Client(MutationError::DataExists));
             }
             let serialised_message = try!(serialise(&mpid_message));
             if let Authority::Client { client_key, .. } = request.src {
@@ -660,7 +661,8 @@ impl Default for MpidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{ClientError, InternalError};
+    use error::InternalError;
+    use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand;
     use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage, ResponseContent};
@@ -916,7 +918,7 @@ mod test {
         // put message again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::Client(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
 
@@ -955,7 +957,7 @@ mod test {
         // put header again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::Client(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
     }
