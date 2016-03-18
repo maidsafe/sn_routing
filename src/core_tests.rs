@@ -402,6 +402,20 @@ fn node_drops() {
 }
 
 #[test]
+fn check_close_groups_for_group_size_nodes() {
+    let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
+
+    assert!(nodes.iter().all(|n| nodes.iter().all(|m|
+        if m.name() != n.name() { m.close_group().contains(n.name()) } else { true }
+    )));
+}
+
+#[test]
+fn check_routing_table_sizes() {
+    assert!(create_connected_nodes(&Network::new(), 20).iter().all(|n| n.routing_table().len() >= 17));
+}
+
+#[test]
 fn successful_put_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
@@ -466,16 +480,12 @@ fn successful_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { ref src,
-                                                   ref dst,
-                                                   content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(RequestMessage {
+                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.send_get_success(dst.clone(),
-                                                              src.clone(),
-                                                              data.clone(),
-                                                              *id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.send_get_success(
+                                dst.clone(), src.clone(), data.clone(), *id, result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetSuccess )");
                         }
                         break;
@@ -537,9 +547,8 @@ fn failed_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { ref src,
-                                                   ref dst,
-                                                   content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(RequestMessage {
+                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
                         let request = RequestMessage {
@@ -547,12 +556,8 @@ fn failed_get_request() {
                             dst: dst.clone(),
                             content: RequestContent::Get(request.clone(), *id)
                         };
-                        if let Err(_) = node.send_get_failure(dst.clone(),
-                                                              src.clone(),
-                                                              request,
-                                                              vec![],
-                                                              *id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.send_get_failure(
+                                dst.clone(), src.clone(), request, vec![], *id, result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetFailure )");
                         }
                         break;
@@ -613,16 +618,12 @@ fn disconnect_on_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { ref src,
-                                                   ref dst,
-                                                   content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(RequestMessage {
+                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.send_get_success(dst.clone(),
-                                                              src.clone(),
-                                                              data.clone(),
-                                                              *id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.send_get_success(
+                                dst.clone(), src.clone(), data.clone(), *id, result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetSuccess )");
                         }
                         break;
