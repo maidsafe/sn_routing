@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::convert::From;
+
 use chunk_store::ChunkStore;
 use default_chunk_store;
 use error::InternalError;
@@ -98,7 +100,7 @@ impl StructuredDataManager {
                                                   request.clone(),
                                                   external_error_indicator,
                                                   *message_id);
-            return Err(InternalError::Client(error));
+            return Err(From::from(error));
         }
 
         try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));

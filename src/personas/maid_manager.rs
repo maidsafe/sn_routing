@@ -15,8 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::HashMap;
 use std::mem;
+use std::convert::From;
+use std::collections::HashMap;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
@@ -200,7 +201,7 @@ impl MaidManager {
             if self.accounts.contains_key(&client_name) {
                 let error = MutationError::AccountExists;
                 try!(self.reply_with_put_failure(routing_node, request.clone(), *message_id, &error));
-                return Err(InternalError::Client(error));
+                return Err(From::from(error));
             }
 
             // Create the account, the SD incurs charge later on
@@ -228,7 +229,7 @@ impl MaidManager {
                    data.name(),
                    error);
             try!(self.reply_with_put_failure(routing_node, request.clone(), message_id, &error));
-            return Err(InternalError::Client(error));
+            return Err(From::from(error));
         }
 
         {
@@ -417,8 +418,10 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data), message_id),
         };
 
-        if let Err(InternalError::Client(MutationError::NoSuchAccount)) = env.maid_manager
-                                                                             .handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::ClientMutation(MutationError::NoSuchAccount)) = env.maid_manager
+                                                                                     .handle_put(&env.routing,
+                                                                                                 &valid_request) {
+        } else {
             unreachable!()
         }
 
@@ -436,7 +439,8 @@ mod test {
                                                                                                       .content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
-            if let MutationError::NoSuchAccount = unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
+            if let MutationError::NoSuchAccount = unwrap_result!(serialisation::deserialise(external_error_indicator)) {
+            } else {
                 unreachable!()
             }
         } else {
@@ -529,8 +533,10 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd), message_id),
         };
 
-        if let Err(InternalError::Client(MutationError::AccountExists)) = env.maid_manager
-                                                                             .handle_put(&env.routing, &valid_request) {} else {
+        if let Err(InternalError::ClientMutation(MutationError::AccountExists)) = env.maid_manager
+                                                                                     .handle_put(&env.routing,
+                                                                                                 &valid_request) {
+        } else {
             unreachable!()
         }
 

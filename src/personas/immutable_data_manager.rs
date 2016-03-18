@@ -15,8 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::convert::From;
+use std::collections::{HashMap, HashSet};
 
 use error::InternalError;
 use safe_network_common::client_errors::GetError;
@@ -155,7 +156,7 @@ impl ImmutableDataManager {
                                                   request.clone(),
                                                   external_error_indicator,
                                                   *message_id);
-            return Err(InternalError::Client(error));
+            return Err(From::from(error));
         };
 
         // If there's an ongoing Put operation, get the data from the cached copy there and return
