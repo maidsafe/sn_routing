@@ -108,6 +108,7 @@ pub struct PmidManager {
     accounts: HashMap<XorName, Account>,
     // key -- (message_id, targeted pmid_node)
     ongoing_puts: HashMap<(MessageId, XorName), MetadataForPutRequest>,
+    put_timeout: Duration,
 }
 
 impl PmidManager {
@@ -115,6 +116,7 @@ impl PmidManager {
         PmidManager {
             accounts: HashMap::new(),
             ongoing_puts: HashMap::new(),
+            put_timeout: Duration::minutes(1),
         }
     }
 
@@ -145,10 +147,9 @@ impl PmidManager {
     }
 
     pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
-        let time_limit = Duration::minutes(1);
         let mut timed_out_puts = Vec::<(MessageId, XorName)>::new();
         for (key, metadata_for_put) in &self.ongoing_puts {
-            if metadata_for_put.creation_timestamp + time_limit < SteadyTime::now() {
+            if metadata_for_put.creation_timestamp + self.put_timeout < SteadyTime::now() {
                 timed_out_puts.push(*key);
             }
         }
@@ -269,12 +270,12 @@ mod test {
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent, RequestMessage,
-                  ResponseContent};
+    use routing::{Authority, Data, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+                  RequestMessage, ResponseContent};
     use sodiumoxide::crypto::hash::sha512;
     use std::sync::mpsc;
     use std::thread::sleep;
-    use std::time::Duration;
+    use time::Duration;
     use types::Refresh;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
@@ -322,7 +323,7 @@ mod test {
 
         loop {
             if let Ok(Some(_)) = env.routing.close_group(data.name()) {
-                return data
+                return data;
             } else {
                 data = ImmutableData::new(ImmutableDataType::Normal, generate_random_vec_u8(1024));
             }
@@ -334,7 +335,7 @@ mod test {
 
         loop {
             if let Ok(Some(_)) = env.routing.close_group(name) {
-                return name
+                return name;
             } else {
                 name = random::<XorName>();
             }
@@ -354,7 +355,7 @@ mod test {
                 loop {
                     let index = range.ind_sample(&mut rng);
                     if close_group[index] != our_name {
-                        return close_group[index]
+                        return close_group[index];
                     }
                 }
             }
@@ -380,7 +381,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+        assert_eq!(put_requests[0].dst,
+                   Authority::ManagedNode(env.our_authority.name().clone()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
             assert_eq!(*data, immutable_data);
@@ -409,7 +411,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+        assert_eq!(put_requests[0].dst,
+                   Authority::ManagedNode(env.our_authority.name().clone()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
             assert_eq!(*data, immutable_data);
@@ -418,8 +421,9 @@ mod test {
             unreachable!()
         }
 
-        sleep(Duration::from_millis(60000));
-
+        // Reduce the timeout to speed up the test
+        sleep(::std::time::Duration::from_secs(1));
+        env.pmid_manager.put_timeout = Duration::milliseconds(500);
         env.pmid_manager.check_timeout(&env.routing);
 
         let put_failures = env.routing.put_failures_given();
@@ -457,7 +461,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+        assert_eq!(put_requests[0].dst,
+                   Authority::ManagedNode(env.our_authority.name().clone()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
             assert_eq!(*data, immutable_data);
@@ -519,7 +524,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+        assert_eq!(put_requests[0].dst,
+                   Authority::ManagedNode(env.our_authority.name().clone()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
             assert_eq!(*data, immutable_data);
@@ -567,7 +573,8 @@ mod test {
 
         assert_eq!(put_requests.len(), 1);
         assert_eq!(put_requests[0].src, env.our_authority);
-        assert_eq!(put_requests[0].dst, Authority::ManagedNode(env.our_authority.name().clone()));
+        assert_eq!(put_requests[0].dst,
+                   Authority::ManagedNode(env.our_authority.name().clone()));
 
         if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[0].content {
             assert_eq!(*data, immutable_data);
@@ -588,7 +595,7 @@ mod test {
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
             if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[0].content {
-               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, *env.our_authority.name());
                 } else {
@@ -612,8 +619,9 @@ mod test {
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[refresh_count].content {
-               if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
+            if let RequestContent::Refresh(ref serialised_refresh) =
+                   refresh_requests[refresh_count].content {
+                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, *env.our_authority.name());
                 } else {
