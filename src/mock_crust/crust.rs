@@ -23,14 +23,17 @@ use std::rc::Rc;
 
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
+/// Default beacon (service discovery) port.
+pub const DEFAULT_BEACON_PORT: u16 = 5484;
+
 /// Mock version of crust::Service
 pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
 
 impl Service {
     /// Create new mock Service using the make_current/get_current mechanism to
     /// get the associated ServiceHandle.
-    pub fn new(event_sender: CrustEventSender, beacon_port: u16) -> Result<Self, Error> {
-        Self::with_handle(&support::get_current(), event_sender, beacon_port)
+    pub fn new(event_sender: CrustEventSender) -> Result<Self, Error> {
+        Self::with_handle(&support::get_current(), event_sender, DEFAULT_BEACON_PORT)
     }
 
     /// Create new mock Service by explicitly passing the mock device to associate
@@ -48,8 +51,8 @@ impl Service {
 
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
-    pub fn restart(&self, event_sender: CrustEventSender, beacon_port: u16) {
-        self.lock_and_poll(|imp| imp.restart(event_sender, beacon_port))
+    pub fn restart(&self, event_sender: CrustEventSender) {
+        self.lock_and_poll(|imp| imp.restart(event_sender, DEFAULT_BEACON_PORT))
     }
 
     pub fn stop_bootstrap(&self) {

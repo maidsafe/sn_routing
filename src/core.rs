@@ -58,10 +58,6 @@ use utils;
 
 type StdDuration = ::std::time::Duration;
 
-const CRUST_DEFAULT_BEACON_PORT: u16 = 5484;
-// const CRUST_DEFAULT_TCP_ACCEPTING_PORT: u16 = 5483;
-// const CRUST_DEFAULT_UTP_ACCEPTING_PORT: u16 = 5483;
-
 /// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
 /// the same time.
 const MAX_JOINING_NODES: usize = 1;
@@ -278,7 +274,7 @@ impl Core {
                                                         category_tx);
 
         // TODO(afck): Add the listening port to the Service constructor.
-        let crust_service = match Service::new(crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT) {
+        let crust_service = match Service::new(crust_sender.clone()) {
             Ok(service) => service,
             Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
         };
@@ -562,6 +558,10 @@ impl Core {
     }
 
     fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
+        if peer_id == self.crust_service.id() {
+            error!("NewPeer fired with our crust peer id");
+            return;
+        }
         if self.client_restriction {
             warn!("{:?} Received NewPeer event as a client.", self);
         } else {
@@ -1190,6 +1190,10 @@ impl Core {
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) {
+        if peer_id == self.crust_service.id() {
+            error!("LostPeer fired with our crust peer id");
+            return;
+        }
         if !self.client_restriction {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
@@ -1698,18 +1702,17 @@ impl Core {
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
     /// not a proxy, client or routing table entry.
     fn disconnect_peer(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
-        if let Some(node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
+        if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             warn!("Not disconnecting routing table entry {:?} ({:?}).",
                   node.name(),
                   peer_id);
-        } else if let Some(public_id) = self.proxy_map.get(peer_id) {
+        } else if let Some(&public_id) = self.proxy_map.get(peer_id) {
             warn!("Not disconnecting proxy node {:?} ({:?}).",
                   public_id.name(),
                   peer_id);
         } else if self.client_map.contains_key(peer_id) {
             warn!("Not disconnecting client {:?}.", peer_id);
-        }
-        if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
+        } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
             warn!("Disconnecting {:?} (indirect).", peer_id);
             try!(self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id)));
         } else {
@@ -2445,8 +2448,7 @@ impl Core {
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn restart_crust_service(&mut self) {
-        self.crust_service = match Service::new(self.crust_sender.clone(),
-                                                CRUST_DEFAULT_BEACON_PORT) {
+        self.crust_service = match Service::new(self.crust_sender.clone()) {
             Ok(service) => service,
             Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
         };
@@ -2454,7 +2456,7 @@ impl Core {
 
     #[cfg(feature = "use-mock-crust")]
     fn restart_crust_service(&mut self) {
-        self.crust_service.restart(self.crust_sender.clone(), CRUST_DEFAULT_BEACON_PORT)
+        self.crust_service.restart(self.crust_sender.clone())
     }
 }
 
