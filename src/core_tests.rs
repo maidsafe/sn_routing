@@ -450,33 +450,9 @@ fn successful_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let dst = Authority::ClientManager(clients[0].name().clone());
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(ImmutableDataType::Normal, bytes);
     let data = Data::Immutable(immutable_data.clone());
-    let message_id = MessageId::new();
-
-    assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx.clone()).is_ok());
-
-    poll_all(&mut nodes, &mut clients);
-
-    let mut request_received_count = 0;
-
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name())) {
-        loop {
-            match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable, ref id), .. })) => {
-                    request_received_count += 1;
-                    if data == *immutable && message_id == *id { break; }
-                },
-                Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
-            }
-        }
-    }
-
-    assert!(request_received_count >= QUORUM_SIZE);
-
     let dst = Authority::NaeManager(data.name().clone());
     let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
     let message_id = MessageId::new();
@@ -485,7 +461,7 @@ fn successful_get_request() {
 
     poll_all(&mut nodes, &mut clients);
 
-    request_received_count = 0;
+    let mut request_received_count = 0;
 
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
         loop {
