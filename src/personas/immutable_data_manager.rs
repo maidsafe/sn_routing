@@ -788,12 +788,12 @@ impl Default for ImmutableDataManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::ClientError;
     use maidsafe_utilities::log;
     use maidsafe_utilities::serialisation;
     use rand::random;
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+    use safe_network_common::client_errors::GetError;
     use std::sync::mpsc;
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
@@ -923,7 +923,7 @@ mod test {
                get_failure[0].content.clone() {
             assert_eq!(get_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-            if let ClientError::NoSuchData = parsed_error {} else {
+            if let GetError::NoSuchData = parsed_error {} else {
                 panic!("Received unexpected external_error_indicator with parsed error as {:?}",
                        parsed_error);
             }
@@ -1052,7 +1052,7 @@ mod test {
                        get_failure[0].content.clone() {
                     assert_eq!(get_env.message_id, *id);
                     let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-                    if let ClientError::NoSuchData = parsed_error {} else {
+                    if let GetError::NoSuchData = parsed_error {} else {
                         panic!("Received unexpected external_error_indicator with parsed error as {:?}",
                                parsed_error);
                     }
