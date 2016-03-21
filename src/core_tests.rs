@@ -411,11 +411,6 @@ fn check_close_groups_for_group_size_nodes() {
 }
 
 #[test]
-fn check_routing_table_sizes() {
-    assert!(create_connected_nodes(&Network::new(), 20).iter().all(|n| n.routing_table().len() >= 17));
-}
-
-#[test]
 fn successful_put_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
