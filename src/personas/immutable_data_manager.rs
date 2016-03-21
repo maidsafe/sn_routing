@@ -464,6 +464,7 @@ impl ImmutableDataManager {
         let close_group = if let Some(group) = self.close_group_to(routing_node, &data_name) {
             group
         } else {
+            trace!("no longer part of the IDM group");
             // Remove entry from `ongoing_puts`, as we're not part of the IDM group any more
             let ongoing_puts = mem::replace(&mut self.ongoing_puts, HashMap::new());
             self.ongoing_puts = ongoing_puts.into_iter()
@@ -683,9 +684,6 @@ impl ImmutableDataManager {
                        data_name,
                        pmid_nodes);
             }
-            if let Some(pmid_nodes) = self.accounts.get(data_name) {
-                self.send_refresh(routing_node, data_name, pmid_nodes);
-            }
         }
 
         Ok(())
@@ -790,13 +788,17 @@ mod test {
     use super::*;
     use maidsafe_utilities::log;
     use maidsafe_utilities::serialisation;
-    use rand::random;
+    use rand::distributions::{IndependentSample, Range};
+    use rand::{random, thread_rng};
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent, ResponseMessage};
     use safe_network_common::client_errors::GetError;
+    use std::collections::HashSet;
+    use std::mem;
     use std::sync::mpsc;
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
+    use types::{Refresh, RefreshValue};
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
@@ -836,6 +838,35 @@ mod test {
                 if let Ok(Some(_)) = self.routing.close_group(im_data.name()) {
                     return im_data
                 }
+            }
+        }
+
+        pub fn get_close_node(&self) -> XorName {
+            loop {
+                let name = random::<XorName>();
+                if let Ok(Some(_)) = self.routing.close_group(name) {
+                    return name
+                }
+            }
+        }
+
+        fn lose_close_node(&self, target: &XorName) -> XorName {
+            if let Ok(Some(close_group)) = self.routing.close_group(*target) {
+                let mut rng = thread_rng();
+                let range = Range::new(0, close_group.len());
+                let our_name = if let Ok(ref name) = self.routing.name() {
+                    *name
+                } else {
+                    unreachable!()
+                };
+                loop {
+                    let index = range.ind_sample(&mut rng);
+                    if close_group[index] != our_name {
+                        return close_group[index]
+                    }
+                }
+            } else {
+                random::<XorName>()
             }
         }
 
@@ -1112,36 +1143,311 @@ mod test {
     }
 
     #[test]
-    fn handle_churn() {
-        // let mut env = environment_setup();
-        // env.immutable_data_manager.handle_put(&env.routing, &env.data);
-        // let close_group = vec![env.our_authority.name().clone()]
-        //                       .into_iter()
-        //                       .chain(env.routing.close_group_including_self().into_iter())
-        //                       .collect();
-        // let churn_node = random();
-        // env.immutable_data_manager.handle_churn(&env.routing, close_group, &churn_node);
-        // let refresh_requests = env.routing.refresh_requests_given();
-        // assert_eq!(refresh_requests.len(), 2);
-        // {
-        //     // Account refresh
-        //     assert_eq!(refresh_requests[0].src.name().clone(), env.data.name());
-        //     let (type_tag, cause) = match refresh_requests[0].content {
-        //         RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
-        //         _ => panic!("Invalid content type"),
-        //     };
-        //     assert_eq!(type_tag, ACCOUNT_TAG);
-        //     assert_eq!(cause, churn_node);
-        // }
-        // {
-        //     // Stats refresh
-        //     assert_eq!(refresh_requests[1].src.name().clone(), churn_node);
-        //     let (type_tag, cause) = match refresh_requests[1].content {
-        //         RequestContent::Refresh{ type_tag, cause, .. } => (type_tag, cause),
-        //         _ => panic!("Invalid content type"),
-        //     };
-        //     assert_eq!(type_tag, STATS_TAG);
-        //     assert_eq!(cause, churn_node);
-        // }
+    fn handle_refresh() {
+        let mut env = Environment::new();
+        let data = env.get_close_data();
+        let mut data_holders : HashSet<DataHolder> = HashSet::new();
+        for _ in 0..REPLICANTS {
+            data_holders.insert(DataHolder::Good(env.get_close_node()));
+        }
+        let _ = env.immutable_data_manager.handle_refresh(data.name(), data_holders.clone());
+        let _get_env = env.get_im_data(data.name());
+        let get_requests = env.routing.get_requests_given();
+        assert_eq!(get_requests.len(), REPLICANTS);
+        let pmid_nodes : Vec<XorName> = get_requests.into_iter().map(|request| {
+            *request.dst.name()
+        }).collect();
+        for data_holder in &data_holders {
+            assert!(pmid_nodes.contains(data_holder.name()));
+        }
     }
+
+    #[test]
+    fn churn_during_put() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_holders : HashSet<DataHolder> = put_requests.iter().map(|put_request| {
+            DataHolder::Pending(put_request.dst.name().clone())
+        }).collect();
+
+        let mut account = data_holders.clone();
+        let mut churn_count = 0;
+        let mut replicants = REPLICANTS;
+        let mut put_request_len = REPLICANTS;
+        let mut replication_put_message_id : MessageId;
+        for data_holder in &data_holders {
+            churn_count += 1;
+            if churn_count % 2 == 0 {
+                let lost_node = env.lose_close_node(&put_env.im_data.name());
+                let _ = env.immutable_data_manager.handle_put_success(data_holder.name(),
+                                                                      &put_env.message_id);
+                env.routing.remove_node_from_routing_table(&lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if *holder.name() == lost_node {
+                                              if let DataHolder::Failed(_) = *holder {} else {
+                                                  replicants -= 1;
+                                              }
+                                              None
+                                          } else if holder == data_holder {
+                                              Some(DataHolder::Good(*holder.name()))
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+                replication_put_message_id = MessageId::from_lost_node(lost_node);
+            } else {
+                let new_node = env.get_close_node();
+                let _ = env.immutable_data_manager.handle_put_failure(&env.routing,
+                                                                      data_holder.name(),
+                                                                      &put_env.message_id);
+                env.routing.add_node_into_routing_table(&new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+
+                if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
+                    // No longer being the DM of the data, expecting no refresh request
+                    assert_eq!(env.routing.refresh_requests_given().len(), churn_count - 1);
+                    return;
+                }
+
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if holder == data_holder {
+                                              replicants -= 1;
+                                              Some(DataHolder::Failed(*holder.name()))
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+                replication_put_message_id = put_env.message_id.clone();
+            }
+            if replicants < MIN_REPLICANTS {
+                put_request_len += 1;
+                replicants += 1;
+                let requests = env.routing.put_requests_given();
+                assert_eq!(requests.len(), put_request_len);
+                let put_request = unwrap_option!(requests.last(), "");
+                assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
+                assert_eq!(put_request.content,
+                           RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
+                                               replication_put_message_id));
+                account.insert(DataHolder::Pending(*put_request.dst.name()));
+            }
+
+            let refreshs = env.routing.refresh_requests_given();
+            assert_eq!(refreshs.len(), churn_count);
+            let received_refresh = unwrap_option!(refreshs.last(), "");
+            if let RequestContent::Refresh(received_serialised_refresh) =
+                    received_refresh.content.clone() {
+                let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                        &received_serialised_refresh[..]));
+                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
+                        parsed_refresh.value.clone() {
+                    assert_eq!(received_account, account);
+                } else {
+                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
+                }
+            } else {
+                panic!("Received unexpected refresh {:?}", received_refresh);
+            }
+        }
+    }
+
+    #[test]
+    fn churn_after_put() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_holders : HashSet<DataHolder> = put_requests.iter().map(|put_request| {
+            let _ = env.immutable_data_manager.handle_put_success(put_request.dst.name(),
+                                                                  &put_env.message_id);
+            DataHolder::Good(put_request.dst.name().clone())
+        }).collect();
+
+        let mut account = data_holders.clone();
+        let mut churn_count = 0;
+        let mut get_message_id : MessageId;
+        let mut get_requests_len = 0;
+        let mut replicants = REPLICANTS;
+        for _data_holder in &data_holders {
+            churn_count += 1;
+            if churn_count % 2 == 0 {
+                let lost_node = env.lose_close_node(&put_env.im_data.name());
+                env.routing.remove_node_from_routing_table(&lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                get_message_id = MessageId::from_lost_node(lost_node);
+
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if *holder.name() == lost_node {
+                                              replicants -= 1;
+                                              None
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+            } else {
+                let new_node = env.get_close_node();
+                env.routing.add_node_into_routing_table(&new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+                get_message_id = MessageId::from_added_node(new_node);
+
+                if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
+                    // No longer being the DM of the data, expecting no refresh request
+                    assert_eq!(env.routing.refresh_requests_given().len(), churn_count - 1);
+                    return;
+                }
+            }
+
+            if replicants < MIN_REPLICANTS && get_requests_len == 0 {
+                get_requests_len = account.len();
+                let get_requests = env.routing.get_requests_given();
+                assert_eq!(get_requests.len(), get_requests_len);
+                for get_request in &get_requests {
+                    assert_eq!(get_request.src, Authority::NaeManager(put_env.im_data.name()));
+                    assert_eq!(get_request.content,
+                               RequestContent::Get(DataRequest::Immutable(put_env.im_data.name(),
+                                                                     ImmutableDataType::Normal),
+                                                   get_message_id));
+                }
+            } else {
+                assert_eq!(env.routing.get_requests_given().len(), get_requests_len);
+            }
+
+            let refreshs = env.routing.refresh_requests_given();
+            assert_eq!(refreshs.len(), churn_count);
+            let received_refresh = unwrap_option!(refreshs.last(), "");
+            if let RequestContent::Refresh(received_serialised_refresh) =
+                    received_refresh.content.clone() {
+                let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                        &received_serialised_refresh[..]));
+                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
+                        parsed_refresh.value.clone() {
+                    assert_eq!(received_account, account);
+                } else {
+                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
+                }
+            } else {
+                panic!("Received unexpected refresh {:?}", received_refresh);
+            }
+        }
+    }
+
+    #[test]
+    fn churn_during_get() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        let put_requests = env.routing.put_requests_given();
+        let data_holders : HashSet<DataHolder> = put_requests.iter().map(|put_request| {
+            let _ = env.immutable_data_manager.handle_put_success(put_request.dst.name(),
+                                                                  &put_env.message_id);
+            DataHolder::Good(put_request.dst.name().clone())
+        }).collect();
+        let get_env = env.get_im_data(put_env.im_data.name());
+        let get_requests = env.routing.get_requests_given();
+
+        let mut account = data_holders.clone();
+        let mut churn_count = 0;
+        let mut get_response_len = 0;
+        for get_request in &get_requests {
+            churn_count += 1;
+            if churn_count % 2 == 0 {
+                let lost_node = env.lose_close_node(&put_env.im_data.name());
+                let get_response = ResponseMessage {
+                    src: get_request.dst.clone(),
+                    dst: get_request.src.clone(),
+                    content: ResponseContent::GetSuccess(Data::Immutable(put_env.im_data.clone()),
+                                                         get_env.message_id.clone()),
+                };
+                let _ = env.immutable_data_manager.handle_get_success(&env.routing, &get_response);
+                env.routing.remove_node_from_routing_table(&lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if *holder.name() == lost_node {
+                                              None
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+                get_response_len = 1;
+            } else {
+                let new_node = env.get_close_node();
+                let _ = env.immutable_data_manager.handle_get_failure(&env.routing,
+                                                                      get_request.dst.name(),
+                                                                      &get_env.message_id,
+                                                                      &get_request,
+                                                                      &[]);
+                env.routing.add_node_into_routing_table(&new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+
+                if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
+                    // No longer being the DM of the data, expecting no refresh request
+                    assert_eq!(env.routing.refresh_requests_given().len(), churn_count - 1);
+                    return;
+                }
+
+                let temp_account = mem::replace(&mut account, HashSet::new());
+                account = temp_account.into_iter()
+                                      .filter_map(|ref holder| {
+                                          if holder.name() == get_request.dst.name() {
+                                              Some(DataHolder::Failed(*holder.name()))
+                                          } else {
+                                              Some(*holder)
+                                          }
+                                      })
+                                      .collect();
+            }
+            if get_response_len == 1 {
+                let get_success = env.routing.get_successes_given();
+                assert_eq!(get_success.len(), 1);
+                if let ResponseMessage { content: ResponseContent::GetSuccess(response_data,
+                                                                              id), .. } =
+                       get_success[0].clone() {
+                    assert_eq!(Data::Immutable(put_env.im_data.clone()), response_data);
+                    assert_eq!(get_env.message_id, id);
+                } else {
+                    panic!("Received unexpected response {:?}", get_success[0]);
+                }
+            }
+            assert_eq!(env.routing.get_successes_given().len(), get_response_len);
+
+            let refreshs = env.routing.refresh_requests_given();
+            assert_eq!(refreshs.len(), churn_count);
+            let received_refresh = unwrap_option!(refreshs.last(), "");
+            if let RequestContent::Refresh(received_serialised_refresh) =
+                    received_refresh.content.clone() {
+                let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                        &received_serialised_refresh[..]));
+                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
+                        parsed_refresh.value.clone() {
+                    if churn_count == REPLICANTS ||
+                       env.immutable_data_manager.ongoing_gets.len() == 0  {
+                        // A replication after ongoing_get get cleared picks up REPLICANTS
+                        // number of pmid_nodes as new data_holder
+                        assert_eq!(env.routing.put_requests_given().len(), 2 * REPLICANTS);
+                        assert!(received_account.len() > REPLICANTS);
+                        return;
+                    } else {
+                        assert_eq!(received_account, account);
+                    }
+                } else {
+                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
+                }
+            } else {
+                panic!("Received unexpected refresh {:?}", received_refresh);
+            }
+        }
+    }
+
 }
