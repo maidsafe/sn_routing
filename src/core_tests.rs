@@ -129,9 +129,7 @@ impl TestNode {
             result_tx: result_tx,
         };
 
-        if let Err(error) = self.action_tx.send(action) {
-            return Err(InterfaceError::from(error));
-        }
+        try!(self.action_tx.send(action));
         Ok(())
     }
 }
@@ -205,9 +203,7 @@ impl TestClient {
             result_tx: result_tx,
         };
 
-        if let Err(error) = self.action_tx.send(action) {
-            return Err(InterfaceError::from(error));
-        }
+        try!(self.action_tx.send(action));
         Ok(())
     }
 
