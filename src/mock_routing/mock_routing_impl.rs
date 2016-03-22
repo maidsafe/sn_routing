@@ -190,6 +190,14 @@ impl MockRoutingNodeImpl {
         self.refresh_requests_given.clone()
     }
 
+    pub fn remove_node_from_routing_table(&mut self, node_lost: &XorName) {
+        let _ = self.routing_table.remove(node_lost);
+    }
+
+    pub fn add_node_into_routing_table(&mut self, new_node: &XorName) {
+        let _ = self.routing_table.add(NodeInfo(*new_node));
+    }
+
     // -----------  the following methods are expected to be API functions   ------------- //
     pub fn send_get_request(&mut self,
                             src: Authority,
