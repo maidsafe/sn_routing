@@ -16,16 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use maidsafe_utilities::serialisation::deserialise;
 use rand;
-use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
+use routing::{Data, DataRequest, StructuredData};
+use safe_network_common::client_errors::GetError;
 use xor_name::XorName;
 
 pub fn test(request_count: u32) {
     let mut test_group = TestGroup::new("StructuredData churn test");
 
-    let mut client = Client::new();
-    client.create_account();
+    let mut client = Client::create_account();
     let mut stored_data = Vec::with_capacity(request_count as usize);
     for i in 0..request_count {
         test_group.start_case(&format!("Put StructuredData {}", i));
@@ -38,10 +37,7 @@ pub fn test(request_count: u32) {
                                                     Some(client.signing_private_key())));
         trace!("Putting StructuredData {} - {}", i, sd.name());
         let data = Data::Structured(sd.clone());
-        if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
-               unwrap_option!(client.put(data), "") {} else {
-            panic!("Received unexpected response")
-        }
+        assert!(client.put(data).is_ok());
         stored_data.push(sd);
     }
 
@@ -50,13 +46,8 @@ pub fn test(request_count: u32) {
         let data_request = DataRequest::Structured(*stored_item.get_identifier(),
                                                    stored_item.get_type_tag());
         trace!("Getting StructuredData {} - {}", i, stored_item.name());
-        if let ResponseMessage {
-               content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } =
-               unwrap_option!(client.get(data_request), "") {
-            assert_eq!(*stored_item, sd)
-        } else {
-            panic!("Received unexpected response")
-        }
+        assert_eq!(Data::Structured(stored_item.clone()),
+                   unwrap_result!(client.get(data_request)));
     }
 
     for (i, stored_item) in stored_data.iter_mut().enumerate() {
@@ -70,10 +61,7 @@ pub fn test(request_count: u32) {
                                                     Some(client.signing_private_key())));
         trace!("Posting StructuredData {} - {}", i, stored_item.name());
         let data = Data::Structured(sd.clone());
-        if let ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } =
-               unwrap_option!(client.post(data), "") {} else {
-            panic!("Received unexpected response")
-        }
+        assert!(client.post(data).is_ok());
         *stored_item = sd;
     }
 
@@ -84,13 +72,8 @@ pub fn test(request_count: u32) {
         trace!("Getting updated StructuredData {} - {}",
                i,
                stored_item.name());
-        if let ResponseMessage {
-               content: ResponseContent::GetSuccess(Data::Structured(sd), _), .. } =
-               unwrap_option!(client.get(data_request.clone()), "") {
-            assert_eq!(*stored_item, sd)
-        } else {
-            panic!("Received unexpected response")
-        }
+        assert_eq!(Data::Structured(stored_item.clone()),
+                   unwrap_result!(client.get(data_request)));
     }
 
     for (i, stored_item) in stored_data.iter().enumerate() {
@@ -104,21 +87,15 @@ pub fn test(request_count: u32) {
                                                     vec![],
                                                     Some(client.signing_private_key())));
         let data = Data::Structured(sd);
-        if let ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } =
-               unwrap_option!(client.delete(data), "") {} else {
-            panic!("Received unexpected response")
-        }
+        assert!(client.delete(data).is_ok());
+
         let data_request = DataRequest::Structured(*stored_item.get_identifier(),
                                                    stored_item.get_type_tag());
-        if let ResponseMessage {
-               content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
-               unwrap_option!(client.get(data_request), "") {
-            if let ClientError::NoSuchData =
-                   unwrap_result!(deserialise::<ClientError>(external_error_indicator)) {} else {
-                panic!("Received unexpected external_error_indicator")
-            }
-        } else {
-            panic!("Received unexpected response")
+        match client.get(data_request) {
+            Ok(result) => panic!("Received unexpected response {:?}", result),
+            // structured_data_manager hasn't implemented a proper external_error_indicator
+            Err(GetError::NoSuchData) => {}
+            Err(err) => panic!("Received unexpected err {:?}", err),
         }
     }
 

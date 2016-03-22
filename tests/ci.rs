@@ -46,7 +46,8 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate rustc_serialize;
+extern crate safe_core;
+extern crate safe_network_common;
 extern crate sodiumoxide;
 extern crate xor_name;
 
@@ -79,11 +80,11 @@ fn main() {
         let request_count = REQUEST_COUNT;
         let processes = setup_network(vault_count);
 
-        let mut is_err = thread!("ImmutableData test", move || immutable_data_test)
+        let mut is_err = thread!("ImmutableData test", move || immutable_data_test())
                              .join()
                              .is_err();
         failed = failed || is_err;
-        is_err = thread!("StructuredData test", move || structured_data_test)
+        is_err = thread!("StructuredData test", move || structured_data_test())
                      .join()
                      .is_err();
         failed = failed || is_err;

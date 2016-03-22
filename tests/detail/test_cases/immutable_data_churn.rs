@@ -16,24 +16,19 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
-              ResponseMessage};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType};
 
 pub fn test(request_count: u32) {
     let mut test_group = TestGroup::new("ImmutableData churn test");
 
-    let mut client = Client::new();
-    client.create_account();
+    let mut client = Client::create_account();
     let mut stored_data = Vec::with_capacity(request_count as usize);
     for i in 0..request_count {
         test_group.start_case(&format!("Put ImmutableData {}", i));
         let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
                                                       generate_random_vec_u8(1024)));
         trace!("Putting ImmutableData {} - {}", i, data.name());
-        if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
-               unwrap_option!(client.put(data.clone()), "") {} else {
-            panic!("Received unexpected response")
-        }
+        assert!(client.put(data.clone()).is_ok());
         stored_data.push(data);
     }
 
@@ -41,12 +36,7 @@ pub fn test(request_count: u32) {
         test_group.start_case(&format!("Get ImmutableData {}", i));
         let data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
         trace!("Getting ImmutableData {} - {}", i, data.name());
-        if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-               unwrap_option!(client.get(data_request), "") {
-            assert_eq!(*data, response_data)
-        } else {
-            panic!("Received unexpected response")
-        }
+        assert_eq!(*data, unwrap_result!(client.get(data_request)));
     }
 
     test_group.release();
