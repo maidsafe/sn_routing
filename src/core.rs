@@ -1517,9 +1517,13 @@ impl Core {
         }
 
         if self.routing_table.len() == 1 {
-            for i in 0..(self.name().bucket_index(&name) + 1) {
+            let our_name = *self.name();
+            if let Err(e) = self.request_close_group(our_name) {
+                error!("{:?} Failed to request close public IDs: {:?}.", self, e);
+            }
+            for i in 0..(our_name.bucket_index(&name) + 1) {
                 if let Err(e) = self.request_bucket_ids(i) {
-                    trace!("{:?} Failed to request public IDs from bucket {}: {:?}.",
+                    error!("{:?} Failed to request public IDs from bucket {}: {:?}.",
                            self,
                            i,
                            e);
