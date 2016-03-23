@@ -186,10 +186,9 @@ impl DebugStats {
 /// ### Getting a new network name from the `NaeManager`
 ///
 /// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
-/// of A's current name. X computes a new name and sends it in its response to A.
-///
-/// It also sends an `ExpectCloseNode` request to the `NaeManager` Y of A's new name to inform Y
-/// about the new node. Each member of Y caches A's public ID.
+/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
+/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
+/// `GetNetworkName` response back to A.
 ///
 ///
 /// ### Connecting to the close group
@@ -1054,9 +1053,10 @@ impl Core {
                                                      dst_name,
                                                      peer_id)
             }
-            (RequestContent::ExpectCloseNode { expect_id, },
+            (RequestContent::ExpectCloseNode { expect_id, client_auth },
              Authority::NaeManager(_),
-             Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id),
+             Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id,
+                                                                                client_auth),
             (RequestContent::GetCloseGroup,
              src,
              Authority::NaeManager(dst_name)) => self.handle_get_close_group_request(src, dst_name),
@@ -1123,7 +1123,7 @@ impl Core {
                msg_dst);
         match (msg_content, msg_src, msg_dst) {
             (ResponseContent::GetNetworkName { relocated_id, },
-             Authority::NaeManager(_),
+             Authority::NodeManager(_),
              Authority::Client { .. }) => self.handle_get_network_name_response(relocated_id),
             (ResponseContent::GetPublicId { public_id, },
              Authority::NodeManager(_),
@@ -1724,28 +1724,16 @@ impl Core {
                                                                   &their_public_id.name()));
         their_public_id.set_name(relocated_name);
 
-        // From X -> A (via B)
+        // From X -> Y; Send to close group of the relocated name
         {
-            let response_content = ResponseContent::GetNetworkName {
-                relocated_id: their_public_id,
-            };
-
-            let response_msg = ResponseMessage {
-                src: Authority::NaeManager(dst_name),
-                dst: Authority::Client {
+            let request_content = RequestContent::ExpectCloseNode {
+                expect_id: their_public_id,
+                client_auth: Authority::Client {
                     client_key: client_key,
                     proxy_node_name: proxy_name,
                     peer_id: peer_id,
                 },
-                content: response_content,
             };
-
-            try!(self.send_response(response_msg));
-        }
-
-        // From X -> Y; Send to close group of the relocated name
-        {
-            let request_content = RequestContent::ExpectCloseNode { expect_id: their_public_id };
 
             let request_msg = RequestMessage {
                 src: Authority::NaeManager(dst_name),
@@ -1759,7 +1747,8 @@ impl Core {
 
     // Received by Y; From X -> Y
     fn handle_expect_close_node_request(&mut self,
-                                        expect_id: PublicId)
+                                        expect_id: PublicId,
+                                        client_auth: Authority)
                                         -> Result<(), RoutingError> {
         if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
             warn!("Previous ID {:?} with same name found during \
@@ -1767,6 +1756,22 @@ impl Core {
                   prev_id);
             return Err(RoutingError::RejectedPublicId);
         }
+
+        // From Y -> A (via B)
+        {
+            let response_content = ResponseContent::GetNetworkName {
+                relocated_id: expect_id,
+            };
+
+            let response_msg = ResponseMessage {
+                src: Authority::NodeManager(*expect_id.name()),
+                dst: client_auth,
+                content: response_content,
+            };
+
+            try!(self.send_response(response_msg));
+        }
+
 
         Ok(())
     }

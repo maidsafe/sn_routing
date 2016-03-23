@@ -277,6 +277,8 @@ pub enum RequestContent {
     ExpectCloseNode {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
+        /// The client's current authority.
+        client_auth: Authority,
     },
     /// Request the `PublicId`s of the recipient's close group.
     ///
@@ -323,7 +325,7 @@ pub enum ResponseContent {
     // ---------- Internal ------------
     /// Reply with the new `PublicId` for the joining node.
     ///
-    /// Sent from the `NaeManager` to the `Client`.
+    /// Sent from the `NodeManager` to the `Client`.
     GetNetworkName {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
@@ -462,8 +464,8 @@ impl Debug for RequestContent {
             RequestContent::GetNetworkName { ref current_id } => {
                 write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
             }
-            RequestContent::ExpectCloseNode { ref expect_id } => {
-                write!(formatter, "ExpectCloseNode {{ {:?} }}", expect_id)
+            RequestContent::ExpectCloseNode { ref expect_id, ref client_auth } => {
+                write!(formatter, "ExpectCloseNode {{ {:?}, {:?} }}", expect_id, client_auth)
             }
             RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
             RequestContent::Connect => write!(formatter, "Connect"),
