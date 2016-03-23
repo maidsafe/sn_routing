@@ -354,7 +354,7 @@ impl Core {
             .other_close_nodes(self.name())
             .unwrap_or_else(Vec::new)
             .into_iter()
-            .map(|info| info.name().clone())
+            .map(|info| *info.name())
             .collect()
     }
 
@@ -1288,12 +1288,8 @@ impl Core {
                 self.handle_bootstrap_identify(public_id, peer_id, current_quorum_size)
             }
             DirectMessage::BootstrapDeny => {
-                if self.client_restriction {
-                    warn!("Connection failed: Proxy node needs a larger routing table to accept \
-                           clients.");
-                } else {
-                    warn!("Connection failed: Proxy node doesn't accept any more joining nodes.");
-                }
+                warn!("Connection failed: Proxy node needs a larger routing table to accept \
+                       clients.");
                 self.retry_bootstrap_with_blacklist(&peer_id);
                 Ok(())
             }
@@ -1405,14 +1401,12 @@ impl Core {
 
         self.remove_stale_joining_nodes();
 
-        if client_restriction {
-            if self.routing_table.len() < GROUP_SIZE - 1 {
-                trace!("Client {:?} rejected: Routing table has {} entries. {} required.",
-                       public_id.name(),
-                       self.routing_table.len(),
-                       GROUP_SIZE - 1);
-                return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
-            }
+        if client_restriction && self.routing_table.len() < GROUP_SIZE - 1 {
+            trace!("Client {:?} rejected: Routing table has {} entries. {} required.",
+                   public_id.name(),
+                   self.routing_table.len(),
+                   GROUP_SIZE - 1);
+            return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
         }
         let client_info = ClientInfo::new(*public_id.signing_public_key(), client_restriction);
         if self.client_map.insert(peer_id, client_info).is_some() {
@@ -2327,8 +2321,9 @@ impl Core {
                    peer_id);
             if self.proxy_map.is_empty() {
                 trace!("Lost connection to last proxy node {:?}", peer_id);
-                if self.client_restriction || self.routing_table.len() < GROUP_SIZE {
+                if self.client_restriction || self.routing_table.len() == 0 {
                     let _ = self.event_sender.send(Event::Disconnected);
+                    self.retry_bootstrap_with_blacklist(peer_id);
                 }
             }
         }

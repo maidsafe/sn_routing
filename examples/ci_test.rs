@@ -56,7 +56,7 @@ mod utils;
 
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
-use std::{io, env, thread};
+use std::{cmp, io, env, thread};
 use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
@@ -80,15 +80,16 @@ const CHURN_MAX_WAIT_SEC: u64 = 15;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
-
+/// Only start the next node when the previous one has reached this routing table size.
+const DELAY_RT_SIZE: usize = GROUP_SIZE;
 
 struct NodeProcess(Child, usize);
 
 impl NodeProcess {
-    fn wait_for_output(&mut self, string: &str) {
+    fn wait_for_output<T: AsRef<str>>(&mut self, pat: T) {
         if let Some(ref mut stderr) = self.0.stderr {
             for line in BufReader::new(stderr).lines() {
-                if line.unwrap().contains(string) {
+                if line.unwrap().contains(pat.as_ref()) {
                     break;
                 }
             }
@@ -133,7 +134,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                              if i == 0 {
                                  node.wait_for_output("Running listener");
                              } else {
-                                 node.wait_for_output("Routing Table size:   1");
+                                 node.wait_for_output(format!("Routing Table size: {:3}",
+                                                              cmp::min(i, DELAY_RT_SIZE)));
                              }
                              Ok(node)
                          })
