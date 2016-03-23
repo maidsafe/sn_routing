@@ -16,68 +16,45 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use maidsafe_utilities::serialisation::deserialise;
 use rand;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, ResponseContent,
-              ResponseMessage};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType};
+use safe_network_common::client_errors::GetError;
 use xor_name::XorName;
 
 pub fn test() {
     let mut test_group = TestGroup::new("ImmutableData test");
+    let testing_data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
+                                                          generate_random_vec_u8(1024)));
 
-    test_group.start_case("Put with no account");
-    let mut client1 = Client::new();
-    let data = Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
-                                                  generate_random_vec_u8(1024)));
-    if let ResponseMessage {
-           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(client1.put(data.clone()), "") {
-        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
-        if let ClientError::NoSuchAccount = parsed_error {} else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
-    }
+    // safe_core::client doesn't provide an API allows connecting to network without creating an
+    // account. The unregistered client can only do get, not put.
+    // test_group.start_case("Put with no account");
+    // let mut client1 = Client::create_unregistered_client();
+    // match client1.put(testing_data.clone()) {
+    //     Ok(result) => panic!("Received unexpected response {:?}", result),
+    //     Err(MutationError::NoSuchAccount) => {}
+    //     Err(err) => panic!("Received unexpected err {:?}", err),
+    // }
 
     test_group.start_case("Put");
-    client1.create_account();
-    if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
-           unwrap_option!(client1.put(data.clone()), "") {
-    } else {
-        panic!("Received unexpected response")
-    }
+    let mut client1 = Client::create_account();
+    assert!(client1.put(testing_data.clone()).is_ok());
 
     test_group.start_case("Get");
-    let mut data_request = DataRequest::Immutable(data.name(), ImmutableDataType::Normal);
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(client1.get(data_request.clone()), "") {
-        assert_eq!(data, response_data)
-    } else {
-        panic!("Received unexpected response")
-    }
+    let mut data_request = DataRequest::Immutable(testing_data.name(), ImmutableDataType::Normal);
+    assert_eq!(testing_data, unwrap_result!(client1.get(data_request.clone())));
 
     test_group.start_case("Get via different Client");
-    let mut client2 = Client::new();
+    let mut client2 = Client::create_unregistered_client();
     // Should succeed on first attempt if previous Client was able to Get already.
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(client2.get(data_request), "") {
-        assert_eq!(data, response_data)
-    } else {
-        panic!("Received unexpected response")
-    }
+    assert_eq!(testing_data, unwrap_result!(client2.get(data_request.clone())));
 
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);
-    if let ResponseMessage {
-           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(client1.get(data_request), "") {
-        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
-        if let ClientError::NoSuchData = parsed_error {} else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
+    match client1.get(data_request) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        Err(GetError::NoSuchData) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 
     test_group.release();

@@ -28,6 +28,7 @@ xor_name = "~0.1.0"
 [dev-dependencies]
 kademlia_routing_table = "~0.4.0"
 rand = "~0.3.14"
+safe_core = "~0.12.1"
 
 [features]
 use-mock-routing = []

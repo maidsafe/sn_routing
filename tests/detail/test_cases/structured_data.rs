@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use super::*;
-use maidsafe_utilities::serialisation::deserialise;
 use rand;
-use routing::{Data, DataRequest, ResponseContent, ResponseMessage, StructuredData};
+use routing::{Data, DataRequest, StructuredData};
+use safe_network_common::client_errors::{GetError, MutationError};
 use xor_name::XorName;
 
 struct Fixture {
@@ -26,13 +26,13 @@ struct Fixture {
     pub client1: Client,
     pub client2: Client,
     pub sd: StructuredData,
-    pub max_get_attempts: u32,
 }
 
-pub fn test(max_get_attempts: u32) {
+pub fn test() {
     let test_group = TestGroup::new("StructuredData test");
-    let client1 = Client::new();
-    let client2 = Client::new();
+    // safe_core::client API requires create_account to having keys
+    let client1 = Client::create_account();
+    let client2 = Client::create_account();
     let sd = unwrap_result!(StructuredData::new(1,
                                                 rand::random::<XorName>(),
                                                 0,
@@ -45,7 +45,6 @@ pub fn test(max_get_attempts: u32) {
         client1: client1,
         client2: client2,
         sd: sd,
-        max_get_attempts: max_get_attempts,
     };
 
     put(&mut fixture);
@@ -57,58 +56,38 @@ pub fn test(max_get_attempts: u32) {
 }
 
 fn put(fixture: &mut Fixture) {
-    fixture.test_group.start_case("Put with no account");
-    let data = Data::Structured(fixture.sd.clone());
-    if let ResponseMessage {
-           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.put(data.clone()), "") {
-        if let ClientError::NoSuchAccount = unwrap_result!(deserialise(external_error_indicator)) {
-        } else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
-    }
+    let testing_data = Data::Structured(fixture.sd.clone());
+    // safe_core::client doesn't provide an API allows connecting to network without creating an
+    // account. The unregistered client can only do get, not put.
+    // fixture.test_group.start_case("Put with no account");
+    // match fixture.client1.put(testing_data.clone()) {
+    //     Ok(result) => panic!("Received unexpected response {:?}", result),
+    //     Err(MutationError::NoSuchAccount) => {}
+    //     Err(err) => panic!("Received unexpected err {:?}", err),
+    // }
 
     fixture.test_group.start_case("Put");
-    fixture.client1.create_account();
-    if let ResponseMessage { content: ResponseContent::PutSuccess(..), .. } =
-           unwrap_option!(fixture.client1.put(data), "") {} else {
-        panic!("Received unexpected response")
-    }
+    assert!(fixture.client1.put(testing_data).is_ok());
 }
 
 fn get(fixture: &mut Fixture) {
     fixture.test_group.start_case("Get");
     let mut data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
                                                    fixture.sd.get_type_tag());
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(fixture.client1.get(data_request.clone()), "") {
-        assert_eq!(Data::Structured(fixture.sd.clone()), response_data)
-    } else {
-        panic!("Received unexpected response")
-    }
+    assert_eq!(Data::Structured(fixture.sd.clone()),
+               unwrap_result!(fixture.client1.get(data_request.clone())));
 
     fixture.test_group.start_case("Get via different Client");
     // Should succeed on first attempt if previous Client was able to Get already.
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(fixture.client2.get(data_request), "") {
-        assert_eq!(Data::Structured(fixture.sd.clone()), response_data)
-    } else {
-        panic!("Received unexpected response")
-    }
+    assert_eq!(Data::Structured(fixture.sd.clone()),
+               unwrap_result!(fixture.client2.get(data_request.clone())));
 
     fixture.test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Structured(rand::random::<XorName>(), 1);
-    if let ResponseMessage {
-           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.get(data_request), "") {
-        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
-        if let ClientError::NoSuchData = parsed_error {} else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client1.get(data_request) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        Err(GetError::NoSuchData) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 }
 
@@ -123,14 +102,11 @@ fn post(fixture: &mut Fixture) {
                                                              Some(fixture.client2
                                                                          .signing_private_key())));
     let mut data = Data::Structured(unauthorised_sd.clone());
-    if let ResponseMessage {
-           content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client2.post(data), "") {
-        // structured_data_manager hasn't implemented a proper external_error_indicator in
-        // PostFailure
-        assert_eq!(0, external_error_indicator.len())
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client2.post(data) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        // structured_data_manager hasn't implemented a proper external_error_indicator
+        Err(MutationError::Unknown) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 
     fixture.test_group.start_case("Post");
@@ -142,21 +118,13 @@ fn post(fixture: &mut Fixture) {
                                                     vec![],
                                                     Some(fixture.client1.signing_private_key())));
     data = Data::Structured(fixture.sd.clone());
-    if let ResponseMessage { content: ResponseContent::PostSuccess( .. ), .. } =
-           unwrap_option!(fixture.client1.post(data.clone()), "") {} else {
-        panic!("Received unexpected response")
-    }
+    assert!(fixture.client1.post(data.clone()).is_ok());
 
     fixture.test_group.start_case("Get updated");
     let data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
                                                fixture.sd.get_type_tag());
     // Should succeed on first attempt if previous Post message returned success.
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(fixture.client1.get(data_request), "") {
-        assert_eq!(data, response_data)
-    } else {
-        panic!("Received unexpected response")
-    }
+    assert_eq!(data, unwrap_result!(fixture.client1.get(data_request.clone())));
 
     fixture.test_group.start_case("Post for non-existent data");
     let bad_sd = unwrap_result!(StructuredData::new(2,
@@ -167,14 +135,11 @@ fn post(fixture: &mut Fixture) {
                                                     vec![],
                                                     Some(fixture.client1.signing_private_key())));
     data = Data::Structured(bad_sd);
-    if let ResponseMessage {
-           content: ResponseContent::PostFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.post(data), "") {
-        // structured_data_manager hasn't implemented a proper external_error_indicator in
-        // PostFailure
-        assert_eq!(0, external_error_indicator.len())
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client1.post(data) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        // structured_data_manager hasn't implemented a proper external_error_indicator
+        Err(MutationError::Unknown) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 }
 
@@ -189,24 +154,17 @@ fn delete(fixture: &mut Fixture) {
                                                         Some(fixture.client2
                                                                     .signing_private_key())));
     let mut data = Data::Structured(invalid_sd);
-    if let ResponseMessage {
-           content: ResponseContent::DeleteFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.delete(data), "") {
-        // structured_data_manager hasn't implemented a proper external_error_indicator in
-        // DeleteFailure
-        assert_eq!(0, external_error_indicator.len())
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client1.delete(data) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        // structured_data_manager hasn't implemented a proper external_error_indicator
+        Err(MutationError::Unknown) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 
     let mut data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
                                                    fixture.sd.get_type_tag());
-    if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, _), .. } =
-           unwrap_option!(fixture.client1.get(data_request.clone()), "") {
-        assert_eq!(Data::Structured(fixture.sd.clone()), response_data);
-    } else {
-        panic!("Received unexpected response")
-    }
+    assert_eq!(Data::Structured(fixture.sd.clone()),
+               unwrap_result!(fixture.client1.get(data_request.clone())));
 
     fixture.test_group.start_case("Delete properly");
     fixture.sd = unwrap_result!(StructuredData::new(fixture.sd.get_type_tag(),
@@ -217,20 +175,14 @@ fn delete(fixture: &mut Fixture) {
                                                     vec![],
                                                     Some(fixture.client1.signing_private_key())));
     data = Data::Structured(fixture.sd.clone());
-    if let ResponseMessage { content: ResponseContent::DeleteSuccess( .. ), .. } =
-           unwrap_option!(fixture.client1.delete(data), "") {} else {
-        panic!("Received unexpected response")
-    }
+    assert!(fixture.client1.delete(data).is_ok());
+
     data_request = DataRequest::Structured(*fixture.sd.get_identifier(), fixture.sd.get_type_tag());
-    if let ResponseMessage {
-           content: ResponseContent::GetFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.get(data_request), "") {
-        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
-        if let ClientError::NoSuchData = parsed_error {} else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client1.get(data_request) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        // structured_data_manager hasn't implemented a proper external_error_indicator
+        Err(GetError::NoSuchData) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 
     fixture.test_group.start_case("Try to Put recently deleted");
@@ -244,14 +196,10 @@ fn delete(fixture: &mut Fixture) {
                                                         Some(fixture.client1
                                                                     .signing_private_key())));
     data = Data::Structured(deleted_sd);
-    if let ResponseMessage {
-           content: ResponseContent::PutFailure { ref external_error_indicator, .. }, .. } =
-           unwrap_option!(fixture.client1.put(data.clone()), "") {
-        let parsed_error = unwrap_result!(deserialise(external_error_indicator));
-        if let ClientError::DataExists = parsed_error {} else {
-            panic!("Received unexpected external_error_indicator")
-        }
-    } else {
-        panic!("Received unexpected response")
+    match fixture.client1.put(data) {
+        Ok(result) => panic!("Received unexpected response {:?}", result),
+        // structured_data_manager hasn't implemented a proper external_error_indicator
+        Err(MutationError::DataExists) => {}
+        Err(err) => panic!("Received unexpected err {:?}", err),
     }
 }

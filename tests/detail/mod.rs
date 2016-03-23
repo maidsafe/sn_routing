@@ -22,7 +22,7 @@ mod test_cases;
 mod test_group;
 mod vault_process;
 
-pub use self::client::{Client, ClientError};
+pub use self::client::Client;
 pub use self::setup_network::setup_network;
 pub use self::simulate_churn::simulate_churn;
 pub use self::test_cases::immutable_data::test as immutable_data_test;
