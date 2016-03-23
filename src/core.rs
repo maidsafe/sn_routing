@@ -58,13 +58,9 @@ use utils;
 
 type StdDuration = ::std::time::Duration;
 
-/// The maximum number of other nodes that can be in the bootstrap process with us as the proxy at
-/// the same time.
-const MAX_JOINING_NODES: usize = 1;
-
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
-const JOINING_NODE_TIMEOUT_SECS: i64 = 20;
+const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
 
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -1417,17 +1413,6 @@ impl Core {
                        GROUP_SIZE - 1);
                 return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
             }
-        } else {
-            let joining_nodes_num = self.joining_nodes_num();
-            // Restrict the number of simultaneously joining nodes. If the network is still
-            // small, we need to accept `GROUP_SIZE` nodes, so that they can fill their
-            // routing tables and drop the proxy connection.
-            if !(self.routing_table.len() < GROUP_SIZE && joining_nodes_num < GROUP_SIZE) &&
-               joining_nodes_num >= MAX_JOINING_NODES {
-                trace!("No additional joining nodes allowed. Denying {:?} to join.",
-                       public_id.name());
-                return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
-            }
         }
         let client_info = ClientInfo::new(*public_id.signing_public_key(), client_restriction);
         if self.client_map.insert(peer_id, client_info).is_some() {
@@ -1533,18 +1518,7 @@ impl Core {
         }
 
         if self.routing_table.len() == 1 {
-            let our_name = *self.name();
-            try!(self.request_close_group(our_name));
-        }
-
-        if self.routing_table.len() >= GROUP_SIZE - 1 && !self.proxy_map.is_empty() {
-            trace!("{:?} Routing table reached group size. Dropping proxy.",
-                   self);
-            try!(self.drop_proxies());
-            // We have all close contacts now and know which bucket addresses to
-            // request IDs from: All buckets up to the one containing the furthest
-            // close node might still be not maximally filled.
-            for i in 0..(self.routing_table.furthest_close_bucket() + 1) {
+            for i in 0..(self.name().bucket_index(&name) + 1) {
                 if let Err(e) = self.request_bucket_ids(i) {
                     trace!("{:?} Failed to request public IDs from bucket {}: {:?}.",
                            self,
@@ -1567,19 +1541,6 @@ impl Core {
             }
         }
 
-        Ok(())
-    }
-
-    /// Removes all proxy map entries and notifies or disconnects from them.
-    fn drop_proxies(&mut self) -> Result<(), RoutingError> {
-        let former_proxies = self.proxy_map.drain().collect_vec();
-        for (peer_id, public_id) in former_proxies {
-            if self.routing_table.contains(public_id.name()) {
-                try!(self.send_direct_message(&peer_id, DirectMessage::ClientToNode));
-            } else {
-                try!(self.disconnect_peer(&peer_id));
-            }
-        }
         Ok(())
     }
 

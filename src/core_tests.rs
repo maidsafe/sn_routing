@@ -398,6 +398,17 @@ fn node_drops() {
 }
 
 #[test]
+fn node_joins_in_front() {
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.insert(0, TestNode::new(&network, false, Some(config.clone()), None));
+    poll_all(&mut nodes, &mut vec![]);
+
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
 
