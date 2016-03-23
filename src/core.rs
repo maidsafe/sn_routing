@@ -1797,24 +1797,6 @@ impl Core {
                                       src: Authority,
                                       dst_name: XorName)
                                       -> Result<(), RoutingError> {
-        match src {
-            Authority::Client { client_key, .. } => {
-                if self.node_id_cache
-                       .retrieve_all()
-                       .iter()
-                       .all(|elt| *elt.1.signing_public_key() != client_key) {
-                    return Err(RoutingError::RejectedGetCloseGroup);
-                }
-            }
-            Authority::ManagedNode(_) => {
-                // Check that the destination is one of the sender's bucket addresses or the address
-                // itself, i. e. it differs from it in 1 or 0 bits.
-                if src.name().count_differing_bits(&dst_name) > 1 {
-                    return Err(RoutingError::RejectedGetCloseGroup);
-                }
-            }
-            _ => return Err(RoutingError::BadAuthority),
-        }
         let close_group = match self.routing_table.close_nodes(&dst_name) {
             Some(close_group) => close_group,
             None => return Err(RoutingError::InvalidDestination),
