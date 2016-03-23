@@ -284,7 +284,7 @@ pub enum RequestContent {
     ///
     /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
     /// `NodeManager`'s members.
-    GetCloseGroup,
+    GetCloseGroup(MessageId),
     /// Request a direct connection to the recipient.
     Connect,
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
@@ -354,6 +354,7 @@ pub enum ResponseContent {
     GetCloseGroup {
         /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
+        message_id: MessageId,
     },
     // ---------- External ------------
     /// Reply with the requested data (may not be ignored)
@@ -467,7 +468,7 @@ impl Debug for RequestContent {
             RequestContent::ExpectCloseNode { ref expect_id, ref client_auth } => {
                 write!(formatter, "ExpectCloseNode {{ {:?}, {:?} }}", expect_id, client_auth)
             }
-            RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
+            RequestContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             RequestContent::Connect => write!(formatter, "Connect"),
             RequestContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
             RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
@@ -507,8 +508,8 @@ impl Debug for ResponseContent {
                        "GetPublicIdWithConnectionInfo {{ {:?}, .. }}",
                        public_id)
             }
-            ResponseContent::GetCloseGroup { ref close_group_ids } => {
-                write!(formatter, "GetCloseGroup {{ {:?} }}", close_group_ids)
+            ResponseContent::GetCloseGroup { ref close_group_ids, message_id } => {
+                write!(formatter, "GetCloseGroup {{ {:?}, {:?} }}", close_group_ids, message_id)
             }
             ResponseContent::GetSuccess(ref data, ref message_id) => {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)

@@ -51,7 +51,7 @@ use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
 use timer::Timer;
-use types::RoutingActionSender;
+use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
@@ -881,7 +881,7 @@ impl Core {
         match *routing_msg {
             RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
                 let i = self.name().bucket_index(name);
-                if self.routing_table.need_to_add(name) {
+                if self.routing_table.need_to_add(name) || self.bucket_filter.insert(&i) > 0 {
                     trace!("Harvesting on {:?} in bucket index {}.", name, i);
                     self.request_bucket_ids(i)
                 } else {
@@ -1057,9 +1057,11 @@ impl Core {
              Authority::NaeManager(_),
              Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id,
                                                                                 client_auth),
-            (RequestContent::GetCloseGroup,
+            (RequestContent::GetCloseGroup(message_id),
              src,
-             Authority::NaeManager(dst_name)) => self.handle_get_close_group_request(src, dst_name),
+             Authority::NaeManager(dst_name)) => self.handle_get_close_group_request(src,
+                                                                                     dst_name,
+                                                                                     message_id),
             (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::ManagedNode(dst_name)) => {
@@ -1135,7 +1137,7 @@ impl Core {
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_with_connection_info_response(public_id, encrypted_connection_info, nonce_bytes, dst_name)
             }
-            (ResponseContent::GetCloseGroup { close_group_ids },
+            (ResponseContent::GetCloseGroup { close_group_ids, .. },
              Authority::NaeManager(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (ResponseContent::GetSuccess(..), _, _) |
@@ -1544,7 +1546,7 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
-        if bucket_index >= xor_name::XOR_NAME_BITS || self.bucket_filter.insert(&bucket_index) > 0 {
+        if bucket_index >= xor_name::XOR_NAME_BITS {
             return Ok(());
         }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
@@ -1556,7 +1558,7 @@ impl Core {
         let request_msg = RequestMessage {
             src: Authority::ManagedNode(*self.name()),
             dst: Authority::NaeManager(name),
-            content: RequestContent::GetCloseGroup,
+            content: RequestContent::GetCloseGroup(MessageId::new()),
         };
         self.send_request(request_msg)
     }
@@ -1785,7 +1787,7 @@ impl Core {
     }
 
     fn request_close_group_as_client(&mut self) -> Result<(), RoutingError> {
-        let request_content = RequestContent::GetCloseGroup;
+        let request_content = RequestContent::GetCloseGroup(MessageId::new());
 
         // From A -> Y
         let request_msg = RequestMessage {
@@ -1800,7 +1802,8 @@ impl Core {
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
     fn handle_get_close_group_request(&mut self,
                                       src: Authority,
-                                      dst_name: XorName)
+                                      dst_name: XorName,
+                                      message_id: MessageId)
                                       -> Result<(), RoutingError> {
         let close_group = match self.routing_table.close_nodes(&dst_name) {
             Some(close_group) => close_group,
@@ -1813,7 +1816,10 @@ impl Core {
         trace!("Sending GetCloseGroup response with {:?} to client {:?}.",
                public_ids.iter().map(PublicId::name).collect_vec(),
                src);
-        let response_content = ResponseContent::GetCloseGroup { close_group_ids: public_ids };
+        let response_content = ResponseContent::GetCloseGroup {
+            close_group_ids: public_ids,
+            message_id: message_id,
+        };
 
         let response_msg = ResponseMessage {
             src: Authority::NaeManager(dst_name),
