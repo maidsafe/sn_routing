@@ -320,7 +320,10 @@ impl Core {
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
         match self.category_rx.try_recv() {
-            Ok(category) => self.handle_event(category),
+            Ok(category) => {
+                self.handle_event(category);
+                true
+            }
             _ => false,
         }
     }

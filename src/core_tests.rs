@@ -28,6 +28,7 @@ use data::{Data, DataRequest, ImmutableData, ImmutableDataType};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
+use itertools::Itertools;
 use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
 use messages::{RoutingMessage, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
@@ -35,6 +36,9 @@ use types::{MessageId, RoutingActionSender};
 
 // kademlia_routing_table::QUORUM_SIZE is private and subject to change!
 const QUORUM_SIZE: usize = 5;
+
+// Poll one event per node. Otherwise, all events in a single node are polled before moving on.
+const BALANCED_POLLING: bool = true;
 
 struct TestNode {
     handle: ServiceHandle,
@@ -223,7 +227,12 @@ macro_rules! expect_event {
 /// Process all events
 fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     loop {
-        let n = nodes.iter_mut().any(TestNode::poll);
+        let mut n = false;
+        if BALANCED_POLLING {
+            nodes.iter_mut().foreach(|node| n = n || node.core.poll());
+        } else {
+            n = nodes.iter_mut().any(TestNode::poll);
+        }
         let c = clients.iter_mut().any(TestClient::poll);
         if !n && !c { break; }
     }
