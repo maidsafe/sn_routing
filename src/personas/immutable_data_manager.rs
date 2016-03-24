@@ -1429,7 +1429,7 @@ mod test {
                         // A replication after ongoing_get get cleared picks up REPLICANTS
                         // number of pmid_nodes as new data_holder
                         assert_eq!(env.routing.put_requests_given().len(), 2 * REPLICANTS);
-                        assert!(received_account.len() > REPLICANTS);
+                        assert!(received_account.len() >= REPLICANTS);
                         return;
                     } else {
                         assert_eq!(received_account, account);
