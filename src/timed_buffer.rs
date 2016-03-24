@@ -46,7 +46,7 @@ impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
         self.map.remove(key).map(|(value, _)| value)
     }
 
-    /// Retrieves a reference to the value stored under `key`, or `None` if the key doesn't exist.
+    /// Retrieves a value stored under `key`, or `None` if the key doesn't exist.
     pub fn get(&mut self, key: &Key) -> Option<Value> {
         self.map.get(key).map(|&(ref value, _)| value.clone())
     }
