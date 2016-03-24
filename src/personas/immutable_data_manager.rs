@@ -31,8 +31,7 @@ use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
-pub const REPLICANTS: usize = 4;
-pub const MIN_REPLICANTS: usize = 4;
+pub const REPLICANTS: usize = 2;
 
 const LRU_CACHE_SIZE: usize = 1000;
 
@@ -535,7 +534,7 @@ impl ImmutableDataManager {
                 DataHolder::Failed(_) => (),
             }
         }
-        if holder_count < MIN_REPLICANTS {
+        if holder_count < REPLICANTS {
             REPLICANTS - holder_count
         } else {
             0
@@ -647,7 +646,7 @@ impl ImmutableDataManager {
             }
             trace!("Have {} good holders for {}", good_holder_count, data_name);
 
-            if good_holder_count >= MIN_REPLICANTS {
+            if good_holder_count >= REPLICANTS {
                 // We can now delete this cached get request with no need for further action
                 finished = true;
             } else if let Some(ref data) = metadata.data {
@@ -1025,26 +1024,20 @@ mod test {
         }).collect();
 
         let mut current_holders = data_holders.clone();
-        let mut failure_count = 0;
         for data_holder in &data_holders {
             let _ = env.immutable_data_manager.handle_put_failure(&env.routing,
                                                                   data_holder,
                                                                   &put_env.message_id);
-            failure_count += 1;
-            if failure_count > (REPLICANTS - MIN_REPLICANTS) {
-                let put_requests = env.routing.put_requests_given();
-                let put_request = unwrap_option!(put_requests.last(), "");
-                assert_eq!(put_requests.len(), current_holders.len() + 1);
-                assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
-                assert_eq!(put_request.content,
-                           RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
-                                               put_env.message_id.clone()));
-                let new_holder = put_request.dst.name().clone();
-                assert!(current_holders.contains(&new_holder) == false);
-                current_holders.push(new_holder);
-            } else {
-                assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
-            }
+            let put_requests = env.routing.put_requests_given();
+            let put_request = unwrap_option!(put_requests.last(), "");
+            assert_eq!(put_requests.len(), current_holders.len() + 1);
+            assert_eq!(put_request.src, Authority::NaeManager(put_env.im_data.name()));
+            assert_eq!(put_request.content,
+                       RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
+                                           put_env.message_id.clone()));
+            let new_holder = put_request.dst.name().clone();
+            assert!(current_holders.contains(&new_holder) == false);
+            current_holders.push(new_holder);
         }
     }
 
@@ -1227,7 +1220,7 @@ mod test {
                                       .collect();
                 replication_put_message_id = put_env.message_id.clone();
             }
-            if replicants < MIN_REPLICANTS {
+            if replicants < REPLICANTS {
                 put_request_len += 1;
                 replicants += 1;
                 let requests = env.routing.put_requests_given();
@@ -1307,7 +1300,7 @@ mod test {
                 }
             }
 
-            if replicants < MIN_REPLICANTS && get_requests_len == 0 {
+            if replicants < REPLICANTS && get_requests_len == 0 {
                 get_requests_len = account.len();
                 let get_requests = env.routing.get_requests_given();
                 assert_eq!(get_requests.len(), get_requests_len);
@@ -1436,7 +1429,7 @@ mod test {
                         // A replication after ongoing_get get cleared picks up REPLICANTS
                         // number of pmid_nodes as new data_holder
                         assert_eq!(env.routing.put_requests_given().len(), 2 * REPLICANTS);
-                        assert!(received_account.len() > REPLICANTS);
+                        assert!(received_account.len() >= REPLICANTS);
                         return;
                     } else {
                         assert_eq!(received_account, account);
