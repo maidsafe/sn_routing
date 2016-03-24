@@ -33,13 +33,12 @@ use xor_name::XorName;
 
 // It has now been decided that the charge will be by unit
 // i.e. each chunk incurs a default charge of one unit, no matter of the data size
-const DEFAULT_ACCOUNT_SIZE: u16 = 2048;  // 2048 units, max 2GB for immutable_data (1MB per chunk)
-const DEFAULT_PAYMENT: u16 = 1;  // 1 MB
+const DEFAULT_ACCOUNT_SIZE: u64 = 1024;  // 1024 units, max 1GB for immutable_data (1MB per chunk)
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
-    data_stored: u16,
-    space_available: u16,
+    data_stored: u64,
+    space_available: u64,
 }
 
 impl Default for Account {
@@ -52,23 +51,18 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_data(&mut self, size: u16) -> Result<(), MutationError> {
-        if size > self.space_available {
+    fn put_data(&mut self) -> Result<(), MutationError> {
+        if self.space_available < 1 {
             return Err(MutationError::LowBalance);
         }
-        self.data_stored += size;
-        self.space_available -= size;
+        self.data_stored += 1;
+        self.space_available -= 1;
         Ok(())
     }
 
-    fn delete_data(&mut self, size: u16) {
-        if self.data_stored < size {
-            self.space_available += self.data_stored;
-            self.data_stored = 0;
-        } else {
-            self.data_stored -= size;
-            self.space_available += size;
-        }
+    fn delete_data(&mut self) {
+        self.data_stored -= 1;
+        self.space_available += 1;
     }
 }
 
@@ -130,7 +124,7 @@ impl MaidManager {
                 // Refund account
                 match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
                     Some(account) => {
-                        account.delete_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                        account.delete_data()
                     }
                     None => return Ok(()),
                 }
@@ -239,7 +233,7 @@ impl MaidManager {
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
                          .and_then(|account| {
-                             account.put_data(DEFAULT_PAYMENT /* data.payload_size() as u64 */)
+                             account.put_data()
                          });
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
@@ -318,12 +312,15 @@ mod test {
 
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
-        assert!(account.put_data(super::DEFAULT_ACCOUNT_SIZE).is_ok());
+        for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
+            assert!(account.put_data().is_ok());
+        }
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
 
-        account.delete_data(super::DEFAULT_ACCOUNT_SIZE);
-
+        for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
+            account.delete_data();
+        }
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
     }
@@ -334,10 +331,12 @@ mod test {
 
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
-        assert!(account.put_data(super::DEFAULT_ACCOUNT_SIZE).is_ok());
+        for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
+            assert!(account.put_data().is_ok());
+        }
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
-        assert!(account.put_data(1).is_err());
+        assert!(account.put_data().is_err());
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
     }
