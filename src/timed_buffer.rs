@@ -46,19 +46,9 @@ impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
         self.map.remove(key).map_or(None, |(value, _)| Some(value))
     }
 
-    /// Retrieves a value stored under `key`, or `None` if the key doesn't exist.
-    pub fn get(&mut self, key: &Key) -> Option<Value> {
-        self.map.get(key).map_or(None, |&(ref value, _)| Some(value.clone()))
-    }
-
     /// Returns the size of the buffer.
     pub fn len(&self) -> usize {
         self.map.len()
-    }
-
-    fn expired(&self, key: &Key) -> bool {
-        let now = SteadyTime::now();
-        self.map.get(key).map_or(false, |&(_, timestamp)| timestamp + self.time_to_live < SteadyTime::now())
     }
 
     fn get_expired(&mut self) -> Vec<Value> {
