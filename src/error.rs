@@ -89,6 +89,8 @@ pub enum RoutingError {
     SendEventError(SendError<Event>),
     /// The bit index for a `XorName` was out of bounds.
     BitIndexOutOfBoundsError,
+    /// Failed to derive an ImmutableDataName
+    UnableToDeriveName,
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error

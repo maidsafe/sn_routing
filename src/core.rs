@@ -866,10 +866,10 @@ impl Core {
     fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
         let content = match *routing_msg {
             RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataRequest::Immutable(ref name, _), id),
+                    content: RequestContent::Get(DataRequest::Immutable(ref name), id),
                     ..
                 }) => {
-                match self.data_cache.get(&name) {
+                match self.data_cache.get(name.raw()) {
                     Some(data) => ResponseContent::GetSuccess(data.clone(), id),
                     _ => return None,
                 }
