@@ -38,17 +38,17 @@ impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
 
     /// Inserts a key-value pair into the buffer with current time.
     pub fn insert(&mut self, key: Key, value: Value) -> Option<Value> {
-        self.map.insert(key, (value, SteadyTime::now())).map(|pair| pair.0)
+        self.map.insert(key, (value, SteadyTime::now())).map_or(None, |(value, _)| Some(value))
     }
 
     /// Removes a value from the buffer.
     pub fn remove(&mut self, key: &Key) -> Option<Value> {
-        self.map.remove(key).map(|(value, _)| value)
+        self.map.remove(key).map_or(None, |(value, _)| Some(value))
     }
 
     /// Retrieves a value stored under `key`, or `None` if the key doesn't exist.
     pub fn get(&mut self, key: &Key) -> Option<Value> {
-        self.map.get(key).map(|&(ref value, _)| value.clone())
+        self.map.get(key).map_or(None, |&(ref value, _)| Some(value.clone()))
     }
 
     /// Returns the size of the buffer.
