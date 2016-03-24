@@ -31,13 +31,15 @@ use utils;
 use vault::RoutingNode;
 use xor_name::XorName;
 
-const DEFAULT_ACCOUNT_SIZE: u64 = 1_073_741_824;  // 1 GB
-const DEFAULT_PAYMENT: u64 = 1_048_576;  // 1 MB
+// It has now been decided that the charge will be by unit
+// i.e. each chunk incurs a default charge of one unit, no matter of the data size
+const DEFAULT_ACCOUNT_SIZE: u16 = 2048;  // 2048 units, max 2GB for immutable_data (1MB per chunk)
+const DEFAULT_PAYMENT: u16 = 1;  // 1 MB
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
-    data_stored: u64,
-    space_available: u64,
+    data_stored: u16,
+    space_available: u16,
 }
 
 impl Default for Account {
@@ -50,7 +52,7 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_data(&mut self, size: u64) -> Result<(), MutationError> {
+    fn put_data(&mut self, size: u16) -> Result<(), MutationError> {
         if size > self.space_available {
             return Err(MutationError::LowBalance);
         }
@@ -59,7 +61,7 @@ impl Account {
         Ok(())
     }
 
-    fn delete_data(&mut self, size: u64) {
+    fn delete_data(&mut self, size: u16) {
         if self.data_stored < size {
             self.space_available += self.data_stored;
             self.data_stored = 0;
