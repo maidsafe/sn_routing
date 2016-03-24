@@ -129,7 +129,13 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).refresh_requests_given()
     }
 
+    pub fn remove_node_from_routing_table(&mut self, node_lost: &XorName) {
+        unwrap_result!(self.pimpl.lock()).remove_node_from_routing_table(node_lost)
+    }
 
+    pub fn add_node_into_routing_table(&mut self, new_node: &XorName) {
+        unwrap_result!(self.pimpl.lock()).add_node_into_routing_table(new_node)
+    }
 
     // -----------  the following methods are expected to be API functions   ------------- //
     pub fn send_get_request(&self,

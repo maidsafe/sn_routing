@@ -53,11 +53,11 @@ extern crate docopt;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
-extern crate mpid_messaging;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
+extern crate safe_network_common;
 extern crate sodiumoxide;
 extern crate time;
 extern crate xor_name;

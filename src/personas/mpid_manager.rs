@@ -15,13 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::convert::From;
 use std::collections::HashMap;
 
 use chunk_store::ChunkStore;
 use default_chunk_store;
-use error::{ClientError, InternalError};
+use error::InternalError;
+use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use mpid_messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage, MpidMessageWrapper};
+use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader, MpidMessage,
+                                     MpidMessageWrapper};
 use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
 use sodiumoxide::crypto::sign::PublicKey;
 use sodiumoxide::crypto::hash::sha512;
@@ -93,7 +96,7 @@ pub struct Account {
 }
 
 impl Default for Account {
-    // FIXME: Account Creation process required
+    // TODO: Account Creation process required
     //   To bypass the the process for a simple network, allowance is granted by default
     fn default() -> Account {
         Account {
@@ -343,7 +346,7 @@ impl MpidManager {
                              message_id: &MessageId)
                              -> Result<(), InternalError> {
         if self.chunk_store_inbox.has_chunk(&data.name()) {
-            return Err(InternalError::Client(ClientError::DataExists));
+            return Err(From::from(MutationError::DataExists));
         }
 
         let serialised_header = try!(serialise(&mpid_header));
@@ -396,7 +399,7 @@ impl MpidManager {
                               -> Result<(), InternalError> {
         if let Some(ref mut account) = self.accounts.get_mut(request.dst.name()) {
             if self.chunk_store_outbox.has_chunk(&data.name()) {
-                return Err(InternalError::Client(ClientError::DataExists));
+                return Err(From::from(MutationError::DataExists));
             }
             let serialised_message = try!(serialise(&mpid_message));
             if let Authority::Client { client_key, .. } = request.src {
@@ -689,9 +692,11 @@ impl Default for MpidManager {
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use error::{ClientError, InternalError};
+    use error::InternalError;
+    use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
     use rand;
     use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage,
@@ -701,7 +706,7 @@ mod test {
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
     use xor_name::XorName;
-    use mpid_messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
+    use safe_network_common::messaging::{MpidHeader, MpidMessage, MpidMessageWrapper};
 
     struct Environment {
         our_authority: Authority,
@@ -852,7 +857,6 @@ mod test {
 
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn put_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -923,7 +927,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn put_message_and_header_twice() {
         let mut env = environment_setup();
         // register client sender online...
@@ -978,7 +981,7 @@ mod test {
         // put message again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::ClientMutation(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
 
@@ -1017,13 +1020,12 @@ mod test {
         // put header again...
         match env.mpid_manager.handle_put(&env.routing, &request) {
             Ok(_) => panic!("Expected an error."),
-            Err(InternalError::Client(ClientError::DataExists)) => (),
+            Err(InternalError::ClientMutation(MutationError::DataExists)) => (),
             Err(_) => panic!("Unexpected error."),
         }
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn get_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1090,7 +1092,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn outbox_has() {
         let mut env = environment_setup();
         let src = env.client.clone();
@@ -1166,7 +1167,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn get_outbox_headers() {
         let mut env = environment_setup();
         let src = env.client.clone();
@@ -1241,7 +1241,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn delete_message() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1319,7 +1318,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn delete_header() {
         let mut env = environment_setup();
         // register client sender online...
@@ -1412,7 +1410,6 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(feature="clippy", allow(indexing_slicing))]
     fn post_put_message() {
         let mut env = environment_setup();
         // register client sender online...
