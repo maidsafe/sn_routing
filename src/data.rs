@@ -18,7 +18,7 @@
 use std::fmt::{self, Debug, Formatter};
 use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
-pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use immutable_data::{ImmutableData, ImmutableDataName};
 pub use plain_data::PlainData;
 use xor_name::XorName;
 
@@ -38,7 +38,7 @@ impl Data {
     pub fn name(&self) -> XorName {
         match *self {
             Data::Structured(ref data) => data.name(),
-            Data::Immutable(ref data) => data.name(),
+            Data::Immutable(ref data) => *data.raw_name(),
             Data::Plain(ref data) => data.name(),
         }
     }
@@ -59,7 +59,7 @@ pub enum DataRequest {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),
     /// Data request, (Identifier, Type), for ImmutableData types.
-    Immutable(XorName, ImmutableDataType),
+    Immutable(ImmutableDataName),
     /// Request for PlainData.
     Plain(XorName),
 }
@@ -78,8 +78,9 @@ impl DataRequest {
     /// DataRequest name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataRequest::Structured(name, tag) => StructuredData::compute_name(tag, &name),
-            DataRequest::Immutable(name, _) | DataRequest::Plain(name) => name,
+            DataRequest::Structured(ref name, tag) => StructuredData::compute_name(tag, name),
+            DataRequest::Immutable(ref name) => *name.raw(),
+            DataRequest::Plain(ref name) => *name,
         }
     }
 }
@@ -106,17 +107,16 @@ mod test {
                                   vec![],
                                   Some(&keys.1)) {
             Ok(structured_data) => {
-                assert_eq!(structured_data.name(),
-                           Data::Structured(structured_data).name());
+                assert_eq!(structured_data.name(), Data::Structured(structured_data).name());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
 
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
-        assert_eq!(immutable_data.name(),
-                   Data::Immutable(immutable_data).name());
+        let immutable_data = ImmutableData::new(value);
+        let immutable_data_raw_name = *immutable_data.raw_name();
+        assert_eq!(immutable_data_raw_name, Data::Immutable(immutable_data).name());
 
         // name() resolves correctly for PlainData
         let name = XorName(sha512::hash(&[]).0);
@@ -145,7 +145,7 @@ mod test {
 
         // payload_size() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.payload_size(),
                    Data::Immutable(immutable_data).payload_size());
 
@@ -158,18 +158,18 @@ mod test {
 
     #[test]
     fn data_request_name() {
-        let name = XorName(sha512::hash(&[]).0);
+        let name = ImmutableDataName::new(&[]);
 
         // name() resolves correctly for StructuedData
         let tag = 0;
-        assert_eq!(StructuredData::compute_name(tag, &name),
-                   DataRequest::Structured(name, tag).name());
+        assert_eq!(StructuredData::compute_name(tag, name.raw()),
+                   DataRequest::Structured(*name.raw(), tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = DataRequest::Immutable(name, ImmutableDataType::Normal).name();
-        assert_eq!(name, actual_name);
+        let immutable_data_raw_name = *name.raw();
+        assert_eq!(immutable_data_raw_name, DataRequest::Immutable(name).name());
 
         // name() resolves correctly for PlainData
-        assert_eq!(name, DataRequest::Plain(name).name());
+        assert_eq!(immutable_data_raw_name, DataRequest::Plain(immutable_data_raw_name).name());
     }
 }
