@@ -70,10 +70,13 @@ impl Vault {
            stop_receiver: Receiver<()>)
            -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
-        let config = match config_handler::read_config_file() {
+        let mut config = match config_handler::read_config_file() {
             Ok(config) => config,
             Err(err) => return Err(err),
         };
+        if let Some(ref mut capacity) = config.max_capacity {
+            *capacity = *capacity / 3;
+        }
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
