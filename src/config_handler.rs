@@ -19,21 +19,17 @@ use config_file_handler::{self, FileHandler};
 use error::InternalError;
 use xor_name::XorName;
 
-#[derive(PartialEq, Eq, Debug, RustcDecodable, RustcEncodable, Clone)]
+#[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct Config {
-    pub account_size: Option<u64>,  // measured by unit
     pub wallet_address: Option<XorName>,
-    pub entries_limit: Option<u64>,
-    pub chunk_store_limit: Option<u64>,  // measured by MB
+    pub max_capacity: Option<u64>,  // measured by MB
 }
 
 impl Default for Config {
     fn default() -> Config {
         Config {
-            account_size: None,
             wallet_address: None,
-            entries_limit: None,
-            chunk_store_limit: None,
+            max_capacity: None,
         }
     }
 }
@@ -53,6 +49,7 @@ pub fn read_config_file() -> Result<Config, InternalError> {
 ///
 /// N.B. This method should only be used as a utility for test and examples.  In normal use cases,
 /// the config file should be created by the installer for the dependent application.
+#[cfg(test)]
 #[allow(dead_code)]
 pub fn write_config_file(config: Config)
                          -> Result<::std::path::PathBuf, InternalError> {

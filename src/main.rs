@@ -121,8 +121,5 @@ pub fn main() {
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
-    match config_handler::read_config_file() {
-        Ok(config) => vault::Vault::run(config),
-        Err(err) => println!("failed in reading the config file : {:?}", err),
-    }
+    vault::Vault::run();
 }

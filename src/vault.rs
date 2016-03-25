@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use config_handler::Config;
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
@@ -25,6 +24,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use xor_name::XorName;
 
+use config_handler;
 use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
@@ -53,7 +53,7 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn run(config: Config) {
+    pub fn run() {
         let (stop_sender, stop_receiver) = mpsc::channel();
 
         // Handle Ctrl+C to properly stop the vault instance.
@@ -63,22 +63,24 @@ impl Vault {
         });
 
         // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
-        unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver, config)).do_run());
+        unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver)).do_run());
     }
 
     fn new(app_event_sender: Option<Sender<Event>>,
-           stop_receiver: Receiver<()>,
-           config: Config)
+           stop_receiver: Receiver<()>)
            -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
-
+        let config = match config_handler::read_config_file() {
+            Ok(config) => config,
+            Err(err) => return Err(err),
+        };
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
-            maid_manager: MaidManager::new(&config),
-            mpid_manager: MpidManager::new(),
+            maid_manager: MaidManager::new(),
+            mpid_manager: MpidManager::new(&config.max_capacity),
             pmid_manager: PmidManager::new(),
-            pmid_node: try!(PmidNode::new()),
-            structured_data_manager: StructuredDataManager::new(),
+            pmid_node: try!(PmidNode::new(&config.max_capacity)),
+            structured_data_manager: StructuredDataManager::new(&config.max_capacity),
             stop_receiver: Some(stop_receiver),
             app_event_sender: app_event_sender,
         })

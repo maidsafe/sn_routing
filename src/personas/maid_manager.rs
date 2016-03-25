@@ -19,7 +19,6 @@ use std::mem;
 use std::convert::From;
 use std::collections::HashMap;
 
-use config_handler::Config;
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use lru_time_cache::LruCache;
@@ -42,14 +41,16 @@ pub struct Account {
     space_available: u64,
 }
 
-impl Account {
-    pub fn new(account_size: u64) -> Account {
+impl Default for Account {
+    fn default() -> Account {
         Account {
             data_stored: 0,
-            space_available: account_size,
+            space_available: DEFAULT_ACCOUNT_SIZE,
         }
     }
+}
 
+impl Account {
     fn put_data(&mut self) -> Result<(), MutationError> {
         if self.space_available < 1 {
             return Err(MutationError::LowBalance);
@@ -70,20 +71,13 @@ impl Account {
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
     request_cache: LruCache<MessageId, RequestMessage>,
-    default_account_size: u64,
 }
 
 impl MaidManager {
-    pub fn new(config: &Config) -> MaidManager {
-        let default_account_size = if let Some(ref account_size) = config.account_size {
-            account_size.clone()
-        } else {
-            DEFAULT_ACCOUNT_SIZE
-        };
+    pub fn new() -> MaidManager {
         MaidManager {
             accounts: HashMap::new(),
             request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
-            default_account_size: default_account_size,
         }
     }
 
@@ -222,8 +216,7 @@ impl MaidManager {
             }
 
             // Create the account, the SD incurs charge later on
-            let _ = self.accounts.insert(client_name,
-                                         Account::new(self.default_account_size));
+            let _ = self.accounts.insert(client_name, Account::default());
         }
         self.forward_put_request(routing_node, client_name, data, *message_id, request)
     }
@@ -284,6 +277,12 @@ impl MaidManager {
     }
 }
 
+impl Default for MaidManager {
+    fn default() -> MaidManager {
+        MaidManager::new()
+    }
+}
+
 
 
 
@@ -291,7 +290,6 @@ impl MaidManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use config_handler::Config;
     use error::InternalError;
     use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
@@ -310,7 +308,7 @@ mod test {
 
     #[test]
     fn account_ok() {
-        let mut account = Account::new(super::DEFAULT_ACCOUNT_SIZE);
+        let mut account = Account::default();
 
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
@@ -329,7 +327,7 @@ mod test {
 
     #[test]
     fn account_err() {
-        let mut account = Account::new(super::DEFAULT_ACCOUNT_SIZE);
+        let mut account = Account::default();
 
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
@@ -373,7 +371,7 @@ mod test {
             our_authority: Authority::ClientManager(utils::client_name(&client)),
             client: client,
             routing: routing,
-            maid_manager: MaidManager::new(&Config::default()),
+            maid_manager: MaidManager::new(),
         }
     }
 
