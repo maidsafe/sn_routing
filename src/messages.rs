@@ -329,6 +329,8 @@ pub enum ResponseContent {
     GetNetworkName {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
+        /// Our close group `PublicId`s.
+        close_group_ids: Vec<PublicId>,
     },
     /// Reply with the requested `PublicId`.
     ///
@@ -354,6 +356,7 @@ pub enum ResponseContent {
     GetCloseGroup {
         /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
+        /// The message ID.
         message_id: MessageId,
     },
     // ---------- External ------------
@@ -466,7 +469,10 @@ impl Debug for RequestContent {
                 write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
             }
             RequestContent::ExpectCloseNode { ref expect_id, ref client_auth } => {
-                write!(formatter, "ExpectCloseNode {{ {:?}, {:?} }}", expect_id, client_auth)
+                write!(formatter,
+                       "ExpectCloseNode {{ {:?}, {:?} }}",
+                       expect_id,
+                       client_auth)
             }
             RequestContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             RequestContent::Connect => write!(formatter, "Connect"),
@@ -497,8 +503,11 @@ impl Debug for RequestContent {
 impl Debug for ResponseContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            ResponseContent::GetNetworkName { ref relocated_id } => {
-                write!(formatter, "GetNetworkName {{ {:?} }}", relocated_id)
+            ResponseContent::GetNetworkName { ref relocated_id, ref close_group_ids } => {
+                write!(formatter,
+                       "GetNetworkName {{ {:?}, {:?} }}",
+                       close_group_ids,
+                       relocated_id)
             }
             ResponseContent::GetPublicId { ref public_id } => {
                 write!(formatter, "GetPublicId {{ {:?} }}", public_id)
@@ -509,7 +518,10 @@ impl Debug for ResponseContent {
                        public_id)
             }
             ResponseContent::GetCloseGroup { ref close_group_ids, message_id } => {
-                write!(formatter, "GetCloseGroup {{ {:?}, {:?} }}", close_group_ids, message_id)
+                write!(formatter,
+                       "GetCloseGroup {{ {:?}, {:?} }}",
+                       close_group_ids,
+                       message_id)
             }
             ResponseContent::GetSuccess(ref data, ref message_id) => {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)

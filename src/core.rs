@@ -64,6 +64,8 @@ const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
 
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
+/// Time (in seconds) after which a `GetNetworkName` request is resent.
+const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 20;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -188,14 +190,10 @@ impl DebugStats {
 /// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
 /// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
 /// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
-/// `GetNetworkName` response back to A.
+/// `GetNetworkName` response back to A, which includes the public IDs of the members of Y.
 ///
 ///
 /// ### Connecting to the close group
-///
-/// A now sends a `GetCloseGroup` request to Y. Each member of Y sends its own public ID and those
-/// of its close group in its response to A. Those messages don't necessarily agree, as not every
-/// member of Y has the same close group!
 ///
 /// To the `ManagedNode` for each public ID it receives from members of Y, A sends its `ConnectionInfo`.
 /// It also caches the ID.
@@ -228,6 +226,7 @@ pub struct Core {
     full_id: FullId,
     state: State,
     routing_table: RoutingTable,
+    get_network_name_timer_token: Option<u64>,
 
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
@@ -300,6 +299,7 @@ impl Core {
             full_id: full_id,
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
+            get_network_name_timer_token: None,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
@@ -818,10 +818,6 @@ impl Core {
                     RoutingMessage::Request(RequestMessage {
                         content: RequestContent::ConnectionInfo { .. },
                         ..
-                    }) |
-                    RoutingMessage::Response(ResponseMessage {
-                        content: ResponseContent::GetCloseGroup { .. },
-                        ..
                     }) => return self.handle_signed_message_for_client(&signed_msg),
                     _ => (),
                 }
@@ -1055,13 +1051,14 @@ impl Core {
             }
             (RequestContent::ExpectCloseNode { expect_id, client_auth },
              Authority::NaeManager(_),
-             Authority::NaeManager(_)) => self.handle_expect_close_node_request(expect_id,
-                                                                                client_auth),
+             Authority::NaeManager(_)) => {
+                self.handle_expect_close_node_request(expect_id, client_auth)
+            }
             (RequestContent::GetCloseGroup(message_id),
              src,
-             Authority::NaeManager(dst_name)) => self.handle_get_close_group_request(src,
-                                                                                     dst_name,
-                                                                                     message_id),
+             Authority::NaeManager(dst_name)) => {
+                self.handle_get_close_group_request(src, dst_name, message_id)
+            }
             (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::ManagedNode(dst_name)) => {
@@ -1124,9 +1121,9 @@ impl Core {
                msg_src,
                msg_dst);
         match (msg_content, msg_src, msg_dst) {
-            (ResponseContent::GetNetworkName { relocated_id, },
+            (ResponseContent::GetNetworkName { relocated_id, close_group_ids },
              Authority::NodeManager(_),
-             Authority::Client { .. }) => self.handle_get_network_name_response(relocated_id),
+             dst) => self.handle_get_network_name_response(relocated_id, close_group_ids, dst),
             (ResponseContent::GetPublicId { public_id, },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
@@ -1688,6 +1685,9 @@ impl Core {
 
     // Constructed by A; From A -> X
     fn relocate(&mut self) -> Result<(), RoutingError> {
+        let duration = StdDuration::from_secs(GET_NETWORK_NAME_TIMEOUT_SECS);
+        self.get_network_name_timer_token = Some(self.timer.schedule(duration));
+
         let request_content = RequestContent::GetNetworkName {
             current_id: *self.full_id.public_id(),
         };
@@ -1763,44 +1763,55 @@ impl Core {
             return Err(RoutingError::RejectedPublicId);
         }
 
+        let close_group = match self.routing_table.close_nodes(expect_id.name()) {
+            Some(close_group) => close_group,
+            None => return Err(RoutingError::InvalidDestination),
+        };
+        let public_ids = close_group.into_iter()
+                                    .map(|info| info.public_id)
+                                    .collect_vec();
+
         // From Y -> A (via B)
-        {
-            let response_content = ResponseContent::GetNetworkName {
-                relocated_id: expect_id,
-            };
+        let response_content = ResponseContent::GetNetworkName {
+            relocated_id: expect_id,
+            close_group_ids: public_ids,
+        };
 
-            let response_msg = ResponseMessage {
-                src: Authority::NodeManager(*expect_id.name()),
-                dst: client_auth,
-                content: response_content,
-            };
+        trace!("Responding to client {:?}: {:?}.",
+               client_auth,
+               response_content);
 
-            try!(self.send_response(response_msg));
-        }
+        let response_msg = ResponseMessage {
+            src: Authority::NodeManager(*expect_id.name()),
+            dst: client_auth,
+            content: response_content,
+        };
 
+        try!(self.send_response(response_msg));
 
         Ok(())
     }
 
     // Received by A; From X -> A
     fn handle_get_network_name_response(&mut self,
-                                        relocated_id: PublicId)
+                                        relocated_id: PublicId,
+                                        mut close_group_ids: Vec<PublicId>,
+                                        dst: Authority)
                                         -> Result<(), RoutingError> {
+        self.get_network_name_timer_token = None;
         self.set_self_node_name(*relocated_id.name());
-        self.request_close_group_as_client()
-    }
-
-    fn request_close_group_as_client(&mut self) -> Result<(), RoutingError> {
-        let request_content = RequestContent::GetCloseGroup(MessageId::new());
-
-        // From A -> Y
-        let request_msg = RequestMessage {
-            src: try!(self.get_client_authority()),
-            dst: Authority::NaeManager(*self.full_id.public_id().name()),
-            content: request_content,
-        };
-
-        self.send_request(request_msg)
+        close_group_ids.truncate(PARALLELISM);
+        // From A -> Closest in Y
+        for close_node_id in close_group_ids {
+            if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
+                trace!("Sending connection info to {:?} on GetNetworkName response.",
+                       close_node_id);
+                try!(self.send_connection_info(close_node_id,
+                                               dst.clone(),
+                                               Authority::ManagedNode(*close_node_id.name())));
+            }
+        }
+        Ok(())
     }
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
@@ -1834,26 +1845,10 @@ impl Core {
         self.send_response(response_msg)
     }
 
-    // Received by A; From Y -> A, or from any node close to one of the sender's bucket addresses.
     fn handle_get_close_group_response(&mut self,
-                                       mut close_group_ids: Vec<PublicId>,
+                                       close_group_ids: Vec<PublicId>,
                                        dst: Authority)
                                        -> Result<(), RoutingError> {
-        if self.state == State::Client {
-            match dst {
-                Authority::Client { .. } => (),
-                _ => return Err(RoutingError::BadAuthority),
-            }
-            self.start_listening();
-            close_group_ids.truncate(PARALLELISM);
-        } else {
-            match dst {
-                Authority::ManagedNode(..) | Authority::Client { .. } => (),
-                _ => return Err(RoutingError::BadAuthority),
-            }
-        }
-
-        // From A -> Each in Y
         for close_node_id in close_group_ids {
             if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
                 if self.routing_table.contains(close_node_id.name()) {
@@ -2101,6 +2096,12 @@ impl Core {
             if bootstrap_token == token {
                 trace!("Timeout when trying to bootstrap against {:?}", peer_id);
                 self.retry_bootstrap_with_blacklist(&peer_id);
+            }
+        } else if self.get_network_name_timer_token == Some(token) {
+            if let Err(err) = self.relocate() {
+                error!("Failed to resend GetNetworkName response: {:?}", err);
+            } else {
+                trace!("Timeout waiting for GetNetworkName response. Resent request.");
             }
         }
     }
@@ -2381,12 +2382,8 @@ impl Core {
                     }
                 }
                 if self.routing_table.len() < GROUP_SIZE {
-                    if self.proxy_map.is_empty() {
-                        trace!("Routing table size fell below {}.", GROUP_SIZE);
-                        let _ = self.event_sender.send(Event::Disconnected);
-                    } else {
-                        let _ = self.request_close_group_as_client();
-                    }
+                    trace!("Routing table size fell below {}.", GROUP_SIZE);
+                    let _ = self.event_sender.send(Event::Disconnected);
                 }
             }
         };
