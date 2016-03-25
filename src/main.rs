@@ -62,6 +62,7 @@ extern crate sodiumoxide;
 extern crate time;
 extern crate xor_name;
 
+mod config_handler;
 mod default_chunk_store;
 mod error;
 mod mock_routing;
@@ -120,5 +121,8 @@ pub fn main() {
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
-    vault::Vault::run();
+    match config_handler::read_config_file() {
+        Ok(config) => vault::Vault::run(config),
+        Err(err) => println!("failed in reading the config file : {:?}", err),
+    }
 }

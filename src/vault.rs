@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use config_handler::Config;
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
@@ -52,7 +53,7 @@ pub struct Vault {
 }
 
 impl Vault {
-    pub fn run() {
+    pub fn run(config: Config) {
         let (stop_sender, stop_receiver) = mpsc::channel();
 
         // Handle Ctrl+C to properly stop the vault instance.
@@ -62,17 +63,18 @@ impl Vault {
         });
 
         // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
-        unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver)).do_run());
+        unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver, config)).do_run());
     }
 
     fn new(app_event_sender: Option<Sender<Event>>,
-           stop_receiver: Receiver<()>)
+           stop_receiver: Receiver<()>,
+           config: Config)
            -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
 
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
-            maid_manager: MaidManager::new(),
+            maid_manager: MaidManager::new(&config),
             mpid_manager: MpidManager::new(),
             pmid_manager: PmidManager::new(),
             pmid_node: try!(PmidNode::new()),
