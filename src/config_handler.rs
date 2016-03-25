@@ -17,12 +17,13 @@
 
 use config_file_handler::{self, FileHandler};
 use error::InternalError;
+use std::ffi::OsString;
 use xor_name::XorName;
 
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct Config {
     pub wallet_address: Option<XorName>,
-    pub max_capacity: Option<u64>,  // measured by MB
+    pub max_capacity: Option<u64>,  // measured by Bytes
 }
 
 impl Default for Config {
@@ -44,27 +45,27 @@ pub fn read_config_file() -> Result<Config, InternalError> {
 
 /// Writes a Vault config file **for use by tests and examples**.
 ///
-/// The file is written to the [`current_bin_dir()`](file_handler/fn.current_bin_dir.html)
+/// The file is written to the `current_bin_dir()`
 /// with the appropriate file name.
 ///
 /// N.B. This method should only be used as a utility for test and examples.  In normal use cases,
-/// the config file should be created by the installer for the dependent application.
+/// the config file should be created by the Vault's installer.
 #[cfg(test)]
 #[allow(dead_code)]
-pub fn write_config_file(config: Config)
-                         -> Result<::std::path::PathBuf, InternalError> {
+pub fn write_config_file(config: Config) -> Result<::std::path::PathBuf, InternalError> {
+    use rustc_serialize::json;
+    use std::fs::File;
     use std::io::Write;
+
     let mut config_path = try!(config_file_handler::current_bin_dir());
     config_path.push(try!(get_file_name()));
-    let mut file = try!(::std::fs::File::create(&config_path));
-    try!(write!(&mut file,
-                "{}",
-                ::rustc_serialize::json::as_pretty_json(&config)));
+    let mut file = try!(File::create(&config_path));
+    try!(write!(&mut file, "{}", json::as_pretty_json(&config)));
     try!(file.sync_all());
     Ok(config_path)
 }
 
-fn get_file_name() -> Result<::std::ffi::OsString, InternalError> {
+fn get_file_name() -> Result<OsString, InternalError> {
     let mut name = try!(config_file_handler::exe_file_stem());
     name.push(".vault.config");
     Ok(name)
@@ -75,13 +76,14 @@ mod test {
     #[test]
     fn parse_sample_config_file() {
         use std::path::Path;
+        use std::fs::File;
         use std::io::Read;
         use super::Config;
         use rustc_serialize::json;
 
         let path = Path::new("installer/sample.config").to_path_buf();
 
-        let mut file = match ::std::fs::File::open(path) {
+        let mut file = match File::open(path) {
             Ok(file) => file,
             Err(what) => {
                 panic!(format!("Error opening sample.config: {:?}", what));

@@ -24,10 +24,10 @@ const SIZE: u64 = 1073741824;
 
 // Construct a new ChunkStore initialised with the default parameters.
 pub fn new(vault_max_capacity: &Option<u64>) -> Result<ChunkStore, Error> {
-	let capacity = if let Some(ref max_capacity) = *vault_max_capacity {
-		max_capacity.clone()
-	} else {
-		SIZE
-	};
+    let capacity = if let Some(ref max_capacity) = *vault_max_capacity {
+        max_capacity.clone()
+    } else {
+        SIZE
+    };
     ChunkStore::new(PREFIX, capacity)
 }
