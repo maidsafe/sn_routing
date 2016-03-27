@@ -21,9 +21,9 @@ use std::collections::HashMap;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
-use lru_time_cache::LruCache;
+use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
+use routing::{Authority, Data, ImmutableData, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use time::Duration;
 use types::{Refresh, RefreshValue};
@@ -70,14 +70,14 @@ impl Account {
 
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
-    request_cache: LruCache<MessageId, RequestMessage>,
+    request_cache: TimedBuffer<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
         MaidManager {
             accounts: HashMap::new(),
-            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
+            request_cache: TimedBuffer::new(Duration::minutes(5)),
         }
     }
 
@@ -137,6 +137,25 @@ impl MaidManager {
         }
     }
 
+    pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
+        for message_id in &self.request_cache.get_expired() {
+            match self.request_cache.remove(message_id) {
+                Some(client_request) => {
+                    match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
+                        Some(account) => {
+                            account.delete_data()
+                        }
+                        None => continue,
+                    }
+                    error!("Cached request {:?} timed-out waiting for a response.", client_request);
+                    let error = MutationError::Timeout;
+                    let _ = self.reply_with_put_failure(routing_node, client_request, *message_id, &error);
+                }
+                None => continue,
+            }
+        }
+    }
+
     pub fn handle_refresh(&mut self, name: XorName, account: Account) {
         let _ = self.accounts.insert(name, account);
     }
@@ -179,14 +198,17 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
-            (Data::Immutable(data.clone()), message_id)
+        if let RequestContent::Put(Data::Immutable(ImmutableData::Normal(data)), message_id) = request.content {
+            self.forward_put_request(routing_node,
+                                     utils::client_name(&request.src),
+                                     Data::Immutable(ImmutableData::Normal(data)),
+                                     message_id,
+                                     request)
+        } else if let RequestContent::Put(_, message_id) = request.content {
+            self.reply_with_put_failure(routing_node, request.clone(), message_id, &MutationError::InvalidOperation)
         } else {
             unreachable!("Logic error")
-        };
-        let client_name = utils::client_name(&request.src);
-        self.forward_put_request(routing_node, client_name, data, *message_id, request)
+        }
     }
 
     fn handle_put_structured_data(&mut self,

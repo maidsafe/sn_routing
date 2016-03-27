@@ -129,6 +129,7 @@ impl Vault {
                 warn!("Failed to handle event: {:?}", error);
             }
 
+            self.maid_manager.check_timeout(routing_node);
             self.pmid_manager.check_timeout(routing_node);
         }
 
