@@ -169,11 +169,12 @@ pub struct MpidManager {
 
 impl MpidManager {
     pub fn new(capacity: &Option<u64>) -> MpidManager {
+        let chunk_store_capacity = capacity.map_or(None, |capacity| Some(capacity / 2) );
         MpidManager {
             accounts: HashMap::new(),
             // TODO - remove unwrap
-            chunk_store_inbox: unwrap_result!(default_chunk_store::new(capacity)),
-            chunk_store_outbox: unwrap_result!(default_chunk_store::new(capacity)),
+            chunk_store_inbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
+            chunk_store_outbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
         }
     }
 
