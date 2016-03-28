@@ -23,7 +23,7 @@ use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, ImmutableData, MessageId, RequestContent, RequestMessage};
+use routing::{Authority, Data, ImmutableDataType, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use time::Duration;
 use types::{Refresh, RefreshValue};
@@ -198,14 +198,18 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        if let RequestContent::Put(Data::Immutable(ImmutableData::Normal(data)), message_id) = request.content {
+        if let RequestContent::Put(Data::Immutable(ref data), message_id) = request.content {
+            if *data.get_type_tag() != ImmutableDataType::Normal {
+                return self.reply_with_put_failure(routing_node,
+                                                   request.clone(),
+                                                   message_id,
+                                                   &MutationError::InvalidOperation);
+            }
             self.forward_put_request(routing_node,
                                      utils::client_name(&request.src),
-                                     Data::Immutable(ImmutableData::Normal(data)),
+                                     Data::Immutable(data.clone()),
                                      message_id,
                                      request)
-        } else if let RequestContent::Put(_, message_id) = request.content {
-            self.reply_with_put_failure(routing_node, request.clone(), message_id, &MutationError::InvalidOperation)
         } else {
             unreachable!("Logic error")
         }
