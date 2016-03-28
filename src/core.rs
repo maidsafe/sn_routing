@@ -34,6 +34,7 @@ use message_filter::MessageFilter;
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::io;
+use std::iter;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -395,19 +396,13 @@ impl Core {
            self.debug_stats.cur_routing_table_size != self.routing_table.len() {
             self.debug_stats.cur_routing_table_size = self.routing_table.len();
 
-            trace!(" -----------------------------------------------------");
-            trace!("| {:?} {:?} - Routing Table size: {:3} |",
-                   self,
-                   self.crust_service.id(),
-                   self.routing_table.len());
-            // self.routing_table.our_close_group().iter().all(|elt| {
-            //     trace!("Name: {:?} Connections {:?}  -- {:?}",
-            //            elt.public_id.name(),
-            //            elt.connections.len(),
-            //            elt.connections);
-            //     true
-            // });
-            trace!(" -----------------------------------------------------");
+            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
+                                     self,
+                                     self.crust_service.id(),
+                                     self.routing_table.len());
+            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
+            trace!("| {} |", status_str);
+            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
         }
     }
 
