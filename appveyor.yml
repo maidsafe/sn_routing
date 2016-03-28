@@ -40,4 +40,4 @@ build_script:
 
 test_script:
   - ps: . ".\Run Tests.ps1"
-  - cargo test --release --no-run
+#  - cargo test --release --no-run
