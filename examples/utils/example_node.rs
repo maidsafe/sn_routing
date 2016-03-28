@@ -75,23 +75,23 @@ impl ExampleNode {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
                 Event::NodeAdded(name) => {
-                    trace!("{:?} Received NodeAdded event {:?}",
+                    trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
                     self.handle_node_added(name);
                 }
                 Event::NodeLost(name) => {
-                    trace!("{:?} Received NodeLost event {:?}",
+                    trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
                     self.handle_node_lost(name);
                 }
                 Event::Connected => {
-                    trace!("{:?} Received connected event", self.get_debug_name());
+                    trace!("{} Received connected event", self.get_debug_name());
                     self.connected = true;
                 }
                 Event::Disconnected => {
-                    trace!("{:?} Received disconnected event", self.get_debug_name());
+                    trace!("{} Received disconnected event", self.get_debug_name());
                     self.connected = false;
                 }
             }
@@ -373,7 +373,8 @@ impl ExampleNode {
                                };
                            dms.retain(|elt| close_grp.contains(elt));
                            if dms.is_empty() {
-                               error!("Chunk lost - No valid nodes left to retrieve chunk");
+                               error!("Chunk lost - No valid nodes left to retrieve chunk {:?}",
+                                      data_name);
                                return None;
                            }
                            Some((data_name, dms))

@@ -1037,19 +1037,20 @@ impl Core {
                msg_src,
                msg_dst);
         match (msg_content, msg_src, msg_dst) {
-            (RequestContent::GetNetworkName { current_id, },
+            (RequestContent::GetNetworkName { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
                 self.handle_get_network_name_request(current_id,
                                                      client_key,
                                                      proxy_node_name,
                                                      dst_name,
-                                                     peer_id)
+                                                     peer_id,
+                                                     message_id)
             }
-            (RequestContent::ExpectCloseNode { expect_id, client_auth },
+            (RequestContent::ExpectCloseNode { expect_id, client_auth, message_id },
              Authority::NaeManager(_),
              Authority::NaeManager(_)) => {
-                self.handle_expect_close_node_request(expect_id, client_auth)
+                self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
             (RequestContent::GetCloseGroup(message_id),
              src,
@@ -1118,7 +1119,7 @@ impl Core {
                msg_src,
                msg_dst);
         match (msg_content, msg_src, msg_dst) {
-            (ResponseContent::GetNetworkName { relocated_id, close_group_ids },
+            (ResponseContent::GetNetworkName { relocated_id, close_group_ids, .. },
              Authority::NodeManager(_),
              dst) => self.handle_get_network_name_response(relocated_id, close_group_ids, dst),
             (ResponseContent::GetPublicId { public_id, },
@@ -1703,6 +1704,7 @@ impl Core {
 
         let request_content = RequestContent::GetNetworkName {
             current_id: *self.full_id.public_id(),
+            message_id: MessageId::new(),
         };
 
         let request_msg = RequestMessage {
@@ -1720,7 +1722,8 @@ impl Core {
                                        client_key: sign::PublicKey,
                                        proxy_name: XorName,
                                        dst_name: XorName,
-                                       peer_id: PeerId)
+                                       peer_id: PeerId,
+                                       message_id: MessageId)
                                        -> Result<(), RoutingError> {
         let hashed_key = hash::sha512::hash(&client_key.0);
         let close_group_to_client = XorName::new(hashed_key.0);
@@ -1752,6 +1755,7 @@ impl Core {
                     proxy_node_name: proxy_name,
                     peer_id: peer_id,
                 },
+                message_id: message_id,
             };
 
             let request_msg = RequestMessage {
@@ -1767,7 +1771,8 @@ impl Core {
     // Received by Y; From X -> Y
     fn handle_expect_close_node_request(&mut self,
                                         expect_id: PublicId,
-                                        client_auth: Authority)
+                                        client_auth: Authority,
+                                        message_id: MessageId)
                                         -> Result<(), RoutingError> {
         if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
             warn!("Previous ID {:?} with same name found during \
@@ -1788,6 +1793,7 @@ impl Core {
         let response_content = ResponseContent::GetNetworkName {
             relocated_id: expect_id,
             close_group_ids: public_ids,
+            message_id: message_id,
         };
 
         trace!("Responding to client {:?}: {:?}.",
