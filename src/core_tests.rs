@@ -259,6 +259,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
     for node in nodes.iter() {
+        expect_event!(node, Event::Connected);
         for _ in 0..n {
             expect_event!(node, Event::NodeAdded(..))
         }

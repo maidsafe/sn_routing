@@ -1494,6 +1494,9 @@ impl Core {
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
+                if self.routing_table.len() == 1 {
+                    let _ = self.event_sender.send(Event::Connected);
+                }
                 for notify_info in must_notify {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
@@ -1508,10 +1511,6 @@ impl Core {
         }
 
         self.state = State::Node;
-
-        if self.routing_table.len() == GROUP_SIZE {
-            let _ = self.event_sender.send(Event::Connected);
-        }
 
         if self.routing_table.len() == 1 {
             let our_name = *self.name();
@@ -2322,7 +2321,7 @@ impl Core {
                    peer_id);
             if self.proxy_map.is_empty() {
                 trace!("Lost connection to last proxy node {:?}", peer_id);
-                if self.client_restriction || self.routing_table.len() == 0 {
+                if self.client_restriction || self.routing_table.is_empty() {
                     let _ = self.event_sender.send(Event::Disconnected);
                     self.retry_bootstrap_with_blacklist(peer_id);
                 }
@@ -2381,8 +2380,8 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.len() < GROUP_SIZE {
-                    trace!("Routing table size fell below {}.", GROUP_SIZE);
+                if self.routing_table.is_empty() {
+                    trace!("Lost last routing node connection.");
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
             }
