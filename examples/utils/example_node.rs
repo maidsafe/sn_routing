@@ -26,7 +26,7 @@ use std::mem;
 use rustc_serialize::{Encoder, Decoder};
 use time;
 
-const STORE_REDUNDANCY: usize = 2;
+const STORE_REDUNDANCY: usize = 4;
 
 /// A simple example node implementation for a network based on the Routing library.
 #[allow(unused)]

@@ -243,6 +243,7 @@ pub struct Core {
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     tunnels: Tunnels,
     debug_stats: DebugStats,
+    send_filter: LruCache<(Vec<u8>, PeerId), ()>,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -295,7 +296,7 @@ impl Core {
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
             node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
+            message_accumulator: Accumulator::with_duration(1, Duration::minutes(20)),
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
             full_id: full_id,
             state: State::Disconnected,
@@ -310,6 +311,7 @@ impl Core {
             connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
             tunnels: Default::default(),
             debug_stats: DebugStats::new(),
+            send_filter: LruCache::with_expiry_duration(Duration::minutes(10)),
         };
 
         (action_sender, core)
@@ -401,7 +403,7 @@ impl Core {
                                      self.crust_service.id(),
                                      self.routing_table.len());
             trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
-            trace!("| {} |", status_str);
+            error!("| {} |", status_str); // Temporarily error for ci_test.
             trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
         }
     }
@@ -1177,7 +1179,7 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => info!("Running listener."),
+            Ok(()) => error!("Running listener."), // Temporarily error for ci_test.
             Err(err) => warn!("Failed to start listening: {:?}", err),
         }
     }
@@ -1187,6 +1189,7 @@ impl Core {
             error!("LostPeer fired with our crust peer id");
             return;
         }
+        error!("Received LostPeer - {:?}", peer_id);
         if !self.client_restriction {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
@@ -1254,7 +1257,23 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Err(err) = self.crust_service.send(peer_id, bytes) {
+        match try!(serialisation::deserialise(&bytes)) {
+            Message::Hop(hop_msg) => {
+                if self.send_filter.insert((bytes.clone(), peer_id.clone()), ()).is_some() {
+                    warn!("Duplicate send to {:?} : {:?}",
+                          peer_id,
+                          *hop_msg.content().content());
+                    return Ok(());
+                } else {
+                    trace!("Sending msg to {:?} : {:?}",
+                           peer_id,
+                           *hop_msg.content().content());
+                }
+            }
+            _ => (),
+        }
+
+        if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
             error!("Connection to {:?} failed. Dropping peer.", peer_id);
             self.crust_service.disconnect(peer_id);
             self.handle_lost_peer(*peer_id);
