@@ -24,6 +24,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use xor_name::XorName;
 
+use config_handler;
 use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
@@ -69,14 +70,26 @@ impl Vault {
            stop_receiver: Receiver<()>)
            -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
-
+        let mut config = match config_handler::read_config_file() {
+            Ok(config) => config,
+            Err(err) => return Err(err),
+        };
+        let pn_capacity = config.max_capacity.map_or(None,
+                                                     |max_capacity| Some(3 * max_capacity / 5));
+        let sdm_capacity = config.max_capacity.map_or(None,
+                                                     |max_capacity| Some(3 * max_capacity / 10));
+        let mpid_capacity = config.max_capacity.map_or(None,
+                                                     |max_capacity| Some(max_capacity / 10));
+        if let Some(ref mut capacity) = config.max_capacity {
+            *capacity = *capacity / 3;
+        }
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
-            mpid_manager: MpidManager::new(),
+            mpid_manager: MpidManager::new(&mpid_capacity),
             pmid_manager: PmidManager::new(),
-            pmid_node: try!(PmidNode::new()),
-            structured_data_manager: StructuredDataManager::new(),
+            pmid_node: try!(PmidNode::new(&pn_capacity)),
+            structured_data_manager: StructuredDataManager::new(&sdm_capacity),
             stop_receiver: Some(stop_receiver),
             app_event_sender: app_event_sender,
         })

@@ -31,8 +31,8 @@ pub struct PmidNode {
 }
 
 impl PmidNode {
-    pub fn new() -> Result<PmidNode, InternalError> {
-        Ok(PmidNode { chunk_store: try!(default_chunk_store::new()) })
+    pub fn new(capacity: &Option<u64>) -> Result<PmidNode, InternalError> {
+        Ok(PmidNode { chunk_store: try!(default_chunk_store::new(capacity)) })
     }
 
     pub fn handle_get(&mut self,

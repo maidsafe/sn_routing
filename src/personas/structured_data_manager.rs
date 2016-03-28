@@ -33,12 +33,12 @@ pub struct StructuredDataManager {
 }
 
 impl StructuredDataManager {
-    pub fn new() -> StructuredDataManager {
+    pub fn new(capacity: &Option<u64>) -> StructuredDataManager {
         StructuredDataManager {
             // TODO allow adjustable max_disk_space and return meaningful error rather than panic
             // if the ChunkStore creation fails.
             // See https://maidsafe.atlassian.net/browse/MAID-1370
-            chunk_store: unwrap_result!(default_chunk_store::new()),
+            chunk_store: unwrap_result!(default_chunk_store::new(capacity)),
         }
     }
 
@@ -265,11 +265,6 @@ impl StructuredDataManager {
     }
 }
 
-impl Default for StructuredDataManager {
-    fn default() -> StructuredDataManager {
-        StructuredDataManager::new()
-    }
-}
 
 
 

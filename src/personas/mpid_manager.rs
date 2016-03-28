@@ -168,12 +168,13 @@ pub struct MpidManager {
 }
 
 impl MpidManager {
-    pub fn new() -> MpidManager {
+    pub fn new(capacity: &Option<u64>) -> MpidManager {
+        let chunk_store_capacity = capacity.map_or(None, |capacity| Some(capacity / 2) );
         MpidManager {
             accounts: HashMap::new(),
             // TODO - remove unwrap
-            chunk_store_inbox: unwrap_result!(default_chunk_store::new()),
-            chunk_store_outbox: unwrap_result!(default_chunk_store::new()),
+            chunk_store_inbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
+            chunk_store_outbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
         }
     }
 
@@ -683,12 +684,6 @@ impl MpidManager {
     }
 }
 
-impl Default for MpidManager {
-    fn default() -> MpidManager {
-        MpidManager::new()
-    }
-}
-
 
 
 #[cfg(all(test, feature = "use-mock-routing"))]
@@ -726,7 +721,7 @@ mod test {
                 proxy_node_name: from,
             },
             routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
-            mpid_manager: MpidManager::new(),
+            mpid_manager: MpidManager::new(&None),
         }
     }
 
