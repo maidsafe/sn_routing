@@ -34,7 +34,6 @@ use message_filter::MessageFilter;
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::io;
-use std::iter;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -243,6 +242,7 @@ pub struct Core {
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     tunnels: Tunnels,
     debug_stats: DebugStats,
+    send_filter: LruCache<(Vec<u8>, PeerId), ()>,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -295,7 +295,7 @@ impl Core {
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
             node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            message_accumulator: Accumulator::with_duration(1, Duration::minutes(5)),
+            message_accumulator: Accumulator::with_duration(1, Duration::minutes(20)),
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
             full_id: full_id,
             state: State::Disconnected,
@@ -310,6 +310,7 @@ impl Core {
             connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
             tunnels: Default::default(),
             debug_stats: DebugStats::new(),
+            send_filter: LruCache::with_expiry_duration(Duration::minutes(10)),
         };
 
         (action_sender, core)
@@ -396,13 +397,19 @@ impl Core {
            self.debug_stats.cur_routing_table_size != self.routing_table.len() {
             self.debug_stats.cur_routing_table_size = self.routing_table.len();
 
-            let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
-                                     self,
-                                     self.crust_service.id(),
-                                     self.routing_table.len());
-            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
-            trace!("| {} |", status_str);
-            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
+            trace!(" -----------------------------------------------------");
+            error!("| {:?} {:?} - Routing Table size: {:3} |",
+                   self,
+                   self.crust_service.id(),
+                   self.routing_table.len());
+            // self.routing_table.our_close_group().iter().all(|elt| {
+            //     trace!("Name: {:?} Connections {:?}  -- {:?}",
+            //            elt.public_id.name(),
+            //            elt.connections.len(),
+            //            elt.connections);
+            //     true
+            // });
+            trace!(" -----------------------------------------------------");
         }
     }
 
@@ -1177,7 +1184,7 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => info!("Running listener."),
+            Ok(()) => error!("Running listener."),
             Err(err) => warn!("Failed to start listening: {:?}", err),
         }
     }
@@ -1187,6 +1194,7 @@ impl Core {
             error!("LostPeer fired with our crust peer id");
             return;
         }
+        error!("Received LostPeer - {:?}", peer_id);
         if !self.client_restriction {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
@@ -1254,7 +1262,23 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Err(err) = self.crust_service.send(peer_id, bytes) {
+        match try!(serialisation::deserialise(&bytes)) {
+            Message::Hop(hop_msg) => {
+                if self.send_filter.insert((bytes.clone(), peer_id.clone()), ()).is_some() {
+                    warn!("Duplicate send to {:?} : {:?}",
+                          peer_id,
+                          *hop_msg.content().content());
+                    return Ok(());
+                } else {
+                    trace!("Sending msg to {:?} : {:?}",
+                           peer_id,
+                           *hop_msg.content().content());
+                }
+            }
+            _ => (),
+        }
+
+        if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
             error!("Connection to {:?} failed. Dropping peer.", peer_id);
             self.crust_service.disconnect(peer_id);
             self.handle_lost_peer(*peer_id);
@@ -1359,8 +1383,8 @@ impl Core {
         if self.proxy_map.is_empty() {
             let _ = self.proxy_map.insert(peer_id, public_id);
         } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
-                   name: {:?}",
+            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous name: \
+                   {:?}",
                   previous_name);
             warn!("Dropping this peer {:?}", peer_id);
             let _ = self.proxy_map.remove(&peer_id);
@@ -1489,9 +1513,6 @@ impl Core {
             }
             Some(AddedNodeDetails { must_notify, common_groups }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
-                if self.routing_table.len() == 1 {
-                    let _ = self.event_sender.send(Event::Connected);
-                }
                 for notify_info in must_notify {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
@@ -1506,6 +1527,10 @@ impl Core {
         }
 
         self.state = State::Node;
+
+        if self.routing_table.len() == GROUP_SIZE {
+            let _ = self.event_sender.send(Event::Connected);
+        }
 
         if self.routing_table.len() == 1 {
             let our_name = *self.name();
@@ -2316,7 +2341,7 @@ impl Core {
                    peer_id);
             if self.proxy_map.is_empty() {
                 trace!("Lost connection to last proxy node {:?}", peer_id);
-                if self.client_restriction || self.routing_table.is_empty() {
+                if self.client_restriction || self.routing_table.len() == 0 {
                     let _ = self.event_sender.send(Event::Disconnected);
                     self.retry_bootstrap_with_blacklist(peer_id);
                 }
@@ -2375,8 +2400,8 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.is_empty() {
-                    trace!("Lost last routing node connection.");
+                if self.routing_table.len() < GROUP_SIZE {
+                    trace!("Routing table size fell below {}.", GROUP_SIZE);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
             }
