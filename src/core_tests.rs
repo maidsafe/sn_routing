@@ -28,6 +28,7 @@ use data::{Data, DataRequest, ImmutableData, ImmutableDataType};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
+use itertools::Itertools;
 use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
 use messages::{RoutingMessage, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
@@ -35,6 +36,9 @@ use types::{MessageId, RoutingActionSender};
 
 // kademlia_routing_table::QUORUM_SIZE is private and subject to change!
 const QUORUM_SIZE: usize = 5;
+
+// Poll one event per node. Otherwise, all events in a single node are polled before moving on.
+const BALANCED_POLLING: bool = true;
 
 struct TestNode {
     handle: ServiceHandle,
@@ -52,8 +56,9 @@ impl TestNode {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (action_tx, core) = mock_crust::make_current(&handle,
-                                                         || Core::new(event_tx, client_restriction, None));
+        let (action_tx, core) = mock_crust::make_current(&handle, || {
+            Core::new(event_tx, client_restriction, None)
+        });
 
         TestNode {
             handle: handle,
@@ -142,15 +147,14 @@ struct TestClient {
 }
 
 impl TestClient {
-    fn new(network: &Network,
-           config: Option<Config>,
-           endpoint: Option<Endpoint>)
-           -> Self {
+    fn new(network: &Network, config: Option<Config>, endpoint: Option<Endpoint>) -> Self {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
 
-        let (action_tx, core) = mock_crust::make_current(&handle, || Core::new(event_tx, true, Some(full_id)));
+        let (action_tx, core) = mock_crust::make_current(&handle, || {
+            Core::new(event_tx, true, Some(full_id))
+        });
 
         TestClient {
             handle: handle,
@@ -189,7 +193,9 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, message_id), dst, result_tx)
+        self.send_action(RequestContent::Get(data_request, message_id),
+                         dst,
+                         result_tx)
     }
 
     fn send_action(&self,
@@ -206,7 +212,6 @@ impl TestClient {
         try!(self.action_tx.send(action));
         Ok(())
     }
-
 }
 
 /// Expect that the node raised an event matching the given pattern, panics if
@@ -223,9 +228,16 @@ macro_rules! expect_event {
 /// Process all events
 fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
     loop {
-        let n = nodes.iter_mut().any(TestNode::poll);
+        let mut n = false;
+        if BALANCED_POLLING {
+            nodes.iter_mut().foreach(|node| n = n || node.core.poll());
+        } else {
+            n = nodes.iter_mut().any(TestNode::poll);
+        }
         let c = clients.iter_mut().any(TestClient::poll);
-        if !n && !c { break; }
+        if !n && !c {
+            break;
+        }
     }
 }
 
@@ -247,6 +259,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
     for node in nodes.iter() {
+        expect_event!(node, Event::Connected);
         for _ in 0..n {
             expect_event!(node, Event::NodeAdded(..))
         }
@@ -398,12 +411,49 @@ fn node_drops() {
 }
 
 #[test]
+fn node_joins_in_front() {
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.insert(0,
+                 TestNode::new(&network, false, Some(config.clone()), None));
+    poll_all(&mut nodes, &mut vec![]);
+
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn multiple_joining_nodes() {
+    let network_size = 2 * GROUP_SIZE;
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, network_size);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    nodes.insert(0,
+                 TestNode::new(&network, false, Some(config.clone()), None));
+    nodes.insert(0,
+                 TestNode::new(&network, false, Some(config.clone()), None));
+    nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
+    poll_all(&mut nodes, &mut vec![]);
+    nodes.retain(|node| !node.core.routing_table().is_empty());
+    poll_all(&mut nodes, &mut vec![]);
+    assert!(nodes.len() > network_size); // At least one node should have succeeded.
+
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
 
-    assert!(nodes.iter().all(|n| nodes.iter().all(|m|
-        if m.name() != n.name() { m.close_group().contains(n.name()) } else { true }
-    )));
+    assert!(nodes.iter().all(|n| {
+        nodes.iter().all(|m| {
+            if m.name() != n.name() {
+                m.close_group().contains(n.name())
+            } else {
+                true
+            }
+        })
+    }));
 }
 
 #[test]
@@ -411,7 +461,9 @@ fn successful_put_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                           Some(Config::with_contacts(&[nodes[0]
+                                                                            .handle
+                                                                            .endpoint()])),
                                            None)];
     poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
@@ -434,7 +486,7 @@ fn successful_put_request() {
                 Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable, ref id), .. })) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id { break; }
-                },
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Request(..) not received"),
             }
@@ -449,7 +501,9 @@ fn successful_get_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                           Some(Config::with_contacts(&[nodes[0]
+                                                                            .handle
+                                                                            .endpoint()])),
                                            None)];
     poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
@@ -462,7 +516,9 @@ fn successful_get_request() {
     let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
     let message_id = MessageId::new();
 
-    assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
+    assert!(clients[0]
+                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+                .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 
@@ -475,13 +531,16 @@ fn successful_get_request() {
                         ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.send_get_success(
-                                dst.clone(), src.clone(), data.clone(), *id, result_tx.clone()) {
+                        if let Err(_) = node.send_get_success(dst.clone(),
+                                                              src.clone(),
+                                                              data.clone(),
+                                                              *id,
+                                                              result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetSuccess )");
                         }
                         break;
                     }
-                },
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Request(..) not received"),
             }
@@ -500,8 +559,10 @@ fn successful_get_request() {
                 Ok(Event::Response(ResponseMessage {
                         content: ResponseContent::GetSuccess(ref immutable, ref id), .. })) => {
                     response_received_count += 1;
-                    if data == *immutable && message_id == *id { break; }
-                },
+                    if data == *immutable && message_id == *id {
+                        break;
+                    }
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Response(..) not received"),
             }
@@ -516,7 +577,9 @@ fn failed_get_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                           Some(Config::with_contacts(&[nodes[0]
+                                                                            .handle
+                                                                            .endpoint()])),
                                            None)];
     poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
@@ -529,7 +592,9 @@ fn failed_get_request() {
     let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
     let message_id = MessageId::new();
 
-    assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
+    assert!(clients[0]
+                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+                .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 
@@ -545,15 +610,19 @@ fn failed_get_request() {
                         let request = RequestMessage {
                             src: src.clone(),
                             dst: dst.clone(),
-                            content: RequestContent::Get(request.clone(), *id)
+                            content: RequestContent::Get(request.clone(), *id),
                         };
-                        if let Err(_) = node.send_get_failure(
-                                dst.clone(), src.clone(), request, vec![], *id, result_tx.clone()) {
+                        if let Err(_) = node.send_get_failure(dst.clone(),
+                                                              src.clone(),
+                                                              request,
+                                                              vec![],
+                                                              *id,
+                                                              result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetFailure )");
                         }
                         break;
                     }
-                },
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Request(..) not received"),
             }
@@ -572,7 +641,7 @@ fn failed_get_request() {
                 Ok(Event::Response(ResponseMessage { content: ResponseContent::GetFailure { ref id, .. }, .. })) => {
                     response_received_count += 1;
                     if message_id == *id { break; }
-                },
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Response(..) not received"),
             }
@@ -587,7 +656,9 @@ fn disconnect_on_get_request() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                           Some(Config::with_contacts(&[nodes[0]
+                                                                            .handle
+                                                                            .endpoint()])),
                                            Some(Endpoint(2 * GROUP_SIZE)))];
     poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
@@ -600,7 +671,9 @@ fn disconnect_on_get_request() {
     let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
     let message_id = MessageId::new();
 
-    assert!(clients[0].send_get_request(dst, data_request.clone(), message_id, result_tx.clone()).is_ok());
+    assert!(clients[0]
+                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+                .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 
@@ -613,13 +686,16 @@ fn disconnect_on_get_request() {
                         ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.send_get_success(
-                                dst.clone(), src.clone(), data.clone(), *id, result_tx.clone()) {
+                        if let Err(_) = node.send_get_success(dst.clone(),
+                                                              src.clone(),
+                                                              data.clone(),
+                                                              *id,
+                                                              result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetSuccess )");
                         }
                         break;
                     }
-                },
+                }
                 Ok(_) => (),
                 _ => panic!("Event::Request(..) not received"),
             }
@@ -636,9 +712,7 @@ fn disconnect_on_get_request() {
     for client in clients.iter() {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(..)) => {
-                    panic!("Unexpected Event::Response(..) received")
-                },
+                Ok(Event::Response(..)) => panic!("Unexpected Event::Response(..) received"),
                 _ => break,
             }
         }

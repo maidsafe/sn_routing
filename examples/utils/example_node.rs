@@ -26,7 +26,7 @@ use std::mem;
 use rustc_serialize::{Encoder, Decoder};
 use time;
 
-const STORE_REDUNDANCY: usize = 2;
+const STORE_REDUNDANCY: usize = 4;
 
 /// A simple example node implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -75,19 +75,23 @@ impl ExampleNode {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
                 Event::NodeAdded(name) => {
-                    trace!("{:?} Received NodeAdded event {:?}", self, name);
+                    trace!("{:?} Received NodeAdded event {:?}",
+                           self.get_debug_name(),
+                           name);
                     self.handle_node_added(name);
                 }
                 Event::NodeLost(name) => {
-                    trace!("{:?} Received NodeLost event {:?}", self, name);
+                    trace!("{:?} Received NodeLost event {:?}",
+                           self.get_debug_name(),
+                           name);
                     self.handle_node_lost(name);
                 }
                 Event::Connected => {
-                    trace!("{:?} Received connected event", self);
+                    trace!("{:?} Received connected event", self.get_debug_name());
                     self.connected = true;
                 }
                 Event::Disconnected => {
-                    trace!("{:?} Received disconnected event", self);
+                    trace!("{:?} Received disconnected event", self.get_debug_name());
                     self.connected = false;
                 }
             }
@@ -108,10 +112,12 @@ impl ExampleNode {
                 self.handle_put_request(data, id, msg.src, msg.dst);
             }
             RequestContent::Post(..) => {
-                trace!("{:?} ExampleNode: Post unimplemented.", self);
+                trace!("{:?} ExampleNode: Post unimplemented.",
+                       self.get_debug_name());
             }
             RequestContent::Delete(..) => {
-                trace!("{:?} ExampleNode: Delete unimplemented.", self);
+                trace!("{:?} ExampleNode: Delete unimplemented.",
+                       self.get_debug_name());
             }
             RequestContent::Refresh(content) => {
                 self.handle_refresh(content);
@@ -155,7 +161,7 @@ impl ExampleNode {
                     }
                     for it in managed_nodes.iter() {
                         trace!("{:?} Handle Get request for NaeManager: data {:?} from {:?}",
-                               self,
+                               self.get_debug_name(),
                                data_request.name(),
                                it);
                         unwrap_result!(self.node
@@ -166,7 +172,7 @@ impl ExampleNode {
                     }
                 } else {
                     error!("{:?} Data name {:?} not found in NaeManager. Current DM Account: {:?}",
-                           self,
+                           self.get_debug_name(),
                            data_request.name(),
                            self.dm_accounts);
                     let msg = RequestMessage {
@@ -180,13 +186,13 @@ impl ExampleNode {
             }
             Authority::ManagedNode(_) => {
                 trace!("{:?} Handle get request for ManagedNode: data {:?}",
-                       self,
+                       self.get_debug_name(),
                        data_request.name());
                 if let Some(data) = self.db.get(&data_request.name()) {
                     unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {
                     trace!("{:?} GetDataRequest failed for {:?}.",
-                           self,
+                           self.get_debug_name(),
                            data_request.name());
                     return;
                 }
@@ -221,13 +227,13 @@ impl ExampleNode {
                 // wait for put success to confirm the same.
                 let _ = self.dm_accounts.insert(data.name(), close_grp.clone());
                 trace!("{:?} Put Request: Updating NaeManager: data {:?}, nodes {:?}",
-                       self,
+                       self.get_debug_name(),
                        data.name(),
                        close_grp);
             }
             Authority::ClientManager(_) => {
                 trace!("{:?} Put Request: Updating ClientManager: key {:?}, value {:?}",
-                       self,
+                       self.get_debug_name(),
                        data.name(),
                        data);
                 {
@@ -245,7 +251,7 @@ impl ExampleNode {
             }
             Authority::ManagedNode(_) => {
                 trace!("{:?} Storing as ManagedNode: key {:?}, value {:?}",
-                       self,
+                       self.get_debug_name(),
                        data.name(),
                        data);
                 let _ = self.db.insert(data.name(), data);
@@ -259,7 +265,7 @@ impl ExampleNode {
         // If the request came from a client, relay the retrieved data to them.
         if let Some(requests) = self.client_request_cache.remove(&data.name()) {
             trace!("{:?} Sending GetSuccess to Client for data {:?}",
-                   self,
+                   self.get_debug_name(),
                    data.name());
             let src = dst.clone();
             for (client_auth, message_id) in requests {
@@ -270,7 +276,9 @@ impl ExampleNode {
 
         // If the retrieved data is missing a copy, send a `Put` request to store one.
         if self.dm_accounts.get(&data.name()).into_iter().any(|dms| dms.len() < STORE_REDUNDANCY) {
-            trace!("{:?} GetSuccess received for data {:?}", self, data.name());
+            trace!("{:?} GetSuccess received for data {:?}",
+                   self.get_debug_name(),
+                   data.name());
             // Find a member of our close group that doesn't already have the lost data item.
             let close_grp = match unwrap_result!(self.node.close_group(data.name())) {
                 None => {
@@ -291,7 +299,7 @@ impl ExampleNode {
                 // wait for Put success to confirm the same.
                 unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
                 trace!("{:?} Replicating chunk {:?} to {:?}",
-                       self,
+                       self.get_debug_name(),
                        data.name(),
                        self.dm_accounts[&data.name()]);
 
@@ -423,7 +431,7 @@ impl ExampleNode {
         match unwrap_result!(deserialise(&content)) {
             RefreshContent::Client { client_name, data, .. } => {
                 trace!("{:?} handle_refresh for ClientManager. client - {:?}",
-                       self,
+                       self.get_debug_name(),
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
@@ -431,7 +439,7 @@ impl ExampleNode {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
                 if old_val != Some(pmid_nodes.clone()) {
                     trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",
-                           self,
+                           self.get_debug_name(),
                            data_name,
                            old_val.unwrap_or_else(Vec::new),
                            pmid_nodes);
@@ -439,11 +447,16 @@ impl ExampleNode {
             }
         }
     }
-}
 
-impl ::std::fmt::Debug for ExampleNode {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "Node({:?}) - ", unwrap_result!(self.node.name()))
+    fn get_debug_name(&self) -> String {
+        format!("Node({:?})",
+                match self.node.name() {
+                    Ok(name) => name,
+                    Err(err) => {
+                        error!("Could not get node name - {:?}", err);
+                        panic!("Could not get node name - {:?}", err);
+                    }
+                })
     }
 }
 

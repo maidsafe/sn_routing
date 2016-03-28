@@ -61,7 +61,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use itertools::Itertools;
-use kademlia_routing_table::GROUP_SIZE;
+use kademlia_routing_table::{GROUP_SIZE, QUORUM_SIZE};
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, RequestContent,
@@ -70,8 +70,6 @@ use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use utils::recv_with_timeout;
 use xor_name::XorName;
-
-const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);

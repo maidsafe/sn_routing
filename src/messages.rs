@@ -277,12 +277,14 @@ pub enum RequestContent {
     ExpectCloseNode {
         /// The joining node's `PublicId` (public keys and name)
         expect_id: PublicId,
+        /// The client's current authority.
+        client_auth: Authority,
     },
     /// Request the `PublicId`s of the recipient's close group.
     ///
     /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
     /// `NodeManager`'s members.
-    GetCloseGroup,
+    GetCloseGroup(MessageId),
     /// Request a direct connection to the recipient.
     Connect,
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
@@ -323,10 +325,12 @@ pub enum ResponseContent {
     // ---------- Internal ------------
     /// Reply with the new `PublicId` for the joining node.
     ///
-    /// Sent from the `NaeManager` to the `Client`.
+    /// Sent from the `NodeManager` to the `Client`.
     GetNetworkName {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
+        /// Our close group `PublicId`s.
+        close_group_ids: Vec<PublicId>,
     },
     /// Reply with the requested `PublicId`.
     ///
@@ -352,6 +356,8 @@ pub enum ResponseContent {
     GetCloseGroup {
         /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
+        /// The message ID.
+        message_id: MessageId,
     },
     // ---------- External ------------
     /// Reply with the requested data (may not be ignored)
@@ -462,10 +468,13 @@ impl Debug for RequestContent {
             RequestContent::GetNetworkName { ref current_id } => {
                 write!(formatter, "GetNetworkName {{ {:?} }}", current_id)
             }
-            RequestContent::ExpectCloseNode { ref expect_id } => {
-                write!(formatter, "ExpectCloseNode {{ {:?} }}", expect_id)
+            RequestContent::ExpectCloseNode { ref expect_id, ref client_auth } => {
+                write!(formatter,
+                       "ExpectCloseNode {{ {:?}, {:?} }}",
+                       expect_id,
+                       client_auth)
             }
-            RequestContent::GetCloseGroup => write!(formatter, "GetCloseGroup"),
+            RequestContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             RequestContent::Connect => write!(formatter, "Connect"),
             RequestContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
             RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
@@ -494,8 +503,11 @@ impl Debug for RequestContent {
 impl Debug for ResponseContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            ResponseContent::GetNetworkName { ref relocated_id } => {
-                write!(formatter, "GetNetworkName {{ {:?} }}", relocated_id)
+            ResponseContent::GetNetworkName { ref relocated_id, ref close_group_ids } => {
+                write!(formatter,
+                       "GetNetworkName {{ {:?}, {:?} }}",
+                       close_group_ids,
+                       relocated_id)
             }
             ResponseContent::GetPublicId { ref public_id } => {
                 write!(formatter, "GetPublicId {{ {:?} }}", public_id)
@@ -505,8 +517,11 @@ impl Debug for ResponseContent {
                        "GetPublicIdWithConnectionInfo {{ {:?}, .. }}",
                        public_id)
             }
-            ResponseContent::GetCloseGroup { ref close_group_ids } => {
-                write!(formatter, "GetCloseGroup {{ {:?} }}", close_group_ids)
+            ResponseContent::GetCloseGroup { ref close_group_ids, message_id } => {
+                write!(formatter,
+                       "GetCloseGroup {{ {:?}, {:?} }}",
+                       close_group_ids,
+                       message_id)
             }
             ResponseContent::GetSuccess(ref data, ref message_id) => {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
