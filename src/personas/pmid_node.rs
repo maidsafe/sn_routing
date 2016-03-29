@@ -16,14 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use chunk_store::ChunkStore;
-use default_chunk_store;
 use error::InternalError;
 use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
               RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use vault::RoutingNode;
+use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
 pub struct PmidNode {
@@ -31,8 +30,8 @@ pub struct PmidNode {
 }
 
 impl PmidNode {
-    pub fn new(capacity: &Option<u64>) -> Result<PmidNode, InternalError> {
-        Ok(PmidNode { chunk_store: try!(default_chunk_store::new(capacity)) })
+    pub fn new(capacity: u64) -> Result<PmidNode, InternalError> {
+        Ok(PmidNode { chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)) })
     }
 
     pub fn handle_get(&mut self,

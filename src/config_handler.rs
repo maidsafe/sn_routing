@@ -23,7 +23,7 @@ use xor_name::XorName;
 #[derive(Debug, RustcDecodable, RustcEncodable)]
 pub struct Config {
     pub wallet_address: Option<XorName>,
-    pub max_capacity: Option<u64>,  // measured by Bytes
+    pub max_capacity: Option<u64>, // measured by Bytes
 }
 
 impl Default for Config {

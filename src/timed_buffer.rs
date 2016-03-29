@@ -26,8 +26,7 @@ pub struct TimedBuffer<Key, Value> {
 }
 
 #[allow(unused)]
-impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
-{
+impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value> {
     /// Constructor.
     pub fn with_expiry_duration(time_to_live: Duration) -> TimedBuffer<Key, Value> {
         TimedBuffer {
@@ -52,10 +51,11 @@ impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
     }
 
     fn get_expired(&mut self) -> Vec<Value> {
-        self.map.iter()
-                .filter(|&(_, &(_, timestamp))| timestamp + self.time_to_live < SteadyTime::now())
-                .map(|(_, &(ref value, _))| value.clone())
-                .collect()
+        self.map
+            .iter()
+            .filter(|&(_, &(_, timestamp))| timestamp + self.time_to_live < SteadyTime::now())
+            .map(|(_, &(ref value, _))| value.clone())
+            .collect()
     }
 }
 
