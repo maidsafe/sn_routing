@@ -20,7 +20,7 @@ use default_chunk_store;
 use error::InternalError;
 use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
+use routing::{Data, DataRequest, ImmutableData, MessageId, RequestContent,
               RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use vault::RoutingNode;
@@ -89,61 +89,15 @@ impl PmidNode {
         info!("pmid_node {:?} storing {:?}", request.dst.name(), data_name);
         let serialised_data = try!(serialisation::serialise(&data));
         if self.chunk_store.has_space(serialised_data.len() as u64) {
-            // the type_tag needs to be stored as well
-            // TODO: error handling
-            try!(self.chunk_store.put(&data_name, &serialised_data));
-            let _ = self.notify_managers_of_success(routing_node, &data_name, &message_id, request);
-            return Ok(());
+            if let Ok(_) = self.chunk_store.put(&data_name, &serialised_data) {
+                let _ = self.notify_managers_of_success(routing_node,
+                                                        &data_name,
+                                                        &message_id,
+                                                        request);
+                return Ok(());
+            }
         }
 
-        // If we can't store the data and it's a Backup or Sacrificial copy, just notify PmidManager
-        // to update the account - replication shall not be carried out for it.
-        if *data.get_type_tag() != ImmutableDataType::Normal {
-            // self.notify_managers_of_sacrifice(our_authority, data, response_token);
-            return Ok(());
-        }
-
-        // If we can't store the data and it's a Normal copy, try to make room for it by clearing
-        // out Sacrificial chunks.
-        let required_space = serialised_data.len() as u64 -
-                             (self.chunk_store.max_space() - self.chunk_store.used_space());
-        let names = self.chunk_store.names();
-        let mut emptied_space = 0;
-        for name in &names {
-            let fetched_data = match self.chunk_store.get(name) {
-                Ok(data) => data,
-                _ => continue,
-            };
-
-            let parsed_data = if let Ok(data) =
-                                     serialisation::deserialise::<ImmutableData>(&fetched_data) {
-                data
-            } else {
-                // remove corrupted data and notify manager group
-                let _ = self.chunk_store.delete(name);
-                // self.notify_managers_of_sacrifice(our_authority, data, response_token);
-                continue;
-            };
-            if let ImmutableDataType::Sacrificial = *parsed_data.get_type_tag() {
-                emptied_space += fetched_data.len() as u64;
-                let _ = self.chunk_store.delete(name);
-
-                // For sacrificed data, just notify PmidManager to update the account and
-                // ImmutableDataManager need to adjust its farming rate, replication shall not be
-                // carried out for it.
-                // self.notify_managers_of_sacrifice(&our_authority, parsed_data, &response_token);
-                if emptied_space > required_space {
-                    try!(self.chunk_store.put(&data_name, &serialised_data));
-                    let _ = self.notify_managers_of_success(routing_node,
-                                                            &data_name,
-                                                            &message_id,
-                                                            request);
-                    return Ok(());
-                }
-            } else {}
-        }
-
-        // We failed to make room for it - replication needs to be carried out.
         let src = request.dst.clone();
         let dst = request.src.clone();
         trace!("As {:?} sending Put failure of data {} to {:?} ",
