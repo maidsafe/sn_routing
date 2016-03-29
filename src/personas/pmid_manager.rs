@@ -22,24 +22,26 @@ use error::InternalError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use time::{Duration, SteadyTime};
+use time::Duration;
+use timed_buffer::TimedBuffer;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
-    stored_total_size: u64,
-    lost_total_size: u64,
+    // It is now decided the chunk is measured by unit instead of size
+    stored_total: u64,
+    lost_total: u64,
 }
 
 impl Default for Account {
     // TODO: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
-    //   To bypass the the process for a simple network, allowance is granted by default
+    //       To bypass the process for a simple network, allowance is granted by default
     fn default() -> Account {
         Account {
-            stored_total_size: 0,
-            lost_total_size: 0,
+            stored_total: 0,
+            lost_total: 0,
         }
     }
 }
@@ -48,75 +50,35 @@ impl Account {
     // Always return true to allow pmid_node carry out removal of Sacrificial copies
     // Otherwise Account need to remember storage info of Primary, Backup and Sacrificial
     // copies separately to trigger an early alert
-    fn put_data(&mut self, size: u64) {
+    fn put_data(&mut self) {
         // if (self.stored_total_size + size) > self.offered_space {
         //   return false;
         // }
-        self.stored_total_size += size;
+        self.stored_total = self.stored_total.saturating_add(1);
     }
 
-    fn delete_data(&mut self, size: u64) {
-        if self.stored_total_size < size {
-            self.stored_total_size = 0;
-        } else {
-            self.stored_total_size -= size;
-        }
+    fn delete_data(&mut self) {
+        self.stored_total = self.stored_total.saturating_sub(1);
     }
 
-    #[allow(dead_code)]
-    fn handle_lost_data(&mut self, size: u64) {
-        self.delete_data(size);
-        self.lost_total_size += size;
-    }
-
-    #[allow(dead_code)]
-    fn handle_falure(&mut self, size: u64) {
-        self.handle_lost_data(size);
-    }
-
-    #[allow(dead_code)]
-    fn update_account(&mut self, diff_size: u64) {
-        if self.stored_total_size < diff_size {
-            self.stored_total_size = 0;
-        } else {
-            self.stored_total_size -= diff_size;
-        }
-        self.lost_total_size += diff_size;
+    fn lost_data(&mut self) {
+        self.stored_total = self.stored_total.saturating_sub(1);
+        self.lost_total = self.lost_total.saturating_add(1);
     }
 }
-
-
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-struct MetadataForPutRequest {
-    pub request: RequestMessage,
-    pub creation_timestamp: SteadyTime,
-}
-
-impl MetadataForPutRequest {
-    pub fn new(request: RequestMessage) -> MetadataForPutRequest {
-        MetadataForPutRequest {
-            request: request,
-            creation_timestamp: SteadyTime::now(),
-        }
-    }
-}
-
 
 
 pub struct PmidManager {
     accounts: HashMap<XorName, Account>,
     // key -- (message_id, targeted pmid_node)
-    ongoing_puts: HashMap<(MessageId, XorName), MetadataForPutRequest>,
-    put_timeout: Duration,
+    ongoing_puts: TimedBuffer<(MessageId, XorName), RequestMessage>,
 }
 
 impl PmidManager {
     pub fn new() -> PmidManager {
         PmidManager {
             accounts: HashMap::new(),
-            ongoing_puts: HashMap::new(),
-            put_timeout: Duration::minutes(1),
+            ongoing_puts: TimedBuffer::new(Duration::minutes(1)),
         }
     }
 
@@ -134,28 +96,21 @@ impl PmidManager {
         self.accounts
             .entry(*request.dst.name())
             .or_insert_with(Account::default)
-            .put_data(data.payload_size() as u64);
+            .put_data();
         let src = Authority::NodeManager(*request.dst.name());
         let dst = Authority::ManagedNode(*request.dst.name());
         trace!("PM forwarding put request of data {} targeting PN {}",
                data.name(),
                dst.name());
         let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
-        let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()),
-                                         MetadataForPutRequest::new(request.clone()));
+        let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()), request.clone());
         Ok(())
     }
 
     pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
-        let mut timed_out_puts = Vec::<(MessageId, XorName)>::new();
-        for (key, metadata_for_put) in &self.ongoing_puts {
-            if metadata_for_put.creation_timestamp + self.put_timeout < SteadyTime::now() {
-                timed_out_puts.push(*key);
-            }
-        }
-        for key in &timed_out_puts {
+        for key in &self.ongoing_puts.get_expired() {
             match self.ongoing_puts.remove(key) {
-                Some(metadata_for_put) => {
+                Some(request) => {
                     // The put_failure notification shall only be sent out to the NAE when this
                     // PM is still in the close_group to the pmid_node.
                     // There is chance the timeout is reached due to the fact that this PM is
@@ -163,10 +118,10 @@ impl PmidManager {
                     // Checking it in churn will be costly and improper as the request cache
                     // is not refreshed out. This leaves a chance if this PM churned out then
                     // churned in, the record will be lost.
-                    if routing_node.close_group(*metadata_for_put.request.dst.name())
+                    if routing_node.close_group(*request.dst.name())
                                    .ok()
                                    .is_some() {
-                        let _ = self.handle_put_failure(routing_node, &metadata_for_put.request);
+                        let _ = self.notify_put_failure(routing_node, &request);
                     }
                 }
                 None => continue,
@@ -179,41 +134,39 @@ impl PmidManager {
                               pmid_node: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
-        if let Some(metadata_for_put) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
-            let message_hash =
-                sha512::hash(&try!(serialisation::serialise(&metadata_for_put.request))[..]);
-            let src = metadata_for_put.request.dst.clone();
-            let dst = metadata_for_put.request.src.clone();
+        if let Some(request) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
+            let message_hash = sha512::hash(&try!(serialisation::serialise(&request))[..]);
+            let src = request.dst.clone();
+            let dst = request.src.clone();
             trace!("As {:?} sending put success to {:?}", src, dst);
             let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
         } else {}
         Ok(())
     }
 
+    // This is handling the put_failure response from PN to PM
     // The `request` is the original request from NAE to PM
     pub fn handle_put_failure(&mut self,
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
-            (data.clone(), message_id)
+        let message_id = if let RequestContent::Put(_, ref message_id) = request.content {
+            message_id
         } else {
             unreachable!("Error in vault demuxing")
         };
+        let _ = self.ongoing_puts.remove(&(*message_id, *request.dst.name()));
+        self.notify_put_failure(routing_node, request)
+    }
 
-        let src = request.dst.clone();
-        let dst = request.src.clone();
-        trace!("As {:?} sending Put failure to {:?} of data {}",
-               src,
-               dst,
-               data.name());
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], *message_id);
-
+    // Posting from DM to PM is only used to notify a get_failure
+    // the encapulated data can be any, as the chunk is now meansured by unit instead of size
+    pub fn handle_post(&mut self,
+                       request: &RequestMessage)
+                       -> Result<(), InternalError> {
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
-            account.delete_data(data.payload_size() as u64);
+            account.lost_data();
         }
-
         Ok(())
     }
 
@@ -246,6 +199,33 @@ impl PmidManager {
                                 .collect();
     }
 
+    // The `request` is the original request from NAE to PM
+    pub fn notify_put_failure(&mut self,
+                              routing_node: &RoutingNode,
+                              request: &RequestMessage)
+                              -> Result<(), InternalError> {
+        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
+                                                            ref message_id) = request.content {
+            (data.clone(), message_id)
+        } else {
+            unreachable!("Error in vault demuxing")
+        };
+
+        let src = request.dst.clone();
+        let dst = request.src.clone();
+        trace!("As {:?} sending Put failure to {:?} of data {}",
+               src,
+               dst,
+               data.name());
+        let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], *message_id);
+
+        if let Some(account) = self.accounts.get_mut(request.dst.name()) {
+            account.delete_data();
+        }
+
+        Ok(())
+    }
+
     fn send_refresh(&self, routing_node: &RoutingNode, pmid_node: &XorName, account: &Account) {
         let src = Authority::NodeManager(*pmid_node);
         let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
@@ -276,6 +256,7 @@ mod test {
     use std::sync::mpsc;
     use std::thread::sleep;
     use time::Duration;
+    use timed_buffer::TimedBuffer;
     use types::Refresh;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
@@ -395,6 +376,9 @@ mod test {
     #[test]
     fn check_timeout() {
         let mut env = environment_setup();
+        // Reduce the timeout to speed up the test
+        env.pmid_manager.ongoing_puts = TimedBuffer::new(Duration::milliseconds(500));
+
         let immutable_data = get_close_data(&env);
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
@@ -421,9 +405,7 @@ mod test {
             unreachable!()
         }
 
-        // Reduce the timeout to speed up the test
         sleep(::std::time::Duration::from_secs(1));
-        env.pmid_manager.put_timeout = Duration::milliseconds(500);
         env.pmid_manager.check_timeout(&env.routing);
 
         let put_failures = env.routing.put_failures_given();
