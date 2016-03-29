@@ -21,11 +21,9 @@ use std::collections::HashMap;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
-use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
+use routing::{Authority, Data, ImmutableDataType, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use time::Duration;
 use types::{Refresh, RefreshValue};
 use utils;
 use vault::RoutingNode;
@@ -70,14 +68,14 @@ impl Account {
 
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
-    request_cache: LruCache<MessageId, RequestMessage>,
+    request_cache: HashMap<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
         MaidManager {
             accounts: HashMap::new(),
-            request_cache: LruCache::with_expiry_duration_and_capacity(Duration::minutes(5), 1000),
+            request_cache: HashMap::new(),
         }
     }
 
@@ -147,6 +145,11 @@ impl MaidManager {
                                     match routing_node.close_group(*maid_name) {
                                         Ok(None) => {
                                             trace!("No longer a MM for {}", maid_name);
+                                            let requests = mem::replace(&mut self.request_cache, HashMap::new());
+                                            self.request_cache =
+                                                requests.into_iter()
+                                                        .filter(|&(_, ref r)| utils::client_name(&r.src) != *maid_name)
+                                                        .collect();
                                             false
                                         }
                                         Ok(Some(_)) => {
@@ -177,14 +180,21 @@ impl MaidManager {
                                  routing_node: &RoutingNode,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
-            (Data::Immutable(data.clone()), message_id)
+        if let RequestContent::Put(Data::Immutable(ref data), message_id) = request.content {
+            if *data.get_type_tag() != ImmutableDataType::Normal {
+                return self.reply_with_put_failure(routing_node,
+                                                   request.clone(),
+                                                   message_id,
+                                                   &MutationError::InvalidOperation);
+            }
+            self.forward_put_request(routing_node,
+                                     utils::client_name(&request.src),
+                                     Data::Immutable(data.clone()),
+                                     message_id,
+                                     request)
         } else {
             unreachable!("Logic error")
-        };
-        let client_name = utils::client_name(&request.src);
-        self.forward_put_request(routing_node, client_name, data, *message_id, request)
+        }
     }
 
     fn handle_put_structured_data(&mut self,
