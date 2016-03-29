@@ -27,7 +27,7 @@ const NORMAL_TO_BACKUP: [u8; XOR_NAME_LEN] =
      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 const NORMAL_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] = [255; XOR_NAME_LEN];
-#[allow(unused)]
+
 const BACKUP_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] =
     [127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
