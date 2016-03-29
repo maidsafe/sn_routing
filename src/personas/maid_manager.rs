@@ -21,11 +21,9 @@ use std::collections::HashMap;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
-use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, ImmutableDataType, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
-use time::Duration;
 use types::{Refresh, RefreshValue};
 use utils;
 use vault::RoutingNode;
@@ -70,14 +68,14 @@ impl Account {
 
 pub struct MaidManager {
     accounts: HashMap<XorName, Account>,
-    request_cache: TimedBuffer<MessageId, RequestMessage>,
+    request_cache: HashMap<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
     pub fn new() -> MaidManager {
         MaidManager {
             accounts: HashMap::new(),
-            request_cache: TimedBuffer::new(Duration::minutes(5)),
+            request_cache: HashMap::new(),
         }
     }
 
@@ -134,25 +132,6 @@ impl MaidManager {
                 self.reply_with_put_failure(routing_node, client_request, *message_id, &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
-        }
-    }
-
-    pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
-        for message_id in &self.request_cache.get_expired() {
-            match self.request_cache.remove(message_id) {
-                Some(client_request) => {
-                    match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
-                        Some(account) => {
-                            account.delete_data()
-                        }
-                        None => continue,
-                    }
-                    error!("Cached request {:?} timed-out waiting for a response.", client_request);
-                    let error = MutationError::Timeout;
-                    let _ = self.reply_with_put_failure(routing_node, client_request, *message_id, &error);
-                }
-                None => continue,
-            }
         }
     }
 

@@ -20,11 +20,13 @@ use std::collections::HashMap;
 use time::{Duration, SteadyTime};
 
 /// TimedBuffer
+#[allow(unused)]
 pub struct TimedBuffer<Key, Value> {
     map: HashMap<Key, (Value, SteadyTime)>,
     time_to_live: Duration,
 }
 
+#[allow(unused)]
 impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
 {
     /// Constructor.
