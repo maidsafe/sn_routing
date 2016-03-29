@@ -102,8 +102,8 @@ impl PmidManager {
         trace!("PM forwarding put request of data {} targeting PN {}",
                data.name(),
                dst.name());
-        let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
         let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()), request.clone());
+        let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
         Ok(())
     }
 
