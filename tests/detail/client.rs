@@ -35,9 +35,7 @@ pub struct Client {
 impl Client {
     /// Creates an unregistered client.
     pub fn create_unregistered_client() -> Client {
-        Client {
-            core_client: unwrap_result!(client::Client::create_unregistered_client()),
-        }
+        Client { core_client: unwrap_result!(client::Client::create_unregistered_client()) }
     }
 
     /// Creates a registered client.
@@ -57,12 +55,14 @@ impl Client {
         let get_response_getter = unwrap_result!(self.core_client.get(data_request.clone(), None));
         match get_response_getter.get() {
             Ok(data) => Ok(data),
-            Err(failure) => match failure {
-                CoreError::GetFailure{ref request, ref reason} => {
-                    assert_eq!(data_request, *request);
-                    Err(reason.clone())
+            Err(failure) => {
+                match failure {
+                    CoreError::GetFailure{ref request, ref reason} => {
+                        assert_eq!(data_request, *request);
+                        Err(reason.clone())
+                    }
+                    _ => panic!("Received unexpected failure {:?}", failure),
                 }
-                _ => panic!("Received unexpected failure {:?}", failure),
             }
         }
     }
@@ -72,52 +72,59 @@ impl Client {
         let put_response_getter = unwrap_result!(self.core_client.put(testing_data.clone(), None));
         match put_response_getter.get() {
             Ok(_) => Ok(()),
-            Err(failure) => match failure {
-                CoreError::MutationFailure{ref data, ref reason} => {
-                    assert_eq!(testing_data, *data);
-                    Err(reason.clone())
+            Err(failure) => {
+                match failure {
+                    CoreError::MutationFailure{ref data, ref reason} => {
+                        assert_eq!(testing_data, *data);
+                        Err(reason.clone())
+                    }
+                    _ => panic!("Received unexpected failure {:?}", failure),
                 }
-                _ => panic!("Received unexpected failure {:?}", failure),
             }
         }
     }
 
     /// Post data onto the network.
     pub fn post(&self, testing_data: Data) -> Result<(), MutationError> {
-        let post_response_getter = unwrap_result!(self.core_client.post(testing_data.clone(),
-                                                                        None));
+        let post_response_getter = unwrap_result!(self.core_client
+                                                      .post(testing_data.clone(), None));
         match post_response_getter.get() {
             Ok(_) => Ok(()),
-            Err(failure) => match failure {
-                CoreError::MutationFailure{ref data, ref reason} => {
-                    assert_eq!(testing_data, *data);
-                    Err(reason.clone())
+            Err(failure) => {
+                match failure {
+                    CoreError::MutationFailure{ref data, ref reason} => {
+                        assert_eq!(testing_data, *data);
+                        Err(reason.clone())
+                    }
+                    _ => panic!("Received unexpected failure {:?}", failure),
                 }
-                _ => panic!("Received unexpected failure {:?}", failure),
             }
         }
     }
 
     /// Delete data from the network.
     pub fn delete(&self, testing_data: Data) -> Result<(), MutationError> {
-        let delete_response_getter = unwrap_result!(self.core_client.delete(testing_data.clone(),
-                                                                            None));
+        let delete_response_getter = unwrap_result!(self.core_client
+                                                        .delete(testing_data.clone(), None));
         match delete_response_getter.get() {
             Ok(_) => Ok(()),
-            Err(failure) => match failure {
-                CoreError::MutationFailure{ref data, ref reason} => {
-                    assert_eq!(testing_data, *data);
-                    Err(reason.clone())
+            Err(failure) => {
+                match failure {
+                    CoreError::MutationFailure{ref data, ref reason} => {
+                        assert_eq!(testing_data, *data);
+                        Err(reason.clone())
+                    }
+                    _ => panic!("Received unexpected failure {:?}", failure),
                 }
-                _ => panic!("Received unexpected failure {:?}", failure),
             }
         }
     }
 
     /// Return network name.
     pub fn name(&self) -> XorName {
-        let hash_sign_key = sha512::hash(&(unwrap_result!(
-                self.core_client.get_public_signing_key())).0);
+        let hash_sign_key = sha512::hash(&(unwrap_result!(self.core_client
+                                                              .get_public_signing_key()))
+                                              .0);
         XorName::new(hash_sign_key.0)
     }
 
@@ -137,4 +144,3 @@ impl Debug for Client {
         write!(formatter, "Client({:?})", self.name())
     }
 }
-

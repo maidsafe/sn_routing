@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use config_file_handler;
 use chunk_store;
 use safe_network_common::messaging;
 use safe_network_common::client_errors::{MutationError, GetError};
@@ -25,20 +26,21 @@ use types::Refresh;
 
 #[derive(Debug)]
 pub enum InternalError {
-    FailedToFindCachedRequest(MessageId),
+    ChunkStore(chunk_store::Error),
     ClientGet(GetError),
     ClientMutation(MutationError),
-    UnknownMessageType(RoutingMessage),
-    UnknownRefreshType(Authority, Authority, Refresh),
+    FailedToFindCachedRequest(MessageId),
+    FileHandler(config_file_handler::Error),
     InvalidResponse,
-    NotInCloseGroup,
-    UnableToAllocateNewPmidNode,
-    ChunkStore(chunk_store::Error),
+    Io(io::Error),
     MpidMessaging(messaging::Error),
-    Serialisation(SerialisationError),
+    NotInCloseGroup,
     Routing(InterfaceError),
     RoutingInternal(RoutingError),
-    Io(io::Error),
+    Serialisation(SerialisationError),
+    UnableToAllocateNewPmidNode,
+    UnknownMessageType(RoutingMessage),
+    UnknownRefreshType(Authority, Authority, Refresh),
 }
 
 impl From<MutationError> for InternalError {
@@ -50,6 +52,12 @@ impl From<MutationError> for InternalError {
 impl From<GetError> for InternalError {
     fn from(error: GetError) -> InternalError {
         InternalError::ClientGet(error)
+    }
+}
+
+impl From<config_file_handler::Error> for InternalError {
+    fn from(error: config_file_handler::Error) -> InternalError {
+        InternalError::FileHandler(error)
     }
 }
 

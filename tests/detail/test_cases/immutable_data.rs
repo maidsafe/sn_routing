@@ -42,12 +42,14 @@ pub fn test() {
 
     test_group.start_case("Get");
     let mut data_request = DataRequest::Immutable(testing_data.name(), ImmutableDataType::Normal);
-    assert_eq!(testing_data, unwrap_result!(client1.get(data_request.clone())));
+    assert_eq!(testing_data,
+               unwrap_result!(client1.get(data_request.clone())));
 
     test_group.start_case("Get via different Client");
     let mut client2 = Client::create_unregistered_client();
     // Should succeed on first attempt if previous Client was able to Get already.
-    assert_eq!(testing_data, unwrap_result!(client2.get(data_request.clone())));
+    assert_eq!(testing_data,
+               unwrap_result!(client2.get(data_request.clone())));
 
     test_group.start_case("Get for non-existent data");
     data_request = DataRequest::Immutable(rand::random::<XorName>(), ImmutableDataType::Normal);

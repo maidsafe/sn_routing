@@ -24,6 +24,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use xor_name::XorName;
 
+use config_handler;
 use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
@@ -32,6 +33,12 @@ use personas::pmid_manager::PmidManager;
 use personas::pmid_node::PmidNode;
 use personas::structured_data_manager::StructuredDataManager;
 use types::{Refresh, RefreshValue};
+
+pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
+const DEFAULT_MAX_CAPACITY: u64 = 1_073_741_824;
+const PMID_NODE_ALLOWANCE: f64 = 0.6;
+const STUCTURED_DATA_MANAGER_ALLOWANCE: f64 = 0.3;
+const MPID_MANAGER_ALLOWANCE: f64 = 0.1;
 
 #[cfg(not(all(test, feature = "use-mock-routing")))]
 pub type RoutingNode = ::routing::Node;
@@ -69,14 +76,18 @@ impl Vault {
            stop_receiver: Receiver<()>)
            -> Result<Vault, InternalError> {
         ::sodiumoxide::init();
-
+        let config = try!(config_handler::read_config_file());
+        let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
+        let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
+        let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
+        let mpid_capacity = (max_capacity * MPID_MANAGER_ALLOWANCE) as u64;
         Ok(Vault {
             immutable_data_manager: ImmutableDataManager::new(),
             maid_manager: MaidManager::new(),
-            mpid_manager: MpidManager::new(),
+            mpid_manager: try!(MpidManager::new(mpid_capacity)),
             pmid_manager: PmidManager::new(),
-            pmid_node: try!(PmidNode::new()),
-            structured_data_manager: StructuredDataManager::new(),
+            pmid_node: try!(PmidNode::new(pn_capacity)),
+            structured_data_manager: try!(StructuredDataManager::new(sdm_capacity)),
             stop_receiver: Some(stop_receiver),
             app_event_sender: app_event_sender,
         })

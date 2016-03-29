@@ -62,7 +62,7 @@ extern crate sodiumoxide;
 extern crate time;
 extern crate xor_name;
 
-mod default_chunk_store;
+mod config_handler;
 mod error;
 mod mock_routing;
 mod personas;

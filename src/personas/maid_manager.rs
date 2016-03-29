@@ -121,9 +121,7 @@ impl MaidManager {
             Some(client_request) => {
                 // Refund account
                 match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
-                    Some(account) => {
-                        account.delete_data()
-                    }
+                    Some(account) => account.delete_data(),
                     None => return Ok(()),
                 }
                 // Send failure response back to client
@@ -147,6 +145,11 @@ impl MaidManager {
                                     match routing_node.close_group(*maid_name) {
                                         Ok(None) => {
                                             trace!("No longer a MM for {}", maid_name);
+                                            let requests = mem::replace(&mut self.request_cache, HashMap::new());
+                                            self.request_cache =
+                                                requests.into_iter()
+                                                        .filter(|&(_, ref r)| utils::client_name(&r.src) != *maid_name)
+                                                        .collect();
                                             false
                                         }
                                         Ok(Some(_)) => {
@@ -237,9 +240,7 @@ impl MaidManager {
         let result = self.accounts
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
-                         .and_then(|account| {
-                             account.put_data()
-                         });
+                         .and_then(|account| account.put_data());
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
