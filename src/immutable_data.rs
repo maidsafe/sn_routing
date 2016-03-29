@@ -108,27 +108,32 @@ impl Debug for ImmutableData {
     }
 }
 
-#[allow(unused)]
+/// Convert normal ImmutableData name to backup name.
 pub fn normal_to_backup(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
-#[allow(unused)]
+
+/// Convert backup ImmutableData name to normal name.
 pub fn backup_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
-#[allow(unused)]
+
+/// Convert normal ImmutableData name to sacrificial name.
 pub fn normal_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
-#[allow(unused)]
+
+/// Convert sacrificial ImmutableData name to normal name.
 pub fn sacrificial_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
-#[allow(unused)]
+
+/// Convert backup ImmutableData name to sacrificial name.
 pub fn backup_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
-#[allow(unused)]
+
+/// Convert sacrificial ImmutableData name to backup name.
 pub fn sacrificial_to_backup(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
