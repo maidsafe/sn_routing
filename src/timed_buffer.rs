@@ -15,22 +15,24 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::BTreeMap;
+use std::hash::Hash;
+use std::collections::HashMap;
 use time::{Duration, SteadyTime};
 
 /// TimedBuffer
 #[allow(unused)]
 pub struct TimedBuffer<Key, Value> {
-    map: BTreeMap<Key, (Value, SteadyTime)>,
+    map: HashMap<Key, (Value, SteadyTime)>,
     time_to_live: Duration,
 }
 
 #[allow(unused)]
-impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value> {
+impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
+{
     /// Constructor.
-    pub fn with_expiry_duration(time_to_live: Duration) -> TimedBuffer<Key, Value> {
+    pub fn new(time_to_live: Duration) -> TimedBuffer<Key, Value> {
         TimedBuffer {
-            map: BTreeMap::new(),
+            map: HashMap::new(),
             time_to_live: time_to_live,
         }
     }
@@ -45,17 +47,13 @@ impl<Key: PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value> {
         self.map.remove(key).map_or(None, |(value, _)| Some(value))
     }
 
-    /// Returns the size of the buffer.
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    fn get_expired(&mut self) -> Vec<Value> {
-        self.map
-            .iter()
-            .filter(|&(_, &(_, timestamp))| timestamp + self.time_to_live < SteadyTime::now())
-            .map(|(_, &(ref value, _))| value.clone())
-            .collect()
+    /// Get the keys, if any, that have expired.
+    pub fn get_expired(&mut self) -> Vec<Key> {
+        let now = SteadyTime::now();
+        self.map.iter()
+                .filter(|&(_, &(_, timestamp))| timestamp + self.time_to_live < now)
+                .map(|(key, &(_, _))| key.clone())
+                .collect()
     }
 }
 
@@ -69,31 +67,33 @@ mod test {
     #[test]
     fn construct_insert() {
         let time_to_live = Duration::milliseconds(100);
-        let mut timed_buffer = TimedBuffer::<usize, usize>::with_expiry_duration(time_to_live);
+        let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
 
         for i in 0..10 {
-            assert_eq!(timed_buffer.len(), i);
+            assert_eq!(timed_buffer.map.len(), i);
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.len(), i + 1);
+            assert_eq!(timed_buffer.map.len(), i + 1);
         }
     }
 
     #[test]
     fn get_expired() {
         let time_to_live = Duration::milliseconds(100);
-        let mut timed_buffer = TimedBuffer::<usize, usize>::with_expiry_duration(time_to_live);
-        let insertions = 0;
+        let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
+        let insertions = 10;
+
         for i in 0..insertions {
-            assert_eq!(timed_buffer.len(), i);
+            assert_eq!(timed_buffer.map.len(), i);
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.len(), i + 1);
+            assert_eq!(timed_buffer.map.len(), i + 1);
         }
 
         thread::sleep(::std::time::Duration::from_millis(100));
 
-        let expired = timed_buffer.get_expired();
+        let mut expired = timed_buffer.get_expired();
 
         assert_eq!(expired.len(), insertions);
+        expired.sort();
 
         for i in 0..insertions {
             assert_eq!(expired[i], i);
