@@ -18,14 +18,13 @@
 use std::convert::From;
 
 use chunk_store::ChunkStore;
-use default_chunk_store;
 use error::InternalError;
 use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
-use vault::RoutingNode;
+use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
 pub struct StructuredDataManager {
@@ -33,13 +32,10 @@ pub struct StructuredDataManager {
 }
 
 impl StructuredDataManager {
-    pub fn new(capacity: &Option<u64>) -> StructuredDataManager {
-        StructuredDataManager {
-            // TODO allow adjustable max_disk_space and return meaningful error rather than panic
-            // if the ChunkStore creation fails.
-            // See https://maidsafe.atlassian.net/browse/MAID-1370
-            chunk_store: unwrap_result!(default_chunk_store::new(capacity)),
-        }
+    pub fn new(capacity: u64) -> Result<StructuredDataManager, InternalError> {
+        Ok(StructuredDataManager {
+            chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
+        })
     }
 
     pub fn handle_get(&mut self,

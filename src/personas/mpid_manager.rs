@@ -19,7 +19,6 @@ use std::convert::From;
 use std::collections::HashMap;
 
 use chunk_store::ChunkStore;
-use default_chunk_store;
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
@@ -30,7 +29,7 @@ use sodiumoxide::crypto::sign::PublicKey;
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use utils;
-use vault::RoutingNode;
+use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
@@ -168,14 +167,12 @@ pub struct MpidManager {
 }
 
 impl MpidManager {
-    pub fn new(capacity: &Option<u64>) -> MpidManager {
-        let chunk_store_capacity = capacity.map_or(None, |capacity| Some(capacity / 2) );
-        MpidManager {
+    pub fn new(capacity: u64) -> Result<MpidManager, InternalError> {
+        Ok(MpidManager {
             accounts: HashMap::new(),
-            // TODO - remove unwrap
-            chunk_store_inbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
-            chunk_store_outbox: unwrap_result!(default_chunk_store::new(&chunk_store_capacity)),
-        }
+            chunk_store_inbox: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity / 2)),
+            chunk_store_outbox: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity / 2)),
+        })
     }
 
     // The name of the PlainData is expected to be the mpidheader or mpidmessage name
@@ -721,7 +718,7 @@ mod test {
                 proxy_node_name: from,
             },
             routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
-            mpid_manager: MpidManager::new(&None),
+            mpid_manager: unwrap_result!(MpidManager::new(107_374_182)),
         }
     }
 

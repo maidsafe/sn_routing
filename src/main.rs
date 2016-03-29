@@ -63,7 +63,6 @@ extern crate time;
 extern crate xor_name;
 
 mod config_handler;
-mod default_chunk_store;
 mod error;
 mod mock_routing;
 mod personas;

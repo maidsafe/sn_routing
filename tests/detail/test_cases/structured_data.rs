@@ -124,7 +124,8 @@ fn post(fixture: &mut Fixture) {
     let data_request = DataRequest::Structured(*fixture.sd.get_identifier(),
                                                fixture.sd.get_type_tag());
     // Should succeed on first attempt if previous Post message returned success.
-    assert_eq!(data, unwrap_result!(fixture.client1.get(data_request.clone())));
+    assert_eq!(data,
+               unwrap_result!(fixture.client1.get(data_request.clone())));
 
     fixture.test_group.start_case("Post for non-existent data");
     let bad_sd = unwrap_result!(StructuredData::new(2,
