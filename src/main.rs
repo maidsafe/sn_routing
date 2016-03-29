@@ -42,12 +42,15 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
+#![cfg_attr(feature = "use-mock-crust", allow(unused))]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate chunk_store;
 extern crate config_file_handler;
+#[cfg(not(feature = "use-mock-crust"))]
 extern crate ctrlc;
 extern crate docopt;
 #[cfg(all(test, feature = "use-mock-routing"))]
@@ -73,6 +76,7 @@ mod vault;
 use std::ffi::OsString;
 use std::process;
 use docopt::Docopt;
+use vault::Vault;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
@@ -95,6 +99,7 @@ struct Args {
 }
 
 /// Runs a SAFE Network vault.
+#[cfg(not(feature = "use-mock-crust"))]
 #[cfg_attr(feature="clippy", allow(print_stdout))]
 pub fn main() {
     let args: Args = Docopt::new(USAGE)
@@ -119,5 +124,12 @@ pub fn main() {
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
-    vault::Vault::run();
+    let mut vault = unwrap_result!(Vault::new(None));
+    unwrap_result!(vault.run());
+}
+
+#[cfg(feature = "use-mock-crust")]
+#[allow(missing_docs)]
+pub fn main() {
+  println!("Error: mock crust not supported");
 }

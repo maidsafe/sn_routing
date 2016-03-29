@@ -31,6 +31,7 @@ safe_core = "~0.13.0"
 
 [features]
 use-mock-routing = []
+use-mock-crust = ["routing/use-mock-crust"]
 
 [[test]]
 harness = false
