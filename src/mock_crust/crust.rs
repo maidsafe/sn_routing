@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#![allow(missing_docs)]
+
 use maidsafe_utilities::event_sender;
 use std::cell::{RefCell, RefMut};
 use std::fmt;

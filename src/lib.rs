@@ -196,8 +196,9 @@ mod utils;
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod core_tests;
 
+/// Mock crust
 #[cfg(feature = "use-mock-crust")]
-mod mock_crust;
+pub mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
