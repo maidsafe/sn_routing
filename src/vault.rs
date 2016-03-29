@@ -210,7 +210,7 @@ impl Vault {
             // ================== Post ==================
             (&Authority::NaeManager(_),
              &Authority::NodeManager(_),
-             &RequestContent::Post(Data::Immutable(_), _)) => {
+             &RequestContent::Post(_, _)) => {
                 self.pmid_manager.handle_post(&request)
             }
             (&Authority::Client{ .. },

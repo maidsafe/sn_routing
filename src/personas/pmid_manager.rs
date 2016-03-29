@@ -28,22 +28,12 @@ use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+// TODO: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Default, Clone)]
 pub struct Account {
     // It is now decided the chunk is measured by unit instead of size
     stored_total: u64,
     lost_total: u64,
-}
-
-impl Default for Account {
-    // TODO: Account Creation process required https://maidsafe.atlassian.net/browse/MAID-1191
-    //       To bypass the process for a simple network, allowance is granted by default
-    fn default() -> Account {
-        Account {
-            stored_total: 0,
-            lost_total: 0,
-        }
-    }
 }
 
 impl Account {
@@ -51,9 +41,6 @@ impl Account {
     // Otherwise Account need to remember storage info of Primary, Backup and Sacrificial
     // copies separately to trigger an early alert
     fn put_data(&mut self) {
-        // if (self.stored_total_size + size) > self.offered_space {
-        //   return false;
-        // }
         self.stored_total = self.stored_total.saturating_add(1);
     }
 

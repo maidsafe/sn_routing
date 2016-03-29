@@ -42,14 +42,10 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
     /// Get a value meanwhile update it's timestamp
     #[allow(unused)]
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
-        let mut entry = self.map.get_mut(key);
-        let result = if let Some(&mut (ref mut value, ref mut time_stamp)) = entry {
+        self.map.get_mut(key).map(|&mut (ref mut value, ref mut time_stamp)| {
             *time_stamp = SteadyTime::now();
-            Some(value)
-        } else {
-            None
-        };
-        result
+            value
+        })
     }
 
     /// Removes a value from the buffer.
