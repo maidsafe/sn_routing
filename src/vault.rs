@@ -72,22 +72,18 @@ fn init_components() -> Result<(ImmutableDataManager,
                                 StructuredDataManager), InternalError> {
     ::sodiumoxide::init();
 
-    let mut config = try!(config_handler::read_config_file());
-
-    let pn_capacity = config.max_capacity.map_or(None, |max_capacity| Some(3 * max_capacity / 5));
-    let sdm_capacity = config.max_capacity.map_or(None, |max_capacity| Some(3 * max_capacity / 10));
-    let mpid_capacity = config.max_capacity.map_or(None, |max_capacity| Some(max_capacity / 10));
-
-    if let Some(ref mut capacity) = config.max_capacity {
-        *capacity = *capacity / 3;
-    }
+    let config = try!(config_handler::read_config_file());
+    let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
+    let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
+    let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
+    let mpid_capacity = (max_capacity * MPID_MANAGER_ALLOWANCE) as u64;
 
     Ok((ImmutableDataManager::new(),
         MaidManager::new(),
-        MpidManager::new(&mpid_capacity),
+        try!(MpidManager::new(mpid_capacity)),
         PmidManager::new(),
-        try!(PmidNode::new(&pn_capacity)),
-        StructuredDataManager::new(&sdm_capacity)))
+        try!(PmidNode::new(pn_capacity)),
+        try!(StructuredDataManager::new(sdm_capacity))))
 }
 
 impl Vault {
@@ -468,18 +464,40 @@ impl Vault {
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
     use super::*;
-    use routing::mock_crust::{self, Network};
+    use routing::mock_crust::{self, Config, Network};
 
     #[test]
     fn how_to_use_mock_crust() {
+        // The mock network.
         let network = Network::new();
-        let service_handle = network.new_service_handle(None, None);
 
-        let mut vault = mock_crust::make_current(&service_handle, || {
+        // Create first vault. This one will also act as the seed node for the
+        // other ones.
+        let handle0 = network.new_service_handle(None, None);
+        let mut vault0 = mock_crust::make_current(&handle0, || {
             unwrap_result!(Vault::new(None))
         });
 
-        vault.poll();
+        // Other nodes know about the seed node via this config.
+        let config = Config::with_contacts(&[handle0.endpoint()]);
+
+        // Create second vault, passing the config with the seed node endpoint.
+        let handle1 = network.new_service_handle(Some(config.clone()), None);
+        let mut vault1 = mock_crust::make_current(&handle1, || {
+            unwrap_result!(Vault::new(None))
+        });
+
+        // Create third vault, passing the config with the seed node endpoint.
+        let handle2 = network.new_service_handle(Some(config.clone()), None);
+        let mut vault2 = mock_crust::make_current(&handle2, || {
+            unwrap_result!(Vault::new(None))
+        });
+
+        // Group the nodes into a array, so we can poll them all together.
+        let mut vaults = [vault0, vault1, vault2];
+
+        // Poll all the nodes until there are no more events to process.
+        while vaults.iter_mut().any(Vault::poll) {}
     }
 }
 
