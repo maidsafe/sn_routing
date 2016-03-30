@@ -55,7 +55,7 @@ extern crate ctrlc;
 extern crate docopt;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(all(test, any(feature = "use-mock-routing", feature = "use-mock-crust")))]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
@@ -68,6 +68,7 @@ mod config_handler;
 mod error;
 mod mock_routing;
 mod personas;
+mod tests;
 mod timed_buffer;
 mod types;
 mod utils;

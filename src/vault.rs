@@ -162,21 +162,14 @@ impl Vault {
 
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        // Remove routing_node from self, so we can safely mutate self while
-        // routing_node is borrowed.
         let mut routing_node = self.routing_node.take().unwrap();
+        let mut result = routing_node.poll();
 
-        let result = if routing_node.poll() {
-            while let Ok(event) = self.routing_rx.try_recv() {
-                self.process_event(&routing_node, event);
-            }
+        if let Ok(event) = self.routing_rx.try_recv() {
+            self.process_event(&routing_node, event);
+            result = true
+        }
 
-            true
-        } else {
-            false
-        };
-
-        // Put routing_node back to self as we are done with it.
         self.routing_node = Some(routing_node);
         result
     }
@@ -460,44 +453,3 @@ impl Vault {
         }
     }
 }
-
-#[cfg(all(test, feature = "use-mock-crust"))]
-mod tests {
-    use super::*;
-    use routing::mock_crust::{self, Config, Network};
-
-    #[test]
-    fn how_to_use_mock_crust() {
-        // The mock network.
-        let network = Network::new();
-
-        // Create first vault. This one will also act as the seed node for the
-        // other ones.
-        let handle0 = network.new_service_handle(None, None);
-        let mut vault0 = mock_crust::make_current(&handle0, || {
-            unwrap_result!(Vault::new(None))
-        });
-
-        // Other nodes know about the seed node via this config.
-        let config = Config::with_contacts(&[handle0.endpoint()]);
-
-        // Create second vault, passing the config with the seed node endpoint.
-        let handle1 = network.new_service_handle(Some(config.clone()), None);
-        let mut vault1 = mock_crust::make_current(&handle1, || {
-            unwrap_result!(Vault::new(None))
-        });
-
-        // Create third vault, passing the config with the seed node endpoint.
-        let handle2 = network.new_service_handle(Some(config.clone()), None);
-        let mut vault2 = mock_crust::make_current(&handle2, || {
-            unwrap_result!(Vault::new(None))
-        });
-
-        // Group the nodes into a array, so we can poll them all together.
-        let mut vaults = [vault0, vault1, vault2];
-
-        // Poll all the nodes until there are no more events to process.
-        while vaults.iter_mut().any(Vault::poll) {}
-    }
-}
-
