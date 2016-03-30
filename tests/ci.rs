@@ -61,7 +61,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use itertools::Itertools;
-use kademlia_routing_table::{GROUP_SIZE, QUORUM_SIZE};
+use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, RequestContent,
@@ -70,6 +70,8 @@ use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use utils::recv_with_timeout;
 use xor_name::XorName;
+
+const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
@@ -152,7 +154,7 @@ fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
     let mut limits = unwrap_result!(get_open_file_limits());
     if limits.rlim_cur < 1024 {
         limits.rlim_cur = 1024;
@@ -162,7 +164,7 @@ fn init() {
 
 #[cfg(not(target_os = "macos"))]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
 }
 
 // Spawns a thread that received events from a node a routes them to the main channel.

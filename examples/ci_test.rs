@@ -87,8 +87,8 @@ struct NodeProcess(Child, usize);
 
 impl NodeProcess {
     fn wait_for_output<T: AsRef<str>>(&mut self, pat: T) {
-        if let Some(ref mut stderr) = self.0.stderr {
-            for line in BufReader::new(stderr).lines() {
+        if let Some(ref mut stdout) = self.0.stdout {
+            for line in BufReader::new(stdout).lines() {
                 if line.unwrap().contains(pat.as_ref()) {
                     break;
                 }
@@ -128,14 +128,14 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                                                                  .args(&args)
                                                                  .stdout(Stdio::piped())
                                                                  .stderr(Stdio::piped())
-                                                                 .spawn()), i + 1);
+                                                                 .spawn()),
+                                                        i + 1);
 
                              println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
                              if i == 0 {
                                  node.wait_for_output("Running listener");
                              } else {
-                                 node.wait_for_output(format!("Routing Table size: {:3}",
-                                                              cmp::min(i, DELAY_RT_SIZE)));
+                                 node.wait_for_output(format!("Routing Table size: {:3}", cmp::min(i, DELAY_RT_SIZE)));
                              }
                              Ok(node)
                          })
@@ -162,7 +162,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
 
                 while !*stop_condition && !wait_timed_out {
                     let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
-                                                         Duration::from_secs(wait_for)));
+                                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
                 }
@@ -172,9 +172,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 }
             }
 
-            if let Err(err) = simulate_churn_impl(&mut nodes,
-                                                  &mut rng,
-                                                  network_size) {
+            if let Err(err) = simulate_churn_impl(&mut nodes, &mut rng, network_size) {
                 println!("{:?}", err);
                 break;
             }
@@ -215,7 +213,8 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                                         .arg(arg)
                                         .stdout(Stdio::null())
                                         .stderr(Stdio::null())
-                                        .spawn()), log_file_number));
+                                        .spawn()),
+                               log_file_number));
         println!("Started Node #{} with Process ID #{}",
                  log_file_number,
                  nodes[nodes.len() - 1].0.id());
@@ -296,8 +295,7 @@ fn main() {
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|error| error.exit());
 
-    let run_network_test = !(args.flag_output.is_some() ||
-                             args.flag_delete_bootstrap_cache.is_some());
+    let run_network_test = !(args.flag_output.is_some() || args.flag_delete_bootstrap_cache.is_some());
 
     if run_network_test {
         let node_count = match args.arg_nodes {

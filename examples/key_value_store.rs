@@ -240,7 +240,7 @@ impl KeyValueStore {
 
 /// /////////////////////////////////////////////////////////////////////////////
 fn main() {
-    maidsafe_utilities::log::init(false);
+    unwrap_result!(maidsafe_utilities::log::init(false));
 
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())
