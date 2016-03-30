@@ -208,6 +208,11 @@ impl Vault {
                 self.pmid_node.handle_put(routing_node, &request)
             }
             // ================== Post ==================
+            (&Authority::NaeManager(_),
+             &Authority::NodeManager(_),
+             &RequestContent::Post(_, _)) => {
+                self.pmid_manager.handle_post(&request)
+            }
             (&Authority::Client{ .. },
              &Authority::NaeManager(_),
              &RequestContent::Post(Data::Structured(_), _)) => {
