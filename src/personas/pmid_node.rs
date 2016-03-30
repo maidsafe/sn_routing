@@ -127,7 +127,7 @@ impl PmidNode {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn get_data_names(&self) -> Vec<XorName> {
+    pub fn get_stored_names(&self) -> Vec<XorName> {
         self.chunk_store.names()
     }
 
