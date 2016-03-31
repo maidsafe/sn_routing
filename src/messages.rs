@@ -24,7 +24,6 @@ use rustc_serialize::{Decoder, Encoder};
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha512;
 use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 
 use authority::Authority;
 use data::{Data, DataRequest};
@@ -118,8 +117,6 @@ pub enum DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     content: SignedMessage,
-    /// Name of the previous node in the `content`'s route.
-    name: XorName,
     /// Signature to be validated against `name`'s public key.
     signature: sign::Signature,
 }
@@ -127,13 +124,11 @@ pub struct HopMessage {
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
-               name: XorName,
                sign_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
-        let bytes_to_sign = try!(serialise(&(&content, &name)));
+        let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
-            name: name,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
     }
@@ -143,7 +138,7 @@ impl HopMessage {
     /// This does not imply that the message came from a known node. That requires a check against
     /// the routing table to identify the name associated with the `verification_key`.
     pub fn verify(&self, verification_key: &sign::PublicKey) -> Result<(), RoutingError> {
-        let signed_bytes = try!(serialise(&(&self.content, &self.name)));
+        let signed_bytes = try!(serialise(&self.content));
         if sign::verify_detached(&self.signature, &signed_bytes, verification_key) {
             Ok(())
         } else {
@@ -157,11 +152,6 @@ impl HopMessage {
     /// and signed the message.
     pub fn content(&self) -> &SignedMessage {
         &self.content
-    }
-
-    /// The name of the previous node in the signed message's route.
-    pub fn name(&self) -> &XorName {
-        &self.name
     }
 }
 
@@ -453,9 +443,8 @@ impl Debug for DirectMessage {
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "HopMessage {{ content: {:?}, name: {:?}, signature: .. }}",
-               self.content,
-               self.name)
+               "HopMessage {{ content: {:?}, signature: .. }}",
+               self.content)
     }
 }
 
@@ -630,10 +619,8 @@ mod test {
         assert!(signed_message_result.is_ok());
 
         let signed_message = unwrap_result!(signed_message_result);
-        let hop_name: XorName = rand::random();
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result = HopMessage::new(signed_message.clone(),
-                                                 hop_name,
                                                  &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
@@ -641,7 +628,6 @@ mod test {
         let hop_message = unwrap_result!(hop_message_result);
 
         assert_eq!(signed_message, *hop_message.content());
-        assert_eq!(hop_name, *hop_message.name());
 
         let verify_result = hop_message.verify(&public_signing_key);
 

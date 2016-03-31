@@ -710,11 +710,13 @@ impl Core {
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
+        let hop_name;
         if self.state == State::Node {
             let mut relayed_get_request = false;
-            if let Some(info) = self.routing_table.get(hop_msg.name()) {
+            if let Some(info) = self.routing_table.find(|node| node.peer_id == peer_id) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
+                hop_name = *info.name();
             } else if let Some(client_info) = self.client_map.get(&peer_id) {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
@@ -726,15 +728,17 @@ impl Core {
                 }) = *hop_msg.content().content() {
                     relayed_get_request = true;
                 }
+                hop_name = *self.name();
             } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
+                hop_name = *pub_id.name();
             } else {
                 // TODO: Drop peer?
                 // error!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
                 //        hop_msg.name(),
                 //        peer_id);
                 // self.disconnect_peer(&peer_id);
-                return Err(RoutingError::UnknownConnection(*hop_msg.name()));
+                return Err(RoutingError::UnknownConnection(peer_id));
             }
             if relayed_get_request {
                 self.debug_stats.get_request_count += 1;
@@ -744,12 +748,15 @@ impl Core {
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
+                hop_name = *pub_id.name();
+            } else {
+                return Err(RoutingError::UnknownConnection(peer_id));
             }
         } else {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        self.handle_signed_message(hop_msg.content(), hop_msg.name())
+        self.handle_signed_message(hop_msg.content(), &hop_name)
     }
 
     fn check_not_get_network_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
@@ -771,14 +778,14 @@ impl Core {
     // enough to satisfy the kademlia_routing_table invariant can be expected to pass direction
     // checks.
     /// Returns an error if this is not a swarm message and was not sent in the right direction.
-    fn _check_direction(&self, hop_msg: &HopMessage) -> Result<(), RoutingError> {
+    fn _check_direction(&self, hop_name: &XorName, hop_msg: &HopMessage) -> Result<(), RoutingError> {
         let dst = hop_msg.content().content().dst();
-        if self._is_swarm(dst, hop_msg.name()) ||
-           !xor_name::closer_to_target(&hop_msg.name(), self.name(), dst.name()) {
+        if self._is_swarm(dst, hop_name) ||
+           !xor_name::closer_to_target(hop_name, self.name(), dst.name()) {
             Ok(())
         } else {
             trace!("Direction check failed in hop message from node {:?}: {:?}",
-                   hop_msg.name(),
+                   hop_name,
                    hop_msg.content().content());
             // TODO: Reconsider direction checks once we know whether they help secure routing.
             Ok(())
@@ -2210,7 +2217,6 @@ impl Core {
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
             let hop_msg = try!(HopMessage::new(signed_msg,
-                                               *self.name(),
                                                self.full_id.signing_private_key()));
             let message = Message::Hop(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
@@ -2223,7 +2229,6 @@ impl Core {
 
     fn to_hop_bytes(&self, signed_msg: SignedMessage) -> Result<Vec<u8>, RoutingError> {
         let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           *self.name(),
                                            self.full_id.signing_private_key()));
         let message = Message::Hop(hop_msg);
         Ok(try!(serialisation::serialise(&message)))
@@ -2235,7 +2240,6 @@ impl Core {
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
         let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           *self.name(),
                                            self.full_id.signing_private_key()));
         let message = Message::TunnelHop {
             content: hop_msg,
