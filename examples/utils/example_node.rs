@@ -54,7 +54,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new() -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone()));
+        let node = unwrap_result!(Node::new(sender.clone(), false));
 
         ExampleNode {
             node: node,

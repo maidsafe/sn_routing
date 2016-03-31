@@ -57,7 +57,7 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
 
         let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None)
+            Core::new(event_tx, client_restriction, None, false)
         });
 
         TestNode {
@@ -153,7 +153,7 @@ impl TestClient {
         let full_id = FullId::new();
 
         let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, true, Some(full_id))
+            Core::new(event_tx, true, Some(full_id), false)
         });
 
         TestClient {

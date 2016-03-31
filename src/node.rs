@@ -61,11 +61,11 @@ impl Node {
     ///
     /// The intial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, false, None);
+        let (action_sender, mut core) = Core::new(event_sender, false, None, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -82,11 +82,11 @@ impl Node {
 
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, false, None);
+        let (action_sender, core) = Core::new(event_sender, false, None, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Node {

@@ -87,7 +87,7 @@ impl TestNode {
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
-            node: unwrap_result!(Node::new(sender)),
+            node: unwrap_result!(Node::new(sender, false)),
             _thread_joiner: joiner,
         }
     }
@@ -116,7 +116,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id))),
+            client: unwrap_result!(Client::new(sender, Some(full_id), false)),
             _thread_joiner: joiner,
         }
     }

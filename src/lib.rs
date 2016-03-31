@@ -61,7 +61,7 @@
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), true).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -79,7 +79,7 @@
 //! use routing::{Node, Event};
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::new(sender).unwrap();
+//! let _ = Node::new(sender, true).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
