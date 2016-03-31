@@ -326,7 +326,7 @@ fn main() {
             cvar.notify_one();
         }
     } else if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, true));
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file
