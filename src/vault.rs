@@ -140,6 +140,7 @@ impl Vault {
                 warn!("Failed to handle event: {:?}", error);
             }
 
+            self.immutable_data_manager.check_timeout(routing_node);
             self.pmid_manager.check_timeout(routing_node);
         }
 
@@ -156,6 +157,9 @@ impl Vault {
         match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client{ .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Get(DataRequest::Immutable(_, _), _)) |
+            (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
                 self.immutable_data_manager.handle_get(routing_node, &request)
@@ -188,6 +192,9 @@ impl Vault {
                 self.mpid_manager.handle_put(routing_node, &request)
             }
             (&Authority::ClientManager(_),
+             &Authority::NaeManager(_),
+             &RequestContent::Put(Data::Immutable(_), _)) |
+            (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Immutable(_), _)) => {
                 self.immutable_data_manager.handle_put(routing_node, &request)
@@ -254,6 +261,9 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
+             &ResponseContent::GetSuccess(Data::Immutable(_), _)) |
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::Immutable(_), _)) => {
                 self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
@@ -267,6 +277,12 @@ impl Vault {
                                         id,
                                         request,
                                         external_error_indicator)
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             &ResponseContent::GetFailure{ ref request, .. }) => {
+                self.immutable_data_manager
+                    .handle_get_from_other_location_failure(routing_node, request)
             }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
