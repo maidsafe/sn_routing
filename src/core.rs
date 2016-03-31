@@ -66,7 +66,7 @@ const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
-const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 20;
+const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -233,6 +233,7 @@ pub struct Core {
     proxy_map: HashMap<PeerId, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
     client_map: HashMap<PeerId, ClientInfo>,
+    use_data_cache: bool,
     data_cache: LruCache<XorName, Data>,
     // TODO(afck): Move these three fields into their own struct.
     connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
@@ -252,7 +253,8 @@ impl Core {
     /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
                client_restriction: bool,
-               keys: Option<FullId>)
+               keys: Option<FullId>,
+               use_data_cache: bool)
                -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -304,6 +306,7 @@ impl Core {
             get_network_name_timer_token: None,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
+            use_data_cache: use_data_cache,
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
@@ -849,8 +852,10 @@ impl Core {
         }
 
         // Cache handling
-        if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
-            return self.send_message(routing_msg);
+        if self.use_data_cache {
+            if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
+                return self.send_message(routing_msg);
+            }
         }
         self.add_to_cache(signed_msg.content());
 
