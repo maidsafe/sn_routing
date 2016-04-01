@@ -40,7 +40,7 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
 use std::thread;
-use time::{Duration, PreciseTime};
+use time::{Duration, PreciseTime, SteadyTime};
 use tunnels::Tunnels;
 use xor_name;
 use xor_name::XorName;
@@ -67,6 +67,8 @@ const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
 const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
+/// Time (in seconds) after which a `Heartbeat` is sent.
+const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -228,11 +230,15 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
+    heartbeat_timer_token: u64,
 
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
     // any clients we have proxying through us, and whether they have `client_restriction`
     client_map: HashMap<PeerId, ClientInfo>,
+    /// All directly connected peers (proxies, clients and routing nodes), and the timestamps of
+    /// their most recent message.
+    peer_map: HashMap<PeerId, SteadyTime>,
     use_data_cache: bool,
     data_cache: LruCache<XorName, Data>,
     // TODO(afck): Move these three fields into their own struct.
@@ -284,6 +290,10 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
+        let mut timer = Timer::new(action_sender2);
+
+        let heartbeat_timer_token = timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+
         let core = Core {
             crust_service: crust_service,
             client_restriction: client_restriction,
@@ -293,7 +303,7 @@ impl Core {
             action_rx: action_rx,
             event_sender: event_sender,
             crust_sender: crust_sender,
-            timer: Timer::new(action_sender2),
+            timer: timer,
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
@@ -304,8 +314,10 @@ impl Core {
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
             get_network_name_timer_token: None,
+            heartbeat_timer_token: heartbeat_timer_token,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
+            peer_map: HashMap::new(),
             use_data_cache: use_data_cache,
             data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
@@ -518,6 +530,7 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
+        let _ = self.peer_map.insert(peer_id, SteadyTime::now());
         self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
@@ -537,6 +550,7 @@ impl Core {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
+        let _ = self.peer_map.insert(peer_id, SteadyTime::now());
         trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
@@ -582,6 +596,7 @@ impl Core {
                     }
                     trace!("Received NewPeer with Ok from {:?}. Sending NodeIdentify.",
                            peer_id);
+                    let _ = self.peer_map.insert(peer_id, SteadyTime::now());
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
@@ -676,6 +691,10 @@ impl Core {
     }
 
     fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
+        match self.peer_map.get_mut(&peer_id) {
+            None => return Err(RoutingError::UnknownConnection(peer_id)),
+            Some(timestamp) => *timestamp = SteadyTime::now(),
+        }
         match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
@@ -778,7 +797,10 @@ impl Core {
     // enough to satisfy the kademlia_routing_table invariant can be expected to pass direction
     // checks.
     /// Returns an error if this is not a swarm message and was not sent in the right direction.
-    fn _check_direction(&self, hop_name: &XorName, hop_msg: &HopMessage) -> Result<(), RoutingError> {
+    fn _check_direction(&self,
+                        hop_name: &XorName,
+                        hop_msg: &HopMessage)
+                        -> Result<(), RoutingError> {
         let dst = hop_msg.content().content().dst();
         if self._is_swarm(dst, hop_name) ||
            !xor_name::closer_to_target(hop_name, self.name(), dst.name()) {
@@ -1198,6 +1220,7 @@ impl Core {
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) {
+        let _ = self.peer_map.remove(&peer_id);
         if peer_id == self.crust_service.id() {
             error!("LostPeer fired with our crust peer id");
             return;
@@ -1359,6 +1382,7 @@ impl Core {
                     self.disconnect_peer(&peer_id)
                 }
             }
+            DirectMessage::Heartbeat => Ok(()),
             DirectMessage::NewNode(public_id) => {
                 trace!("Received NewNode({:?}).", public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
@@ -1391,8 +1415,8 @@ impl Core {
         if self.proxy_map.is_empty() {
             let _ = self.proxy_map.insert(peer_id, public_id);
         } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
-                   name: {:?}",
+            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous name: \
+                   {:?}",
                   previous_name);
             warn!("Dropping this peer {:?}", peer_id);
             let _ = self.proxy_map.remove(&peer_id);
@@ -2128,12 +2152,31 @@ impl Core {
                 trace!("Timeout when trying to bootstrap against {:?}", peer_id);
                 self.retry_bootstrap_with_blacklist(&peer_id);
             }
-        } else if self.get_network_name_timer_token == Some(token) {
+            return;
+        }
+        if self.get_network_name_timer_token == Some(token) {
             if let Err(err) = self.relocate() {
                 error!("Failed to resend GetNetworkName response: {:?}", err);
             } else {
                 trace!("Timeout waiting for GetNetworkName response. Resent request.");
             }
+        } else if self.heartbeat_timer_token == token {
+            let now = SteadyTime::now();
+            let stale_peers = self.peer_map
+                                  .iter()
+                                  .filter(|&(_, timestamp)| (now - *timestamp).num_minutes() > 3)
+                                  .map(|(peer_id, _)| peer_id)
+                                  .cloned()
+                                  .collect_vec();
+            for peer_id in stale_peers {
+                self.crust_service.disconnect(&peer_id);
+                self.handle_lost_peer(peer_id);
+            }
+            for peer_id in self.peer_map.keys().cloned().collect_vec() {
+                let _ = self.send_direct_message(&peer_id, DirectMessage::Heartbeat);
+            }
+            self.heartbeat_timer_token =
+                self.timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
         }
     }
 
@@ -2216,8 +2259,7 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            let hop_msg = try!(HopMessage::new(signed_msg,
-                                               self.full_id.signing_private_key()));
+            let hop_msg = try!(HopMessage::new(signed_msg, self.full_id.signing_private_key()));
             let message = Message::Hop(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
             return self.send_or_drop(peer_id, raw_bytes);
@@ -2228,8 +2270,7 @@ impl Core {
     }
 
     fn to_hop_bytes(&self, signed_msg: SignedMessage) -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           self.full_id.signing_private_key()));
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(), self.full_id.signing_private_key()));
         let message = Message::Hop(hop_msg);
         Ok(try!(serialisation::serialise(&message)))
     }
@@ -2239,8 +2280,7 @@ impl Core {
                            src: PeerId,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                           self.full_id.signing_private_key()));
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(), self.full_id.signing_private_key()));
         let message = Message::TunnelHop {
             content: hop_msg,
             src: src,

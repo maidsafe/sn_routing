@@ -95,6 +95,8 @@ pub enum DirectMessage {
     /// Sent from a client that became a full routing node. The recipient can remove it from its
     /// client map.
     ClientToNode,
+    /// Sent regularly to every peer to detect if they go offline.
+    Heartbeat,
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
@@ -424,6 +426,7 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
+            DirectMessage::Heartbeat => write!(formatter, "Heartbeat"),
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
             }
