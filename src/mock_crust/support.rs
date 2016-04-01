@@ -69,6 +69,7 @@ impl Network {
         handle
     }
 
+    /// Generate unique Endpoint
     pub fn gen_endpoint(&self, opt_endpoint: Option<Endpoint>) -> Endpoint {
         let mut imp = self.0.borrow_mut();
         let endpoint = if let Some(endpoint) = opt_endpoint {
@@ -80,6 +81,7 @@ impl Network {
         endpoint
     }
 
+    /// Poll and process all queued Packets.
     pub fn poll(&self) {
         while let Some((sender, receiver, packet)) = self.pop_packet() {
             self.process_packet(sender, receiver, packet);
@@ -137,6 +139,7 @@ impl ServiceHandle {
         ServiceHandle(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
+    /// Endpoint of the Service bound to this handle.
     pub fn endpoint(&self) -> Endpoint {
         self.0.borrow().endpoint
     }
@@ -449,21 +452,24 @@ fn gen_peer_id(endpoint: Endpoint) -> PeerId {
 /// Simulated crust config file.
 #[derive(Clone)]
 pub struct Config {
+    /// Contacts to bootstrap against.
     pub hard_coded_contacts: Vec<Endpoint>,
 }
 
 impl Config {
+    /// Create default Config.
     pub fn new() -> Self {
         Self::with_contacts(&[])
     }
 
+    /// Create Config with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
     }
 }
 
-/// Simulated network endpoint (socket address). This is used to identify and
-/// address Services in the mock network.
+/// Simulated network endpoint (think socket address). This is used to identify
+/// and address Services in the mock network.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(pub usize);
 
