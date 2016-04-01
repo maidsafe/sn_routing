@@ -18,6 +18,8 @@
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use id::FullId;
@@ -43,7 +45,7 @@ pub struct Client {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    core: Core,
+    core: RefCell<Core>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -93,14 +95,14 @@ impl Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            core: core,
+            core: RefCell::new(core),
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
     #[allow(missing_docs)]
-    pub fn poll(&mut self) -> bool {
-        self.core.poll()
+    pub fn poll(&self) -> bool {
+        self.core.borrow_mut().poll()
     }
 
     /// Send a Get message with a DataRequest to an Authority, signed with given keys.
@@ -147,7 +149,17 @@ impl Client {
         };
 
         try!(self.action_sender.send(action));
+        self.receive_action_result()
+    }
 
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn receive_action_result(&self) -> Result<(), InterfaceError> {
+        try!(self.interface_result_rx.recv())
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn receive_action_result(&self) -> Result<(), InterfaceError> {
+        while self.poll() {}
         try!(self.interface_result_rx.recv())
     }
 }

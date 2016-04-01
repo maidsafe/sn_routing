@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
+/// Mock crust main module. This module provides mock version of all public
+/// types and methods of crust.
 pub mod crust;
 mod support;
 
