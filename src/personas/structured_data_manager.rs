@@ -239,6 +239,11 @@ impl StructuredDataManager {
         }
     }
 
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_stored_names(&self) -> Vec<XorName> {
+        self.chunk_store.names()
+    }
+
     fn send_refresh(&self, routing_node: &RoutingNode, data_name: &XorName) {
         let serialised_data = match self.chunk_store.get(data_name) {
             Ok(data) => data,
@@ -263,207 +268,597 @@ impl StructuredDataManager {
 
 
 
+#[cfg(all(test, feature = "use-mock-routing"))]
+mod test {
+    use super::*;
+    use maidsafe_utilities::log;
+    use maidsafe_utilities::serialisation;
+    use rand::distributions::{IndependentSample, Range};
+    use rand::{random, thread_rng};
+    use routing::{Authority, Data, DataRequest, MessageId, RequestContent,
+                  RequestMessage, ResponseContent, ResponseMessage, StructuredData};
+    use safe_network_common::client_errors::{GetError, MutationError};
+    use sodiumoxide::crypto::hash::sha512;
+    use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
+    use std::sync::mpsc;
+    use types::{Refresh, RefreshValue};
+    use utils;
+    use vault::RoutingNode;
+    use xor_name::XorName;
 
-// #[cfg(all(test, feature = "use-mock-routing"))]
-// mod test {
-// use super::*;
-// use lru_time_cache::LruCache;
-// use maidsafe_utilities::log;
-// use maidsafe_utilities::serialisation::deserialise;
-// use rand::random;
-// use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, RequestContent,
-// RequestMessage, ResponseContent, ResponseMessage, StructuredData};
-// use std::cmp::{max, min, Ordering};
-// use std::collections::BTreeSet;
-// use time::{Duration, SteadyTime};
-// use types::Refreshable;
-// use utils::{median, merge, HANDLED, NOT_HANDLED};
-// use vault::Routing;
-// use xor_name::{XorName, closer_to_target};
-//
-// pub struct Environment {
-// pub routing: ::vault::Routing,
-// pub structured_data_manager: StructuredDataManager,
-// pub data_name: XorName,
-// pub identifier: XorName,
-// pub keys: (::sodiumoxide::crypto::sign::PublicKey,
-// ::sodiumoxide::crypto::sign::SecretKey),
-// pub structured_data: ::routing::structured_data::StructuredData,
-// pub data: ::routing::data::Data,
-// pub us: ::routing::Authority,
-// pub client: ::routing::Authority,
-// pub maid_manager: ::routing::Authority,
-// }
-//
-// impl Environment {
-// pub fn new() -> Environment {
-// log::init(true);
-// let routing = ::vault::Routing::new(::std::sync::mpsc::channel().0);
-// let identifier = random();
-// let keys = ::sodiumoxide::crypto::sign::gen_keypair();
-// let structured_data =
-// unwrap_result!(::routing::structured_data::StructuredData::new(0, identifier, 0,
-// generate_random_vec_u8(1024), vec![keys.0],
-// vec![], Some(&keys.1)));
-// let data_name = structured_data.name();
-// Environment {
-// routing: routing.clone(),
-// structured_data_manager: StructuredDataManager::new(routing),
-// data_name: data_name.clone(),
-// identifier: identifier,
-// keys: keys,
-// structured_data: structured_data.clone(),
-// data: ::routing::data::Data::Structured(structured_data),
-// us: Authority::NaeManager(data_name),
-// client: Authority::Client(random(),
-// ::sodiumoxide::crypto::sign::gen_keypair().0),
-// maid_manager: Authority::ClientManager(random()),
-// }
-// }
-//
-// pub fn get_from_chunkstore(&self, data_name: &XorName)
-// -> Option<::routing::structured_data::StructuredData> {
-// let data = self.structured_data_manager.chunk_store.get(data_name);
-// if data.len() == 0 {
-// return None;
-// }
-// deserialise::<StructuredData>(&data).ok()
-// }
-// }
-//
-//
-// #[test]
-// fn handle_put_get() {
-// let mut env = Environment::new();
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-// assert_eq!(0, env.routing.put_requests_given().len());
-// assert_eq!(0, env.routing.put_responses_given().len());
-//
-// let request = ::routing::data::DataRequest::Structured(env.identifier.clone(), 0);
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_get(&env.us, &env.client, &request, &None));
-// let get_responses = env.routing.get_responses_given();
-// assert_eq!(get_responses.len(), 1);
-// assert_eq!(get_responses[0].our_authority, env.us);
-// assert_eq!(get_responses[0].location, env.client);
-// assert_eq!(get_responses[0].data, env.data);
-// assert_eq!(get_responses[0].data_request, request);
-// assert_eq!(get_responses[0].response_token, None);
-// }
-//
-// #[test]
-// fn handle_post() {
-// let mut env = Environment::new();
-// posting to non-existent data
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_post(&env.us, &env.client, &env.data));
-// assert_eq!(None, env.get_from_chunkstore(&env.data_name));
-//
-// PUT the data
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-// assert_eq!(env.structured_data,
-// unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get inital data"));
-//
-// incorrect version
-// let mut sd_new_bad = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// env.structured_data
-// .get_identifier(),
-// 3,
-// env.structured_data
-// .get_data()
-// .clone(),
-// vec![env.keys.0],
-// vec![],
-// Some(&env.keys.1)));
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_post(&env.us,
-// &env.client,
-// &::routing::data::Data::Structured(sd_new_bad)));
-// assert_eq!(env.structured_data,
-// unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get original data."));
-//
-// correct version
-// let mut sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// env.structured_data
-// .get_identifier(),
-// 1,
-// env.structured_data
-// .get_data()
-// .clone(),
-// vec![env.keys.0],
-// vec![],
-// Some(&env.keys.1)));
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager
-// .handle_post(&env.us,
-// &env.client,
-// &::routing::data::Data::Structured(sd_new.clone())));
-// assert_eq!(sd_new,
-// unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
-//
-// update to a new owner, wrong signature
-// let keys2 = ::sodiumoxide::crypto::sign::gen_keypair();
-// sd_new_bad = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// env.structured_data
-// .get_identifier(),
-// 2,
-// env.structured_data
-// .get_data()
-// .clone(),
-// vec![keys2.0],
-// vec![env.keys.0],
-// Some(&keys2.1)));
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager
-// .handle_post(&env.us,
-// &env.client,
-// &::routing::data::Data::Structured(sd_new_bad.clone())));
-// assert_eq!(sd_new,
-// unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get updated data"));
-//
-// update to a new owner, correct signature
-// sd_new = unwrap_result!(::routing::structured_data::StructuredData::new(0,
-// env.structured_data
-// .get_identifier(),
-// 2,
-// env.structured_data
-// .get_data()
-// .clone(),
-// vec![keys2.0],
-// vec![env.keys.0],
-// Some(&env.keys.1)));
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager
-// .handle_post(&env.us,
-// &env.client,
-// &::routing::data::Data::Structured(sd_new.clone())));
-// assert_eq!(sd_new,
-// unwrap_option!(env.get_from_chunkstore(&env.data_name), "Failed to get re-updated data"));
-// }
-//
-// #[test]
-// fn handle_churn_and_account_transfer() {
-// let mut env = Environment::new();
-// let churn_node = random();
-// assert_eq!(::utils::HANDLED,
-// env.structured_data_manager.handle_put(&env.us, &env.maid_manager, &env.data));
-// env.structured_data_manager.handle_churn(&churn_node);
-// let refresh_requests = env.routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 1);
-// assert_eq!(refresh_requests[0].type_tag, ACCOUNT_TAG);
-// assert_eq!(refresh_requests[0].our_authority, env.us);
-//
-// let mut d = ::cbor::Decoder::from_bytes(&refresh_requests[0].content[..]);
-// if let Some(sd_account) = d.decode().next().and_then(|result| result.ok()) {
-// env.structured_data_manager.handle_account_transfer(sd_account);
-// }
-//
-// env.structured_data_manager.handle_churn(&churn_node);
-// let refresh_requests = env.routing.refresh_requests_given();
-// assert_eq!(refresh_requests.len(), 2);
-// assert_eq!(refresh_requests[0], refresh_requests[1]);
-// }
-// }
-//
+    pub struct Environment {
+        pub routing: RoutingNode,
+        pub structured_data_manager: StructuredDataManager,
+    }
+
+    pub struct PutEnvironment {
+        pub keys: (PublicKey, SecretKey),
+        pub client: Authority,
+        pub client_manager: Authority,
+        pub sd_data: StructuredData,
+        pub message_id: MessageId,
+        pub request: RequestMessage,
+    }
+
+    pub struct GetEnvironment {
+        pub client: Authority,
+        pub message_id: MessageId,
+        pub request: RequestMessage,
+    }
+
+    pub struct PostEnvironment {
+        pub keys: (PublicKey, SecretKey),
+        pub client: Authority,
+        pub sd_data: StructuredData,
+        pub message_id: MessageId,
+        pub request: RequestMessage,
+    }
+
+    pub struct DeleteEnvironment {
+        pub keys: (PublicKey, SecretKey),
+        pub client: Authority,
+        pub sd_data: StructuredData,
+        pub message_id: MessageId,
+        pub request: RequestMessage,
+    }
+
+    impl Environment {
+        pub fn new() -> Environment {
+            log::init(true);
+            let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
+            Environment {
+                routing: routing,
+                structured_data_manager: unwrap_result!(StructuredDataManager::new(322_122_546)),
+            }
+        }
+
+        pub fn get_close_data(&self, keys: (PublicKey, SecretKey)) -> StructuredData {
+            loop {
+                let identifier = random();
+                let structured_data =
+                    unwrap_result!(StructuredData::new(0,
+                                                       identifier,
+                                                       0,
+                                                       utils::generate_random_vec_u8(1024),
+                                                       vec![keys.0],
+                                                       vec![],
+                                                       Some(&keys.1)));
+                if let Ok(Some(_)) = self.routing.close_group(structured_data.name()) {
+                    return structured_data;
+                }
+            }
+        }
+
+        pub fn lose_close_node(&self, target: &XorName) -> XorName {
+            if let Ok(Some(close_group)) = self.routing.close_group(*target) {
+                let mut rng = thread_rng();
+                let range = Range::new(0, close_group.len());
+                let our_name = if let Ok(ref name) = self.routing.name() {
+                    *name
+                } else {
+                    unreachable!()
+                };
+                loop {
+                    let index = range.ind_sample(&mut rng);
+                    if close_group[index] != our_name {
+                        return close_group[index];
+                    }
+                }
+            } else {
+                random::<XorName>()
+            }
+        }
+
+        pub fn put_sd_data(&mut self) -> PutEnvironment {
+            let keys = sign::gen_keypair();
+            let sd_data = self.get_close_data(keys.clone());
+            self.put_existing_sd_data(sd_data, keys)
+        }
+
+        pub fn put_existing_sd_data(&mut self,
+                                    sd_data: StructuredData,
+                                    keys: (PublicKey, SecretKey))
+                                    -> PutEnvironment {
+            let message_id = MessageId::new();
+            let content = RequestContent::Put(Data::Structured(sd_data.clone()), message_id);
+            let client = Authority::Client {
+                client_key: keys.0,
+                peer_id: random(),
+                proxy_node_name: random::<XorName>(),
+            };
+            let client_manager = Authority::ClientManager(utils::client_name(&client));
+            let request = RequestMessage {
+                src: client_manager.clone(),
+                dst: Authority::NaeManager(sd_data.name()),
+                content: content.clone(),
+            };
+            let _ = self.structured_data_manager.handle_put(&self.routing, &request);
+            PutEnvironment {
+                keys: keys,
+                client: client,
+                client_manager: client_manager,
+                sd_data: sd_data,
+                message_id: message_id,
+                request: request,
+            }
+        }
+
+        pub fn get_sd_data(&mut self, sd_data: StructuredData) -> GetEnvironment {
+            let message_id = MessageId::new();
+            let content = RequestContent::Get(DataRequest::Structured(*sd_data.get_identifier(),
+                                                                      sd_data.get_type_tag()),
+                                              message_id);
+            let keys = sign::gen_keypair();
+            let client = Authority::Client {
+                client_key: keys.0,
+                peer_id: random(),
+                proxy_node_name: random::<XorName>(),
+            };
+            let request = RequestMessage {
+                src: client.clone(),
+                dst: Authority::NaeManager(sd_data.name()),
+                content: content.clone(),
+            };
+            let _ = self.structured_data_manager.handle_get(&self.routing, &request);
+            GetEnvironment {
+                client: client,
+                message_id: message_id,
+                request: request,
+            }
+        }
+
+        pub fn post_sd_data(&mut self) -> PostEnvironment {
+            let keys = sign::gen_keypair();
+            let sd_data = self.get_close_data(keys.clone());
+            let client = Authority::Client {
+                client_key: keys.0,
+                peer_id: random(),
+                proxy_node_name: random::<XorName>(),
+            };
+            self.post_existing_sd_data(sd_data, keys, client)
+        }
+
+        pub fn post_existing_sd_data(&mut self,
+                                     sd_data: StructuredData,
+                                     keys: (PublicKey, SecretKey),
+                                     client: Authority)
+                                     -> PostEnvironment {
+            let message_id = MessageId::new();
+            let content = RequestContent::Post(Data::Structured(sd_data.clone()), message_id);
+            let request = RequestMessage {
+                src: client.clone(),
+                dst: Authority::NaeManager(sd_data.name()),
+                content: content.clone(),
+            };
+            let _ = self.structured_data_manager.handle_post(&self.routing, &request);
+            PostEnvironment {
+                keys: keys,
+                client: client,
+                sd_data: sd_data,
+                message_id: message_id,
+                request: request,
+            }
+        }
+
+        pub fn delete_sd_data(&mut self) -> DeleteEnvironment {
+            let keys = sign::gen_keypair();
+            let sd_data = self.get_close_data(keys.clone());
+            let client = Authority::Client {
+                client_key: keys.0,
+                peer_id: random(),
+                proxy_node_name: random::<XorName>(),
+            };
+            self.delete_existing_sd_data(sd_data, keys, client)
+        }
+
+        pub fn delete_existing_sd_data(&mut self,
+                                       sd_data: StructuredData,
+                                       keys: (PublicKey, SecretKey),
+                                       client: Authority)
+                                       -> DeleteEnvironment {
+            let message_id = MessageId::new();
+            let content = RequestContent::Delete(Data::Structured(sd_data.clone()), message_id);
+            let request = RequestMessage {
+                src: client.clone(),
+                dst: Authority::NaeManager(sd_data.name()),
+                content: content.clone(),
+            };
+            let _ = self.structured_data_manager.handle_delete(&self.routing, &request);
+            DeleteEnvironment {
+                keys: keys,
+                client: client,
+                sd_data: sd_data,
+                message_id: message_id,
+                request: request,
+            }
+        }
+
+        pub fn get_from_chunkstore(&self, data_name: &XorName) -> Option<StructuredData> {
+            if let Ok(data) = self.structured_data_manager.chunk_store.get(data_name) {
+                serialisation::deserialise::<StructuredData>(&data).ok()
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn handle_put_get_normal_flow() {
+        let mut env = Environment::new();
+        let put_env = env.put_sd_data();
+        assert_eq!(Some(put_env.sd_data.clone()),
+                   env.get_from_chunkstore(&put_env.sd_data.name()));
+        assert_eq!(0, env.routing.put_requests_given().len());
+        let put_responses = env.routing.put_successes_given();
+        assert_eq!(put_responses.len(), 1);
+        if let ResponseContent::PutSuccess(digest, id) = put_responses[0].content.clone() {
+            let message_hash =
+                sha512::hash(&unwrap_result!(serialisation::serialise(&put_env.request))[..]);
+            assert_eq!(message_hash, digest);
+            assert_eq!(put_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", put_responses[0]);
+        }
+        assert_eq!(put_env.client_manager, put_responses[0].dst);
+        assert_eq!(Authority::NaeManager(put_env.sd_data.name()), put_responses[0].src);
+
+        let get_env = env.get_sd_data(put_env.sd_data.clone());
+        let get_responses = env.routing.get_successes_given();
+        assert_eq!(get_responses.len(), 1);
+        if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
+               get_responses[0].clone() {
+            assert_eq!(Data::Structured(put_env.sd_data.clone()), response_data);
+            assert_eq!(get_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", get_responses[0]);
+        }
+        assert_eq!(get_responses[0].dst, get_env.client);
+    }
+
+   #[test]
+    fn handle_put_get_error_flow() {
+        // This shows a non-owner can still store the sd_data
+        let mut env = Environment::new();
+        let keys = sign::gen_keypair();
+        let sd_data = env.get_close_data(keys.clone());
+        let put_env = env.put_existing_sd_data(sd_data.clone(), keys.clone());
+        assert_eq!(env.routing.put_successes_given().len(), 1);
+
+        // Put to the same data
+        let put_existing_env = env.put_existing_sd_data(put_env.sd_data.clone(),
+                                                        put_env.keys.clone());
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].dst, put_existing_env.client_manager);
+
+        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, put_existing_env.message_id);
+            assert_eq!(*request, put_existing_env.request);
+            let err = unwrap_result!(
+                    serialisation::deserialise::<MutationError>(external_error_indicator));
+            match err.clone() {
+                MutationError::DataExists => {}
+                _ => panic!("received unexpected erro r {:?}", err),
+            }
+        } else {
+            unreachable!()
+        }
+
+        // Get non-existing data
+        let non_existing_sd_data = env.get_close_data(keys.clone());
+        let get_env = env.get_sd_data(non_existing_sd_data.clone());
+        assert_eq!(env.routing.get_requests_given().len(), 0);
+        assert_eq!(env.routing.get_successes_given().len(), 0);
+        let get_failure = env.routing.get_failures_given();
+        assert_eq!(get_failure.len(), 1);
+        if let ResponseContent::GetFailure{ ref external_error_indicator, ref id, .. } =
+               get_failure[0].content.clone() {
+            assert_eq!(get_env.message_id, *id);
+            let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
+            if let GetError::NoSuchData = parsed_error {} else {
+                panic!("Received unexpected external_error_indicator with parsed error as {:?}",
+                       parsed_error);
+            }
+        } else {
+            panic!("Received unexpected response {:?}", get_failure[0]);
+        }
+        assert_eq!(get_env.client, get_failure[0].dst);
+        assert_eq!(Authority::NaeManager(non_existing_sd_data.name()), get_failure[0].src);
+    }
+
+    #[test]
+    fn handle_post() {
+        let mut env = Environment::new();
+        // posting to non-existent data
+        let post_env = env.post_sd_data();
+        assert_eq!(None, env.get_from_chunkstore(&post_env.sd_data.name()));
+        let mut post_failure = env.routing.post_failures_given();
+        assert_eq!(post_failure.len(), 1);
+        if let ResponseContent::PostFailure{ ref external_error_indicator, ref id, .. } =
+               post_failure[0].content.clone() {
+            assert_eq!(post_env.message_id, *id);
+            assert!(external_error_indicator.is_empty());
+        } else {
+            panic!("Received unexpected response {:?}", post_failure[0]);
+        }
+        assert_eq!(post_env.client, post_failure[0].dst);
+        assert_eq!(Authority::NaeManager(post_env.sd_data.name()), post_failure[0].src);
+
+        // PUT the data
+        let put_env = env.put_existing_sd_data(post_env.sd_data.clone(), post_env.keys.clone());
+        assert_eq!(env.routing.put_successes_given().len(), 1);
+
+        // incorrect version
+        let mut sd_new_bad = unwrap_result!(StructuredData::new(0,
+                                                                *put_env.sd_data.get_identifier(),
+                                                                3,
+                                                                put_env.sd_data.get_data().clone(),
+                                                                vec![put_env.keys.0],
+                                                                vec![],
+                                                                Some(&put_env.keys.1)));
+        let post_incorrect_env = env.post_existing_sd_data(sd_new_bad.clone(),
+                                                           put_env.keys.clone(),
+                                                           put_env.client.clone());
+        post_failure = env.routing.post_failures_given();
+        assert_eq!(post_failure.len(), 2);
+        if let ResponseContent::PostFailure{ ref external_error_indicator, ref id, .. } =
+               post_failure[1].content.clone() {
+            assert_eq!(post_incorrect_env.message_id, *id);
+            assert!(external_error_indicator.is_empty());
+        } else {
+            panic!("Received unexpected response {:?}", post_failure[1]);
+        }
+        assert_eq!(post_incorrect_env.client, post_failure[1].dst);
+        assert_eq!(Authority::NaeManager(post_incorrect_env.sd_data.name()), post_failure[1].src);
+        assert_eq!(Some(put_env.sd_data.clone()),
+                   env.get_from_chunkstore(&sd_new_bad.name()));
+
+        // correct version
+        let mut sd_new = unwrap_result!(StructuredData::new(0,
+                                                            *put_env.sd_data.get_identifier(),
+                                                            1,
+                                                            put_env.sd_data.get_data().clone(),
+                                                            vec![put_env.keys.0],
+                                                            vec![],
+                                                            Some(&put_env.keys.1)));
+        let mut post_correct_env = env.post_existing_sd_data(sd_new.clone(),
+                                                             put_env.keys.clone(),
+                                                             put_env.client.clone());
+        let mut post_success = env.routing.post_successes_given();
+        assert_eq!(post_success.len(), 1);
+        if let ResponseContent::PostSuccess(digest, id) = post_success[0].content.clone() {
+            let message_hash = sha512::hash(&unwrap_result!(
+                serialisation::serialise(&post_correct_env.request))[..]);
+            assert_eq!(message_hash, digest);
+            assert_eq!(post_correct_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", post_success[0]);
+        }
+        assert_eq!(post_correct_env.client, post_success[0].dst);
+        assert_eq!(Authority::NaeManager(post_correct_env.sd_data.name()), post_success[0].src);
+        assert_eq!(Some(sd_new.clone()),
+                   env.get_from_chunkstore(&put_env.sd_data.name()));
+
+        // update to a new owner, wrong signature
+        let keys2 = sign::gen_keypair();
+        sd_new_bad = unwrap_result!(StructuredData::new(0,
+                                                        *put_env.sd_data.get_identifier(),
+                                                        2,
+                                                        put_env.sd_data.get_data().clone(),
+                                                        vec![keys2.0],
+                                                        vec![put_env.keys.0],
+                                                        Some(&keys2.1)));
+        let _ = env.post_existing_sd_data(sd_new_bad.clone(),
+                                          put_env.keys.clone(),
+                                          put_env.client.clone());
+        post_failure = env.routing.post_failures_given();
+        assert_eq!(post_failure.len(), 3);
+        if let ResponseContent::PostFailure{ ref external_error_indicator, .. } =
+               post_failure[2].content.clone() {
+            assert!(external_error_indicator.is_empty());
+        } else {
+            panic!("Received unexpected response {:?}", post_failure[2]);
+        }
+        assert_eq!(Some(sd_new.clone()),
+                   env.get_from_chunkstore(&put_env.sd_data.name()));
+
+        // update to a new owner, correct signature
+        sd_new = unwrap_result!(StructuredData::new(0,
+                                                    *put_env.sd_data.get_identifier(),
+                                                    2,
+                                                    put_env.sd_data.get_data().clone(),
+                                                    vec![keys2.0],
+                                                    vec![put_env.keys.0],
+                                                    Some(&put_env.keys.1)));
+        post_correct_env = env.post_existing_sd_data(sd_new.clone(),
+                                                     put_env.keys.clone(),
+                                                     put_env.client.clone());
+        post_success = env.routing.post_successes_given();
+        assert_eq!(env.routing.post_successes_given().len(), 2);
+        if let ResponseContent::PostSuccess(digest, id) = post_success[1].content.clone() {
+            let message_hash = sha512::hash(&unwrap_result!(
+                serialisation::serialise(&post_correct_env.request))[..]);
+            assert_eq!(message_hash, digest);
+            assert_eq!(post_correct_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", post_success[1]);
+        }
+        assert_eq!(Some(sd_new.clone()),
+                   env.get_from_chunkstore(&put_env.sd_data.name()));
+    }
+
+    #[test]
+    fn handle_delete() {
+        let mut env = Environment::new();
+        // posting to non-existent data
+        let delete_env = env.delete_sd_data();
+        assert_eq!(None, env.get_from_chunkstore(&delete_env.sd_data.name()));
+        let mut delete_failure = env.routing.delete_failures_given();
+        assert_eq!(delete_failure.len(), 1);
+        if let ResponseContent::DeleteFailure{ ref external_error_indicator, ref id, .. } =
+               delete_failure[0].content.clone() {
+            assert_eq!(delete_env.message_id, *id);
+            assert!(external_error_indicator.is_empty());
+        } else {
+            panic!("Received unexpected response {:?}", delete_failure[0]);
+        }
+        assert_eq!(delete_env.client, delete_failure[0].dst);
+        assert_eq!(Authority::NaeManager(delete_env.sd_data.name()), delete_failure[0].src);
+
+        // PUT the data
+        let put_env = env.put_existing_sd_data(delete_env.sd_data.clone(), delete_env.keys.clone());
+        assert_eq!(env.routing.put_successes_given().len(), 1);
+
+        // incorrect version
+        let sd_new_bad = unwrap_result!(StructuredData::new(0,
+                                                            *put_env.sd_data.get_identifier(),
+                                                            3,
+                                                            vec![],
+                                                            vec![put_env.keys.0],
+                                                            vec![],
+                                                            Some(&put_env.keys.1)));
+        let _ = env.delete_existing_sd_data(sd_new_bad.clone(),
+                                            put_env.keys.clone(),
+                                            put_env.client.clone());
+        delete_failure = env.routing.delete_failures_given();
+        assert_eq!(delete_failure.len(), 2);
+        if let ResponseContent::DeleteFailure{ ref external_error_indicator, .. } =
+               delete_failure[1].content.clone() {
+            assert!(external_error_indicator.is_empty());
+        } else {
+            panic!("Received unexpected response {:?}", delete_failure[1]);
+        }
+        assert_eq!(Some(put_env.sd_data.clone()),
+                   env.get_from_chunkstore(&sd_new_bad.name()));
+
+        // correct version
+        let sd_new = unwrap_result!(StructuredData::new(0,
+                                                        *put_env.sd_data.get_identifier(),
+                                                        1,
+                                                        vec![],
+                                                        vec![put_env.keys.0],
+                                                        vec![],
+                                                        Some(&put_env.keys.1)));
+        let delete_correct_env = env.delete_existing_sd_data(sd_new.clone(),
+                                                             put_env.keys.clone(),
+                                                             put_env.client.clone());
+        let delete_success = env.routing.delete_successes_given();
+        assert_eq!(delete_success.len(), 1);
+        if let ResponseContent::DeleteSuccess(digest, id) = delete_success[0].content.clone() {
+            let message_hash = sha512::hash(&unwrap_result!(
+                serialisation::serialise(&delete_correct_env.request))[..]);
+            assert_eq!(message_hash, digest);
+            assert_eq!(delete_correct_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", delete_success[0]);
+        }
+        assert_eq!(delete_correct_env.client, delete_success[0].dst);
+        assert_eq!(Authority::NaeManager(delete_correct_env.sd_data.name()), delete_success[0].src);
+        assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
+
+        // block put after deletion
+        let _ = env.put_existing_sd_data(put_env.sd_data.clone(), put_env.keys.clone());
+        assert_eq!(env.routing.put_failures_given().len(), 1);
+        assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
+
+        // block post after deletion
+        let _ = env.post_existing_sd_data(put_env.sd_data.clone(),
+                                          put_env.keys.clone(),
+                                          put_env.client.clone());
+        assert_eq!(env.routing.post_failures_given().len(), 1);
+        assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
+
+        // block refresh in after deletion
+        let _ = env.structured_data_manager.handle_refresh(put_env.sd_data.clone());
+        assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
+    }
+
+    #[test]
+    fn handle_churn() {
+        let mut env = Environment::new();
+        let put_env = env.put_sd_data();
+        assert_eq!(env.routing.put_successes_given().len(), 1);
+
+        let lost_node = env.lose_close_node(&put_env.sd_data.name());
+        env.routing.remove_node_from_routing_table(&lost_node);
+        let _ = env.structured_data_manager.handle_churn(&env.routing);
+
+        let refresh_requests = env.routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests[0].src, Authority::NaeManager(put_env.sd_data.name()));
+        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.sd_data.name()));
+        if let RequestContent::Refresh(received_serialised_refresh) = refresh_requests[0].content
+                                                                                         .clone() {
+            let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                    &received_serialised_refresh[..]));
+            if let RefreshValue::StructuredDataManager(received_data) =
+                   parsed_refresh.value.clone() {
+                assert_eq!(received_data, put_env.sd_data);
+            } else {
+                panic!("Received unexpected refresh value {:?}", parsed_refresh);
+            }
+        } else {
+            panic!("Received unexpected refresh {:?}", refresh_requests[0]);
+        }
+    }
+
+    #[test]
+    fn handle_refresh() {
+        // Refresh a structured_data in
+        let mut env = Environment::new();
+        let keys = sign::gen_keypair();
+        let sd_data = unwrap_result!(StructuredData::new(0,
+                                                         random(),
+                                                         0,
+                                                         utils::generate_random_vec_u8(1024),
+                                                         vec![keys.0],
+                                                         vec![],
+                                                         Some(&keys.1)));
+        let _ = env.structured_data_manager.handle_refresh(sd_data.clone());
+        assert_eq!(Some(sd_data.clone()),
+                   env.get_from_chunkstore(&sd_data.name()));
+        // Refresh an incorrect version new structured_data in
+        let sd_bad = unwrap_result!(StructuredData::new(0,
+                                                        *sd_data.get_identifier(),
+                                                        3,
+                                                        sd_data.get_data().clone(),
+                                                        vec![keys.0],
+                                                        vec![],
+                                                        Some(&keys.1)));
+        let _ = env.structured_data_manager.handle_refresh(sd_bad.clone());
+        // Refresh a correct version new structured_data in
+        let sd_new = unwrap_result!(StructuredData::new(0,
+                                                        *sd_data.get_identifier(),
+                                                        1,
+                                                        sd_data.get_data().clone(),
+                                                        vec![keys.0],
+                                                        vec![],
+                                                        Some(&keys.1)));
+        let _ = env.structured_data_manager.handle_refresh(sd_new.clone());
+        assert_eq!(Some(sd_new.clone()),
+                   env.get_from_chunkstore(&sd_data.name()));
+    }
+}
+
