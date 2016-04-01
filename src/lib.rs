@@ -197,8 +197,9 @@ mod utils;
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod core_tests;
 
+/// Mock crust
 #[cfg(feature = "use-mock-crust")]
-mod mock_crust;
+pub mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
@@ -206,7 +207,8 @@ pub use data::{Data, DataRequest};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use immutable_data::{ImmutableData, ImmutableDataType, normal_to_backup, backup_to_normal, normal_to_sacrificial,
+                         sacrificial_to_normal, backup_to_sacrificial, sacrificial_to_backup};
 pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
                    RoutingMessage, SignedMessage};
 pub use node::Node;
