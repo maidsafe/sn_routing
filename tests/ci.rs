@@ -368,7 +368,7 @@ fn core() {
                         content: RequestContent::Put(data, id),
                     })) => {
                         let src = Authority::ClientManager(name);
-                        let dst = Authority::NaeManager(data.name().clone());
+                        let dst = Authority::NaeManager(data.name());
                         unwrap_result!(nodes[index]
                                            .node
                                            .send_put_request(src, dst, data.clone(), id.clone()));
@@ -475,7 +475,7 @@ fn core() {
                                                         content: RequestContent::Put(data, id)
                           })) => {
                     let src = Authority::ClientManager(name);
-                    let dst = Authority::NaeManager(data.name().clone());
+                    let dst = Authority::NaeManager(data.name());
                     unwrap_result!(nodes[index]
                                        .node
                                        .send_put_request(src, dst, data.clone(), id.clone()));

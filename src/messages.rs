@@ -504,6 +504,7 @@ impl Debug for ResponseContent {
 
 
 #[cfg(test)]
+#[allow(shadow_unrelated)]
 mod test {
     extern crate rand;
 

@@ -28,6 +28,7 @@ pub struct FullId {
 
 impl FullId {
     /// Construct a FullId with newly generated keys.
+    #[allow(new_without_default)]
     pub fn new() -> FullId {
         let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
         let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();

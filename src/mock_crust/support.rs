@@ -18,7 +18,7 @@
 // It seems that code used only in tests is considered unused by rust.
 // TODO: Remove `unsafe_code` here again, once these changes are in stable:
 //       https://github.com/rust-lang/rust/issues/30756
-#![allow(unused, unsafe_code)]
+#![allow(unused, unsafe_code, shadow_reuse)]
 
 use rand;
 use std::cell::RefCell;
@@ -41,6 +41,7 @@ pub struct NetworkImpl {
 
 impl Network {
     /// Create new mock Network.
+    #[allow(new_without_default)]
     pub fn new() -> Self {
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
@@ -50,7 +51,10 @@ impl Network {
     }
 
     /// Create new ServiceHandle.
-    pub fn new_service_handle(&self, config: Option<Config>, endpoint: Option<Endpoint>) -> ServiceHandle {
+    pub fn new_service_handle(&self,
+                              config: Option<Config>,
+                              endpoint: Option<Endpoint>)
+                              -> ServiceHandle {
         let config = config.unwrap_or_else(Config::new);
         let endpoint = endpoint.unwrap_or_else(|| self.gen_endpoint());
 
@@ -151,7 +155,7 @@ impl ServiceImpl {
     pub fn start(&mut self, event_sender: CrustEventSender, _beacon_port: u16) {
         let mut pending_bootstraps = 0;
 
-        for endpoint in self.config.hard_coded_contacts.iter() {
+        for endpoint in &self.config.hard_coded_contacts {
             if *endpoint == self.endpoint {
                 continue;
             }
@@ -163,7 +167,8 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFinished
         // immediately.
         if pending_bootstraps == 0 {
-            let _ = event_sender.send(Event::BootstrapFinished).unwrap();
+            event_sender.send(Event::BootstrapFinished)
+                        .expect("Failed to send Event::BootstrapFinished");
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -252,7 +257,8 @@ impl ServiceImpl {
     }
 
     fn handle_connect_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        if self.is_connected(&peer_endpoint, &peer_id) && !self.pending_connects.contains(&peer_id) {
+        if self.is_connected(&peer_endpoint, &peer_id) &&
+           !self.pending_connects.contains(&peer_id) {
             warn!("Connection already exist");
         }
 
@@ -284,7 +290,10 @@ impl ServiceImpl {
     }
 
     fn send_event(&self, event: Event) {
-        let _ = self.event_sender.as_ref().unwrap().send(event);
+        let _ = self.event_sender
+                    .as_ref()
+                    .expect("Failed to send event")
+                    .send(event);
     }
 
     fn is_listening(&self) -> bool {
@@ -394,7 +403,7 @@ fn gen_peer_id(endpoint: Endpoint) -> PeerId {
 }
 
 /// Simulated crust config file.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Config {
     /// Contacts to bootstrap against.
     pub hard_coded_contacts: Vec<Endpoint>,
@@ -462,5 +471,9 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
 }
 
 pub fn get_current() -> ServiceHandle {
-    CURRENT.with(|current| current.borrow_mut().take().unwrap())
+    CURRENT.with(|current| {
+        current.borrow_mut()
+               .take()
+               .expect("get_current can be only called in the closure passed to make_current")
+    })
 }

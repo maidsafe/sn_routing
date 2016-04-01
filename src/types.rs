@@ -33,6 +33,7 @@ pub struct MessageId(XorName);
 #[cfg_attr(feature="clippy", allow(char_lit_as_u8))] // 'A' and 'L' are ASCII.
 impl MessageId {
     /// Generate a new `MessageId` with random content.
+    #[allow(new_without_default)]
     pub fn new() -> MessageId {
         MessageId(random::<XorName>())
     }
