@@ -68,6 +68,7 @@ mod config_handler;
 mod error;
 mod mock_routing;
 mod personas;
+#[cfg(all(test, feature = "use-mock-crust"))]
 mod tests;
 mod timed_buffer;
 mod types;
