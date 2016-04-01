@@ -109,9 +109,9 @@ pub fn main() {
     }
 
     if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, false));
     } else {
-        maidsafe_utilities::log::init(false);
+        let _ = maidsafe_utilities::log::init(false);
     }
 
     let mut message = String::from("Running ");

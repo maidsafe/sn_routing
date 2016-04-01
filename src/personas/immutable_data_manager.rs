@@ -1125,8 +1125,7 @@ impl Default for ImmutableDataManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
-    use maidsafe_utilities::log;
-    use maidsafe_utilities::serialisation;
+    use maidsafe_utilities::{log, serialisation};
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
@@ -1146,7 +1145,9 @@ mod test {
         pub client_manager: Authority,
         pub im_data: ImmutableData,
         pub message_id: MessageId,
-        pub request: RequestMessage,
+        pub incoming_request: RequestMessage,
+        pub outgoing_requests: Vec<RequestMessage>,
+        pub initial_holders: HashSet<DataHolder>,
     }
 
     struct GetEnvironment {
@@ -1162,7 +1163,7 @@ mod test {
 
     impl Environment {
         pub fn new() -> Environment {
-            log::init(false);
+            let _ = log::init(false);
             let env = Environment {
                 routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
                 immutable_data_manager: ImmutableDataManager::new(),
@@ -1214,17 +1215,29 @@ mod test {
             let message_id = MessageId::new();
             let content = RequestContent::Put(Data::Immutable(im_data.clone()), message_id);
             let client_manager = Authority::ClientManager(random());
-            let request = RequestMessage {
+            let client_request = RequestMessage {
                 src: client_manager.clone(),
                 dst: Authority::NaeManager(im_data.name()),
                 content: content.clone(),
             };
-            unwrap_result!(self.immutable_data_manager.handle_put(&self.routing, &request));
+            unwrap_result!(self.immutable_data_manager.handle_put(&self.routing, &client_request));
+            let outgoing_requests = self.routing.put_requests_given();
+            assert_eq!(outgoing_requests.len(), REPLICANTS + 2);
+            let initial_holders = outgoing_requests.iter()
+                                                   .map(|put_request| {
+                                                       DataHolder::Pending(put_request.dst
+                                                                                      .name()
+                                                                                      .clone())
+                                                   })
+                                                   .take(REPLICANTS)
+                                                   .collect();
             PutEnvironment {
                 client_manager: client_manager,
                 im_data: im_data,
                 message_id: message_id,
-                request: request,
+                incoming_request: client_request,
+                outgoing_requests: outgoing_requests,
+                initial_holders: initial_holders,
             }
         }
 
@@ -1258,19 +1271,45 @@ mod test {
     fn handle_put() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        assert_eq!(put_requests.len(), REPLICANTS);
-        for req in &put_requests {
+        let backup_message_id = MessageId::increment_first_byte(&put_env.message_id);
+        let sacrificial_message_id = MessageId::increment_first_byte(&backup_message_id);
+        for (index, req) in put_env.outgoing_requests.iter().enumerate() {
             assert_eq!(req.src, Authority::NaeManager(put_env.im_data.name()));
-            assert_eq!(req.content,
-                       RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
-                                           put_env.message_id.clone()));
+            if index < REPLICANTS {
+                if let Authority::NodeManager(_) = req.dst {} else {
+                    panic!()
+                }
+                assert_eq!(req.content,
+                           RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
+                                               put_env.message_id.clone()));
+            } else if index == REPLICANTS {
+                let backup = ImmutableData::new(ImmutableDataType::Backup,
+                                                put_env.im_data.value().clone());
+                if let Authority::NaeManager(dst) = req.dst {
+                    assert_eq!(backup.name(), dst);
+                } else {
+                    panic!();
+                }
+                assert_eq!(req.content,
+                           RequestContent::Put(Data::Immutable(backup), backup_message_id));
+            } else {
+                let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
+                                                     put_env.im_data.value().clone());
+                if let Authority::NaeManager(dst) = req.dst {
+                    assert_eq!(sacrificial.name(), dst);
+                } else {
+                    panic!();
+                }
+                assert_eq!(req.content,
+                           RequestContent::Put(Data::Immutable(sacrificial),
+                                               sacrificial_message_id));
+            }
         }
         let put_successes = env.routing.put_successes_given();
         assert_eq!(put_successes.len(), 1);
         if let ResponseContent::PutSuccess(digest, id) = put_successes[0].content.clone() {
             let message_hash =
-                sha512::hash(&unwrap_result!(serialisation::serialise(&put_env.request))[..]);
+                sha512::hash(&unwrap_result!(serialisation::serialise(&put_env.incoming_request))[..]);
             assert_eq!(message_hash, digest);
             assert_eq!(put_env.message_id, id);
         } else {
@@ -1286,8 +1325,8 @@ mod test {
         let mut env = Environment::new();
         let im_data = env.get_close_data();
         let get_env = env.get_im_data(im_data.name());
-        assert_eq!(env.routing.get_requests_given().len(), 0);
-        assert_eq!(env.routing.get_successes_given().len(), 0);
+        assert!(env.routing.get_requests_given().is_empty());
+        assert!(env.routing.get_successes_given().is_empty());
         let get_failure = env.routing.get_failures_given();
         assert_eq!(get_failure.len(), 1);
         if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
@@ -1311,8 +1350,8 @@ mod test {
         let put_env = env.put_im_data();
 
         let get_env = env.get_im_data(put_env.im_data.name());
-        assert_eq!(env.routing.get_requests_given().len(), 0);
-        assert_eq!(env.routing.get_failures_given().len(), 0);
+        assert!(env.routing.get_requests_given().is_empty());
+        assert!(env.routing.get_failures_given().is_empty());
         let get_success = env.routing.get_successes_given();
         assert_eq!(get_success.len(), 1);
         if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
@@ -1328,20 +1367,14 @@ mod test {
     fn get_after_put_success() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: Vec<XorName> = put_requests.iter()
-                                                     .map(|put_request| {
-                                                         put_request.dst.name().clone()
-                                                     })
-                                                     .collect();
-        assert_eq!(data_holders.len(), REPLICANTS);
-        for data_holder in &data_holders {
-            let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
+        for data_holder in &put_env.initial_holders {
+            let _ = env.immutable_data_manager
+                       .handle_put_success(data_holder.name(), &put_env.message_id);
         }
 
         let get_env = env.get_im_data(put_env.im_data.name());
-        assert_eq!(env.routing.get_successes_given().len(), 0);
-        assert_eq!(env.routing.get_failures_given().len(), 0);
+        assert!(env.routing.get_successes_given().is_empty());
+        assert!(env.routing.get_failures_given().is_empty());
         let get_requests = env.routing.get_requests_given();
         assert_eq!(get_requests.len(), REPLICANTS);
         for get_request in &get_requests {
@@ -1353,7 +1386,8 @@ mod test {
             }
             assert_eq!(Authority::NaeManager(put_env.im_data.name()),
                        get_request.src);
-            assert!(data_holders.contains(get_request.dst.name()));
+            assert!(put_env.initial_holders
+                           .contains(&DataHolder::Pending(*get_request.dst.name())));
         }
     }
 
@@ -1361,28 +1395,23 @@ mod test {
     fn handle_put_failure() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: Vec<XorName> = put_requests.iter()
-                                                     .map(|put_request| {
-                                                         put_request.dst.name().clone()
-                                                     })
-                                                     .collect();
-
-        let mut current_holders = data_holders.clone();
-        for data_holder in &data_holders {
+        let mut current_put_request_count = put_env.outgoing_requests.len();
+        let mut current_holders = put_env.initial_holders.clone();
+        for data_holder in &put_env.initial_holders {
             let _ = env.immutable_data_manager
-                       .handle_put_failure(&env.routing, data_holder, &put_env.message_id);
+                       .handle_put_failure(&env.routing, data_holder.name(), &put_env.message_id);
             let put_requests = env.routing.put_requests_given();
-            let put_request = unwrap_option!(put_requests.last(), "");
-            assert_eq!(put_requests.len(), current_holders.len() + 1);
-            assert_eq!(put_request.src,
+            let last_put_request = unwrap_option!(put_requests.last(), "");
+            assert_eq!(put_requests.len(), current_put_request_count + 1);
+            assert_eq!(last_put_request.src,
                        Authority::NaeManager(put_env.im_data.name()));
-            assert_eq!(put_request.content,
+            assert_eq!(last_put_request.content,
                        RequestContent::Put(Data::Immutable(put_env.im_data.clone()),
                                            put_env.message_id.clone()));
-            let new_holder = put_request.dst.name().clone();
-            assert!(current_holders.contains(&new_holder) == false);
-            current_holders.push(new_holder);
+            let new_holder = DataHolder::Pending(last_put_request.dst.name().clone());
+            assert!(!current_holders.contains(&new_holder));
+            current_put_request_count += 1;
+            current_holders.insert(new_holder);
         }
     }
 
@@ -1390,69 +1419,114 @@ mod test {
     fn handle_get_failure() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: Vec<XorName> = put_requests.iter()
-                                                     .map(|put_request| {
-                                                         put_request.dst.name().clone()
-                                                     })
-                                                     .collect();
-        for data_holder in &data_holders {
-            let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
+        for data_holder in &put_env.initial_holders {
+            let _ = env.immutable_data_manager
+                       .handle_put_success(data_holder.name(), &put_env.message_id);
         }
 
-        // As there is no available data, no replication happens.
-        // After all data_holders marked as Bad, a get_failure shall be returned.
         let get_env = env.get_im_data(put_env.im_data.name());
-        let get_requests = env.routing.get_requests_given();
+        let mut get_requests = env.routing.get_requests_given();
         assert_eq!(get_requests.len(), REPLICANTS);
-        let mut failure_count = 0;
-        for get_request in &get_requests {
-            let _ = env.immutable_data_manager.handle_get_failure(&env.routing,
-                                                                  get_request.dst.name(),
-                                                                  &get_env.message_id,
-                                                                  &get_request,
-                                                                  &[]);
-            failure_count += 1;
-            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
+
+        // The first holder responds with failure - no further Puts or Gets triggered
+        {
+            let get_request = unwrap_option!(get_requests.first(), "");
+            unwrap_result!(env.immutable_data_manager.handle_get_failure(&env.routing,
+                                                                         get_request.dst.name(),
+                                                                         &get_env.message_id,
+                                                                         &get_request,
+                                                                         &[]));
+            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
             assert_eq!(env.routing.get_requests_given().len(), REPLICANTS);
-            assert_eq!(env.routing.get_successes_given().len(), 0);
-            if failure_count == REPLICANTS {
-                let get_failure = env.routing.get_failures_given();
-                assert_eq!(get_failure.len(), 1);
-                if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
-                       get_failure[0].content.clone() {
-                    assert_eq!(get_env.message_id, *id);
-                    let parsed_error =
-                        unwrap_result!(serialisation::deserialise(external_error_indicator));
-                    if let GetError::NoSuchData = parsed_error {} else {
-                        panic!("Received unexpected external_error_indicator with parsed error \
-                                as {:?}",
-                               parsed_error);
-                    }
-                } else {
-                    panic!("Received unexpected response {:?}", get_failure[0]);
-                }
-                assert_eq!(get_env.client, get_failure[0].dst);
-                assert_eq!(Authority::NaeManager(put_env.im_data.name()),
-                           get_failure[0].src);
-            } else {
-                assert_eq!(env.routing.get_failures_given().len(), 0);
-            }
+            assert!(env.routing.get_successes_given().is_empty());
+            assert!(env.routing.get_failures_given().is_empty());
         }
+
+        // The second holder responds with failure - should trigger Gets from Backup and Sacrificial
+        // DMs
+        {
+            let get_request = unwrap_option!(get_requests.get(1), "");
+            unwrap_result!(env.immutable_data_manager.handle_get_failure(&env.routing,
+                                                                         get_request.dst.name(),
+                                                                         &get_env.message_id,
+                                                                         &get_request,
+                                                                         &[]));
+        }
+        assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
+        assert!(env.routing.get_successes_given().is_empty());
+        assert!(env.routing.get_failures_given().is_empty());
+        get_requests = env.routing.get_requests_given();
+        assert_eq!(get_requests.len(), REPLICANTS + 2);
+
+        let backup_get_request = unwrap_option!(get_requests.get(REPLICANTS), "");
+        let backup = ImmutableData::new(ImmutableDataType::Backup, put_env.im_data.value().clone());
+        if let Authority::NaeManager(dst) = backup_get_request.dst {
+            assert_eq!(backup.name(), dst);
+        } else {
+            panic!();
+        }
+        assert_eq!(backup_get_request.content,
+                   RequestContent::Get(DataRequest::Immutable(backup.name(),
+                                                              ImmutableDataType::Backup),
+                                       get_env.message_id));
+
+        let sacrificial_get_request = unwrap_option!(get_requests.last(), "");
+        let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
+                                             put_env.im_data.value().clone());
+        if let Authority::NaeManager(dst) = sacrificial_get_request.dst {
+            assert_eq!(sacrificial.name(), dst);
+        } else {
+            panic!();
+        }
+        assert_eq!(sacrificial_get_request.content,
+                   RequestContent::Get(DataRequest::Immutable(sacrificial.name(),
+                                                              ImmutableDataType::Sacrificial),
+                                       get_env.message_id));
+
+        // The Sacrificial holder responds with failure - should trigger no further messages
+        unwrap_result!(env.immutable_data_manager
+                          .handle_get_from_other_location_failure(&env.routing,
+                                                                  &sacrificial_get_request));
+        assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
+        assert_eq!(env.routing.get_requests_given().len(), REPLICANTS + 2);
+        assert!(env.routing.get_successes_given().is_empty());
+        assert!(env.routing.get_failures_given().is_empty());
+
+        // The Normal holder responds with failure - should trigger failure response to Client since
+        // the original request was for Normal data
+        unwrap_result!(env.immutable_data_manager
+                          .handle_get_from_other_location_failure(&env.routing,
+                                                                  &backup_get_request));
+        assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
+        assert_eq!(env.routing.get_requests_given().len(), REPLICANTS + 2);
+        assert!(env.routing.get_successes_given().is_empty());
+
+        let get_failures = env.routing.get_failures_given();
+        assert_eq!(get_failures.len(), 1);
+        let get_failure = unwrap_option!(get_failures.first(), "");
+        if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
+               get_failure.content.clone() {
+            assert_eq!(get_env.message_id, *id);
+            let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
+            if let GetError::NoSuchData = parsed_error {} else {
+                panic!("Received unexpected external_error_indicator with parsed error as {:?}",
+                       parsed_error);
+            }
+        } else {
+            panic!("Received unexpected response {:?}", get_failure);
+        }
+        assert_eq!(get_env.client, get_failure.dst);
+        assert_eq!(Authority::NaeManager(put_env.im_data.name()),
+                   get_failure.src);
     }
 
     #[test]
     fn handle_get_success() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: Vec<XorName> = put_requests.iter()
-                                                     .map(|put_request| {
-                                                         put_request.dst.name().clone()
-                                                     })
-                                                     .collect();
-        for data_holder in &data_holders {
-            let _ = env.immutable_data_manager.handle_put_success(data_holder, &put_env.message_id);
+        for data_holder in &put_env.initial_holders {
+            let _ = env.immutable_data_manager
+                       .handle_put_success(data_holder.name(), &put_env.message_id);
         }
 
         let get_env = env.get_im_data(put_env.im_data.name());
@@ -1468,9 +1542,9 @@ mod test {
             };
             let _ = env.immutable_data_manager.handle_get_success(&env.routing, &response);
             success_count += 1;
-            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS);
+            assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
             assert_eq!(env.routing.get_requests_given().len(), REPLICANTS);
-            assert_eq!(env.routing.get_failures_given().len(), 0);
+            assert!(env.routing.get_failures_given().is_empty());
             if success_count == 1 {
                 let get_success = env.routing.get_successes_given();
                 assert_eq!(get_success.len(), 1);
@@ -1513,18 +1587,12 @@ mod test {
     fn churn_during_put() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: HashSet<DataHolder> =
-            put_requests.iter()
-                        .map(|put_request| DataHolder::Pending(put_request.dst.name().clone()))
-                        .collect();
-
-        let mut account = Account::new(&ImmutableDataType::Normal, data_holders.clone());
+        let mut account = Account::new(&ImmutableDataType::Normal, put_env.initial_holders.clone());
         let mut churn_count = 0;
         let mut replicants = REPLICANTS;
-        let mut put_request_len = REPLICANTS;
+        let mut put_request_len = REPLICANTS + 2;
         let mut replication_put_message_id: MessageId;
-        for data_holder in &data_holders {
+        for data_holder in &put_env.initial_holders {
             churn_count += 1;
             if churn_count % 2 == 0 {
                 let lost_node = env.lose_close_node(&put_env.im_data.name());
@@ -1620,23 +1688,19 @@ mod test {
     fn churn_after_put() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: HashSet<DataHolder> =
-            put_requests.iter()
-                        .map(|put_request| {
-                            let _ = env.immutable_data_manager
-                                       .handle_put_success(put_request.dst.name(),
-                                                           &put_env.message_id);
-                            DataHolder::Good(put_request.dst.name().clone())
-                        })
-                        .collect();
+        let mut good_holders = HashSet::new();
+        for data_holder in &put_env.initial_holders {
+            unwrap_result!(env.immutable_data_manager
+                              .handle_put_success(data_holder.name(), &put_env.message_id));
+            good_holders.insert(DataHolder::Good(*data_holder.name()));
+        }
 
-        let mut account = Account::new(&ImmutableDataType::Normal, data_holders.clone());
+        let mut account = Account::new(&ImmutableDataType::Normal, good_holders.clone());
         let mut churn_count = 0;
         let mut get_message_id: MessageId;
         let mut get_requests_len = 0;
         let mut replicants = REPLICANTS;
-        for _data_holder in &data_holders {
+        for _data_holder in &good_holders {
             churn_count += 1;
             if churn_count % 2 == 0 {
                 let lost_node = env.lose_close_node(&put_env.im_data.name());
@@ -1710,20 +1774,17 @@ mod test {
     fn churn_during_get() {
         let mut env = Environment::new();
         let put_env = env.put_im_data();
-        let put_requests = env.routing.put_requests_given();
-        let data_holders: HashSet<DataHolder> =
-            put_requests.iter()
-                        .map(|put_request| {
-                            let _ = env.immutable_data_manager
-                                       .handle_put_success(put_request.dst.name(),
-                                                           &put_env.message_id);
-                            DataHolder::Good(put_request.dst.name().clone())
-                        })
-                        .collect();
+        let mut good_holders = HashSet::new();
+        for data_holder in &put_env.initial_holders {
+            unwrap_result!(env.immutable_data_manager
+                              .handle_put_success(data_holder.name(), &put_env.message_id));
+            good_holders.insert(DataHolder::Good(*data_holder.name()));
+        }
+
         let get_env = env.get_im_data(put_env.im_data.name());
         let get_requests = env.routing.get_requests_given();
 
-        let mut account = Account::new(&ImmutableDataType::Normal, data_holders.clone());
+        let mut account = Account::new(&ImmutableDataType::Normal, good_holders.clone());
         let mut churn_count = 0;
         let mut get_response_len = 0;
         for get_request in &get_requests {
@@ -1811,7 +1872,7 @@ mod test {
                        env.immutable_data_manager.ongoing_gets.len() == 0 {
                         // A replication after ongoing_get get cleared picks up REPLICANTS
                         // number of pmid_nodes as new data_holder
-                        assert_eq!(env.routing.put_requests_given().len(), 2 * REPLICANTS);
+                        assert_eq!(env.routing.put_requests_given().len(), (2 * REPLICANTS) + 2);
                         assert!(received_account.pmid_nodes().len() >= REPLICANTS);
                         return;
                     } else {
@@ -1825,5 +1886,4 @@ mod test {
             }
         }
     }
-
 }

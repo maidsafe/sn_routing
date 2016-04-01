@@ -57,7 +57,7 @@ impl Client {
             Ok(data) => Ok(data),
             Err(failure) => {
                 match failure {
-                    CoreError::GetFailure{ref request, ref reason} => {
+                    CoreError::GetFailure { ref request, ref reason } => {
                         assert_eq!(data_request, *request);
                         Err(reason.clone())
                     }
@@ -74,7 +74,7 @@ impl Client {
             Ok(_) => Ok(()),
             Err(failure) => {
                 match failure {
-                    CoreError::MutationFailure{ref data, ref reason} => {
+                    CoreError::MutationFailure { ref data, ref reason } => {
                         assert_eq!(testing_data, *data);
                         Err(reason.clone())
                     }
@@ -92,7 +92,7 @@ impl Client {
             Ok(_) => Ok(()),
             Err(failure) => {
                 match failure {
-                    CoreError::MutationFailure{ref data, ref reason} => {
+                    CoreError::MutationFailure { ref data, ref reason } => {
                         assert_eq!(testing_data, *data);
                         Err(reason.clone())
                     }
@@ -110,7 +110,7 @@ impl Client {
             Ok(_) => Ok(()),
             Err(failure) => {
                 match failure {
-                    CoreError::MutationFailure{ref data, ref reason} => {
+                    CoreError::MutationFailure { ref data, ref reason } => {
                         assert_eq!(testing_data, *data);
                         Err(reason.clone())
                     }

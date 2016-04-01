@@ -87,9 +87,9 @@ mod test {
         let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
 
         for i in 0..10 {
-            assert_eq!(timed_buffer.map.len(), i);
+            assert_eq!(timed_buffer.len(), i);
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.map.len(), i + 1);
+            assert_eq!(timed_buffer.len(), i + 1);
         }
     }
 
@@ -100,9 +100,9 @@ mod test {
         let insertions = 10;
 
         for i in 0..insertions {
-            assert_eq!(timed_buffer.map.len(), i);
+            assert!(!timed_buffer.contains_key(&i));
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.map.len(), i + 1);
+            assert!(timed_buffer.contains_key(&i));
         }
 
         thread::sleep(::std::time::Duration::from_millis(100));

@@ -11,13 +11,13 @@ version = "0.5.0"
 
 [dependencies]
 chunk_store = "~0.3.0"
-clippy = {version = "~0.0.56", optional = true}
+clippy = {version = "~0.0.59", optional = true}
 config_file_handler = "~0.3.0"
 ctrlc = "~1.1.1"
 docopt = "~0.6.78"
 log = "~0.3.5"
-maidsafe_utilities = "~0.4.1"
-routing = "~0.11.1"
+maidsafe_utilities = "~0.5.0"
+routing = "~0.12.0"
 rustc-serialize = "~0.3.18"
 safe_network_common = "~0.0.1"
 sodiumoxide = "~0.0.9"
@@ -27,7 +27,7 @@ xor_name = "~0.1.0"
 [dev-dependencies]
 kademlia_routing_table = "~0.4.0"
 rand = "~0.3.14"
-safe_core = "~0.12.1"
+safe_core = "~0.13.0"
 
 [features]
 use-mock-routing = []
