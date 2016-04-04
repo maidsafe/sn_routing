@@ -1729,6 +1729,7 @@ impl Core {
         } else {
             warn!("Disconnecting {:?}.", peer_id);
             let _ = self.crust_service.disconnect(peer_id);
+            let _ = self.peer_map.remove(peer_id);
         }
         Ok(())
     }
@@ -2385,7 +2386,7 @@ impl Core {
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if let Some(public_id) = self.proxy_map.remove(peer_id) {
-            trace!("Lost bootstrap connection to {:?} (peer ID {:?}).",
+            trace!("Lost bootstrap connection to {:?} ({:?}).",
                    public_id.name(),
                    peer_id);
             if self.proxy_map.is_empty() {
