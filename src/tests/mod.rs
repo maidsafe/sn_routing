@@ -21,11 +21,11 @@ mod poll;
 mod test_client;
 mod test_node;
 
-use rand::{thread_rng, Rng};
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType};
 use routing::mock_crust::{Config, Network};
 
 use self::test_client::TestClient;
+use utils;
 
 #[test]
 fn plain_data_put_and_get() {
@@ -37,8 +37,7 @@ fn plain_data_put_and_get() {
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
-    let mut content = vec![0; 1024];
-    thread_rng().fill_bytes(&mut content);
+    let content = utils::generate_random_vec_u8(1024);
     let orig_data = ImmutableData::new(ImmutableDataType::Normal, content);
 
     client.put(Data::Immutable(orig_data.clone()), &mut nodes);
@@ -46,9 +45,9 @@ fn plain_data_put_and_get() {
     match client.get(DataRequest::Immutable(orig_data.name(), ImmutableDataType::Normal), &mut nodes) {
         Data::Immutable(data) => {
             assert_eq!(data.name(), orig_data.name());
-            assert_eq!(data.value(), orig_data.value());
+            assert!(data.value() == orig_data.value());
         },
 
-        d => panic!("Got unexpected data: {:?}", d),
+        data => panic!("Got unexpected data: {:?}", data),
     }
 }

@@ -98,7 +98,7 @@ impl TestClient {
                 return data;
             }
 
-            r => panic!("Expected GetSuccess, got: {:?}", r),
+            event => panic!("Expected GetSuccess, got: {:?}", event),
         }
     }
 
@@ -117,7 +117,7 @@ impl TestClient {
                 assert_eq!(request_message_id, response_message_id);
             }
 
-            r => panic!("Expected PutSuccess, got: {:?}", r),
+            event => panic!("Expected PutSuccess, got: {:?}", event),
         }
     }
 }
