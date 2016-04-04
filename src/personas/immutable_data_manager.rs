@@ -143,6 +143,7 @@ impl MetadataForGetRequest {
 
         if self.pmid_nodes.is_empty() {
             // There are no "Good" holders for this type, so send Get to other types' DMs
+            let mut msg_id = message_id;
             let (normal_name, backup_name, sacrificial_name) = match self.requested_data_type {
                 ImmutableDataType::Normal => {
                     (None,
@@ -165,21 +166,24 @@ impl MetadataForGetRequest {
                 let data_type = ImmutableDataType::Normal;
                 log(&data_type, &normal_name, &dst);
                 let data_request = DataRequest::Immutable(normal_name, data_type);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, message_id);
+                msg_id = MessageId::increment_first_byte(&msg_id);
+                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
             }
             if let Some(backup_name) = backup_name {
                 let dst = Authority::NaeManager(backup_name);
                 let data_type = ImmutableDataType::Backup;
                 log(&data_type, &backup_name, &dst);
                 let data_request = DataRequest::Immutable(backup_name, data_type);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, message_id);
+                msg_id = MessageId::increment_first_byte(&msg_id);
+                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
             }
             if let Some(sacrificial_name) = sacrificial_name {
                 let dst = Authority::NaeManager(sacrificial_name);
                 let data_type = ImmutableDataType::Sacrificial;
                 log(&data_type, &sacrificial_name, &dst);
                 let data_request = DataRequest::Immutable(sacrificial_name, data_type);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, message_id);
+                msg_id = MessageId::increment_first_byte(&msg_id);
+                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
             }
         } else {
             // Send to pmid_nodes (which should be "Good" holders)
@@ -421,10 +425,10 @@ impl ImmutableDataManager {
                               request: &RequestMessage,
                               _external_error_indicator: &[u8])
                               -> Result<(), InternalError> {
-        let mut result = Err(InternalError::FailedToFindCachedRequest(*message_id));
+        let mut metadata_message_id = None;
         let data_name = if let Ok((data_name, metadata)) =
                                self.find_ongoing_get_after_failure(request) {
-            result = Ok(());
+            metadata_message_id = Some(metadata.message_id);
 
             // Mark the responder as "failed" in the cached get request
             let predicate = |elt: &DataHolder| {
@@ -465,10 +469,12 @@ impl ImmutableDataManager {
             trace!("Account for {} updated to {:?}", data_name, account);
         }
 
-        if result.is_ok() {
-            try!(self.check_and_replicate_after_get(routing_node, &data_name, message_id));
+        if let Some(msg_id) = metadata_message_id {
+            try!(self.check_and_replicate_after_get(routing_node, &data_name, &msg_id));
+            Ok(())
+        } else {
+            Err(InternalError::FailedToFindCachedRequest(*message_id))
         }
-        result
     }
 
     pub fn handle_get_from_other_location_failure(&mut self,
@@ -581,28 +587,31 @@ impl ImmutableDataManager {
 
     pub fn check_timeout(&mut self, routing_node: &RoutingNode) {
         for data_name in &self.ongoing_gets.get_expired() {
-            // Safe to unwrap here as we just got all these keys via `get_expired`
-            let mut metadata = self.ongoing_gets
-                                   .remove(data_name)
-                                   .expect("Logic error in TimedBuffer");
-            for pmid_node in &mut metadata.pmid_nodes {
-                // Get timed-out PmidNodes
-                if let DataHolder::Pending(name) = *pmid_node {
-                    warn!("PmidNode {} failed to reply to Get request for {}.",
-                          name,
-                          data_name);
-                    // Mark it as failed in the cache
-                    *pmid_node = DataHolder::Failed(name);
-                    // Mark it as "failed" in the account if it was previously marked "good"
-                    if let Some(account) = self.accounts.get_mut(data_name) {
-                        if account.pmid_nodes_mut().remove(&DataHolder::Good(name)) {
-                            account.pmid_nodes_mut().insert(DataHolder::Failed(name));
+            let message_id;
+            {
+                // Safe to unwrap here as we just got all these keys via `get_expired`
+                let mut metadata = self.ongoing_gets
+                                       .get_mut(data_name)
+                                       .expect("Logic error in TimedBuffer");
+                for pmid_node in &mut metadata.pmid_nodes {
+                    // Get timed-out PmidNodes
+                    if let DataHolder::Pending(name) = *pmid_node {
+                        warn!("PmidNode {} failed to reply to Get request for {}.",
+                              name,
+                              data_name);
+                        // Mark it as failed in the cache
+                        *pmid_node = DataHolder::Failed(name);
+                        // Mark it as "failed" in the account if it was previously marked "good"
+                        if let Some(account) = self.accounts.get_mut(data_name) {
+                            if account.pmid_nodes_mut().remove(&DataHolder::Good(name)) {
+                                account.pmid_nodes_mut().insert(DataHolder::Failed(name));
+                            }
                         }
                     }
                 }
+                message_id = metadata.message_id;
             }
-            let message_id = metadata.message_id;
-            let _ = self.ongoing_gets.insert(*data_name, metadata);
+            // let _ = self.ongoing_gets.insert(*data_name, metadata);
             let _ = self.check_and_replicate_after_get(routing_node, data_name, &message_id);
         }
     }
@@ -989,7 +998,7 @@ impl ImmutableDataManager {
                 finished = true;
             } else {
                 // Recover the data from backup and/or sacrificial locations
-                Self::recover_from_backup(routing_node, metadata, data_name, message_id);
+                Self::recover_from_other_locations(routing_node, metadata, data_name, message_id);
             }
         } else {
             warn!("Failed to find metadata for check_and_replicate_after_get of {}",
@@ -1062,12 +1071,12 @@ impl ImmutableDataManager {
         Ok(new_pmid_nodes)
     }
 
-    fn recover_from_backup(routing_node: &RoutingNode,
+    fn recover_from_other_locations(routing_node: &RoutingNode,
                            metadata: &mut MetadataForGetRequest,
                            data_name: &XorName,
                            message_id: &MessageId) {
         metadata.pmid_nodes.clear();
-        // If this Vault is a Backup or Sacrificial manager just return failure to any clients
+        // If this Vault is a Backup or Sacrificial manager just return failure to any requesters
         // waiting for responses.
         match metadata.requested_data_type {
             ImmutableDataType::Backup | ImmutableDataType::Sacrificial => {
@@ -1465,10 +1474,11 @@ mod test {
         } else {
             panic!();
         }
+        let mut expected_message_id = MessageId::increment_first_byte(&get_env.message_id);
         assert_eq!(backup_get_request.content,
                    RequestContent::Get(DataRequest::Immutable(backup.name(),
                                                               ImmutableDataType::Backup),
-                                       get_env.message_id));
+                                       expected_message_id));
 
         let sacrificial_get_request = unwrap_option!(get_requests.last(), "");
         let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
@@ -1478,10 +1488,11 @@ mod test {
         } else {
             panic!();
         }
+        expected_message_id = MessageId::increment_first_byte(&expected_message_id);
         assert_eq!(sacrificial_get_request.content,
                    RequestContent::Get(DataRequest::Immutable(sacrificial.name(),
                                                               ImmutableDataType::Sacrificial),
-                                       get_env.message_id));
+                                       expected_message_id));
 
         // The Sacrificial holder responds with failure - should trigger no further messages
         unwrap_result!(env.immutable_data_manager
@@ -1492,7 +1503,7 @@ mod test {
         assert!(env.routing.get_successes_given().is_empty());
         assert!(env.routing.get_failures_given().is_empty());
 
-        // The Normal holder responds with failure - should trigger failure response to Client since
+        // The Backup holder responds with failure - should trigger failure response to Client since
         // the original request was for Normal data
         unwrap_result!(env.immutable_data_manager
                           .handle_get_from_other_location_failure(&env.routing,
