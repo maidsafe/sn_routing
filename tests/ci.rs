@@ -73,7 +73,7 @@ use detail::*;
 fn main() {
     let mut failed = false;
     {
-        maidsafe_utilities::log::init(true);
+        let _ = maidsafe_utilities::log::init(true);
         let vault_count = VAULT_COUNT;
         let min_wait = CHURN_MIN_WAIT_SEC;
         let max_wait = CHURN_MAX_WAIT_SEC;

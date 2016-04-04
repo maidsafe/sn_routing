@@ -140,6 +140,7 @@ impl Vault {
                 warn!("Failed to handle event: {:?}", error);
             }
 
+            self.immutable_data_manager.check_timeout(routing_node);
             self.pmid_manager.check_timeout(routing_node);
         }
 
@@ -155,12 +156,15 @@ impl Vault {
                   -> Result<(), InternalError> {
         match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
+             &Authority::NaeManager(_),
+             &RequestContent::Get(DataRequest::Immutable(_, _), _)) |
+            (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
                 self.immutable_data_manager.handle_get(routing_node, &request)
             }
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::NaeManager(_),
              &RequestContent::Get(DataRequest::Structured(_, _), _)) => {
                 self.structured_data_manager.handle_get(routing_node, &request)
@@ -171,15 +175,15 @@ impl Vault {
                 self.pmid_node.handle_get(routing_node, &request)
             }
             // ================== Put ==================
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::Immutable(_), _)) |
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::Structured(_), _)) => {
                 self.maid_manager.handle_put(routing_node, &request)
             }
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
@@ -188,6 +192,9 @@ impl Vault {
                 self.mpid_manager.handle_put(routing_node, &request)
             }
             (&Authority::ClientManager(_),
+             &Authority::NaeManager(_),
+             &RequestContent::Put(Data::Immutable(_), _)) |
+            (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Immutable(_), _)) => {
                 self.immutable_data_manager.handle_put(routing_node, &request)
@@ -210,15 +217,13 @@ impl Vault {
             // ================== Post ==================
             (&Authority::NaeManager(_),
              &Authority::NodeManager(_),
-             &RequestContent::Post(_, _)) => {
-                self.pmid_manager.handle_post(&request)
-            }
-            (&Authority::Client{ .. },
+             &RequestContent::Post(_, _)) => self.pmid_manager.handle_post(&request),
+            (&Authority::Client { .. },
              &Authority::NaeManager(_),
              &RequestContent::Post(Data::Structured(_), _)) => {
                 self.structured_data_manager.handle_post(routing_node, &request)
             }
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Post(Data::Plain(_), _)) |
             (&Authority::ClientManager(_),
@@ -227,12 +232,12 @@ impl Vault {
                 self.mpid_manager.handle_post(routing_node, &request)
             }
             // ================== Delete ==================
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Delete(Data::Plain(_), _)) => {
                 self.mpid_manager.handle_delete(routing_node, &request)
             }
-            (&Authority::Client{ .. },
+            (&Authority::Client { .. },
              &Authority::NaeManager(_),
              &RequestContent::Delete(Data::Structured(_), _)) => {
                 self.structured_data_manager.handle_delete(routing_node, &request)
@@ -254,19 +259,28 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
+             &ResponseContent::GetSuccess(Data::Immutable(_), _)) |
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::Immutable(_), _)) => {
                 self.immutable_data_manager.handle_get_success(routing_node, &response)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator }) => {
+             &ResponseContent::GetFailure { ref id, ref request, ref external_error_indicator }) => {
                 self.immutable_data_manager
                     .handle_get_failure(routing_node,
                                         pmid_node,
                                         id,
                                         request,
                                         external_error_indicator)
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             &ResponseContent::GetFailure { ref request, .. }) => {
+                self.immutable_data_manager
+                    .handle_get_from_other_location_failure(routing_node, request)
             }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
@@ -296,17 +310,17 @@ impl Vault {
             }
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::PutFailure{ ref id, .. }) => {
+             &ResponseContent::PutFailure { ref id, .. }) => {
                 self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, id)
             }
             (&Authority::ManagedNode(_),
              &Authority::NodeManager(_),
-             &ResponseContent::PutFailure{ ref request, .. }) => {
+             &ResponseContent::PutFailure { ref request, .. }) => {
                 self.pmid_manager.handle_put_failure(routing_node, request)
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutFailure{ ref request, .. }) => {
+             &ResponseContent::PutFailure { ref request, .. }) => {
                 self.mpid_manager.handle_put_failure(routing_node, request)
             }
             // ================== Invalid Response ==================

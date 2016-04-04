@@ -148,9 +148,7 @@ impl PmidManager {
 
     // Posting from DM to PM is only used to notify a get_failure
     // the encapulated data can be any, as the chunk is now meansured by unit instead of size
-    pub fn handle_post(&mut self,
-                       request: &RequestMessage)
-                       -> Result<(), InternalError> {
+    pub fn handle_post(&mut self, request: &RequestMessage) -> Result<(), InternalError> {
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
             account.lost_data();
         }
@@ -401,7 +399,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.from_authority);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
@@ -513,7 +511,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.from_authority);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
@@ -575,7 +573,7 @@ mod test {
             }
             refresh_count += 1;
         } else {
-            assert_eq!(refresh_requests.len(), 0);
+            assert!(refresh_requests.is_empty());
         }
 
         env.routing.node_lost_event(lose_close_node(&env));

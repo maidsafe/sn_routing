@@ -324,7 +324,7 @@ mod test {
 
     impl Environment {
         pub fn new() -> Environment {
-            log::init(true);
+            let _ = log::init(true);
             let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
             Environment {
                 routing: routing,

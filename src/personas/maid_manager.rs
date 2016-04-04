@@ -145,10 +145,13 @@ impl MaidManager {
                                     match routing_node.close_group(*maid_name) {
                                         Ok(None) => {
                                             trace!("No longer a MM for {}", maid_name);
-                                            let requests = mem::replace(&mut self.request_cache, HashMap::new());
+                                            let requests = mem::replace(&mut self.request_cache,
+                                                                        HashMap::new());
                                             self.request_cache =
                                                 requests.into_iter()
-                                                        .filter(|&(_, ref r)| utils::client_name(&r.src) != *maid_name)
+                                                        .filter(|&(_, ref r)| {
+                                                            utils::client_name(&r.src) != *maid_name
+                                                        })
                                                         .collect();
                                             false
                                         }
@@ -204,9 +207,7 @@ impl MaidManager {
         let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
                                                                       ref message_id) =
                                                   request.content {
-            (Data::Structured(data.clone()),
-             data.get_type_tag(),
-             message_id)
+            (Data::Structured(data.clone()), data.get_type_tag(), message_id)
         } else {
             unreachable!("Logic error")
         };
@@ -468,7 +469,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
@@ -588,7 +589,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
@@ -731,7 +732,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.client);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, valid_request);
@@ -787,7 +788,7 @@ mod test {
             }
             refresh_count += 1;
         } else {
-            assert_eq!(refresh_requests.len(), 0);
+            assert!(refresh_requests.is_empty());
         }
 
         env.routing.node_lost_event(lose_close_node(&env));

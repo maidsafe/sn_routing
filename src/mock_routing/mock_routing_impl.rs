@@ -398,7 +398,7 @@ impl MockRoutingNodeImpl {
                      thread_name: &str)
                      -> ResponseMessage {
         let sender = match dst {
-            Authority::Client{ .. } => self.client_sender.clone(),
+            Authority::Client { .. } => self.client_sender.clone(),
             _ => self.sender.clone(),
         };
         let message = ResponseMessage {

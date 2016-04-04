@@ -19,8 +19,7 @@ use chunk_store::ChunkStore;
 use error::InternalError;
 use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
-use routing::{Data, DataRequest, ImmutableData, MessageId, RequestContent,
-              RequestMessage};
+use routing::{Data, DataRequest, ImmutableData, MessageId, RequestContent, RequestMessage};
 use sodiumoxide::crypto::hash::sha512;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;

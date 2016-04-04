@@ -1291,8 +1291,10 @@ mod test {
         assert_eq!(post_failures[0].src, env.our_authority);
         assert_eq!(post_failures[0].dst,
                    Authority::ClientManager(receiver_name.clone()));
-        if let ResponseContent::PostFailure{ ref id, ref request, ref external_error_indicator } =
-               post_failures[0].content {
+        if let ResponseContent::PostFailure { ref id,
+                                              ref request,
+                                              ref external_error_indicator } = post_failures[0]
+                                                                                   .content {
             let wrapper = MpidMessageWrapper::GetMessage(mpid_header.clone());
             let value = unwrap_result!(serialisation::serialise(&wrapper));
             let plain_data = PlainData::new(mpid_header_name, value);
@@ -1383,7 +1385,9 @@ mod test {
         assert_eq!(delete_failures[0].src,
                    Authority::ClientManager(receiver_name.clone()));
         assert_eq!(delete_failures[0].dst, receiver);
-        if let ResponseContent::DeleteFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::DeleteFailure { ref id,
+                                                ref request,
+                                                ref external_error_indicator } =
                delete_failures[0].content {
             let mpid_header_wrapper = MpidMessageWrapper::DeleteHeader(mpid_header_name);
             let value = unwrap_result!(serialisation::serialise(&mpid_header_wrapper));

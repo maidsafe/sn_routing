@@ -40,7 +40,6 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
     }
 
     /// Get a value meanwhile update it's timestamp
-    #[allow(unused)]
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
         self.map.get_mut(key).map(|&mut (ref mut value, ref mut time_stamp)| {
             *time_stamp = SteadyTime::now();
@@ -62,6 +61,17 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
             .map(|(key, &(_, _))| key.clone())
             .collect()
     }
+
+    // Returns true if the map contains a value for the specified key.
+    pub fn contains_key(&self, key: &Key) -> bool {
+        self.map.contains_key(key)
+    }
+
+    /// Returns the number of entries.
+    #[cfg(all(test, feature = "use-mock-routing"))]
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
 }
 
 
@@ -77,9 +87,9 @@ mod test {
         let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
 
         for i in 0..10 {
-            assert_eq!(timed_buffer.map.len(), i);
+            assert_eq!(timed_buffer.len(), i);
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.map.len(), i + 1);
+            assert_eq!(timed_buffer.len(), i + 1);
         }
     }
 
@@ -90,9 +100,9 @@ mod test {
         let insertions = 10;
 
         for i in 0..insertions {
-            assert_eq!(timed_buffer.map.len(), i);
+            assert!(!timed_buffer.contains_key(&i));
             let _ = timed_buffer.insert(i, i);
-            assert_eq!(timed_buffer.map.len(), i + 1);
+            assert!(timed_buffer.contains_key(&i));
         }
 
         thread::sleep(::std::time::Duration::from_millis(100));
