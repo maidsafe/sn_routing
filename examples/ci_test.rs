@@ -127,7 +127,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                              let mut node = NodeProcess(try!(Command::new(current_exe_path.clone())
                                                                  .args(&args)
                                                                  .stdout(Stdio::piped())
-                                                                 .stderr(Stdio::piped())
+                                                                 .stderr(Stdio::inherit())
                                                                  .spawn()),
                                                         i + 1);
 
