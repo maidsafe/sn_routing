@@ -143,7 +143,7 @@ impl Vault {
         CtrlC::set_handler(move || {
             // Drop the routing node to close the event channel which terminates
             // the receive loop and thus this whole function.
-            let _ = routing_node0.lock().as_mut().map(Option::take);
+            let _ = routing_node0.lock().as_mut().map(|mut node| node.take());
         });
 
         for event in routing_receiver.iter() {
@@ -171,6 +171,14 @@ impl Vault {
 
         self.routing_node = Some(routing_node);
         result
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_stored_names(&self) -> Vec<XorName> {
+        let mut stored_names = self.pmid_node.get_stored_names();
+        let mut structured_data_names = self.structured_data_manager.get_stored_names();
+        stored_names.append(&mut structured_data_names);
+        stored_names
     }
 
     fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
