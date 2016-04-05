@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
+#![deny(unused)]
 
 mod poll;
 mod test_client;
@@ -173,7 +173,7 @@ fn plain_data_put_and_get() {
 #[test]
 fn test1() {
     let network = Network::new();
-    let mut node_count = 2 * 8;
+    let node_count = 2 * 8;
     let mut nodes = test_node::create_nodes(&network, node_count);
     let config = Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
@@ -181,10 +181,10 @@ fn test1() {
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
-    let mut rng = thread_rng();
     let mut all_data = Vec::new();
     let mut all_immutable_data = Vec::new();
     let mut all_structured_data = Vec::new();
+    let mut rng = thread_rng();
     let immutable_range = Range::new(128, 1024);
     let structured_range = Range::new(1, 10000);
     let put_range = Range::new(50, 100);
@@ -239,7 +239,7 @@ fn test1() {
 
     check_data(all_immutable_data.clone(), all_structured_data.clone(), all_stored_names.clone());
 
-    for i in 0..3 {
+    for _ in 0..3 {
         for _ in 0..3 {
             let node_range = Range::new(1, nodes.len());
             let node_index = node_range.ind_sample(&mut rng);
@@ -257,7 +257,7 @@ fn test1() {
         check_data(all_immutable_data.clone(), all_structured_data.clone(), all_stored_names.clone());
 
         test_node::add_nodes(&network, &mut nodes, 3);
-        // poll::nodes_and_client(&mut nodes, &mut client);
+        poll::nodes_and_client(&mut nodes, &mut client);
         all_stored_names.clear();
 
         for node in &nodes {
