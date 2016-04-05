@@ -40,7 +40,7 @@
 //! with Concise Binary Object Representation (CBOR).
 //!
 //!
-//! ## Usage
+//! # Usage
 //!
 //! A decentralised service based on the `routing` library uses `Client` to send requests to the
 //! network of nodes and receive responses.
@@ -49,7 +49,7 @@
 //! functionality, e. g. storing and retrieving data, validating permissions, managing metadata etc.
 //!
 //!
-//! # Client creation
+//! ## Client creation
 //!
 //! A client's name is a hash of its public keys. Upon creation, the client will attempt to connect
 //! to the network through any node, and exchange public keys with it. That node becomes a
@@ -70,7 +70,7 @@
 //! `receiver`.
 //!
 //!
-//! # Node creation
+//! ## Node creation
 //!
 //! Creating a node looks even simpler:
 //!
@@ -92,7 +92,7 @@
 //! same message.
 //!
 //!
-//! # Example: Put message flow for immutable data
+//! ## Example: Put message flow for immutable data
 //!
 //! An example implementation of a vault for storing and retrieving `ImmutableData` is included
 //! with the code of this library. The flow of a `Put` request there moves through the following
@@ -132,6 +132,10 @@
 //!
 //! * by a client or individual node, or
 //! * by a sufficient number of members of a group authority.
+//!
+//! # Sequence diagrams
+//!
+//! [Bootstrapping](https://cacoo.com/diagrams/th3ie0I5yOM5ymJq-F56A2.png)
 //!
 
 #![doc(html_logo_url =
