@@ -74,12 +74,13 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
-// TODO This is a current limitation but once responses are coded this can ideally be close to 0
 const CHURN_MIN_WAIT_SEC: u64 = 10;
 const CHURN_MAX_WAIT_SEC: u64 = 15;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
+/// The number of churn-get cycles.
+const DEFAULT_BATCHES: usize = 1;
 /// Only start the next node when the previous one has reached this routing table size.
 const DELAY_RT_SIZE: usize = GROUP_SIZE;
 
@@ -223,7 +224,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     Ok(())
 }
 
-fn store_and_verify(requests: usize) {
+fn store_and_verify(requests: usize, batches: usize) {
     println!("--------- Starting Client -----------");
     let mut example_client = ExampleClient::new();
 
@@ -249,19 +250,20 @@ fn store_and_verify(requests: usize) {
         // };
     }
 
-    println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
-    thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
+    for batch in 0..batches {
+        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
+        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
-    // Get the data again.
-    println!("--------- Getting Data -----------");
-    for (i, data_item) in stored_data.iter().enumerate().take(requests) {
-        println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
-        if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
-            assert_eq!(data, stored_data[i]);
-        } else {
-            println!("Failed to recover stored data: {}.", data_item.name());
-            break;
-        };
+        println!("--------- Getting Data - batch {} of {} -----------", batch + 1, batches);
+        for (i, data_item) in stored_data.iter().enumerate().take(requests) {
+            println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
+            if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
+                assert_eq!(data, stored_data[i]);
+            } else {
+                println!("Failed to recover stored data: {}.", data_item.name());
+                break;
+            };
+        }
     }
 }
 
@@ -269,7 +271,9 @@ fn store_and_verify(requests: usize) {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  ci_test [(<nodes> <requests>) | (--output=<log_file> [-c [<requests>]] [-d] | -h)]
+  ci_test -h
+  ci_test --output=<log_file> [-c [<requests> [<batches>]]] [-d]
+  ci_test [<nodes> <requests> [<batches>]]
 
 Options:
   -o, --output=<log_file>       Run individual CI node.
@@ -281,6 +285,7 @@ Options:
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
+    arg_batches: Option<usize>,
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
     flag_output: Option<String>,
@@ -296,6 +301,8 @@ fn main() {
                          .unwrap_or_else(|error| error.exit());
 
     let run_network_test = !(args.flag_output.is_some() || args.flag_delete_bootstrap_cache.is_some());
+    let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
+    let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
 
     if run_network_test {
         let node_count = match args.arg_nodes {
@@ -310,14 +317,12 @@ fn main() {
             None => DEFAULT_NODE_COUNT,
         };
 
-        let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
-
         let nodes = unwrap_result!(start_nodes(node_count));
 
         let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
 
-        store_and_verify(requests);
+        store_and_verify(requests, batches);
 
         // Graceful exit
         {
@@ -333,8 +338,7 @@ fn main() {
         }
 
         if Some(true) == args.flag_client {
-            let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
-            store_and_verify(requests);
+            store_and_verify(requests, batches);
         } else {
             ExampleNode::new().run();
         }
