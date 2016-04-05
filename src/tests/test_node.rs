@@ -75,3 +75,16 @@ pub fn create_nodes(network:& Network, size: usize) -> Vec<TestNode> {
 
     nodes
 }
+
+pub fn add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize) {
+    let mut config = None;
+
+    if !nodes.is_empty() {
+        config = Some(Config::with_contacts(&[nodes[0].endpoint()]));
+    }
+
+    for _ in 0..size {
+        nodes.push(TestNode::new(network, config.clone()));
+        poll::nodes(&mut nodes);
+    }
+}
