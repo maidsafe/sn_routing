@@ -275,8 +275,8 @@ mod test {
     use maidsafe_utilities::serialisation;
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
-    use routing::{Authority, Data, DataRequest, MessageId, RequestContent,
-                  RequestMessage, ResponseContent, ResponseMessage, StructuredData};
+    use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
+                  ResponseContent, ResponseMessage, StructuredData};
     use safe_network_common::client_errors::{GetError, MutationError};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
@@ -335,8 +335,7 @@ mod test {
         pub fn get_close_data(&self, keys: (PublicKey, SecretKey)) -> StructuredData {
             loop {
                 let identifier = random();
-                let structured_data =
-                    unwrap_result!(StructuredData::new(0,
+                let structured_data = unwrap_result!(StructuredData::new(0,
                                                        identifier,
                                                        0,
                                                        utils::generate_random_vec_u8(1024),
@@ -520,7 +519,8 @@ mod test {
             panic!("Received unexpected response {:?}", put_responses[0]);
         }
         assert_eq!(put_env.client_manager, put_responses[0].dst);
-        assert_eq!(Authority::NaeManager(put_env.sd_data.name()), put_responses[0].src);
+        assert_eq!(Authority::NaeManager(put_env.sd_data.name()),
+                   put_responses[0].src);
 
         let get_env = env.get_sd_data(put_env.sd_data.clone());
         let get_responses = env.routing.get_successes_given();
@@ -535,7 +535,7 @@ mod test {
         assert_eq!(get_responses[0].dst, get_env.client);
     }
 
-   #[test]
+    #[test]
     fn handle_put_get_error_flow() {
         // This shows a non-owner can still store the sd_data
         let mut env = Environment::new();
@@ -552,7 +552,7 @@ mod test {
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].dst, put_existing_env.client_manager);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, put_existing_env.message_id);
             assert_eq!(*request, put_existing_env.request);
@@ -573,7 +573,7 @@ mod test {
         assert_eq!(env.routing.get_successes_given().len(), 0);
         let get_failure = env.routing.get_failures_given();
         assert_eq!(get_failure.len(), 1);
-        if let ResponseContent::GetFailure{ ref external_error_indicator, ref id, .. } =
+        if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
                get_failure[0].content.clone() {
             assert_eq!(get_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
@@ -585,7 +585,8 @@ mod test {
             panic!("Received unexpected response {:?}", get_failure[0]);
         }
         assert_eq!(get_env.client, get_failure[0].dst);
-        assert_eq!(Authority::NaeManager(non_existing_sd_data.name()), get_failure[0].src);
+        assert_eq!(Authority::NaeManager(non_existing_sd_data.name()),
+                   get_failure[0].src);
     }
 
     #[test]
@@ -596,7 +597,7 @@ mod test {
         assert_eq!(None, env.get_from_chunkstore(&post_env.sd_data.name()));
         let mut post_failure = env.routing.post_failures_given();
         assert_eq!(post_failure.len(), 1);
-        if let ResponseContent::PostFailure{ ref external_error_indicator, ref id, .. } =
+        if let ResponseContent::PostFailure { ref external_error_indicator, ref id, .. } =
                post_failure[0].content.clone() {
             assert_eq!(post_env.message_id, *id);
             assert!(external_error_indicator.is_empty());
@@ -604,7 +605,8 @@ mod test {
             panic!("Received unexpected response {:?}", post_failure[0]);
         }
         assert_eq!(post_env.client, post_failure[0].dst);
-        assert_eq!(Authority::NaeManager(post_env.sd_data.name()), post_failure[0].src);
+        assert_eq!(Authority::NaeManager(post_env.sd_data.name()),
+                   post_failure[0].src);
 
         // PUT the data
         let put_env = env.put_existing_sd_data(post_env.sd_data.clone(), post_env.keys.clone());
@@ -614,7 +616,9 @@ mod test {
         let mut sd_new_bad = unwrap_result!(StructuredData::new(0,
                                                                 *put_env.sd_data.get_identifier(),
                                                                 3,
-                                                                put_env.sd_data.get_data().clone(),
+                                                                put_env.sd_data
+                                                                       .get_data()
+                                                                       .clone(),
                                                                 vec![put_env.keys.0],
                                                                 vec![],
                                                                 Some(&put_env.keys.1)));
@@ -623,7 +627,7 @@ mod test {
                                                            put_env.client.clone());
         post_failure = env.routing.post_failures_given();
         assert_eq!(post_failure.len(), 2);
-        if let ResponseContent::PostFailure{ ref external_error_indicator, ref id, .. } =
+        if let ResponseContent::PostFailure { ref external_error_indicator, ref id, .. } =
                post_failure[1].content.clone() {
             assert_eq!(post_incorrect_env.message_id, *id);
             assert!(external_error_indicator.is_empty());
@@ -631,7 +635,8 @@ mod test {
             panic!("Received unexpected response {:?}", post_failure[1]);
         }
         assert_eq!(post_incorrect_env.client, post_failure[1].dst);
-        assert_eq!(Authority::NaeManager(post_incorrect_env.sd_data.name()), post_failure[1].src);
+        assert_eq!(Authority::NaeManager(post_incorrect_env.sd_data.name()),
+                   post_failure[1].src);
         assert_eq!(Some(put_env.sd_data.clone()),
                    env.get_from_chunkstore(&sd_new_bad.name()));
 
@@ -657,7 +662,8 @@ mod test {
             panic!("Received unexpected response {:?}", post_success[0]);
         }
         assert_eq!(post_correct_env.client, post_success[0].dst);
-        assert_eq!(Authority::NaeManager(post_correct_env.sd_data.name()), post_success[0].src);
+        assert_eq!(Authority::NaeManager(post_correct_env.sd_data.name()),
+                   post_success[0].src);
         assert_eq!(Some(sd_new.clone()),
                    env.get_from_chunkstore(&put_env.sd_data.name()));
 
@@ -675,8 +681,9 @@ mod test {
                                           put_env.client.clone());
         post_failure = env.routing.post_failures_given();
         assert_eq!(post_failure.len(), 3);
-        if let ResponseContent::PostFailure{ ref external_error_indicator, .. } =
-               post_failure[2].content.clone() {
+        if let ResponseContent::PostFailure { ref external_error_indicator, .. } = post_failure[2]
+                                                                                       .content
+                                                                                       .clone() {
             assert!(external_error_indicator.is_empty());
         } else {
             panic!("Received unexpected response {:?}", post_failure[2]);
@@ -717,7 +724,7 @@ mod test {
         assert_eq!(None, env.get_from_chunkstore(&delete_env.sd_data.name()));
         let mut delete_failure = env.routing.delete_failures_given();
         assert_eq!(delete_failure.len(), 1);
-        if let ResponseContent::DeleteFailure{ ref external_error_indicator, ref id, .. } =
+        if let ResponseContent::DeleteFailure { ref external_error_indicator, ref id, .. } =
                delete_failure[0].content.clone() {
             assert_eq!(delete_env.message_id, *id);
             assert!(external_error_indicator.is_empty());
@@ -725,7 +732,8 @@ mod test {
             panic!("Received unexpected response {:?}", delete_failure[0]);
         }
         assert_eq!(delete_env.client, delete_failure[0].dst);
-        assert_eq!(Authority::NaeManager(delete_env.sd_data.name()), delete_failure[0].src);
+        assert_eq!(Authority::NaeManager(delete_env.sd_data.name()),
+                   delete_failure[0].src);
 
         // PUT the data
         let put_env = env.put_existing_sd_data(delete_env.sd_data.clone(), delete_env.keys.clone());
@@ -744,7 +752,7 @@ mod test {
                                             put_env.client.clone());
         delete_failure = env.routing.delete_failures_given();
         assert_eq!(delete_failure.len(), 2);
-        if let ResponseContent::DeleteFailure{ ref external_error_indicator, .. } =
+        if let ResponseContent::DeleteFailure { ref external_error_indicator, .. } =
                delete_failure[1].content.clone() {
             assert!(external_error_indicator.is_empty());
         } else {
@@ -775,7 +783,8 @@ mod test {
             panic!("Received unexpected response {:?}", delete_success[0]);
         }
         assert_eq!(delete_correct_env.client, delete_success[0].dst);
-        assert_eq!(Authority::NaeManager(delete_correct_env.sd_data.name()), delete_success[0].src);
+        assert_eq!(Authority::NaeManager(delete_correct_env.sd_data.name()),
+                   delete_success[0].src);
         assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
 
         // block put after deletion
@@ -807,14 +816,17 @@ mod test {
 
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
-        assert_eq!(refresh_requests[0].src, Authority::NaeManager(put_env.sd_data.name()));
-        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.sd_data.name()));
-        if let RequestContent::Refresh(received_serialised_refresh) = refresh_requests[0].content
-                                                                                         .clone() {
+        assert_eq!(refresh_requests[0].src,
+                   Authority::NaeManager(put_env.sd_data.name()));
+        assert_eq!(refresh_requests[0].dst,
+                   Authority::NaeManager(put_env.sd_data.name()));
+        if let RequestContent::Refresh(received_serialised_refresh) = refresh_requests[0]
+                                                                          .content
+                                                                          .clone() {
             let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                     &received_serialised_refresh[..]));
-            if let RefreshValue::StructuredDataManager(received_data) =
-                   parsed_refresh.value.clone() {
+            if let RefreshValue::StructuredDataManager(received_data) = parsed_refresh.value
+                                                                                      .clone() {
                 assert_eq!(received_data, put_env.sd_data);
             } else {
                 panic!("Received unexpected refresh value {:?}", parsed_refresh);
@@ -861,4 +873,3 @@ mod test {
                    env.get_from_chunkstore(&sd_data.name()));
     }
 }
-

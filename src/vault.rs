@@ -59,16 +59,21 @@ pub struct Vault {
     structured_data_manager: StructuredDataManager,
     app_event_sender: Option<Sender<Event>>,
 
-    #[cfg(feature = "use-mock-crust")] routing_node: Option<RoutingNode>,
-    #[cfg(feature = "use-mock-crust")] routing_receiver: Receiver<Event>,
+    #[cfg(feature = "use-mock-crust")]
+    routing_node: Option<RoutingNode>,
+    #[cfg(feature = "use-mock-crust")]
+    routing_receiver: Receiver<Event>,
 }
 
-fn init_components() -> Result<(ImmutableDataManager,
-                                MaidManager,
-                                MpidManager,
-                                PmidManager,
-                                PmidNode,
-                                StructuredDataManager), InternalError> {
+fn init_components()
+    -> Result<(ImmutableDataManager,
+               MaidManager,
+               MpidManager,
+               PmidManager,
+               PmidNode,
+               StructuredDataManager),
+              InternalError>
+{
     ::sodiumoxide::init();
 
     let config = try!(config_handler::read_config_file());
