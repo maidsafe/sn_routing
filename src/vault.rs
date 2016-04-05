@@ -15,13 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage, RoutingMessage};
+#[cfg(not(feature = "use-mock-crust"))]
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::sync::mpsc::{self, Sender};
+#[cfg(feature = "use-mock-crust")]
+use std::sync::mpsc::Receiver;
 use xor_name::XorName;
 
 use config_handler;
@@ -54,100 +57,144 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
-    stop_receiver: Option<Receiver<()>>,
     app_event_sender: Option<Sender<Event>>,
+
+    #[cfg(feature = "use-mock-crust")] routing_node: Option<RoutingNode>,
+    #[cfg(feature = "use-mock-crust")] routing_receiver: Receiver<Event>,
+}
+
+fn init_components() -> Result<(ImmutableDataManager,
+                                MaidManager,
+                                MpidManager,
+                                PmidManager,
+                                PmidNode,
+                                StructuredDataManager), InternalError> {
+    ::sodiumoxide::init();
+
+    let config = try!(config_handler::read_config_file());
+    let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
+    let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
+    let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
+    let mpid_capacity = (max_capacity * MPID_MANAGER_ALLOWANCE) as u64;
+
+    Ok((ImmutableDataManager::new(),
+        MaidManager::new(),
+        try!(MpidManager::new(mpid_capacity)),
+        PmidManager::new(),
+        try!(PmidNode::new(pn_capacity)),
+        try!(StructuredDataManager::new(sdm_capacity))))
 }
 
 impl Vault {
-    pub fn run() {
-        let (stop_sender, stop_receiver) = mpsc::channel();
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+        let (immutable_data_manager,
+             maid_manager,
+             mpid_manager,
+             pmid_manager,
+             pmid_node,
+             structured_data_manager) = try!(init_components());
 
-        // Handle Ctrl+C to properly stop the vault instance.
-        // TODO: this should probably be moved over to main.
-        CtrlC::set_handler(move || {
-            let _ = stop_sender.send(());
-        });
-
-        // TODO - Keep retrying to construct new Vault until returns Ok() rather than using unwrap?
-        unwrap_result!(unwrap_result!(Vault::new(None, stop_receiver)).do_run());
-    }
-
-    fn new(app_event_sender: Option<Sender<Event>>,
-           stop_receiver: Receiver<()>)
-           -> Result<Vault, InternalError> {
-        ::sodiumoxide::init();
-        let config = try!(config_handler::read_config_file());
-        let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
-        let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
-        let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
-        let mpid_capacity = (max_capacity * MPID_MANAGER_ALLOWANCE) as u64;
         Ok(Vault {
-            immutable_data_manager: ImmutableDataManager::new(),
-            maid_manager: MaidManager::new(),
-            mpid_manager: try!(MpidManager::new(mpid_capacity)),
-            pmid_manager: PmidManager::new(),
-            pmid_node: try!(PmidNode::new(pn_capacity)),
-            structured_data_manager: try!(StructuredDataManager::new(sdm_capacity)),
-            stop_receiver: Some(stop_receiver),
+            immutable_data_manager: immutable_data_manager,
+            maid_manager: maid_manager,
+            mpid_manager: mpid_manager,
+            pmid_manager: pmid_manager,
+            pmid_node: pmid_node,
+            structured_data_manager: structured_data_manager,
             app_event_sender: app_event_sender,
         })
     }
 
-    fn do_run(&mut self) -> Result<(), InternalError> {
+    #[cfg(feature = "use-mock-crust")]
+    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+        let (immutable_data_manager,
+             maid_manager,
+             mpid_manager,
+             pmid_manager,
+             pmid_node,
+             structured_data_manager) = try!(init_components());
+
         let (routing_sender, routing_receiver) = mpsc::channel();
-
         let routing_node = try!(RoutingNode::new(routing_sender));
-        let routing_node1 = Arc::new(Mutex::new(Some(routing_node)));
-        let routing_node2 = routing_node1.clone();
 
-        // Take the stop_receiver from self, so we can move it into the stop thread.
-        let stop_receiver = unwrap_option!(self.stop_receiver.take(), "");
+        Ok(Vault {
+            immutable_data_manager: immutable_data_manager,
+            maid_manager: maid_manager,
+            mpid_manager: mpid_manager,
+            pmid_manager: pmid_manager,
+            pmid_node: pmid_node,
+            structured_data_manager: structured_data_manager,
+            app_event_sender: app_event_sender,
+            routing_node: Some(routing_node),
+            routing_receiver: routing_receiver,
+        })
+    }
 
-        // Listen for stop event and destroy the routing node if one is received.  Destroying it
-        // will close the routing event channel, stopping the main event loop.
-        let stop_thread_handle = thread::spawn(move || {
-            let _ = stop_receiver.recv();
-            let _ = unwrap_result!(routing_node1.lock()).take();
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn run(&mut self) -> Result<(), InternalError> {
+        let (routing_sender, routing_receiver) = mpsc::channel();
+        let routing_node = try!(RoutingNode::new(routing_sender));
+        let routing_node0 = Arc::new(Mutex::new(Some(routing_node)));
+        let routing_node1 = routing_node0.clone();
 
-            stop_receiver
+        // Handle Ctrl+C to properly stop the vault instance.
+        // TODO: do we really need this to terminate gracefully on Ctrl+C?
+        CtrlC::set_handler(move || {
+            // Drop the routing node to close the event channel which terminates
+            // the receive loop and thus this whole function.
+            let _ = routing_node0.lock().map(|mut node| node.take());
         });
 
         for event in routing_receiver.iter() {
-            let routing_node = unwrap_result!(routing_node2.lock());
+            let routing_node = unwrap_result!(routing_node1.lock());
 
-            if routing_node.is_none() {
+            if let Some(routing_node) = routing_node.as_ref() {
+                self.process_event(routing_node, event);
+            } else {
                 break;
             }
-
-            let routing_node = unwrap_option!(routing_node.as_ref(), "");
-
-            trace!("Vault {} received an event from routing: {:?}",
-                   unwrap_result!(routing_node.name()),
-                   event);
-
-            let _ = self.app_event_sender
-                        .clone()
-                        .and_then(|sender| Some(sender.send(event.clone())));
-
-            if let Err(error) = match event {
-                Event::Request(request) => self.on_request(routing_node, request),
-                Event::Response(response) => self.on_response(routing_node, response),
-                Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
-                Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
-                Event::Connected => self.on_connected(),
-                Event::Disconnected => self.on_disconnected(),
-            } {
-                warn!("Failed to handle event: {:?}", error);
-            }
-
-            self.immutable_data_manager.check_timeout(routing_node);
-            self.pmid_manager.check_timeout(routing_node);
         }
 
-        // Return the stop_receiver back to self, in case we want to call do_run again.
-        self.stop_receiver = Some(unwrap_result!(stop_thread_handle.join()));
-
         Ok(())
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn poll(&mut self) -> bool {
+        let mut routing_node = self.routing_node.take().expect("routing_node should never be None");
+        let mut result = routing_node.poll();
+
+        if let Ok(event) = self.routing_receiver.try_recv() {
+            self.process_event(&routing_node, event);
+            result = true
+        }
+
+        self.routing_node = Some(routing_node);
+        result
+    }
+
+    fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
+        trace!("Vault {} received an event from routing: {:?}",
+               unwrap_result!(routing_node.name()),
+               event);
+
+        let _ = self.app_event_sender
+                    .as_ref()
+                    .map(|sender| sender.send(event.clone()));
+
+        if let Err(error) = match event {
+            Event::Request(request) => self.on_request(routing_node, request),
+            Event::Response(response) => self.on_response(routing_node, response),
+            Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
+            Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
+            Event::Connected => self.on_connected(),
+            Event::Disconnected => self.on_disconnected(),
+        } {
+            warn!("Failed to handle event: {:?}", error);
+        }
+
+        self.immutable_data_manager.check_timeout(routing_node);
+        self.pmid_manager.check_timeout(routing_node);
     }
 
     fn on_request(&mut self,

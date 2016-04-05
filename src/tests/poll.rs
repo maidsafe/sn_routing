@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,20 +15,43 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::Authority;
-use sodiumoxide::crypto::hash::sha512;
-use xor_name::XorName;
+use super::test_client::TestClient;
+use super::test_node::TestNode;
 
-pub fn client_name(authority: &Authority) -> XorName {
-    if let Authority::Client { ref client_key, .. } = *authority {
-        XorName(sha512::hash(&client_key.0[..]).0)
-    } else {
-        unreachable!("Logic error")
+pub fn nodes(nodes: &mut [TestNode]) {
+    loop {
+        let mut next = false;
+
+        for node in nodes.iter_mut() {
+            if node.poll() {
+                next = true;
+                break;
+            }
+        }
+
+        if !next {
+            break;
+        }
     }
 }
 
-#[cfg(all(test, any(feature = "use-mock-routing", feature = "use-mock-crust")))]
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::{self, Rng};
-    rand::thread_rng().gen_iter().take(size).collect()
+pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) {
+    loop {
+        let mut next = false;
+
+        for node in nodes.iter_mut() {
+            if node.poll() {
+                next = true;
+                break;
+            }
+        }
+
+        if client.poll() {
+            next = true;
+        }
+
+        if !next {
+            break;
+        }
+    }
 }
