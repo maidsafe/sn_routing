@@ -230,7 +230,9 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap_result!(serialise(&(put_where, put_what)));
-        self.example_client.put(Data::Plain(PlainData::new(name, data)));
+        if self.example_client.put(Data::Plain(PlainData::new(name, data))).is_err() {
+            error!("Failed to put data.");
+        }
     }
 
     fn calculate_key_name(key: &str) -> XorName {

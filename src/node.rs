@@ -29,7 +29,6 @@ use data::{Data, DataRequest};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
-use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
 use types::MessageId;
 
@@ -204,13 +203,12 @@ impl Node {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
-                            request_hash: sha512::Digest,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutSuccess(request_hash, id),
+            content: ResponseContent::PutSuccess(id),
         });
         self.send_action(routing_msg)
     }
@@ -239,13 +237,12 @@ impl Node {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             request_hash: sha512::Digest,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostSuccess(request_hash, id),
+            content: ResponseContent::PostSuccess(id),
         });
         self.send_action(routing_msg)
     }
@@ -274,13 +271,12 @@ impl Node {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
-                               request_hash: sha512::Digest,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteSuccess(request_hash, id),
+            content: ResponseContent::DeleteSuccess(id),
         });
         self.send_action(routing_msg)
     }

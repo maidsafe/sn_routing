@@ -50,11 +50,12 @@ extern crate routing;
 extern crate xor_name;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
+extern crate term;
 extern crate time;
 
 mod utils;
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::time::Duration;
 use std::{cmp, io, env, thread};
 use std::sync::{Arc, Mutex, Condvar};
@@ -73,6 +74,8 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
+
+use term::color;
 
 const CHURN_MIN_WAIT_SEC: u64 = 10;
 const CHURN_MAX_WAIT_SEC: u64 = 15;
@@ -136,7 +139,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                              if i == 0 {
                                  node.wait_for_output("Running listener");
                              } else {
-                                 node.wait_for_output(format!("Routing Table size: {:3}", cmp::min(i, DELAY_RT_SIZE)));
+                                 node.wait_for_output(format!("Routing Table size: {:3}",
+                                                              cmp::min(i, DELAY_RT_SIZE)));
                              }
                              Ok(node)
                          })
@@ -162,8 +166,9 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
-                                                                          Duration::from_secs(wait_for)));
+                    let wake_up_result =
+                        unwrap_result!(cvar.wait_timeout(stop_condition,
+                                                         Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
                 }
@@ -187,7 +192,8 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        rng: &mut ThreadRng,
                        network_size: usize)
                        -> Result<(), io::Error> {
-    println!("About to churn on {} active nodes...", nodes.len());
+    print!("Churning on {} active nodes. ", nodes.len());
+    io::stdout().flush().ok().expect("Could not flush stdout");
 
     let mut log_file_number = nodes.len() + 1;
 
@@ -204,7 +210,8 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         // Never kill the bootstrap (0th) node
         let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
         let node = nodes.remove(kill_at_index);
-        println!("Killing Node #{}", node.1);
+        print!("Killing Node #{}: ", node.1);
+        io::stdout().flush().ok().expect("Could not flush stdout");
     } else {
         log_path.set_file_name(&format!("Node_{:02}.log", log_file_number));
         let arg = format!("--output={}", log_path.display());
@@ -224,6 +231,14 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     Ok(())
 }
 
+fn print_color(text: &str, color: color::Color) {
+    let mut term = term::stdout().expect("Could not open stdout.");
+    term.fg(color).expect("Failed to set color");
+    print!("{}", text);
+    term.reset().expect("Failed to restore stdout attributes.");
+    io::stdout().flush().ok().expect("Could not flush stdout");
+}
+
 fn store_and_verify(requests: usize, batches: usize) {
     println!("--------- Starting Client -----------");
     let mut example_client = ExampleClient::new();
@@ -237,30 +252,41 @@ fn store_and_verify(requests: usize, batches: usize) {
         let data = unwrap_result!(serialise(&(key, value)));
         let data = Data::Plain(PlainData::new(name, data));
 
-        println!("Putting Data: count #{} - Data {:?}", i + 1, name);
-        example_client.put(data.clone());
-        stored_data.push(data.clone());
-
-        // println!("Getting Data: count #{} - Data {:?}", i + 1, name);
-        // if let Some(data) = example_client.get(DataRequest::Plain(data.name())) {
-        //     assert_eq!(data, stored_data[i]);
-        // } else {
-        //     println!("Failed to recover stored data: {}.", data.name());
-        //     break;
-        // };
+        print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
+        io::stdout().flush().ok().expect("Could not flush stdout");
+        if example_client.put(data.clone()).is_ok() {
+            print_color("OK", color::GREEN);
+            print!(" - getting - ");
+            io::stdout().flush().ok().expect("Could not flush stdout");
+            stored_data.push(data.clone());
+            if let Some(got_data) = example_client.get(DataRequest::Plain(data.name())) {
+                assert_eq!(got_data, data);
+                print_color("OK\n", color::GREEN);
+            } else {
+                print_color("FAIL\n", color::RED);
+                break;
+            };
+        } else {
+            print_color("FAIL\n", color::RED);
+            break;
+        }
     }
 
     for batch in 0..batches {
         println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
         thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
 
-        println!("--------- Getting Data - batch {} of {} -----------", batch + 1, batches);
+        println!("--------- Getting Data - batch {} of {} -----------",
+                 batch + 1,
+                 batches);
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
-            println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
+            print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
+            io::stdout().flush().ok().expect("Could not flush stdout");
             if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
                 assert_eq!(data, stored_data[i]);
+                print_color("OK\n", color::GREEN);
             } else {
-                println!("Failed to recover stored data: {}.", data_item.name());
+                print_color("FAIL\n", color::RED);
                 break;
             };
         }
@@ -300,7 +326,8 @@ fn main() {
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|error| error.exit());
 
-    let run_network_test = !(args.flag_output.is_some() || args.flag_delete_bootstrap_cache.is_some());
+    let run_network_test = !(args.flag_output.is_some() ||
+                             args.flag_delete_bootstrap_cache.is_some());
     let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
     let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
 
