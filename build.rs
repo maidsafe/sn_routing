@@ -28,7 +28,7 @@ extern crate hyper;
 use hyper::Client;
 use hyper::client::IntoUrl;
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -43,6 +43,7 @@ fn main() {
   // List all diagrams names and URLs to download them from.
   download_image("bootstrap",       "https://cacoo.com/diagrams/cqX6QPN90ZuKXZ0n-F56A2.png");
   download_image("get-close-group", "https://cacoo.com/diagrams/PTBt1OgHVcdu0PKt-F56A2.png");
+  download_image("new-node",        "https://cacoo.com/diagrams/5VCFe286q4yfQ6Pm-F56A2.png");
 }
 
 fn download_image<U: IntoUrl>(name: &str, src: U) {
@@ -52,6 +53,11 @@ fn download_image<U: IntoUrl>(name: &str, src: U) {
 fn download<U: IntoUrl, P: AsRef<Path>>(src: U, dst: P) {
   let client = Client::new();
   let mut res = client.get(src).send().unwrap();
+
+  if let Some(dir) = dst.as_ref().parent() {
+    fs::create_dir_all(dir).unwrap();
+  }
+
   let mut file = File::create(dst).unwrap();
 
   io::copy(&mut res, &mut file).unwrap();
