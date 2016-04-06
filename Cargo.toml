@@ -8,6 +8,7 @@ name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
 version = "0.15.0"
+build = "build.rs"
 
 [dependencies]
 accumulator = "~0.2.0"
@@ -30,6 +31,13 @@ xor_name = "~0.1.0"
 docopt = "~0.6.80"
 libc = "~0.2.9"
 
+[build-dependencies]
+hyper = "0.8.0"
+
+[features]
+use-mock-crust = []
+generate-diagrams = []
+
 [[example]]
 bench = false
 name = "key_value_store"
@@ -40,5 +48,3 @@ bench = false
 name = "ci_test"
 test = false
 
-[features]
-use-mock-crust = []
