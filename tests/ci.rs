@@ -37,7 +37,8 @@
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
 // To avoid multiple cfg statements before each import.
-#![cfg_attr(any(feature="use-mock-routing", feature="use-mock-crust"), allow(unused, unused_extern_crates))]
+#![cfg_attr(any(feature="use-mock-routing", feature="use-mock-crust"),
+   allow(unused, unused_extern_crates))]
 
 extern crate kademlia_routing_table;
 #[macro_use]

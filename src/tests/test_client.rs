@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use rand::random;
-use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PublicId, ResponseContent,
-              ResponseMessage, StructuredData};
+use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PublicId,
+              ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use std::sync::mpsc::{self, Receiver};
 
@@ -32,7 +32,7 @@ pub struct TestClient {
 }
 
 impl TestClient {
-    pub fn new(network: &Network,  config: Option<Config>) -> Self {
+    pub fn new(network: &Network, config: Option<Config>) -> Self {
         let (routing_tx, routing_rx) = mpsc::channel();
 
         let full_id = FullId::new();

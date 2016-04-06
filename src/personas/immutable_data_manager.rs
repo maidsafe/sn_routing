@@ -25,6 +25,7 @@ use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
 use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
               PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use safe_network_common::client_errors::MutationError;
 use sodiumoxide::crypto::hash::sha512;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
@@ -32,6 +33,7 @@ use vault::RoutingNode;
 use xor_name::XorName;
 
 pub const REPLICANTS: usize = 2;
+const MAX_FULL_RATIO: f32 = 0.5;
 
 // Collection of PmidNodes holding a copy of the chunk
 #[derive(Clone, PartialEq, Eq, Debug, RustcEncodable, RustcDecodable)]
@@ -77,11 +79,12 @@ impl Account {
 
 
 
-// This is the name of a PmidNode which has been chosen to store the data on.  It is marked as
-// `Pending` until the response of the Put request is received, when it is then marked as `Good` or
-// `Failed` depending on the response result.  It remains `Good` until it fails a Get request, at
-// which time it is deemed `Failed`, or until it disconnects or moves out of the close group for
-// the chunk, when it is removed from the list of holders.
+// This is the name of a PmidNode which has been chosen to store the data on.  It is associated with
+// a specific piece of `ImmutableData`.  It is marked as `Pending` until the response of the Put
+// request is received, when it is then marked as `Good` or `Failed` depending on the response
+// result.  It remains `Good` until it fails a Get request, at which time it is deemed `Failed`, or
+// until it disconnects or moves out of the close group for the chunk, when it is removed from the
+// list of holders.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub enum DataHolder {
     Good(XorName),
@@ -306,6 +309,7 @@ impl ImmutableDataManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
+                      full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
@@ -330,9 +334,27 @@ impl ImmutableDataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
-                                                                    &data_name,
-                                                                    vec![]));
+        let target_pmid_nodes = match self.choose_initial_pmid_nodes(routing_node,
+                                                                     full_pmid_nodes,
+                                                                     &data_name) {
+            Ok(pmid_nodes) => pmid_nodes,
+            Err(InternalError::UnableToAllocateNewPmidNode) => {
+                // Send failure if src is MaidManager.
+                let error = MutationError::NetworkFull;
+                if let Authority::ClientManager(_) = request.src {
+                    let src = request.dst.clone();
+                    let dst = request.src.clone();
+                    let external_error_indicator = try!(serialisation::serialise(&error));
+                    let _ = routing_node.send_put_failure(src,
+                                                          dst,
+                                                          request.clone(),
+                                                          external_error_indicator,
+                                                          *message_id);
+                }
+                return Err(From::from(error));
+            }
+            Err(error) => return Err(error),
+        };
         trace!("ImmutableDataManager chosen {:?} as pmid_nodes for chunk {:?}",
                target_pmid_nodes,
                data);
@@ -1050,9 +1072,19 @@ impl ImmutableDataManager {
         trace!("Replicating {} - nodes to be excluded: {:?}",
                data_name,
                nodes_to_exclude);
-        let target_pmid_nodes = try!(Self::choose_target_pmid_nodes(routing_node,
-                                                                    &data_name,
-                                                                    nodes_to_exclude));
+        let target_pmid_nodes = match try!(routing_node.close_group(data_name)) {
+            Some(mut target_pmid_nodes) => {
+                target_pmid_nodes.retain(|elt| {
+                    !nodes_to_exclude.iter().any(|exclude| elt == *exclude)
+                });
+                target_pmid_nodes.truncate(REPLICANTS);
+                target_pmid_nodes.into_iter()
+                                 .map(DataHolder::Pending)
+                                 .collect::<HashSet<DataHolder>>()
+            }
+            None => return Err(InternalError::NotInCloseGroup),
+        };
+
         trace!("Replicating {} - target nodes: {:?}",
                data_name,
                target_pmid_nodes);
@@ -1072,9 +1104,9 @@ impl ImmutableDataManager {
     }
 
     fn recover_from_other_locations(routing_node: &RoutingNode,
-                           metadata: &mut MetadataForGetRequest,
-                           data_name: &XorName,
-                           message_id: &MessageId) {
+                                    metadata: &mut MetadataForGetRequest,
+                                    data_name: &XorName,
+                                    message_id: &MessageId) {
         metadata.pmid_nodes.clear();
         // If this Vault is a Backup or Sacrificial manager just return failure to any requesters
         // waiting for responses.
@@ -1103,15 +1135,19 @@ impl ImmutableDataManager {
         }
     }
 
-    fn choose_target_pmid_nodes(routing_node: &RoutingNode,
-                                data_name: &XorName,
-                                nodes_to_exclude: Vec<&XorName>)
-                                -> Result<HashSet<DataHolder>, InternalError> {
-        match try!(routing_node.close_group(data_name.clone())) {
+    fn choose_initial_pmid_nodes(&self,
+                                 routing_node: &RoutingNode,
+                                 full_pmid_nodes: &HashSet<XorName>,
+                                 data_name: &XorName)
+                                 -> Result<HashSet<DataHolder>, InternalError> {
+        match try!(routing_node.close_group(*data_name)) {
             Some(mut target_pmid_nodes) => {
-                target_pmid_nodes.retain(|elt| {
-                    !nodes_to_exclude.iter().any(|exclude| elt == *exclude)
-                });
+                let all_nodes = target_pmid_nodes.len() as f32;
+                target_pmid_nodes.retain(|target| !full_pmid_nodes.contains(target));
+                let full_ratio = (all_nodes - target_pmid_nodes.len() as f32) / all_nodes;
+                if full_ratio > MAX_FULL_RATIO {
+                    return Err(InternalError::UnableToAllocateNewPmidNode);
+                }
                 target_pmid_nodes.truncate(REPLICANTS);
                 Ok(target_pmid_nodes.into_iter()
                                     .map(DataHolder::Pending)
@@ -1229,7 +1265,9 @@ mod test {
                 dst: Authority::NaeManager(im_data.name()),
                 content: content.clone(),
             };
-            unwrap_result!(self.immutable_data_manager.handle_put(&self.routing, &client_request));
+            let full_pmid_nodes = HashSet::new();
+            unwrap_result!(self.immutable_data_manager
+                               .handle_put(&self.routing, &full_pmid_nodes, &client_request));
             let outgoing_requests = self.routing.put_requests_given();
             assert_eq!(outgoing_requests.len(), REPLICANTS + 2);
             let initial_holders = outgoing_requests.iter()
