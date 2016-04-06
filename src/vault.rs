@@ -175,10 +175,14 @@ impl Vault {
 
     #[cfg(feature = "use-mock-crust")]
     pub fn get_stored_names(&self) -> Vec<XorName> {
-        let mut stored_names = self.pmid_node.get_stored_names();
-        let mut structured_data_names = self.structured_data_manager.get_stored_names();
-        stored_names.append(&mut structured_data_names);
-        stored_names
+        self.pmid_node
+            .get_stored_names()
+            .iter()
+            .chain(self.structured_data_manager
+                       .get_stored_names()
+                       .iter())
+            .cloned()
+            .collect()
     }
 
     fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
