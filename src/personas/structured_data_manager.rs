@@ -15,13 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::HashSet;
 use std::convert::From;
 
 use chunk_store::ChunkStore;
 use error::InternalError;
-use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
+use safe_network_common::client_errors::{MutationError, GetError};
 use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
@@ -77,6 +78,7 @@ impl StructuredDataManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
+                      full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         // Take a hash of the message anticipating sending this as a success response to the MM.
@@ -104,6 +106,28 @@ impl StructuredDataManager {
                                                   external_error_indicator,
                                                   *message_id);
             return Err(From::from(error));
+        }
+
+        // Check there aren't too many full nodes in the close group to this data
+        match try!(routing_node.close_group(data_name)) {
+            Some(mut close_group) => {
+                close_group.retain(|member| !full_pmid_nodes.contains(member));
+                // TODO - Use routing getter `dynamic_quorum_size()` once available
+                if close_group.len() < 5 {
+                    trace!("Close group for SD {} only has {} non-full PmidNodes",
+                           data_name,
+                           close_group.len());
+                    let error = MutationError::NetworkFull;
+                    let external_error_indicator = try!(serialisation::serialise(&error));
+                    let _ = routing_node.send_put_failure(response_src,
+                                                          response_dst,
+                                                          request.clone(),
+                                                          external_error_indicator,
+                                                          *message_id);
+                    return Err(From::from(error));
+                }
+            }
+            None => return Err(InternalError::NotInCloseGroup),
         }
 
         try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
@@ -271,8 +295,11 @@ impl StructuredDataManager {
 #[cfg(all(test, feature = "use-mock-routing"))]
 mod test {
     use super::*;
-    use maidsafe_utilities::log;
-    use maidsafe_utilities::serialisation;
+
+    use std::collections::HashSet;
+    use std::sync::mpsc;
+
+    use maidsafe_utilities::{log, serialisation};
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
     use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
@@ -280,7 +307,6 @@ mod test {
     use safe_network_common::client_errors::{GetError, MutationError};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
-    use std::sync::mpsc;
     use types::{Refresh, RefreshValue};
     use utils;
     use vault::RoutingNode;
@@ -391,7 +417,9 @@ mod test {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.structured_data_manager.handle_put(&self.routing, &request);
+            let full_pmid_nodes = HashSet::new();
+            let _ = self.structured_data_manager
+                        .handle_put(&self.routing, &full_pmid_nodes, &request);
             PutEnvironment {
                 keys: keys,
                 client: client,

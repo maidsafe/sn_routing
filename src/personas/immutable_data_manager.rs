@@ -238,8 +238,6 @@ pub struct ImmutableDataManager {
     // key is chunk_name
     ongoing_gets: TimedBuffer<XorName, MetadataForGetRequest>,
     ongoing_puts: HashSet<(ImmutableData, MessageId)>,
-    // key is PmidNode name; value is whether OK to store on (true) or Full (false)
-    known_pmid_nodes: HashMap<XorName, bool>,
 }
 
 impl ImmutableDataManager {
@@ -248,7 +246,6 @@ impl ImmutableDataManager {
             accounts: HashMap::new(),
             ongoing_gets: TimedBuffer::new(Duration::minutes(5)),
             ongoing_puts: HashSet::new(),
-            known_pmid_nodes: HashMap::new(),
         }
     }
 
@@ -312,6 +309,7 @@ impl ImmutableDataManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
+                      full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
@@ -336,7 +334,9 @@ impl ImmutableDataManager {
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        let target_pmid_nodes = match self.choose_initial_pmid_nodes(routing_node, &data_name) {
+        let target_pmid_nodes = match self.choose_initial_pmid_nodes(routing_node,
+                                                                     full_pmid_nodes,
+                                                                     &data_name) {
             Ok(pmid_nodes) => pmid_nodes,
             Err(InternalError::UnableToAllocateNewPmidNode) => {
                 // Send failure if src is MaidManager.
@@ -538,7 +538,6 @@ impl ImmutableDataManager {
                                              .iter()
                                              .find(|&entry| entry.1 == *message_id) {
             if let Some(account) = self.accounts.get_mut(&entry.0.name()) {
-                let _ = self.known_pmid_nodes.entry(*pmid_node).or_insert(true);
                 if !account.pmid_nodes_mut().remove(&DataHolder::Pending(*pmid_node)) {
                     return Err(InternalError::InvalidResponse);
                 }
@@ -572,9 +571,6 @@ impl ImmutableDataManager {
                                                     .iter()
                                                     .find(|&entry| entry.1 == *message_id) {
             if let Some(account) = self.accounts.get_mut(&immutable_data.name()) {
-                let known_pmid_node = self.known_pmid_nodes.entry(*pmid_node).or_insert(false);
-                *known_pmid_node = false;
-
                 // Mark the holder as Failed
                 if !account.pmid_nodes_mut().remove(&DataHolder::Pending(*pmid_node)) {
                     return Err(InternalError::InvalidResponse);
@@ -651,7 +647,6 @@ impl ImmutableDataManager {
     }
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_lost: XorName) {
-        let _ = self.known_pmid_nodes.remove(&node_lost);
         self.handle_churn(routing_node, MessageId::from_lost_node(node_lost));
     }
 
@@ -1142,25 +1137,13 @@ impl ImmutableDataManager {
 
     fn choose_initial_pmid_nodes(&self,
                                  routing_node: &RoutingNode,
+                                 full_pmid_nodes: &HashSet<XorName>,
                                  data_name: &XorName)
                                  -> Result<HashSet<DataHolder>, InternalError> {
-        let full_pmid_nodes = self.known_pmid_nodes
-                                  .iter()
-                                  .filter_map(|(pmid_node, can_store)| {
-                                      if *can_store {
-                                          None
-                                      } else {
-                                          Some(pmid_node)
-                                      }
-                                  })
-                                  .collect::<Vec<_>>();
-
-        match try!(routing_node.close_group(data_name.clone())) {
+        match try!(routing_node.close_group(*data_name)) {
             Some(mut target_pmid_nodes) => {
                 let all_nodes = target_pmid_nodes.len() as f32;
-                target_pmid_nodes.retain(|elt| {
-                    !full_pmid_nodes.iter().any(|exclude| elt == *exclude)
-                });
+                target_pmid_nodes.retain(|target| !full_pmid_nodes.contains(target));
                 let full_ratio = (all_nodes - target_pmid_nodes.len() as f32) / all_nodes;
                 if full_ratio > MAX_FULL_RATIO {
                     return Err(InternalError::UnableToAllocateNewPmidNode);
@@ -1282,7 +1265,9 @@ mod test {
                 dst: Authority::NaeManager(im_data.name()),
                 content: content.clone(),
             };
-            unwrap_result!(self.immutable_data_manager.handle_put(&self.routing, &client_request));
+            let full_pmid_nodes = HashSet::new();
+            unwrap_result!(self.immutable_data_manager
+                               .handle_put(&self.routing, &full_pmid_nodes, &client_request));
             let outgoing_requests = self.routing.put_requests_given();
             assert_eq!(outgoing_requests.len(), REPLICANTS + 2);
             let initial_holders = outgoing_requests.iter()
