@@ -135,7 +135,8 @@
 //!
 //! # Sequence diagrams
 //!
-//! [Bootstrapping](https://cacoo.com/diagrams/th3ie0I5yOM5ymJq-F56A2.png)
+//! - [Bootstrapping](bootstrap.png)
+//! - [GetCloseGroup](get-close-group.png)
 //!
 
 #![doc(html_logo_url =
