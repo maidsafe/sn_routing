@@ -28,7 +28,7 @@ pub struct TestNode {
 impl TestNode {
     pub fn new(network: &Network, config: Option<Config>) -> Self {
         let handle = network.new_service_handle(config, None);
-        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new(None)));
+        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
 
         TestNode {
             handle: handle,

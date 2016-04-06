@@ -22,7 +22,7 @@ use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessag
               ResponseContent, ResponseMessage, RoutingMessage};
 #[cfg(not(feature = "use-mock-crust"))]
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::Receiver;
 use xor_name::XorName;
@@ -57,7 +57,6 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
-    app_event_sender: Option<Sender<Event>>,
 
     #[cfg(feature = "use-mock-crust")]
     routing_node: Option<RoutingNode>,
@@ -92,7 +91,7 @@ fn init_components()
 
 impl Vault {
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+    pub fn new() -> Result<Self, InternalError> {
         let (immutable_data_manager,
              maid_manager,
              mpid_manager,
@@ -107,12 +106,11 @@ impl Vault {
             pmid_manager: pmid_manager,
             pmid_node: pmid_node,
             structured_data_manager: structured_data_manager,
-            app_event_sender: app_event_sender,
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+    pub fn new() -> Result<Self, InternalError> {
         let (immutable_data_manager,
              maid_manager,
              mpid_manager,
@@ -130,7 +128,6 @@ impl Vault {
             pmid_manager: pmid_manager,
             pmid_node: pmid_node,
             structured_data_manager: structured_data_manager,
-            app_event_sender: app_event_sender,
             routing_node: Some(routing_node),
             routing_receiver: routing_receiver,
         })
@@ -182,10 +179,6 @@ impl Vault {
         trace!("Vault {} received an event from routing: {:?}",
                unwrap_result!(routing_node.name()),
                event);
-
-        let _ = self.app_event_sender
-                    .as_ref()
-                    .map(|sender| sender.send(event.clone()));
 
         if let Err(error) = match event {
             Event::Request(request) => self.on_request(routing_node, request),
