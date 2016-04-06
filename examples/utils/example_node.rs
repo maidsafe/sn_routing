@@ -311,7 +311,9 @@ impl ExampleNode {
             }
         }
 
-        self.add_dm(data.name(), *src.name());
+        if self.add_dm(data.name(), *src.name()) {
+            trace!("Added {:?} as a DM for {:?} on GetSuccess.", src.name(), data.name());
+        }
 
         // If the retrieved data is missing a copy, send a `Put` request to store one.
         if self.dm_accounts.get(&data.name()).into_iter().any(|dms| dms.len() < STORE_REDUNDANCY) {
@@ -351,21 +353,23 @@ impl ExampleNode {
     }
 
     /// Add the given `dm_name` to the `dm_accounts` for `data_name`, if appropriate.
-    fn add_dm(&mut self, data_name: XorName, dm_name: XorName) {
+    fn add_dm(&mut self, data_name: XorName, dm_name: XorName) -> bool {
         if Some(true) == self.dm_accounts.get(&data_name).map(|dms| dms.contains(&dm_name)) {
-            return; // The dm is already in our map.
+            return false; // The dm is already in our map.
         }
         if let Some(close_grp) = unwrap_result!(self.node.close_group(data_name)) {
             if close_grp.contains(&dm_name) {
                 self.dm_accounts.entry(data_name).or_insert_with(Vec::new).push(dm_name);
+                return true;
             } else {
                 warn!("Data holder {:?} is not close to data {:?}.",
                       dm_name,
                       data_name);
             }
         } else {
-            warn!("Not not close to data {:?}.", data_name);
+            warn!("Not close to data {:?}.", data_name);
         }
+        false
     }
 
     // While handling churn messages, we first "action" it ourselves and then
@@ -494,13 +498,10 @@ impl ExampleNode {
                 let _ = self.client_accounts.insert(client_name, data);
             }
             RefreshContent::Nae { data_name, pmid_nodes, .. } => {
-                let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
-                if old_val != Some(pmid_nodes.clone()) {
-                    trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",
-                           self.get_debug_name(),
-                           data_name,
-                           old_val.unwrap_or_else(Vec::new),
-                           pmid_nodes);
+                for dm in pmid_nodes {
+                    if self.add_dm(data_name, dm) {
+                        trace!("Added {:?} as a DM for {:?} on refresh.", dm, data_name);
+                    }
                 }
             }
         }
