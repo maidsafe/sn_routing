@@ -22,7 +22,6 @@ use mock_crust::crust::PeerId;
 use maidsafe_utilities::serialisation::serialise;
 use rustc_serialize::{Decoder, Encoder};
 use sodiumoxide::crypto::{box_, sign};
-use sodiumoxide::crypto::hash::sha512;
 use std::fmt::{self, Debug, Formatter};
 
 use authority::Authority;
@@ -364,11 +363,11 @@ pub enum ResponseContent {
     /// may be shortcut if the data is in a node's cache.
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
-    PutSuccess(sha512::Digest, MessageId),
+    PutSuccess(MessageId),
     /// Success token for Post  (may be ignored)
-    PostSuccess(sha512::Digest, MessageId),
+    PostSuccess(MessageId),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(sha512::Digest, MessageId),
+    DeleteSuccess(MessageId),
     /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
@@ -529,23 +528,14 @@ impl Debug for ResponseContent {
             ResponseContent::GetSuccess(ref data, ref message_id) => {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
             }
-            ResponseContent::PutSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "PutSuccess {{ Digest({}), {:?} }}",
-                       utils::format_binary_array(digest),
-                       message_id)
+            ResponseContent::PutSuccess(ref message_id) => {
+                write!(formatter, "PutSuccess {{ {:?} }}", message_id)
             }
-            ResponseContent::PostSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "PostSuccess {{ Digest({}), {:?} }}",
-                       utils::format_binary_array(digest),
-                       message_id)
+            ResponseContent::PostSuccess(ref message_id) => {
+                write!(formatter, "PostSuccess {{ {:?} }}", message_id)
             }
-            ResponseContent::DeleteSuccess(ref digest, ref message_id) => {
-                write!(formatter,
-                       "DeleteSuccess {{ Digest({}), {:?} }}",
-                       utils::format_binary_array(digest),
-                       message_id)
+            ResponseContent::DeleteSuccess(ref message_id) => {
+                write!(formatter, "DeleteSuccess {{ {:?} }}", message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
@@ -623,8 +613,7 @@ mod test {
 
         let signed_message = unwrap_result!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(),
-                                                 &secret_signing_key);
+        let hop_message_result = HopMessage::new(signed_message.clone(), &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 
