@@ -15,7 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use routing::mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use config_handler::Config;
+use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use vault::Vault;
 
 use super::poll;
@@ -26,9 +27,12 @@ pub struct TestNode {
 }
 
 impl TestNode {
-    pub fn new(network: &Network, config: Option<Config>) -> Self {
-        let handle = network.new_service_handle(config, None);
-        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
+    pub fn new(network: &Network,
+               crust_config: Option<mock_crust::Config>,
+               config: Option<Config>)
+               -> Self {
+        let handle = network.new_service_handle(crust_config, None);
+        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new(config)));
 
         TestNode {
             handle: handle,
@@ -51,18 +55,18 @@ impl TestNode {
     }
 }
 
-pub fn create_nodes(network: &Network, size: usize) -> Vec<TestNode> {
+pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, None));
+    nodes.push(TestNode::new(network, None, config.clone()));
     while nodes[0].poll() {}
 
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
-        nodes.push(TestNode::new(network, Some(config.clone())));
+        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone()));
         poll::nodes(&mut nodes);
     }
 

@@ -22,6 +22,7 @@ use std::sync::mpsc;
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::Receiver;
 
+use config_handler::Config;
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
@@ -67,18 +68,20 @@ pub struct Vault {
     routing_receiver: Receiver<Event>,
 }
 
-fn init_components()
-    -> Result<(ImmutableDataManager,
-               MaidManager,
-               MpidManager,
-               PmidManager,
-               PmidNode,
-               StructuredDataManager),
-              InternalError>
-{
+fn init_components(optional_config: Option<Config>)
+                   -> Result<(ImmutableDataManager,
+                              MaidManager,
+                              MpidManager,
+                              PmidManager,
+                              PmidNode,
+                              StructuredDataManager),
+                             InternalError> {
     ::sodiumoxide::init();
 
-    let config = try!(config_handler::read_config_file());
+    let config = match optional_config {
+        Some(config) => config,
+        None => try!(config_handler::read_config_file()),
+    };
     let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
     let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
     let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
@@ -100,7 +103,7 @@ impl Vault {
              mpid_manager,
              pmid_manager,
              pmid_node,
-             structured_data_manager) = try!(init_components());
+             structured_data_manager) = try!(init_components(None));
 
         Ok(Vault {
             immutable_data_manager: immutable_data_manager,
@@ -114,13 +117,13 @@ impl Vault {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn new() -> Result<Self, InternalError> {
+    pub fn new(config: Option<Config>) -> Result<Self, InternalError> {
         let (immutable_data_manager,
              maid_manager,
              mpid_manager,
              pmid_manager,
              pmid_node,
-             structured_data_manager) = try!(init_components());
+             structured_data_manager) = try!(init_components(config));
 
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = try!(RoutingNode::new(routing_sender));
