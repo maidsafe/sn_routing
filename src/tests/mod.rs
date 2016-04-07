@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![allow(unused)]
+#![deny(unused)]
 
 mod poll;
 mod test_client;
@@ -189,17 +189,17 @@ fn test1() {
     let immutable_range = Range::new(128, 1024);
     let structured_range = Range::new(1, 10000);
     let put_range = Range::new(50, 100);
-    let put_requests = 1; // put_range.ind_sample(&mut rng);
+    let put_requests = put_range.ind_sample(&mut rng);
 
     for _ in 0..put_requests {
-        // if random::<usize>() % 2 == 0 {
+        if random::<usize>() % 2 == 0 {
             let content = utils::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
             let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
             all_data.push(Data::Immutable(immutable_data));
-        // } else {
-        //     let structured_data = random_structured_data(structured_range.ind_sample(&mut rng));
-        //     all_data.push(Data::Structured(structured_data));
-        // }
+        } else {
+            let structured_data = random_structured_data(structured_range.ind_sample(&mut rng));
+            all_data.push(Data::Structured(structured_data));
+        }
     }
 
     for data in &all_data {
@@ -250,10 +250,8 @@ fn test1() {
             let node = nodes.remove(node_index);
 
             drop(node);
-
-            // thread::sleep(Duration::from_secs(5));
-            // poll::nodes(&mut nodes);
         }
+
         thread::sleep(Duration::from_secs(5));
         poll::nodes_and_client(&mut nodes, &mut client);
         all_stored_names.clear();
