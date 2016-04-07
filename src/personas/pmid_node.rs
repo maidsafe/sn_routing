@@ -103,7 +103,11 @@ impl PmidNode {
                data_name,
                dst);
         let external_error_indicator = try!(serialisation::serialise(&Vec::<u8>::new()));
-        let _ = routing_node.send_put_failure(src, dst, request.clone(), external_error_indicator, *message_id);
+        let _ = routing_node.send_put_failure(src,
+                                              dst,
+                                              request.clone(),
+                                              external_error_indicator,
+                                              *message_id);
         Ok(())
     }
 
@@ -168,8 +172,8 @@ mod test {
     use safe_network_common::client_errors::GetError;
     use maidsafe_utilities::serialisation;
     use rand::random;
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId, RequestContent,
-                  RequestMessage, ResponseContent};
+    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
+                  RequestContent, RequestMessage, ResponseContent};
     use sodiumoxide::crypto::hash::sha512;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -191,8 +195,7 @@ mod test {
         loop {
             if let Ok(Some(_)) = routing.close_group(name) {
                 break;
-            }
-            else {
+            } else {
                 name = random::<XorName>();
             }
         }
@@ -283,7 +286,7 @@ mod test {
         assert_eq!(put_failures[0].src, env.our_authority);
         assert_eq!(put_failures[0].dst, env.from_authority);
 
-        if let ResponseContent::PutFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, request_msg);
@@ -336,7 +339,9 @@ mod test {
         }
 
         let message_id = MessageId::new();
-        let name = if let Authority::ManagedNode(name) = env.our_authority { name } else {
+        let name = if let Authority::ManagedNode(name) = env.our_authority {
+            name
+        } else {
             unreachable!()
         };
         let request_msg = RequestMessage {
@@ -359,7 +364,7 @@ mod test {
         assert_eq!(get_successes[0].src, env.our_authority);
         assert_eq!(get_successes[0].dst, Authority::NaeManager(name));
 
-        if let ResponseContent::GetSuccess(ref data, ref id) = get_successes[0].content  {
+        if let ResponseContent::GetSuccess(ref data, ref id) = get_successes[0].content {
             assert_eq!(*data, Data::Immutable(immutable_data));
             assert_eq!(*id, message_id);
         } else {
@@ -378,7 +383,9 @@ mod test {
         let mut env = environment_setup(capacity);
 
         let message_id = MessageId::new();
-        let name = if let Authority::ManagedNode(name) = env.our_authority { name } else {
+        let name = if let Authority::ManagedNode(name) = env.our_authority {
+            name
+        } else {
             unreachable!()
         };
         let request_msg = RequestMessage {
@@ -401,12 +408,14 @@ mod test {
         assert_eq!(get_failures[0].src, env.our_authority);
         assert_eq!(get_failures[0].dst, Authority::NaeManager(name));
 
-        if let ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator } =
+        if let ResponseContent::GetFailure { ref id, ref request, ref external_error_indicator } =
                get_failures[0].content {
             assert_eq!(*id, message_id);
             assert_eq!(*request, request_msg);
             let error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-            if let GetError::NoSuchData = error {} else { unreachable!() }
+            if let GetError::NoSuchData = error {} else {
+                unreachable!()
+            }
         } else {
             unreachable!()
         }
@@ -455,7 +464,9 @@ mod test {
         env.pmid_node.handle_churn(&env.routing);
 
         let message_id = MessageId::new();
-        let name = if let Authority::ManagedNode(name) = env.our_authority { name } else {
+        let name = if let Authority::ManagedNode(name) = env.our_authority {
+            name
+        } else {
             unreachable!()
         };
         let request_msg = RequestMessage {
@@ -479,7 +490,7 @@ mod test {
             assert_eq!(get_successes[0].src, env.our_authority);
             assert_eq!(get_successes[0].dst, Authority::NaeManager(name));
 
-            if let ResponseContent::GetSuccess(ref data, ref id) = get_successes[0].content  {
+            if let ResponseContent::GetSuccess(ref data, ref id) = get_successes[0].content {
                 assert_eq!(*data, Data::Immutable(immutable_data));
                 assert_eq!(*id, message_id);
             } else {
@@ -496,12 +507,16 @@ mod test {
             assert_eq!(get_failures[0].src, env.our_authority);
             assert_eq!(get_failures[0].dst, Authority::NaeManager(name));
 
-            if let ResponseContent::GetFailure{ ref id, ref request, ref external_error_indicator } =
-                   get_failures[0].content {
+            if let ResponseContent::GetFailure { ref id,
+                                                 ref request,
+                                                 ref external_error_indicator } = get_failures[0]
+                                                                                      .content {
                 assert_eq!(*id, message_id);
                 assert_eq!(*request, request_msg);
                 let error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-                if let GetError::NoSuchData = error {} else { unreachable!() }
+                if let GetError::NoSuchData = error {} else {
+                    unreachable!()
+                }
             } else {
                 unreachable!()
             }

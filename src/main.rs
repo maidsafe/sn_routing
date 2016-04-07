@@ -126,12 +126,12 @@ pub fn main() {
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
-    let mut vault = unwrap_result!(Vault::new(None));
+    let mut vault = unwrap_result!(Vault::new());
     unwrap_result!(vault.run());
 }
 
 #[cfg(feature = "use-mock-crust")]
 #[allow(missing_docs)]
 pub fn main() {
-  println!("Error: mock crust not supported");
+    println!("Error: mock crust not supported");
 }

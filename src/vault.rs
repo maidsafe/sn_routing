@@ -15,16 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::collections::HashSet;
+#[cfg(not(feature = "use-mock-crust"))]
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
+#[cfg(feature = "use-mock-crust")]
+use std::sync::mpsc::Receiver;
+
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage, RoutingMessage};
-#[cfg(not(feature = "use-mock-crust"))]
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Sender};
-#[cfg(feature = "use-mock-crust")]
-use std::sync::mpsc::Receiver;
 use xor_name::XorName;
 
 use config_handler;
@@ -57,18 +59,23 @@ pub struct Vault {
     pmid_manager: PmidManager,
     pmid_node: PmidNode,
     structured_data_manager: StructuredDataManager,
-    app_event_sender: Option<Sender<Event>>,
+    full_pmid_nodes: HashSet<XorName>,
 
-    #[cfg(feature = "use-mock-crust")] routing_node: Option<RoutingNode>,
-    #[cfg(feature = "use-mock-crust")] routing_receiver: Receiver<Event>,
+    #[cfg(feature = "use-mock-crust")]
+    routing_node: Option<RoutingNode>,
+    #[cfg(feature = "use-mock-crust")]
+    routing_receiver: Receiver<Event>,
 }
 
-fn init_components() -> Result<(ImmutableDataManager,
-                                MaidManager,
-                                MpidManager,
-                                PmidManager,
-                                PmidNode,
-                                StructuredDataManager), InternalError> {
+fn init_components()
+    -> Result<(ImmutableDataManager,
+               MaidManager,
+               MpidManager,
+               PmidManager,
+               PmidNode,
+               StructuredDataManager),
+              InternalError>
+{
     ::sodiumoxide::init();
 
     let config = try!(config_handler::read_config_file());
@@ -87,7 +94,7 @@ fn init_components() -> Result<(ImmutableDataManager,
 
 impl Vault {
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+    pub fn new() -> Result<Self, InternalError> {
         let (immutable_data_manager,
              maid_manager,
              mpid_manager,
@@ -102,12 +109,12 @@ impl Vault {
             pmid_manager: pmid_manager,
             pmid_node: pmid_node,
             structured_data_manager: structured_data_manager,
-            app_event_sender: app_event_sender,
+            full_pmid_nodes: HashSet::new(),
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(app_event_sender: Option<Sender<Event>>) -> Result<Self, InternalError> {
+    pub fn new() -> Result<Self, InternalError> {
         let (immutable_data_manager,
              maid_manager,
              mpid_manager,
@@ -125,7 +132,7 @@ impl Vault {
             pmid_manager: pmid_manager,
             pmid_node: pmid_node,
             structured_data_manager: structured_data_manager,
-            app_event_sender: app_event_sender,
+            full_pmid_nodes: HashSet::new(),
             routing_node: Some(routing_node),
             routing_receiver: routing_receiver,
         })
@@ -177,10 +184,6 @@ impl Vault {
         trace!("Vault {} received an event from routing: {:?}",
                unwrap_result!(routing_node.name()),
                event);
-
-        let _ = self.app_event_sender
-                    .as_ref()
-                    .map(|sender| sender.send(event.clone()));
 
         if let Err(error) = match event {
             Event::Request(request) => self.on_request(routing_node, request),
@@ -244,12 +247,14 @@ impl Vault {
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Immutable(_), _)) => {
-                self.immutable_data_manager.handle_put(routing_node, &request)
+                self.immutable_data_manager
+                    .handle_put(routing_node, &self.full_pmid_nodes, &request)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(Data::Structured(_), _)) => {
-                self.structured_data_manager.handle_put(routing_node, &request)
+                self.structured_data_manager
+                    .handle_put(routing_node, &self.full_pmid_nodes, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::NodeManager(_),
@@ -358,6 +363,7 @@ impl Vault {
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
              &ResponseContent::PutFailure { ref id, .. }) => {
+                let _ = self.full_pmid_nodes.insert(*pmid_node);
                 self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, id)
             }
             (&Authority::ManagedNode(_),
@@ -392,6 +398,7 @@ impl Vault {
                     routing_node: &RoutingNode,
                     node_lost: XorName)
                     -> Result<(), InternalError> {
+        let _ = self.full_pmid_nodes.remove(&node_lost);
         self.maid_manager.handle_churn(routing_node);
         self.immutable_data_manager.handle_node_lost(routing_node, node_lost);
         self.structured_data_manager.handle_churn(routing_node);
