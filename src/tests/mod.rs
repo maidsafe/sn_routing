@@ -159,32 +159,6 @@ fn check_data(all_immutable_data: Vec<Data>,
                all_structured_data.len());
 }
 
-#[test]
-fn immutable_data_put_and_get() {
-    let network = Network::new();
-    let mut nodes = test_node::create_nodes(&network, 8, None);
-    let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-
-    let mut client = TestClient::new(&network, Some(crust_config));
-    client.ensure_connected(&mut nodes);
-    client.create_account(&mut nodes);
-
-    let content = utils::generate_random_vec_u8(1024);
-    let orig_data = ImmutableData::new(ImmutableDataType::Normal, content);
-
-    client.put(Data::Immutable(orig_data.clone()), &mut nodes);
-
-    match client.get(DataRequest::Immutable(orig_data.name(), ImmutableDataType::Normal),
-                     &mut nodes) {
-        Data::Immutable(data) => {
-            assert_eq!(data.name(), orig_data.name());
-            assert!(data.value() == orig_data.value());
-        }
-
-        data => panic!("Got unexpected data: {:?}", data),
-    }
-}
-
 #[ignore]
 #[test]
 fn data_confirmation() {
