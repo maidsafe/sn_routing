@@ -20,13 +20,12 @@
 mod poll;
 mod test_client;
 mod test_node;
-use std::time::Duration;
-use std::thread;
+
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, normal_to_backup,
               normal_to_sacrificial, StructuredData};
-use routing::mock_crust::{Config, Network};
+use routing::mock_crust::{self, Network};
 use sodiumoxide::crypto::sign;
 use xor_name::XorName;
 use utils;
@@ -163,10 +162,10 @@ fn check_data(all_immutable_data: Vec<Data>,
 #[test]
 fn immutable_data_put_and_get() {
     let network = Network::new();
-    let mut nodes = test_node::create_nodes(&network, 8);
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut nodes = test_node::create_nodes(&network, 8, None);
+    let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
-    let mut client = TestClient::new(&network, Some(config));
+    let mut client = TestClient::new(&network, Some(crust_config));
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
@@ -186,13 +185,13 @@ fn immutable_data_put_and_get() {
     }
 }
 
-// #[ignore]
+#[ignore]
 #[test]
 fn data_confirmation() {
     let network = Network::new();
     let node_count = 2 * 8;
-    let mut nodes = test_node::create_nodes(&network, node_count);
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
@@ -273,7 +272,6 @@ fn data_confirmation() {
             drop(node);
         }
 
-        thread::sleep(Duration::from_secs(5));
         poll::nodes_and_client(&mut nodes, &mut client);
         all_stored_names.clear();
 
@@ -286,7 +284,6 @@ fn data_confirmation() {
                    all_stored_names.clone());
 
         test_node::add_nodes(&network, &mut nodes, 3);
-        thread::sleep(Duration::from_secs(5));
         poll::nodes_and_client(&mut nodes, &mut client);
         all_stored_names.clear();
 
@@ -304,8 +301,8 @@ fn data_confirmation() {
 #[test]
 fn put_get_when_churn() {
     let network = Network::new();
-    let mut nodes = test_node::create_nodes(&network, 2 * 8);
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut nodes = test_node::create_nodes(&network, 2 * 8, None);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
