@@ -171,8 +171,9 @@ fn plain_data_put_and_get() {
     }
 }
 
+#[ignore]
 #[test]
-fn test1() {
+fn data_confirmation() {
     let network = Network::new();
     let node_count = 2 * 8;
     let mut nodes = test_node::create_nodes(&network, node_count);
@@ -275,6 +276,7 @@ fn test1() {
     }
 }
 
+#[ignore]
 #[test]
 fn put_get_when_churn() {
     let network = Network::new();
