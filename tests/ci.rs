@@ -87,7 +87,7 @@ impl TestNode {
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
-            node: unwrap_result!(Node::new(sender)),
+            node: unwrap_result!(Node::new(sender, false)),
             _thread_joiner: joiner,
         }
     }
@@ -116,7 +116,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id))),
+            client: unwrap_result!(Client::new(sender, Some(full_id), false)),
             _thread_joiner: joiner,
         }
     }
@@ -154,7 +154,7 @@ fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
     let mut limits = unwrap_result!(get_open_file_limits());
     if limits.rlim_cur < 1024 {
         limits.rlim_cur = 1024;
@@ -164,7 +164,7 @@ fn init() {
 
 #[cfg(not(target_os = "macos"))]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
 }
 
 // Spawns a thread that received events from a node a routes them to the main channel.

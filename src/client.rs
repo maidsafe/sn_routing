@@ -63,11 +63,14 @@ impl Client {
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               use_data_cache: bool)
+               -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, true, keys);
+        let (action_sender, mut core) = Core::new(event_sender, true, keys, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -84,11 +87,14 @@ impl Client {
 
     /// Create a new `Client` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               use_data_cache: bool)
+               -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, true, keys);
+        let (action_sender, core) = Core::new(event_sender, true, keys, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Client {

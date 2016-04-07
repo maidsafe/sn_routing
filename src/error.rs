@@ -16,10 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
+#[cfg(not(feature = "use-mock-crust"))]
+use crust::PeerId;
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::crust::PeerId;
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
-use xor_name::XorName;
 
 #[derive(Debug)]
 /// InterfaceError.
@@ -96,7 +99,7 @@ pub enum RoutingError {
     /// Asymmetric Decryption Failure
     AsymmetricDecryptionFailure,
     /// Unknown Connection
-    UnknownConnection(XorName),
+    UnknownConnection(PeerId),
     /// The message is not getting closer to the target
     DirectionCheckFailed,
     /// Density mismatch
@@ -109,6 +112,8 @@ pub enum RoutingError {
     ClientConnectionNotFound,
     /// Invalid Source
     InvalidSource,
+    /// Attempted to use a node as a tunnel that is not directly connected
+    CannotTunnelThroughTunnel,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {

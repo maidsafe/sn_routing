@@ -104,7 +104,10 @@ impl ImmutableData {
 
 impl Debug for ImmutableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "ImmutableData {{ {:?}, {} }}", self.type_tag, self.name())
+        write!(formatter,
+               "ImmutableData {{ {:?}, {} }}",
+               self.type_tag,
+               self.name())
     }
 }
 

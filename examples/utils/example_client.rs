@@ -51,7 +51,7 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap_result!(Client::new(sender, Some(full_id)));
+        let routing_client = unwrap_result!(Client::new(sender, Some(full_id), false));
 
         // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
         // requests to the network.
@@ -113,8 +113,8 @@ impl ExampleClient {
 
     /// Send a `Put` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
-    pub fn put(&self, data: Data) {
+    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure` response.
+    pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_name = data.name();
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
@@ -126,23 +126,32 @@ impl ExampleClient {
         for it in self.receiver.iter() {
             match it {
                 Event::Response(ResponseMessage {
-                    content: ResponseContent::PutSuccess(_, id),
+                    content: ResponseContent::PutSuccess(id),
                     ..
                 }) => {
                     if message_id == id {
-                        println!("Successfully stored {:?}", data_name);
+                        trace!("Successfully stored {:?}", data_name);
+                        return Ok(());
                     } else {
-                        println!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
-                                 data_name,
-                                 id,
-                                 message_id);
+                        error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
+                               data_name,
+                               id,
+                               message_id);
+                        return Err(());
                     }
-                    break;
+                }
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::PutFailure { .. },
+                    ..
+                }) => {
+                    error!("Received PutFailure for {:?}.", data_name);
+                    return Err(());
                 }
                 Event::Disconnected => self.disconnected(),
                 _ => (),
             }
         }
+        Err(())
     }
 
     fn disconnected(&self) {
