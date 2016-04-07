@@ -45,6 +45,3 @@ test = false
 bench = false
 name = "ci_test"
 test = false
-
-[features]
-use-mock-crust = []
