@@ -280,19 +280,17 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, ref id) = message.content {
-                            let encoded = unwrap_result!(serialisation::serialise(&message));
                             let node = &nodes[index].node;
 
                             unwrap_result!(node.send_put_success(message.dst,
                                                                  message.src,
-                                                                 sha512::hash(&encoded),
                                                                  id.clone()));
                         }
                     }
 
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(_, id), .. }))
+                                content: ResponseContent::PutSuccess(id), .. }))
                         if index == client.index => {
                         // The client received response to its request. We are done.
                         assert_eq!(message_id, id);
@@ -524,19 +522,16 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, id) = message.content {
-                            let encoded = unwrap_result!(serialisation::serialise(&message));
-
                             unwrap_result!(nodes[index]
                                                .node
                                                .send_put_success(message.dst,
                                                                  message.src,
-                                                                 sha512::hash(&encoded),
                                                                  id));
                         }
                     }
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(_, id), .. }))
+                                content: ResponseContent::PutSuccess(id), .. }))
                         if index == client.index => {
                         assert!(received_ids.insert(id));
                     }
