@@ -17,6 +17,7 @@
 
 use config_handler::Config;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
+use xor_name::XorName;
 use vault::Vault;
 
 use super::poll;
@@ -53,6 +54,10 @@ impl TestNode {
     pub fn endpoint(&self) -> Endpoint {
         self.handle.endpoint()
     }
+
+    pub fn get_stored_names(&self) -> Vec<XorName> {
+        self.vault.get_stored_names()
+    }
 }
 
 pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> Vec<TestNode> {
@@ -71,4 +76,34 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
     }
 
     nodes
+}
+
+pub fn add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize) {
+    let mut config = None;
+
+    if !nodes.is_empty() {
+        config = Some(mock_crust::Config::with_contacts(&[nodes[0].endpoint()]));
+    }
+
+    for _ in 0..size {
+        nodes.push(TestNode::new(network, config.clone(), None));
+        poll::nodes(&mut nodes);
+    }
+}
+
+pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>) {
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    nodes.push(TestNode::new(network, Some(config.clone()), None));
+    poll::nodes(nodes);
+}
+
+pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+    let node = nodes.remove(index);
+    drop(node);
+    poll_all(nodes);
+}
+
+/// Process all events
+fn poll_all(nodes: &mut [TestNode]) {
+    while nodes.iter_mut().any(TestNode::poll) {}
 }

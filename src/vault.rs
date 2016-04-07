@@ -183,6 +183,18 @@ impl Vault {
         result
     }
 
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_stored_names(&self) -> Vec<XorName> {
+        self.pmid_node
+            .get_stored_names()
+            .iter()
+            .chain(self.structured_data_manager
+                       .get_stored_names()
+                       .iter())
+            .cloned()
+            .collect()
+    }
+
     fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
         trace!("Vault {} received an event from routing: {:?}",
                unwrap_result!(routing_node.name()),
