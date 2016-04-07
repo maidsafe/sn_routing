@@ -20,9 +20,12 @@ use error::InternalError;
 use std::ffi::OsString;
 use xor_name::XorName;
 
+/// missing docs
 #[derive(Clone, Debug, RustcDecodable, RustcEncodable)]
 pub struct Config {
+    /// missing docs
     pub wallet_address: Option<XorName>,
+    /// missing docs
     pub max_capacity: Option<u64>, // measured by Bytes
 }
 

@@ -15,10 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use config_handler::Config;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
+use vault::{Config, Vault};
 use xor_name::XorName;
-use vault::Vault;
 
 use super::poll;
 

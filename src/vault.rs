@@ -22,7 +22,7 @@ use std::sync::mpsc;
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::Receiver;
 
-use config_handler::Config;
+use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
@@ -30,7 +30,6 @@ use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessag
               ResponseContent, ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
-use config_handler;
 use error::InternalError;
 use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
@@ -96,6 +95,7 @@ fn init_components(optional_config: Option<Config>)
 }
 
 impl Vault {
+    /// document this fn
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new() -> Result<Self, InternalError> {
         let (immutable_data_manager,
@@ -116,6 +116,7 @@ impl Vault {
         })
     }
 
+    /// document this fn
     #[cfg(feature = "use-mock-crust")]
     pub fn new(config: Option<Config>) -> Result<Self, InternalError> {
         let (immutable_data_manager,
@@ -141,6 +142,7 @@ impl Vault {
         })
     }
 
+    /// document this fn
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
         let (routing_sender, routing_receiver) = mpsc::channel();
@@ -169,6 +171,7 @@ impl Vault {
         Ok(())
     }
 
+    /// document this fn
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
         let mut routing_node = self.routing_node.take().expect("routing_node should never be None");
@@ -183,6 +186,7 @@ impl Vault {
         result
     }
 
+    /// document this fn
     #[cfg(feature = "use-mock-crust")]
     pub fn get_stored_names(&self) -> Vec<XorName> {
         self.pmid_node

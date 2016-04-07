@@ -15,12 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![deny(unused)]
+#![allow(unused)]
 
-mod poll;
-mod test_client;
-mod test_node;
+#[macro_use]
+extern crate maidsafe_utilities;
+extern crate rand;
+extern crate routing;
+extern crate sodiumoxide;
+extern crate xor_name;
+extern crate vault;
 
+mod crust_detail;
+
+use crust_detail::{poll, test_client, test_node};
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, normal_to_backup,
@@ -28,9 +35,7 @@ use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, normal_to_bac
 use routing::mock_crust::{self, Network};
 use sodiumoxide::crypto::sign;
 use xor_name::XorName;
-use utils;
-
-use self::test_client::TestClient;
+use vault::Config;
 
 fn random_structured_data(type_tag: u64) -> StructuredData {
     let keys = sign::gen_keypair();
@@ -38,7 +43,7 @@ fn random_structured_data(type_tag: u64) -> StructuredData {
     unwrap_result!(StructuredData::new(type_tag,
                                        random::<XorName>(),
                                        0,
-                                       utils::generate_random_vec_u8(10),
+                                       crust_detail::generate_random_vec_u8(10),
                                        vec![keys.0],
                                        vec![],
                                        Some(&keys.1)))
@@ -166,7 +171,7 @@ fn data_confirmation() {
     let node_count = 2 * 8;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-    let mut client = TestClient::new(&network, Some(config));
+    let mut client = test_client::TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
@@ -277,7 +282,7 @@ fn put_get_when_churn() {
     let network = Network::new();
     let mut nodes = test_node::create_nodes(&network, 2 * 8, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-    let mut client = TestClient::new(&network, Some(config));
+    let mut client = test_client::TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
@@ -359,4 +364,9 @@ fn put_get_when_churn() {
                                        })
                                        .count(),
                put_requests);
+}
+
+/// Runs tests.
+pub fn main() {
+    // run tests
 }
