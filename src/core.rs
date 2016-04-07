@@ -534,6 +534,9 @@ impl Core {
         self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
+                if !self.client_restriction {
+                    self.start_listening();
+                }
                 trace!("Received BootstrapConnect from {:?}.", peer_id);
                 // Established connection. Pending Validity checks
                 let _ = self.client_identify(peer_id);
