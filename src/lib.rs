@@ -138,6 +138,7 @@
 //! - [Bootstrapping](bootstrap.png)
 //! - [GetCloseGroup](get-close-group.png)
 //! - [Churn (NewNode)](new-node.png)
+//! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",
