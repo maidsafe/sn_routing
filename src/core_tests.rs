@@ -424,6 +424,7 @@ fn node_joins_in_front() {
 
 #[test]
 fn multiple_joining_nodes() {
+    // TODO: This occasionally fails.
     let network_size = 2 * GROUP_SIZE;
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, network_size);
