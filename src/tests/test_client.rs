@@ -89,16 +89,20 @@ impl TestClient {
         unwrap_result!(self.routing_client.send_get_request(dst, request, request_message_id));
         poll::nodes_and_client(nodes, self);
 
-        match self.routing_rx.try_recv() {
-            Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::GetSuccess(data, response_message_id),
-                ..
-            })) => {
-                assert_eq!(request_message_id, response_message_id);
-                return data;
+        loop {
+            match self.routing_rx.try_recv() {
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::GetSuccess(data, response_message_id),
+                    ..
+                })) => {
+                    if request_message_id == response_message_id {
+                        return data;
+                    } else {
+                        println!("{:?}  --   {:?}", request_message_id, response_message_id);
+                    }
+                }
+                event => panic!("Expected GetSuccess, got: {:?}", event),
             }
-
-            event => panic!("Expected GetSuccess, got: {:?}", event),
         }
     }
 

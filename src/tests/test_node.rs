@@ -88,3 +88,20 @@ pub fn add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize) 
         poll::nodes(&mut nodes);
     }
 }
+
+pub fn add_node(network:& Network, nodes: &mut Vec<TestNode>) {
+    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    nodes.push(TestNode::new(network, Some(config.clone())));
+    poll::nodes(nodes);
+}
+
+pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+    let node = nodes.remove(index);
+    drop(node);
+    poll_all(nodes);
+}
+
+/// Process all events
+fn poll_all(nodes: &mut [TestNode]) {
+    while nodes.iter_mut().any(TestNode::poll) {}
+}
