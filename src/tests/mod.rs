@@ -22,7 +22,7 @@ mod test_client;
 mod test_node;
 
 use routing::{Data, DataRequest, ImmutableData, ImmutableDataType};
-use routing::mock_crust::{Config, Network};
+use routing::mock_crust::{self, Network};
 
 use self::test_client::TestClient;
 use utils;
@@ -30,10 +30,10 @@ use utils;
 #[test]
 fn plain_data_put_and_get() {
     let network = Network::new();
-    let mut nodes = test_node::create_nodes(&network, 8);
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut nodes = test_node::create_nodes(&network, 8, None);
+    let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
-    let mut client = TestClient::new(&network, Some(config));
+    let mut client = TestClient::new(&network, Some(crust_config));
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
