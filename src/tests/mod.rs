@@ -161,7 +161,7 @@ fn check_data(all_immutable_data: Vec<Data>,
 }
 
 #[test]
-fn plain_data_put_and_get() {
+fn immutable_data_put_and_get() {
     let network = Network::new();
     let mut nodes = test_node::create_nodes(&network, 8);
     let config = Config::with_contacts(&[nodes[0].endpoint()]);
