@@ -21,19 +21,151 @@ mod poll;
 mod test_client;
 mod test_node;
 
-use routing::{Data, DataRequest, ImmutableData, ImmutableDataType};
-use routing::mock_crust::{Config, Network};
-
-use self::test_client::TestClient;
+use rand::{random, thread_rng};
+use rand::distributions::{IndependentSample, Range};
+use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, normal_to_backup,
+              normal_to_sacrificial, StructuredData};
+use routing::mock_crust::{self, Network};
+use sodiumoxide::crypto::sign;
+use xor_name::XorName;
 use utils;
 
-#[test]
-fn plain_data_put_and_get() {
-    let network = Network::new();
-    let mut nodes = test_node::create_nodes(&network, 8);
-    let config = Config::with_contacts(&[nodes[0].endpoint()]);
+use self::test_client::TestClient;
 
-    let mut client = TestClient::new(&network, Some(config));
+fn random_structured_data(type_tag: u64) -> StructuredData {
+    let keys = sign::gen_keypair();
+
+    unwrap_result!(StructuredData::new(type_tag,
+                                       random::<XorName>(),
+                                       0,
+                                       utils::generate_random_vec_u8(10),
+                                       vec![keys.0],
+                                       vec![],
+                                       Some(&keys.1)))
+}
+
+fn check_data(all_immutable_data: Vec<Data>,
+              all_structured_data: Vec<Data>,
+              mut all_stored_names: Vec<XorName>) {
+    all_stored_names.sort();
+
+    let mut all_immutable_data_names = all_immutable_data.iter()
+                                                         .cloned()
+                                                         .map(|data| data.name().clone())
+                                                         .collect::<Vec<XorName>>();
+
+    all_immutable_data_names.sort();
+
+    let mut normal_names = all_stored_names.clone();
+
+    normal_names.retain(|&stored_name| {
+        all_immutable_data_names.iter()
+                                .find(|&&name| name == stored_name)
+                                .is_some()
+    });
+
+    assert_eq!(2 * all_immutable_data.len(), normal_names.len());
+
+    normal_names.dedup();
+
+    assert_eq!(all_immutable_data_names.iter()
+                                       .zip(normal_names)
+                                       .filter(|&(data_name, normal_name)| {
+                                           *data_name == normal_name
+                                       })
+                                       .count(),
+               all_immutable_data.len());
+
+    let mut backup_names = all_stored_names.clone();
+
+    backup_names.retain(|&stored_name| {
+        all_immutable_data_names.iter()
+                                .find(|&&name| normal_to_backup(&name) == stored_name)
+                                .is_some()
+    });
+
+    assert_eq!(2 * all_immutable_data.len(), backup_names.len());
+
+    let mut all_backup_names = all_immutable_data.iter()
+                                                 .cloned()
+                                                 .map(|data| normal_to_backup(&data.name()))
+                                                 .collect::<Vec<XorName>>();
+
+    all_backup_names.sort();
+    backup_names.sort();
+    backup_names.dedup();
+
+    assert_eq!(all_backup_names.iter()
+                               .zip(backup_names)
+                               .filter(|&(data_name, backup_name)| *data_name == backup_name)
+                               .count(),
+               all_immutable_data.len());
+
+    let mut sacrificial_names = all_stored_names.clone();
+
+    sacrificial_names.retain(|&stored_name| {
+        all_immutable_data_names.iter()
+                                .find(|&&name| normal_to_sacrificial(&name) == stored_name)
+                                .is_some()
+    });
+
+    assert_eq!(2 * all_immutable_data.len(), sacrificial_names.len());
+
+    let mut all_sacrificial_names = all_immutable_data.iter()
+                                                      .cloned()
+                                                      .map(|data| {
+                                                          normal_to_sacrificial(&data.name())
+                                                      })
+                                                      .collect::<Vec<XorName>>();
+
+    all_sacrificial_names.sort();
+    sacrificial_names.sort();
+    sacrificial_names.dedup();
+
+    assert_eq!(all_sacrificial_names.iter()
+                                    .zip(sacrificial_names)
+                                    .filter(|&(data_name, sacrificial_name)| {
+                                        *data_name == sacrificial_name
+                                    })
+                                    .count(),
+               all_immutable_data.len());
+
+    let mut all_structured_data_names = all_structured_data.iter()
+                                                           .cloned()
+                                                           .map(|data| data.name().clone())
+                                                           .collect::<Vec<XorName>>();
+
+    all_structured_data_names.sort();
+
+    let mut structured_names = all_stored_names.clone();
+
+    structured_names.retain(|&stored_name| {
+        all_structured_data_names.iter()
+                                 .find(|&&name| name == stored_name)
+                                 .is_some()
+    });
+
+    assert_eq!(8 * all_structured_data.len(), structured_names.len());
+
+    structured_names.sort();
+    structured_names.dedup();
+
+    assert_eq!(all_structured_data_names.iter()
+                                        .zip(structured_names)
+                                        .filter(|&(data_name, structured_name)| {
+                                            *data_name == structured_name
+                                        })
+                                        .count(),
+               all_structured_data.len());
+}
+
+#[test]
+fn immutable_data_put_and_get() {
+    let network = Network::new();
+    let mut nodes = test_node::create_nodes(&network, 8, None);
+    let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+
+    let mut client = TestClient::new(&network, Some(crust_config));
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
@@ -51,4 +183,206 @@ fn plain_data_put_and_get() {
 
         data => panic!("Got unexpected data: {:?}", data),
     }
+}
+
+#[ignore]
+#[test]
+fn data_confirmation() {
+    let network = Network::new();
+    let node_count = 2 * 8;
+    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut client = TestClient::new(&network, Some(config));
+
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+
+    let mut all_data = Vec::new();
+    let mut all_immutable_data = Vec::new();
+    let mut all_structured_data = Vec::new();
+    let mut rng = thread_rng();
+    let immutable_range = Range::new(128, 1024);
+    let structured_range = Range::new(1, 10000);
+    let put_range = Range::new(50, 100);
+    let put_requests = put_range.ind_sample(&mut rng);
+
+    for _ in 0..put_requests {
+        if random::<bool>() {
+            let content = utils::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
+            let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
+            all_data.push(Data::Immutable(immutable_data));
+        } else {
+            let structured_data = random_structured_data(structured_range.ind_sample(&mut rng));
+            all_data.push(Data::Structured(structured_data));
+        }
+    }
+
+    for data in &all_data {
+        client.put(data.clone(), &mut nodes);
+    }
+
+    for data in &all_data {
+        match *data {
+            Data::Immutable(ref sent_immutable_data) => {
+                match client.get(DataRequest::Immutable(data.name(), ImmutableDataType::Normal),
+                                 &mut nodes) {
+                    Data::Immutable(recovered_immutable_data) => {
+                        assert_eq!(recovered_immutable_data.name(), sent_immutable_data.name());
+                        assert!(recovered_immutable_data.value() == sent_immutable_data.value());
+                    }
+                    unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
+                }
+                all_immutable_data.push(data.clone());
+            }
+            Data::Structured(ref sent_structured_data) => {
+                match client.get(DataRequest::Structured(sent_structured_data.get_identifier()
+                                                                             .clone(),
+                                                         sent_structured_data.get_type_tag()),
+                                 &mut nodes) {
+                    Data::Structured(recovered_structured_data) => {
+                        assert_eq!(recovered_structured_data.name(),
+                                   sent_structured_data.name());
+                    }
+                    unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
+                }
+                all_structured_data.push(data.clone());
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    poll::nodes_and_client(&mut nodes, &mut client);
+
+    let mut all_stored_names = Vec::new();
+
+    for node in &nodes {
+        all_stored_names.append(&mut node.get_stored_names());
+    }
+
+    check_data(all_immutable_data.clone(),
+               all_structured_data.clone(),
+               all_stored_names.clone());
+
+    for _ in 0..10 {
+        for _ in 0..3 {
+            let node_range = Range::new(1, nodes.len());
+            let node_index = node_range.ind_sample(&mut rng);
+            let node = nodes.remove(node_index);
+
+            drop(node);
+        }
+
+        poll::nodes_and_client(&mut nodes, &mut client);
+        all_stored_names.clear();
+
+        for node in &nodes {
+            all_stored_names.append(&mut node.get_stored_names());
+        }
+
+        check_data(all_immutable_data.clone(),
+                   all_structured_data.clone(),
+                   all_stored_names.clone());
+
+        test_node::add_nodes(&network, &mut nodes, 3);
+        poll::nodes_and_client(&mut nodes, &mut client);
+        all_stored_names.clear();
+
+        for node in &nodes {
+            all_stored_names.append(&mut node.get_stored_names());
+        }
+
+        check_data(all_immutable_data.clone(),
+                   all_structured_data.clone(),
+                   all_stored_names.clone());
+    }
+}
+
+#[ignore]
+#[test]
+fn put_get_when_churn() {
+    let network = Network::new();
+    let mut nodes = test_node::create_nodes(&network, 2 * 8, None);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut client = TestClient::new(&network, Some(config));
+
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+
+    let mut all_immutable_data = Vec::new();
+    let mut rng = thread_rng();
+    let range = Range::new(128, 1024);
+    let put_requests = 30;
+
+    for _ in 0..put_requests {
+        let content = utils::generate_random_vec_u8(range.ind_sample(&mut rng));
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
+        all_immutable_data.push(immutable_data);
+    }
+
+    let node_index_range = Range::new(1, nodes.len() - 1);
+    // Churn every 10 put_requests, thats 10 churn in total
+    for i in 0..all_immutable_data.len() {
+        client.put(Data::Immutable(all_immutable_data[i].clone()), &mut nodes);
+        if i % 10 == 0 {
+            if i % 20 == 0 {
+                test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
+            } else {
+                test_node::add_node(&network, &mut nodes);
+            }
+        }
+    }
+    // Churn every 10 put_requests, thats 10 churn in total
+    for i in 0..all_immutable_data.len() {
+        match client.get(DataRequest::Immutable(all_immutable_data[i].name(),
+                                                ImmutableDataType::Normal),
+                         &mut nodes) {
+            Data::Immutable(immutable_data) => {
+                assert_eq!(immutable_data.name(), all_immutable_data[i].name());
+                assert!(immutable_data.value() == all_immutable_data[i].value());
+            }
+            data => panic!("Got unexpected data: {:?}", data),
+        }
+        if i % 10 == 0 {
+            if i % 20 == 0 {
+                test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
+            } else {
+                test_node::add_node(&network, &mut nodes);
+            }
+        }
+    }
+
+    let mut all_immutable_data_names = all_immutable_data.iter()
+                                                         .cloned()
+                                                         .map(|immutable_data| {
+                                                             immutable_data.name().clone()
+                                                         })
+                                                         .collect::<Vec<XorName>>();
+
+    all_immutable_data_names.sort();
+
+    let mut all_stored_names = Vec::new();
+
+    for node in &nodes {
+        all_stored_names.append(&mut node.get_stored_names());
+    }
+
+    all_stored_names.sort();
+
+    all_stored_names.retain(|&stored_name| {
+        all_immutable_data_names.iter()
+                                .find(|&&immutable_data_name| immutable_data_name == stored_name)
+                                .is_some()
+    });
+
+    assert!(all_stored_names.len() >= 2 * put_requests);
+
+    all_stored_names.dedup();
+
+    assert_eq!(all_immutable_data_names.iter()
+                                       .zip(all_stored_names)
+                                       .filter(|&(data_name, stored_name)| {
+                                           *data_name == stored_name
+                                       })
+                                       .count(),
+               put_requests);
 }
