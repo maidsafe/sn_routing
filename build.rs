@@ -44,6 +44,7 @@ fn main() {
   download_image("bootstrap",       "https://cacoo.com/diagrams/cqX6QPN90ZuKXZ0n-F56A2.png");
   download_image("get-close-group", "https://cacoo.com/diagrams/PTBt1OgHVcdu0PKt-F56A2.png");
   download_image("new-node",        "https://cacoo.com/diagrams/5VCFe286q4yfQ6Pm-F56A2.png");
+  download_image("tunnel",          "https://cacoo.com/diagrams/ALXyW2ugR92IxgWd-F56A2.png");
 }
 
 fn download_image<U: IntoUrl>(name: &str, src: U) {
