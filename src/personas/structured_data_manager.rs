@@ -23,7 +23,7 @@ use error::InternalError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
-use sodiumoxide::crypto::hash::sha512;
+use sodiumoxide::crypto::hash::sha512::Digest;
 use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
@@ -81,9 +81,6 @@ impl StructuredDataManager {
                       full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
-        // Take a hash of the message anticipating sending this as a success response to the MM.
-        let message_hash = sha512::hash(&try!(serialisation::serialise(request))[..]);
-
         let (data, message_id) = if let RequestContent::Put(Data::Structured(ref data),
                                                             ref message_id) = request.content {
             (data, message_id)
@@ -130,13 +127,25 @@ impl StructuredDataManager {
             None => return Err(InternalError::NotInCloseGroup),
         }
 
-        try!(self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))));
-        trace!("SDM sending PutSuccess for data {}", data_name);
-        let _ = routing_node.send_put_success(response_src,
-                                              response_dst,
-                                              message_hash,
-                                              *message_id);
-        Ok(())
+        if let Err(err) = self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))) {
+            trace!("SDM failed to store {} in chunkstore: {:?}", data_name, err);
+            let error = MutationError::Unknown;
+            let external_error_indicator = try!(serialisation::serialise(&error));
+            let _ = routing_node.send_put_failure(response_src,
+                                                  response_dst,
+                                                  request.clone(),
+                                                  external_error_indicator,
+                                                  *message_id);
+            Err(From::from(error))
+        } else {
+            let message_hash = Digest([0; 64]);
+            trace!("SDM sending PutSuccess for data {}", data_name);
+            let _ = routing_node.send_put_success(response_src,
+                                                  response_dst,
+                                                  message_hash,
+                                                  *message_id);
+            Ok(())
+        }
     }
 
     pub fn handle_post(&mut self,
@@ -159,14 +168,12 @@ impl StructuredDataManager {
                         if let Ok(()) = self.chunk_store
                                             .put(&existing_data.name(), &serialised_data) {
                             trace!("SDM updated {:?} to {:?}", existing_data, new_data);
-                            if let Ok(serialised_request) = serialisation::serialise(request) {
-                                let digest = sha512::hash(&serialised_request[..]);
-                                let _ = routing_node.send_post_success(request.dst.clone(),
-                                                                       request.src.clone(),
-                                                                       digest,
-                                                                       *message_id);
-                                return Ok(());
-                            }
+                            let digest = Digest([0; 64]);
+                            let _ = routing_node.send_post_success(request.dst.clone(),
+                                                                   request.src.clone(),
+                                                                   digest,
+                                                                   *message_id);
+                            return Ok(());
                         }
                     }
                 }
@@ -203,14 +210,12 @@ impl StructuredDataManager {
                         trace!("SDM deleted {:?} with requested new version {:?}",
                                existing_data,
                                data);
-                        if let Ok(serialised_request) = serialisation::serialise(request) {
-                            let digest = sha512::hash(&serialised_request[..]);
-                            let _ = routing_node.send_delete_success(request.dst.clone(),
-                                                                     request.src.clone(),
-                                                                     digest,
-                                                                     *message_id);
-                            return Ok(());
-                        }
+                        let digest = Digest([0; 64]);
+                        let _ = routing_node.send_delete_success(request.dst.clone(),
+                                                                 request.src.clone(),
+                                                                 digest,
+                                                                 *message_id);
+                        return Ok(());
                     }
                 }
             }
@@ -305,7 +310,6 @@ mod test {
     use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
                   ResponseContent, ResponseMessage, StructuredData};
     use safe_network_common::client_errors::{GetError, MutationError};
-    use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
     use types::{Refresh, RefreshValue};
     use utils;
@@ -538,10 +542,7 @@ mod test {
         assert_eq!(0, env.routing.put_requests_given().len());
         let put_responses = env.routing.put_successes_given();
         assert_eq!(put_responses.len(), 1);
-        if let ResponseContent::PutSuccess(digest, id) = put_responses[0].content.clone() {
-            let message_hash =
-                sha512::hash(&unwrap_result!(serialisation::serialise(&put_env.request))[..]);
-            assert_eq!(message_hash, digest);
+        if let ResponseContent::PutSuccess(_, id) = put_responses[0].content.clone() {
             assert_eq!(put_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", put_responses[0]);
@@ -681,10 +682,7 @@ mod test {
                                                              put_env.client.clone());
         let mut post_success = env.routing.post_successes_given();
         assert_eq!(post_success.len(), 1);
-        if let ResponseContent::PostSuccess(digest, id) = post_success[0].content.clone() {
-            let message_hash = sha512::hash(&unwrap_result!(
-                serialisation::serialise(&post_correct_env.request))[..]);
-            assert_eq!(message_hash, digest);
+        if let ResponseContent::PostSuccess(_, id) = post_success[0].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", post_success[0]);
@@ -732,10 +730,7 @@ mod test {
                                                      put_env.client.clone());
         post_success = env.routing.post_successes_given();
         assert_eq!(env.routing.post_successes_given().len(), 2);
-        if let ResponseContent::PostSuccess(digest, id) = post_success[1].content.clone() {
-            let message_hash = sha512::hash(&unwrap_result!(
-                serialisation::serialise(&post_correct_env.request))[..]);
-            assert_eq!(message_hash, digest);
+        if let ResponseContent::PostSuccess(_, id) = post_success[1].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", post_success[1]);
@@ -802,10 +797,7 @@ mod test {
                                                              put_env.client.clone());
         let delete_success = env.routing.delete_successes_given();
         assert_eq!(delete_success.len(), 1);
-        if let ResponseContent::DeleteSuccess(digest, id) = delete_success[0].content.clone() {
-            let message_hash = sha512::hash(&unwrap_result!(
-                serialisation::serialise(&delete_correct_env.request))[..]);
-            assert_eq!(message_hash, digest);
+        if let ResponseContent::DeleteSuccess(_, id) = delete_success[0].content.clone() {
             assert_eq!(delete_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", delete_success[0]);
