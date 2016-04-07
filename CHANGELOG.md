@@ -1,5 +1,15 @@
 # Routing - Change Log
 
+## [0.13.0]
+- Add tunnel nodes.
+- Optimise the `GetNetworkName` message flow for quicker joining.
+- Make caching optional.
+- Send keepalive signals to detect lost peers.
+- Implement full `Put` response flow in the example node.
+- Remove digest from success responses; it has been replaced by `MessageId`.
+- Migrate to Crust 0.10.0.
+- Various bug fixes.
+
 ## [0.12.0]
 - Make the mock_crust module public
 
