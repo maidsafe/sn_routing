@@ -161,11 +161,12 @@ fn plain_data_put_and_get() {
 
     client.put(Data::Immutable(orig_data.clone()), &mut nodes);
 
-    match client.get(DataRequest::Immutable(orig_data.name(), ImmutableDataType::Normal), &mut nodes) {
+    match client.get(DataRequest::Immutable(orig_data.name(), ImmutableDataType::Normal),
+                     &mut nodes) {
         Data::Immutable(data) => {
             assert_eq!(data.name(), orig_data.name());
             assert!(data.value() == orig_data.value());
-        },
+        }
 
         data => panic!("Got unexpected data: {:?}", data),
     }
