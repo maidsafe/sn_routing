@@ -50,12 +50,14 @@ extern crate routing;
 extern crate xor_name;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
+extern crate term;
 extern crate time;
 
 mod utils;
 
+use std::io::{BufRead, BufReader, Write};
 use std::time::Duration;
-use std::{io, env, thread};
+use std::{cmp, io, env, thread};
 use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
@@ -73,15 +75,32 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
 
-// TODO This is a current limitation but once responses are coded this can ideally be close to 0
+use term::color;
+
 const CHURN_MIN_WAIT_SEC: u64 = 10;
 const CHURN_MAX_WAIT_SEC: u64 = 15;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
+/// The number of churn-get cycles.
+const DEFAULT_BATCHES: usize = 1;
+/// Only start the next node when the previous one has reached this routing table size.
+const DELAY_RT_SIZE: usize = GROUP_SIZE;
 
+struct NodeProcess(Child, usize);
 
-struct NodeProcess(Child);
+impl NodeProcess {
+    fn wait_for_output<T: AsRef<str>>(&mut self, pat: T) {
+        if let Some(ref mut stdout) = self.0.stdout {
+            for line in BufReader::new(stdout).lines() {
+                if line.unwrap().contains(pat.as_ref()) {
+                    break;
+                }
+            }
+        }
+    }
+}
+
 impl Drop for NodeProcess {
     fn drop(&mut self) {
         match self.0.kill() {
@@ -109,21 +128,23 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                                  args.push("-d".to_owned());
                              }
 
-                             let node = NodeProcess(try!(Command::new(current_exe_path.clone())
-                                                             .args(&args)
-                                                             .stdout(Stdio::null())
-                                                             .stderr(Stdio::null())
-                                                             .spawn()));
+                             let mut node = NodeProcess(try!(Command::new(current_exe_path.clone())
+                                                                 .args(&args)
+                                                                 .stdout(Stdio::piped())
+                                                                 .stderr(Stdio::inherit())
+                                                                 .spawn()),
+                                                        i + 1);
 
                              println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
-                             // Let Routing properly stabilise and populate its routing-table
-                             thread::sleep(Duration::from_secs(3));
+                             if i == 0 {
+                                 node.wait_for_output("Running listener");
+                             } else {
+                                 node.wait_for_output(format!("Routing Table size: {:3}",
+                                                              cmp::min(i, DELAY_RT_SIZE)));
+                             }
                              Ok(node)
                          })
                          .collect::<io::Result<Vec<NodeProcess>>>());
-
-    println!("Waiting 10 seconds to let the network stabilise");
-    thread::sleep(Duration::from_secs(10));
 
     Ok(nodes)
 }
@@ -136,7 +157,6 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
-        let mut log_file_number = nodes.len() + 1;
         loop {
             {
                 let &(ref lock, ref cvar) = &*stop_flg;
@@ -146,7 +166,8 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
+                    let wake_up_result =
+                        unwrap_result!(cvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
@@ -157,10 +178,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 }
             }
 
-            if let Err(err) = simulate_churn_impl(&mut nodes,
-                                                  &mut rng,
-                                                  &mut log_file_number,
-                                                  network_size) {
+            if let Err(err) = simulate_churn_impl(&mut nodes, &mut rng, network_size) {
                 println!("{:?}", err);
                 break;
             }
@@ -172,10 +190,12 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        rng: &mut ThreadRng,
-                       log_file_number: &mut usize,
                        network_size: usize)
                        -> Result<(), io::Error> {
-    println!("About to churn on {} active nodes...", nodes.len());
+    print!("Churning on {} active nodes. ", nodes.len());
+    io::stdout().flush().ok().expect("Could not flush stdout");
+
+    let mut log_file_number = nodes.len() + 1;
 
     let kill_node = match nodes.len() {
         size if size == GROUP_SIZE => false,
@@ -189,34 +209,101 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
     if kill_node {
         // Never kill the bootstrap (0th) node
         let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
-        println!("Killing Node #{}", kill_at_index + 1);
-        let _ = nodes.remove(kill_at_index);
+        let node = nodes.remove(kill_at_index);
+        print!("Killing Node #{}: ", node.1);
+        io::stdout().flush().ok().expect("Could not flush stdout");
     } else {
         log_path.set_file_name(&format!("Node_{:02}.log", log_file_number));
-        let arg = format!("--output=Node_{:02}.log", log_path.display());
-        *log_file_number += 1;
+        let arg = format!("--output={}", log_path.display());
+        log_file_number += 1;
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
                                         .arg(arg)
                                         .stdout(Stdio::null())
                                         .stderr(Stdio::null())
-                                        .spawn())));
+                                        .spawn()),
+                               log_file_number));
         println!("Started Node #{} with Process ID #{}",
-                 nodes.len(),
+                 log_file_number,
                  nodes[nodes.len() - 1].0.id());
     }
 
     Ok(())
 }
 
+fn print_color(text: &str, color: color::Color) {
+    let mut term = term::stdout().expect("Could not open stdout.");
+    term.fg(color).expect("Failed to set color");
+    print!("{}", text);
+    term.reset().expect("Failed to restore stdout attributes.");
+    io::stdout().flush().ok().expect("Could not flush stdout");
+}
+
+fn store_and_verify(requests: usize, batches: usize) {
+    println!("--------- Starting Client -----------");
+    let mut example_client = ExampleClient::new();
+
+    println!("--------- Putting Data -----------");
+    let mut stored_data = Vec::with_capacity(requests);
+    for i in 0..requests {
+        let key: String = (0..10).map(|_| random::<u8>() as char).collect();
+        let value: String = (0..10).map(|_| random::<u8>() as char).collect();
+        let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
+        let data = unwrap_result!(serialise(&(key, value)));
+        let data = Data::Plain(PlainData::new(name, data));
+
+        print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
+        io::stdout().flush().ok().expect("Could not flush stdout");
+        if example_client.put(data.clone()).is_ok() {
+            print_color("OK", color::GREEN);
+            print!(" - getting - ");
+            io::stdout().flush().ok().expect("Could not flush stdout");
+            stored_data.push(data.clone());
+            if let Some(got_data) = example_client.get(DataRequest::Plain(data.name())) {
+                assert_eq!(got_data, data);
+                print_color("OK\n", color::GREEN);
+            } else {
+                print_color("FAIL\n", color::RED);
+                break;
+            };
+        } else {
+            print_color("FAIL\n", color::RED);
+            break;
+        }
+    }
+
+    for batch in 0..batches {
+        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
+        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
+
+        println!("--------- Getting Data - batch {} of {} -----------",
+                 batch + 1,
+                 batches);
+        for (i, data_item) in stored_data.iter().enumerate().take(requests) {
+            print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
+            io::stdout().flush().ok().expect("Could not flush stdout");
+            if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
+                assert_eq!(data, stored_data[i]);
+                print_color("OK\n", color::GREEN);
+            } else {
+                print_color("FAIL\n", color::RED);
+                break;
+            };
+        }
+    }
+}
+
 // ==========================   Program Options   =================================
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  local_network [(<nodes> <requests>) | (--output=<log_file> | --output=<log_file> -d | -h)]
+  ci_test -h
+  ci_test --output=<log_file> [-c [<requests> [<batches>]]] [-d]
+  ci_test [<nodes> <requests> [<batches>]]
 
 Options:
   -o, --output=<log_file>       Run individual CI node.
+  -c, --client                  Run as an individual client.
   -d, --delete-bootstrap-cache  Delete existing bootstrap-cache.
   -h, --help                    Display this help message.
 ";
@@ -224,9 +311,11 @@ Options:
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
+    arg_batches: Option<usize>,
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
     flag_output: Option<String>,
+    flag_client: Option<bool>,
     flag_delete_bootstrap_cache: Option<bool>,
     flag_help: Option<bool>,
 }
@@ -239,6 +328,8 @@ fn main() {
 
     let run_network_test = !(args.flag_output.is_some() ||
                              args.flag_delete_bootstrap_cache.is_some());
+    let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
+    let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
 
     if run_network_test {
         let node_count = match args.arg_nodes {
@@ -253,52 +344,12 @@ fn main() {
             None => DEFAULT_NODE_COUNT,
         };
 
-        let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
-
         let nodes = unwrap_result!(start_nodes(node_count));
 
         let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
 
-        println!("--------- Starting Client -----------");
-        let mut example_client = ExampleClient::new();
-
-        println!("--------- Putting Data -----------");
-        let mut stored_data = Vec::with_capacity(requests);
-        for i in 0..requests {
-            let key: String = (0..10).map(|_| random::<u8>() as char).collect();
-            let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-            let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
-            let data = unwrap_result!(serialise(&(key, value)));
-            let data = Data::Plain(PlainData::new(name, data));
-
-            println!("Putting Data: count #{} - Data {:?}", i + 1, name);
-            example_client.put(data.clone());
-            stored_data.push(data.clone());
-
-            println!("Getting Data: count #{} - Data {:?}", i + 1, name);
-            if let Some(data) = example_client.get(DataRequest::Plain(data.name())) {
-                assert_eq!(data, stored_data[i]);
-            } else {
-                println!("Failed to recover stored data: {}.", data.name());
-                break;
-            };
-        }
-
-        println!("--------- Churning {} seconds -----------", CHURN_TIME_SEC);
-        thread::sleep(Duration::from_secs(CHURN_TIME_SEC));
-
-        // Get the data again.
-        println!("--------- Getting Data -----------");
-        for (i, data_item) in stored_data.iter().enumerate().take(requests) {
-            println!("Get attempt #{} - Data {:?}", i + 1, data_item.name());
-            if let Some(data) = example_client.get(DataRequest::Plain(data_item.name())) {
-                assert_eq!(data, stored_data[i]);
-            } else {
-                println!("Failed to recover stored data: {}.", data_item.name());
-                break;
-            };
-        }
+        store_and_verify(requests, batches);
 
         // Graceful exit
         {
@@ -307,12 +358,16 @@ fn main() {
             cvar.notify_one();
         }
     } else if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file));
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, true));
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file
         }
 
-        ExampleNode::new().run();
+        if Some(true) == args.flag_client {
+            store_and_verify(requests, batches);
+        } else {
+            ExampleNode::new().run();
+        }
     }
 }

@@ -54,7 +54,9 @@ impl Debug for Action {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
             Action::NodeSendMessage { ref content, .. } => {
-                write!(formatter, "Action::NodeSendMessage {{ {:?}, result_tx }}", content)
+                write!(formatter,
+                       "Action::NodeSendMessage {{ {:?}, result_tx }}",
+                       content)
             }
             Action::ClientSendRequest { ref content, ref dst, .. } => {
                 write!(formatter,
