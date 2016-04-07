@@ -1297,16 +1297,9 @@ impl Core {
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
         match try!(serialisation::deserialise(&bytes)) {
-            Message::Hop(hop_msg) => {
+            Message::Hop(_) => {
                 if self.send_filter.insert((bytes.clone(), peer_id.clone()), ()).is_some() {
-                    warn!("Duplicate send to {:?} : {:?}",
-                          peer_id,
-                          *hop_msg.content().content());
                     return Ok(());
-                } else {
-                    trace!("Sending msg to {:?} : {:?}",
-                           peer_id,
-                           *hop_msg.content().content());
                 }
             }
             _ => (),
