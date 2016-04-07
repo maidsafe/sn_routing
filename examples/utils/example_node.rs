@@ -498,10 +498,13 @@ impl ExampleNode {
                 let _ = self.client_accounts.insert(client_name, data);
             }
             RefreshContent::Nae { data_name, pmid_nodes, .. } => {
-                for dm in pmid_nodes {
-                    if self.add_dm(data_name, dm) {
-                        trace!("Added {:?} as a DM for {:?} on refresh.", dm, data_name);
-                    }
+                let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
+                if old_val != Some(pmid_nodes.clone()) {
+                    trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",
+                           self.get_debug_name(),
+                           data_name,
+                           old_val.unwrap_or_else(Vec::new),
+                           pmid_nodes);
                 }
             }
         }
