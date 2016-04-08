@@ -17,6 +17,13 @@
 
 //! SAFE Vault provides the interface to SAFE routing.
 //! The resulting executable is the Vault node for the SAFE network.
+//!
+//! # Diagrams
+//!
+//! - [Personas](personas.png)
+//! - [Immutable data put flow](immutable-data-put-flow.png)
+//! - [Immutable data get flow](immutable-data-get-flow.png)
+//!
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",

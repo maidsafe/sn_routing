@@ -26,7 +26,7 @@ use maidsafe_utilities::serialisation;
 use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
               PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use safe_network_common::client_errors::MutationError;
-use sodiumoxide::crypto::hash::sha512;
+use sodiumoxide::crypto::hash::sha512::Digest;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -319,25 +319,31 @@ impl ImmutableDataManager {
             unreachable!("Error in vault demuxing");
         };
 
-        // Send success on receipt if src is MaidManager.
-        if let Authority::ClientManager(_) = request.src {
-            let src = request.dst.clone();
-            let dst = request.src.clone();
-            let message_hash = sha512::hash(&try!(serialisation::serialise(&request))[..]);
-            let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
-        }
+        let send_success = || {
+            // Only send success response if src is MaidManager.
+            if let Authority::ClientManager(_) = request.src {
+                let src = request.dst.clone();
+                let dst = request.src.clone();
+                let digest = Digest([0; 64]);
+                let _ = routing_node.send_put_success(src, dst, digest, *message_id);
+            }
+        };
 
-        // If the data already exists, there's no more to do.
+        // If the data already exists, send success and finish.
         let data_name = data.name();
         if self.accounts.contains_key(&data_name) {
-            return Ok(());
+            return Ok(send_success());
         }
 
         // Choose the PmidNodes to store the data on, and add them in a new database entry.
         let target_pmid_nodes = match self.choose_initial_pmid_nodes(routing_node,
                                                                      full_pmid_nodes,
                                                                      &data_name) {
-            Ok(pmid_nodes) => pmid_nodes,
+            Ok(pmid_nodes) => {
+                // Send success since we found enough non-full Pmid Nodes
+                send_success();
+                pmid_nodes
+            }
             Err(InternalError::UnableToAllocateNewPmidNode) => {
                 // Send failure if src is MaidManager.
                 let error = MutationError::NetworkFull;
@@ -1170,16 +1176,17 @@ impl Default for ImmutableDataManager {
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
+
+    use std::collections::HashSet;
+    use std::mem;
+    use std::sync::mpsc;
+
     use maidsafe_utilities::{log, serialisation};
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent, ResponseMessage};
     use safe_network_common::client_errors::GetError;
-    use std::collections::HashSet;
-    use std::mem;
-    use std::sync::mpsc;
-    use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
     use types::{Refresh, RefreshValue};
     use utils::generate_random_vec_u8;
@@ -1354,10 +1361,7 @@ mod test {
         }
         let put_successes = env.routing.put_successes_given();
         assert_eq!(put_successes.len(), 1);
-        if let ResponseContent::PutSuccess(digest, id) = put_successes[0].content.clone() {
-            let message_hash =
-                sha512::hash(&unwrap_result!(serialisation::serialise(&put_env.incoming_request))[..]);
-            assert_eq!(message_hash, digest);
+        if let ResponseContent::PutSuccess(_, id) = put_successes[0].content.clone() {
             assert_eq!(put_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", put_successes[0]);
