@@ -10,7 +10,8 @@ target/
 /.project
 *.sublime-*
 *.bootstrap.cache
-/bin/
+/bin/*
+!safe_vault.rs
 .cargo/
 packages/
 .DS_Store
