@@ -20,12 +20,12 @@ use error::InternalError;
 use std::ffi::OsString;
 use xor_name::XorName;
 
-/// missing docs
+/// Lets a vault configure a wallet address and storage limit.
 #[derive(Clone, Debug, RustcDecodable, RustcEncodable)]
 pub struct Config {
-    /// missing docs
+    /// Used to store the address where SafeCoin will be sent.
     pub wallet_address: Option<XorName>,
-    /// missing docs
+    /// Upper limit for allowed network storage on this vault.
     pub max_capacity: Option<u64>, // measured by Bytes
 }
 
