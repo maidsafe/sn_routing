@@ -49,7 +49,6 @@ extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate config_file_handler;
-extern crate ctrlc;
 extern crate docopt;
 extern crate rustc_serialize;
 extern crate vault;

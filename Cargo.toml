@@ -47,5 +47,4 @@ harness = false
 name = "ci"
 
 [[test]]
-harness = false
 name = "mock_crust"
