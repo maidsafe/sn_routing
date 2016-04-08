@@ -20,7 +20,6 @@ use error::InternalError;
 use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
 use routing::{Data, DataRequest, ImmutableData, MessageId, RequestContent, RequestMessage};
-use sodiumoxide::crypto::hash::sha512;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
@@ -140,14 +139,13 @@ impl PmidNode {
                                   message_id: &MessageId,
                                   request: &RequestMessage)
                                   -> Result<(), InternalError> {
-        let message_hash = sha512::hash(&try!(serialisation::serialise(&request))[..]);
         let src = request.dst.clone();
         let dst = request.src.clone();
         trace!("As {:?} sending put success of data {} to {:?}",
                src,
                data_name,
                dst);
-        let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
+        let _ = routing_node.send_put_success(src, dst, *message_id);
         Ok(())
     }
 
@@ -174,7 +172,6 @@ mod test {
     use rand::random;
     use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent};
-    use sodiumoxide::crypto::hash::sha512;
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
     use vault::RoutingNode;
@@ -189,7 +186,7 @@ mod test {
 
     fn environment_setup(capacity: u64) -> Environment {
         let mut name = random::<XorName>();
-        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
+        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
         let pmid_node = unwrap_result!(PmidNode::new(capacity));
 
         loop {
@@ -248,10 +245,7 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
-            if let Ok(serialised_request) = serialisation::serialise(&request_msg) {
-                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
-            }
+        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
         } else {
             unreachable!()
@@ -329,10 +323,7 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
-            if let Ok(serialised_request) = serialisation::serialise(&request_msg) {
-                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
-            }
+        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
         } else {
             unreachable!()
@@ -449,10 +440,7 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
-            if let Ok(serialised_request) = serialisation::serialise(&request_msg) {
-                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
-            }
+        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
         } else {
             unreachable!()

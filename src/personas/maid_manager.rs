@@ -23,7 +23,6 @@ use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, ImmutableDataType, MessageId, RequestContent, RequestMessage};
-use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use utils;
 use vault::RoutingNode;
@@ -101,11 +100,9 @@ impl MaidManager {
         match self.request_cache.remove(message_id) {
             Some(client_request) => {
                 // Send success response back to client
-                let message_hash =
-                    sha512::hash(&try!(serialisation::serialise(&client_request))[..]);
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, message_hash, *message_id);
+                let _ = routing_node.send_put_success(src, dst, *message_id);
                 Ok(())
             }
             None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
@@ -357,7 +354,7 @@ mod test {
     }
 
     fn environment_setup() -> Environment {
-        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
+        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
         let from = random::<XorName>();
         let client;
 
@@ -648,10 +645,7 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.client);
 
-        if let ResponseContent::PutSuccess(ref digest, ref id) = put_successes[0].content {
-            if let Ok(serialised_request) = serialisation::serialise(&valid_request) {
-                assert_eq!(*digest, sha512::hash(&serialised_request[..]));
-            }
+        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
         } else {
             unreachable!()
