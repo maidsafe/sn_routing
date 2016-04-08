@@ -8,8 +8,8 @@ trap 'exit' ERR
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-Version=$(sed -n 's/[ \t]*version[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
-VaultName=$(sed -n 's/[ \t]*name[ \t]*=[ \t]*"\([^"]*\)".*/\1/p' "$RootDir/Cargo.toml")
+Version=$(cargo pkgid | sed -e "s/.*[:#]\(.*\)/\1/")
+VaultName=$(cargo pkgid | sed -e "s/.*\(\<.*\>\)[:#].*/\1/")
 if [[ "$1" == "linux" ]]
 then
   VaultPath=/usr/bin/

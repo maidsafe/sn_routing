@@ -12,27 +12,24 @@ If (!$AdvancedInstallerPath) {
 $AdvancedInstallerPath = Join-Path $AdvancedInstallerPath bin\x86
 $env:PATH = "$env:RUST_NIGHTLY\bin;$AdvancedInstallerPath;$env:PATH"
 
-# Get the current project version and name from Cargo.toml
+# Get the current project version and name
 $PSScriptRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
-$project_root = (get-item $PSScriptRoot).parent.parent.FullName
-$cargo_toml = Join-Path $project_root Cargo.toml
-$cargo_content = Get-Content "$cargo_toml"
-$project_version = (($cargo_content -match 'version[= \t]*"[^"]*"') -replace 'version[= \t]*"', '') -replace '"', ''
-$matches = Get-Content "$cargo_toml" | Select-String -Pattern 'name[= \t]*"([^"]*)"'
-$project_name = (($cargo_content -match 'name[= \t]*"[^"]*"') -replace 'name[= \t]*"', '') -replace '"', ''
+$ProjectRoot = (get-item $PSScriptRoot).parent.parent.FullName
+cd $ProjectRoot
+$ProjectVersion = (cargo pkgid) -replace '.*[:#](.*)', '$1'
+$ProjectName = (cargo pkgid) -replace '/*([^/#]*[/#])*((\w+)[:#]).*', '$3'
 
 # Build the main target
-cd $project_root
 cargo update
 cargo rustc --release '--' -C link-args="-Wl,--subsystem,windows"
-strip target\release\$project_name.exe
+strip target\release\$ProjectName.exe
 
 # Update the AdvancedInstaller project file and build the 32-bit or 64-bit package
 If ($env:PROCESSOR_ARCHITECTURE -eq "x86") {
-    $build_name = "x86"
+    $BuildName = "x86"
 } Else {
-    $build_name = "x64"
+    $BuildName = "x64"
 }
-$aip_file = Join-Path $PSScriptRoot ("$project_name" + "_32_and_64_bit.aip")
-AdvancedInstaller.com /edit $aip_file /SetVersion $project_version
-AdvancedInstaller.com /build $aip_file -buildslist $build_name
+$AipFile = Join-Path $PSScriptRoot ("$ProjectName" + "_32_and_64_bit.aip")
+AdvancedInstaller.com /edit $AipFile /SetVersion $ProjectVersion
+AdvancedInstaller.com /build $AipFile -buildslist $BuildName
