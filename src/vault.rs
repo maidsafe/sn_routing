@@ -175,7 +175,7 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        let mut routing_node = self.routing_node.take().expect("routing_node should never be None");
+        let routing_node = self.routing_node.take().expect("routing_node should never be None");
         let mut result = routing_node.poll();
 
         if let Ok(event) = self.routing_receiver.try_recv() {

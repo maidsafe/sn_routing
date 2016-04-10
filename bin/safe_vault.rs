@@ -116,7 +116,6 @@ pub fn main() {
 }
 
 #[cfg(feature = "use-mock-crust")]
-#[allow(missing_docs)]
-pub fn main() {
+fn main() {
     println!("Error: mock crust not supported");
 }

@@ -30,7 +30,6 @@
          missing_debug_implementations, variant_size_differences)]
 
 #![allow(unused_extern_crates)]
-
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate rand;
@@ -48,8 +47,7 @@ mod test {
     use mock_crust_detail::{self, poll, test_client, test_node};
     use rand::{random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Data, DataRequest, ImmutableData, ImmutableDataType, normal_to_backup,
-                  normal_to_sacrificial, StructuredData};
+    use routing::{self, Data, DataRequest, ImmutableData, ImmutableDataType, StructuredData};
     use routing::mock_crust::{self, Network};
     use sodiumoxide::crypto::sign;
     use xor_name::XorName;
@@ -102,7 +100,7 @@ mod test {
 
         backup_names.retain(|&stored_name| {
             all_immutable_data_names.iter()
-                                    .find(|&&name| normal_to_backup(&name) == stored_name)
+                                    .find(|&&name| routing::normal_to_backup(&name) == stored_name)
                                     .is_some()
         });
 
@@ -110,7 +108,7 @@ mod test {
 
         let mut all_backup_names = all_immutable_data.iter()
                                                      .cloned()
-                                                     .map(|data| normal_to_backup(&data.name()))
+                                                     .map(|data| routing::normal_to_backup(&data.name()))
                                                      .collect::<Vec<XorName>>();
 
         all_backup_names.sort();
@@ -127,7 +125,7 @@ mod test {
 
         sacrificial_names.retain(|&stored_name| {
             all_immutable_data_names.iter()
-                                    .find(|&&name| normal_to_sacrificial(&name) == stored_name)
+                                    .find(|&&name| routing::normal_to_sacrificial(&name) == stored_name)
                                     .is_some()
         });
 
@@ -136,7 +134,7 @@ mod test {
         let mut all_sacrificial_names = all_immutable_data.iter()
                                                           .cloned()
                                                           .map(|data| {
-                                                              normal_to_sacrificial(&data.name())
+                                                              routing::normal_to_sacrificial(&data.name())
                                                           })
                                                           .collect::<Vec<XorName>>();
 

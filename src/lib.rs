@@ -41,8 +41,6 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
-#![cfg_attr(feature = "use-mock-crust", allow(unused))]
-
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -53,7 +51,7 @@ extern crate config_file_handler;
 extern crate ctrlc;
 #[cfg(all(test, feature = "use-mock-routing"))]
 extern crate kademlia_routing_table;
-#[cfg(all(test, any(feature = "use-mock-routing", feature = "use-mock-crust")))]
+#[cfg(all(test, feature = "use-mock-routing"))]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
