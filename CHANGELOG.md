@@ -1,7 +1,7 @@
 # Routing - Change Log
 
 ## [0.12.0]
-- Implementation of RFC-0023 for ImmutableData type naming.
+- Make the mock_crust module public
 
 ## [0.11.1]
 - Send a Disconnected event if client fails to bootstrap.
