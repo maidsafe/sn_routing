@@ -21,8 +21,8 @@ use std::convert::From;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, MessageId,
-              RequestContent, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
+              StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
@@ -139,9 +139,7 @@ impl StructuredDataManager {
             Err(From::from(error))
         } else {
             trace!("SDM sending PutSuccess for data {}", data_name);
-            let _ = routing_node.send_put_success(response_src,
-                                                  response_dst,
-                                                  *message_id);
+            let _ = routing_node.send_put_success(response_src, response_dst, *message_id);
             Ok(())
         }
     }
@@ -288,16 +286,16 @@ impl StructuredDataManager {
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("SDM sending refresh for data {:?}", src.name());
             let _ = routing_node.send_refresh_request(src.clone(),
-			                                          src.clone(),
-			                                          serialised_refresh,
-													  MessageId::from_lost_node(*node_changed));
+                                                      src.clone(),
+                                                      serialised_refresh,
+                                                      MessageId::from_lost_node(*node_changed));
         }
     }
 }
 
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 mod test {
     use super::*;
 
@@ -840,8 +838,9 @@ mod test {
                    Authority::NaeManager(put_env.sd_data.name()));
         assert_eq!(refresh_requests[0].dst,
                    Authority::NaeManager(put_env.sd_data.name()));
-        if let RequestContent::Refresh(received_serialised_refresh, _) =
-                refresh_requests[0].content.clone() {
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[0]
+                                                                             .content
+                                                                             .clone() {
             let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                     &received_serialised_refresh[..]));
             if let RefreshValue::StructuredDataManager(received_data) = parsed_refresh.value

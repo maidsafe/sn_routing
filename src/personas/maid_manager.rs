@@ -178,14 +178,13 @@ impl MaidManager {
                     account: &Account,
                     node_changed: &XorName) {
         let src = Authority::ClientManager(*maid_name);
-        let refresh = Refresh::new(maid_name,
-                                   RefreshValue::MaidManagerAccount(account.clone()));
+        let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src.clone(),
-			                                          src.clone(),
-			                                          serialised_refresh,
-													  MessageId::from_lost_node(*node_changed));
+                                                      src.clone(),
+                                                      serialised_refresh,
+                                                      MessageId::from_lost_node(*node_changed));
         }
     }
 
@@ -207,7 +206,8 @@ impl MaidManager {
                     if full_pmid_nodes.intersection(&close_group.iter()
                                                                 .cloned()
                                                                 .collect::<HashSet<XorName>>())
-                                      .count() >= (close_group.len() as f32 * MAX_FULL_RATIO) as usize {
+                                      .count() >=
+                       (close_group.len() as f32 * MAX_FULL_RATIO) as usize {
                         return self.reply_with_put_failure(routing_node,
                                                            request.clone(),
                                                            message_id,
@@ -216,7 +216,7 @@ impl MaidManager {
                 }
                 _ => {
                     error!("Failed to get close group.");
-                    return Ok(())
+                    return Ok(());
                 }
             }
 
@@ -237,7 +237,9 @@ impl MaidManager {
         let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
                                                                       ref message_id) =
                                                   request.content {
-            (Data::Structured(data.clone()), data.get_type_tag(), message_id)
+            (Data::Structured(data.clone()),
+             data.get_type_tag(),
+             message_id)
         } else {
             unreachable!("Logic error")
         };
@@ -321,7 +323,7 @@ impl Default for MaidManager {
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
@@ -428,9 +430,8 @@ mod test {
                 content: RequestContent::Put(Data::Structured(sd), message_id),
             };
 
-            if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                        &HashSet::<XorName>::new(),
-                                                        &request) {} else {
+            if let Ok(()) = env.maid_manager
+                               .handle_put(&env.routing, &HashSet::<XorName>::new(), &request) {} else {
                 unreachable!()
             }
         };
@@ -528,7 +529,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request)
+                   .is_ok());
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -563,7 +566,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request)
+                   .is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -643,7 +648,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request)
+                   .is_ok());
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -714,7 +721,9 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd.clone()), message_id),
         };
 
-        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request)
+                   .is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -735,10 +744,9 @@ mod test {
         // Valid case.
         let error = MutationError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
-            assert!(env.maid_manager.handle_put_failure(&env.routing,
-                                                        &message_id,
-                                                        &error_indicator[..])
-                                    .is_ok());
+            assert!(env.maid_manager
+                       .handle_put_failure(&env.routing, &message_id, &error_indicator[..])
+                       .is_ok());
         } else {
             unreachable!()
         }
@@ -800,7 +808,9 @@ mod test {
                                          .collect::<HashSet<XorName>>();
         }
 
-        assert!(env.maid_manager.handle_put(&env.routing, &full_pmid_nodes, &valid_request).is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&env.routing, &full_pmid_nodes, &valid_request)
+                   .is_ok());
 
         let put_failures = env.routing.put_failures_given();
 
@@ -838,8 +848,8 @@ mod test {
             assert_eq!(refresh_requests[0].src, env.our_authority);
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh, _) =
-                    refresh_requests[0].content {
+            if let RequestContent::Refresh(ref serialised_refresh, _) = refresh_requests[0]
+                                                                            .content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, utils::client_name(&env.client));

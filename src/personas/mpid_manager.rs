@@ -331,10 +331,10 @@ impl MpidManager {
                                                                         received_headers));
             if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("MpidManager sending refresh for account {:?}", src.name());
-            let _ = routing_node.send_refresh_request(src.clone(),
-			                                          src.clone(),
-			                                          serialised_refresh,
-													  message_id);
+                let _ = routing_node.send_refresh_request(src.clone(),
+                                                          src.clone(),
+                                                          serialised_refresh,
+                                                          message_id);
             }
         }
     }
@@ -684,7 +684,7 @@ impl MpidManager {
 
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;

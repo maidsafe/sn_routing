@@ -45,10 +45,10 @@ const PMID_NODE_ALLOWANCE: f64 = 0.6;
 const STUCTURED_DATA_MANAGER_ALLOWANCE: f64 = 0.3;
 const MPID_MANAGER_ALLOWANCE: f64 = 0.1;
 
-#[cfg(not(all(test, feature = "use-mock-routing")))]
+#[cfg(not(test))]
 pub type RoutingNode = ::routing::Node;
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 pub type RoutingNode = ::mock_routing::MockRoutingNode;
 
 /// Main struct to hold all personas and Routing instance
@@ -315,7 +315,9 @@ impl Vault {
                 self.structured_data_manager.handle_delete(routing_node, &request)
             }
             // ================== Refresh ==================
-            (src, dst, &RequestContent::Refresh(ref serialised_refresh, _)) => {
+            (src,
+             dst,
+             &RequestContent::Refresh(ref serialised_refresh, _)) => {
                 self.on_refresh(src, dst, serialised_refresh)
             }
             // ================== Invalid Request ==================

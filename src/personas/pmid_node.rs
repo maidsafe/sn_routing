@@ -164,7 +164,7 @@ impl PmidNode {
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 mod test {
     use super::*;
     use safe_network_common::client_errors::GetError;

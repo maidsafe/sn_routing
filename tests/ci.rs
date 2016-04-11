@@ -37,7 +37,7 @@
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
 // To avoid multiple cfg statements before each import.
-#![cfg_attr(any(feature="use-mock-routing", feature="use-mock-crust"),
+#![cfg_attr(test,
    allow(unused, unused_extern_crates))]
 
 extern crate kademlia_routing_table;
@@ -52,7 +52,7 @@ extern crate safe_network_common;
 extern crate sodiumoxide;
 extern crate xor_name;
 
-#[cfg(all(not(feature = "use-mock-routing"), not(feature = "use-mock-crust")))]
+#[cfg(all(not(feature = "use-mock-crust")))]
 mod detail;
 
 const VAULT_COUNT: u32 = 10;
@@ -66,10 +66,10 @@ const REQUEST_COUNT: u32 = 30;
 
 use std::process;
 use std::sync::{Arc, Mutex, Condvar};
-#[cfg(all(not(feature = "use-mock-routing"), not(feature = "use-mock-crust")))]
+#[cfg(all(not(feature = "use-mock-crust")))]
 use detail::*;
 
-#[cfg(all(not(feature = "use-mock-routing"), not(feature = "use-mock-crust")))]
+#[cfg(all(not(feature = "use-mock-crust")))]
 #[cfg_attr(feature="clippy", allow(mutex_atomic, print_stdout))]
 fn main() {
     let mut failed = false;
@@ -120,5 +120,5 @@ fn main() {
     }
 }
 
-#[cfg(any(feature = "use-mock-routing", feature = "use-mock-crust"))]
+#[cfg(any(feature = "use-mock-crust"))]
 fn main() {}

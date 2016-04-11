@@ -219,14 +219,13 @@ impl PmidManager {
                     account: &Account,
                     message_id: &MessageId) {
         let src = Authority::NodeManager(*pmid_node);
-        let refresh = Refresh::new(pmid_node,
-                                   RefreshValue::PmidManagerAccount(account.clone()));
+        let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("PM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src.clone(),
-			                                          src.clone(),
-			                                          serialised_refresh,
-													  *message_id);
+                                                      src.clone(),
+                                                      serialised_refresh,
+                                                      *message_id);
         }
     }
 }
@@ -238,7 +237,7 @@ impl Default for PmidManager {
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
@@ -567,8 +566,8 @@ mod test {
             assert_eq!(refresh_requests[0].src, env.our_authority);
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh, _) =
-                    refresh_requests[0].content {
+            if let RequestContent::Refresh(ref serialised_refresh, _) = refresh_requests[0]
+                                                                            .content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, *env.our_authority.name());

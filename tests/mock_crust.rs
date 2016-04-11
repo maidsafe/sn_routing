@@ -108,7 +108,9 @@ mod test {
 
         let mut all_backup_names = all_immutable_data.iter()
                                                      .cloned()
-                                                     .map(|data| routing::normal_to_backup(&data.name()))
+                                                     .map(|data| {
+                                                         routing::normal_to_backup(&data.name())
+                                                     })
                                                      .collect::<Vec<XorName>>();
 
         all_backup_names.sort();
@@ -125,18 +127,19 @@ mod test {
 
         sacrificial_names.retain(|&stored_name| {
             all_immutable_data_names.iter()
-                                    .find(|&&name| routing::normal_to_sacrificial(&name) == stored_name)
+                                    .find(|&&name| {
+                                        routing::normal_to_sacrificial(&name) == stored_name
+                                    })
                                     .is_some()
         });
 
         assert_eq!(2 * all_immutable_data.len(), sacrificial_names.len());
 
-        let mut all_sacrificial_names = all_immutable_data.iter()
-                                                          .cloned()
-                                                          .map(|data| {
-                                                              routing::normal_to_sacrificial(&data.name())
-                                                          })
-                                                          .collect::<Vec<XorName>>();
+        let mut all_sacrificial_names =
+            all_immutable_data.iter()
+                              .cloned()
+                              .map(|data| routing::normal_to_sacrificial(&data.name()))
+                              .collect::<Vec<XorName>>();
 
         all_sacrificial_names.sort();
         sacrificial_names.sort();
@@ -202,7 +205,8 @@ mod test {
 
         for _ in 0..put_requests {
             if random::<bool>() {
-                let content = mock_crust_detail::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
+                let content =
+                    mock_crust_detail::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
                 let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
                 all_data.push(Data::Immutable(immutable_data));
             } else {
@@ -218,11 +222,13 @@ mod test {
         for data in &all_data {
             match *data {
                 Data::Immutable(ref sent_immutable_data) => {
-                    match client.get(DataRequest::Immutable(data.name(), ImmutableDataType::Normal),
+                    match client.get(DataRequest::Immutable(data.name(),
+                                                            ImmutableDataType::Normal),
                                      &mut nodes) {
                         Data::Immutable(recovered_immutable_data) => {
                             assert_eq!(recovered_immutable_data.name(), sent_immutable_data.name());
-                            assert!(recovered_immutable_data.value() == sent_immutable_data.value());
+                            assert!(recovered_immutable_data.value() ==
+                                    sent_immutable_data.value());
                         }
                         unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
                     }
@@ -363,7 +369,9 @@ mod test {
 
         all_stored_names.retain(|&stored_name| {
             all_immutable_data_names.iter()
-                                    .find(|&&immutable_data_name| immutable_data_name == stored_name)
+                                    .find(|&&immutable_data_name| {
+                                        immutable_data_name == stored_name
+                                    })
                                     .is_some()
         });
 

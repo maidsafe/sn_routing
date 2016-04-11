@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(all(test, feature = "use-mock-routing"))]
+#![cfg(test)]
 
 #![allow(unused)]
 
@@ -36,8 +36,9 @@ pub struct MockRoutingNode {
 }
 
 impl MockRoutingNode {
-    pub fn new(event_sender: mpsc::Sender<Event>, _use_data_cache: bool)
-        -> Result<MockRoutingNode, RoutingError> {
+    pub fn new(event_sender: mpsc::Sender<Event>,
+               _use_data_cache: bool)
+               -> Result<MockRoutingNode, RoutingError> {
         Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
