@@ -417,9 +417,11 @@ impl Core {
                                      self,
                                      self.crust_service.id(),
                                      self.routing_table.len());
-            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
+            trace!(" -{}- ",
+                   iter::repeat('-').take(status_str.len()).collect::<String>());
             error!("| {} |", status_str); // Temporarily error for ci_test.
-            trace!(" -{}- ", iter::repeat('-').take(status_str.len()).collect::<String>());
+            trace!(" -{}- ",
+                   iter::repeat('-').take(status_str.len()).collect::<String>());
         }
     }
 
@@ -490,15 +492,17 @@ impl Core {
                     return false;
                 }
             }
-
             Action::Name { result_tx, } => {
                 if result_tx.send(*self.name()).is_err() {
                     return false;
                 }
             }
-
+            Action::QuorumSize { result_tx, } => {
+                if result_tx.send(self.routing_table.dynamic_quorum_size()).is_err() {
+                    return false;
+                }
+            }
             Action::Timeout(token) => self.handle_timeout(token),
-
             Action::Terminate => {
                 return false;
             }
@@ -1133,7 +1137,7 @@ impl Core {
             (RequestContent::Put(..), _, _) |
             (RequestContent::Post(..), _, _) |
             (RequestContent::Delete(..), _, _) |
-            (RequestContent::Refresh(_), _, _) => {
+            (RequestContent::Refresh(..), _, _) => {
                 let event = Event::Request(request_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())

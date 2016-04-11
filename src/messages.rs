@@ -299,7 +299,7 @@ pub enum RequestContent {
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Message from upper layers sending network state on any network churn event.
-    Refresh(Vec<u8>),
+    Refresh(Vec<u8>, MessageId),
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
     Get(DataRequest, MessageId),
@@ -482,8 +482,11 @@ impl Debug for RequestContent {
             RequestContent::GetPublicIdWithConnectionInfo { .. } => {
                 write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
             }
-            RequestContent::Refresh(ref data) => {
-                write!(formatter, "Refresh({})", utils::format_binary_array(data))
+            RequestContent::Refresh(ref data, ref message_id) => {
+                write!(formatter,
+                       "Refresh({}, {:?})",
+                       utils::format_binary_array(data),
+                       message_id)
             }
             RequestContent::Get(ref data_request, ref message_id) => {
                 write!(formatter, "Get({:?}, {:?})", data_request, message_id)

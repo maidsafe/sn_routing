@@ -36,6 +36,10 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(shadow_unrelated, print_stdout, use_debug))]
 
+#![cfg(feature = "use-mock-crust")]
+
+fn main() {}
+
 #![cfg(not(feature = "use-mock-crust"))]
 
 #[macro_use]
@@ -77,8 +81,8 @@ use rand::distributions::{IndependentSample, Range};
 
 use term::color;
 
-const CHURN_MIN_WAIT_SEC: u64 = 10;
-const CHURN_MAX_WAIT_SEC: u64 = 15;
+const CHURN_MIN_WAIT_SEC: u64 = 20;
+const CHURN_MAX_WAIT_SEC: u64 = 30;
 const CHURN_TIME_SEC: u64 = 20;
 const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
@@ -157,6 +161,8 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
+        let mut node_count = nodes.len();
+
         loop {
             {
                 let &(ref lock, ref cvar) = &*stop_flg;
@@ -166,8 +172,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result =
-                        unwrap_result!(cvar.wait_timeout(stop_condition,
+                    let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
@@ -178,7 +183,10 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 }
             }
 
-            if let Err(err) = simulate_churn_impl(&mut nodes, &mut rng, network_size) {
+            if let Err(err) = simulate_churn_impl(&mut nodes,
+                                                  &mut rng,
+                                                  network_size,
+                                                  &mut node_count) {
                 println!("{:?}", err);
                 break;
             }
@@ -190,12 +198,11 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        rng: &mut ThreadRng,
-                       network_size: usize)
+                       network_size: usize,
+                       node_count: &mut usize)
                        -> Result<(), io::Error> {
     print!("Churning on {} active nodes. ", nodes.len());
     io::stdout().flush().ok().expect("Could not flush stdout");
-
-    let mut log_file_number = nodes.len() + 1;
 
     let kill_node = match nodes.len() {
         size if size == GROUP_SIZE => false,
@@ -213,18 +220,18 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         print!("Killing Node #{}: ", node.1);
         io::stdout().flush().ok().expect("Could not flush stdout");
     } else {
-        log_path.set_file_name(&format!("Node_{:02}.log", log_file_number));
+        *node_count += 1;
+        log_path.set_file_name(&format!("Node_{:02}.log", node_count));
         let arg = format!("--output={}", log_path.display());
-        log_file_number += 1;
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
                                         .arg(arg)
                                         .stdout(Stdio::null())
                                         .stderr(Stdio::null())
                                         .spawn()),
-                               log_file_number));
+                               *node_count));
         println!("Started Node #{} with Process ID #{}",
-                 log_file_number,
+                 node_count,
                  nodes[nodes.len() - 1].0.id());
     }
 

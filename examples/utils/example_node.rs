@@ -121,8 +121,8 @@ impl ExampleNode {
                 warn!("{:?} ExampleNode: Delete unimplemented.",
                       self.get_debug_name());
             }
-            RequestContent::Refresh(content) => {
-                self.handle_refresh(content);
+            RequestContent::Refresh(content, id) => {
+                self.handle_refresh(content, id);
             }
             _ => (),
         }
@@ -312,7 +312,9 @@ impl ExampleNode {
         }
 
         if self.add_dm(data.name(), *src.name()) {
-            trace!("Added {:?} as a DM for {:?} on GetSuccess.", src.name(), data.name());
+            trace!("Added {:?} as a DM for {:?} on GetSuccess.",
+                   src.name(),
+                   data.name());
         }
 
         // If the retrieved data is missing a copy, send a `Put` request to store one.
@@ -379,7 +381,6 @@ impl ExampleNode {
         for (client_name, stored) in &self.client_accounts {
             // TODO: Check whether name is actually close to client_name.
             let refresh_content = RefreshContent::Client {
-                id: id,
                 client_name: *client_name,
                 data: *stored,
             };
@@ -388,7 +389,9 @@ impl ExampleNode {
 
             unwrap_result!(self.node
                                .send_refresh_request(Authority::ClientManager(*client_name),
-                                                     content));
+                                                     Authority::ClientManager(*client_name),
+                                                     content,
+                                                     id));
         }
 
         self.process_lost_close_node(id);
@@ -400,7 +403,6 @@ impl ExampleNode {
         // TODO: Check whether name was actually close to client_name.
         for (client_name, stored) in &self.client_accounts {
             let refresh_content = RefreshContent::Client {
-                id: id,
                 client_name: *client_name,
                 data: *stored,
             };
@@ -409,7 +411,9 @@ impl ExampleNode {
 
             unwrap_result!(self.node
                                .send_refresh_request(Authority::ClientManager(*client_name),
-                                                     content));
+                                                     Authority::ClientManager(*client_name),
+                                                     content,
+                                                     id));
         }
 
         self.process_lost_close_node(id);
@@ -477,27 +481,26 @@ impl ExampleNode {
                                          managed_nodes: &[XorName],
                                          id: MessageId) {
         let refresh_content = RefreshContent::Nae {
-            id: id,
             data_name: *data_name,
             pmid_nodes: managed_nodes.to_vec(),
         };
 
         let content = unwrap_result!(serialise(&refresh_content));
         let src = Authority::NaeManager(*data_name);
-        unwrap_result!(self.node.send_refresh_request(src, content));
+        unwrap_result!(self.node.send_refresh_request(src.clone(), src, content, id));
     }
 
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in
     /// the group agree, so we need to update our data accordingly.
-    fn handle_refresh(&mut self, content: Vec<u8>) {
+    fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
         match unwrap_result!(deserialise(&content)) {
-            RefreshContent::Client { client_name, data, .. } => {
+            RefreshContent::Client { client_name, data, } => {
                 trace!("{:?} handle_refresh for ClientManager. client - {:?}",
                        self.get_debug_name(),
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::Nae { data_name, pmid_nodes, .. } => {
+            RefreshContent::Nae { data_name, pmid_nodes, } => {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
                 if old_val != Some(pmid_nodes.clone()) {
                     trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",
@@ -528,13 +531,11 @@ impl ExampleNode {
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
     Client {
-        id: MessageId,
         client_name: XorName,
         data: u64,
     },
     /// A message to an `NaeManager` to add a new data chunk.
     Nae {
-        id: MessageId,
         data_name: XorName,
         pmid_nodes: Vec<XorName>,
     },
