@@ -10,6 +10,14 @@ repository = "https://github.com/maidsafe/safe_vault"
 version = "0.5.0"
 build = "build.rs"
 
+[[bin]]
+name = "safe_vault"
+path = "bin/safe_vault.rs"
+
+[lib]
+name = "vault"
+path = "src/lib.rs"
+
 [dependencies]
 chunk_store = "~0.3.0"
 clippy = {version = "~0.0.62", optional = true}
@@ -41,3 +49,6 @@ use-mock-crust = ["routing/use-mock-crust", "safe_core/use-mock-crust"]
 [[test]]
 harness = false
 name = "ci"
+
+[[test]]
+name = "mock_crust"
