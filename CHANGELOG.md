@@ -2,7 +2,7 @@
 
 ## [0.14.0]
 - Add message id to Refresh messages
-- Node numbers only increase during node addition in churn
+- Node numbers only increase during node addition in churn for ci_test example
 - Update dependencies
 
 ## [0.13.0]
