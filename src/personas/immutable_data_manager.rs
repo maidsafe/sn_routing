@@ -26,7 +26,6 @@ use maidsafe_utilities::serialisation;
 use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
               PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use safe_network_common::client_errors::MutationError;
-use sodiumoxide::crypto::hash::sha512::Digest;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
@@ -324,8 +323,7 @@ impl ImmutableDataManager {
             if let Authority::ClientManager(_) = request.src {
                 let src = request.dst.clone();
                 let dst = request.src.clone();
-                let digest = Digest([0; 64]);
-                let _ = routing_node.send_put_success(src, dst, digest, *message_id);
+                let _ = routing_node.send_put_success(src, dst, *message_id);
             }
         };
 
@@ -1217,7 +1215,7 @@ mod test {
         pub fn new() -> Environment {
             let _ = log::init(false);
             let env = Environment {
-                routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
+                routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
                 immutable_data_manager: ImmutableDataManager::new(),
             };
             env
@@ -1361,7 +1359,7 @@ mod test {
         }
         let put_successes = env.routing.put_successes_given();
         assert_eq!(put_successes.len(), 1);
-        if let ResponseContent::PutSuccess(_, id) = put_successes[0].content.clone() {
+        if let ResponseContent::PutSuccess(id) = put_successes[0].content.clone() {
             assert_eq!(put_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", put_successes[0]);

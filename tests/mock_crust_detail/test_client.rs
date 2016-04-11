@@ -42,7 +42,7 @@ impl TestClient {
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(routing::Client::new(routing_tx, Some(full_id)))
+            unwrap_result!(routing::Client::new(routing_tx, Some(full_id), false))
         });
 
         TestClient {
@@ -117,7 +117,7 @@ impl TestClient {
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::PutSuccess(_, response_message_id),
+                content: ResponseContent::PutSuccess(response_message_id),
                 ..
             })) => {
                 assert_eq!(request_message_id, response_message_id);
