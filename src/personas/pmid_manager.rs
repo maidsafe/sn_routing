@@ -157,7 +157,7 @@ impl PmidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
         self.accounts = accounts.into_iter()
@@ -168,7 +168,11 @@ impl PmidManager {
                                             false
                                         }
                                         Ok(Some(_)) => {
-                                            self.send_refresh(routing_node, pmid_node, account);
+                                            self.send_refresh(routing_node,
+                                                              pmid_node,
+                                                              account,
+                                                              &MessageId::from_lost_node(
+                                                                    *node_changed));
                                             true
                                         }
                                         Err(error) => {
@@ -209,9 +213,15 @@ impl PmidManager {
         Ok(())
     }
 
-    fn send_refresh(&self, routing_node: &RoutingNode, pmid_node: &XorName, account: &Account) {
+    fn send_refresh(&self,
+                    routing_node: &RoutingNode,
+                    pmid_node: &XorName,
+                    account: &Account,
+                    message_id: &MessageId) {
         let src = Authority::NodeManager(*pmid_node);
-        let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
+        let refresh = Refresh::new(pmid_node,
+                                   RefreshValue::PmidManagerAccount(account.clone()),
+                                   message_id);
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("PM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -545,7 +555,7 @@ mod test {
         }
 
         env.routing.node_added_event(get_close_node(&env));
-        env.pmid_manager.handle_churn(&env.routing);
+        env.pmid_manager.handle_churn(&env.routing, &random::<XorName>());
 
         let mut refresh_count = 0;
         let mut refresh_requests = env.routing.refresh_requests_given();
@@ -571,7 +581,7 @@ mod test {
         }
 
         env.routing.node_lost_event(lose_close_node(&env));
-        env.pmid_manager.handle_churn(&env.routing);
+        env.pmid_manager.handle_churn(&env.routing, &random::<XorName>());
 
         refresh_requests = env.routing.refresh_requests_given();
 

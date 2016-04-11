@@ -21,7 +21,8 @@ use std::convert::From;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataRequest, MessageId,
+              RequestContent, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
@@ -243,7 +244,7 @@ impl StructuredDataManager {
         Ok(())
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
         // Only retain data for which we're still in the close group
         let data_names = self.chunk_store.names();
         for data_name in data_names {
@@ -252,7 +253,7 @@ impl StructuredDataManager {
                     trace!("No longer a SDM for {}", data_name);
                     let _ = self.chunk_store.delete(&data_name);
                 }
-                Ok(Some(_)) => self.send_refresh(routing_node, &data_name),
+                Ok(Some(_)) => self.send_refresh(routing_node, &data_name, node_changed),
                 Err(error) => {
                     error!("Failed to get close group: {:?} for {}", error, data_name);
                     let _ = self.chunk_store.delete(&data_name);
@@ -266,7 +267,10 @@ impl StructuredDataManager {
         self.chunk_store.names()
     }
 
-    fn send_refresh(&self, routing_node: &RoutingNode, data_name: &XorName) {
+    fn send_refresh(&self,
+                    routing_node: &RoutingNode,
+                    data_name: &XorName,
+                    node_changed: &XorName) {
         let serialised_data = match self.chunk_store.get(data_name) {
             Ok(data) => data,
             _ => return,
@@ -280,7 +284,8 @@ impl StructuredDataManager {
 
         let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,
-                                   RefreshValue::StructuredDataManager(structured_data));
+                                   RefreshValue::StructuredDataManager(structured_data),
+                                   &MessageId::from_lost_node(*node_changed));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("SDM sending refresh for data {:?}", src.name());
             let _ = routing_node.send_refresh_request(src, serialised_refresh);
@@ -825,7 +830,7 @@ mod test {
 
         let lost_node = env.lose_close_node(&put_env.sd_data.name());
         env.routing.remove_node_from_routing_table(&lost_node);
-        let _ = env.structured_data_manager.handle_churn(&env.routing);
+        let _ = env.structured_data_manager.handle_churn(&env.routing, &random::<XorName>());
 
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
