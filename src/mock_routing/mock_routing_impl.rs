@@ -350,10 +350,12 @@ impl MockRoutingNodeImpl {
 
     pub fn send_refresh_request(&mut self,
                                 src: Authority,
-                                content: Vec<u8>)
+                                dst: Authority,
+                                content: Vec<u8>,
+                                message_id: MessageId)
                                 -> Result<(), InterfaceError> {
-        let refresh = RequestContent::Refresh(content);
-        let message = self.send_request(src.clone(), src, refresh, "Mock Refresh Request");
+        let refresh = RequestContent::Refresh(content, message_id);
+        let message = self.send_request(src, dst, refresh, "Mock Refresh Request");
         Ok(self.refresh_requests_given.push(message))
     }
 

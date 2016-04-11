@@ -316,7 +316,8 @@ impl MpidManager {
         }
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
+        let message_id = MessageId::from_lost_node(*node_changed);
         for (mpid_name, account) in &self.accounts {
             let received_headers = Self::fetch_chunks(&self.chunk_store_inbox,
                                                       &account.received_headers());
@@ -330,7 +331,10 @@ impl MpidManager {
                                                                         received_headers));
             if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("MpidManager sending refresh for account {:?}", src.name());
-                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  message_id);
             }
         }
     }
