@@ -284,11 +284,13 @@ impl StructuredDataManager {
 
         let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,
-                                   RefreshValue::StructuredDataManager(structured_data),
-                                   &MessageId::from_lost_node(*node_changed));
+                                   RefreshValue::StructuredDataManager(structured_data));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("SDM sending refresh for data {:?}", src.name());
-            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  MessageId::from_lost_node(*node_changed));
         }
     }
 }
@@ -838,9 +840,8 @@ mod test {
                    Authority::NaeManager(put_env.sd_data.name()));
         assert_eq!(refresh_requests[0].dst,
                    Authority::NaeManager(put_env.sd_data.name()));
-        if let RequestContent::Refresh(received_serialised_refresh) = refresh_requests[0]
-                                                                          .content
-                                                                          .clone() {
+        if let RequestContent::Refresh(received_serialised_refresh, _) =
+                refresh_requests[0].content.clone() {
             let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                     &received_serialised_refresh[..]));
             if let RefreshValue::StructuredDataManager(received_data) = parsed_refresh.value

@@ -315,7 +315,7 @@ impl Vault {
                 self.structured_data_manager.handle_delete(routing_node, &request)
             }
             // ================== Refresh ==================
-            (src, dst, &RequestContent::Refresh(ref serialised_refresh)) => {
+            (src, dst, &RequestContent::Refresh(ref serialised_refresh, _)) => {
                 self.on_refresh(src, dst, serialised_refresh)
             }
             // ================== Invalid Request ==================

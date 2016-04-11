@@ -969,12 +969,14 @@ impl ImmutableDataManager {
                     message_id: &MessageId) {
         let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,
-                                   RefreshValue::ImmutableDataManagerAccount(account.clone()),
-                                   message_id);
+                                   RefreshValue::ImmutableDataManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("ImmutableDataManager sending refresh for account {:?}",
                    src.name());
-            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  *message_id);
         }
     }
 
@@ -1724,8 +1726,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =
@@ -1810,8 +1812,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =
@@ -1918,8 +1920,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =

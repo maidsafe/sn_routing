@@ -328,11 +328,13 @@ impl MpidManager {
             let refresh = Refresh::new(mpid_name,
                                        RefreshValue::MpidManagerAccount(account.clone(),
                                                                         stored_messages,
-                                                                        received_headers),
-                                       &message_id);
+                                                                        received_headers));
             if let Ok(serialised_refresh) = serialise(&refresh) {
                 debug!("MpidManager sending refresh for account {:?}", src.name());
-                let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  message_id);
             }
         }
     }
