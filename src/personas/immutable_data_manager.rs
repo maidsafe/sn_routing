@@ -646,12 +646,12 @@ impl ImmutableDataManager {
         let _ = self.accounts.insert(data_name, account);
     }
 
-    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_added: XorName) {
-        self.handle_churn(routing_node, MessageId::from_added_node(node_added));
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_added: &XorName) {
+        self.handle_churn(routing_node, MessageId::from_added_node(*node_added));
     }
 
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_lost: XorName) {
-        self.handle_churn(routing_node, MessageId::from_lost_node(node_lost));
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_lost: &XorName) {
+        self.handle_churn(routing_node, MessageId::from_lost_node(*node_lost));
     }
 
     // This is used when handling Get responses since we don't know the data name of the original
@@ -865,7 +865,7 @@ impl ImmutableDataManager {
             }
         }
 
-        self.send_refresh(routing_node, &data_name, &account);
+        self.send_refresh(routing_node, &data_name, &account, &message_id);
         Some((*data_name, account.clone()))
     }
 
@@ -962,14 +962,21 @@ impl ImmutableDataManager {
         }
     }
 
-    fn send_refresh(&self, routing_node: &RoutingNode, data_name: &XorName, account: &Account) {
+    fn send_refresh(&self,
+                    routing_node: &RoutingNode,
+                    data_name: &XorName,
+                    account: &Account,
+                    message_id: &MessageId) {
         let src = Authority::NaeManager(*data_name);
         let refresh = Refresh::new(data_name,
                                    RefreshValue::ImmutableDataManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("ImmutableDataManager sending refresh for account {:?}",
                    src.name());
-            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  *message_id);
         }
     }
 
@@ -1650,7 +1657,7 @@ mod test {
                 let _ = env.immutable_data_manager
                            .handle_put_success(data_holder.name(), &put_env.message_id);
                 env.routing.remove_node_from_routing_table(&lost_node);
-                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, &lost_node);
                 let temp_account = mem::replace(&mut account,
                                                 Account::new(&ImmutableDataType::Normal,
                                                              HashSet::new()));
@@ -1677,7 +1684,7 @@ mod test {
                                                                       data_holder.name(),
                                                                       &put_env.message_id);
                 env.routing.add_node_into_routing_table(&new_node);
-                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, &new_node);
 
                 if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
                     // No longer being the DM of the data, expecting no refresh request
@@ -1719,8 +1726,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =
@@ -1756,7 +1763,7 @@ mod test {
             if churn_count % 2 == 0 {
                 let lost_node = env.lose_close_node(&put_env.im_data.name());
                 env.routing.remove_node_from_routing_table(&lost_node);
-                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, &lost_node);
                 get_message_id = MessageId::from_lost_node(lost_node);
 
                 let temp_account = mem::replace(&mut account,
@@ -1776,7 +1783,7 @@ mod test {
             } else {
                 let new_node = env.get_close_node();
                 env.routing.add_node_into_routing_table(&new_node);
-                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, &new_node);
                 get_message_id = MessageId::from_added_node(new_node);
 
                 if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
@@ -1805,8 +1812,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =
@@ -1850,7 +1857,7 @@ mod test {
                 };
                 let _ = env.immutable_data_manager.handle_get_success(&env.routing, &get_response);
                 env.routing.remove_node_from_routing_table(&lost_node);
-                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, lost_node);
+                let _ = env.immutable_data_manager.handle_node_lost(&env.routing, &lost_node);
                 let temp_account = mem::replace(&mut account,
                                                 Account::new(&ImmutableDataType::Normal,
                                                              HashSet::new()));
@@ -1873,7 +1880,7 @@ mod test {
                                                                       &get_request,
                                                                       &[]);
                 env.routing.add_node_into_routing_table(&new_node);
-                let _ = env.immutable_data_manager.handle_node_added(&env.routing, new_node);
+                let _ = env.immutable_data_manager.handle_node_added(&env.routing, &new_node);
 
                 if let Ok(None) = env.routing.close_group(put_env.im_data.name()) {
                     // No longer being the DM of the data, expecting no refresh request
@@ -1913,8 +1920,8 @@ mod test {
             let refreshs = env.routing.refresh_requests_given();
             assert_eq!(refreshs.len(), churn_count);
             let received_refresh = unwrap_option!(refreshs.last(), "");
-            if let RequestContent::Refresh(received_serialised_refresh) = received_refresh.content
-                                                                                          .clone() {
+            if let RequestContent::Refresh(received_serialised_refresh, _) =
+                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
                 if let RefreshValue::ImmutableDataManagerAccount(received_account) =

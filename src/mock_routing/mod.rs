@@ -254,9 +254,11 @@ impl MockRoutingNode {
 
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                content: Vec<u8>)
+                                dst: Authority,
+                                content: Vec<u8>,
+                                message_id: MessageId)
                                 -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_refresh_request(src, content)
+        unwrap_result!(self.pimpl.lock()).send_refresh_request(src, dst, content, message_id)
     }
 
     pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {

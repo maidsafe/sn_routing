@@ -134,7 +134,7 @@ impl MaidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
         self.accounts = accounts.into_iter()
@@ -153,7 +153,10 @@ impl MaidManager {
                                             false
                                         }
                                         Ok(Some(_)) => {
-                                            self.send_refresh(routing_node, maid_name, account);
+                                            self.send_refresh(routing_node,
+                                                              maid_name,
+                                                              account,
+                                                              node_changed);
                                             true
                                         }
                                         Err(error) => {
@@ -167,12 +170,20 @@ impl MaidManager {
                                 .collect();
     }
 
-    fn send_refresh(&self, routing_node: &RoutingNode, maid_name: &XorName, account: &Account) {
+    fn send_refresh(&self,
+                    routing_node: &RoutingNode,
+                    maid_name: &XorName,
+                    account: &Account,
+                    node_changed: &XorName) {
         let src = Authority::ClientManager(*maid_name);
-        let refresh = Refresh::new(maid_name, RefreshValue::MaidManagerAccount(account.clone()));
+        let refresh = Refresh::new(maid_name,
+                                   RefreshValue::MaidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
-            let _ = routing_node.send_refresh_request(src, serialised_refresh);
+            let _ = routing_node.send_refresh_request(src.clone(),
+			                                          src.clone(),
+			                                          serialised_refresh,
+													  MessageId::from_lost_node(*node_changed));
         }
     }
 
@@ -760,7 +771,7 @@ mod test {
         create_account(&mut env);
 
         env.routing.node_added_event(get_close_node(&env));
-        env.maid_manager.handle_churn(&env.routing);
+        env.maid_manager.handle_churn(&env.routing, &random::<XorName>());
 
         let mut refresh_count = 0;
         let mut refresh_requests = env.routing.refresh_requests_given();
@@ -770,7 +781,8 @@ mod test {
             assert_eq!(refresh_requests[0].src, env.our_authority);
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) = refresh_requests[0].content {
+            if let RequestContent::Refresh(ref serialised_refresh, _) =
+                    refresh_requests[0].content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, utils::client_name(&env.client));
@@ -786,7 +798,7 @@ mod test {
         }
 
         env.routing.node_lost_event(lose_close_node(&env));
-        env.maid_manager.handle_churn(&env.routing);
+        env.maid_manager.handle_churn(&env.routing, &random::<XorName>());
 
         refresh_requests = env.routing.refresh_requests_given();
 
@@ -795,7 +807,7 @@ mod test {
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh) =
+            if let RequestContent::Refresh(ref serialised_refresh, _) =
                    refresh_requests[refresh_count].content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
