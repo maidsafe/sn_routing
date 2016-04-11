@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
-use vault::{Config, Vault};
+use safe_vault::{Config, Vault};
 use xor_name::XorName;
 
 use super::poll;
