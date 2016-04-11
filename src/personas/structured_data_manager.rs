@@ -23,7 +23,6 @@ use error::InternalError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataRequest, RequestContent, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
-use sodiumoxide::crypto::hash::sha512::Digest;
 use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
@@ -138,11 +137,9 @@ impl StructuredDataManager {
                                                   *message_id);
             Err(From::from(error))
         } else {
-            let message_hash = Digest([0; 64]);
             trace!("SDM sending PutSuccess for data {}", data_name);
             let _ = routing_node.send_put_success(response_src,
                                                   response_dst,
-                                                  message_hash,
                                                   *message_id);
             Ok(())
         }
@@ -168,10 +165,8 @@ impl StructuredDataManager {
                         if let Ok(()) = self.chunk_store
                                             .put(&existing_data.name(), &serialised_data) {
                             trace!("SDM updated {:?} to {:?}", existing_data, new_data);
-                            let digest = Digest([0; 64]);
                             let _ = routing_node.send_post_success(request.dst.clone(),
                                                                    request.src.clone(),
-                                                                   digest,
                                                                    *message_id);
                             return Ok(());
                         }
@@ -210,10 +205,8 @@ impl StructuredDataManager {
                         trace!("SDM deleted {:?} with requested new version {:?}",
                                existing_data,
                                data);
-                        let digest = Digest([0; 64]);
                         let _ = routing_node.send_delete_success(request.dst.clone(),
                                                                  request.src.clone(),
-                                                                 digest,
                                                                  *message_id);
                         return Ok(());
                     }
@@ -355,7 +348,7 @@ mod test {
     impl Environment {
         pub fn new() -> Environment {
             let _ = log::init(true);
-            let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0));
+            let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
             Environment {
                 routing: routing,
                 structured_data_manager: unwrap_result!(StructuredDataManager::new(322_122_546)),
@@ -542,7 +535,7 @@ mod test {
         assert_eq!(0, env.routing.put_requests_given().len());
         let put_responses = env.routing.put_successes_given();
         assert_eq!(put_responses.len(), 1);
-        if let ResponseContent::PutSuccess(_, id) = put_responses[0].content.clone() {
+        if let ResponseContent::PutSuccess(id) = put_responses[0].content.clone() {
             assert_eq!(put_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", put_responses[0]);
@@ -682,7 +675,7 @@ mod test {
                                                              put_env.client.clone());
         let mut post_success = env.routing.post_successes_given();
         assert_eq!(post_success.len(), 1);
-        if let ResponseContent::PostSuccess(_, id) = post_success[0].content.clone() {
+        if let ResponseContent::PostSuccess(id) = post_success[0].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", post_success[0]);
@@ -730,7 +723,7 @@ mod test {
                                                      put_env.client.clone());
         post_success = env.routing.post_successes_given();
         assert_eq!(env.routing.post_successes_given().len(), 2);
-        if let ResponseContent::PostSuccess(_, id) = post_success[1].content.clone() {
+        if let ResponseContent::PostSuccess(id) = post_success[1].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", post_success[1]);
@@ -797,7 +790,7 @@ mod test {
                                                              put_env.client.clone());
         let delete_success = env.routing.delete_successes_given();
         assert_eq!(delete_success.len(), 1);
-        if let ResponseContent::DeleteSuccess(_, id) = delete_success[0].content.clone() {
+        if let ResponseContent::DeleteSuccess(id) = delete_success[0].content.clone() {
             assert_eq!(delete_correct_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", delete_success[0]);

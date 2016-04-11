@@ -273,10 +273,9 @@ impl MockRoutingNodeImpl {
     pub fn send_put_success(&mut self,
                             src: Authority,
                             dst: Authority,
-                            request_hash: sha512::Digest,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let content = ResponseContent::PutSuccess(request_hash, id);
+        let content = ResponseContent::PutSuccess(id);
         let message = self.send_response(src, dst, content, "Mock Put Success");
         Ok(self.put_successes_given.push(message))
     }
@@ -300,10 +299,9 @@ impl MockRoutingNodeImpl {
     pub fn send_post_success(&mut self,
                              src: Authority,
                              dst: Authority,
-                             request_hash: sha512::Digest,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let content = ResponseContent::PostSuccess(request_hash, id);
+        let content = ResponseContent::PostSuccess(id);
         let message = self.send_response(src, dst, content, "Mock Post Success");
         Ok(self.post_successes_given.push(message))
     }
@@ -327,10 +325,9 @@ impl MockRoutingNodeImpl {
     pub fn send_delete_success(&mut self,
                                src: Authority,
                                dst: Authority,
-                               request_hash: sha512::Digest,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let content = ResponseContent::DeleteSuccess(request_hash, id);
+        let content = ResponseContent::DeleteSuccess(id);
         let message = self.send_response(src, dst, content, "Mock Delete Success");
         Ok(self.delete_successes_given.push(message))
     }

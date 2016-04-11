@@ -36,7 +36,8 @@ pub struct MockRoutingNode {
 }
 
 impl MockRoutingNode {
-    pub fn new(event_sender: mpsc::Sender<Event>) -> Result<MockRoutingNode, RoutingError> {
+    pub fn new(event_sender: mpsc::Sender<Event>, _use_data_cache: bool)
+        -> Result<MockRoutingNode, RoutingError> {
         Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
@@ -197,10 +198,9 @@ impl MockRoutingNode {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
-                            request_hash: sha512::Digest,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, request_hash, id)
+        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, id)
     }
 
     pub fn send_put_failure(&self,
@@ -217,10 +217,9 @@ impl MockRoutingNode {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             request_hash: sha512::Digest,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, request_hash, id)
+        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, id)
     }
 
     pub fn send_post_failure(&self,
@@ -237,10 +236,9 @@ impl MockRoutingNode {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
-                               request_hash: sha512::Digest,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, request_hash, id)
+        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, id)
     }
 
     pub fn send_delete_failure(&self,

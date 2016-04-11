@@ -126,7 +126,7 @@ impl Vault {
              structured_data_manager) = try!(init_components(config));
 
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(routing_sender));
+        let routing_node = try!(RoutingNode::new(routing_sender, false));
 
         Ok(Vault {
             immutable_data_manager: immutable_data_manager,
@@ -144,7 +144,7 @@ impl Vault {
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(routing_sender));
+        let routing_node = try!(RoutingNode::new(routing_sender, true));
         let routing_node0 = Arc::new(Mutex::new(Some(routing_node)));
         let routing_node1 = routing_node0.clone();
 
@@ -352,17 +352,17 @@ impl Vault {
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutSuccess(_, ref message_id)) => {
+             &ResponseContent::PutSuccess(ref message_id)) => {
                 self.maid_manager.handle_put_success(routing_node, message_id)
             }
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::PutSuccess(_, ref message_id)) => {
+             &ResponseContent::PutSuccess(ref message_id)) => {
                 self.immutable_data_manager.handle_put_success(pmid_node, message_id)
             }
             (&Authority::ManagedNode(ref pmid_node),
              &Authority::NodeManager(_),
-             &ResponseContent::PutSuccess(_, ref message_id)) => {
+             &ResponseContent::PutSuccess(ref message_id)) => {
                 self.pmid_manager.handle_put_success(routing_node, pmid_node, message_id)
             }
             // ================== PutFailure ==================

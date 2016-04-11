@@ -26,7 +26,6 @@ use safe_network_common::messaging::{MAX_INBOX_SIZE, MAX_OUTBOX_SIZE, MpidHeader
                                      MpidMessageWrapper};
 use routing::{Authority, Data, MessageId, PlainData, RequestContent, RequestMessage};
 use sodiumoxide::crypto::sign::PublicKey;
-use sodiumoxide::crypto::hash::sha512;
 use types::{Refresh, RefreshValue};
 use utils;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
@@ -423,8 +422,7 @@ impl MpidManager {
             try!(routing_node.send_put_request(src.clone(), dst, notification, message_id.clone()));
             // Send put success to Client.
             dst = request.src.clone();
-            let digest = sha512::hash(&try!(serialise(request))[..]);
-            let _ = routing_node.send_put_success(src, dst, digest, *message_id);
+            let _ = routing_node.send_put_success(src, dst, *message_id);
         } else {
             // Client not registered online.
             try!(routing_node.send_put_failure(request.dst.clone(),
@@ -448,8 +446,7 @@ impl MpidManager {
         // Send post success to client.
         let src = request.dst.clone();
         let dst = request.src.clone();
-        let digest = sha512::hash(&try!(serialise(request))[..]);
-        let _ = routing_node.send_post_success(src, dst, digest, *message_id);
+        let _ = routing_node.send_post_success(src, dst, *message_id);
         // For each received header in the inbox, fetch the full message from the sender
         let received_headers = account.received_headers();
         for header in &received_headers {
@@ -717,7 +714,7 @@ mod test {
                 peer_id: rand::random(),
                 proxy_node_name: from,
             },
-            routing: unwrap_result!(RoutingNode::new(mpsc::channel().0)),
+            routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
             mpid_manager: unwrap_result!(MpidManager::new(107_374_182)),
         }
     }
