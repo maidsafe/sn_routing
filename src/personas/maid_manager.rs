@@ -17,7 +17,7 @@
 
 use std::mem;
 use std::convert::From;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
@@ -80,11 +80,12 @@ impl MaidManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
+                      full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         match request.content {
             RequestContent::Put(Data::Immutable(_), _) => {
-                self.handle_put_immutable_data(routing_node, request)
+                self.handle_put_immutable_data(routing_node, full_pmid_nodes, request)
             }
             RequestContent::Put(Data::Structured(_), _) => {
                 self.handle_put_structured_data(routing_node, request)
@@ -178,6 +179,7 @@ impl MaidManager {
 
     fn handle_put_immutable_data(&mut self,
                                  routing_node: &RoutingNode,
+                                 full_pmid_nodes: &HashSet<XorName>,
                                  request: &RequestMessage)
                                  -> Result<(), InternalError> {
         if let RequestContent::Put(Data::Immutable(ref data), message_id) = request.content {
@@ -187,6 +189,22 @@ impl MaidManager {
                                                    message_id,
                                                    &MutationError::InvalidOperation);
             }
+
+            match routing_node.close_group(utils::client_name(&request.src)) {
+                Ok(Some(ref close_group)) => {
+                    if full_pmid_nodes.intersection(&close_group.iter()
+                                                                .cloned()
+                                                                .collect::<HashSet<XorName>>())
+                                      .count() >= (close_group.len() as f64 * 0.5) as usize {
+                        return self.reply_with_put_failure(routing_node,
+                                                           request.clone(),
+                                                           message_id,
+                                                           &MutationError::NetworkFull);
+                    }
+                }
+                _ => ()
+            }
+
             self.forward_put_request(routing_node,
                                      utils::client_name(&request.src),
                                      Data::Immutable(data.clone()),
@@ -288,12 +306,11 @@ impl Default for MaidManager {
 }
 
 
-
-
 #[cfg(all(test, feature = "use-mock-routing"))]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;
+    use std::collections::HashSet;
     use error::InternalError;
     use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
@@ -396,7 +413,9 @@ mod test {
                 content: RequestContent::Put(Data::Structured(sd), message_id),
             };
 
-            if let Ok(()) = env.maid_manager.handle_put(&env.routing, &request) {} else {
+            if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                        &HashSet::<XorName>::new(),
+                                                        &request) {} else {
                 unreachable!()
             }
         };
@@ -451,7 +470,7 @@ mod test {
 
         if let Err(InternalError::ClientMutation(MutationError::NoSuchAccount)) =
                env.maid_manager
-                  .handle_put(&env.routing, &valid_request) {
+                  .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request) {
         } else {
             unreachable!()
         }
@@ -494,7 +513,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                    &HashSet::<XorName>::new(),
+                                                    &valid_request) {} else {
             unreachable!()
         }
 
@@ -531,7 +552,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                    &HashSet::<XorName>::new(),
+                                                    &valid_request) {} else {
             unreachable!()
         }
 
@@ -575,7 +598,7 @@ mod test {
 
         if let Err(InternalError::ClientMutation(MutationError::AccountExists)) =
                env.maid_manager
-                  .handle_put(&env.routing, &valid_request) {
+                  .handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request) {
         } else {
             unreachable!()
         }
@@ -613,7 +636,9 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                    &HashSet::<XorName>::new(),
+                                                    &valid_request) {} else {
             unreachable!()
         }
 
@@ -688,7 +713,9 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing, &valid_request) {} else {
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                    &HashSet::<XorName>::new(),
+                                                    &valid_request) {} else {
             unreachable!()
         }
 
@@ -746,6 +773,54 @@ mod test {
                    env.maid_manager
                       .handle_put_failure(&env.routing, &message_id, &error_indicator[..]) {
                 assert_eq!(message_id, id);
+            } else {
+                unreachable!()
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn network_full() {
+        let mut env = environment_setup();
+        create_account(&mut env);
+
+        let immutable_data = ImmutableData::new(ImmutableDataType::Normal,
+                                                generate_random_vec_u8(1024));
+        let message_id = MessageId::new();
+        let valid_request = RequestMessage {
+            src: env.client.clone(),
+            dst: env.our_authority.clone(),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
+        };
+
+        let mut full_pmid_nodes = HashSet::new();
+
+        if let Ok(Some(close_group)) = env.routing.close_group(utils::client_name(&env.client)) {
+            full_pmid_nodes = close_group.iter()
+                                         .cloned()
+                                         .collect::<HashSet<XorName>>();
+        }
+
+        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
+                                                    &full_pmid_nodes,
+                                                    &valid_request) {} else {
+            unreachable!()
+        }
+
+        let put_failures = env.routing.put_failures_given();
+
+        assert_eq!(put_failures.len(), 1);
+        assert_eq!(put_failures[0].src, env.our_authority);
+        assert_eq!(put_failures[0].dst, env.client);
+
+        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
+               put_failures[0].content {
+            assert_eq!(*id, message_id);
+            assert_eq!(*request, valid_request);
+            if let Ok(error_indicator) = serialisation::serialise(&MutationError::NetworkFull) {
+                assert_eq!(*external_error_indicator, error_indicator);
             } else {
                 unreachable!()
             }
