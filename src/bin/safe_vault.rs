@@ -58,12 +58,12 @@ extern crate maidsafe_utilities;
 extern crate config_file_handler;
 extern crate docopt;
 extern crate rustc_serialize;
-extern crate vault;
+extern crate safe_vault;
 
 use std::ffi::OsString;
 use std::process;
 use docopt::Docopt;
-use vault::Vault;
+use safe_vault::Vault;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "

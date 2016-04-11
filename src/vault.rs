@@ -251,7 +251,7 @@ impl Vault {
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
              &RequestContent::Put(Data::Structured(_), _)) => {
-                self.maid_manager.handle_put(routing_node, &request)
+                self.maid_manager.handle_put(routing_node, &self.full_pmid_nodes, &request)
             }
             (&Authority::Client { .. },
              &Authority::ClientManager(_),

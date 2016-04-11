@@ -36,7 +36,7 @@ extern crate rand;
 extern crate routing;
 extern crate sodiumoxide;
 extern crate xor_name;
-extern crate vault;
+extern crate safe_vault;
 
 #[cfg(feature = "use-mock-crust")]
 mod mock_crust_detail;
