@@ -784,6 +784,7 @@ mod test {
 
         if let Ok(Some(close_group)) = env.routing.close_group(utils::client_name(&env.client)) {
             full_pmid_nodes = close_group.iter()
+                                         .take(close_group.len() / 2)
                                          .cloned()
                                          .collect::<HashSet<XorName>>();
         }
