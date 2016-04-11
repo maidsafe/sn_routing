@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.14.0]
+- Add message id to Refresh messages
+- Node numbers only increase during node addition in churn for ci_test example
+- Update dependencies
+
 ## [0.13.0]
 - Add tunnel nodes.
 - Optimise the `GetNetworkName` message flow for quicker joining.
