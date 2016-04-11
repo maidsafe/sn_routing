@@ -25,14 +25,12 @@ use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
 use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
               PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
-use safe_network_common::client_errors::MutationError;
 use time::{Duration, SteadyTime};
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::XorName;
 
 pub const REPLICANTS: usize = 2;
-const MAX_FULL_RATIO: f32 = 0.5;
 
 // Collection of PmidNodes holding a copy of the chunk
 #[derive(Clone, PartialEq, Eq, Debug, RustcEncodable, RustcDecodable)]
@@ -341,21 +339,6 @@ impl ImmutableDataManager {
                 // Send success since we found enough non-full Pmid Nodes
                 send_success();
                 pmid_nodes
-            }
-            Err(InternalError::UnableToAllocateNewPmidNode) => {
-                // Send failure if src is MaidManager.
-                let error = MutationError::NetworkFull;
-                if let Authority::ClientManager(_) = request.src {
-                    let src = request.dst.clone();
-                    let dst = request.src.clone();
-                    let external_error_indicator = try!(serialisation::serialise(&error));
-                    let _ = routing_node.send_put_failure(src,
-                                                          dst,
-                                                          request.clone(),
-                                                          external_error_indicator,
-                                                          *message_id);
-                }
-                return Err(From::from(error));
             }
             Err(error) => return Err(error),
         };
@@ -1146,12 +1129,7 @@ impl ImmutableDataManager {
                                  -> Result<HashSet<DataHolder>, InternalError> {
         match try!(routing_node.close_group(*data_name)) {
             Some(mut target_pmid_nodes) => {
-                let all_nodes = target_pmid_nodes.len() as f32;
                 target_pmid_nodes.retain(|target| !full_pmid_nodes.contains(target));
-                let full_ratio = (all_nodes - target_pmid_nodes.len() as f32) / all_nodes;
-                if full_ratio > MAX_FULL_RATIO {
-                    return Err(InternalError::UnableToAllocateNewPmidNode);
-                }
                 target_pmid_nodes.truncate(REPLICANTS);
                 Ok(target_pmid_nodes.into_iter()
                                     .map(DataHolder::Pending)

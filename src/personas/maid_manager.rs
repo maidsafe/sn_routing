@@ -31,6 +31,7 @@ use xor_name::XorName;
 // It has now been decided that the charge will be by unit
 // i.e. each chunk incurs a default charge of one unit, no matter of the data size
 const DEFAULT_ACCOUNT_SIZE: u64 = 1024;  // 1024 units, max 1GB for immutable_data (1MB per chunk)
+const MAX_FULL_RATIO: f32 = 0.5;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
@@ -195,14 +196,17 @@ impl MaidManager {
                     if full_pmid_nodes.intersection(&close_group.iter()
                                                                 .cloned()
                                                                 .collect::<HashSet<XorName>>())
-                                      .count() >= (close_group.len() as f64 * 0.5) as usize {
+                                      .count() >= (close_group.len() as f32 * MAX_FULL_RATIO) as usize {
                         return self.reply_with_put_failure(routing_node,
                                                            request.clone(),
                                                            message_id,
                                                            &MutationError::NetworkFull);
                     }
                 }
-                _ => ()
+                _ => {
+                    error!("Failed to get close group.");
+                    return Ok(())
+                }
             }
 
             self.forward_put_request(routing_node,
@@ -513,11 +517,7 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                    &HashSet::<XorName>::new(),
-                                                    &valid_request) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -552,11 +552,7 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                    &HashSet::<XorName>::new(),
-                                                    &valid_request) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -636,11 +632,7 @@ mod test {
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                    &HashSet::<XorName>::new(),
-                                                    &valid_request) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
 
         let put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -660,9 +652,7 @@ mod test {
         }
 
         // Valid case.
-        if let Ok(()) = env.maid_manager.handle_put_success(&env.routing, &message_id) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put_success(&env.routing, &message_id).is_ok());
 
         let put_successes = env.routing.put_successes_given();
 
@@ -713,11 +703,7 @@ mod test {
             content: RequestContent::Put(Data::Structured(sd.clone()), message_id),
         };
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                    &HashSet::<XorName>::new(),
-                                                    &valid_request) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put(&env.routing, &HashSet::<XorName>::new(), &valid_request).is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -738,11 +724,10 @@ mod test {
         // Valid case.
         let error = MutationError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
-            if let Ok(()) = env.maid_manager.handle_put_failure(&env.routing,
-                                                                &message_id,
-                                                                &error_indicator[..]) {} else {
-                unreachable!()
-            }
+            assert!(env.maid_manager.handle_put_failure(&env.routing,
+                                                        &message_id,
+                                                        &error_indicator[..])
+                                    .is_ok());
         } else {
             unreachable!()
         }
@@ -803,11 +788,7 @@ mod test {
                                          .collect::<HashSet<XorName>>();
         }
 
-        if let Ok(()) = env.maid_manager.handle_put(&env.routing,
-                                                    &full_pmid_nodes,
-                                                    &valid_request) {} else {
-            unreachable!()
-        }
+        assert!(env.maid_manager.handle_put(&env.routing, &full_pmid_nodes, &valid_request).is_ok());
 
         let put_failures = env.routing.put_failures_given();
 
