@@ -11,7 +11,7 @@ version = "0.13.0"
 
 [dependencies]
 accumulator = "~0.2.0"
-clippy = {version = "~0.0.61", optional = true}
+clippy = {version = "~0.0.63", optional = true}
 crust = "~0.10.0"
 itertools = "~0.4.12"
 kademlia_routing_table = "~0.4.0"
@@ -22,23 +22,23 @@ message_filter = "~0.3.1"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
 sodiumoxide = "~0.0.10"
-term = "0.4.4"
+term = "~0.4.4"
 time = "~0.1.35"
 xor_name = "~0.1.0"
 
 [dev-dependencies]
-docopt = "~0.6.78"
-libc = "~0.2.7"
+docopt = "~0.6.80"
+libc = "~0.2.9"
+
+[[example]]
+bench = false
+name = "key_value_store"
+test = false
+
+[[example]]
+bench = false
+name = "ci_test"
+test = false
 
 [features]
 use-mock-crust = []
-
-[[example]]
-bench = false
-test = false
-name = "key_value_store"
-
-[[example]]
-bench = false
-test = false
-name = "ci_test"

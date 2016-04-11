@@ -308,12 +308,14 @@ impl Node {
     /// happened, the churn mechanism is triggered to adapt to the change.
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                content: Vec<u8>)
+                                dst: Authority,
+                                content: Vec<u8>,
+                                id: MessageId)
                                 -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
-            src: src.clone(),
-            dst: src,
-            content: RequestContent::Refresh(content),
+            src: src,
+            dst: dst,
+            content: RequestContent::Refresh(content, id),
         });
         self.send_action(routing_msg)
     }
@@ -333,6 +335,14 @@ impl Node {
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+
+        self.receive_action_result(&result_rx)
+    }
+
+    /// Returns the name of this node.
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::QuorumSize { result_tx: result_tx }));
 
         self.receive_action_result(&result_rx)
     }
