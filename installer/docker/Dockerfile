@@ -15,5 +15,9 @@ RUN apt-get remove -y build-essential curl file pkg-config sudo && \
     apt-get autoremove -y && \
     apt-get autoclean -y
 
+COPY safe_vault.crust.config /root/.cargo/bin/
 ENV PATH ${PATH}:/root/.cargo/bin
+ENV RUST_LOG=warn
+EXPOSE 5483
 ENTRYPOINT ["safe_vault"]
+
