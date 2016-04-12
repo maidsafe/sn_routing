@@ -284,16 +284,18 @@ fn core() {
 
                             unwrap_result!(node.send_put_success(message.dst,
                                                                  message.src,
+                                                                 data.name(),
                                                                  id.clone()));
                         }
                     }
 
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(id), .. }))
+                                content: ResponseContent::PutSuccess(name, id), .. }))
                         if index == client.index => {
                         // The client received response to its request. We are done.
                         assert_eq!(message_id, id);
+                        assert_eq!(name, data.name());
                         break;
                     }
 
@@ -526,14 +528,16 @@ fn core() {
                                                .node
                                                .send_put_success(message.dst,
                                                                  message.src,
+                                                                 data.name(),
                                                                  id));
                         }
                     }
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(id), .. }))
+                                content: ResponseContent::PutSuccess(name, id), .. }))
                         if index == client.index => {
                         assert!(received_ids.insert(id));
+                        assert_eq!(name, data.name());
                     }
                     _ => (),
                 }

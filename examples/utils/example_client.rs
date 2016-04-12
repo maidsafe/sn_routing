@@ -126,18 +126,23 @@ impl ExampleClient {
         for it in self.receiver.iter() {
             match it {
                 Event::Response(ResponseMessage {
-                    content: ResponseContent::PutSuccess(id),
+                    content: ResponseContent::PutSuccess(name, id),
                     ..
                 }) => {
-                    if message_id == id {
-                        trace!("Successfully stored {:?}", data_name);
-                        return Ok(());
-                    } else {
+                    if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_name,
                                id,
                                message_id);
                         return Err(());
+                    } else if data_name != name {
+                        error!("Stored {:?}, but with wrong name {:?}.",
+                               data_name,
+                               name);
+                        return Err(());
+                    } else {
+                        trace!("Successfully stored {:?}", data_name);
+                        return Ok(());
                     }
                 }
                 Event::Response(ResponseMessage {
