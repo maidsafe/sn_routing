@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.15.0]
+- Implement Rand for mock PeerId.
+- Add data name to Put, Post and Delete success responses.
+
 ## [0.14.0]
 - Add message id to Refresh messages
 - Node numbers only increase during node addition in churn for ci_test example
