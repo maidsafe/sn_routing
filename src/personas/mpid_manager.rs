@@ -426,7 +426,7 @@ impl MpidManager {
             try!(routing_node.send_put_request(src.clone(), dst, notification, message_id.clone()));
             // Send put success to Client.
             dst = request.src.clone();
-            let _ = routing_node.send_put_success(src, dst, *message_id);
+            let _ = routing_node.send_put_success(src, dst, data.name(), *message_id);
         } else {
             // Client not registered online.
             try!(routing_node.send_put_failure(request.dst.clone(),
@@ -450,7 +450,8 @@ impl MpidManager {
         // Send post success to client.
         let src = request.dst.clone();
         let dst = request.src.clone();
-        let _ = routing_node.send_post_success(src, dst, *message_id);
+        // TODO: Check whether the request argument is needed.
+        let _ = routing_node.send_post_success(src, dst, *request.dst.name(), *message_id);
         // For each received header in the inbox, fetch the full message from the sender
         let received_headers = account.received_headers();
         for header in &received_headers {
@@ -686,6 +687,7 @@ impl MpidManager {
 
 #[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
     use error::InternalError;

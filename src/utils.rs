@@ -27,7 +27,7 @@ pub fn client_name(authority: &Authority) -> XorName {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "use-mock-crust")))]
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
     use rand::{self, Rng};
     rand::thread_rng().gen_iter().take(size).collect()

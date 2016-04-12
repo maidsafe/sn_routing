@@ -97,6 +97,7 @@ impl MaidManager {
 
     pub fn handle_put_success(&mut self,
                               routing_node: &RoutingNode,
+                              data_name: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
         match self.request_cache.remove(message_id) {
@@ -104,7 +105,7 @@ impl MaidManager {
                 // Send success response back to client
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, *message_id);
+                let _ = routing_node.send_put_success(src, dst, *data_name, *message_id);
                 Ok(())
             }
             None => Err(InternalError::FailedToFindCachedRequest(*message_id)),
@@ -325,6 +326,7 @@ impl Default for MaidManager {
 
 #[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
     use std::collections::HashSet;
@@ -661,15 +663,19 @@ mod test {
         assert_eq!(put_requests[1].dst,
                    Authority::NaeManager(immutable_data.name()));
 
-        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
+        let data = if let RequestContent::Put(Data::Immutable(ref data), ref id) =
+                          put_requests[1].content {
             assert_eq!(*data, immutable_data);
             assert_eq!(*id, message_id);
+            data
         } else {
             unreachable!()
-        }
+        };
 
         // Valid case.
-        assert!(env.maid_manager.handle_put_success(&env.routing, &message_id).is_ok());
+        assert!(env.maid_manager
+                   .handle_put_success(&env.routing, &data.name(), &message_id)
+                   .is_ok());
 
         let put_successes = env.routing.put_successes_given();
 
@@ -677,8 +683,9 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.client);
 
-        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
+        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
+            assert_eq!(*name, data.name());
         } else {
             unreachable!()
         }
@@ -688,7 +695,7 @@ mod test {
 
         if let Err(InternalError::FailedToFindCachedRequest(id)) =
                env.maid_manager
-                  .handle_put_success(&env.routing, &message_id) {
+                  .handle_put_success(&env.routing, &data.name(), &message_id) {
             assert_eq!(message_id, id);
         } else {
             unreachable!()

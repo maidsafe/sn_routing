@@ -111,15 +111,16 @@ impl TestClient {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
 
-        unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
+        unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
         poll::nodes_and_client(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::PutSuccess(response_message_id),
+                content: ResponseContent::PutSuccess(name, response_message_id),
                 ..
             })) => {
                 assert_eq!(request_message_id, response_message_id);
+                assert_eq!(data.name(), name);
             }
 
             event => panic!("Expected PutSuccess, got: {:?}", event),

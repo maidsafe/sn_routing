@@ -321,7 +321,7 @@ impl ImmutableDataManager {
             if let Authority::ClientManager(_) = request.src {
                 let src = request.dst.clone();
                 let dst = request.src.clone();
-                let _ = routing_node.send_put_success(src, dst, *message_id);
+                let _ = routing_node.send_put_success(src, dst, data.name(), *message_id);
             }
         };
 
@@ -517,6 +517,7 @@ impl ImmutableDataManager {
 
     pub fn handle_put_success(&mut self,
                               pmid_node: &XorName,
+                              _data_name: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
         let mut replicants_stored = 0;
@@ -524,6 +525,7 @@ impl ImmutableDataManager {
         let entry = if let Some(entry) = self.ongoing_puts
                                              .iter()
                                              .find(|&entry| entry.1 == *message_id) {
+            // TODO: Check that the data_name is correct.
             if let Some(account) = self.accounts.get_mut(&entry.0.name()) {
                 if !account.pmid_nodes_mut().remove(&DataHolder::Pending(*pmid_node)) {
                     return Err(InternalError::InvalidResponse);
@@ -1157,6 +1159,7 @@ impl Default for ImmutableDataManager {
 
 #[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
 
@@ -1344,8 +1347,9 @@ mod test {
         }
         let put_successes = env.routing.put_successes_given();
         assert_eq!(put_successes.len(), 1);
-        if let ResponseContent::PutSuccess(id) = put_successes[0].content.clone() {
+        if let ResponseContent::PutSuccess(name, id) = put_successes[0].content.clone() {
             assert_eq!(put_env.message_id, id);
+            assert_eq!(put_env.im_data.name(), name);
         } else {
             panic!("Received unexpected response {:?}", put_successes[0]);
         }
@@ -1403,7 +1407,9 @@ mod test {
         let put_env = env.put_im_data();
         for data_holder in &put_env.initial_holders {
             let _ = env.immutable_data_manager
-                       .handle_put_success(data_holder.name(), &put_env.message_id);
+                       .handle_put_success(data_holder.name(),
+                                           &put_env.im_data.name(),
+                                           &put_env.message_id);
         }
 
         let get_env = env.get_im_data(put_env.im_data.name());
@@ -1455,7 +1461,9 @@ mod test {
         let put_env = env.put_im_data();
         for data_holder in &put_env.initial_holders {
             let _ = env.immutable_data_manager
-                       .handle_put_success(data_holder.name(), &put_env.message_id);
+                       .handle_put_success(data_holder.name(),
+                                           &put_env.im_data.name(),
+                                           &put_env.message_id);
         }
 
         let get_env = env.get_im_data(put_env.im_data.name());
@@ -1562,7 +1570,9 @@ mod test {
         let put_env = env.put_im_data();
         for data_holder in &put_env.initial_holders {
             let _ = env.immutable_data_manager
-                       .handle_put_success(data_holder.name(), &put_env.message_id);
+                       .handle_put_success(data_holder.name(),
+                                           &put_env.im_data.name(),
+                                           &put_env.message_id);
         }
 
         let get_env = env.get_im_data(put_env.im_data.name());
@@ -1633,7 +1643,9 @@ mod test {
             if churn_count % 2 == 0 {
                 let lost_node = env.lose_close_node(&put_env.im_data.name());
                 let _ = env.immutable_data_manager
-                           .handle_put_success(data_holder.name(), &put_env.message_id);
+                           .handle_put_success(data_holder.name(),
+                                               &put_env.im_data.name(),
+                                               &put_env.message_id);
                 env.routing.remove_node_from_routing_table(&lost_node);
                 let _ = env.immutable_data_manager.handle_node_lost(&env.routing, &lost_node);
                 let temp_account = mem::replace(&mut account,
@@ -1727,7 +1739,9 @@ mod test {
         let mut good_holders = HashSet::new();
         for data_holder in &put_env.initial_holders {
             unwrap_result!(env.immutable_data_manager
-                              .handle_put_success(data_holder.name(), &put_env.message_id));
+                              .handle_put_success(data_holder.name(),
+                                                  &put_env.im_data.name(),
+                                                  &put_env.message_id));
             good_holders.insert(DataHolder::Good(*data_holder.name()));
         }
 
@@ -1813,7 +1827,9 @@ mod test {
         let mut good_holders = HashSet::new();
         for data_holder in &put_env.initial_holders {
             unwrap_result!(env.immutable_data_manager
-                              .handle_put_success(data_holder.name(), &put_env.message_id));
+                              .handle_put_success(data_holder.name(),
+                                                  &put_env.im_data.name(),
+                                                  &put_env.message_id));
             good_holders.insert(DataHolder::Good(*data_holder.name()));
         }
 

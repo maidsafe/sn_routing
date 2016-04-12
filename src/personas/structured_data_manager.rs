@@ -139,7 +139,10 @@ impl StructuredDataManager {
             Err(From::from(error))
         } else {
             trace!("SDM sending PutSuccess for data {}", data_name);
-            let _ = routing_node.send_put_success(response_src, response_dst, *message_id);
+            let _ = routing_node.send_put_success(response_src,
+                                                  response_dst,
+                                                  data_name,
+                                                  *message_id);
             Ok(())
         }
     }
@@ -166,6 +169,7 @@ impl StructuredDataManager {
                             trace!("SDM updated {:?} to {:?}", existing_data, new_data);
                             let _ = routing_node.send_post_success(request.dst.clone(),
                                                                    request.src.clone(),
+                                                                   new_data.name(),
                                                                    *message_id);
                             return Ok(());
                         }
@@ -206,6 +210,7 @@ impl StructuredDataManager {
                                data);
                         let _ = routing_node.send_delete_success(request.dst.clone(),
                                                                  request.src.clone(),
+                                                                 data.name(),
                                                                  *message_id);
                         return Ok(());
                     }
@@ -296,6 +301,7 @@ impl StructuredDataManager {
 
 
 #[cfg(test)]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
 
@@ -540,8 +546,9 @@ mod test {
         assert_eq!(0, env.routing.put_requests_given().len());
         let put_responses = env.routing.put_successes_given();
         assert_eq!(put_responses.len(), 1);
-        if let ResponseContent::PutSuccess(id) = put_responses[0].content.clone() {
+        if let ResponseContent::PutSuccess(name, id) = put_responses[0].content.clone() {
             assert_eq!(put_env.message_id, id);
+            assert_eq!(put_env.sd_data.name(), name);
         } else {
             panic!("Received unexpected response {:?}", put_responses[0]);
         }
@@ -680,8 +687,9 @@ mod test {
                                                              put_env.client.clone());
         let mut post_success = env.routing.post_successes_given();
         assert_eq!(post_success.len(), 1);
-        if let ResponseContent::PostSuccess(id) = post_success[0].content.clone() {
+        if let ResponseContent::PostSuccess(name, id) = post_success[0].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
+            assert_eq!(sd_new.name(), name);
         } else {
             panic!("Received unexpected response {:?}", post_success[0]);
         }
@@ -728,8 +736,9 @@ mod test {
                                                      put_env.client.clone());
         post_success = env.routing.post_successes_given();
         assert_eq!(env.routing.post_successes_given().len(), 2);
-        if let ResponseContent::PostSuccess(id) = post_success[1].content.clone() {
+        if let ResponseContent::PostSuccess(name, id) = post_success[1].content.clone() {
             assert_eq!(post_correct_env.message_id, id);
+            assert_eq!(sd_new.name(), name);
         } else {
             panic!("Received unexpected response {:?}", post_success[1]);
         }
@@ -795,8 +804,9 @@ mod test {
                                                              put_env.client.clone());
         let delete_success = env.routing.delete_successes_given();
         assert_eq!(delete_success.len(), 1);
-        if let ResponseContent::DeleteSuccess(id) = delete_success[0].content.clone() {
+        if let ResponseContent::DeleteSuccess(name, id) = delete_success[0].content.clone() {
             assert_eq!(delete_correct_env.message_id, id);
+            assert_eq!(sd_new.name(), name);
         } else {
             panic!("Received unexpected response {:?}", delete_success[0]);
         }

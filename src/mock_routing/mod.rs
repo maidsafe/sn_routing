@@ -199,9 +199,10 @@ impl MockRoutingNode {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
+                            name: XorName,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, name, id)
     }
 
     pub fn send_put_failure(&self,
@@ -218,9 +219,10 @@ impl MockRoutingNode {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
+                             name: XorName,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, name, id)
     }
 
     pub fn send_post_failure(&self,
@@ -237,9 +239,10 @@ impl MockRoutingNode {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
+                               name: XorName,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, name, id)
     }
 
     pub fn send_delete_failure(&self,
