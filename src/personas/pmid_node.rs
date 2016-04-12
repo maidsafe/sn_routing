@@ -145,7 +145,7 @@ impl PmidNode {
                src,
                data_name,
                dst);
-        let _ = routing_node.send_put_success(src, dst, *message_id);
+        let _ = routing_node.send_put_success(src, dst, *data_name, *message_id);
         Ok(())
     }
 
@@ -164,7 +164,8 @@ impl PmidNode {
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
     use safe_network_common::client_errors::GetError;
@@ -230,7 +231,7 @@ mod test {
         let request_msg = RequestMessage {
             src: env.from_authority.clone(),
             dst: env.our_authority.clone(),
-            content: RequestContent::Put(Data::Immutable(immutable_data), message_id),
+            content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
 
         assert!(env.pmid_node.handle_put(&env.routing, &request_msg).is_ok());
@@ -245,8 +246,9 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
+        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
+            assert_eq!(*name, immutable_data.name());
         } else {
             unreachable!()
         }
@@ -323,8 +325,9 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
+        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
+            assert_eq!(*name, immutable_data.name());
         } else {
             unreachable!()
         }
@@ -440,8 +443,9 @@ mod test {
         assert_eq!(put_successes[0].src, env.our_authority);
         assert_eq!(put_successes[0].dst, env.from_authority);
 
-        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
+        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
+            assert_eq!(*name, immutable_data.name());
         } else {
             unreachable!()
         }

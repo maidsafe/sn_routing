@@ -45,11 +45,11 @@ const PMID_NODE_ALLOWANCE: f64 = 0.6;
 const STUCTURED_DATA_MANAGER_ALLOWANCE: f64 = 0.3;
 const MPID_MANAGER_ALLOWANCE: f64 = 0.1;
 
-#[cfg(not(all(test, feature = "use-mock-routing")))]
-pub type RoutingNode = ::routing::Node;
+#[cfg(any(not(test), feature = "use-mock-crust"))]
+pub use routing::Node as RoutingNode;
 
-#[cfg(all(test, feature = "use-mock-routing"))]
-pub type RoutingNode = ::mock_routing::MockRoutingNode;
+#[cfg(all(test, not(feature = "use-mock-crust")))]
+pub use mock_routing::MockRoutingNode as RoutingNode;
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
@@ -315,7 +315,9 @@ impl Vault {
                 self.structured_data_manager.handle_delete(routing_node, &request)
             }
             // ================== Refresh ==================
-            (src, dst, &RequestContent::Refresh(ref serialised_refresh, _)) => {
+            (src,
+             dst,
+             &RequestContent::Refresh(ref serialised_refresh, _)) => {
                 self.on_refresh(src, dst, serialised_refresh)
             }
             // ================== Invalid Request ==================
@@ -357,18 +359,18 @@ impl Vault {
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutSuccess(ref message_id)) => {
-                self.maid_manager.handle_put_success(routing_node, message_id)
+             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
+                self.maid_manager.handle_put_success(routing_node, name, message_id)
             }
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::PutSuccess(ref message_id)) => {
-                self.immutable_data_manager.handle_put_success(pmid_node, message_id)
+             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
+                self.immutable_data_manager.handle_put_success(pmid_node, name, message_id)
             }
             (&Authority::ManagedNode(ref pmid_node),
              &Authority::NodeManager(_),
-             &ResponseContent::PutSuccess(ref message_id)) => {
-                self.pmid_manager.handle_put_success(routing_node, pmid_node, message_id)
+             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
+                self.pmid_manager.handle_put_success(routing_node, pmid_node, name, message_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),

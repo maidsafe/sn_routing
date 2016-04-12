@@ -68,14 +68,14 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
     }
 
     /// Returns the number of entries.
-    #[cfg(all(test, feature = "use-mock-routing"))]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 mod test {
     use super::*;
     use time::Duration;

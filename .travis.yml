@@ -1,7 +1,7 @@
 env:
   global:
     - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
-    - Features="use-mock-crust use-mock-routing"
+    - Features="use-mock-crust"
 os:
   - linux
   - osx

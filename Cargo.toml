@@ -18,29 +18,29 @@ ctrlc = "~1.1.1"
 docopt = "~0.6.78"
 log = "~0.3.6"
 maidsafe_utilities = "~0.5.1"
-routing = "~0.14.0"
+routing = "~0.15.0"
 rustc-serialize = "~0.3.19"
 safe_network_common = "~0.1.1"
 sodiumoxide = "~0.0.10"
 time = "~0.1.35"
 xor_name = "~0.1.0"
+safe_core = {version = "~0.14.2", optional = true}
 
 [dev-dependencies]
 kademlia_routing_table = "~0.4.0"
 rand = "~0.3.14"
-safe_core = "~0.14.1"
 
 [build-dependencies]
 hyper = {version = "~0.8.0", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]
-use-mock-routing = []
-use-mock-crust = ["routing/use-mock-crust", "safe_core/use-mock-crust"]
+use-mock-crust = ["routing/use-mock-crust"]
 
-[[test]]
-harness = false
-name = "ci"
 
 [[test]]
 name = "mock_crust"
+
+[[bin]]
+name = "safe_vault"
+doc = false

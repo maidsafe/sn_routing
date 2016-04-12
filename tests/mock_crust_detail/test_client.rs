@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(feature = "use-mock-crust")]
 
 use rand::random;
 use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PublicId,
@@ -112,15 +111,16 @@ impl TestClient {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
 
-        unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
+        unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
         poll::nodes_and_client(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::PutSuccess(response_message_id),
+                content: ResponseContent::PutSuccess(name, response_message_id),
                 ..
             })) => {
                 assert_eq!(request_message_id, response_message_id);
+                assert_eq!(data.name(), name);
             }
 
             event => panic!("Expected PutSuccess, got: {:?}", event),

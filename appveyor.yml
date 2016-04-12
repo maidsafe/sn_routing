@@ -1,7 +1,6 @@
 environment:
   global:
     RUST_BACKTRACE: 1
-    Features: "use-mock-routing"
   matrix:
     - RUST_VERSION: stable
 branches:

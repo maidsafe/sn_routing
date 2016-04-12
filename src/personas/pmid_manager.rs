@@ -118,14 +118,23 @@ impl PmidManager {
     pub fn handle_put_success(&mut self,
                               routing_node: &RoutingNode,
                               pmid_node: &XorName,
+                              data_name: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
         if let Some(request) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
+            if request.src.name() != data_name {
+                error!("Got PutSuccess for {:?} with data name {:?} instead of {:?}.",
+                       message_id,
+                       data_name,
+                       request.src.name());
+                return Err(InternalError::InvalidResponse);
+            }
             let src = request.dst.clone();
             let dst = request.src.clone();
             trace!("As {:?} sending put success to {:?}", src, dst);
-            let _ = routing_node.send_put_success(src, dst, *message_id);
-        } else {}
+            let _ = routing_node.send_put_success(src, dst, *data_name, *message_id);
+        }
+        // Otherwise we are probably a new member of this `PmidManager` group.
         Ok(())
     }
 
@@ -219,14 +228,13 @@ impl PmidManager {
                     account: &Account,
                     message_id: &MessageId) {
         let src = Authority::NodeManager(*pmid_node);
-        let refresh = Refresh::new(pmid_node,
-                                   RefreshValue::PmidManagerAccount(account.clone()));
+        let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("PM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src.clone(),
-			                                          src.clone(),
-			                                          serialised_refresh,
-													  *message_id);
+                                                      src.clone(),
+                                                      serialised_refresh,
+                                                      *message_id);
         }
     }
 }
@@ -238,8 +246,9 @@ impl Default for PmidManager {
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+#[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
+#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
     use maidsafe_utilities::serialisation;
@@ -424,7 +433,7 @@ mod test {
         let immutable_data = get_close_data(&env);
         let mut message_id = MessageId::new();
         let valid_request = RequestMessage {
-            src: env.from_authority.clone(),
+            src: Authority::NaeManager(immutable_data.name()),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
@@ -449,7 +458,10 @@ mod test {
 
         // Valid case.
         let mut pmid_node = *env.our_authority.name();
-        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
+        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing,
+                                                            &pmid_node,
+                                                            &immutable_data.name(),
+                                                            &message_id) {} else {
             unreachable!()
         }
 
@@ -457,10 +469,12 @@ mod test {
 
         assert_eq!(put_successes.len(), 1);
         assert_eq!(put_successes[0].src, env.our_authority);
-        assert_eq!(put_successes[0].dst, env.from_authority);
+        assert_eq!(put_successes[0].dst,
+                   Authority::NaeManager(immutable_data.name()));
 
-        if let ResponseContent::PutSuccess(ref id) = put_successes[0].content {
+        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
             assert_eq!(*id, message_id);
+            assert_eq!(*name, immutable_data.name());
         } else {
             unreachable!()
         }
@@ -469,7 +483,10 @@ mod test {
         pmid_node = get_close_node(&env);
         message_id = MessageId::new();
 
-        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing, &pmid_node, &message_id) {} else {
+        if let Ok(()) = env.pmid_manager.handle_put_success(&env.routing,
+                                                            &pmid_node,
+                                                            &immutable_data.name(),
+                                                            &message_id) {} else {
             unreachable!()
         }
 
@@ -567,8 +584,8 @@ mod test {
             assert_eq!(refresh_requests[0].src, env.our_authority);
             assert_eq!(refresh_requests[0].dst, env.our_authority);
 
-            if let RequestContent::Refresh(ref serialised_refresh, _) =
-                    refresh_requests[0].content {
+            if let RequestContent::Refresh(ref serialised_refresh, _) = refresh_requests[0]
+                                                                            .content {
                 if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
                     let refresh: Refresh = refresh;
                     assert_eq!(refresh.name, *env.our_authority.name());

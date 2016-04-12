@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(all(test, feature = "use-mock-routing"))]
+#![cfg(test)]
 
 #![allow(unused)]
 
@@ -36,8 +36,9 @@ pub struct MockRoutingNode {
 }
 
 impl MockRoutingNode {
-    pub fn new(event_sender: mpsc::Sender<Event>, _use_data_cache: bool)
-        -> Result<MockRoutingNode, RoutingError> {
+    pub fn new(event_sender: mpsc::Sender<Event>,
+               _use_data_cache: bool)
+               -> Result<MockRoutingNode, RoutingError> {
         Ok(MockRoutingNode { pimpl: Arc::new(Mutex::new(MockRoutingNodeImpl::new(event_sender))) })
     }
 
@@ -198,9 +199,10 @@ impl MockRoutingNode {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
+                            name: XorName,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_put_success(src, dst, name, id)
     }
 
     pub fn send_put_failure(&self,
@@ -217,9 +219,10 @@ impl MockRoutingNode {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
+                             name: XorName,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_post_success(src, dst, name, id)
     }
 
     pub fn send_post_failure(&self,
@@ -236,9 +239,10 @@ impl MockRoutingNode {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
+                               name: XorName,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, id)
+        unwrap_result!(self.pimpl.lock()).send_delete_success(src, dst, name, id)
     }
 
     pub fn send_delete_failure(&self,
