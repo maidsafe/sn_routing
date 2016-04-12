@@ -430,10 +430,9 @@ mod test {
                 content: RequestContent::Put(Data::Structured(sd), message_id),
             };
 
-            if let Ok(()) = env.maid_manager
-                               .handle_put(&env.routing, &HashSet::<XorName>::new(), &request) {} else {
-                unreachable!()
-            }
+            assert!(env.maid_manager
+                       .handle_put(&env.routing, &HashSet::<XorName>::new(), &request)
+                       .is_ok());
         };
     }
 
