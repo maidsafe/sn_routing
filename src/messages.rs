@@ -30,6 +30,7 @@ use error::RoutingError;
 use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
+use xor_name::XorName;
 
 /// Wrapper of all messages.
 ///
@@ -363,11 +364,11 @@ pub enum ResponseContent {
     /// may be shortcut if the data is in a node's cache.
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
-    PutSuccess(MessageId),
+    PutSuccess(XorName, MessageId),
     /// Success token for Post  (may be ignored)
-    PostSuccess(MessageId),
+    PostSuccess(XorName, MessageId),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(MessageId),
+    DeleteSuccess(XorName, MessageId),
     /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
@@ -531,14 +532,14 @@ impl Debug for ResponseContent {
             ResponseContent::GetSuccess(ref data, ref message_id) => {
                 write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
             }
-            ResponseContent::PutSuccess(ref message_id) => {
-                write!(formatter, "PutSuccess {{ {:?} }}", message_id)
+            ResponseContent::PutSuccess(ref name, ref message_id) => {
+                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", name, message_id)
             }
-            ResponseContent::PostSuccess(ref message_id) => {
-                write!(formatter, "PostSuccess {{ {:?} }}", message_id)
+            ResponseContent::PostSuccess(ref name, ref message_id) => {
+                write!(formatter, "PostSuccess {{ {:?}, {:?} }}", name, message_id)
             }
-            ResponseContent::DeleteSuccess(ref message_id) => {
-                write!(formatter, "DeleteSuccess {{ {:?} }}", message_id)
+            ResponseContent::DeleteSuccess(ref name, ref message_id) => {
+                write!(formatter, "DeleteSuccess {{ {:?}, {:?} }}", name, message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)

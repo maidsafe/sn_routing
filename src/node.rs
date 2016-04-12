@@ -203,12 +203,13 @@ impl Node {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
+                            name: XorName,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutSuccess(id),
+            content: ResponseContent::PutSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
@@ -237,12 +238,13 @@ impl Node {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
+                             name: XorName,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostSuccess(id),
+            content: ResponseContent::PostSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
@@ -271,12 +273,13 @@ impl Node {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
+                               name: XorName,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteSuccess(id),
+            content: ResponseContent::DeleteSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
