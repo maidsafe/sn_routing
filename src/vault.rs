@@ -409,7 +409,7 @@ impl Vault {
         self.immutable_data_manager.handle_node_added(routing_node, &node_added);
         self.structured_data_manager.handle_churn(routing_node, &node_added);
         self.pmid_manager.handle_node_added(routing_node, &node_added);
-        self.pmid_node.handle_churn(routing_node);
+        self.pmid_node.handle_node_added(routing_node);
         self.mpid_manager.handle_churn(routing_node, &node_added);
         Ok(())
     }
@@ -423,7 +423,6 @@ impl Vault {
         self.immutable_data_manager.handle_node_lost(routing_node, &node_lost);
         self.structured_data_manager.handle_churn(routing_node, &node_lost);
         self.pmid_manager.handle_node_lost(routing_node, &node_lost);
-        self.pmid_node.handle_churn(routing_node);
         self.mpid_manager.handle_churn(routing_node, &node_lost);
         Ok(())
     }

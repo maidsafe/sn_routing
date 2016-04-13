@@ -110,7 +110,7 @@ impl PmidNode {
         Ok(())
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode) {
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode) {
         // Only retain chunks for which we're still in the close group
         let chunk_names = self.chunk_store.names();
         for chunk_name in chunk_names {
@@ -453,7 +453,7 @@ mod test {
         let name = get_close_node(&env);
 
         env.routing.node_added_event(name);
-        env.pmid_node.handle_churn(&env.routing);
+        env.pmid_node.handle_node_added(&env.routing);
 
         let message_id = MessageId::new();
         let name = if let Authority::ManagedNode(name) = env.our_authority {
