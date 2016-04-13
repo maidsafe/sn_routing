@@ -1325,21 +1325,13 @@ mod test {
             } else if index == REPLICANTS {
                 let backup = ImmutableData::new(ImmutableDataType::Backup,
                                                 put_env.im_data.value().clone());
-                if let Authority::NaeManager(dst) = req.dst {
-                    assert_eq!(backup.name(), dst);
-                } else {
-                    panic!();
-                }
+                assert_eq!(req.dst, Authority::NaeManager(backup.name()));
                 assert_eq!(req.content,
                            RequestContent::Put(Data::Immutable(backup), backup_message_id));
             } else {
                 let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
                                                      put_env.im_data.value().clone());
-                if let Authority::NaeManager(dst) = req.dst {
-                    assert_eq!(sacrificial.name(), dst);
-                } else {
-                    panic!();
-                }
+                assert_eq!(req.dst, Authority::NaeManager(sacrificial.name()));
                 assert_eq!(req.content,
                            RequestContent::Put(Data::Immutable(sacrificial),
                                                sacrificial_message_id));
@@ -1347,12 +1339,8 @@ mod test {
         }
         let put_successes = env.routing.put_successes_given();
         assert_eq!(put_successes.len(), 1);
-        if let ResponseContent::PutSuccess(name, id) = put_successes[0].content.clone() {
-            assert_eq!(put_env.message_id, id);
-            assert_eq!(put_env.im_data.name(), name);
-        } else {
-            panic!("Received unexpected response {:?}", put_successes[0]);
-        }
+        assert_eq!(put_successes[0].content,
+                   ResponseContent::PutSuccess(put_env.im_data.name(), put_env.message_id));
         assert_eq!(put_env.client_manager, put_successes[0].dst);
         assert_eq!(Authority::NaeManager(put_env.im_data.name()),
                    put_successes[0].src);
@@ -1371,10 +1359,7 @@ mod test {
                get_failure[0].content.clone() {
             assert_eq!(get_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
-            if let GetError::NoSuchData = parsed_error {} else {
-                panic!("Received unexpected external_error_indicator with parsed error as {:?}",
-                       parsed_error);
-            }
+            assert_eq!(GetError::NoSuchData, parsed_error);
         } else {
             panic!("Received unexpected response {:?}", get_failure[0]);
         }
@@ -1502,11 +1487,7 @@ mod test {
 
         let backup_get_request = unwrap_option!(get_requests.get(REPLICANTS), "");
         let backup = ImmutableData::new(ImmutableDataType::Backup, put_env.im_data.value().clone());
-        if let Authority::NaeManager(dst) = backup_get_request.dst {
-            assert_eq!(backup.name(), dst);
-        } else {
-            panic!();
-        }
+        assert_eq!(backup_get_request.dst, Authority::NaeManager(backup.name()));
         let mut expected_message_id = MessageId::increment_first_byte(&get_env.message_id);
         assert_eq!(backup_get_request.content,
                    RequestContent::Get(DataRequest::Immutable(backup.name(),
@@ -1516,11 +1497,8 @@ mod test {
         let sacrificial_get_request = unwrap_option!(get_requests.last(), "");
         let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
                                              put_env.im_data.value().clone());
-        if let Authority::NaeManager(dst) = sacrificial_get_request.dst {
-            assert_eq!(sacrificial.name(), dst);
-        } else {
-            panic!();
-        }
+        assert_eq!(sacrificial_get_request.dst,
+                   Authority::NaeManager(sacrificial.name()));
         expected_message_id = MessageId::increment_first_byte(&expected_message_id);
         assert_eq!(sacrificial_get_request.content,
                    RequestContent::Get(DataRequest::Immutable(sacrificial.name(),
@@ -1594,8 +1572,10 @@ mod test {
             if success_count == 1 {
                 let get_success = env.routing.get_successes_given();
                 assert_eq!(get_success.len(), 1);
-                if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
-                       get_success[0].clone() {
+                if let ResponseMessage {
+                    content: ResponseContent::GetSuccess(response_data, id),
+                    ..
+                } = get_success[0].clone() {
                     assert_eq!(Data::Immutable(put_env.im_data.clone()), response_data);
                     assert_eq!(get_env.message_id, id);
                 } else {
@@ -1720,12 +1700,8 @@ mod test {
                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
-                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
-                       parsed_refresh.value.clone() {
-                    assert_eq!(received_account, account);
-                } else {
-                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
-                }
+                assert_eq!(parsed_refresh.value,
+                           RefreshValue::ImmutableDataManagerAccount(account.clone()));
             } else {
                 panic!("Received unexpected refresh {:?}", received_refresh);
             }
@@ -1808,12 +1784,8 @@ mod test {
                    received_refresh.content.clone() {
                 let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                         &received_serialised_refresh[..]));
-                if let RefreshValue::ImmutableDataManagerAccount(received_account) =
-                       parsed_refresh.value.clone() {
-                    assert_eq!(received_account, account);
-                } else {
-                    panic!("Received unexpected refresh value {:?}", parsed_refresh);
-                }
+                assert_eq!(parsed_refresh.value,
+                           RefreshValue::ImmutableDataManagerAccount(account.clone()));
             } else {
                 panic!("Received unexpected refresh {:?}", received_refresh);
             }
