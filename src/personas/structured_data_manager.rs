@@ -231,7 +231,7 @@ impl StructuredDataManager {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
                 if let Ok(existing_data) =
                        serialisation::deserialise::<StructuredData>(&serialised_data) {
-                    if existing_data.validate_self_against_successor(&structured_data).is_ok() {
+                    if existing_data.get_version() < structured_data.get_version() {
                         // chunk_store::put() deletes the old data automatically
                         let serialised_data = try!(serialisation::serialise(&structured_data));
                         return Ok(try!(self.chunk_store
@@ -247,21 +247,29 @@ impl StructuredDataManager {
         Ok(())
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain data for which we're still in the close group
         let data_names = self.chunk_store.names();
         for data_name in data_names {
             match routing_node.close_group(data_name) {
                 Ok(None) => {
-                    trace!("No longer a SDM for {}", data_name);
+                    error!("{} added. No longer a SDM for {}", node_name, data_name);
                     let _ = self.chunk_store.delete(&data_name);
                 }
-                Ok(Some(_)) => self.send_refresh(routing_node, &data_name, node_changed),
+                Ok(Some(_)) => self.send_refresh(routing_node,
+                                                 &data_name,
+                                                 MessageId::from_added_node(*node_name)),
                 Err(error) => {
                     error!("Failed to get close group: {:?} for {}", error, data_name);
                     let _ = self.chunk_store.delete(&data_name);
                 }
             }
+        }
+    }
+
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        for data_name in self.chunk_store.names() {
+            self.send_refresh(routing_node, &data_name, MessageId::from_lost_node(*node_name));
         }
     }
 
@@ -273,7 +281,7 @@ impl StructuredDataManager {
     fn send_refresh(&self,
                     routing_node: &RoutingNode,
                     data_name: &XorName,
-                    node_changed: &XorName) {
+                    message_id: MessageId) {
         let serialised_data = match self.chunk_store.get(data_name) {
             Ok(data) => data,
             _ => return,
@@ -293,7 +301,7 @@ impl StructuredDataManager {
             let _ = routing_node.send_refresh_request(src.clone(),
                                                       src.clone(),
                                                       serialised_refresh,
-                                                      MessageId::from_lost_node(*node_changed));
+                                                      message_id);
         }
     }
 }
@@ -840,7 +848,7 @@ mod test {
 
         let lost_node = env.lose_close_node(&put_env.sd_data.name());
         env.routing.remove_node_from_routing_table(&lost_node);
-        let _ = env.structured_data_manager.handle_churn(&env.routing, &random::<XorName>());
+        let _ = env.structured_data_manager.handle_node_lost(&env.routing, &random::<XorName>());
 
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 1);
@@ -871,7 +879,7 @@ mod test {
         let keys = sign::gen_keypair();
         let sd_data = unwrap_result!(StructuredData::new(0,
                                                          random(),
-                                                         0,
+                                                         1,
                                                          utils::generate_random_vec_u8(1024),
                                                          vec![keys.0],
                                                          vec![],
@@ -882,7 +890,7 @@ mod test {
         // Refresh an incorrect version new structured_data in
         let sd_bad = unwrap_result!(StructuredData::new(0,
                                                         *sd_data.get_identifier(),
-                                                        3,
+                                                        0,
                                                         sd_data.get_data().clone(),
                                                         vec![keys.0],
                                                         vec![],
@@ -891,7 +899,7 @@ mod test {
         // Refresh a correct version new structured_data in
         let sd_new = unwrap_result!(StructuredData::new(0,
                                                         *sd_data.get_identifier(),
-                                                        1,
+                                                        3,
                                                         sd_data.get_data().clone(),
                                                         vec![keys.0],
                                                         vec![],

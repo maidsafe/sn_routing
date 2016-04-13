@@ -208,7 +208,6 @@ impl PmidManager {
         }
     }
 
-    // The `request` is the original request from NAE to PM
     pub fn notify_put_failure(&mut self,
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
