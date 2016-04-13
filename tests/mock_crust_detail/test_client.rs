@@ -15,12 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::sync::mpsc::{self, Receiver};
 
+use maidsafe_utilities::serialisation;
 use rand::random;
 use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PublicId,
-              ResponseContent, ResponseMessage, StructuredData};
+              RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
-use std::sync::mpsc::{self, Receiver};
+use safe_network_common::client_errors::MutationError;
 
 use super::test_node::TestNode;
 use super::poll;
@@ -80,7 +82,7 @@ impl TestClient {
                                                          vec![],
                                                          None));
 
-        self.put(Data::Structured(account), nodes);
+        unwrap_result!(self.put(Data::Structured(account), nodes));
     }
 
     pub fn get(&mut self, request: DataRequest, nodes: &mut [TestNode]) -> Data {
@@ -107,7 +109,7 @@ impl TestClient {
         }
     }
 
-    pub fn put(&mut self, data: Data, nodes: &mut [TestNode]) {
+    pub fn put(&mut self, data: Data, nodes: &mut [TestNode]) -> Result<(), MutationError> {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
 
@@ -116,14 +118,27 @@ impl TestClient {
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::PutSuccess(name, response_message_id),
+                content: ResponseContent::PutSuccess(_, response_message_id),
                 ..
             })) => {
                 assert_eq!(request_message_id, response_message_id);
-                assert_eq!(data.name(), name);
+                Ok(())
             }
-
-            event => panic!("Expected PutSuccess, got: {:?}", event),
+            Ok(Event::Response(ResponseMessage{
+                content: ResponseContent::PutFailure{ id: response_id, request, external_error_indicator: response_error },
+                ..
+            })) => {
+                assert_eq!(request_message_id, response_id);
+                if let RequestContent::Put(returned_data, returned_id) = request.content {
+                    assert!(data == returned_data);
+                    assert_eq!(request_message_id, returned_id);
+                } else {
+                    panic!("Got wrong request included in Put response");
+                }
+                let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
+                Err(parsed_error)
+            }
+            event => panic!("Expected Put response got: {:?}", event),
         }
     }
 }

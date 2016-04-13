@@ -207,12 +207,13 @@ impl PmidManager {
             unreachable!("Error in vault demuxing")
         };
 
+        let data_name = data.name();
         let src = request.dst.clone();
-        let dst = request.src.clone();
+        let dst = Authority::NaeManager(data_name);
         trace!("As {:?} sending Put failure to {:?} of data {}",
                src,
                dst,
-               data.name());
+               data_name);
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], *message_id);
 
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
@@ -268,7 +269,6 @@ mod test {
 
     struct Environment {
         our_authority: Authority,
-        from_authority: Authority,
         routing: RoutingNode,
         pmid_manager: PmidManager,
     }
@@ -296,7 +296,6 @@ mod test {
 
         Environment {
             our_authority: Authority::NodeManager(our_name),
-            from_authority: Authority::NaeManager(from_name),
             routing: routing,
             pmid_manager: PmidManager::default(),
         }
@@ -352,7 +351,7 @@ mod test {
         let immutable_data = get_close_data(&env);
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
-            src: env.from_authority.clone(),
+            src: Authority::NaeManager(immutable_data.name()),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
@@ -384,8 +383,9 @@ mod test {
 
         let immutable_data = get_close_data(&env);
         let message_id = MessageId::new();
+        let from_authority = Authority::NaeManager(immutable_data.name());
         let valid_request = RequestMessage {
-            src: env.from_authority.clone(),
+            src: from_authority.clone(),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
@@ -415,7 +415,7 @@ mod test {
 
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
-        assert_eq!(put_failures[0].dst, env.from_authority);
+        assert_eq!(put_failures[0].dst, from_authority);
 
         if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
@@ -500,8 +500,9 @@ mod test {
         let mut env = environment_setup();
         let immutable_data = get_close_data(&env);
         let message_id = MessageId::new();
+        let from_authority = Authority::NaeManager(immutable_data.name());
         let valid_request = RequestMessage {
-            src: env.from_authority.clone(),
+            src: from_authority.clone(),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };
@@ -532,7 +533,7 @@ mod test {
 
         assert_eq!(put_failures.len(), 1);
         assert_eq!(put_failures[0].src, env.our_authority);
-        assert_eq!(put_failures[0].dst, env.from_authority);
+        assert_eq!(put_failures[0].dst, from_authority);
 
         if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
@@ -550,7 +551,7 @@ mod test {
         let immutable_data = get_close_data(&env);
         let message_id = MessageId::new();
         let valid_request = RequestMessage {
-            src: env.from_authority.clone(),
+            src: Authority::NaeManager(immutable_data.name()),
             dst: env.our_authority.clone(),
             content: RequestContent::Put(Data::Immutable(immutable_data.clone()), message_id),
         };

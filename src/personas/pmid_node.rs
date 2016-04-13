@@ -83,10 +83,10 @@ impl PmidNode {
             unreachable!("Error in vault demuxing")
         };
         let data_name = data.name();
-        info!("pmid_node {:?} storing {:?}", request.dst.name(), data_name);
         let serialised_data = try!(serialisation::serialise(&data));
         if self.chunk_store.has_space(serialised_data.len() as u64) {
             if let Ok(_) = self.chunk_store.put(&data_name, &serialised_data) {
+                trace!("pmid_node {} stored {}", request.dst.name(), data_name);
                 let _ = self.notify_managers_of_success(routing_node,
                                                         &data_name,
                                                         &message_id,
@@ -97,7 +97,7 @@ impl PmidNode {
 
         let src = request.dst.clone();
         let dst = request.src.clone();
-        trace!("As {:?} sending Put failure of data {} to {:?} ",
+        debug!("As {:?} sending Put failure of data {} to {:?} ",
                src,
                data_name,
                dst);

@@ -29,26 +29,30 @@
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
-#![allow(unused_extern_crates)]
+#![cfg(feature = "use-mock-crust")]
+#![cfg(test)]
 #[macro_use]
 extern crate maidsafe_utilities;
+#[macro_use]
+extern crate log;
 extern crate rand;
 extern crate routing;
+extern crate safe_network_common;
 extern crate sodiumoxide;
 extern crate xor_name;
 extern crate safe_vault;
 
-#[cfg(feature = "use-mock-crust")]
 mod mock_crust_detail;
 
-#[cfg(feature = "use-mock-crust")]
-#[cfg(test)]
 mod test {
-    use mock_crust_detail::{self, poll, test_client, test_node};
+    use maidsafe_utilities::log;
+    use mock_crust_detail::{self, poll, test_node};
+    use mock_crust_detail::test_client::TestClient;
     use rand::{random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
     use routing::{self, Data, DataRequest, ImmutableData, ImmutableDataType, StructuredData};
     use routing::mock_crust::{self, Network};
+    use safe_vault::Config;
     use sodiumoxide::crypto::sign;
     use xor_name::XorName;
 
@@ -185,10 +189,10 @@ mod test {
     #[test]
     fn data_confirmation() {
         let network = Network::new();
-        let node_count = 2 * 8;
+        let node_count = 24;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
         let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = test_client::TestClient::new(&network, Some(config));
+        let mut client = TestClient::new(&network, Some(config));
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
@@ -215,7 +219,7 @@ mod test {
         }
 
         for data in &all_data {
-            client.put(data.clone(), &mut nodes);
+            unwrap_result!(client.put(data.clone(), &mut nodes));
         }
 
         for data in &all_data {
@@ -262,7 +266,7 @@ mod test {
                    all_structured_data.clone(),
                    all_stored_names.clone());
 
-        //for _ in 0..10 {
+        // for _ in 0..10 {
         //    for _ in 0..3 {
         //        let node_range = Range::new(1, nodes.len());
         //        let node_index = node_range.ind_sample(&mut rng);
@@ -292,15 +296,48 @@ mod test {
         //    check_data(all_immutable_data.clone(),
         //               all_structured_data.clone(),
         //               all_stored_names.clone());
-        //}
+        // }
+    }
+
+    #[test]
+    fn fill_network() {
+        let _ = log::init(false);
+        let network = Network::new();
+        let config = Config {
+            wallet_address: None,
+            max_capacity: Some(7000),
+        };
+        let mut nodes = test_node::create_nodes(&network, 24, Some(config));
+        let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+        let mut client = TestClient::new(&network, Some(crust_config));
+
+        client.ensure_connected(&mut nodes);
+        client.create_account(&mut nodes);
+
+        let mut content = vec![0u8; 1024];
+        let mut index = 0;
+        loop {
+            content[index] ^= 1u8;
+            let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content.clone());
+            match client.put(Data::Immutable(immutable_data), &mut nodes) {
+                Ok(()) => {
+                    trace!("\nStored chunk {}\n=================\n", index)
+                }
+                Err(response) => {
+                    trace!("\nFailed storing chunk {}\n=================\n{:?}\n", index, response);
+                    break;
+                }
+            }
+            index += 1;
+        }
     }
 
     #[test]
     fn put_get_when_churn() {
         let network = Network::new();
-        let mut nodes = test_node::create_nodes(&network, 2 * 8, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = test_client::TestClient::new(&network, Some(config));
+        let mut nodes = test_node::create_nodes(&network, 24, None);
+        let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+        let mut client = TestClient::new(&network, Some(crust_config));
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
@@ -319,15 +356,15 @@ mod test {
         // let node_index_range = Range::new(1, nodes.len() - 1);
         // Churn every 10 put_requests, thats 10 churn in total
         for i in 0..all_immutable_data.len() {
-            client.put(Data::Immutable(all_immutable_data[i].clone()), &mut nodes);
+            unwrap_result!(client.put(Data::Immutable(all_immutable_data[i].clone()), &mut nodes));
             // TODO: Re-enable churn.
-            //if i % 10 == 0 {
+            // if i % 10 == 0 {
             //    if i % 20 == 0 {
             //        test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
             //    } else {
             //        test_node::add_node(&network, &mut nodes);
             //    }
-            //}
+            // }
         }
         poll::nodes_and_client(&mut nodes, &mut client);
         // Churn every 10 put_requests, thats 10 churn in total
@@ -342,13 +379,13 @@ mod test {
                 data => panic!("Got unexpected data: {:?}", data),
             }
             // TODO: Re-enable churn.
-            //if i % 10 == 0 {
+            // if i % 10 == 0 {
             //    if i % 20 == 0 {
             //        test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
             //    } else {
             //        test_node::add_node(&network, &mut nodes);
             //    }
-            //}
+            // }
         }
         poll::nodes_and_client(&mut nodes, &mut client);
 
