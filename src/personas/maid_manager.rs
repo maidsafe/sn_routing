@@ -321,6 +321,11 @@ impl MaidManager {
                                               message_id);
         Ok(())
     }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_put_count(&self, client_name: &XorName) -> Option<u64> {
+        self.accounts.get(client_name).map(|account| account.data_stored)
+    }
 }
 
 impl Default for MaidManager {

@@ -23,6 +23,7 @@ use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, Publ
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use safe_network_common::client_errors::MutationError;
+use xor_name::XorName;
 
 use super::test_node::TestNode;
 use super::poll;
@@ -32,6 +33,7 @@ pub struct TestClient {
     routing_client: routing::Client,
     routing_rx: Receiver<Event>,
     public_id: PublicId,
+    name: XorName,
 }
 
 impl TestClient {
@@ -51,6 +53,7 @@ impl TestClient {
             routing_client: client,
             routing_rx: routing_rx,
             public_id: public_id,
+            name: *public_id.name(),
         }
     }
 
@@ -140,5 +143,9 @@ impl TestClient {
             }
             event => panic!("Expected Put response got: {:?}", event),
         }
+    }
+
+    pub fn name(&self) -> &XorName {
+        &self.name
     }
 }

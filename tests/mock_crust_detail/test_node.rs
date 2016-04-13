@@ -57,6 +57,10 @@ impl TestNode {
     pub fn get_stored_names(&self) -> Vec<XorName> {
         self.vault.get_stored_names()
     }
+
+    pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
+        self.vault.get_maid_manager_put_count(client_name)
+    }
 }
 
 pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> Vec<TestNode> {

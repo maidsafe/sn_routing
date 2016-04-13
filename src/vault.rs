@@ -200,6 +200,12 @@ impl Vault {
             .collect()
     }
 
+    /// Get the number of put requests the network processed for the given client.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
+        self.maid_manager.get_put_count(client_name)
+    }
+
     fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
         trace!("Vault {} received an event from routing: {:?}",
                unwrap_result!(routing_node.name()),

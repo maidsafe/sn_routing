@@ -187,6 +187,53 @@ mod test {
     }
 
     #[test]
+    fn maid_manager_churn() {
+        let network = Network::new();
+        let node_count = 15;
+        let mut nodes = test_node::create_nodes(&network, node_count, None);
+        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+        let mut client = TestClient::new(&network, Some(config));
+
+        client.ensure_connected(&mut nodes);
+        client.create_account(&mut nodes);
+
+        let mut rng = thread_rng();
+
+        let mut put_count = 1; // Login packet.
+
+        for i in 0..10 {
+            for data in (0..4)
+                .map(|_| Data::Structured(random_structured_data(100000))) {
+                unwrap_result!(client.put(data.clone(), &mut nodes));
+                put_count += 1;
+            }
+            trace!("Churn {}", i);
+            if nodes.len() <= GROUP_SIZE + 2 || random() {
+                trace!("Adding node.");
+                test_node::add_node(&network, &mut nodes);
+            } else {
+                let number = random::<usize>() % 3 + 1;
+                trace!("Removing {} node(s).", number);
+                for _ in 0..number {
+                    let node_range = Range::new(1, nodes.len());
+                    let node_index = node_range.ind_sample(&mut rng);
+                    test_node::drop_node(&mut nodes, node_index);
+                }
+            }
+            poll::nodes_and_client(&mut nodes, &mut client);
+            assert_eq!(GROUP_SIZE, nodes.iter().filter(|node| {
+                match node.get_maid_manager_put_count(client.name()) {
+                    None => false,
+                    Some(count) => {
+                        assert_eq!(count, put_count);
+                        true
+                    }
+                }
+            }).count());
+        }
+    }
+
+    #[test]
     fn structured_data_churn() {
         let network = Network::new();
         let node_count = 15;
