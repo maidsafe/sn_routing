@@ -159,7 +159,7 @@ impl Vault {
         });
 
         for event in routing_receiver.iter() {
-            let routing_node = unwrap_result!(routing_node1.lock());
+            let routing_node = routing_node1.lock().expect("Node mutex poisoned.");
 
             if let Some(routing_node) = routing_node.as_ref() {
                 self.process_event(routing_node, event);
@@ -405,7 +405,7 @@ impl Vault {
                      routing_node: &RoutingNode,
                      node_added: XorName)
                      -> Result<(), InternalError> {
-        self.maid_manager.handle_churn(routing_node, &node_added);
+        self.maid_manager.handle_node_added(routing_node, &node_added);
         self.immutable_data_manager.handle_node_added(routing_node, &node_added);
         self.structured_data_manager.handle_churn(routing_node, &node_added);
         self.pmid_manager.handle_churn(routing_node, &node_added);
@@ -419,7 +419,7 @@ impl Vault {
                     node_lost: XorName)
                     -> Result<(), InternalError> {
         let _ = self.full_pmid_nodes.remove(&node_lost);
-        self.maid_manager.handle_churn(routing_node, &node_lost);
+        self.maid_manager.handle_node_lost(routing_node, &node_lost);
         self.immutable_data_manager.handle_node_lost(routing_node, &node_lost);
         self.structured_data_manager.handle_churn(routing_node, &node_lost);
         self.pmid_manager.handle_churn(routing_node, &node_lost);
