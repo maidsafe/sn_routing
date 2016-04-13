@@ -139,7 +139,6 @@ impl PmidManager {
     }
 
     // This is handling the put_failure response from PN to PM
-    // The `request` is the original request from NAE to PM
     pub fn handle_put_failure(&mut self,
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
@@ -149,8 +148,13 @@ impl PmidManager {
         } else {
             unreachable!("Error in vault demuxing")
         };
-        let _ = self.ongoing_puts.remove(&(*message_id, *request.dst.name()));
-        self.notify_put_failure(routing_node, request)
+        if let Some(removed_request) = self.ongoing_puts
+                                           .remove(&(*message_id, *request.dst.name())) {
+            if routing_node.close_group(*request.dst.name()).ok().is_some() {
+                let _ = self.notify_put_failure(routing_node, &removed_request);
+            }
+        }
+        Ok(())
     }
 
     // Posting from DM to PM is only used to notify a get_failure
@@ -208,10 +212,10 @@ impl PmidManager {
         }
     }
 
-    pub fn notify_put_failure(&mut self,
-                              routing_node: &RoutingNode,
-                              request: &RequestMessage)
-                              -> Result<(), InternalError> {
+    fn notify_put_failure(&mut self,
+                          routing_node: &RoutingNode,
+                          request: &RequestMessage)
+                          -> Result<(), InternalError> {
         let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
                                                             ref message_id) = request.content {
             (data.clone(), message_id)
@@ -219,13 +223,12 @@ impl PmidManager {
             unreachable!("Error in vault demuxing")
         };
 
-        let data_name = data.name();
         let src = request.dst.clone();
-        let dst = Authority::NaeManager(data_name);
+        let dst = request.src.clone();
         trace!("As {:?} sending Put failure to {:?} of data {}",
                src,
                dst,
-               data_name);
+               data.name());
         let _ = routing_node.send_put_failure(src, dst, request.clone(), vec![], *message_id);
 
         if let Some(account) = self.accounts.get_mut(request.dst.name()) {
@@ -537,7 +540,7 @@ mod test {
             unreachable!()
         }
 
-        if let Ok(()) = env.pmid_manager.handle_put_failure(&env.routing, &valid_request) {} else {
+        if let Ok(()) = env.pmid_manager.handle_put_failure(&env.routing, &put_requests[0]) {} else {
             unreachable!()
         }
 

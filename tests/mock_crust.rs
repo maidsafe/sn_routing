@@ -373,7 +373,6 @@ mod test {
         // }
     }
 
-    #[ignore]
     #[test]
     fn fill_network() {
         let network = Network::new();
