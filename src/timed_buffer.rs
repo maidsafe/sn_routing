@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use itertools::Itertools;
 use std::hash::Hash;
 use std::collections::HashMap;
 use time::{Duration, SteadyTime};
@@ -62,9 +63,19 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
             .collect()
     }
 
-    // Returns true if the map contains a value for the specified key.
+    /// Returns true if the map contains a value for the specified key.
     pub fn contains_key(&self, key: &Key) -> bool {
         self.map.contains_key(key)
+    }
+
+    /// Removes all entries where the key matches the predicate.
+    pub fn remove_keys<F>(&mut self, f: F)
+        where F: FnMut(&&Key) -> bool
+    {
+        let keys = self.map.keys().filter(f).cloned().collect_vec();
+        for key in keys {
+            let _ = self.map.remove(&key);
+        }
     }
 
     /// Returns the number of entries.

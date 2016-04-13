@@ -166,7 +166,7 @@ impl PmidManager {
         let _ = self.accounts.insert(name, account);
     }
 
-    pub fn handle_churn(&mut self, routing_node: &RoutingNode, node_changed: &XorName) {
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
         self.accounts = accounts.into_iter()
@@ -174,14 +174,16 @@ impl PmidManager {
                                     match routing_node.close_group(*pmid_node) {
                                         Ok(None) => {
                                             trace!("No longer a PM for {}", pmid_node);
+                                            self.ongoing_puts
+                                                .remove_keys(|&&(_, name)| name == *pmid_node);
                                             false
                                         }
                                         Ok(Some(_)) => {
                                             self.send_refresh(routing_node,
                                                               pmid_node,
                                                               account,
-                                                              &MessageId::from_lost_node(
-                                                                    *node_changed));
+                                                              MessageId::from_added_node(
+                                                                    *node_name));
                                             true
                                         }
                                         Err(error) => {
@@ -193,6 +195,17 @@ impl PmidManager {
                                     }
                                 })
                                 .collect();
+    }
+
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        let _ = self.accounts.remove(&node_name);
+        self.ongoing_puts.remove_keys(|&&(_, name)| name == *node_name);
+        for (pmid_node, account) in &self.accounts {
+            self.send_refresh(routing_node,
+                              pmid_node,
+                              account,
+                              MessageId::from_lost_node(*node_name));
+        }
     }
 
     // The `request` is the original request from NAE to PM
@@ -227,7 +240,7 @@ impl PmidManager {
                     routing_node: &RoutingNode,
                     pmid_node: &XorName,
                     account: &Account,
-                    message_id: &MessageId) {
+                    message_id: MessageId) {
         let src = Authority::NodeManager(*pmid_node);
         let refresh = Refresh::new(pmid_node, RefreshValue::PmidManagerAccount(account.clone()));
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
@@ -235,7 +248,7 @@ impl PmidManager {
             let _ = routing_node.send_refresh_request(src.clone(),
                                                       src.clone(),
                                                       serialised_refresh,
-                                                      *message_id);
+                                                      message_id);
         }
     }
 }
@@ -575,7 +588,7 @@ mod test {
         }
 
         env.routing.node_added_event(get_close_node(&env));
-        env.pmid_manager.handle_churn(&env.routing, &random::<XorName>());
+        env.pmid_manager.handle_node_added(&env.routing, &random::<XorName>());
 
         let mut refresh_count = 0;
         let mut refresh_requests = env.routing.refresh_requests_given();
@@ -602,7 +615,7 @@ mod test {
         }
 
         env.routing.node_lost_event(lose_close_node(&env));
-        env.pmid_manager.handle_churn(&env.routing, &random::<XorName>());
+        env.pmid_manager.handle_node_lost(&env.routing, &random::<XorName>());
 
         refresh_requests = env.routing.refresh_requests_given();
 

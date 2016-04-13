@@ -56,6 +56,7 @@ extern crate chunk_store;
 extern crate config_file_handler;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate ctrlc;
+extern crate itertools;
 #[cfg(test)]
 extern crate kademlia_routing_table;
 #[cfg(test)]
