@@ -419,7 +419,7 @@ impl Core {
                                      self.routing_table.len());
             trace!(" -{}- ",
                    iter::repeat('-').take(status_str.len()).collect::<String>());
-            error!("| {} |", status_str); // Temporarily error for ci_test.
+            info!("| {} |", status_str); // Temporarily error for ci_test.
             trace!(" -{}- ",
                    iter::repeat('-').take(status_str.len()).collect::<String>());
         }
@@ -1221,7 +1221,7 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => error!("Running listener."), // Temporarily error for ci_test.
+            Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
             Err(err) => warn!("Failed to start listening: {:?}", err),
         }
     }
@@ -1232,7 +1232,7 @@ impl Core {
             error!("LostPeer fired with our crust peer id");
             return;
         }
-        error!("Received LostPeer - {:?}", peer_id);
+        trace!("Received LostPeer - {:?}", peer_id);
         if !self.client_restriction {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
@@ -1543,7 +1543,7 @@ impl Core {
                        peer_id);
                 return self.disconnect_peer(&peer_id);
             }
-            Some(AddedNodeDetails { must_notify, common_groups }) => {
+            Some(AddedNodeDetails { must_notify, .. }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
@@ -1552,11 +1552,11 @@ impl Core {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
                 }
-                if common_groups {
-                    let event = Event::NodeAdded(name);
-                    if let Err(err) = self.event_sender.send(event) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
+                // TODO: Figure out whether common_groups makes sense: Do we need to send a
+                // NodeAdded event for _every_ new peer?
+                let event = Event::NodeAdded(name);
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
             }
         }
@@ -2034,7 +2034,7 @@ impl Core {
             } else if let Some(&public_id) = self.node_id_cache.get(&dst_name) {
                 public_id
             } else {
-                error!("Cannot answer GetPublicId: {:?} not found in the routing table.",
+                debug!("Cannot answer GetPublicId: {:?} not found in the routing table.",
                        dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
