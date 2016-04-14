@@ -231,6 +231,11 @@ impl StructuredDataManager {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
                 if let Ok(existing_data) =
                        serialisation::deserialise::<StructuredData>(&serialised_data) {
+                    // Make sure we don't 'update' to a lower version due to delayed accumulation.
+                    // We do accept any greater version, however, in case we missed some update,
+                    // e. g. because an earlier refresh hasn't accumulated yet. The validity of the
+                    // new data is not checked here: If the group has reached consensus, a quorum
+                    // has already been reached by the nodes that checked it.
                     if existing_data.get_version() < structured_data.get_version() {
                         // chunk_store::put() deletes the old data automatically
                         let serialised_data = try!(serialisation::serialise(&structured_data));
@@ -256,9 +261,11 @@ impl StructuredDataManager {
                     error!("{} added. No longer a SDM for {}", node_name, data_name);
                     let _ = self.chunk_store.delete(&data_name);
                 }
-                Ok(Some(_)) => self.send_refresh(routing_node,
-                                                 &data_name,
-                                                 MessageId::from_added_node(*node_name)),
+                Ok(Some(_)) => {
+                    self.send_refresh(routing_node,
+                                      &data_name,
+                                      MessageId::from_added_node(*node_name))
+                }
                 Err(error) => {
                     error!("Failed to get close group: {:?} for {}", error, data_name);
                     let _ = self.chunk_store.delete(&data_name);
@@ -269,7 +276,9 @@ impl StructuredDataManager {
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         for data_name in self.chunk_store.names() {
-            self.send_refresh(routing_node, &data_name, MessageId::from_lost_node(*node_name));
+            self.send_refresh(routing_node,
+                              &data_name,
+                              MessageId::from_lost_node(*node_name));
         }
     }
 
