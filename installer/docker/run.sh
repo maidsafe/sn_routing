@@ -1,7 +1,5 @@
 #! /bin/bash
 
-BIN_DIR=/root/.cargo/bin/
-
 function generate_config() {
   local path=$1
 
@@ -20,5 +18,5 @@ function generate_config() {
   echo "}"                                      >> $path
 }
 
-generate_config $BIN_DIR/safe_vault.vault.config
-$BIN_DIR/safe_vault
+generate_config safe_vault.vault.config
+./safe_vault
