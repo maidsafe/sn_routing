@@ -17,6 +17,7 @@ config_file_handler = "~0.3.0"
 ctrlc = "~1.1.1"
 docopt = "~0.6.80"
 itertools = "~0.4.12"
+kademlia_routing_table = "~0.4.0"
 log = "~0.3.6"
 maidsafe_utilities = "~0.5.1"
 routing = "~0.15.0"
@@ -28,7 +29,6 @@ xor_name = "~0.1.0"
 safe_core = {version = "~0.14.2", optional = true}
 
 [dev-dependencies]
-kademlia_routing_table = "~0.4.0"
 rand = "~0.3.14"
 
 [build-dependencies]

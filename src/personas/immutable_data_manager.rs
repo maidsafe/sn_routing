@@ -20,15 +20,17 @@ use std::convert::From;
 use std::collections::{HashMap, HashSet};
 
 use error::InternalError;
+use itertools::Itertools;
+use kademlia_routing_table::GROUP_SIZE;
 use safe_network_common::client_errors::GetError;
 use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
 use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
               PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
-use time::{Duration, SteadyTime};
+use time::Duration;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
-use xor_name::XorName;
+use xor_name::{self, XorName};
 
 pub const REPLICANTS: usize = 2;
 
@@ -106,11 +108,12 @@ struct MetadataForGetRequest {
     // This will be the ID of the first client request to trigger the Get, or of the churn event if
     // it wasn't triggered by a client request.
     pub message_id: MessageId,
+    // The incoming requests that need to be responded to once we receive the data.
     pub requests: Vec<(MessageId, RequestMessage)>,
     pub pmid_nodes: Vec<DataHolder>,
-    pub creation_timestamp: SteadyTime,
     pub data: Option<ImmutableData>,
     pub requested_data_type: ImmutableDataType,
+    // Whether we already received a `GetFailure` from the IDM of one of the two other data types.
     pub secondary_location_failed: bool,
 }
 
@@ -220,7 +223,6 @@ impl MetadataForGetRequest {
             message_id: message_id.clone(),
             requests: requests,
             pmid_nodes: good_nodes,
-            creation_timestamp: SteadyTime::now(),
             data: None,
             requested_data_type: account.data_type(),
             secondary_location_failed: false,
@@ -636,12 +638,82 @@ impl ImmutableDataManager {
         let _ = self.accounts.insert(data_name, account);
     }
 
-    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_added: &XorName) {
-        self.handle_churn(routing_node, MessageId::from_added_node(*node_added));
+    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        let message_id = MessageId::from_added_node(*node_name);
+        // Remove entries from `ongoing_puts` that we are not responsible for any more.
+        let ongoing_puts = mem::replace(&mut self.ongoing_puts, HashSet::new());
+        self.ongoing_puts = ongoing_puts.into_iter()
+                                        .filter(|&(ref data, _)| {
+                                            self.close_group_to(routing_node, &data.name())
+                                                .is_some()
+                                        })
+                                        .collect();
+        // Remove entries from `ongoing_gets` that we are not responsible for any more.
+        self.ongoing_gets
+            .remove_keys(|&data_name| {
+                match routing_node.close_group(*data_name) {
+                    Ok(Some(_)) => false,
+                    _ => true,
+                }
+            });
+        // Only retain accounts for which we're still in the close group.
+        let accounts = mem::replace(&mut self.accounts, HashMap::new());
+        self.accounts = accounts.into_iter()
+                                .filter_map(|(data_name, mut account)| {
+                                    let close_group = if let Some(group) =
+                                                             self.close_group_to(routing_node,
+                                                                                 &data_name) {
+                                        group
+                                    } else {
+                                        return None;
+                                    };
+                                    if close_group.contains(node_name) {
+                                        *account.pmid_nodes_mut() =
+                    account.pmid_nodes()
+                           .iter()
+                           .filter(|pmid_node| {
+                               // Remove this data holder if it has been pushed out of the close
+                               // group by the new node, i. e. if it is now too far away from the
+                               // data. If Routing would suppress NodeAdded events on the side of
+                               // the joining node, we could instead do this here:
+                               // close_group.contains(pmid_node.name())
+                               close_group.get(GROUP_SIZE - 1).into_iter().all(|name| {
+                                   xor_name::closer_to_target_or_equal(pmid_node.name(),
+                                                                       name,
+                                                                       &data_name)
+                               })
+                           })
+                           .cloned()
+                           .collect();
+                                    }
+                                    let _ = self.handle_churn_for_account(routing_node,
+                                                                          &data_name,
+                                                                          &message_id,
+                                                                          close_group,
+                                                                          &mut account);
+                                    Some((data_name, account))
+                                })
+                                .collect();
     }
 
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_lost: &XorName) {
-        self.handle_churn(routing_node, MessageId::from_lost_node(*node_lost));
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        let message_id = MessageId::from_lost_node(*node_name);
+        let mut accounts = mem::replace(&mut self.accounts, HashMap::new());
+        accounts.iter_mut().foreach(|(data_name, account)| {
+            *account.pmid_nodes_mut() = account.pmid_nodes()
+                                               .iter()
+                                               .filter(|pmid_node| pmid_node.name() != node_name)
+                                               .cloned()
+                                               .collect();
+            if let Some(close_group) = self.close_group_to(routing_node, &data_name) {
+                let _ = self.handle_churn_for_account(routing_node,
+                                                      data_name,
+                                                      &message_id,
+                                                      close_group,
+                                                      account);
+            }
+        });
+        let _ = mem::replace(&mut self.accounts, accounts);
     }
 
     // This is used when handling Get responses since we don't know the data name of the original
@@ -787,52 +859,14 @@ impl ImmutableDataManager {
         Err(InternalError::FailedToFindCachedRequest(*message_id))
     }
 
-    fn handle_churn(&mut self, routing_node: &RoutingNode, message_id: MessageId) {
-        // Only retain accounts for which we're still in the close group
-        let accounts = mem::replace(&mut self.accounts, HashMap::new());
-        self.accounts = accounts.into_iter()
-                                .filter_map(|(data_name, mut account)| {
-                                    self.handle_churn_for_account(routing_node,
-                                                                  &data_name,
-                                                                  &message_id,
-                                                                  &mut account)
-                                })
-                                .collect();
-    }
-
     fn handle_churn_for_account(&mut self,
                                 routing_node: &RoutingNode,
                                 data_name: &XorName,
                                 message_id: &MessageId,
+                                close_group: Vec<XorName>,
                                 account: &mut Account)
                                 -> Option<(XorName, Account)> {
-        trace!("Churning for {} - holders before: {:?}", data_name, account);
-        // This function is used to filter accounts for which this node is no longer responsible, so
-        // return `None` in this case
-        let close_group = if let Some(group) = self.close_group_to(routing_node, &data_name) {
-            group
-        } else {
-            trace!("no longer part of the IDM group");
-            // Remove entry from `ongoing_puts`, as we're not part of the IDM group any more
-            let ongoing_puts = mem::replace(&mut self.ongoing_puts, HashSet::new());
-            self.ongoing_puts = ongoing_puts.into_iter()
-                                            .filter(|&(ref data, _)| data.name() != *data_name)
-                                            .collect();
-            return None;
-        };
-
-        *account.pmid_nodes_mut() = account.pmid_nodes()
-                                           .iter()
-                                           .filter(|pmid_node| {
-                                               close_group.contains(pmid_node.name())
-                                           })
-                                           .cloned()
-                                           .collect();
         trace!("Churning for {} - holders after: {:?}", data_name, account);
-        if account.pmid_nodes().is_empty() {
-            error!("Chunk lost - No valid nodes left to retrieve chunk");
-            return None;
-        }
 
         // Check to see if the chunk should be replicated
         let new_replicants_count = Self::new_replicants_count(&account);
@@ -904,7 +938,7 @@ impl ImmutableDataManager {
                           .iter()
                           .filter(|&entry| entry.0.name() == *data_name)
                           .cloned()
-                          .collect::<Vec<_>>();
+                          .collect_vec();
         if entries.is_empty() {
             return false;
         }
@@ -945,7 +979,11 @@ impl ImmutableDataManager {
             trace!("Already getting {} - {:?}", data_name, metadata);
             // Remove any holders which no longer belong in the cache entry
             metadata.pmid_nodes
-                    .retain(|pmid_node| close_group.contains(pmid_node.name()));
+                    .retain(|pmid_node| {
+                        close_group.get(GROUP_SIZE - 1).into_iter().all(|name| {
+                            xor_name::closer_to_target_or_equal(pmid_node.name(), name, data_name)
+                        })
+                    });
             trace!("Updated ongoing get for {} to {:?}", data_name, metadata);
             true
         } else {
@@ -1062,6 +1100,7 @@ impl ImmutableDataManager {
             match *queried_pmid_node {
                 DataHolder::Good(ref name) => {
                     let _ = good_nodes.insert(DataHolder::Good(*name));
+                    nodes_to_exclude.push(name);
                 }
                 DataHolder::Failed(ref name) => {
                     nodes_to_exclude.push(name);
@@ -1090,7 +1129,7 @@ impl ImmutableDataManager {
         trace!("Replicating {} - target nodes: {:?}",
                data_name,
                target_pmid_nodes);
-        for new_pmid_node in target_pmid_nodes.difference(&good_nodes).into_iter() {
+        for new_pmid_node in &target_pmid_nodes {
             trace!("Replicating {} - sending Put to {}",
                    data_name,
                    new_pmid_node.name());

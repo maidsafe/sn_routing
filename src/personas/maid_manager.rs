@@ -140,36 +140,37 @@ impl MaidManager {
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
-        self.accounts =
-            accounts.into_iter()
-                    .filter(|&(ref maid_name, ref account)| {
-                        match routing_node.close_group(*maid_name) {
-                            Ok(None) => {
-                                trace!("No longer a MM for {}", maid_name);
-                                let requests = mem::replace(&mut self.request_cache,
-                                                            HashMap::new());
-                                self.request_cache = requests.into_iter()
-                                                             .filter(|&(_, ref r)| {
-                                                                 utils::client_name(&r.src) !=
-                                                                 *maid_name
-                                                             })
-                                                             .collect();
-                                false
-                            }
-                            Ok(Some(_)) => {
-                                self.send_refresh(routing_node,
+        self.accounts = accounts.into_iter()
+                                .filter(|&(ref maid_name, ref account)| {
+                                    match routing_node.close_group(*maid_name) {
+                                        Ok(None) => {
+                                            trace!("No longer a MM for {}", maid_name);
+                                            let requests = mem::replace(&mut self.request_cache,
+                                                                        HashMap::new());
+                                            self.request_cache =
+                                                requests.into_iter()
+                                                        .filter(|&(_, ref r)| {
+                                                            utils::client_name(&r.src) != *maid_name
+                                                        })
+                                                        .collect();
+                                            false
+                                        }
+                                        Ok(Some(_)) => {
+                                            self.send_refresh(routing_node,
                                                   maid_name,
                                                   account,
                                                   MessageId::from_added_node(*node_name));
-                                true
-                            }
-                            Err(error) => {
-                                error!("Failed to get close group: {:?} for {}", error, maid_name);
-                                false
-                            }
-                        }
-                    })
-                    .collect();
+                                            true
+                                        }
+                                        Err(error) => {
+                                            error!("Failed to get close group: {:?} for {}",
+                                                   error,
+                                                   maid_name);
+                                            false
+                                        }
+                                    }
+                                })
+                                .collect();
     }
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
