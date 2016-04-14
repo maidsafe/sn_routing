@@ -37,6 +37,12 @@ impl MessageId {
         MessageId(random::<XorName>())
     }
 
+    /// Generate a `MessageId` with value 0. This should only be used for messages where there is
+    /// no danger of duplication.
+    pub fn zero() -> MessageId {
+        MessageId(XorName([0; 64]))
+    }
+
     /// Generate a new `MessageId` with contents extracted from lost node.
     pub fn from_lost_node(mut name: XorName) -> MessageId {
         name.0[0] = 'L' as u8;
