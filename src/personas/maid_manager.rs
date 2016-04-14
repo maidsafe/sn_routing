@@ -18,6 +18,7 @@
 use std::mem;
 use std::convert::From;
 use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::Entry;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
@@ -37,6 +38,7 @@ const MAX_FULL_RATIO: f32 = 0.5;
 pub struct Account {
     data_stored: u64,
     space_available: u64,
+    version: u64,
 }
 
 impl Default for Account {
@@ -44,6 +46,7 @@ impl Default for Account {
         Account {
             data_stored: 0,
             space_available: DEFAULT_ACCOUNT_SIZE,
+            version: 0,
         }
     }
 }
@@ -55,12 +58,14 @@ impl Account {
         }
         self.data_stored += 1;
         self.space_available -= 1;
+        self.version += 1;
         Ok(())
     }
 
     fn delete_data(&mut self) {
         self.data_stored -= 1;
         self.space_available += 1;
+        self.version += 1;
     }
 }
 
@@ -134,7 +139,16 @@ impl MaidManager {
     }
 
     pub fn handle_refresh(&mut self, maid_name: XorName, account: Account) {
-        let _ = self.accounts.insert(maid_name, account);
+        match self.accounts.entry(maid_name) {
+            Entry::Vacant(entry) => {
+                let _ = entry.insert(account);
+            }
+            Entry::Occupied(mut entry) => {
+                if entry.get().version < account.version {
+                    let _ = entry.insert(account);
+                }
+            }
+        }
     }
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
@@ -282,6 +296,12 @@ impl MaidManager {
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
                          .and_then(|account| account.put_data());
+        if result.is_ok() {
+            self.send_refresh(routing_node,
+                              &client_name,
+                              self.accounts.get(&client_name).expect("Account not found."),
+                              MessageId::zero());
+        }
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
