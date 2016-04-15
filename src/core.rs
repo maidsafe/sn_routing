@@ -896,7 +896,9 @@ impl Core {
         self.add_to_cache(signed_msg.content());
 
         if relay {
-            try!(self.send(signed_msg.clone(), hop_name, false));
+            if let Err(err) = self.send(signed_msg.clone(), hop_name, false) {
+                error!("Failed relaying message: {:?}", err);
+            }
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
