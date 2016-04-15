@@ -85,7 +85,7 @@ impl TestClient {
                                                          vec![],
                                                          None));
 
-        unwrap_result!(self.put(Data::Structured(account), nodes));
+        unwrap_result!(self.put_and_verify(Data::Structured(account), nodes));
     }
 
     pub fn get(&mut self, request: DataRequest, nodes: &mut [TestNode]) -> Data {
@@ -112,10 +112,18 @@ impl TestClient {
         }
     }
 
-    pub fn put(&mut self, data: Data, nodes: &mut [TestNode]) -> Result<(), MutationError> {
+    pub fn put(&mut self, data: Data) {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
+    }
 
+    pub fn put_and_verify(&mut self,
+                          data: Data,
+                          nodes: &mut [TestNode])
+                          -> Result<(), MutationError> {
+        let dst = Authority::ClientManager(*self.public_id.name());
+        let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
         poll::nodes_and_client(nodes, self);
 

@@ -97,13 +97,11 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
 pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>) {
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     nodes.push(TestNode::new(network, Some(config.clone()), None));
-    // poll::nodes(nodes);
 }
 
 pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     drop(node);
-    // poll_all(nodes);
 }
 
 /// Process all events
