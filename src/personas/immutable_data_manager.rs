@@ -220,7 +220,7 @@ impl MetadataForGetRequest {
                                 .collect();
 
         MetadataForGetRequest {
-            message_id: message_id.clone(),
+            message_id: *message_id,
             requests: requests,
             pmid_nodes: good_nodes,
             data: None,

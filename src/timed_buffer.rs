@@ -20,7 +20,11 @@ use std::hash::Hash;
 use std::collections::HashMap;
 use time::{Duration, SteadyTime};
 
-/// TimedBuffer
+/// A map whose entries can time out.
+///
+/// This is similar to an LRU cache, but never silently drops entries without returning them.
+/// Expired entries need to be retrieved with `get_expired`, so that every expiry can be acted
+/// upon.
 pub struct TimedBuffer<Key, Value> {
     map: HashMap<Key, (Value, SteadyTime)>,
     time_to_live: Duration,

@@ -212,6 +212,8 @@ impl MaidManager {
         }
     }
 
+    #[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss,
+                                       cast_sign_loss))]
     fn handle_put_immutable_data(&mut self,
                                  routing_node: &RoutingNode,
                                  full_pmid_nodes: &HashSet<XorName>,
@@ -225,23 +227,21 @@ impl MaidManager {
                                                    &MutationError::InvalidOperation);
             }
 
-            match routing_node.close_group(utils::client_name(&request.src)) {
-                Ok(Some(ref close_group)) => {
-                    if full_pmid_nodes.intersection(&close_group.iter()
-                                                                .cloned()
-                                                                .collect::<HashSet<XorName>>())
-                                      .count() >=
-                       (close_group.len() as f32 * MAX_FULL_RATIO) as usize {
-                        return self.reply_with_put_failure(routing_node,
-                                                           request.clone(),
-                                                           message_id,
-                                                           &MutationError::NetworkFull);
-                    }
+            if let Ok(Some(ref close_group)) =
+                   routing_node.close_group(utils::client_name(&request.src)) {
+                if full_pmid_nodes.intersection(&close_group.iter()
+                                                            .cloned()
+                                                            .collect::<HashSet<XorName>>())
+                                  .count() >=
+                   (close_group.len() as f32 * MAX_FULL_RATIO) as usize {
+                    return self.reply_with_put_failure(routing_node,
+                                                       request.clone(),
+                                                       message_id,
+                                                       &MutationError::NetworkFull);
                 }
-                _ => {
-                    error!("Failed to get close group.");
-                    return Ok(());
-                }
+            } else {
+                error!("Failed to get close group.");
+                return Ok(());
             }
 
             self.forward_put_request(routing_node,

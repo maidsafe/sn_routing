@@ -67,6 +67,9 @@ pub struct Vault {
     routing_receiver: Receiver<Event>,
 }
 
+// TODO: Consider specifying allowances in percent instead of using f64 to avoid floating point
+// issues.
+#[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss, cast_sign_loss))]
 fn init_components(optional_config: Option<Config>)
                    -> Result<(ImmutableDataManager,
                               MaidManager,
