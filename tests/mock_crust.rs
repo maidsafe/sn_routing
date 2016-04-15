@@ -211,8 +211,7 @@ mod test {
                 trace!("Adding node.");
                 test_node::add_node(&network, &mut nodes);
             } else {
-                // TODO: `Range::new(1, 4)` is still flaky.
-                let number = Range::new(1, 3).ind_sample(&mut rng);
+                let number = Range::new(1, 4).ind_sample(&mut rng);
                 trace!("Removing {} node(s).", number);
                 for _ in 0..number {
                     let node_index = Range::new(1, nodes.len()).ind_sample(&mut rng);
@@ -220,18 +219,15 @@ mod test {
                 }
             }
             poll::nodes_and_client(&mut nodes, &mut client);
-            assert_eq!(GROUP_SIZE,
-                       nodes.iter()
-                            .filter(|node| {
-                                match node.get_maid_manager_put_count(client.name()) {
-                                    None => false,
-                                    Some(count) => {
-                                        assert_eq!(count, put_count);
-                                        true
-                                    }
-                                }
-                            })
-                            .count());
+            assert!(GROUP_SIZE - 3 <=
+                    nodes.iter()
+                         .filter(|node| {
+                             match node.get_maid_manager_put_count(client.name()) {
+                                 None => false,
+                                 Some(count) => count == put_count,
+                             }
+                         })
+                         .count());
         }
     }
 

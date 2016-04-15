@@ -181,7 +181,7 @@ impl Vault {
         let routing_node = self.routing_node.take().expect("routing_node should never be None");
         let mut result = routing_node.poll();
 
-        if let Ok(event) = self.routing_receiver.try_recv() {
+        while let Ok(event) = self.routing_receiver.try_recv() {
             self.process_event(&routing_node, event);
             result = true
         }
@@ -327,7 +327,7 @@ impl Vault {
             (src,
              dst,
              &RequestContent::Refresh(ref serialised_refresh, _)) => {
-                self.on_refresh(src, dst, serialised_refresh)
+                self.on_refresh(routing_node, src, dst, serialised_refresh)
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
@@ -451,6 +451,7 @@ impl Vault {
     }
 
     fn on_refresh(&mut self,
+                  routing_node: &RoutingNode,
                   src: &Authority,
                   dst: &Authority,
                   serialised_refresh: &[u8])
@@ -460,7 +461,7 @@ impl Vault {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
              &RefreshValue::MaidManagerAccount(ref account)) => {
-                Ok(self.maid_manager.handle_refresh(refresh.name, account.clone()))
+                Ok(self.maid_manager.handle_refresh(routing_node, refresh.name, account.clone()))
             }
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
