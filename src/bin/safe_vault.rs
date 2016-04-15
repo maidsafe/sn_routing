@@ -15,15 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-//! SAFE Vault provides the interface to SAFE routing.
-//! The resulting executable is the Vault node for the SAFE network.
-//!
-//! # Diagrams
-//!
-//! - [Personas](personas.png)
-//! - [Immutable data put flow](immutable-data-put-flow.png)
-//! - [Immutable data get flow](immutable-data-get-flow.png)
-//!
+//! SAFE Vault provides the interface to SAFE routing.  The resulting executable is the Vault node
+//! for the SAFE network.
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",

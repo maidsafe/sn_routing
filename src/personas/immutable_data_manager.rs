@@ -210,7 +210,8 @@ impl MetadataForGetRequest {
                                         DataHolder::Good(pmid_node) => {
                                             Some(DataHolder::Pending(pmid_node))
                                         }
-                                        DataHolder::Failed(_) | DataHolder::Pending(_) => None,
+                                        DataHolder::Failed(_) |
+                                        DataHolder::Pending(_) => None,
                                     }
                                 })
                                 .collect();
@@ -875,7 +876,8 @@ impl ImmutableDataManager {
         let mut holder_count = 0;
         for pmid_node in account.pmid_nodes() {
             match *pmid_node {
-                DataHolder::Pending(_) | DataHolder::Good(_) => holder_count += 1,
+                DataHolder::Pending(_) |
+                DataHolder::Good(_) => holder_count += 1,
                 DataHolder::Failed(_) => (),
             }
         }
@@ -1107,7 +1109,8 @@ impl ImmutableDataManager {
         // If this Vault is a Backup or Sacrificial manager just return failure to any requesters
         // waiting for responses.
         match metadata.requested_data_type {
-            ImmutableDataType::Backup | ImmutableDataType::Sacrificial => {
+            ImmutableDataType::Backup |
+            ImmutableDataType::Sacrificial => {
                 Self::send_get_failures(routing_node, metadata);
             }
             _ => (),
