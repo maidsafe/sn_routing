@@ -16,6 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 //! Vault provides the library interface to SAFE routing.
+//!
+//! # Diagrams
+//!
+//! - [Personas](personas.png)
+//! - [Immutable data put flow](immutable-data-put-flow.png)
+//! - [Immutable data get flow](immutable-data-get-flow.png)
+//!
 
 #![doc(html_logo_url =
            "https://raw.githubusercontent.com/maidsafe/QA/master/Images/maidsafe_logo.png",

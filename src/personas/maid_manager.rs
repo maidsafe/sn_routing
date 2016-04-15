@@ -238,9 +238,7 @@ impl MaidManager {
         let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
                                                                       ref message_id) =
                                                   request.content {
-            (Data::Structured(data.clone()),
-             data.get_type_tag(),
-             message_id)
+            (Data::Structured(data.clone()), data.get_type_tag(), message_id)
         } else {
             unreachable!("Logic error")
         };
