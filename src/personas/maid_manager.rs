@@ -875,16 +875,22 @@ mod test {
         let mut env = environment_setup();
         create_account(&mut env);
 
+        let mut refresh_count = 1;
+        let mut refresh_requests = env.routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), refresh_count);
+        assert_eq!(refresh_requests[0].src, env.our_authority);
+        assert_eq!(refresh_requests[0].dst, env.our_authority);
+
         env.routing.node_added_event(get_close_node(&env));
         env.maid_manager.handle_node_added(&env.routing, &random::<XorName>());
 
-        let mut refresh_count = 0;
-        let mut refresh_requests = env.routing.refresh_requests_given();
+        refresh_requests = env.routing.refresh_requests_given();
 
         if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
-            assert_eq!(refresh_requests.len(), 1);
-            assert_eq!(refresh_requests[0].src, env.our_authority);
-            assert_eq!(refresh_requests[0].dst, env.our_authority);
+            assert_eq!(refresh_requests.len(), refresh_count + 1);
+            assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
+            assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
+            refresh_count += 1;
 
             if let RequestContent::Refresh(ref serialised_refresh, _) = refresh_requests[0]
                                                                             .content {
@@ -897,9 +903,8 @@ mod test {
             } else {
                 unreachable!()
             }
-            refresh_count += 1;
         } else {
-            assert!(refresh_requests.is_empty());
+            assert_eq!(refresh_requests.len(), refresh_count);
         }
 
         env.routing.node_lost_event(lose_close_node(&env));
@@ -911,6 +916,7 @@ mod test {
             assert_eq!(refresh_requests.len(), refresh_count + 1);
             assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
             assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
+            // refresh_count += 1;
 
             if let RequestContent::Refresh(ref serialised_refresh, _) =
                    refresh_requests[refresh_count].content {
@@ -923,7 +929,6 @@ mod test {
             } else {
                 unreachable!()
             }
-            // refresh_count += 1;
         } else {
             assert_eq!(refresh_requests.len(), refresh_count);
         }
