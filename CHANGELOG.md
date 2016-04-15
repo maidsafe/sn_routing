@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.15.1]
+- Fix a message handling bug.
+- Add `MessageId::zero` constructor.
+- Always send `NodeAdded` for a new peer, even if not in a common group.
+
 ## [0.15.0]
 - Implement Rand for mock PeerId.
 - Add data name to Put, Post and Delete success responses.
