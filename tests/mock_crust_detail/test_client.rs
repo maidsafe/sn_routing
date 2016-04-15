@@ -23,6 +23,7 @@ use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, Publ
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use safe_network_common::client_errors::MutationError;
+use sodiumoxide::crypto::sign;
 use xor_name::XorName;
 
 use super::test_node::TestNode;
@@ -32,6 +33,7 @@ pub struct TestClient {
     _handle: ServiceHandle,
     routing_client: routing::Client,
     routing_rx: Receiver<Event>,
+    full_id: FullId,
     public_id: PublicId,
     name: XorName,
 }
@@ -45,13 +47,14 @@ impl TestClient {
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(routing::Client::new(routing_tx, Some(full_id), false))
+            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone()), false))
         });
 
         TestClient {
             _handle: handle,
             routing_client: client,
             routing_rx: routing_rx,
+            full_id: full_id,
             public_id: public_id,
             name: *public_id.name(),
         }
@@ -88,9 +91,14 @@ impl TestClient {
         unwrap_result!(self.put_and_verify(Data::Structured(account), nodes));
     }
 
+    fn flush(&mut self) {
+        while let Ok(_) = self.routing_rx.try_recv() {}
+    }
+
     pub fn get(&mut self, request: DataRequest, nodes: &mut [TestNode]) -> Data {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
+        self.flush();
 
         unwrap_result!(self.routing_client.send_get_request(dst, request, request_message_id));
         poll::nodes_and_client(nodes, self);
@@ -110,6 +118,12 @@ impl TestClient {
                 event => panic!("Expected GetSuccess, got: {:?}", event),
             }
         }
+    }
+
+    pub fn post(&mut self, data: Data) {
+        let dst = Authority::ClientManager(*self.public_id.name());
+        let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_post_request(dst, data, request_message_id));
     }
 
     pub fn put(&mut self, data: Data) {
@@ -151,6 +165,10 @@ impl TestClient {
             }
             event => panic!("Expected Put response got: {:?}", event),
         }
+    }
+
+    pub fn signing_private_key(&self) -> &sign::SecretKey {
+        self.full_id.signing_private_key()
     }
 
     pub fn name(&self) -> &XorName {

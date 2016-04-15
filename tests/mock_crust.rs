@@ -60,7 +60,7 @@ mod test {
     use sodiumoxide::crypto::sign;
     use xor_name::XorName;
 
-    fn random_structured_data(type_tag: u64) -> StructuredData {
+    fn random_structured_data(type_tag: u64, key: sign::SecretKey) -> StructuredData {
         let keys = sign::gen_keypair();
 
         unwrap_result!(StructuredData::new(type_tag,
@@ -69,7 +69,7 @@ mod test {
                                            mock_crust_detail::generate_random_vec_u8(10),
                                            vec![keys.0],
                                            vec![],
-                                           Some(&keys.1)))
+                                           Some(&key)))
     }
 
     fn check_data(all_immutable_data: Vec<Data>,
@@ -172,18 +172,13 @@ mod test {
 
         structured_names.retain(|&stored_name| all_structured_data_names.contains(&stored_name));
 
-        assert_eq!(8 * all_structured_data.len(), structured_names.len());
-
-        structured_names.sort();
-        structured_names.dedup();
-
-        assert_eq!(all_structured_data_names.iter()
-                                            .zip(structured_names)
-                                            .filter(|&(data_name, structured_name)| {
-                                                *data_name == structured_name
-                                            })
-                                            .count(),
-                   all_structured_data.len());
+        for data_name in all_structured_data_names {
+            let count = structured_names.iter().filter(|n| **n == data_name).count();
+            assert!(5 <= count,
+                    "Only {} copies of structured data {:?}.",
+                    count,
+                    data_name);
+        }
     }
 
     #[test]
@@ -200,9 +195,12 @@ mod test {
         let mut rng = thread_rng();
 
         let mut put_count = 1; // Login packet.
+        let client_key = client.signing_private_key().clone();
 
         for i in 0..10 {
-            for data in (0..4).map(|_| Data::Structured(random_structured_data(100000))) {
+            for data in (0..4).map(|_| {
+                Data::Structured(random_structured_data(100000, client_key.clone()))
+            }) {
                 client.put(data.clone());
                 put_count += 1;
             }
@@ -242,32 +240,44 @@ mod test {
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
 
-        let put_requests = 10;
-        let all_data = (0..put_requests)
-                           .map(|_| Data::Structured(random_structured_data(100000)))
-                           .collect_vec();
-
-        for data in &all_data {
-            unwrap_result!(client.put_and_verify(data.clone(), &mut nodes));
-        }
-
-        let mut all_stored_names = Vec::new();
-
-        for node in &nodes {
-            all_stored_names.append(&mut node.get_stored_names());
-        }
-
-        check_data(vec![], all_data.clone(), all_stored_names.clone());
-
+        let mut all_data = vec![];
         let mut rng = thread_rng();
 
-        for i in 0..10 {
-            trace!("Churn {} with {:?}", i, all_data[0].name());
+        for i in 0..30 {
+            for _ in 0..4 {
+                if all_data.is_empty() || random() {
+                    let data =
+                        Data::Structured(random_structured_data(100000,
+                                                                client.signing_private_key()
+                                                                      .clone()));
+                    trace!("Putting data {:?}.", data.name());
+                    client.put(data.clone());
+                    all_data.push(data);
+                } else {
+                    let j = Range::new(0, all_data.len()).ind_sample(&mut rng);
+                    let data = Data::Structured(if let Data::Structured(sd) = all_data[j]
+                                                                                  .clone() {
+                        unwrap_result!(StructuredData::new(sd.get_type_tag(),
+                                                           *sd.get_identifier(),
+                                                           sd.get_version() + 1,
+                                                           mock_crust_detail::generate_random_vec_u8(10),
+                                                           sd.get_owner_keys().clone(),
+                                                           vec![],
+                                                           Some(client.signing_private_key())))
+                    } else {
+                        panic!("Non-structured data found.");
+                    });
+                    trace!("Posting data {:?}.", data.name());
+                    all_data[j] = data.clone();
+                    client.post(data);
+                }
+            }
+            trace!("Churn {}", i);
             if nodes.len() <= GROUP_SIZE + 2 || random() {
                 trace!("Adding node.");
                 test_node::add_node(&network, &mut nodes);
             } else {
-                let number = random::<usize>() % 3 + 1;
+                let number = Range::new(3, 4).ind_sample(&mut rng);
                 trace!("Removing {} node(s).", number);
                 for _ in 0..number {
                     let node_range = Range::new(1, nodes.len());
@@ -277,11 +287,9 @@ mod test {
             }
             poll::nodes_and_client(&mut nodes, &mut client);
 
-            all_stored_names.clear();
-
-            for node in &nodes {
-                all_stored_names.append(&mut node.get_stored_names());
-            }
+            let all_stored_names = nodes.iter()
+                                        .flat_map(|node| node.get_stored_names())
+                                        .collect_vec();
 
             check_data(vec![], all_data.clone(), all_stored_names.clone());
 
@@ -332,7 +340,8 @@ mod test {
                 let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
                 all_data.push(Data::Immutable(immutable_data));
             } else {
-                let structured_data = random_structured_data(structured_range.ind_sample(&mut rng));
+                let structured_data = random_structured_data(structured_range.ind_sample(&mut rng),
+                                                             client.signing_private_key().clone());
                 all_data.push(Data::Structured(structured_data));
             }
         }

@@ -479,7 +479,7 @@ impl Vault {
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RefreshValue::StructuredDataManager(ref structured_data)) => {
-                self.structured_data_manager.handle_refresh(structured_data.clone())
+                self.structured_data_manager.handle_refresh(routing_node, structured_data.clone())
             }
             (&Authority::NodeManager(_),
              &Authority::NodeManager(_),

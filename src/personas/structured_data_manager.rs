@@ -143,6 +143,7 @@ impl StructuredDataManager {
                                                   response_dst,
                                                   data_name,
                                                   *message_id);
+            self.send_refresh(routing_node, &data_name, MessageId::zero());
             Ok(())
         }
     }
@@ -171,6 +172,7 @@ impl StructuredDataManager {
                                                                    request.src.clone(),
                                                                    new_data.name(),
                                                                    *message_id);
+                            self.send_refresh(routing_node, &new_data.name(), MessageId::zero());
                             return Ok(());
                         }
                     }
@@ -226,7 +228,14 @@ impl StructuredDataManager {
         Ok(())
     }
 
-    pub fn handle_refresh(&mut self, structured_data: StructuredData) -> Result<(), InternalError> {
+    pub fn handle_refresh(&mut self,
+                          routing_node: &RoutingNode,
+                          structured_data: StructuredData)
+                          -> Result<(), InternalError> {
+        match routing_node.close_group(structured_data.name()) {
+            Ok(None) | Err(_) => return Ok(()),
+            Ok(Some(_)) => (),
+        }
         if self.chunk_store.has_chunk(&structured_data.name()) {
             if let Ok(serialised_data) = self.chunk_store.get(&structured_data.name()) {
                 if let Ok(existing_data) =
@@ -258,7 +267,7 @@ impl StructuredDataManager {
         for data_name in data_names {
             match routing_node.close_group(data_name) {
                 Ok(None) => {
-                    error!("{} added. No longer a SDM for {}", node_name, data_name);
+                    trace!("{} added. No longer a SDM for {}", node_name, data_name);
                     let _ = self.chunk_store.delete(&data_name);
                 }
                 Ok(Some(_)) => {
