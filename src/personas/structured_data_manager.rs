@@ -105,6 +105,7 @@ impl StructuredDataManager {
             return Err(From::from(error));
         }
 
+        // TODO: Reconsider this. The client manager should check whether the network is full.
         // Check there aren't too many full nodes in the close group to this data
         match try!(routing_node.close_group(data_name)) {
             Some(mut close_group) => {
@@ -214,6 +215,7 @@ impl StructuredDataManager {
                                                                  request.src.clone(),
                                                                  data.name(),
                                                                  *message_id);
+                        // TODO: Send a refresh message.
                         return Ok(());
                     }
                 }
