@@ -59,6 +59,7 @@ mod test {
     use routing::mock_crust::{self, Network};
     use safe_vault::Config;
     use sodiumoxide::crypto::sign;
+    use std::cmp;
     use std::collections::HashMap;
     use xor_name::XorName;
 
@@ -172,6 +173,8 @@ mod test {
         let mut nodes = test_node::create_nodes(&network, node_count, None);
         let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
         let mut client = TestClient::new(&network, Some(config));
+        const DATA_COUNT: usize = 5;
+        const DATA_PER_ITER: usize = 2;
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
@@ -180,7 +183,7 @@ mod test {
         let mut rng = thread_rng();
 
         for i in 0..10 {
-            for _ in 0..4 {
+            for _ in 0..(cmp::min(DATA_PER_ITER, DATA_COUNT - all_data.len())) {
                 let data =
                     Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
                                        mock_crust_detail::generate_random_vec_u8(10)));

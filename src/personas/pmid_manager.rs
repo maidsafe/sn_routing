@@ -56,8 +56,8 @@ impl Account {
 
 pub struct PmidManager {
     accounts: HashMap<XorName, Account>,
-    // key -- (message_id, targeted pmid_node)
-    ongoing_puts: TimedBuffer<(MessageId, XorName), RequestMessage>,
+    // key -- (data name, targeted pmid_node)
+    ongoing_puts: TimedBuffer<(XorName, XorName), RequestMessage>,
 }
 
 impl PmidManager {
@@ -88,7 +88,7 @@ impl PmidManager {
         trace!("PM forwarding put request of data {} targeting PN {}",
                data.name(),
                dst.name());
-        let _ = self.ongoing_puts.insert((*message_id, *request.dst.name()), request.clone());
+        let _ = self.ongoing_puts.insert((data.name(), *request.dst.name()), request.clone());
         let _ = routing_node.send_put_request(src, dst, Data::Immutable(data.clone()), *message_id);
         Ok(())
     }
@@ -121,7 +121,7 @@ impl PmidManager {
                               data_name: &XorName,
                               message_id: &MessageId)
                               -> Result<(), InternalError> {
-        if let Some(request) = self.ongoing_puts.remove(&(*message_id, *pmid_node)) {
+        if let Some(request) = self.ongoing_puts.remove(&(*data_name, *pmid_node)) {
             if request.src.name() != data_name {
                 error!("Got PutSuccess for {:?} with data name {:?} instead of {:?}.",
                        message_id,
@@ -143,13 +143,13 @@ impl PmidManager {
                               routing_node: &RoutingNode,
                               request: &RequestMessage)
                               -> Result<(), InternalError> {
-        let message_id = if let RequestContent::Put(_, ref message_id) = request.content {
-            message_id
+        let data_name = if let RequestContent::Put(ref data, _) = request.content {
+            data.name()
         } else {
             unreachable!("Error in vault demuxing")
         };
         if let Some(removed_request) = self.ongoing_puts
-                                           .remove(&(*message_id, *request.dst.name())) {
+                                           .remove(&(data_name, *request.dst.name())) {
             if routing_node.close_group(*request.dst.name()).ok().is_some() {
                 let _ = self.notify_put_failure(routing_node, &removed_request);
             }
