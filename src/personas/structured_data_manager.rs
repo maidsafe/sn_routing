@@ -854,7 +854,7 @@ mod test {
         assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
 
         // block refresh in after deletion
-        let _ = env.structured_data_manager.handle_refresh(put_env.sd_data.clone());
+        let _ = env.structured_data_manager.handle_refresh(&env.routing, put_env.sd_data.clone());
         assert_eq!(None, env.get_from_chunkstore(&put_env.sd_data.name()));
     }
 
@@ -869,10 +869,14 @@ mod test {
         let _ = env.structured_data_manager.handle_node_lost(&env.routing, &random::<XorName>());
 
         let refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests.len(), 2);
         assert_eq!(refresh_requests[0].src,
                    Authority::NaeManager(put_env.sd_data.name()));
         assert_eq!(refresh_requests[0].dst,
+                   Authority::NaeManager(put_env.sd_data.name()));
+        assert_eq!(refresh_requests[1].src,
+                   Authority::NaeManager(put_env.sd_data.name()));
+        assert_eq!(refresh_requests[1].dst,
                    Authority::NaeManager(put_env.sd_data.name()));
         if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[0]
                                                                              .content
@@ -895,14 +899,8 @@ mod test {
         // Refresh a structured_data in
         let mut env = Environment::new();
         let keys = sign::gen_keypair();
-        let sd_data = unwrap_result!(StructuredData::new(0,
-                                                         random(),
-                                                         1,
-                                                         utils::generate_random_vec_u8(1024),
-                                                         vec![keys.0],
-                                                         vec![],
-                                                         Some(&keys.1)));
-        let _ = env.structured_data_manager.handle_refresh(sd_data.clone());
+        let sd_data = env.get_close_data(keys.clone());
+        let _ = env.structured_data_manager.handle_refresh(&env.routing, sd_data.clone());
         assert_eq!(Some(sd_data.clone()),
                    env.get_from_chunkstore(&sd_data.name()));
         // Refresh an incorrect version new structured_data in
@@ -913,7 +911,7 @@ mod test {
                                                         vec![keys.0],
                                                         vec![],
                                                         Some(&keys.1)));
-        let _ = env.structured_data_manager.handle_refresh(sd_bad.clone());
+        let _ = env.structured_data_manager.handle_refresh(&env.routing, sd_bad.clone());
         // Refresh a correct version new structured_data in
         let sd_new = unwrap_result!(StructuredData::new(0,
                                                         *sd_data.get_identifier(),
@@ -922,7 +920,7 @@ mod test {
                                                         vec![keys.0],
                                                         vec![],
                                                         Some(&keys.1)));
-        let _ = env.structured_data_manager.handle_refresh(sd_new.clone());
+        let _ = env.structured_data_manager.handle_refresh(&env.routing, sd_new.clone());
         assert_eq!(Some(sd_new.clone()),
                    env.get_from_chunkstore(&sd_data.name()));
     }
