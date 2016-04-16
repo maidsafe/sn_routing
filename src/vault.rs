@@ -373,8 +373,8 @@ impl Vault {
             }
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
-                self.immutable_data_manager.handle_put_success(pmid_node, name, message_id)
+             &ResponseContent::PutSuccess(ref name, _)) => {
+                self.immutable_data_manager.handle_put_success(pmid_node, name)
             }
             (&Authority::ManagedNode(ref pmid_node),
              &Authority::NodeManager(_),
@@ -393,9 +393,13 @@ impl Vault {
             }
             (&Authority::NodeManager(ref pmid_node),
              &Authority::NaeManager(_),
-             &ResponseContent::PutFailure { ref id, .. }) => {
+             &ResponseContent::PutFailure { ref id,
+                    request: RequestMessage {
+                        content: RequestContent::Put(Data::Immutable(ref data), _), .. },
+             ..
+             }) => {
                 let _ = self.full_pmid_nodes.insert(*pmid_node);
-                self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, id)
+                self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, data, id)
             }
             (&Authority::ManagedNode(_),
              &Authority::NodeManager(_),
