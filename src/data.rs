@@ -121,22 +121,36 @@ mod test {
                                   vec![],
                                   Some(&keys.1)) {
             Ok(structured_data) => {
-                assert_eq!(structured_data.name(),
-                           Data::Structured(structured_data).name());
+                assert_eq!(structured_data.clone().name(),
+                           Data::Structured(structured_data.clone()).name());
+                assert_eq!(DataIdentifier::Structured(structured_data.name(),
+                                                      structured_data.get_type_tag()),
+                           structured_data.identifier());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
+
 
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
         let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.name(),
-                   Data::Immutable(immutable_data).name());
+                   Data::Immutable(immutable_data.clone()).name());
+        assert_eq!(immutable_data.identifier(),
+                   DataIdentifier::Immutable(immutable_data.name()));
 
+        let backup_data = ImmutableDataBackup::new(immutable_data.clone());
+        assert_eq!(backup_data.identifier(),
+                   DataIdentifier::ImmutableBackup(backup_data.name()));
+        let sacrificial_data = ImmutableDataSacrificial::new(immutable_data.clone());
+        assert_eq!(sacrificial_data.identifier(),
+                   DataIdentifier::ImmutableSacrificial(sacrificial_data.name()));
         // name() resolves correctly for PlainData
         let name = XorName(sha512::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(), Data::Plain(plain_data).name());
+        assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
+        assert_eq!(plain_data.identifier(),
+                   DataIdentifier::Plain(plain_data.name()));
     }
 
     #[test]

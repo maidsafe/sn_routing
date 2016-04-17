@@ -20,6 +20,7 @@ use std::fmt::{self, Debug, Formatter};
 use rustc_serialize::{Decoder, Encodable, Encoder};
 use xor_name::{XorName, XOR_NAME_LEN};
 use sodiumoxide::crypto::hash::sha512;
+use data::DataIdentifier;
 
 const NORMAL_TO_BACKUP: [u8; XOR_NAME_LEN] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -75,6 +76,11 @@ impl ImmutableData {
     pub fn payload_size(&self) -> usize {
         self.value.len()
     }
+
+    /// return DataIdentifier for this data element
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::Immutable(self.name())
+    }
 }
 
 impl Debug for ImmutableData {
@@ -110,6 +116,11 @@ impl ImmutableDataBackup {
     pub fn payload_size(&self) -> usize {
         self.value.value.len()
     }
+
+    /// return DataIdentifier for this data element
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::ImmutableBackup(self.name())
+    }
 }
 
 impl Debug for ImmutableDataBackup {
@@ -144,6 +155,11 @@ impl ImmutableDataSacrificial {
     /// Return size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.value.len()
+    }
+
+    /// return DataIdentifier for this data element
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::ImmutableSacrificial(self.name())
     }
 }
 
