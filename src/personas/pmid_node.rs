@@ -19,7 +19,7 @@ use chunk_store::ChunkStore;
 use error::InternalError;
 use safe_network_common::client_errors::GetError;
 use maidsafe_utilities::serialisation;
-use routing::{Data, DataRequest, ImmutableData, MessageId, RequestContent, RequestMessage};
+use routing::{Data, DataIdentifier, ImmutableData, MessageId, RequestContent, RequestMessage};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
@@ -37,7 +37,7 @@ impl PmidNode {
                       request: &RequestMessage)
                       -> Result<(), InternalError> {
         let (data_name, message_id) =
-            if let RequestContent::Get(DataRequest::Immutable(ref name, _), ref message_id) =
+            if let RequestContent::Get(DataIdentifier::Immutable(ref name, _), ref message_id) =
                    request.content {
                 (name, message_id)
             } else {
@@ -171,7 +171,7 @@ mod test {
     use safe_network_common::client_errors::GetError;
     use maidsafe_utilities::serialisation;
     use rand::random;
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
+    use routing::{Authority, Data, DataIdentifier, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent};
     use std::sync::mpsc;
     use utils::generate_random_vec_u8;
@@ -341,8 +341,8 @@ mod test {
         let request_msg = RequestMessage {
             src: Authority::NaeManager(name),
             dst: env.our_authority.clone(),
-            content: RequestContent::Get(DataRequest::Immutable(immutable_data.name().clone(),
-                                                                ImmutableDataType::Normal),
+            content: RequestContent::Get(DataIdentifier::Immutable(immutable_data.name().clone(),
+                                                                   ImmutableDataType::Normal),
                                          message_id),
         };
 
@@ -385,8 +385,8 @@ mod test {
         let request_msg = RequestMessage {
             src: Authority::NaeManager(name),
             dst: env.our_authority.clone(),
-            content: RequestContent::Get(DataRequest::Immutable(immutable_data.name().clone(),
-                                                                ImmutableDataType::Normal),
+            content: RequestContent::Get(DataIdentifier::Immutable(immutable_data.name().clone(),
+                                                                   ImmutableDataType::Normal),
                                          message_id),
         };
 
@@ -464,8 +464,8 @@ mod test {
         let request_msg = RequestMessage {
             src: Authority::NaeManager(name),
             dst: env.our_authority.clone(),
-            content: RequestContent::Get(DataRequest::Immutable(immutable_data.name().clone(),
-                                                                ImmutableDataType::Normal),
+            content: RequestContent::Get(DataIdentifier::Immutable(immutable_data.name().clone(),
+                                                                   ImmutableDataType::Normal),
                                          message_id),
         };
 

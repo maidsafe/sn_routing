@@ -21,7 +21,7 @@ use std::convert::From;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
+use routing::{Authority, Data, DataIdentifier, MessageId, RequestContent, RequestMessage,
               StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use types::{Refresh, RefreshValue};
@@ -45,7 +45,7 @@ impl StructuredDataManager {
                       -> Result<(), InternalError> {
         // TODO - handle type_tag from name too
         let (data_name, message_id) =
-            if let RequestContent::Get(ref data_request @ DataRequest::Structured(_, _),
+            if let RequestContent::Get(ref data_request @ DataIdentifier::Structured(_, _),
                                        ref message_id) = request.content {
                 (data_request.name(), message_id)
             } else {
@@ -339,7 +339,7 @@ mod test {
     use maidsafe_utilities::{log, serialisation};
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
-    use routing::{Authority, Data, DataRequest, MessageId, RequestContent, RequestMessage,
+    use routing::{Authority, Data, DataIdentifier, MessageId, RequestContent, RequestMessage,
                   ResponseContent, ResponseMessage, StructuredData};
     use safe_network_common::client_errors::{GetError, MutationError};
     use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
@@ -468,9 +468,10 @@ mod test {
 
         pub fn get_sd_data(&mut self, sd_data: StructuredData) -> GetEnvironment {
             let message_id = MessageId::new();
-            let content = RequestContent::Get(DataRequest::Structured(*sd_data.get_identifier(),
-                                                                      sd_data.get_type_tag()),
-                                              message_id);
+            let content =
+                RequestContent::Get(DataIdentifier::Structured(*sd_data.get_identifier(),
+                                                               sd_data.get_type_tag()),
+                                    message_id);
             let keys = sign::gen_keypair();
             let client = Authority::Client {
                 client_key: keys.0,

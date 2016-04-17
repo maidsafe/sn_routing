@@ -25,26 +25,47 @@ use kademlia_routing_table::GROUP_SIZE;
 use safe_network_common::client_errors::GetError;
 use timed_buffer::TimedBuffer;
 use maidsafe_utilities::serialisation;
-use routing::{self, Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
-              PlainData, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
-use time::Duration;
+use routing::{self, Authority, Data, DataIdentifier, ImmutableData, ImmutableDataBackup,
+              ImmutableDataSacrificial, MessageId, PlainData, RequestContent, RequestMessage,
+              ResponseContent, ResponseMessage};
+use std::time::Duration;
 use types::{Refresh, RefreshValue};
 use vault::RoutingNode;
 use xor_name::{self, XorName};
 
 pub const REPLICANTS: usize = 2;
 
-// Collection of PmidNodes holding a copy of the chunk
+/// State of data_holder.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub enum DataHolderSate {
+    Good,
+    Failed,
+    Pending,
+}
+
+/// This is the name of a PmidNode which has been chosen to store the data on.  It is associated with
+/// a specific piece of `ImmutableData`.  It is marked as `Pending` until the response of the Put
+/// request is received, when it is then marked as `Good` or `Failed` depending on the response
+/// result.  It remains `Good` until it fails a Get request, at which time it is deemed `Failed`, or
+/// until it disconnects or moves out of the close group for the chunk, when it is removed from the
+/// list of holders.
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
+pub struct DataHolder {
+    name: XorName,
+    state: DataHolderSate,
+}
+
+/// Collection of PmidNodes holding a copy of the chunk
 #[derive(Clone, PartialEq, Eq, Debug, RustcEncodable, RustcDecodable)]
 pub struct Account {
-    data_type: ImmutableDataType,
+    data_name: DataIdentifier,
     data_holders: HashSet<DataHolder>,
 }
 
 impl Account {
-    pub fn new(data_type: &ImmutableDataType, data_holders: HashSet<DataHolder>) -> Account {
+    pub fn new(data_name: DataIdentifier, data_holders: HashSet<DataHolder>) -> Account {
         Account {
-            data_type: data_type.clone(),
+            data_name: data_name,
             data_holders: data_holders,
         }
     }
@@ -53,177 +74,23 @@ impl Account {
         &self.data_holders
     }
 
+    pub fn name(&self) -> XorName {
+        self.data_name.name()
+    }
+
+    pub fn data_type_name(&self) -> DataIdentifier {
+        self.data_name
+    }
+
     pub fn data_holders_mut(&mut self) -> &mut HashSet<DataHolder> {
         &mut self.data_holders
     }
-
-    pub fn data_type(&self) -> ImmutableDataType {
-        self.data_type.clone()
-    }
 }
-
-
-
-// This is the name of a PmidNode which has been chosen to store the data on.  It is associated with
-// a specific piece of `ImmutableData`.  It is marked as `Pending` until the response of the Put
-// request is received, when it is then marked as `Good` or `Failed` depending on the response
-// result.  It remains `Good` until it fails a Get request, at which time it is deemed `Failed`, or
-// until it disconnects or moves out of the close group for the chunk, when it is removed from the
-// list of holders.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum DataHolder {
-    Good(XorName),
-    Failed(XorName),
-    Pending(XorName),
-}
-
-impl DataHolder {
-    pub fn name(&self) -> &XorName {
-        match *self {
-            DataHolder::Good(ref name) |
-            DataHolder::Failed(ref name) |
-            DataHolder::Pending(ref name) => name,
-        }
-    }
-}
-
-
-
-#[derive(Clone, PartialEq, Eq, Debug)]
-struct MetadataForGetRequest {
-    // This will be the ID of the first client request to trigger the Get, or of the churn event if
-    // it wasn't triggered by a client request.
-    pub message_id: MessageId,
-    // The incoming requests that need to be responded to once we receive the data.
-    pub requests: Vec<(MessageId, RequestMessage)>,
-    pub data_holders: Vec<DataHolder>,
-    pub data: Option<ImmutableData>,
-    pub requested_data_type: ImmutableDataType,
-    // Whether we already received a `GetFailure` from the IDM of one of the two other data types.
-    pub secondary_location_failed: bool,
-}
-
-impl MetadataForGetRequest {
-    pub fn new(message_id: &MessageId, account: &Account) -> MetadataForGetRequest {
-        Self::construct(message_id, vec![], account)
-    }
-
-    pub fn with_message(message_id: &MessageId,
-                        request: &RequestMessage,
-                        account: &Account)
-                        -> MetadataForGetRequest {
-        Self::construct(message_id,
-                        vec![(message_id.clone(), request.clone()); 1],
-                        account)
-    }
-
-    pub fn send_get_requests(&self,
-                             routing_node: &RoutingNode,
-                             data_name: &XorName,
-                             message_id: MessageId) {
-        let src = Authority::NaeManager(*data_name);
-        let log = |data_type: &ImmutableDataType, data_name: &XorName, dst: &Authority| {
-            trace!("ImmutableDataManager {} sending get {:?}({}) to {:?}",
-                   unwrap_result!(routing_node.name()),
-                   data_type,
-                   data_name,
-                   dst);
-        };
-
-        if self.data_holders.is_empty() {
-            // There are no "Good" holders for this type, so send Get to other types' DMs
-            let mut msg_id = message_id;
-            let (normal_name, backup_name, sacrificial_name) = match self.requested_data_type {
-                ImmutableDataType::Normal => {
-                    (None,
-                     Some(routing::normal_to_backup(data_name)),
-                     Some(routing::normal_to_sacrificial(data_name)))
-                }
-                ImmutableDataType::Backup => {
-                    (Some(routing::backup_to_normal(data_name)),
-                     None,
-                     Some(routing::backup_to_sacrificial(data_name)))
-                }
-                ImmutableDataType::Sacrificial => {
-                    (Some(routing::sacrificial_to_normal(data_name)),
-                     Some(routing::sacrificial_to_backup(data_name)),
-                     None)
-                }
-            };
-            if let Some(normal_name) = normal_name {
-                let dst = Authority::NaeManager(normal_name);
-                let data_type = ImmutableDataType::Normal;
-                log(&data_type, &normal_name, &dst);
-                let data_request = DataRequest::Immutable(normal_name, data_type);
-                msg_id = MessageId::increment_first_byte(&msg_id);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
-            }
-            if let Some(backup_name) = backup_name {
-                let dst = Authority::NaeManager(backup_name);
-                let data_type = ImmutableDataType::Backup;
-                log(&data_type, &backup_name, &dst);
-                let data_request = DataRequest::Immutable(backup_name, data_type);
-                msg_id = MessageId::increment_first_byte(&msg_id);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
-            }
-            if let Some(sacrificial_name) = sacrificial_name {
-                let dst = Authority::NaeManager(sacrificial_name);
-                let data_type = ImmutableDataType::Sacrificial;
-                log(&data_type, &sacrificial_name, &dst);
-                let data_request = DataRequest::Immutable(sacrificial_name, data_type);
-                msg_id = MessageId::increment_first_byte(&msg_id);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, msg_id);
-            }
-        } else {
-            // Send to data_holders (which should be "Good" holders)
-            for good_node in &self.data_holders {
-                let dst = Authority::ManagedNode(*good_node.name());
-                let data_request = DataRequest::Immutable(*data_name,
-                                                          self.requested_data_type.clone());
-                log(&self.requested_data_type, data_name, &dst);
-                let _ = routing_node.send_get_request(src.clone(), dst, data_request, message_id);
-            }
-        }
-    }
-
-    fn construct(message_id: &MessageId,
-                 requests: Vec<(MessageId, RequestMessage)>,
-                 account: &Account)
-                 -> MetadataForGetRequest {
-        // We only want to try and get data from "good" holders
-        let good_nodes = account.data_holders()
-                                .iter()
-                                .cloned()
-                                .filter_map(|pmid_node| {
-                                    match pmid_node {
-                                        DataHolder::Good(pmid_node) => {
-                                            Some(DataHolder::Pending(pmid_node))
-                                        }
-                                        DataHolder::Failed(_) |
-                                        DataHolder::Pending(_) => None,
-                                    }
-                                })
-                                .collect();
-
-        MetadataForGetRequest {
-            message_id: *message_id,
-            requests: requests,
-            data_holders: good_nodes,
-            data: None,
-            requested_data_type: account.data_type(),
-            secondary_location_failed: false,
-        }
-    }
-}
-
-
 
 pub struct ImmutableDataManager {
-    // <Data name, PmidNodes holding a copy of the data>
-    accounts: HashMap<XorName, Account>,
-    // key is chunk_name
-    ongoing_gets: TimedBuffer<XorName, MetadataForGetRequest>,
-    data_cache: HashMap<XorName, ImmutableData>,
+    accounts: HashSet<Account>,
+    ongoing_gets: TimedBuffer<(DataIdentifier, MessageId), RequestMessage>,
+    data_cache: HashMap<DataIdentifier, Data>,
 }
 
 impl ImmutableDataManager {
@@ -234,84 +101,90 @@ impl ImmutableDataManager {
             data_cache: HashMap::new(),
         }
     }
-
+    // ######################### Get ################################
     pub fn handle_get(&mut self,
                       routing_node: &RoutingNode,
-                      request: &RequestMessage)
+                      request: &RequestMessage,
+                      data_request: &DataIdentifier,
+                      message_id: &MessageId)
                       -> Result<(), InternalError> {
-        let (data_name, message_id) =
-            if let RequestContent::Get(DataRequest::Immutable(ref data_name, _), ref message_id) =
-                   request.content {
-                (data_name, message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
 
-        // If the data doesn't exist, respond with GetFailure
-        let data_holders = if let Some(account) = self.accounts.get(&data_name) {
+        // If the account doesn't exist, respond with GetFailure
+        let data_holders = if let Some(account) = self.accounts.get(data_request.name()) {
             account
         } else {
-            let src = request.dst.clone();
-            let dst = request.src.clone();
-            let error = GetError::NoSuchData;
-            let external_error_indicator = try!(serialisation::serialise(&error));
-            let _ = routing_node.send_get_failure(src,
-                                                  dst,
-                                                  request.clone(),
-                                                  external_error_indicator,
-                                                  *message_id);
-            return Err(From::from(error));
+            self.send_get_failure(routing_node, request, message_id)
         };
 
-        // If there's an ongoing Put operation, get the data from the cached copy there and return
-        if let Some(immutable_data) = self.data_cache.get(data_name) {
-            let src = request.dst.clone();
-            let dst = request.src.clone();
-            let _ = routing_node.send_get_success(src,
-                                                  dst,
-                                                  Data::Immutable(immutable_data.clone()),
-                                                  *message_id);
-            return Ok(());
+        // If data in data_Cache, return it from here
+        if let Some(immutable_data) = self.data_cache.get(data_request.name()) {
+            self.send_get_success(routing_node,
+                                  Data::Immutable(immutable_data.clone()),
+                                  message_id)
         }
 
-        {
-            // If there's already a cached get request, handle it here and return
-            if let Some(mut metadata) = self.ongoing_gets.get_mut(&data_name) {
-                return Ok(Self::reply_with_data_else_cache_request(routing_node,
-                                                                   request,
-                                                                   message_id,
-                                                                   metadata));
+        // Request the data from our PmidNodes (We do not need to check here for dead holders, that
+        // is managed via churn handling)
+        for holder in data_holders {
+            match holder.state {
+                DataHolderSate::Good | DataHolderSate::Pending => {
+                    self.routing_node.send_get_request(Authority::NaeManager(*data_request.name()),
+                                                       Authority::ManagedNode(holder.name()),
+                                                       *data_request,
+                                                       message_id.clone())
+                }
+                DataHolderSate::Failed => {} // could be full
             }
         }
+        // Add to ongoing_gets and reply when we get the data
+        self.ongoing_gets.insert(*data_request.name(), *message_id)
+    }
 
-        // This is new cache entry
-        let entry = MetadataForGetRequest::with_message(message_id, request, data_holders);
-        entry.send_get_requests(routing_node, &data_name, *message_id);
-        let _ = self.ongoing_gets.insert(*data_name, entry);
-        Ok(())
+    fn send_get_failure(&mut self,
+                        routing_node: &RoutingNode,
+                        request_msg: &RequestMessage,
+                        message_id: MessageId)
+                        -> Result<(), InternalError> {
+        let src = request_msg.dst.clone();
+        let dst = request_msg.src.clone();
+        let error = GetError::NoSuchData;
+        let external_error_indicator = try!(serialisation::serialise(&error));
+        routing_node.send_get_failure(src,
+                                      dst,
+                                      request_msg.clone(),
+                                      external_error_indicator,
+                                      *message_id)
+    }
+
+    fn send_get_success(&mut self,
+                        routing_node: &RoutingNode,
+                        data: Data,
+                        request_msg: &RequestMessage,
+                        message_id: MessageId)
+                        -> Result<(), InternalError> {
+        let src = request_msg.dst.clone();
+        let dst = request_msg.src.clone();
+        routing_node.send_get_success(src, dst, data, message_id)
+
     }
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
                       full_pmid_nodes: &HashSet<XorName>,
-                      request: &RequestMessage)
+                      request: &RequestMessage,
+                      orig_data: Data,
+                      message_id: routing::MessageId)
                       -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Immutable(ref data),
-                                                            ref message_id) = request.content {
-            (data, message_id)
-        } else {
-            unreachable!("Error in vault demuxing");
-        };
 
-        let data_name = data.name();
-        // Only send success response if src is MaidManager.
+        let data_name = orig_data.name();
+        // Only send success response if src is ClientManager.
         if let Authority::ClientManager(_) = request.src {
             let src = request.dst.clone();
             let dst = request.src.clone();
-            let _ = routing_node.send_put_success(src, dst, data_name, *message_id);
+            let _ = routing_node.send_put_success(src, dst, data_name, message_id);
         }
 
-        // If the data already exists, send success and finish.
+        // If the data already exists, we are finished
         if self.accounts.contains_key(&data_name) {
             return Ok(());
         }
@@ -323,35 +196,31 @@ impl ImmutableDataManager {
                                                                         &data_name));
         trace!("ImmutableDataManager chosen {:?} as data_holders for chunk {:?}",
                target_data_holders,
-               data);
+               orig_data);
         let _ = self.accounts.insert(data_name,
-                                     Account::new(data.get_type_tag(),
+                                     Account::new(orig_data.get_type_tag(),
                                                   target_data_holders.clone()));
-        let _ = self.data_cache.insert(data_name, data.clone());
+        let _ = self.data_cache.insert(orig_data.name(), orig_data.clone());
 
         // Send the message on to the PmidNodes' managers.
         for pmid_node in target_data_holders {
             let src = Authority::NaeManager(data_name);
-            let dst = Authority::NodeManager(*pmid_node.name());
-            let _ = routing_node.send_put_request(src,
-                                                  dst,
-                                                  Data::Immutable(data.clone()),
-                                                  *message_id);
+            let dst = Authority::NodeManager(pmid_node.name);
+            let _ = routing_node.send_put_request(src, dst, orig_data.clone(), message_id);
         }
 
         // If this is a "Normal" copy, we need to Put the "Backup" and "Sacrificial" copies too.
-        if let ImmutableDataType::Normal = *data.get_type_tag() {
-            let backup = ImmutableData::new(ImmutableDataType::Backup, data.value().clone());
+        if let Data::Immutable(data) = orig_data {
+            let backup = ImmutableDataBackup::new(data.clone());
             let _ = routing_node.send_put_request(request.dst.clone(),
                                                   Authority::NaeManager(backup.name()),
                                                   Data::Immutable(backup),
-                                                  *message_id);
-            let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
-                                                 data.value().clone());
+                                                  message_id);
+            let sacrificial = ImmutableDataSacrificial::new(data.clone());
             let _ = routing_node.send_put_request(request.dst.clone(),
                                                   Authority::NaeManager(sacrificial.name()),
                                                   Data::Immutable(sacrificial),
-                                                  *message_id);
+                                                  message_id);
         }
 
         Ok(())
@@ -359,8 +228,48 @@ impl ImmutableDataManager {
 
     pub fn handle_get_success(&mut self,
                               routing_node: &RoutingNode,
-                              response: &ResponseMessage)
+                              response: &ResponseMessage,
+                              data: &data,
+                              message_id: &message_id)
                               -> Result<(), InternalError> {
+
+        // make sure we are still managing this group
+        let _ = try!(routing_node.close_group(data.name()));
+        match self.accounts.get_mut(data.identify()) {
+            Some(acc) => {
+                // make sure data holder is marked good in the account.
+                let holder = DataHolder {
+                    name: response.src.name(),
+                    state: DataHolderState::Good,
+                };
+                let _ = acc.data_holders_mut().insert(&holder);
+            }
+            None => {
+                // We need to create the account and mark this holder as good
+                let hold = HashSet::new();
+                let holder = DataHolder {
+                    name: response.src.name(),
+                    state: DataHolderState::Good,
+                };
+                let _ = hold.insert(&holder);
+                let acc = Account::new(data.identifier(), hold);
+                let _ = self.accounts.insert(acc);
+            }
+        };
+        // find and reply to requestor
+        if let Some(request_message) = self.ongoing_gets.remove((data.identifier(), message_id)) {
+            let src = request.dst.clone();
+            let dst = request.src;
+            trace!("Sending GetSuccess back to {:?}", dst);
+            let _ = routing_node.send_get_success(src, dst, data, message_id);
+
+            let _ = self.account.data_holders.insert(DataHolder {
+                name: *response.src.name(),
+                state: DataHolderSate::Good,
+            });
+
+        }
+
         let data_name;
         let message_id;
         {
@@ -381,24 +290,13 @@ impl ImmutableDataManager {
 
             // If the src is a PmidNode, mark the responder as "good"
             if let Authority::ManagedNode(_) = response.src {
-                let predicate = |elt: &DataHolder| {
-                    match *elt {
-                        DataHolder::Pending(ref name) => name == response.src.name(),
-                        _ => false,
-                    }
-                };
-                if let Some(pmid_node_index) = metadata.data_holders.iter().position(predicate) {
-                    let good_holder = DataHolder::Good(*metadata.data_holders
-                                                                .remove(pmid_node_index)
-                                                                .name());
-                    metadata.data_holders.push(good_holder);
-                }
+                let _ = metadata.data_holders.insert(DataHolder {
+                    name: *response.src.name(),
+                    state: DataHolderSate::Good,
+                });
             }
 
-            // Keep the data with the cached metadata in case further get requests arrive for it
-            if metadata.data.is_none() {
-                metadata.data = Some(data);
-            }
+            let _ = self.data_cache.insert(data_name, data);
             trace!("Metadata for Get {} updated to {:?}", data_name, metadata);
         }
 
@@ -417,19 +315,12 @@ impl ImmutableDataManager {
                                self.find_ongoing_get_after_failure(request) {
             metadata_message_id = Some(metadata.message_id);
 
-            // Mark the responder as "failed" in the cached get request
-            let predicate = |elt: &DataHolder| {
-                match *elt {
-                    DataHolder::Pending(ref name) => name == pmid_node,
-                    _ => false,
-                }
-            };
-            if let Some(pmid_node_index) = metadata.data_holders.iter().position(predicate) {
-                let failed_holder = DataHolder::Failed(*metadata.data_holders
-                                                                .remove(pmid_node_index)
-                                                                .name());
-                metadata.data_holders.push(failed_holder);
-            }
+            // Mark the responder as "failed"
+            let _ = metadata.data_holders.insert(DataHolder {
+                name: *pmid_node,
+                state: DataHolderSate::Failed,
+            });
+
             trace!("Metadata for Get {} updated to {:?}", data_name, metadata);
             data_name
         } else {
@@ -442,17 +333,10 @@ impl ImmutableDataManager {
 
         // Mark the responder as "failed" in the account if it was previously marked "good"
         if let Some(account) = self.accounts.get_mut(&data_name) {
-            if account.data_holders_mut().remove(&DataHolder::Good(*pmid_node)) {
-                // Notify the failed PN's managers
-                let src = Authority::NaeManager(data_name);
-                let dst = Authority::NodeManager(*pmid_node);
-                let _ = routing_node.send_post_request(src,
-                                                       dst,
-                                                       Data::Plain(PlainData::new(data_name,
-                                                                                  vec![])),
-                                                       *message_id);
-                account.data_holders_mut().insert(DataHolder::Failed(*pmid_node));
-            }
+            let _ = account.data_holders.insert(DataHolder {
+                name: *pmid_node,
+                state: DataHolderSate::Failed,
+            });
             trace!("Account for {} updated to {:?}", data_name, account);
         }
 
@@ -464,34 +348,6 @@ impl ImmutableDataManager {
         }
     }
 
-    pub fn handle_get_from_other_location_failure(&mut self,
-                                                  routing_node: &RoutingNode,
-                                                  request: &RequestMessage)
-                                                  -> Result<(), InternalError> {
-        let mut to_remove = None;
-        {
-            let (data_name, metadata) = try!(self.find_ongoing_get_after_failure(request));
-            warn!("Other location failed to provide ImmutableData {} - original request: {:?}",
-                  data_name,
-                  request);
-            if metadata.requested_data_type == ImmutableDataType::Normal {
-                // This Vault is the "Normal" DM.  If we've already had one secondary location
-                // failed, reply to requesters as we've exhausted all options
-                if metadata.secondary_location_failed {
-                    Self::send_get_failures(routing_node, metadata);
-                    // Entry can be removed from cache now.
-                    to_remove = Some(data_name);
-                } else {
-                    metadata.secondary_location_failed = true;
-                }
-            }
-        }
-
-        if let Some(data_name) = to_remove {
-            let _ = self.ongoing_gets.remove(&data_name);
-        }
-        Ok(())
-    }
 
     pub fn handle_put_success(&mut self,
                               pmid_node: &XorName,
@@ -691,9 +547,8 @@ impl ImmutableDataManager {
     fn find_ongoing_get_after_success
         (&mut self,
          response: &ResponseMessage)
-         -> Result<(ImmutableData, &mut MetadataForGetRequest), InternalError> {
-        let (data, message_id) = if let ResponseContent::GetSuccess(Data::Immutable(ref data),
-                                                                    ref message_id) =
+         -> Result<(ImmutableData, &mut PendingGetRequest), InternalError> {
+        let (data, message_id) = if let ResponseContent::GetSuccess(ref data, ref message_id) =
                                         response.content {
             (data, message_id)
         } else {
@@ -759,7 +614,7 @@ impl ImmutableDataManager {
     fn find_ongoing_get_after_failure
         (&mut self,
          request: &RequestMessage)
-         -> Result<(XorName, &mut MetadataForGetRequest), InternalError> {
+         -> Result<(XorName, &mut PendingGetRequest), InternalError> {
         let (data_request, message_id) = if let RequestContent::Get(ref data_request,
                                                                     ref message_id) =
                                                 request.content {
@@ -773,17 +628,17 @@ impl ImmutableDataManager {
         if let Authority::NaeManager(_) = request.dst {
             let mut found = None;
             let (normal_name, backup_name, sacrificial_name) = match *data_request {
-                DataRequest::Immutable(ref data_name, ImmutableDataType::Normal) => {
+                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Normal) => {
                     (None,
                      Some(routing::normal_to_backup(data_name)),
                      Some(routing::normal_to_sacrificial(data_name)))
                 }
-                DataRequest::Immutable(ref data_name, ImmutableDataType::Backup) => {
+                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Backup) => {
                     (Some(routing::backup_to_normal(data_name)),
                      None,
                      Some(routing::backup_to_sacrificial(data_name)))
                 }
-                DataRequest::Immutable(ref data_name, ImmutableDataType::Sacrificial) => {
+                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Sacrificial) => {
                     (Some(routing::sacrificial_to_normal(data_name)),
                      Some(routing::sacrificial_to_backup(data_name)),
                      None)
@@ -843,7 +698,7 @@ impl ImmutableDataManager {
                                                    new_replicants_count) &&
                !self.handle_churn_for_ongoing_gets(data_name, &close_group) {
                 // Create a new entry and send Get requests to each of the current holders
-                let entry = MetadataForGetRequest::new(message_id, &account);
+                let entry = PendingGetRequest::new(message_id, &account);
                 trace!("Created ongoing get entry for {} - {:?}", data_name, entry);
                 entry.send_get_requests(routing_node, data_name, *message_id);
                 let _ = self.ongoing_gets.insert(*data_name, entry);
@@ -969,7 +824,7 @@ impl ImmutableDataManager {
     fn reply_with_data_else_cache_request(routing_node: &RoutingNode,
                                           request: &RequestMessage,
                                           message_id: &MessageId,
-                                          metadata: &mut MetadataForGetRequest) {
+                                          metadata: &mut PendingGetRequest) {
         // If we've already received the chunk, send it to the new requester.  Otherwise add the
         // request to the others for later handling.
         if let Some(ref data) = metadata.data {
@@ -1098,7 +953,7 @@ impl ImmutableDataManager {
     }
 
     fn recover_from_other_locations(routing_node: &RoutingNode,
-                                    metadata: &mut MetadataForGetRequest,
+                                    metadata: &mut PendingGetRequest,
                                     data_name: &XorName,
                                     message_id: &MessageId) {
         metadata.data_holders.clear();
@@ -1114,7 +969,7 @@ impl ImmutableDataManager {
         metadata.send_get_requests(routing_node, data_name, *message_id);
     }
 
-    fn send_get_failures(routing_node: &RoutingNode, metadata: &mut MetadataForGetRequest) {
+    fn send_get_failures(routing_node: &RoutingNode, metadata: &mut PendingGetRequest) {
         while let Some((original_message_id, request)) = metadata.requests.pop() {
             let src = request.dst.clone();
             let dst = request.src.clone();
@@ -1169,7 +1024,7 @@ mod test {
     use maidsafe_utilities::{log, serialisation};
     use rand::distributions::{IndependentSample, Range};
     use rand::{random, thread_rng};
-    use routing::{Authority, Data, DataRequest, ImmutableData, ImmutableDataType, MessageId,
+    use routing::{Authority, Data, DataIdentifier, ImmutableData, ImmutableDataType, MessageId,
                   RequestContent, RequestMessage, ResponseContent, ResponseMessage};
     use safe_network_common::client_errors::GetError;
     use sodiumoxide::crypto::sign;
@@ -1282,8 +1137,8 @@ mod test {
 
         pub fn get_im_data(&mut self, data_name: XorName) -> GetEnvironment {
             let message_id = MessageId::new();
-            let content = RequestContent::Get(DataRequest::Immutable(data_name.clone(),
-                                                                     ImmutableDataType::Normal),
+            let content = RequestContent::Get(DataIdentifier::Immutable(data_name.clone(),
+                                                                        ImmutableDataType::Normal),
                                               message_id);
             let keys = sign::gen_keypair();
             let from = random();
@@ -1485,8 +1340,8 @@ mod test {
         assert_eq!(backup_get_request.dst, Authority::NaeManager(backup.name()));
         let mut expected_message_id = MessageId::increment_first_byte(&get_env.message_id);
         assert_eq!(backup_get_request.content,
-                   RequestContent::Get(DataRequest::Immutable(backup.name(),
-                                                              ImmutableDataType::Backup),
+                   RequestContent::Get(DataIdentifier::Immutable(backup.name(),
+                                                                 ImmutableDataType::Backup),
                                        expected_message_id));
 
         let sacrificial_get_request = unwrap_option!(get_requests.last(), "");
@@ -1496,24 +1351,15 @@ mod test {
                    Authority::NaeManager(sacrificial.name()));
         expected_message_id = MessageId::increment_first_byte(&expected_message_id);
         assert_eq!(sacrificial_get_request.content,
-                   RequestContent::Get(DataRequest::Immutable(sacrificial.name(),
-                                                              ImmutableDataType::Sacrificial),
+                   RequestContent::Get(DataIdentifier::Immutable(sacrificial.name(),
+                                                                 ImmutableDataType::Sacrificial),
                                        expected_message_id));
 
-        // The Sacrificial holder responds with failure - should trigger no further messages
-        unwrap_result!(env.immutable_data_manager
-                          .handle_get_from_other_location_failure(&env.routing,
-                                                                  &sacrificial_get_request));
         assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
         assert_eq!(env.routing.get_requests_given().len(), REPLICANTS + 2);
         assert!(env.routing.get_successes_given().is_empty());
         assert!(env.routing.get_failures_given().is_empty());
 
-        // The Backup holder responds with failure - should trigger failure response to Client since
-        // the original request was for Normal data
-        unwrap_result!(env.immutable_data_manager
-                          .handle_get_from_other_location_failure(&env.routing,
-                                                                  &backup_get_request));
         assert_eq!(env.routing.put_requests_given().len(), REPLICANTS + 2);
         assert_eq!(env.routing.get_requests_given().len(), REPLICANTS + 2);
         assert!(env.routing.get_successes_given().is_empty());
@@ -1761,7 +1607,7 @@ mod test {
                     assert_eq!(get_request.src,
                                Authority::NaeManager(put_env.im_data.name()));
                     assert_eq!(get_request.content,
-                               RequestContent::Get(DataRequest::Immutable(put_env.im_data.name(),
+                               RequestContent::Get(DataIdentifier::Immutable(put_env.im_data.name(),
                                                                      ImmutableDataType::Normal),
                                                    get_message_id));
                 }

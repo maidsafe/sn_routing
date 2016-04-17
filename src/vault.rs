@@ -26,7 +26,7 @@ use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataRequest, Event, RequestContent, RequestMessage,
+use routing::{Authority, Data, DataIdentifier, Event, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
@@ -237,20 +237,31 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::Immutable(_, _), _)) |
+             &RequestContent::Get(ref data_request, ref message_id))
+            // Guard - client can only get ImmutableData
+                if Some(tmp) = data_request::Immutable(tmp) => {
+                self.immutable_data_manager
+                    .handle_get(&routing_node, &request, &data_request, &message_id)
+            }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
+             &RequestContent::Get(ref data_request, ref message_id))
+            if Some(tmp) = data_request::Immutable(tmp) |
+                data_request::ImmutableBackup(tmp) |
+                data_request::ImmutableSacrificial(tmp) => {
                 self.immutable_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(DataRequest::Structured(_, _), _)) => {
+             &RequestContent::Get(DataIdentifier::Structured(_, _), _)) => {
                 self.structured_data_manager.handle_get(routing_node, &request)
             }
             (&Authority::NaeManager(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Get(DataRequest::Immutable(_, _), _)) => {
+             &RequestContent::Get(ref data_request, ref message_id))
+            if Some(tmp) = data_request::Immutable(tmp) |
+                data_request::ImmutableBackup(tmp) |
+                data_request::ImmutableSacrificial(tmp) => {
                 self.pmid_node.handle_get(routing_node, &request)
             }
             // ================== Put ==================
@@ -287,8 +298,8 @@ impl Vault {
             }
             (&Authority::NaeManager(_),
              &Authority::NodeManager(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => {
-                self.pmid_manager.handle_put(routing_node, &request)
+             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
+                self.pmid_manager.handle_put(routing_node, &request, data, message_id)
             }
             (&Authority::NodeManager(_),
              &Authority::ManagedNode(_),
@@ -342,11 +353,12 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(Data::Immutable(_), _)) |
+             &ResponseContent::GetSuccess(ref data, ref message_id)) |
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &ResponseContent::GetSuccess(Data::Immutable(_), _)) => {
-                self.immutable_data_manager.handle_get_success(routing_node, &response)
+                self.immutable_data_manager.handle_get_success(routing_node, &response, &data,
+                &message_id)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(ref pmid_node),

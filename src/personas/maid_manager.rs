@@ -23,7 +23,7 @@ use std::collections::hash_map::Entry;
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, ImmutableDataType, MessageId, RequestContent, RequestMessage};
+use routing::{Authority, Data, MessageId, RequestContent, RequestMessage};
 use types::{Refresh, RefreshValue};
 use utils;
 use vault::RoutingNode;
@@ -139,13 +139,13 @@ impl MaidManager {
     }
 
     pub fn handle_refresh(&mut self,
-                          routing_node: &RoutingNode,
+                          _routing_node: &RoutingNode,
                           maid_name: XorName,
                           account: Account) {
-        match routing_node.close_group(maid_name) {
-            Ok(None) | Err(_) => return,
-            Ok(Some(_)) => (),
-        }
+        // match routing_node.close_group(maid_name) {
+        //     Ok(None) | Err(_) => return,
+        //     Ok(Some(_)) => (),
+        // }
         match self.accounts.entry(maid_name) {
             Entry::Vacant(entry) => {
                 let _ = entry.insert(account);
@@ -268,7 +268,9 @@ impl MaidManager {
         let (data, type_tag, message_id) = if let RequestContent::Put(Data::Structured(ref data),
                                                                       ref message_id) =
                                                   request.content {
-            (Data::Structured(data.clone()), data.get_type_tag(), message_id)
+            (Data::Structured(data.clone()),
+             data.get_type_tag(),
+             message_id)
         } else {
             unreachable!("Logic error")
         };
