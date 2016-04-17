@@ -207,7 +207,8 @@ pub use data::{Data, DataRequest};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, ImmutableDataType, normal_to_backup, backup_to_normal, normal_to_sacrificial,
+pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial,
+                         normal_to_backup, backup_to_normal, normal_to_sacrificial,
                          sacrificial_to_normal, backup_to_sacrificial, sacrificial_to_backup};
 pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
                    RoutingMessage, SignedMessage};

@@ -18,10 +18,11 @@
 use std::fmt::{self, Debug, Formatter};
 use rustc_serialize::{Decoder, Encodable, Encoder};
 pub use structured_data::StructuredData;
-pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial};
 pub use plain_data::PlainData;
 use xor_name::XorName;
 
+#[allow(missing_docs)]
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
@@ -29,6 +30,8 @@ pub enum Data {
     Structured(StructuredData),
     /// ImmutableData Data type.
     Immutable(ImmutableData),
+    ImmutableBackup(ImmutableDataBackup),
+    ImmutableSacrificial(ImmutableDataSacrificial),
     /// PlainData Data type.
     Plain(PlainData),
 }
@@ -39,6 +42,8 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
+            Data::ImmutableBackup(ref data) => data.name(),
+            Data::ImmutableSacrificial(ref data) => data.name(),
             Data::Plain(ref data) => data.name(),
         }
     }
@@ -48,18 +53,23 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.payload_size(),
             Data::Immutable(ref data) => data.payload_size(),
+            Data::ImmutableBackup(ref data) => data.payload_size(),
+            Data::ImmutableSacrificial(ref data) => data.payload_size(),
             Data::Plain(ref data) => data.payload_size(),
         }
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// DataRequest.
 pub enum DataRequest {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),
-    /// Data request, (Identifier, Type), for ImmutableData types.
-    Immutable(XorName, ImmutableDataType),
+    /// Data request, (Identifier), for ImmutableData types.
+    Immutable(XorName),
+    ImmutableBackup(XorName),
+    ImmutableSacrificial(XorName),
     /// Request for PlainData.
     Plain(XorName),
 }
@@ -69,6 +79,8 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
+            Data::ImmutableBackup(ref data) => data.fmt(formatter),
+            Data::ImmutableSacrificial(ref data) => data.fmt(formatter),
             Data::Plain(ref data) => data.fmt(formatter),
         }
     }
@@ -79,7 +91,10 @@ impl DataRequest {
     pub fn name(&self) -> XorName {
         match *self {
             DataRequest::Structured(name, tag) => StructuredData::compute_name(tag, &name),
-            DataRequest::Immutable(name, _) | DataRequest::Plain(name) => name,
+            DataRequest::Immutable(name) |
+            DataRequest::ImmutableBackup(name) |
+            DataRequest::ImmutableSacrificial(name) |
+            DataRequest::Plain(name) => name,
         }
     }
 }
@@ -114,7 +129,7 @@ mod test {
 
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.name(),
                    Data::Immutable(immutable_data).name());
 
@@ -145,7 +160,7 @@ mod test {
 
         // payload_size() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.payload_size(),
                    Data::Immutable(immutable_data).payload_size());
 
@@ -166,7 +181,7 @@ mod test {
                    DataRequest::Structured(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = DataRequest::Immutable(name, ImmutableDataType::Normal).name();
+        let actual_name = DataRequest::Immutable(name).name();
         assert_eq!(name, actual_name);
 
         // name() resolves correctly for PlainData

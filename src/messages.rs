@@ -539,7 +539,10 @@ impl Debug for ResponseContent {
                 write!(formatter, "PostSuccess {{ {:?}, {:?} }}", name, message_id)
             }
             ResponseContent::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter, "DeleteSuccess {{ {:?}, {:?} }}", name, message_id)
+                write!(formatter,
+                       "DeleteSuccess {{ {:?}, {:?} }}",
+                       name,
+                       message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
