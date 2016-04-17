@@ -37,7 +37,7 @@ pub const REPLICANTS: usize = 2;
 
 /// State of data_holder.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum DataHolderSate {
+pub enum DataHolderState {
     Good,
     Failed,
     Pending,
@@ -52,7 +52,7 @@ pub enum DataHolderSate {
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, RustcEncodable, RustcDecodable)]
 pub struct DataHolder {
     name: XorName,
-    state: DataHolderSate,
+    state: DataHolderState,
 }
 
 /// Collection of PmidNodes holding a copy of the chunk
@@ -127,13 +127,13 @@ impl ImmutableDataManager {
         // is managed via churn handling)
         for holder in data_holders {
             match holder.state {
-                DataHolderSate::Good | DataHolderSate::Pending => {
+                DataHolderState::Good | DataHolderState::Pending => {
                     self.routing_node.send_get_request(Authority::NaeManager(*data_request.name()),
                                                        Authority::ManagedNode(holder.name()),
                                                        *data_request,
                                                        message_id.clone())
                 }
-                DataHolderSate::Failed => {} // could be full
+                DataHolderState::Failed => {} // could be full
             }
         }
         // Add to ongoing_gets and reply when we get the data
@@ -226,15 +226,39 @@ impl ImmutableDataManager {
         Ok(())
     }
 
-    pub fn handle_get_success(&mut self,
-                              routing_node: &RoutingNode,
-                              response: &ResponseMessage,
-                              data: &data,
-                              message_id: &message_id)
-                              -> Result<(), InternalError> {
+    pub fn handle_client_get_success(&mut self,
+                                     routing_node: &RoutingNode,
+                                     response: &ResponseMessage,
+                                     data: &Data,
+                                     message_id: &MessageId)
+                                     -> Result<(), InternalError> {
 
         // make sure we are still managing this group
         let _ = try!(routing_node.close_group(data.name()));
+        self.find_and_reply_to_requestor(routing_node, response, data, message_id)
+            .and(self.update_good_dataholder_in_account(routing_node, response, data))
+    }
+
+    fn find_and_reply_to_requestor(&mut self,
+                                   routing_node: &RoutingNode,
+                                   response: &ResponseMessage,
+                                   data: &Data,
+                                   message_id: &MessageId)
+                                   -> Result<(), InternalError> {
+        if let Some(request) = self.ongoing_gets.remove((data.identifier(), message_id)) {
+            let src = request.dst.clone();
+            let dst = request.src;
+            trace!("Sending GetSuccess back to {:?}", dst);
+            routing_node.send_get_success(src, dst, data, message_id);
+        }
+        Ok(())
+    }
+
+    fn update_good_dataholder_in_account(&mut self,
+                                         routing_node: &RoutingNode,
+                                         response: &ResponseMessage,
+                                         data: &Data)
+                                         -> Result<(), InternalError> {
         match self.accounts.get_mut(data.identify()) {
             Some(acc) => {
                 // make sure data holder is marked good in the account.
@@ -242,10 +266,11 @@ impl ImmutableDataManager {
                     name: response.src.name(),
                     state: DataHolderState::Good,
                 };
-                let _ = acc.data_holders_mut().insert(&holder);
+                acc.data_holders_mut().insert(&holder);
             }
             None => {
                 // We need to create the account and mark this holder as good
+                // OK as routing guarantees we asked for this Get request!
                 let hold = HashSet::new();
                 let holder = DataHolder {
                     name: response.src.name(),
@@ -253,54 +278,19 @@ impl ImmutableDataManager {
                 };
                 let _ = hold.insert(&holder);
                 let acc = Account::new(data.identifier(), hold);
-                let _ = self.accounts.insert(acc);
+                self.accounts.insert(acc);
             }
-        };
-        // find and reply to requestor
-        if let Some(request_message) = self.ongoing_gets.remove((data.identifier(), message_id)) {
-            let src = request.dst.clone();
-            let dst = request.src;
-            trace!("Sending GetSuccess back to {:?}", dst);
-            let _ = routing_node.send_get_success(src, dst, data, message_id);
-
-            let _ = self.account.data_holders.insert(DataHolder {
-                name: *response.src.name(),
-                state: DataHolderSate::Good,
-            });
-
         }
+    }
 
-        let data_name;
-        let message_id;
-        {
-            let (data, metadata) = try!(self.find_ongoing_get_after_success(response));
-            data_name = data.name();
-            message_id = metadata.message_id;
-
-            // Reply to any unanswered requests
-            while let Some((original_message_id, request)) = metadata.requests.pop() {
-                let src = request.dst.clone();
-                let dst = request.src;
-                trace!("Sending GetSuccess back to {:?}", dst);
-                let _ = routing_node.send_get_success(src,
-                                                      dst,
-                                                      Data::Immutable(data.clone()),
-                                                      original_message_id);
-            }
-
-            // If the src is a PmidNode, mark the responder as "good"
-            if let Authority::ManagedNode(_) = response.src {
-                let _ = metadata.data_holders.insert(DataHolder {
-                    name: *response.src.name(),
-                    state: DataHolderSate::Good,
-                });
-            }
-
-            let _ = self.data_cache.insert(data_name, data);
-            trace!("Metadata for Get {} updated to {:?}", data_name, metadata);
-        }
-
-        self.check_and_replicate_after_get(routing_node, &data_name, &message_id)
+    pub fn handle_get_success_from_data_managers(&mut self,
+                                                 routing_node: &RoutingNode,
+                                                 response: &ResponseMessage,
+                                                 data: &Data,
+                                                 message_id: &MessageId)
+                                                 -> Result<(), InternalError> {
+        uimplemented!()
+        // [TODO]: check data type, check all conversions and if we should be managing that data - 2016-04-17 10:21pm
     }
 
     pub fn handle_get_failure(&mut self,
@@ -318,7 +308,7 @@ impl ImmutableDataManager {
             // Mark the responder as "failed"
             let _ = metadata.data_holders.insert(DataHolder {
                 name: *pmid_node,
-                state: DataHolderSate::Failed,
+                state: DataHolderState::Failed,
             });
 
             trace!("Metadata for Get {} updated to {:?}", data_name, metadata);
@@ -335,7 +325,7 @@ impl ImmutableDataManager {
         if let Some(account) = self.accounts.get_mut(&data_name) {
             let _ = account.data_holders.insert(DataHolder {
                 name: *pmid_node,
-                state: DataHolderSate::Failed,
+                state: DataHolderState::Failed,
             });
             trace!("Account for {} updated to {:?}", data_name, account);
         }
@@ -347,7 +337,6 @@ impl ImmutableDataManager {
             Err(InternalError::FailedToFindCachedRequest(*message_id))
         }
     }
-
 
     pub fn handle_put_success(&mut self,
                               pmid_node: &XorName,
@@ -531,148 +520,6 @@ impl ImmutableDataManager {
             }
         });
         let _ = mem::replace(&mut self.accounts, accounts);
-    }
-
-    // This is used when handling Get responses since we don't know the data name of the original
-    // request if the response is from a NaeManager.  In this case it will (very likely) be for a
-    // different type to the ones this Vault is currently managing, so we try to find an entry in
-    // the ongoing_gets which matches the response's name converted to each of the other two types.
-    //
-    // If this Vault is a manager for two types for that particular chunk, there could be more than
-    // one entry which matches this response.  As such, we need to match the entry which contains no
-    // "Good" holders, as that will be the one which triggered the Get for the different chunk type.
-    //
-    // It is assumed that a Vault will never be a manager for all three types, so we don't have to
-    // look for more than one entry which matches.
-    fn find_ongoing_get_after_success
-        (&mut self,
-         response: &ResponseMessage)
-         -> Result<(ImmutableData, &mut PendingGetRequest), InternalError> {
-        let (data, message_id) = if let ResponseContent::GetSuccess(ref data, ref message_id) =
-                                        response.content {
-            (data, message_id)
-        } else {
-            unreachable!("Error in vault demuxing")
-        };
-        let data_name = data.name();
-        if let Authority::NaeManager(_) = response.src {
-            let (normal_name, backup_name, sacrificial_name) = match *data.get_type_tag() {
-                ImmutableDataType::Normal => {
-                    (None,
-                     Some(routing::normal_to_backup(&data_name)),
-                     Some(routing::normal_to_sacrificial(&data_name)))
-                }
-                ImmutableDataType::Backup => {
-                    (Some(routing::backup_to_normal(&data_name)),
-                     None,
-                     Some(routing::backup_to_sacrificial(&data_name)))
-                }
-                ImmutableDataType::Sacrificial => {
-                    (Some(routing::sacrificial_to_normal(&data_name)),
-                     Some(routing::sacrificial_to_backup(&data_name)),
-                     None)
-                }
-            };
-            let mut found = None;
-            if let Some(normal_name) = normal_name {
-                if self.ongoing_gets.contains_key(&normal_name) {
-                    found = Some((normal_name,
-                                  ImmutableData::new(ImmutableDataType::Normal,
-                                                     data.value().clone())));
-                }
-            }
-            if let Some(backup_name) = backup_name {
-                if found.is_none() && self.ongoing_gets.contains_key(&backup_name) {
-                    found = Some((backup_name,
-                                  ImmutableData::new(ImmutableDataType::Backup,
-                                                     data.value().clone())));
-                }
-            }
-            if let Some(sacrificial_name) = sacrificial_name {
-                if found.is_none() && self.ongoing_gets.contains_key(&sacrificial_name) {
-                    found = Some((sacrificial_name,
-                                  ImmutableData::new(ImmutableDataType::Sacrificial,
-                                                     data.value().clone())));
-                }
-            }
-            if let Some((found_name, converted_data)) = found {
-                let metadata = self.ongoing_gets.get_mut(&found_name).expect("Must exist");
-                return Ok((converted_data, metadata));
-            }
-        } else {
-            if let Some(metadata) = self.ongoing_gets.get_mut(&data_name) {
-                return Ok((data.clone(), metadata));
-            }
-        }
-        warn!("Failed to find metadata for Get response of {} with msg ID {:?}",
-              data_name,
-              message_id);
-        Err(InternalError::FailedToFindCachedRequest(*message_id))
-    }
-
-    // See comments for find_ongoing_get_after_success
-    fn find_ongoing_get_after_failure
-        (&mut self,
-         request: &RequestMessage)
-         -> Result<(XorName, &mut PendingGetRequest), InternalError> {
-        let (data_request, message_id) = if let RequestContent::Get(ref data_request,
-                                                                    ref message_id) =
-                                                request.content {
-            (data_request, message_id)
-        } else {
-            warn!("Request type doesn't correspond to response type: {:?}",
-                  request);
-            return Err(InternalError::InvalidResponse);
-        };
-
-        if let Authority::NaeManager(_) = request.dst {
-            let mut found = None;
-            let (normal_name, backup_name, sacrificial_name) = match *data_request {
-                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Normal) => {
-                    (None,
-                     Some(routing::normal_to_backup(data_name)),
-                     Some(routing::normal_to_sacrificial(data_name)))
-                }
-                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Backup) => {
-                    (Some(routing::backup_to_normal(data_name)),
-                     None,
-                     Some(routing::backup_to_sacrificial(data_name)))
-                }
-                DataIdentifier::Immutable(ref data_name, ImmutableDataType::Sacrificial) => {
-                    (Some(routing::sacrificial_to_normal(data_name)),
-                     Some(routing::sacrificial_to_backup(data_name)),
-                     None)
-                }
-                _ => unreachable!(),  // Safe to use this here since response is from a group
-            };
-            if let Some(normal_name) = normal_name {
-                if self.ongoing_gets.contains_key(&normal_name) {
-                    found = Some(normal_name);
-                }
-            }
-            if let Some(backup_name) = backup_name {
-                if found.is_none() && self.ongoing_gets.contains_key(&backup_name) {
-                    found = Some(backup_name);
-                }
-            }
-            if let Some(sacrificial_name) = sacrificial_name {
-                if found.is_none() && self.ongoing_gets.contains_key(&sacrificial_name) {
-                    found = Some(sacrificial_name);
-                }
-            }
-            if let Some(found_name) = found {
-                let metadata = self.ongoing_gets.get_mut(&found_name).expect("Must exist");
-                return Ok((found_name, metadata));
-            }
-        } else {
-            if let Some(metadata) = self.ongoing_gets.get_mut(&data_request.name()) {
-                return Ok((data_request.name(), metadata));
-            }
-        }
-        warn!("Failed to find metadata for Get response of {} with msg ID {:?}",
-              data_request.name(),
-              message_id);
-        Err(InternalError::FailedToFindCachedRequest(*message_id))
     }
 
     fn handle_churn_for_account(&mut self,

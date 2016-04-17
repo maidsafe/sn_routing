@@ -142,10 +142,10 @@ impl MaidManager {
                           _routing_node: &RoutingNode,
                           maid_name: XorName,
                           account: Account) {
-        // match routing_node.close_group(maid_name) {
-        //     Ok(None) | Err(_) => return,
-        //     Ok(Some(_)) => (),
-        // }
+        match routing_node.close_group(maid_name) {
+            Ok(None) | Err(_) => return,
+            Ok(Some(_)) => (),
+        }
         match self.accounts.entry(maid_name) {
             Entry::Vacant(entry) => {
                 let _ = entry.insert(account);

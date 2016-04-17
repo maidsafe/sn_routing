@@ -353,12 +353,17 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(ref data, ref message_id)) |
+             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
+                self.immutable_data_manager
+                    .handle_client_get_success(routing_node, &response, &data, &message_id)
+            }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(Data::Immutable(_), _)) => {
-                self.immutable_data_manager.handle_get_success(routing_node, &response, &data,
-                &message_id)
+             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
+                self.immutable_data_manager.handle_get_success_from_data_managers(routing_node,
+                                                                                  &response,
+                                                                                  &data,
+                                                                                  &message_id)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(ref pmid_node),
