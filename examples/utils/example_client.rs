@@ -25,8 +25,8 @@ extern crate maidsafe_utilities;
 use std::sync::mpsc;
 use self::sodiumoxide::crypto;
 use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
-                    Client, MessageId};
+use self::routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent,
+                    ResponseMessage, Client, MessageId};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -72,7 +72,7 @@ impl ExampleClient {
     /// Send a `Get` request to the network and return the data received in the response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
-    pub fn get(&mut self, request: DataRequest) -> Option<Data> {
+    pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
@@ -136,9 +136,7 @@ impl ExampleClient {
                                message_id);
                         return Err(());
                     } else if data_name != name {
-                        error!("Stored {:?}, but with wrong name {:?}.",
-                               data_name,
-                               name);
+                        error!("Stored {:?}, but with wrong name {:?}.", data_name, name);
                         return Err(());
                     } else {
                         trace!("Successfully stored {:?}", data_name);

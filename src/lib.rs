@@ -203,7 +203,7 @@ pub mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
-pub use data::{Data, DataRequest};
+pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};

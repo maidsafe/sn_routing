@@ -62,8 +62,8 @@ impl Data {
 
 #[allow(missing_docs)]
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-/// DataRequest.
-pub enum DataRequest {
+/// DataIdentifier.
+pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),
     /// Data request, (Identifier), for ImmutableData types.
@@ -86,15 +86,15 @@ impl Debug for Data {
     }
 }
 
-impl DataRequest {
-    /// DataRequest name.
+impl DataIdentifier {
+    /// DataIdentifier name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataRequest::Structured(name, tag) => StructuredData::compute_name(tag, &name),
-            DataRequest::Immutable(name) |
-            DataRequest::ImmutableBackup(name) |
-            DataRequest::ImmutableSacrificial(name) |
-            DataRequest::Plain(name) => name,
+            DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
+            DataIdentifier::Immutable(name) |
+            DataIdentifier::ImmutableBackup(name) |
+            DataIdentifier::ImmutableSacrificial(name) |
+            DataIdentifier::Plain(name) => name,
         }
     }
 }
@@ -178,13 +178,13 @@ mod test {
         // name() resolves correctly for StructuedData
         let tag = 0;
         assert_eq!(StructuredData::compute_name(tag, &name),
-                   DataRequest::Structured(name, tag).name());
+                   DataIdentifier::Structured(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = DataRequest::Immutable(name).name();
+        let actual_name = DataIdentifier::Immutable(name).name();
         assert_eq!(name, actual_name);
 
         // name() resolves correctly for PlainData
-        assert_eq!(name, DataRequest::Plain(name).name());
+        assert_eq!(name, DataIdentifier::Plain(name).name());
     }
 }

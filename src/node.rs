@@ -25,7 +25,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use action::Action;
 use authority::Authority;
 use core::Core;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
@@ -108,7 +108,7 @@ impl Node {
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
-                            data_request: DataRequest,
+                            data_request: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
@@ -421,7 +421,7 @@ impl Drop for Node {
 //         client.put(data.clone());
 //         ::std::thread::sleep_ms(5000);
 
-//         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
+//         let recovered_data = match client.get(::data::DataIdentifier::PlainData(name)) {
 //             Some(data) => data,
 //             None => panic!("Failed to recover stored data: {}.", name),
 //         };

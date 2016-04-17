@@ -25,7 +25,7 @@ use sodiumoxide::crypto::{box_, sign};
 use std::fmt::{self, Debug, Formatter};
 
 use authority::Authority;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::RoutingError;
 use id::{FullId, PublicId};
 use types::MessageId;
@@ -303,7 +303,7 @@ pub enum RequestContent {
     Refresh(Vec<u8>, MessageId),
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
-    Get(DataRequest, MessageId),
+    Get(DataIdentifier, MessageId),
     /// Put data to network. Provide actual data as parameter
     Put(Data, MessageId),
     /// Post data to network. Provide actual data as parameter
