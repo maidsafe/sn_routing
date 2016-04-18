@@ -70,6 +70,7 @@ use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use utils::recv_with_timeout;
 use xor_name::XorName;
+use routing::DataIdentifier;
 
 const QUORUM_SIZE: usize = 5;
 
@@ -284,18 +285,18 @@ fn core() {
 
                             unwrap_result!(node.send_put_success(message.dst,
                                                                  message.src,
-                                                                 data.name(),
+                                                                 DataIdentifier::Plain(data.name()),
                                                                  id.clone()));
                         }
                     }
 
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(name, id), .. }))
+                                content: ResponseContent::PutSuccess(ref identifier, ref id), .. }))
                         if index == client.index => {
                         // The client received response to its request. We are done.
-                        assert_eq!(message_id, id);
-                        assert_eq!(name, data.name());
+                        assert_eq!(&message_id, id);
+                        assert_eq!(identifier.name(), data.name());
                         break;
                     }
 
@@ -528,16 +529,16 @@ fn core() {
                                                .node
                                                .send_put_success(message.dst,
                                                                  message.src,
-                                                                 data.name(),
+                                                                 DataIdentifier::Plain(data.name()),
                                                                  id));
                         }
                     }
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(name, id), .. }))
+                                content: ResponseContent::PutSuccess(ref name, ref id), .. }))
                         if index == client.index => {
-                        assert!(received_ids.insert(id));
-                        assert_eq!(name, data.name());
+                        assert!(received_ids.insert(*id));
+                        assert_eq!(name, &DataIdentifier::Plain(data.name()));
                     }
                     _ => (),
                 }

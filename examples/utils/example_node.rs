@@ -154,7 +154,8 @@ impl ExampleNode {
                     unwrap_result!(self.node.send_put_success(src, dst, data_name, id));
                 }
             }
-            (ResponseContent::PutSuccess(data_name, id), Authority::NaeManager(name)) => {
+            (ResponseContent::PutSuccess(data_name, id),
+             Authority::NaeManager(name)) => {
                 trace!("Received PutSuccess for {:?} with ID {:?}", data_name, id);
             }
             _ => unreachable!(),

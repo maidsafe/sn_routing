@@ -25,12 +25,11 @@ use sodiumoxide::crypto::{box_, sign};
 use std::fmt::{self, Debug, Formatter};
 
 use authority::Authority;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::RoutingError;
 use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
-use xor_name::XorName;
 
 /// Wrapper of all messages.
 ///
@@ -303,7 +302,7 @@ pub enum RequestContent {
     Refresh(Vec<u8>, MessageId),
     // ---------- External ------------
     /// Ask for data from network, passed from API with data name as parameter
-    Get(DataRequest, MessageId),
+    Get(DataIdentifier, MessageId),
     /// Put data to network. Provide actual data as parameter
     Put(Data, MessageId),
     /// Post data to network. Provide actual data as parameter
@@ -364,11 +363,11 @@ pub enum ResponseContent {
     /// may be shortcut if the data is in a node's cache.
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
-    PutSuccess(XorName, MessageId),
+    PutSuccess(DataIdentifier, MessageId),
     /// Success token for Post  (may be ignored)
-    PostSuccess(XorName, MessageId),
+    PostSuccess(DataIdentifier, MessageId),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(XorName, MessageId),
+    DeleteSuccess(DataIdentifier, MessageId),
     /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
@@ -539,7 +538,10 @@ impl Debug for ResponseContent {
                 write!(formatter, "PostSuccess {{ {:?}, {:?} }}", name, message_id)
             }
             ResponseContent::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter, "DeleteSuccess {{ {:?}, {:?} }}", name, message_id)
+                write!(formatter,
+                       "DeleteSuccess {{ {:?}, {:?} }}",
+                       name,
+                       message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
