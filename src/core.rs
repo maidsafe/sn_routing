@@ -897,7 +897,7 @@ impl Core {
 
         if relay {
             if let Err(err) = self.send(signed_msg.clone(), hop_name, false) {
-                error!("Failed relaying message: {:?}", err);
+                info!("Failed relaying message: {:?}", err);
             }
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
@@ -1312,7 +1312,7 @@ impl Core {
         }
 
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
-            error!("Connection to {:?} failed. Dropping peer.", peer_id);
+            info!("Connection to {:?} failed. Dropping peer.", peer_id);
             self.crust_service.disconnect(peer_id);
             self.handle_lost_peer(*peer_id);
             return Err(err.into());
@@ -2328,12 +2328,12 @@ impl Core {
                                                           self.crust_service.id(),
                                                           target.peer_id));
                 if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
-                    error!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                     result = Err(err);
                 }
             } else {
                 if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
-                    error!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                     result = Err(err);
                 }
             }

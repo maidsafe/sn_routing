@@ -106,12 +106,12 @@ impl Client {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[allow(missing_docs)]
+    /// Poll and process all events in this client's `Core` instance.
     pub fn poll(&self) -> bool {
         self.core.borrow_mut().poll()
     }
 
-    /// Send a Get message with a DataIdentifier to an Authority, signed with given keys.
+    /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&mut self,
                             dst: Authority,
                             data_request: DataIdentifier,

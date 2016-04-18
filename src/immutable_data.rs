@@ -67,17 +67,17 @@ impl ImmutableData {
     }
 
 
-    /// Returns name ensuring invariant
+    /// Returns name ensuring invariant.
     pub fn name(&self) -> XorName {
         XorName(sha512::hash(&self.value).0)
     }
 
-    /// Return size of contained value.
+    /// Returns size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.len()
     }
 
-    /// return DataIdentifier for this data element
+    /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::Immutable(self.name())
     }
@@ -101,23 +101,23 @@ impl ImmutableDataBackup {
         ImmutableDataBackup { value: value }
     }
 
-    /// Returns the value
+    /// Returns the value.
     pub fn value(&self) -> &ImmutableData {
         &self.value
     }
 
 
-    /// Returns name ensuring invariant
+    /// Returns name ensuring invariant.
     pub fn name(&self) -> XorName {
         xor(&self.value.name().0, NORMAL_TO_BACKUP)
     }
 
-    /// Return size of contained value.
+    /// Returns size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.value.len()
     }
 
-    /// return DataIdentifier for this data element
+    /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::ImmutableBackup(self.name())
     }
@@ -136,28 +136,28 @@ pub struct ImmutableDataSacrificial {
 }
 
 impl ImmutableDataSacrificial {
-    /// Creates a new instance of `ImmutableDataSacrificial`
+    /// Creates a new instance of `ImmutableDataSacrificial`.
     pub fn new(value: ImmutableData) -> ImmutableDataSacrificial {
         ImmutableDataSacrificial { value: value }
     }
 
-    /// Returns the value
+    /// Returns the value.
     pub fn value(&self) -> &ImmutableData {
         &self.value
     }
 
 
-    /// Returns name ensuring invariant
+    /// Returns name ensuring invariant.
     pub fn name(&self) -> XorName {
         xor(&self.value.name().0, NORMAL_TO_SACRIFICIAL)
     }
 
-    /// Return size of contained value.
+    /// Returns size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.value.len()
     }
 
-    /// return DataIdentifier for this data element
+    /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::ImmutableSacrificial(self.name())
     }
@@ -169,32 +169,32 @@ impl Debug for ImmutableDataSacrificial {
     }
 }
 
-/// Convert normal ImmutableData name to backup name.
+/// Converts normal `ImmutableData` name to backup name.
 pub fn normal_to_backup(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
 
-/// Convert backup ImmutableData name to normal name.
+/// Converts backup `ImmutableData` name to normal name.
 pub fn backup_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
 
-/// Convert normal ImmutableData name to sacrificial name.
+/// Converts normal `ImmutableData` name to sacrificial name.
 pub fn normal_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
 
-/// Convert sacrificial ImmutableData name to normal name.
+/// Converts sacrificial `ImmutableData` name to normal name.
 pub fn sacrificial_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
 
-/// Convert backup ImmutableData name to sacrificial name.
+/// Converts backup `ImmutableData` name to sacrificial name.
 pub fn backup_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
 
-/// Convert sacrificial ImmutableData name to backup name.
+/// Converts sacrificial `ImmutableData` name to backup name.
 pub fn sacrificial_to_backup(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
