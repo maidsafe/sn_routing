@@ -167,65 +167,7 @@ impl ImmutableDataManager {
         routing_node.send_get_success(src, dst, data, message_id)
 
     }
-
-    pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
-                      full_pmid_nodes: &HashSet<XorName>,
-                      request: &RequestMessage,
-                      orig_data: Data,
-                      message_id: routing::MessageId)
-                      -> Result<(), InternalError> {
-
-        let data_name = orig_data.name();
-        // Only send success response if src is ClientManager.
-        if let Authority::ClientManager(_) = request.src {
-            let src = request.dst.clone();
-            let dst = request.src.clone();
-            let _ = routing_node.send_put_success(src, dst, data_name, message_id);
-        }
-
-        // If the data already exists, we are finished
-        if self.accounts.contains_key(&data_name) {
-            return Ok(());
-        }
-
-        // Choose the PmidNodes to store the data on, and add them in a new database entry.
-        // This can potentially return an empty list if all the nodes are full.
-        let target_data_holders = try!(self.choose_initial_data_holders(routing_node,
-                                                                        full_pmid_nodes,
-                                                                        &data_name));
-        trace!("ImmutableDataManager chosen {:?} as data_holders for chunk {:?}",
-               target_data_holders,
-               orig_data);
-        let _ = self.accounts.insert(data_name,
-                                     Account::new(orig_data.get_type_tag(),
-                                                  target_data_holders.clone()));
-        let _ = self.data_cache.insert(orig_data.name(), orig_data.clone());
-
-        // Send the message on to the PmidNodes' managers.
-        for pmid_node in target_data_holders {
-            let src = Authority::NaeManager(data_name);
-            let dst = Authority::NodeManager(pmid_node.name);
-            let _ = routing_node.send_put_request(src, dst, orig_data.clone(), message_id);
-        }
-
-        // If this is a "Normal" copy, we need to Put the "Backup" and "Sacrificial" copies too.
-        if let Data::Immutable(data) = orig_data {
-            let backup = ImmutableDataBackup::new(data.clone());
-            let _ = routing_node.send_put_request(request.dst.clone(),
-                                                  Authority::NaeManager(backup.name()),
-                                                  Data::Immutable(backup),
-                                                  message_id);
-            let sacrificial = ImmutableDataSacrificial::new(data.clone());
-            let _ = routing_node.send_put_request(request.dst.clone(),
-                                                  Authority::NaeManager(sacrificial.name()),
-                                                  Data::Immutable(sacrificial),
-                                                  message_id);
-        }
-
-        Ok(())
-    }
-
+    /// recieved data we requested
     pub fn handle_client_get_success(&mut self,
                                      routing_node: &RoutingNode,
                                      response: &ResponseMessage,
@@ -338,6 +280,67 @@ impl ImmutableDataManager {
         }
     }
 
+
+    // ##################### Put ###############################
+
+    pub fn handle_put(&mut self,
+                      routing_node: &RoutingNode,
+                      full_pmid_nodes: &HashSet<XorName>,
+                      request: &RequestMessage,
+                      orig_data: Data,
+                      message_id: routing::MessageId)
+                      -> Result<(), InternalError> {
+
+        let data_name = orig_data.name();
+        // Only send success response if src is ClientManager.
+        if let Authority::ClientManager(_) = request.src {
+            let src = request.dst.clone();
+            let dst = request.src.clone();
+            let _ = routing_node.send_put_success(src, dst, data_name, message_id);
+        }
+
+        // If the data already exists, we are finished
+        if self.accounts.contains_key(&data_name) {
+            return Ok(());
+        }
+
+        // Choose the PmidNodes to store the data on, and add them in a new database entry.
+        // This can potentially return an empty list if all the nodes are full.
+        let target_data_holders = try!(self.choose_initial_data_holders(routing_node,
+                                                                        full_pmid_nodes,
+                                                                        &data_name));
+        trace!("ImmutableDataManager chosen {:?} as data_holders for chunk {:?}",
+               target_data_holders,
+               orig_data);
+        let _ = self.accounts.insert(data_name,
+                                     Account::new(orig_data.get_type_tag(),
+                                                  target_data_holders.clone()));
+        let _ = self.data_cache.insert(orig_data.name(), orig_data.clone());
+
+        // Send the message on to the PmidNodes' managers.
+        for pmid_node in target_data_holders {
+            let src = Authority::NaeManager(data_name);
+            let dst = Authority::NodeManager(pmid_node.name);
+            let _ = routing_node.send_put_request(src, dst, orig_data.clone(), message_id);
+        }
+
+        // If this is a "Normal" copy, we need to Put the "Backup" and "Sacrificial" copies too.
+        if let Data::Immutable(data) = orig_data {
+            let backup = ImmutableDataBackup::new(data.clone());
+            let _ = routing_node.send_put_request(request.dst.clone(),
+                                                  Authority::NaeManager(backup.name()),
+                                                  Data::Immutable(backup),
+                                                  message_id);
+            let sacrificial = ImmutableDataSacrificial::new(data.clone());
+            let _ = routing_node.send_put_request(request.dst.clone(),
+                                                  Authority::NaeManager(sacrificial.name()),
+                                                  Data::Immutable(sacrificial),
+                                                  message_id);
+        }
+
+        Ok(())
+    }
+
     pub fn handle_put_success(&mut self,
                               pmid_node: &XorName,
                               data_name: &XorName)
@@ -439,7 +442,7 @@ impl ImmutableDataManager {
             let _ = self.check_and_replicate_after_get(routing_node, data_name, &message_id);
         }
     }
-
+    // ################################# Churn ##################################
     pub fn handle_refresh(&mut self, data_name: XorName, account: Account) {
         let _ = self.accounts.insert(data_name, account);
     }
@@ -502,26 +505,6 @@ impl ImmutableDataManager {
                                 .collect();
     }
 
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        let message_id = MessageId::from_lost_node(*node_name);
-        let mut accounts = mem::replace(&mut self.accounts, HashMap::new());
-        accounts.iter_mut().foreach(|(data_name, account)| {
-            *account.data_holders_mut() = account.data_holders()
-                                                 .iter()
-                                                 .filter(|pmid_node| pmid_node.name() != node_name)
-                                                 .cloned()
-                                                 .collect();
-            if let Some(close_group) = self.close_group_to(routing_node, &data_name) {
-                let _ = self.handle_churn_for_account(routing_node,
-                                                      data_name,
-                                                      &message_id,
-                                                      close_group,
-                                                      account);
-            }
-        });
-        let _ = mem::replace(&mut self.accounts, accounts);
-    }
-
     fn handle_churn_for_account(&mut self,
                                 routing_node: &RoutingNode,
                                 data_name: &XorName,
@@ -572,6 +555,27 @@ impl ImmutableDataManager {
             }
         }
     }
+
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        let message_id = MessageId::from_lost_node(*node_name);
+        let mut accounts = mem::replace(&mut self.accounts, HashMap::new());
+        accounts.iter_mut().foreach(|(data_name, account)| {
+            *account.data_holders_mut() = account.data_holders()
+                                                 .iter()
+                                                 .filter(|pmid_node| pmid_node.name() != node_name)
+                                                 .cloned()
+                                                 .collect();
+            if let Some(close_group) = self.close_group_to(routing_node, &data_name) {
+                let _ = self.handle_churn_for_account(routing_node,
+                                                      data_name,
+                                                      &message_id,
+                                                      close_group,
+                                                      account);
+            }
+        });
+        let _ = mem::replace(&mut self.accounts, accounts);
+    }
+
 
     fn new_replicants_count(account: &Account) -> usize {
         let mut holder_count = 0;
