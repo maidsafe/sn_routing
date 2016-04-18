@@ -33,7 +33,6 @@ use xor_name::XorName;
 use error::InternalError;
 use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
-use types::{Refresh, RefreshValue};
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
@@ -199,7 +198,9 @@ impl Vault {
             // ================== Put ==================
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(_, _)) => self.maid_manager.handle_put(routing_node, &request),
+             &RequestContent::Put(ref data, ref msg_id)) => {
+                self.maid_manager.handle_put(routing_node, &request, data, msg_id)
+            }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Put(ref data, ref msg_id)) => {
@@ -242,8 +243,8 @@ impl Vault {
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
-                self.maid_manager.handle_put_success(routing_node, name, message_id)
+             &ResponseContent::PutSuccess(ref data_id, ref msg_id)) => {
+                self.maid_manager.handle_put_success(routing_node, data_id, msg_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),

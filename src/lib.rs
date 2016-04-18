@@ -73,7 +73,6 @@ mod error;
 mod mock_routing;
 mod personas;
 mod timed_buffer;
-mod types;
 mod utils;
 mod vault;
 

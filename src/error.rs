@@ -22,7 +22,6 @@ use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{Authority, InterfaceError, MessageId, RoutingError, RoutingMessage};
 use std::io;
-use types::Refresh;
 
 #[derive(Debug)]
 pub enum InternalError {
@@ -40,7 +39,7 @@ pub enum InternalError {
     Serialisation(SerialisationError),
     UnableToAllocateNewPmidNode,
     UnknownMessageType(RoutingMessage),
-    UnknownRefreshType(Authority, Authority, Refresh),
+    UnknownRefreshType(Authority, Authority),
 }
 
 impl From<MutationError> for InternalError {

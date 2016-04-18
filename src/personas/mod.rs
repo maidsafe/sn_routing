@@ -16,5 +16,4 @@
 // relating to use of the SAFE Network Software.
 
 pub mod maid_manager;
-pub mod mpid_manager;
 pub mod data_manager;
