@@ -56,7 +56,7 @@ impl PlainData {
         self.value.len()
     }
 
-    /// return DataIdentifier for this data element
+    /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::Plain(self.name())
     }

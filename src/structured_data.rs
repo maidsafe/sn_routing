@@ -109,7 +109,7 @@ impl StructuredData {
         StructuredData::compute_name(self.type_tag, &self.identifier)
     }
 
-    /// return DataIdentifier for this data element
+    /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::Structured(self.name(), self.type_tag)
     }

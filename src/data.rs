@@ -22,17 +22,18 @@ pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrif
 pub use plain_data::PlainData;
 use xor_name::XorName;
 
-#[allow(missing_docs)]
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
-    /// StructuredData Data type.
+    /// `StructuredData` data type.
     Structured(StructuredData),
-    /// ImmutableData Data type.
+    /// `ImmutableData` data type.
     Immutable(ImmutableData),
+    /// `ImmutableData` data type - backup copy.
     ImmutableBackup(ImmutableDataBackup),
+    /// `ImmutableData` data type - sacrificial copy.
     ImmutableSacrificial(ImmutableDataSacrificial),
-    /// PlainData Data type.
+    /// `PlainData` data type.
     Plain(PlainData),
 }
 
@@ -60,15 +61,16 @@ impl Data {
     }
 }
 
-#[allow(missing_docs)]
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 /// DataIdentifier.
 pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),
-    /// Data request, (Identifier), for ImmutableData types.
+    /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
+    /// Data request, (Identifier), for a backup copy of `ImmutableData`.
     ImmutableBackup(XorName),
+    /// Data request, (Identifier), for a sacrificial copy of `ImmutableData`.
     ImmutableSacrificial(XorName),
     /// Request for PlainData.
     Plain(XorName),

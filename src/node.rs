@@ -99,7 +99,7 @@ impl Node {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[allow(missing_docs)]
+    /// Poll and process all events in this node's `Core` instance.
     pub fn poll(&self) -> bool {
         self.core.borrow_mut().poll()
     }
