@@ -56,7 +56,7 @@ pub struct ImmutableData {
 }
 
 impl ImmutableData {
-    /// Creates a new instance of ImmutableData
+    /// Creates a new instance of `ImmutableData`
     pub fn new(value: Vec<u8>) -> ImmutableData {
         ImmutableData { value: value }
     }
@@ -89,14 +89,14 @@ impl Debug for ImmutableData {
     }
 }
 
-/// BAckup types
+/// Backup types
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct ImmutableDataBackup {
     value: ImmutableData,
 }
 
 impl ImmutableDataBackup {
-    /// Creates a new instance of ImmutableData
+    /// Creates a new instance of `ImmutableDataiBackup`
     pub fn new(value: ImmutableData) -> ImmutableDataBackup {
         ImmutableDataBackup { value: value }
     }
@@ -136,7 +136,7 @@ pub struct ImmutableDataSacrificial {
 }
 
 impl ImmutableDataSacrificial {
-    /// Creates a new instance of ImmutableData
+    /// Creates a new instance of `ImmutableDataSacrificial`
     pub fn new(value: ImmutableData) -> ImmutableDataSacrificial {
         ImmutableDataSacrificial { value: value }
     }
