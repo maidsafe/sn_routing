@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.16.0]
+
+- Add `identifier()` method to all data elements (type + name)
+- All `ImmutableData` types now concrete (not variants)
+
 ## [0.15.1]
 - Fix a message handling bug.
 - Add `MessageId::zero` constructor.
