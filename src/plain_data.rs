@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::{self, Debug, Formatter};
-use rustc_serialize::{Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encoder};
 use xor_name::XorName;
 use data::DataIdentifier;
 use utils;

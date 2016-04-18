@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::{self, Debug, Formatter};
-use rustc_serialize::{Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encoder};
 pub use structured_data::StructuredData;
 pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial};
 pub use plain_data::PlainData;
