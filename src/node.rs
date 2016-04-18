@@ -203,7 +203,7 @@ impl Node {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
-                            name: XorName,
+                            name: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
@@ -238,7 +238,7 @@ impl Node {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             name: XorName,
+                             name: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
@@ -273,7 +273,7 @@ impl Node {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
-                               name: XorName,
+                               name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {

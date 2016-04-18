@@ -30,7 +30,6 @@ use error::RoutingError;
 use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
-use xor_name::XorName;
 
 /// Wrapper of all messages.
 ///
@@ -364,11 +363,11 @@ pub enum ResponseContent {
     /// may be shortcut if the data is in a node's cache.
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
-    PutSuccess(XorName, MessageId),
+    PutSuccess(DataIdentifier, MessageId),
     /// Success token for Post  (may be ignored)
-    PostSuccess(XorName, MessageId),
+    PostSuccess(DataIdentifier, MessageId),
     /// Success token for delete  (may be ignored)
-    DeleteSuccess(XorName, MessageId),
+    DeleteSuccess(DataIdentifier, MessageId),
     /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
