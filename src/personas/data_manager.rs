@@ -28,44 +28,36 @@ use types::{Refresh, RefreshValue};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
-pub struct StructuredDataManager {
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+struct Refresh(Data);
+
+pub struct DataManager {
     chunk_store: ChunkStore,
 }
 
-impl StructuredDataManager {
-    pub fn new(capacity: u64) -> Result<StructuredDataManager, InternalError> {
-        Ok(StructuredDataManager {
-            chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
-        })
+impl DataManager {
+    pub fn new(capacity: u64) -> Result<DataManager, InternalError> {
+        Ok(DataManager { chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)) })
     }
 
     pub fn handle_get(&mut self,
                       routing_node: &RoutingNode,
-                      request: &RequestMessage)
+                      request: &RequestMessage,
+                      data_id: &DataIdentifier,
+                      msg_id: &MessageId)
                       -> Result<(), InternalError> {
-        // TODO - handle type_tag from name too
-        let (data_name, message_id) =
-            if let RequestContent::Get(ref data_request @ DataIdentifier::Structured(_, _),
-                                       ref message_id) = request.content {
-                (data_request.name(), message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
-
-        if let Ok(data) = self.chunk_store.get(&data_name) {
-            if let Ok(decoded) = serialisation::deserialise::<StructuredData>(&data) {
-                trace!("As {:?} sending data {:?} to {:?}",
-                       request.dst,
-                       Data::Structured(decoded.clone()),
-                       request.src);
-                let _ = routing_node.send_get_success(request.dst.clone(),
-                                                      request.src.clone(),
-                                                      Data::Structured(decoded),
-                                                      *message_id);
-                return Ok(());
-            }
+        if let Ok(data) = self.chunk_store.get(&data_id) {
+            trace!("As {:?} sending data {:?} to {:?}",
+                   request.dst,
+                   data,
+                   request.src);
+            let _ = routing_node.send_get_success(request.dst.clone(),
+                                                  request.src.clone(),
+                                                  data,
+                                                  *message_id);
+            return Ok(());
         }
-        trace!("SDM sending get_failure of sd {}", data_name);
+        trace!("DM sending get_failure of {}", data_id);
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
@@ -79,24 +71,18 @@ impl StructuredDataManager {
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
                       full_pmid_nodes: &HashSet<XorName>,
-                      request: &RequestMessage)
+                      request: &RequestMessage,
+                      data: &Data,
+                      msg_id: &MessageId)
                       -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Put(Data::Structured(ref data),
-                                                            ref message_id) = request.content {
-            (data, message_id)
-        } else {
-            unreachable!("Logic error")
-        };
-
-        let data_name = data.name();
+        let data_identifier = data.identifier();
         let response_src = request.dst.clone();
         let response_dst = request.src.clone();
 
-        if self.chunk_store.has_chunk(&data_name) {
-            debug!("Already have SD {:?}", data_name);
+        if self.chunk_store.has_chunk(&data_identifier) {
             let error = MutationError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
-            trace!("SDM sending PutFailure for data {}", data_name);
+            trace!("DM sending PutFailure for data {}", data_identifier);
             let _ = routing_node.send_put_failure(response_src,
                                                   response_dst,
                                                   request.clone(),
@@ -105,31 +91,23 @@ impl StructuredDataManager {
             return Err(From::from(error));
         }
 
-        // TODO: Reconsider this. The client manager should check whether the network is full.
         // Check there aren't too many full nodes in the close group to this data
-        match try!(routing_node.close_group(data_name)) {
-            Some(mut close_group) => {
-                close_group.retain(|member| !full_pmid_nodes.contains(member));
-                // TODO - Use routing getter `dynamic_quorum_size()` once available
-                if close_group.len() < 5 {
-                    trace!("Close group for SD {} only has {} non-full PmidNodes",
-                           data_name,
-                           close_group.len());
-                    let error = MutationError::NetworkFull;
-                    let external_error_indicator = try!(serialisation::serialise(&error));
-                    let _ = routing_node.send_put_failure(response_src,
-                                                          response_dst,
-                                                          request.clone(),
-                                                          external_error_indicator,
-                                                          *message_id);
-                    return Err(From::from(error));
-                }
-            }
-            None => return Err(InternalError::NotInCloseGroup),
+        if self.chunk_store.used_space() / self.chunk_store.max_space() * 100 > 50 {
+            let error = MutationError::NetworkFull;
+            let external_error_indicator = try!(serialisation::serialise(&error));
+            let _ = routing_node.send_put_failure(response_src,
+                                                  response_dst,
+                                                  request.clone(),
+                                                  external_error_indicator,
+                                                  *message_id);
+            return Err(From::from(error));
         }
 
-        if let Err(err) = self.chunk_store.put(&data_name, &try!(serialisation::serialise(data))) {
-            trace!("SDM failed to store {} in chunkstore: {:?}", data_name, err);
+        if let Err(err) = self.chunk_store
+                              .put(&data_identifier, &try!(serialisation::serialise(data))) {
+            trace!("DM failed to store {} in chunkstore: {:?}",
+                   data_identifier,
+                   err);
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = routing_node.send_put_failure(response_src,
@@ -139,100 +117,78 @@ impl StructuredDataManager {
                                                   *message_id);
             Err(From::from(error))
         } else {
-            trace!("SDM sending PutSuccess for data {}", data_name);
+            trace!("DM sending PutSuccess for data {}", data_identifier);
             let _ = routing_node.send_put_success(response_src,
                                                   response_dst,
-                                                  data_name,
+                                                  data_identifier,
                                                   *message_id);
-            self.send_refresh(routing_node, &data_name, MessageId::zero());
+            self.send_refresh(routing_node, &data_identifier, MessageId::zero());
             Ok(())
         }
     }
 
+    // This function is only for SD
     pub fn handle_post(&mut self,
                        routing_node: &RoutingNode,
-                       request: &RequestMessage)
+                       request: &RequestMessage,
+                       new_data: &StructuredData,
+                       msg_id: &MessageId)
                        -> Result<(), InternalError> {
-        let (new_data, message_id) =
-            if let RequestContent::Post(Data::Structured(ref structured_data), ref message_id) =
-                   request.content {
-                (structured_data, message_id)
-            } else {
-                unreachable!("Error in vault demuxing")
-            };
-
-        if let Ok(serialised_data) = self.chunk_store.get(&new_data.name()) {
-            if let Ok(mut existing_data) =
-                   serialisation::deserialise::<StructuredData>(&serialised_data) {
-                if existing_data.replace_with_other(new_data.clone()).is_ok() {
-                    if let Ok(serialised_data) = serialisation::serialise(&existing_data) {
-                        if let Ok(()) = self.chunk_store
-                                            .put(&existing_data.name(), &serialised_data) {
-                            trace!("SDM updated {:?} to {:?}", existing_data, new_data);
-                            let _ = routing_node.send_post_success(request.dst.clone(),
-                                                                   request.src.clone(),
-                                                                   new_data.name(),
-                                                                   *message_id);
-                            self.send_refresh(routing_node, &new_data.name(), MessageId::zero());
-                            return Ok(());
-                        }
-                    }
+        if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&data.identifier()) {
+            if data.replace_with_other(new_data.clone()).is_ok() {
+                if let Ok(()) = self.chunk_store
+                                    .put(&data.identifier(), &data) {
+                    trace!("DM updated for : {:?}", data.identifier());
+                    let _ = routing_node.send_post_success(request.dst.clone(),
+                                                           request.src.clone(),
+                                                           data.identifier(),
+                                                           *msg_id);
+                    self.send_refresh(routing_node, &data.identifier(), MessageId::zero());
+                    return Ok(());
                 }
             }
         }
-        trace!("SDM sending post_failure of sd {}", new_data.name());
-        try!(routing_node.send_post_failure(request.dst.clone(),
-                                            request.src.clone(),
-                                            request.clone(),
-                                            Vec::new(),
-                                            *message_id));
-        Ok(())
+
+        trace!("DM sending post_failure {}", data.identifier());
+        Ok(try!(routing_node.send_post_failure(request.dst.clone(),
+                                               request.src.clone(),
+                                               request.clone(),
+                                               try!(serialise(&MutationError::InvalidSuccessor)),
+                                               *message_id)))
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
     pub fn handle_delete(&mut self,
                          routing_node: &RoutingNode,
-                         request: &RequestMessage)
+                         request: &RequestMessage,
+                         new_data: &StructuredData,
+                         msg_id: &MessageId)
                          -> Result<(), InternalError> {
-        let (data, message_id) = if let RequestContent::Delete(Data::Structured(ref data),
-                                                               ref message_id) = request.content {
-            (data.clone(), message_id)
-        } else {
-            unreachable!("Error in vault demuxing")
-        };
-
-        if let Ok(serialised_data) = self.chunk_store.get(&data.name()) {
-            if let Ok(existing_data) =
-                   serialisation::deserialise::<StructuredData>(&serialised_data) {
-                if existing_data.validate_self_against_successor(&data).is_ok() {
-                    // Reducing content to empty to avoid later on put bearing the same name
-                    // chunk_store::put() deletes the old data automatically
-                    if let Ok(()) = self.chunk_store.put(&data.name(), &[]) {
-                        trace!("SDM deleted {:?} with requested new version {:?}",
-                               existing_data,
-                               data);
-                        let _ = routing_node.send_delete_success(request.dst.clone(),
-                                                                 request.src.clone(),
-                                                                 data.name(),
-                                                                 *message_id);
-                        // TODO: Send a refresh message.
-                        return Ok(());
-                    }
+        if let Ok(data) = self.chunk_store.get(&new_data.identifier()) {
+            if data.validate_self_against_successor(&new_data).is_ok() {
+                if let Ok(()) = self.chunk_store.delete(&data.identifier()) {
+                    trace!("DM deleted {:?}", data.identifier());
+                    let _ = routing_node.send_delete_success(request.dst.clone(),
+                                                             request.src.clone(),
+                                                             data.name(),
+                                                             *message_id);
+                    // TODO: Send a refresh message.
+                    return Ok(());
                 }
             }
         }
-        trace!("SDM sending delete_failure of sd {}", data.name());
+        trace!("DM sending delete_failure for {}", data.identifier());
         try!(routing_node.send_delete_failure(request.dst.clone(),
                                               request.src.clone(),
                                               request.clone(),
-                                              Vec::new(),
+                                              try!(serialise(&MutationError::InvalidSuccessor)),
                                               *message_id));
         Ok(())
     }
 
     pub fn handle_refresh(&mut self,
                           routing_node: &RoutingNode,
-                          structured_data: StructuredData)
+                          serialised_msg: Vec<u8>)
                           -> Result<(), InternalError> {
         match routing_node.close_group(structured_data.name()) {
             Ok(None) | Err(_) => return Ok(()),
@@ -265,30 +221,29 @@ impl StructuredDataManager {
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain data for which we're still in the close group
-        let data_names = self.chunk_store.names();
-        for data_name in data_names {
-            match routing_node.close_group(data_name) {
+        let data_ids = self.chunk_store.names();
+        for data_id in data_ids {
+            match routing_node.close_group(data_id.name()) {
                 Ok(None) => {
-                    trace!("{} added. No longer a SDM for {}", node_name, data_name);
-                    let _ = self.chunk_store.delete(&data_name);
+                    trace!("{} added. No longer a DM for {}", node_name, data_id);
+                    let _ = self.chunk_store.delete(&data_id);
                 }
                 Ok(Some(_)) => {
                     self.send_refresh(routing_node,
-                                      &data_name,
+                                      &data_id,
                                       MessageId::from_added_node(*node_name))
                 }
                 Err(error) => {
-                    error!("Failed to get close group: {:?} for {}", error, data_name);
-                    let _ = self.chunk_store.delete(&data_name);
+                    error!("Failed to get close group: {:?} for {}", error, data_id);
                 }
             }
         }
     }
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        for data_name in self.chunk_store.names() {
+        for data_id in self.chunk_store.names() {
             self.send_refresh(routing_node,
-                              &data_name,
+                              &data_id,
                               MessageId::from_lost_node(*node_name));
         }
     }
@@ -300,26 +255,19 @@ impl StructuredDataManager {
 
     fn send_refresh(&self,
                     routing_node: &RoutingNode,
-                    data_name: &XorName,
+                    data_id: &DataIdentifier,
                     message_id: MessageId) {
-        let serialised_data = match self.chunk_store.get(data_name) {
+        let data = match self.chunk_store.get(data_id) {
             Ok(data) => data,
             _ => return,
         };
 
-        let structured_data =
-            match serialisation::deserialise::<StructuredData>(&serialised_data) {
-                Ok(parsed_data) => parsed_data,
-                Err(_) => return,
-            };
-
-        let src = Authority::NaeManager(*data_name);
-        let refresh = Refresh::new(data_name,
-                                   RefreshValue::StructuredDataManager(structured_data));
+        let src = Authority::NaeManager(*data_id.name());
+        let refresh = Refresh(data);
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-            trace!("SDM sending refresh for data {:?}", src.name());
+            trace!("DM sending refresh for {:?}", data_id);
             let _ = routing_node.send_refresh_request(src.clone(),
-                                                      src.clone(),
+                                                      src,
                                                       serialised_refresh,
                                                       message_id);
         }
@@ -350,7 +298,7 @@ mod test {
 
     pub struct Environment {
         pub routing: RoutingNode,
-        pub structured_data_manager: StructuredDataManager,
+        pub structured_data_manager: DataManager,
     }
 
     pub struct PutEnvironment {
@@ -390,7 +338,7 @@ mod test {
             let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
             Environment {
                 routing: routing,
-                structured_data_manager: unwrap_result!(StructuredDataManager::new(322_122_546)),
+                structured_data_manager: unwrap_result!(DataManager::new(322_122_546)),
             }
         }
 
@@ -886,8 +834,8 @@ mod test {
                                                                              .clone() {
             let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
                     &received_serialised_refresh[..]));
-            if let RefreshValue::StructuredDataManager(received_data) = parsed_refresh.value
-                                                                                      .clone() {
+            if let RefreshValue::DataManager(received_data) = parsed_refresh.value
+                                                                            .clone() {
                 assert_eq!(received_data, put_env.sd_data);
             } else {
                 panic!("Received unexpected refresh value {:?}", parsed_refresh);

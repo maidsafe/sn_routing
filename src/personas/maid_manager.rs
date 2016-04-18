@@ -35,6 +35,9 @@ const DEFAULT_ACCOUNT_SIZE: u64 = 1024;  // 1024 units, max 1GB for immutable_da
 const MAX_FULL_RATIO: f32 = 0.5;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+struct Refresh(Data);
+
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 pub struct Account {
     data_stored: u64,
     space_available: u64,

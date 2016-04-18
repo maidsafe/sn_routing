@@ -31,19 +31,14 @@ use routing::{Authority, Data, DataIdentifier, Event, RequestContent, RequestMes
 use xor_name::XorName;
 
 use error::InternalError;
-use personas::immutable_data_manager::ImmutableDataManager;
 use personas::maid_manager::MaidManager;
-use personas::mpid_manager::MpidManager;
-use personas::pmid_manager::PmidManager;
-use personas::pmid_node::PmidNode;
-use personas::structured_data_manager::StructuredDataManager;
+use personas::data_manager::DataManager;
 use types::{Refresh, RefreshValue};
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
-const DEFAULT_MAX_CAPACITY: u64 = 1_073_741_824;
+const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
 const PMID_NODE_ALLOWANCE: f64 = 0.6;
 const STUCTURED_DATA_MANAGER_ALLOWANCE: f64 = 0.3;
-const MPID_MANAGER_ALLOWANCE: f64 = 0.1;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;
@@ -53,13 +48,8 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
-    immutable_data_manager: ImmutableDataManager,
     maid_manager: MaidManager,
-    mpid_manager: MpidManager,
-    pmid_manager: PmidManager,
-    pmid_node: PmidNode,
-    structured_data_manager: StructuredDataManager,
-    full_pmid_nodes: HashSet<XorName>,
+    data_manager: DataManager,
 
     #[cfg(feature = "use-mock-crust")]
     routing_node: Option<RoutingNode>,
@@ -71,13 +61,7 @@ pub struct Vault {
 // issues.
 #[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss, cast_sign_loss))]
 fn init_components(optional_config: Option<Config>)
-                   -> Result<(ImmutableDataManager,
-                              MaidManager,
-                              MpidManager,
-                              PmidManager,
-                              PmidNode,
-                              StructuredDataManager),
-                             InternalError> {
+                   -> Result<(MaidManager, DataManager), InternalError> {
     ::sodiumoxide::init();
 
     let config = match optional_config {
@@ -85,61 +69,33 @@ fn init_components(optional_config: Option<Config>)
         None => try!(config_handler::read_config_file()),
     };
     let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
-    let pn_capacity = (max_capacity * PMID_NODE_ALLOWANCE) as u64;
-    let sdm_capacity = (max_capacity * STUCTURED_DATA_MANAGER_ALLOWANCE) as u64;
-    let mpid_capacity = (max_capacity * MPID_MANAGER_ALLOWANCE) as u64;
 
-    Ok((ImmutableDataManager::new(),
-        MaidManager::new(),
-        try!(MpidManager::new(mpid_capacity)),
-        PmidManager::new(),
-        try!(PmidNode::new(pn_capacity)),
-        try!(StructuredDataManager::new(sdm_capacity))))
+    Ok((MaidManager::new(), try!(DataManager::new(max_capacity))))
 }
 
 impl Vault {
     /// Creates a network Vault instance.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new() -> Result<Self, InternalError> {
-        let (immutable_data_manager,
-             maid_manager,
-             mpid_manager,
-             pmid_manager,
-             pmid_node,
-             structured_data_manager) = try!(init_components(None));
+        let (maid_manager, data_manager) = try!(init_components(None));
 
         Ok(Vault {
-            immutable_data_manager: immutable_data_manager,
             maid_manager: maid_manager,
-            mpid_manager: mpid_manager,
-            pmid_manager: pmid_manager,
-            pmid_node: pmid_node,
-            structured_data_manager: structured_data_manager,
-            full_pmid_nodes: HashSet::new(),
+            data_manager: data_manager,
         })
     }
 
     /// Creates a Vault instance for use with the mock-crust feature enabled.
     #[cfg(feature = "use-mock-crust")]
     pub fn new(config: Option<Config>) -> Result<Self, InternalError> {
-        let (immutable_data_manager,
-             maid_manager,
-             mpid_manager,
-             pmid_manager,
-             pmid_node,
-             structured_data_manager) = try!(init_components(config));
+        let (maid_manager, data_manager) = try!(init_components(config));
 
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = try!(RoutingNode::new(routing_sender, false));
 
         Ok(Vault {
-            immutable_data_manager: immutable_data_manager,
             maid_manager: maid_manager,
-            mpid_manager: mpid_manager,
-            pmid_manager: pmid_manager,
-            pmid_node: pmid_node,
-            structured_data_manager: structured_data_manager,
-            full_pmid_nodes: HashSet::new(),
+            data_manager: data_manager,
             routing_node: Some(routing_node),
             routing_receiver: routing_receiver,
         })
@@ -196,7 +152,7 @@ impl Vault {
         self.pmid_node
             .get_stored_names()
             .iter()
-            .chain(self.structured_data_manager
+            .chain(self.data_manager
                        .get_stored_names()
                        .iter())
             .cloned()
@@ -237,108 +193,41 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(ref data_request, ref message_id))
-            // Guard - client can only get ImmutableData
-                if Some(tmp) = data_request::Immutable(tmp) => {
-                self.immutable_data_manager
-                    .handle_get(&routing_node, &request, &data_request, &message_id)
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &RequestContent::Get(ref data_request, ref message_id))
-            if Some(tmp) = data_request::Immutable(tmp) |
-                data_request::ImmutableBackup(tmp) |
-                data_request::ImmutableSacrificial(tmp) => {
-                self.immutable_data_manager.handle_get(routing_node, &request)
-            }
-            (&Authority::Client { .. },
-             &Authority::NaeManager(_),
-             &RequestContent::Get(DataIdentifier::Structured(_, _), _)) => {
-                self.structured_data_manager.handle_get(routing_node, &request)
-            }
-            (&Authority::NaeManager(_),
-             &Authority::ManagedNode(_),
-             &RequestContent::Get(ref data_request, ref message_id))
-            if Some(tmp) = data_request::Immutable(tmp) |
-                data_request::ImmutableBackup(tmp) |
-                data_request::ImmutableSacrificial(tmp) => {
-                self.pmid_node.handle_get(routing_node, &request)
+             &RequestContent::Get(ref data_id, ref msg_id)) => {
+                self.data_manager.handle_get(routing_node, &request, data_id, msg_id)
             }
             // ================== Put ==================
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Immutable(_), _)) |
-            (&Authority::Client { .. },
-             &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Structured(_), _)) => {
-                self.maid_manager.handle_put(routing_node, &self.full_pmid_nodes, &request)
-            }
-            (&Authority::Client { .. },
-             &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Plain(_), _)) |
-            (&Authority::ClientManager(_),
-             &Authority::ClientManager(_),
-             &RequestContent::Put(Data::Plain(_), _)) => {
-                self.mpid_manager.handle_put(routing_node, &request)
-            }
+             &RequestContent::Put(_, _)) => self.maid_manager.handle_put(routing_node, &request),
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(Data::Immutable(_), _)) |
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => {
-                self.immutable_data_manager
-                    .handle_put(routing_node, &self.full_pmid_nodes, &request)
-            }
-            (&Authority::ClientManager(_),
-             &Authority::NaeManager(_),
-             &RequestContent::Put(Data::Structured(_), _)) => {
-                self.structured_data_manager
-                    .handle_put(routing_node, &self.full_pmid_nodes, &request)
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NodeManager(_),
-             &RequestContent::Put(Data::Immutable(ref data), ref message_id)) => {
-                self.pmid_manager.handle_put(routing_node, &request, data, message_id)
-            }
-            (&Authority::NodeManager(_),
-             &Authority::ManagedNode(_),
-             &RequestContent::Put(Data::Immutable(_), _)) => {
-                self.pmid_node.handle_put(routing_node, &request)
+             &RequestContent::Put(ref data, ref msg_id)) => {
+                self.data_manager
+                    .handle_put(routing_node, &request, data, msg_id)
             }
             // ================== Post ==================
-            (&Authority::NaeManager(_),
-             &Authority::NodeManager(_),
-             &RequestContent::Post(_, _)) => self.pmid_manager.handle_post(&request),
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::Structured(_), _)) => {
-                self.structured_data_manager.handle_post(routing_node, &request)
-            }
-            (&Authority::Client { .. },
-             &Authority::ClientManager(_),
-             &RequestContent::Post(Data::Plain(_), _)) |
-            (&Authority::ClientManager(_),
-             &Authority::ClientManager(_),
-             &RequestContent::Post(Data::Plain(_), _)) => {
-                self.mpid_manager.handle_post(routing_node, &request)
+             &RequestContent::Post(Data::Structured(ref data), ref msg_id)) => {
+                self.data_manager.handle_post(routing_node, &request, data, msg_id)
             }
             // ================== Delete ==================
             (&Authority::Client { .. },
-             &Authority::ClientManager(_),
-             &RequestContent::Delete(Data::Plain(_), _)) => {
-                self.mpid_manager.handle_delete(routing_node, &request)
-            }
-            (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Delete(Data::Structured(_), _)) => {
-                self.structured_data_manager.handle_delete(routing_node, &request)
+             &RequestContent::Delete(Data::Structured(ref data), ref msg_id)) => {
+                self.data_manager.handle_delete(routing_node, &request, data, msg_id)
             }
             // ================== Refresh ==================
-            (src,
-             dst,
-             &RequestContent::Refresh(ref serialised_refresh, _)) => {
-                self.on_refresh(routing_node, src, dst, serialised_refresh)
+            (&Authority::ClientManager(_),
+             &Authority::ClientManager(_),
+             &RequestContent::Refresh(ref serialised_msg, _)) => {
+                self.maid_manager.handle_refresh(serialised_msg);
+            }
+            (&Authority::NaeManager(_),
+             &Authority::NaeManager(_),
+             &RequestContent::Refresh(ref serialised_msg, _)) => {
+                self.data_manager.handle_refresh(serialised_msg);
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
@@ -350,53 +239,11 @@ impl Vault {
                    response: ResponseMessage)
                    -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
-            // ================== GetSuccess ==================
-            (&Authority::ManagedNode(_),
-             &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
-                self.immutable_data_manager
-                    .handle_client_get_success(routing_node, &response, &data, &message_id)
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
-                self.immutable_data_manager.handle_get_success_from_data_managers(routing_node,
-                                                                                  &response,
-                                                                                  &data,
-                                                                                  &message_id)
-            }
-            // ================== GetFailure ==================
-            (&Authority::ManagedNode(ref pmid_node),
-             &Authority::NaeManager(_),
-             &ResponseContent::GetFailure { ref id, ref request, ref external_error_indicator }) => {
-                self.immutable_data_manager
-                    .handle_get_failure(routing_node,
-                                        pmid_node,
-                                        id,
-                                        request,
-                                        external_error_indicator)
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &ResponseContent::GetFailure { ref request, .. }) => {
-                self.immutable_data_manager
-                    .handle_get_from_other_location_failure(routing_node, request)
-            }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
              &ResponseContent::PutSuccess(ref name, ref message_id)) => {
                 self.maid_manager.handle_put_success(routing_node, name, message_id)
-            }
-            (&Authority::NodeManager(ref pmid_node),
-             &Authority::NaeManager(_),
-             &ResponseContent::PutSuccess(ref name, _)) => {
-                self.immutable_data_manager.handle_put_success(pmid_node, name)
-            }
-            (&Authority::ManagedNode(ref pmid_node),
-             &Authority::NodeManager(_),
-             &ResponseContent::PutSuccess(ref name, ref message_id)) => {
-                self.pmid_manager.handle_put_success(routing_node, pmid_node, name, message_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
@@ -404,29 +251,9 @@ impl Vault {
              &ResponseContent::PutFailure{
                     ref id,
                     request: RequestMessage {
-                        content: RequestContent::Put(Data::Structured(_), _), .. },
+                        content: RequestContent::Put(_, _), .. },
                     ref external_error_indicator }) => {
                 self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
-            }
-            (&Authority::NodeManager(ref pmid_node),
-             &Authority::NaeManager(_),
-             &ResponseContent::PutFailure { ref id,
-                    request: RequestMessage {
-                        content: RequestContent::Put(Data::Immutable(ref data), _), .. },
-             ..
-             }) => {
-                let _ = self.full_pmid_nodes.insert(*pmid_node);
-                self.immutable_data_manager.handle_put_failure(routing_node, pmid_node, data, id)
-            }
-            (&Authority::ManagedNode(_),
-             &Authority::NodeManager(_),
-             &ResponseContent::PutFailure { ref request, .. }) => {
-                self.pmid_manager.handle_put_failure(routing_node, request)
-            }
-            (&Authority::ClientManager(_),
-             &Authority::ClientManager(_),
-             &ResponseContent::PutFailure { ref request, .. }) => {
-                self.mpid_manager.handle_put_failure(routing_node, request)
             }
             // ================== Invalid Response ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Response(response.clone()))),
@@ -438,11 +265,7 @@ impl Vault {
                      node_added: XorName)
                      -> Result<(), InternalError> {
         self.maid_manager.handle_node_added(routing_node, &node_added);
-        self.immutable_data_manager.handle_node_added(routing_node, &node_added);
-        self.structured_data_manager.handle_node_added(routing_node, &node_added);
-        self.pmid_manager.handle_node_added(routing_node, &node_added);
-        self.pmid_node.handle_node_added(routing_node);
-        self.mpid_manager.handle_churn(routing_node, &node_added);
+        self.data_manager.handle_node_added(routing_node, &node_added);
         Ok(())
     }
 
@@ -450,12 +273,8 @@ impl Vault {
                     routing_node: &RoutingNode,
                     node_lost: XorName)
                     -> Result<(), InternalError> {
-        let _ = self.full_pmid_nodes.remove(&node_lost);
         self.maid_manager.handle_node_lost(routing_node, &node_lost);
-        self.immutable_data_manager.handle_node_lost(routing_node, &node_lost);
-        self.structured_data_manager.handle_node_lost(routing_node, &node_lost);
-        self.pmid_manager.handle_node_lost(routing_node, &node_lost);
-        self.mpid_manager.handle_churn(routing_node, &node_lost);
+        self.data_manager.handle_node_lost(routing_node, &node_lost);
         Ok(())
     }
 
@@ -469,45 +288,5 @@ impl Vault {
         // TODO: restart event loop with new routing object, discarding all current data
         debug!("Vault disconnected");
         Ok(())
-    }
-
-    fn on_refresh(&mut self,
-                  routing_node: &RoutingNode,
-                  src: &Authority,
-                  dst: &Authority,
-                  serialised_refresh: &[u8])
-                  -> Result<(), InternalError> {
-        let refresh = try!(serialisation::deserialise::<Refresh>(serialised_refresh));
-        match (src, dst, &refresh.value) {
-            (&Authority::ClientManager(_),
-             &Authority::ClientManager(_),
-             &RefreshValue::MaidManagerAccount(ref account)) => {
-                Ok(self.maid_manager.handle_refresh(routing_node, refresh.name, account.clone()))
-            }
-            (&Authority::ClientManager(_),
-             &Authority::ClientManager(_),
-             &RefreshValue::MpidManagerAccount(ref account,
-                                               ref stored_messages,
-                                               ref received_headers)) => {
-                Ok(self.mpid_manager
-                       .handle_refresh(refresh.name, account, stored_messages, received_headers))
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &RefreshValue::ImmutableDataManagerAccount(ref account)) => {
-                Ok(self.immutable_data_manager.handle_refresh(refresh.name, account.clone()))
-            }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
-             &RefreshValue::StructuredDataManager(ref structured_data)) => {
-                self.structured_data_manager.handle_refresh(routing_node, structured_data.clone())
-            }
-            (&Authority::NodeManager(_),
-             &Authority::NodeManager(_),
-             &RefreshValue::PmidManagerAccount(ref account)) => {
-                Ok(self.pmid_manager.handle_refresh(refresh.name, account.clone()))
-            }
-            _ => Err(InternalError::UnknownRefreshType(src.clone(), dst.clone(), refresh.clone())),
-        }
     }
 }

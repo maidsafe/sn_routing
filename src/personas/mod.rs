@@ -15,9 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub mod immutable_data_manager;
 pub mod maid_manager;
 pub mod mpid_manager;
-pub mod pmid_manager;
-pub mod pmid_node;
-pub mod structured_data_manager;
+pub mod data_manager;
