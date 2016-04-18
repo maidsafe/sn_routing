@@ -49,6 +49,17 @@ impl Data {
         }
     }
 
+    /// Return data identifier.
+    pub fn identifier(&self) -> DataIdentifier {
+        match *self {
+            Data::Structured(ref data) => data.identifier(),
+            Data::Immutable(ref data) => data.identifier(),
+            Data::ImmutableBackup(ref data) => data.identifier(),
+            Data::ImmutableSacrificial(ref data) => data.identifier(),
+            Data::Plain(ref data) => data.identifier(),
+        }
+    }
+
     /// Return data size.
     pub fn payload_size(&self) -> usize {
         match *self {
