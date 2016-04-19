@@ -229,7 +229,6 @@ mod test {
 
     #[test]
     fn structured_data_churn() {
-        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
