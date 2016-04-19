@@ -270,7 +270,7 @@ impl DataManager {
 
 #[cfg(test)]
 #[cfg(not(feature="use-mock-crust"))]
-mod test {
+mod test_sd {
     use super::*;
     use super::Refresh;
 
@@ -290,7 +290,7 @@ mod test {
 
     pub struct Environment {
         pub routing: RoutingNode,
-        pub structured_data_manager: DataManager,
+        pub data_manager: DataManager,
     }
 
     pub struct PutEnvironment {
@@ -330,7 +330,7 @@ mod test {
             let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
             Environment {
                 routing: routing,
-                structured_data_manager: unwrap_result!(DataManager::new(322_122_546)),
+                data_manager: unwrap_result!(DataManager::new(322_122_546)),
             }
         }
 
@@ -394,8 +394,7 @@ mod test {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.structured_data_manager
-                        .handle_put(&self.routing, &request, &data, &msg_id);
+            let _ = self.data_manager.handle_put(&self.routing, &request, &data, &msg_id);
             PutEnvironment {
                 keys: keys,
                 client: client,
@@ -424,10 +423,10 @@ mod test {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.structured_data_manager.handle_get(&self.routing,
-                                                            &request,
-                                                            &data.identifier(),
-                                                            &msg_id);
+            let _ = self.data_manager.handle_get(&self.routing,
+                                                 &request,
+                                                 &data.identifier(),
+                                                 &msg_id);
             GetEnvironment {
                 client: client,
                 msg_id: msg_id,
@@ -458,10 +457,10 @@ mod test {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.structured_data_manager.handle_post(&self.routing,
-                                                             &request,
-                                                             &sd_data,
-                                                             &msg_id);
+            let _ = self.data_manager.handle_post(&self.routing,
+                                                  &request,
+                                                  &sd_data,
+                                                  &msg_id);
             PostEnvironment {
                 keys: keys,
                 client: client,
@@ -494,10 +493,10 @@ mod test {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.structured_data_manager.handle_delete(&self.routing,
-                                                               &request,
-                                                               &sd_data,
-                                                               &msg_id);
+            let _ = self.data_manager.handle_delete(&self.routing,
+                                                    &request,
+                                                    &sd_data,
+                                                    &msg_id);
             DeleteEnvironment {
                 keys: keys,
                 client: client,
@@ -509,7 +508,7 @@ mod test {
 
         pub fn get_from_chunkstore(&self,
                                    data_identifier: &DataIdentifier) -> Option<StructuredData> {
-            if let Ok(data) = self.structured_data_manager.chunk_store.get(data_identifier) {
+            if let Ok(data) = self.data_manager.chunk_store.get(data_identifier) {
                 if let Data::Structured(sd) = data {
                     return Some(sd);
                 }
@@ -820,7 +819,7 @@ mod test {
 
         let lost_node = env.lose_close_node(&put_env.sd_data.name());
         env.routing.remove_node_from_routing_table(&lost_node);
-        let _ = env.structured_data_manager.handle_node_lost(&env.routing, &random::<XorName>());
+        let _ = env.data_manager.handle_node_lost(&env.routing, &random::<XorName>());
 
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);
@@ -851,7 +850,7 @@ mod test {
         let sd_data = env.get_close_data(keys.clone());
         let refresh = Refresh(Data::Structured(sd_data.clone()));
         let value = unwrap_result!(serialisation::serialise(&refresh));
-        let _ = env.structured_data_manager.handle_refresh(&env.routing, &value);
+        let _ = env.data_manager.handle_refresh(&env.routing, &value);
         assert_eq!(Some(sd_data.clone()),
                    env.get_from_chunkstore(&sd_data.identifier()));
         // Refresh an incorrect version new structured_data in
@@ -864,7 +863,7 @@ mod test {
                                                         Some(&keys.1)));
         let refresh_bad = Refresh(Data::Structured(sd_bad.clone()));
         let value_bad = unwrap_result!(serialisation::serialise(&refresh_bad));
-        let _ = env.structured_data_manager.handle_refresh(&env.routing, &value_bad);
+        let _ = env.data_manager.handle_refresh(&env.routing, &value_bad);
         // Refresh a correct version new structured_data in
         let sd_new = unwrap_result!(StructuredData::new(0,
                                                         *sd_data.get_identifier(),
@@ -875,8 +874,264 @@ mod test {
                                                         Some(&keys.1)));
         let refresh_new = Refresh(Data::Structured(sd_new.clone()));
         let value_new = unwrap_result!(serialisation::serialise(&refresh_new));
-        let _ = env.structured_data_manager.handle_refresh(&env.routing, &value_new);
+        let _ = env.data_manager.handle_refresh(&env.routing, &value_new);
         assert_eq!(Some(sd_new.clone()),
                    env.get_from_chunkstore(&sd_data.identifier()));
     }
+}
+
+
+#[cfg(test)]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
+#[cfg(not(feature="use-mock-crust"))]
+mod test_im {
+    use super::*;
+    use super::Refresh;
+
+    use std::collections::HashSet;
+    use std::mem;
+    use std::sync::mpsc;
+
+    use maidsafe_utilities::{log, serialisation};
+    use rand::distributions::{IndependentSample, Range};
+    use rand::{random, thread_rng};
+    use routing::{Authority, Data, DataIdentifier, ImmutableData, MessageId, RequestContent,
+                  RequestMessage, ResponseContent, ResponseMessage};
+    use safe_network_common::client_errors::GetError;
+    use sodiumoxide::crypto::sign;
+    use utils::generate_random_vec_u8;
+    use vault::RoutingNode;
+    use xor_name::XorName;
+
+    struct PutEnvironment {
+        pub client_manager: Authority,
+        pub im_data: ImmutableData,
+        pub message_id: MessageId,
+        pub incoming_request: RequestMessage,
+    }
+
+    struct GetEnvironment {
+        pub client: Authority,
+        pub message_id: MessageId,
+        pub request: RequestMessage,
+    }
+
+    struct Environment {
+        pub routing: RoutingNode,
+        pub data_manager: DataManager,
+    }
+
+    impl Environment {
+        pub fn new() -> Environment {
+            let _ = log::init(false);
+            let env = Environment {
+                routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
+                data_manager: unwrap_result!(DataManager::new(322_122_546)),
+            };
+            env
+        }
+
+        pub fn get_close_data(&self) -> ImmutableData {
+            loop {
+                let im_data = ImmutableData::new(generate_random_vec_u8(1024));
+                if let Ok(Some(_)) = self.routing.close_group(im_data.name()) {
+                    return im_data;
+                }
+            }
+        }
+
+        pub fn get_close_node(&self) -> XorName {
+            loop {
+                let name = random::<XorName>();
+                if let Ok(Some(_)) = self.routing.close_group(name) {
+                    return name;
+                }
+            }
+        }
+
+        fn lose_close_node(&self, target: &XorName) -> XorName {
+            if let Ok(Some(close_group)) = self.routing.close_group(*target) {
+                let mut rng = thread_rng();
+                let range = Range::new(0, close_group.len());
+                let our_name = if let Ok(ref name) = self.routing.name() {
+                    *name
+                } else {
+                    unreachable!()
+                };
+                loop {
+                    let index = range.ind_sample(&mut rng);
+                    if close_group[index] != our_name {
+                        return close_group[index];
+                    }
+                }
+            } else {
+                random::<XorName>()
+            }
+        }
+
+        pub fn put_im_data(&mut self) -> PutEnvironment {
+            let im_data = self.get_close_data();
+            let message_id = MessageId::new();
+            let content = RequestContent::Put(Data::Immutable(im_data.clone()), message_id);
+            let client_manager = Authority::ClientManager(random());
+            let client_request = RequestMessage {
+                src: client_manager.clone(),
+                dst: Authority::NaeManager(im_data.name()),
+                content: content.clone(),
+            };
+            let data = Data::Immutable(im_data.clone());
+            unwrap_result!(self.data_manager
+                               .handle_put(&self.routing, &client_request, &data, &message_id));
+
+            PutEnvironment {
+                client_manager: client_manager,
+                im_data: im_data,
+                message_id: message_id,
+                incoming_request: client_request,
+            }
+        }
+
+        pub fn get_im_data(&mut self, data_identifier: DataIdentifier) -> GetEnvironment {
+            let message_id = MessageId::new();
+            let content = RequestContent::Get(data_identifier.clone(), message_id);
+            let keys = sign::gen_keypair();
+            let from = random();
+            let client = Authority::Client {
+                client_key: keys.0,
+                peer_id: random(),
+                proxy_node_name: from,
+            };
+            let request = RequestMessage {
+                src: client.clone(),
+                dst: Authority::NaeManager(data_identifier.name()),
+                content: content.clone(),
+            };
+
+            let _ = self.data_manager.handle_get(&self.routing,
+                                                 &request,
+                                                 &data_identifier,
+                                                 &message_id);
+            GetEnvironment {
+                client: client,
+                message_id: message_id,
+                request: request,
+            }
+        }
+
+        pub fn get_from_chunkstore(&self,
+                                   data_identifier: &DataIdentifier) -> Option<ImmutableData> {
+            if let Ok(data) = self.data_manager.chunk_store.get(data_identifier) {
+                if let Data::Immutable(im_data) = data {
+                    return Some(im_data);
+                }
+            }
+            None
+        }
+    }
+
+    #[test]
+    fn handle_put() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+
+        assert_eq!(Some(put_env.im_data.clone()),
+                   env.get_from_chunkstore(&put_env.im_data.identifier()));
+
+        let put_successes = env.routing.put_successes_given();
+        assert_eq!(put_successes.len(), 1);
+        if let ResponseContent::PutSuccess(identifier, id) = put_successes[0].content.clone() {
+            assert_eq!(put_env.message_id, id);
+            assert_eq!(put_env.im_data.identifier(), identifier);
+        } else {
+            panic!("Received unexpected response {:?}", put_successes[0]);
+        }
+        assert_eq!(put_env.client_manager, put_successes[0].dst);
+        assert_eq!(Authority::NaeManager(put_env.im_data.name()),
+                   put_successes[0].src);
+    }
+
+    #[test]
+    fn get_non_existing_data() {
+        let mut env = Environment::new();
+        let im_data = env.get_close_data();
+        let get_env = env.get_im_data(im_data.identifier());
+        assert!(env.routing.get_requests_given().is_empty());
+        assert!(env.routing.get_successes_given().is_empty());
+        let get_failure = env.routing.get_failures_given();
+        assert_eq!(get_failure.len(), 1);
+        if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
+               get_failure[0].content.clone() {
+            assert_eq!(get_env.message_id, *id);
+            let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
+            if let GetError::NoSuchData = parsed_error {} else {
+                panic!("Received unexpected external_error_indicator with parsed error as {:?}",
+                       parsed_error);
+            }
+        } else {
+            panic!("Received unexpected response {:?}", get_failure[0]);
+        }
+        assert_eq!(get_env.client, get_failure[0].dst);
+        assert_eq!(Authority::NaeManager(im_data.name()), get_failure[0].src);
+    }
+
+    #[test]
+    fn get_existing_data() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+
+        let get_env = env.get_im_data(put_env.im_data.identifier());
+        let get_responses = env.routing.get_successes_given();
+        assert_eq!(get_responses.len(), 1);
+        if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
+               get_responses[0].clone() {
+            assert_eq!(Data::Immutable(put_env.im_data.clone()), response_data);
+            assert_eq!(get_env.message_id, id);
+        } else {
+            panic!("Received unexpected response {:?}", get_responses[0]);
+        }
+        assert_eq!(get_responses[0].dst, get_env.client);
+    }
+
+    #[test]
+    fn handle_churn() {
+        let mut env = Environment::new();
+        let put_env = env.put_im_data();
+        assert_eq!(env.routing.put_successes_given().len(), 1);
+
+        let lost_node = env.lose_close_node(&put_env.im_data.name());
+        env.routing.remove_node_from_routing_table(&lost_node);
+        let _ = env.data_manager.handle_node_lost(&env.routing, &random::<XorName>());
+
+        let refresh_requests = env.routing.refresh_requests_given();
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[0].src,
+                   Authority::NaeManager(put_env.im_data.identifier().name()));
+        assert_eq!(refresh_requests[0].dst,
+                   Authority::NaeManager(put_env.im_data.identifier().name()));
+        assert_eq!(refresh_requests[1].src,
+                   Authority::NaeManager(put_env.im_data.identifier().name()));
+        assert_eq!(refresh_requests[1].dst,
+                   Authority::NaeManager(put_env.im_data.identifier().name()));
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[0]
+                                                                             .content
+                                                                             .clone() {
+            let parsed_refresh = unwrap_result!(serialisation::deserialise::<Refresh>(
+                    &received_serialised_refresh[..]));
+            assert_eq!(parsed_refresh.0, Data::Immutable(put_env.im_data.clone()));
+        } else {
+            panic!("Received unexpected refresh {:?}", refresh_requests[0]);
+        }
+    }
+
+    #[test]
+    fn handle_refresh() {
+        let mut env = Environment::new();
+        let im_data = env.get_close_data();
+        let refresh = Refresh(Data::Immutable(im_data.clone()));
+        let value = unwrap_result!(serialisation::serialise(&refresh));
+        let _ = env.data_manager.handle_refresh(&env.routing, &value);
+        assert_eq!(Some(im_data.clone()),
+                   env.get_from_chunkstore(&im_data.identifier()));
+    }
+
 }
