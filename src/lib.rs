@@ -56,15 +56,14 @@ extern crate chunk_store;
 extern crate config_file_handler;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate ctrlc;
-extern crate itertools;
+/*#[cfg(feature = "use-mock-crust")]
 extern crate kademlia_routing_table;
 #[cfg(test)]
-extern crate rand;
+extern crate rand;*/
 extern crate routing;
 extern crate rustc_serialize;
 extern crate safe_network_common;
 extern crate sodiumoxide;
-extern crate time;
 extern crate xor_name;
 
 mod config_handler;
@@ -72,7 +71,6 @@ mod error;
 #[cfg(test)]
 mod mock_routing;
 mod personas;
-mod timed_buffer;
 mod utils;
 mod vault;
 

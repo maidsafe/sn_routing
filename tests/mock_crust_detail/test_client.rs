@@ -19,7 +19,7 @@ use std::sync::mpsc::{self, Receiver};
 
 use maidsafe_utilities::serialisation;
 use rand::random;
-use routing::{self, Authority, Data, DataRequest, Event, FullId, MessageId, PublicId,
+use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId,
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use safe_network_common::client_errors::MutationError;
@@ -95,7 +95,7 @@ impl TestClient {
         while let Ok(_) = self.routing_rx.try_recv() {}
     }
 
-    pub fn get(&mut self, request: DataRequest, nodes: &mut [TestNode]) -> Data {
+    pub fn get(&mut self, request: DataIdentifier, nodes: &mut [TestNode]) -> Data {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
         self.flush();

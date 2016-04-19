@@ -19,11 +19,11 @@
 
 #![allow(unused)]
 
-mod mock_routing_impl;
+/*mod mock_routing_impl;
 
 use self::mock_routing_impl::MockRoutingNodeImpl;
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, ImmutableData, ImmutableDataType,
+use routing::{Authority, Data, DataIdentifier, Event, ImmutableData,
               InterfaceError, MessageId, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage, RoutingError};
 use sodiumoxide::crypto::hash::sha512;
@@ -281,3 +281,4 @@ impl MockRoutingNode {
         }
     }
 }
+*/

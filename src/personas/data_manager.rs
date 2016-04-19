@@ -15,13 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::HashSet;
 use std::convert::From;
 
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestContent, RequestMessage,
+use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage,
               StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
@@ -58,7 +57,7 @@ impl DataManager {
                                                   *msg_id);
             return Ok(());
         }
-        trace!("DM sending get_failure of {}", data_id);
+        trace!("DM sending get_failure of {:?}", data_id);
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(routing_node.send_get_failure(request.dst.clone(),
@@ -71,7 +70,6 @@ impl DataManager {
 
     pub fn handle_put(&mut self,
                       routing_node: &RoutingNode,
-                      full_pmid_nodes: &HashSet<XorName>,
                       request: &RequestMessage,
                       data: &Data,
                       msg_id: &MessageId)
@@ -80,10 +78,10 @@ impl DataManager {
         let response_src = request.dst.clone();
         let response_dst = request.src.clone();
 
-        if self.chunk_store.has_chunk(&data_identifier) {
+        if self.chunk_store.has(&data_identifier) {
             let error = MutationError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
-            trace!("DM sending PutFailure for data {}", data_identifier);
+            trace!("DM sending PutFailure for data {:?}", data_identifier);
             let _ = routing_node.send_put_failure(response_src,
                                                   response_dst,
                                                   request.clone(),
@@ -106,8 +104,8 @@ impl DataManager {
         }
 
         if let Err(err) = self.chunk_store
-                              .put(&data_identifier, &try!(serialisation::serialise(data))) {
-            trace!("DM failed to store {} in chunkstore: {:?}",
+                              .put(&data_identifier, data) {
+            trace!("DM failed to store {:?} in chunkstore: {:?}",
                    data_identifier,
                    err);
             let error = MutationError::Unknown;
@@ -119,10 +117,10 @@ impl DataManager {
                                                   *msg_id);
             Err(From::from(error))
         } else {
-            trace!("DM sending PutSuccess for data {}", data_identifier);
+            trace!("DM sending PutSuccess for data {:?}", data_identifier);
             let _ = routing_node.send_put_success(response_src,
                                                   response_dst,
-                                                  data_identifier,
+                                                  data_identifier.clone(),
                                                   *msg_id);
             self.send_refresh(routing_node, &data_identifier, MessageId::zero());
             Ok(())
@@ -139,7 +137,7 @@ impl DataManager {
         if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.replace_with_other(new_data.clone()).is_ok() {
                 if let Ok(()) = self.chunk_store
-                                    .put(&data.identifier(), &data) {
+                                    .put(&data.identifier(), &Data::Structured(data.clone())) {
                     trace!("DM updated for : {:?}", data.identifier());
                     let _ = routing_node.send_post_success(request.dst.clone(),
                                                            request.src.clone(),
@@ -151,7 +149,7 @@ impl DataManager {
             }
         }
 
-        trace!("DM sending post_failure {}", new_data.identifier());
+        trace!("DM sending post_failure {:?}", new_data.identifier());
         Ok(try!(routing_node.send_post_failure(request.dst.clone(),
                                                request.src.clone(),
                                                request.clone(),
@@ -160,26 +158,27 @@ impl DataManager {
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
+    // This function is only for SD
     pub fn handle_delete(&mut self,
                          routing_node: &RoutingNode,
                          request: &RequestMessage,
                          new_data: &StructuredData,
                          msg_id: &MessageId)
                          -> Result<(), InternalError> {
-        if let Ok(data) = self.chunk_store.get(&new_data.identifier()) {
+        if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.validate_self_against_successor(&new_data).is_ok() {
                 if let Ok(()) = self.chunk_store.delete(&data.identifier()) {
                     trace!("DM deleted {:?}", data.identifier());
                     let _ = routing_node.send_delete_success(request.dst.clone(),
                                                              request.src.clone(),
-                                                             data.name(),
+                                                             data.identifier(),
                                                              *msg_id);
                     // TODO: Send a refresh message.
                     return Ok(());
                 }
             }
         }
-        trace!("DM sending delete_failure for {}", new_data.identifier());
+        trace!("DM sending delete_failure for {:?}", new_data.identifier());
         try!(routing_node.send_delete_failure(request.dst.clone(),
                                               request.src.clone(),
                                               request.clone(),
@@ -190,20 +189,21 @@ impl DataManager {
 
     pub fn handle_refresh(&mut self,
                           routing_node: &RoutingNode,
-                          serialised_msg: Vec<u8>)
+                          serialised_msg: &Vec<u8>)
                           -> Result<(), InternalError> {
-        let data = try!(serialisation::deserialise(&serialised_msg));
+        let refresh_data = try!(serialisation::deserialise::<Refresh>(serialised_msg));
+        let data = refresh_data.0;
         match routing_node.close_group(data.name()) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
-        if let Ok(Data::StructuredData(struct_data)) = self.chunk_store.get(&data.identifier()) {
+        if let Ok(Data::Structured(struct_data)) = self.chunk_store.get(&data.identifier()) {
             // Make sure we don't 'update' to a lower version due to delayed accumulation.
             // We do accept any greater version, however, in case we missed some update,
             // e. g. because an earlier refresh hasn't accumulated yet. The validity of the
             // new data is not checked here: If the group has reached consensus, a quorum
             // has already been reached by the nodes that checked it.
-            let new_struct_data = if let Data::StructuredData(ref sd) = data {
+            let new_struct_data = if let Data::Structured(ref sd) = data {
                 sd
             } else {
                 unreachable!("Logic Error - Investigate !!");
@@ -219,11 +219,11 @@ impl DataManager {
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain data for which we're still in the close group
-        let data_ids = self.chunk_store.names();
+        let data_ids = self.chunk_store.keys();
         for data_id in data_ids {
             match routing_node.close_group(data_id.name()) {
                 Ok(None) => {
-                    trace!("{} added. No longer a DM for {}", node_name, data_id);
+                    trace!("{} added. No longer a DM for {:?}", node_name, data_id);
                     let _ = self.chunk_store.delete(&data_id);
                 }
                 Ok(Some(_)) => {
@@ -232,14 +232,14 @@ impl DataManager {
                                       MessageId::from_added_node(*node_name))
                 }
                 Err(error) => {
-                    error!("Failed to get close group: {:?} for {}", error, data_id);
+                    error!("Failed to get close group: {:?} for {:?}", error, data_id);
                 }
             }
         }
     }
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        for data_id in self.chunk_store.names() {
+        for data_id in self.chunk_store.keys() {
             self.send_refresh(routing_node,
                               &data_id,
                               MessageId::from_lost_node(*node_name));
@@ -247,8 +247,8 @@ impl DataManager {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    pub fn get_stored_names(&self) -> Vec<XorName> {
-        self.chunk_store.names()
+    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
+        self.chunk_store.keys()
     }
 
     fn send_refresh(&self,
@@ -260,7 +260,7 @@ impl DataManager {
             _ => return,
         };
 
-        let src = Authority::NaeManager(*data_id.name());
+        let src = Authority::NaeManager(data_id.name());
         let refresh = Refresh(data);
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("DM sending refresh for {:?}", data_id);

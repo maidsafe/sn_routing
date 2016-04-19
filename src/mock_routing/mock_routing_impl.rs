@@ -18,7 +18,7 @@
 use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent,
+use routing::{Authority, Data, DataIdentifier, Event, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::sync::mpsc;

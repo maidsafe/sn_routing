@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
+use routing::DataIdentifier;
 use safe_vault::{Config, Vault};
 use xor_name::XorName;
 
@@ -54,7 +55,7 @@ impl TestNode {
         self.handle.endpoint()
     }
 
-    pub fn get_stored_names(&self) -> Vec<XorName> {
+    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.vault.get_stored_names()
     }
 

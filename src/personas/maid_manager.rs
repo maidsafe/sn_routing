@@ -17,13 +17,13 @@
 
 use std::mem;
 use std::convert::From;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation;
-use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestContent,
+use routing::{ImmutableData, StructuredData, Authority, Data, MessageId,
               RequestMessage, DataIdentifier};
 use utils;
 use vault::RoutingNode;
@@ -118,7 +118,7 @@ impl MaidManager {
                 // Send success response back to client
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, *data_id, *msg_id);
+                let _ = routing_node.send_put_success(src, dst, data_id.clone(), *msg_id);
                 Ok(())
             }
             None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
@@ -148,10 +148,14 @@ impl MaidManager {
 
     pub fn handle_refresh(&mut self,
                           routing_node: &RoutingNode,
-                          maid_name: XorName,
-                          account: Account) {
+                          serialised_msg: &Vec<u8>)
+                          -> Result<(), InternalError> {
+        let refresh_data = try!(serialisation::deserialise::<Refresh>(serialised_msg));
+        let maid_name = refresh_data.0;
+        let account = refresh_data.1;
+
         match routing_node.close_group(maid_name) {
-            Ok(None) | Err(_) => return,
+            Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
         match self.accounts.entry(maid_name) {
@@ -164,6 +168,7 @@ impl MaidManager {
                 }
             }
         }
+        Ok(())
     }
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {

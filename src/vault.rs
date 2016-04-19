@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::HashSet;
 #[cfg(not(feature = "use-mock-crust"))]
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
@@ -25,7 +24,6 @@ use std::sync::mpsc::Receiver;
 use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
-use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, Event, RequestContent, RequestMessage,
               ResponseContent, ResponseMessage, RoutingMessage};
 use xor_name::XorName;
@@ -36,8 +34,6 @@ use personas::data_manager::DataManager;
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
-const PMID_NODE_ALLOWANCE: f64 = 0.6;
-const STUCTURED_DATA_MANAGER_ALLOWANCE: f64 = 0.3;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;
@@ -67,7 +63,7 @@ fn init_components(optional_config: Option<Config>)
         Some(config) => config,
         None => try!(config_handler::read_config_file()),
     };
-    let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY) as f64;
+    let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
 
     Ok((MaidManager::new(), try!(DataManager::new(max_capacity))))
 }
@@ -147,15 +143,8 @@ impl Vault {
 
     /// Get the names of all the data chunks stored in a personas' chunk store.
     #[cfg(feature = "use-mock-crust")]
-    pub fn get_stored_names(&self) -> Vec<XorName> {
-        self.pmid_node
-            .get_stored_names()
-            .iter()
-            .chain(self.data_manager
-                       .get_stored_names()
-                       .iter())
-            .cloned()
-            .collect()
+    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
+        self.data_manager.get_stored_names()
     }
 
     /// Get the number of put requests the network processed for the given client.
@@ -179,9 +168,6 @@ impl Vault {
         } {
             warn!("Failed to handle event: {:?}", error);
         }
-
-        self.immutable_data_manager.check_timeout(routing_node);
-        self.pmid_manager.check_timeout(routing_node);
     }
 
     fn on_request(&mut self,
@@ -223,12 +209,12 @@ impl Vault {
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
              &RequestContent::Refresh(ref serialised_msg, _)) => {
-                self.maid_manager.handle_refresh(serialised_msg);
+                self.maid_manager.handle_refresh(routing_node, serialised_msg)
             }
             (&Authority::NaeManager(_),
              &Authority::NaeManager(_),
              &RequestContent::Refresh(ref serialised_msg, _)) => {
-                self.data_manager.handle_refresh(serialised_msg);
+                self.data_manager.handle_refresh(routing_node, serialised_msg)
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),

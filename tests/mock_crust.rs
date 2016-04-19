@@ -55,7 +55,7 @@ mod test {
     use mock_crust_detail::test_client::TestClient;
     use rand::{random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{self, Data, DataRequest, ImmutableData, ImmutableDataType, StructuredData};
+    use routing::{Data, DataIdentifier, ImmutableData, StructuredData};
     use routing::mock_crust::{self, Network};
     use safe_vault::Config;
     use sodiumoxide::crypto::sign;
@@ -77,40 +77,26 @@ mod test {
 
     /// Checks that the given `nodes` store the expected number of copies of the given data.
     fn check_data(all_data: Vec<Data>, nodes: &[TestNode]) {
-        let mut data_count: HashMap<XorName, usize> = HashMap::new();
-        for name in nodes.iter().flat_map(TestNode::get_stored_names) {
-            *data_count.entry(name).or_insert(0) += 1;
+        let mut data_count: HashMap<DataIdentifier, usize> = HashMap::new();
+        for data_id in nodes.iter().flat_map(TestNode::get_stored_names) {
+            *data_count.entry(data_id).or_insert(0) += 1;
         }
 
         for data in all_data {
             match data {
                 Data::Immutable(data) => {
-                    assert_eq!(ImmutableDataType::Normal, *data.get_type_tag());
-                    let normal_name = data.name();
-                    let backup_name = routing::normal_to_backup(&normal_name);
-                    let sacrificial_name = routing::normal_to_sacrificial(&normal_name);
-                    let normal_count = *data_count.get(&normal_name).unwrap_or(&0);
-                    assert!(2 <= normal_count,
-                            "Only {} copies of normal immutable data {:?}",
-                            normal_count,
-                            normal_name);
-                    let backup_count = *data_count.get(&backup_name).unwrap_or(&0);
-                    assert!(2 <= backup_count,
-                            "Only {} copies of backup immutable data {:?}",
-                            backup_count,
-                            backup_name);
-                    let sacrificial_count = *data_count.get(&sacrificial_name).unwrap_or(&0);
-                    assert!(2 <= sacrificial_count,
-                            "Only {} copies of sacrificial immutable data {:?}",
-                            sacrificial_count,
-                            sacrificial_name);
+                    let count = *data_count.get(&data.identifier()).unwrap_or(&0);
+                    assert!(5 <= count,
+                            "Only {} copies of immutable data {:?}.",
+                            count,
+                            data.identifier());
                 }
                 Data::Structured(data) => {
-                    let count = *data_count.get(&data.name()).unwrap_or(&0);
+                    let count = *data_count.get(&data.identifier()).unwrap_or(&0);
                     assert!(5 <= count,
                             "Only {} copies of structured data {:?}.",
                             count,
-                            data.name());
+                            data.identifier());
                 }
                 _ => unreachable!(),
             }
@@ -119,6 +105,7 @@ mod test {
 
     #[test]
     fn maid_manager_churn() {
+        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -153,15 +140,15 @@ mod test {
                 }
             }
             poll::nodes_and_client(&mut nodes, &mut client);
-            assert!(GROUP_SIZE - 3 <=
-                    nodes.iter()
+            let count = nodes.iter()
                          .filter(|node| {
                              match node.get_maid_manager_put_count(client.name()) {
                                  None => false,
                                  Some(count) => count == put_count,
                              }
                          })
-                         .count());
+                         .count();
+            assert!(GROUP_SIZE - 3 <= count, "put_count {} only found with {} nodes", put_count, count);
         }
     }
 
@@ -185,8 +172,7 @@ mod test {
         for i in 0..10 {
             for _ in 0..(cmp::min(DATA_PER_ITER, DATA_COUNT - all_data.len())) {
                 let data =
-                    Data::Immutable(ImmutableData::new(ImmutableDataType::Normal,
-                                       mock_crust_detail::generate_random_vec_u8(10)));
+                    Data::Immutable(ImmutableData::new(mock_crust_detail::generate_random_vec_u8(10)));
                 trace!("Putting data {:?}.", data.name());
                 client.put(data.clone());
                 all_data.push(data);
@@ -212,8 +198,7 @@ mod test {
         for data in &all_data {
             match *data {
                 Data::Immutable(ref sent_data) => {
-                    match client.get(DataRequest::Immutable(sent_data.name(),
-                                                            sent_data.get_type_tag().clone()),
+                    match client.get(sent_data.identifier(),
                                      &mut nodes) {
                         Data::Immutable(recovered_data) => {
                             assert_eq!(recovered_data, *sent_data);
@@ -228,6 +213,7 @@ mod test {
 
     #[test]
     fn structured_data_churn() {
+        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -289,9 +275,7 @@ mod test {
             for data in &all_data {
                 match *data {
                     Data::Structured(ref sent_structured_data) => {
-                        match client.get(DataRequest::Structured(sent_structured_data.get_identifier()
-                                                                                     .clone(),
-                                                                 sent_structured_data.get_type_tag()),
+                        match client.get(sent_structured_data.identifier(),
                                          &mut nodes) {
                             Data::Structured(recovered_structured_data) => {
                                 assert_eq!(recovered_structured_data.name(),
@@ -306,6 +290,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn data_confirmation() {
         let network = Network::new();
@@ -330,7 +315,7 @@ mod test {
             if random::<bool>() {
                 let content =
                     mock_crust_detail::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
-                let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
+                let immutable_data = ImmutableData::new(content);
                 all_data.push(Data::Immutable(immutable_data));
             } else {
                 let structured_data = random_structured_data(structured_range.ind_sample(&mut rng),
@@ -346,8 +331,7 @@ mod test {
         for data in &all_data {
             match *data {
                 Data::Immutable(ref sent_immutable_data) => {
-                    match client.get(DataRequest::Immutable(data.name(),
-                                                            ImmutableDataType::Normal),
+                    match client.get(DataIdentifier::Immutable(data.name()),
                                      &mut nodes) {
                         Data::Immutable(recovered_immutable_data) => {
                             assert_eq!(recovered_immutable_data.name(), sent_immutable_data.name());
@@ -359,7 +343,7 @@ mod test {
                     all_immutable_data.push(data.clone());
                 }
                 Data::Structured(ref sent_structured_data) => {
-                    match client.get(DataRequest::Structured(sent_structured_data.get_identifier()
+                    match client.get(DataIdentifier::Structured(sent_structured_data.get_identifier()
                                                                                  .clone(),
                                                              sent_structured_data.get_type_tag()),
                                      &mut nodes) {
@@ -437,7 +421,7 @@ mod test {
         let mut index = 0;
         loop {
             content[index] ^= 1u8;
-            let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content.clone());
+            let immutable_data = ImmutableData::new(content.clone());
             match client.put_and_verify(Data::Immutable(immutable_data), &mut nodes) {
                 Ok(()) => trace!("\nStored chunk {}\n=================\n", index),
                 Err(response) => {
@@ -451,6 +435,7 @@ mod test {
         }
     }
 
+    #[ignore]
     #[test]
     fn put_get_when_churn() {
         let network = Network::new();
@@ -468,7 +453,7 @@ mod test {
 
         for _ in 0..put_requests {
             let content = mock_crust_detail::generate_random_vec_u8(range.ind_sample(&mut rng));
-            let immutable_data = ImmutableData::new(ImmutableDataType::Normal, content);
+            let immutable_data = ImmutableData::new(content);
             all_immutable_data.push(immutable_data);
         }
 
@@ -489,8 +474,7 @@ mod test {
         poll::nodes_and_client(&mut nodes, &mut client);
         // Churn every 10 put_requests, thats 10 churn in total
         for i in 0..all_immutable_data.len() {
-            match client.get(DataRequest::Immutable(all_immutable_data[i].name(),
-                                                    ImmutableDataType::Normal),
+            match client.get(DataIdentifier::Immutable(all_immutable_data[i].name()),
                              &mut nodes) {
                 Data::Immutable(immutable_data) => {
                     assert_eq!(immutable_data.name(), all_immutable_data[i].name());
@@ -509,41 +493,12 @@ mod test {
         }
         poll::nodes_and_client(&mut nodes, &mut client);
 
-        let mut all_immutable_data_names = all_immutable_data.iter()
+        let all_data = all_immutable_data.iter()
                                                              .cloned()
                                                              .map(|immutable_data| {
-                                                                 immutable_data.name().clone()
+                                                                 Data::Immutable(immutable_data)
                                                              })
-                                                             .collect::<Vec<XorName>>();
-
-        all_immutable_data_names.sort();
-
-        let mut all_stored_names = Vec::new();
-
-        for node in &nodes {
-            all_stored_names.append(&mut node.get_stored_names());
-        }
-
-        all_stored_names.sort();
-
-        all_stored_names.retain(|&stored_name| {
-            all_immutable_data_names.iter()
-                                    .find(|&&immutable_data_name| {
-                                        immutable_data_name == stored_name
-                                    })
-                                    .is_some()
-        });
-
-        assert!(all_stored_names.len() >= 2 * put_requests);
-
-        all_stored_names.dedup();
-
-        assert_eq!(all_immutable_data_names.iter()
-                                           .zip(all_stored_names)
-                                           .filter(|&(data_name, stored_name)| {
-                                               *data_name == stored_name
-                                           })
-                                           .count(),
-                   put_requests);
+                                                             .collect::<Vec<Data>>();
+        check_data(all_data, &nodes);
     }
 }
