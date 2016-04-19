@@ -23,7 +23,6 @@ use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, P
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use safe_network_common::client_errors::MutationError;
-use sodiumoxide::crypto::sign;
 use xor_name::XorName;
 
 use super::test_node::TestNode;
@@ -132,6 +131,12 @@ impl TestClient {
         unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
     }
 
+    pub fn delete(&mut self, data: Data) {
+        let dst = Authority::NaeManager(data.name());
+        let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_delete_request(dst, data, request_message_id));
+    }
+
     pub fn put_and_verify(&mut self,
                           data: Data,
                           nodes: &mut [TestNode])
@@ -169,8 +174,8 @@ impl TestClient {
         }
     }
 
-    pub fn signing_private_key(&self) -> &sign::SecretKey {
-        self.full_id.signing_private_key()
+    pub fn full_id(&self) -> &FullId {
+        &self.full_id
     }
 
     pub fn name(&self) -> &XorName {
