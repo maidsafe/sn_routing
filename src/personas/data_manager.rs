@@ -25,7 +25,7 @@ use safe_network_common::client_errors::{MutationError, GetError};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
-const MAX_FULL_RATIO: f32 = 0.5;
+const MAX_FULL_PERCENT: u64 = 50;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 struct Refresh(Data);
@@ -90,8 +90,7 @@ impl DataManager {
         }
 
         // Check there aren't too many full nodes in the close group to this data
-        if self.chunk_store.used_space() as f32 / self.chunk_store.max_space() as f32 >
-           MAX_FULL_RATIO {
+        if self.chunk_store.used_space() > (self.chunk_store.max_space() / 100) * MAX_FULL_PERCENT {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = routing_node.send_put_failure(response_src,

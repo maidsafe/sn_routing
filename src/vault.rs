@@ -168,7 +168,7 @@ impl Vault {
             Event::Connected => self.on_connected(),
             Event::Disconnected => self.on_disconnected(),
         } {
-            warn!("Failed to handle event: {:?}", error);
+            debug!("Failed to handle event: {:?}", error);
         }
     }
 

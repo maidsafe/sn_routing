@@ -95,8 +95,8 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
     }
 }
 
-pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>) {
-    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
+    let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
     nodes.push(TestNode::new(network, Some(config.clone()), None));
 }
 
