@@ -56,10 +56,10 @@ extern crate chunk_store;
 extern crate config_file_handler;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate ctrlc;
-// #[cfg(feature = "use-mock-crust")]
-// extern crate kademlia_routing_table;
-// #[cfg(test)]
-// extern crate rand;
+#[cfg(all(test, not(feature = "use-mock-crust")))]
+extern crate kademlia_routing_table;
+#[cfg(all(test, not(feature = "use-mock-crust")))]
+extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
 extern crate safe_network_common;
