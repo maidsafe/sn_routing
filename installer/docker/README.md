@@ -20,23 +20,26 @@ To build the image from source:
 docker build -t msafe/vault path/to/safe_vault/Dockerfile
 ```
 
-## Configuring the container
+## Running the container
 
-The vault process inside the container listens for incomming connections
-on port 5000 (both TCP and UDP) and runs local service discovery on port 5100.
-These ports can be mapped to any ports on the host machine using Docker's port
-publishing feature:
+To run the container in "interactive" mode, so we can see its output in stdout/stderr:
 
 ```
-docker run --rm -it -p 6000:5000 msafe/vault
+docker run --rm -it -P msafe/vault
 ```
 
-(Note: `-it` means the container will run in interactive mode and output to stdout/stderr on the host machine. `--rm` means the container will be removed after it stops)
+To run it in detached (daemonized) mode:
 
-Here, we published the listening port to port 6000 on the host machine and we
-didn't publish the local discovery port (so only vaults running in the same docker network can use it).
+```
+docker run -d -P msafe/vault
+```
 
-The vault itself can be configured using environment variables:
+Note the `-P` switch tells docker to publish exposed ports. This is necessary so
+other nodes and clients can connect to this vault.
+
+## Configuring the vault
+
+The vault can be configured using environment variables:
 
 - `VAULT_WALLET_ADDRESS` - wallet adress
 - `VAULT_MAX_CAPACITY` - maximum storage capacity (in bytes)
@@ -44,7 +47,7 @@ The vault itself can be configured using environment variables:
 Example:
 
 ```
-docker run --rm -it -p 5000:5000 -e "VAULT_WALLET_ADDRESS=xyz" -e "VAULT_MAX_CAPACITY=1073741824" msafe/vault
+docker run --rm -it -P -e "VAULT_WALLET_ADDRESS=xyz" -e "VAULT_MAX_CAPACITY=1073741824" msafe/vault
 ```
 
 ## Deploying to cloud
@@ -90,7 +93,7 @@ This will export a set of environment variables to the current shell telling `do
 ### Install and run Safe Vault container on the droplet
 
 ```
-docker run -d -p 5000:5000 --name safe-vault --restart=unless-stopped msafe/vault
+docker run -d -P --name safe-vault --restart=unless-stopped msafe/vault
 ```
 
 The above command runs detached container named "safe-vault" on port 5000 and instructs it to restart automatically when the droplet reboots.

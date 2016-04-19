@@ -1,5 +1,5 @@
 FROM debian:jessie
-MAINTAINER Adam Cigánek <adam.ciganek@maidsafe.net>
+MAINTAINER MaidSafe Developers <dev@maidsafe.net>
 
 EXPOSE 5000 5100
 ENV RUST_LOG=error
