@@ -103,7 +103,7 @@ impl DataIdentifier {
     /// DataIdentifier name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
+            DataIdentifier::Structured(name, _) => name,
             DataIdentifier::Immutable(name) |
             DataIdentifier::ImmutableBackup(name) |
             DataIdentifier::ImmutableSacrificial(name) |
