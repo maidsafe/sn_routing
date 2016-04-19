@@ -1,7 +1,9 @@
 # Routing - Change Log
 
-## [0.16.0]
+## [0.16.1]
+- Bug fix: DataIdentifier now correctly returns the structured data computed name in its name() function
 
+## [0.16.0]
 - Add `identifier()` method to all data elements (type + name)
 - All `ImmutableData` types now concrete (not variants)
 
