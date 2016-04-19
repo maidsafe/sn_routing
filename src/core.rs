@@ -47,7 +47,7 @@ use xor_name::XorName;
 
 use action::Action;
 use authority::Authority;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -419,7 +419,7 @@ impl Core {
                                      self.routing_table.len());
             trace!(" -{}- ",
                    iter::repeat('-').take(status_str.len()).collect::<String>());
-            error!("| {} |", status_str); // Temporarily error for ci_test.
+            info!("| {} |", status_str); // Temporarily error for ci_test.
             trace!(" -{}- ",
                    iter::repeat('-').take(status_str.len()).collect::<String>());
         }
@@ -896,7 +896,9 @@ impl Core {
         self.add_to_cache(signed_msg.content());
 
         if relay {
-            try!(self.send(signed_msg.clone(), hop_name, false));
+            if let Err(err) = self.send(signed_msg.clone(), hop_name, false) {
+                info!("Failed relaying message: {:?}", err);
+            }
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
@@ -981,7 +983,7 @@ impl Core {
     fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
         let content = match *routing_msg {
             RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataRequest::Immutable(ref name, _), id),
+                    content: RequestContent::Get(DataIdentifier::Immutable(ref name), id),
                     ..
                 }) => {
                 match self.data_cache.get(&name) {
@@ -1221,7 +1223,7 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => error!("Running listener."), // Temporarily error for ci_test.
+            Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
             Err(err) => warn!("Failed to start listening: {:?}", err),
         }
     }
@@ -1232,7 +1234,7 @@ impl Core {
             error!("LostPeer fired with our crust peer id");
             return;
         }
-        error!("Received LostPeer - {:?}", peer_id);
+        trace!("Received LostPeer - {:?}", peer_id);
         if !self.client_restriction {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
@@ -1310,7 +1312,7 @@ impl Core {
         }
 
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
-            error!("Connection to {:?} failed. Dropping peer.", peer_id);
+            info!("Connection to {:?} failed. Dropping peer.", peer_id);
             self.crust_service.disconnect(peer_id);
             self.handle_lost_peer(*peer_id);
             return Err(err.into());
@@ -1543,7 +1545,7 @@ impl Core {
                        peer_id);
                 return self.disconnect_peer(&peer_id);
             }
-            Some(AddedNodeDetails { must_notify, common_groups }) => {
+            Some(AddedNodeDetails { must_notify, .. }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
@@ -1552,11 +1554,11 @@ impl Core {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
                 }
-                if common_groups {
-                    let event = Event::NodeAdded(name);
-                    if let Err(err) = self.event_sender.send(event) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
+                // TODO: Figure out whether common_groups makes sense: Do we need to send a
+                // NodeAdded event for _every_ new peer?
+                let event = Event::NodeAdded(name);
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
             }
         }
@@ -2034,7 +2036,7 @@ impl Core {
             } else if let Some(&public_id) = self.node_id_cache.get(&dst_name) {
                 public_id
             } else {
-                error!("Cannot answer GetPublicId: {:?} not found in the routing table.",
+                debug!("Cannot answer GetPublicId: {:?} not found in the routing table.",
                        dst_name);
                 return Err(RoutingError::RejectedPublicId);
             };
@@ -2326,12 +2328,12 @@ impl Core {
                                                           self.crust_service.id(),
                                                           target.peer_id));
                 if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
-                    error!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                     result = Err(err);
                 }
             } else {
                 if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
-                    error!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                     result = Err(err);
                 }
             }

@@ -17,23 +17,26 @@
 
 use std::fmt::{self, Debug, Formatter};
 
-use rustc_serialize::{Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encoder};
 use xor_name::{XorName, XOR_NAME_LEN};
 use sodiumoxide::crypto::hash::sha512;
+use data::DataIdentifier;
 
-const NORMAL_TO_BACKUP: [u8; XOR_NAME_LEN] =
-    [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const NORMAL_TO_BACKUP: [u8; XOR_NAME_LEN] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 const NORMAL_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] = [255; XOR_NAME_LEN];
 
-const BACKUP_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] =
-    [127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-     255, 255, 255, 255];
+const BACKUP_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] = [127, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
+                                                   255];
 
 fn xor(lhs: &[u8; XOR_NAME_LEN], mut rhs: [u8; XOR_NAME_LEN]) -> XorName {
     for i in 0..XOR_NAME_LEN {
@@ -43,36 +46,19 @@ fn xor(lhs: &[u8; XOR_NAME_LEN], mut rhs: [u8; XOR_NAME_LEN]) -> XorName {
     XorName(rhs)
 }
 
-#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable, Debug)]
-/// The type of an individual copy of immutable data.
-pub enum ImmutableDataType {
-    /// Used in normal operation. The name of the data is the SHA512 hash of its value.
-    Normal,
-    /// Used only when no normal copies are left, or if copies need to be relocated. Its name is
-    /// `hash(hash(value))`.
-    Backup,
-    /// Only kept if there is unused space left. If storage space becomes scarce, this copy will be
-    /// sacrificed. Its name is `hash(hash(hash(value)))`.
-    Sacrificial,
-}
-
 /// An immutable chunk of data.
 ///
 /// Its name is computed from its content by applying the SHA512 hash up to three times, depending
 /// on the `ImmutableDataType`.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
 pub struct ImmutableData {
-    type_tag: ImmutableDataType,
     value: Vec<u8>,
 }
 
 impl ImmutableData {
-    /// Creates a new instance of ImmutableData
-    pub fn new(type_tag: ImmutableDataType, value: Vec<u8>) -> ImmutableData {
-        ImmutableData {
-            type_tag: type_tag,
-            value: value,
-        }
+    /// Creates a new instance of `ImmutableData`
+    pub fn new(value: Vec<u8>) -> ImmutableData {
+        ImmutableData { value: value }
     }
 
     /// Returns the value
@@ -80,63 +66,135 @@ impl ImmutableData {
         &self.value
     }
 
-    /// Returns the type
-    pub fn get_type_tag(&self) -> &ImmutableDataType {
-        &self.type_tag
-    }
 
-    /// Returns name ensuring invariant
+    /// Returns name ensuring invariant.
     pub fn name(&self) -> XorName {
-        let digest = sha512::hash(&self.value);
-        match self.type_tag {
-            ImmutableDataType::Normal => XorName(digest.0),
-            ImmutableDataType::Backup => xor(&digest.0, NORMAL_TO_BACKUP),
-            ImmutableDataType::Sacrificial => xor(&digest.0, NORMAL_TO_SACRIFICIAL),
-
-        }
+        XorName(sha512::hash(&self.value).0)
     }
 
-    /// Return size of contained value.
+    /// Returns size of contained value.
     pub fn payload_size(&self) -> usize {
         self.value.len()
+    }
+
+    /// Returns `DataIdentifier` for this data element.
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::Immutable(self.name())
     }
 }
 
 impl Debug for ImmutableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "ImmutableData {{ {:?}, {} }}",
-               self.type_tag,
-               self.name())
+        write!(formatter, "ImmutableData {:?}", self.name())
     }
 }
 
-/// Convert normal ImmutableData name to backup name.
+/// Backup types
+#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
+pub struct ImmutableDataBackup {
+    value: ImmutableData,
+}
+
+impl ImmutableDataBackup {
+    /// Creates a new instance of `ImmutableDataiBackup`
+    pub fn new(value: ImmutableData) -> ImmutableDataBackup {
+        ImmutableDataBackup { value: value }
+    }
+
+    /// Returns the value.
+    pub fn value(&self) -> &ImmutableData {
+        &self.value
+    }
+
+
+    /// Returns name ensuring invariant.
+    pub fn name(&self) -> XorName {
+        xor(&self.value.name().0, NORMAL_TO_BACKUP)
+    }
+
+    /// Returns size of contained value.
+    pub fn payload_size(&self) -> usize {
+        self.value.value.len()
+    }
+
+    /// Returns `DataIdentifier` for this data element.
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::ImmutableBackup(self.name())
+    }
+}
+
+impl Debug for ImmutableDataBackup {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "ImmutableDataBackup {:?}", self.name())
+    }
+}
+
+/// Sacrificial types
+#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
+pub struct ImmutableDataSacrificial {
+    value: ImmutableData,
+}
+
+impl ImmutableDataSacrificial {
+    /// Creates a new instance of `ImmutableDataSacrificial`.
+    pub fn new(value: ImmutableData) -> ImmutableDataSacrificial {
+        ImmutableDataSacrificial { value: value }
+    }
+
+    /// Returns the value.
+    pub fn value(&self) -> &ImmutableData {
+        &self.value
+    }
+
+
+    /// Returns name ensuring invariant.
+    pub fn name(&self) -> XorName {
+        xor(&self.value.name().0, NORMAL_TO_SACRIFICIAL)
+    }
+
+    /// Returns size of contained value.
+    pub fn payload_size(&self) -> usize {
+        self.value.value.len()
+    }
+
+    /// Returns `DataIdentifier` for this data element.
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::ImmutableSacrificial(self.name())
+    }
+}
+
+impl Debug for ImmutableDataSacrificial {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "ImmutableDataSacrificial {:?}", self.name())
+    }
+}
+
+/// Converts normal `ImmutableData` name to backup name.
 pub fn normal_to_backup(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
 
-/// Convert backup ImmutableData name to normal name.
+/// Converts backup `ImmutableData` name to normal name.
 pub fn backup_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_BACKUP)
 }
 
-/// Convert normal ImmutableData name to sacrificial name.
+/// Converts normal `ImmutableData` name to sacrificial name.
 pub fn normal_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
 
-/// Convert sacrificial ImmutableData name to normal name.
+/// Converts sacrificial `ImmutableData` name to normal name.
 pub fn sacrificial_to_normal(name: &XorName) -> XorName {
     xor(&name.0, NORMAL_TO_SACRIFICIAL)
 }
 
-/// Convert backup ImmutableData name to sacrificial name.
+/// Converts backup `ImmutableData` name to sacrificial name.
 pub fn backup_to_sacrificial(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
 
-/// Convert sacrificial ImmutableData name to backup name.
+/// Converts sacrificial `ImmutableData` name to backup name.
 pub fn sacrificial_to_backup(name: &XorName) -> XorName {
     xor(&name.0, BACKUP_TO_SACRIFICIAL)
 }
@@ -166,7 +224,7 @@ mod test {
         let value = "immutable data value".to_owned().into_bytes();
 
         // Normal
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
         let expected_immutable_data_name = "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f\
                                             2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c\
@@ -175,31 +233,33 @@ mod test {
         assert_eq!(&expected_immutable_data_name, &immutable_data_name);
 
         // Backup
-        let immutable_data_backup = ImmutableData::new(ImmutableDataType::Backup, immutable_data.value().clone());
+        let immutable_data_backup = ImmutableDataBackup::new(immutable_data.clone());
         let immutable_data_backup_name = immutable_data_backup.name().0.as_ref().to_hex();
         let expected_immutable_data_backup_name = "1f1c9e526f47e36d782de464ea9df0a31a5c19c321f\
                                                    2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c\
                                                    2311650df1ee24107371935b6be88a10cbf4cd2f8f";
 
-        assert_eq!(&expected_immutable_data_backup_name, &immutable_data_backup_name);
+        assert_eq!(&expected_immutable_data_backup_name,
+                   &immutable_data_backup_name);
 
         // Sacrificial
-        let immutable_data_sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial,
-                                                            immutable_data.value().clone());
+        let immutable_data_sacrificial = ImmutableDataSacrificial::new(immutable_data.clone());
         let immutable_data_sacrificial_name = immutable_data_sacrificial.name().0.as_ref().to_hex();
-        let expected_immutable_data_sacrificial_name = "60e361ad90b81c9287d21b9b15620f5ce5a3e63cde0\
-                                                        d5a26370553225b2a65438ecbba3737ac1e7bd283d3\
-                                                        dcee9af20e11dbef8c8e6ca4941775ef340b32d070";
+        let expected_immutable_data_sacrificial_name = "60e361ad90b81c9287d21b9b15620f5ce5a3e63cde\
+                                                        0d5a26370553225b2a65438ecbba3737ac1e7bd283\
+                                                        d3dcee9af20e11dbef8c8e6ca4941775ef340b32d0\
+                                                        70";
 
-        assert_eq!(&expected_immutable_data_sacrificial_name, &immutable_data_sacrificial_name);
+        assert_eq!(&expected_immutable_data_sacrificial_name,
+                   &immutable_data_sacrificial_name);
     }
 
     #[test]
     fn name_is_xor_related_to_lesser_type_name() {
         let value = generate_random();
-        let normal = ImmutableData::new(ImmutableDataType::Normal, value.clone());
-        let backup = ImmutableData::new(ImmutableDataType::Backup, value.clone());
-        let sacrificial = ImmutableData::new(ImmutableDataType::Sacrificial, value.clone());
+        let normal = ImmutableData::new(value.clone());
+        let backup = ImmutableDataBackup::new(normal.clone());
+        let sacrificial = ImmutableDataSacrificial::new(normal.clone());
 
         assert_eq!(normal.name(), XorName(sha512::hash(&value).0));
         assert_eq!(normal.name(), backup_to_normal(&backup.name()));

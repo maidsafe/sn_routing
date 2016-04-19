@@ -1,5 +1,19 @@
 # Routing - Change Log
 
+## [0.16.0]
+
+- Add `identifier()` method to all data elements (type + name)
+- All `ImmutableData` types now concrete (not variants)
+
+## [0.15.1]
+- Fix a message handling bug.
+- Add `MessageId::zero` constructor.
+- Always send `NodeAdded` for a new peer, even if not in a common group.
+
+## [0.15.0]
+- Implement Rand for mock PeerId.
+- Add data name to Put, Post and Delete success responses.
+
 ## [0.14.0]
 - Add message id to Refresh messages
 - Node numbers only increase during node addition in churn for ci_test example

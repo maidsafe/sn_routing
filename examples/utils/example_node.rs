@@ -148,14 +148,15 @@ impl ExampleNode {
              Authority::NaeManager(_)) => {
                 self.process_failed_dm(&data.name(), msg.src.name(), id);
             }
-            (ResponseContent::PutSuccess(id),
+            (ResponseContent::PutSuccess(data_name, id),
              Authority::ClientManager(name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
-                    unwrap_result!(self.node.send_put_success(src, dst, id));
+                    unwrap_result!(self.node.send_put_success(src, dst, data_name, id));
                 }
             }
-            (ResponseContent::PutSuccess(id), Authority::NaeManager(name)) => {
-                trace!("Received PutSuccess with ID {:?}", id);
+            (ResponseContent::PutSuccess(data_name, id),
+             Authority::NaeManager(name)) => {
+                trace!("Received PutSuccess for {:?} with ID {:?}", data_name, id);
             }
             _ => unreachable!(),
         }
@@ -245,7 +246,7 @@ impl ExampleNode {
     fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                self.node.send_put_success(dst.clone(), src, id);
+                self.node.send_put_success(dst.clone(), src, data.name(), id);
                 if self.dm_accounts.contains_key(&data.name()) {
                     return; // Don't allow duplicate put.
                 }
@@ -291,8 +292,8 @@ impl ExampleNode {
                        self.get_debug_name(),
                        data.name(),
                        data);
+                self.node.send_put_success(dst, src, data.name(), id);
                 let _ = self.db.insert(data.name(), data);
-                self.node.send_put_success(dst, src, id);
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }

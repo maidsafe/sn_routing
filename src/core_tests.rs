@@ -24,7 +24,7 @@ use xor_name::XorName;
 use action::Action;
 use authority::Authority;
 use core::{Core, RoutingTable};
-use data::{Data, DataRequest, ImmutableData, ImmutableDataType};
+use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
@@ -189,7 +189,7 @@ impl TestClient {
 
     fn send_get_request(&mut self,
                         dst: Authority,
-                        data_request: DataRequest,
+                        data_request: DataIdentifier,
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
@@ -472,7 +472,7 @@ fn successful_put_request() {
     let (result_tx, _result_rx) = mpsc::channel();
     let dst = Authority::ClientManager(clients[0].name().clone());
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(ImmutableDataType::Normal, bytes);
+    let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
 
@@ -511,10 +511,10 @@ fn successful_get_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(ImmutableDataType::Normal, bytes);
+    let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
+    let data_request = DataIdentifier::Immutable(data.name().clone());
     let message_id = MessageId::new();
 
     assert!(clients[0]
@@ -587,10 +587,10 @@ fn failed_get_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(ImmutableDataType::Normal, bytes);
+    let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
+    let data_request = DataIdentifier::Immutable(data.name().clone());
     let message_id = MessageId::new();
 
     assert!(clients[0]
@@ -666,10 +666,10 @@ fn disconnect_on_get_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(ImmutableDataType::Normal, bytes);
+    let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataRequest::Immutable(data.name().clone(), ImmutableDataType::Normal);
+    let data_request = DataIdentifier::Immutable(data.name().clone());
     let message_id = MessageId::new();
 
     assert!(clients[0]

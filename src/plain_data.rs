@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::{self, Debug, Formatter};
-use rustc_serialize::{Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encoder};
 use xor_name::XorName;
+use data::DataIdentifier;
 use utils;
 
 /// Plain data with a name and a value.
@@ -53,6 +54,11 @@ impl PlainData {
     /// Returns the size of the contained data. Equivalent to `value().len()`.
     pub fn payload_size(&self) -> usize {
         self.value.len()
+    }
+
+    /// Returns `DataIdentifier` for this data element.
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::Plain(self.name())
     }
 }
 

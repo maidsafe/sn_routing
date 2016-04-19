@@ -26,7 +26,7 @@ use id::FullId;
 use action::Action;
 use event::Event;
 use core::Core;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::RequestContent;
@@ -106,15 +106,15 @@ impl Client {
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[allow(missing_docs)]
+    /// Poll and process all events in this client's `Core` instance.
     pub fn poll(&self) -> bool {
         self.core.borrow_mut().poll()
     }
 
-    /// Send a Get message with a DataRequest to an Authority, signed with given keys.
+    /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&mut self,
                             dst: Authority,
-                            data_request: DataRequest,
+                            data_request: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
         self.send_action(RequestContent::Get(data_request, message_id), dst)

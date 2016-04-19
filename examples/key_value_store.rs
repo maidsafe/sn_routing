@@ -66,7 +66,7 @@ use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use routing::{Data, DataRequest, PlainData};
+use routing::{Data, DataIdentifier, PlainData};
 use utils::{ExampleNode, ExampleClient};
 
 // ==========================   Program Options   =================================
@@ -206,7 +206,7 @@ impl KeyValueStore {
     /// Get data from the network.
     pub fn get(&mut self, what: String) {
         let name = KeyValueStore::calculate_key_name(&what);
-        let data = self.example_client.get(DataRequest::Plain(name));
+        let data = self.example_client.get(DataIdentifier::Plain(name));
         match data {
             Some(data) => {
                 let plain_data = if let Data::Plain(plain_data) = data {

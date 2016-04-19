@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::event_sender;
+use rand::{Rand, Rng};
 use std::cell::{RefCell, RefMut};
 use std::fmt;
 use std::io;
@@ -150,6 +151,12 @@ impl fmt::Debug for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Ignore the random number, as it would only clutter the debug output.
         write!(f, "PeerId({})", self.0)
+    }
+}
+
+impl Rand for PeerId {
+    fn rand<R: Rng>(rng: &mut R) -> PeerId {
+        PeerId(Rand::rand(rng), Rand::rand(rng))
     }
 }
 
