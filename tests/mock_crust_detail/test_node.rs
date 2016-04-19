@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
+use routing::DataIdentifier;
 use safe_vault::{Config, Vault};
 use xor_name::XorName;
 
@@ -54,8 +55,12 @@ impl TestNode {
         self.handle.endpoint()
     }
 
-    pub fn get_stored_names(&self) -> Vec<XorName> {
+    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.vault.get_stored_names()
+    }
+
+    pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
+        self.vault.get_maid_manager_put_count(client_name)
     }
 }
 
@@ -90,16 +95,14 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
     }
 }
 
-pub fn _add_node(network: &Network, nodes: &mut Vec<TestNode>) {
-    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
+    let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
     nodes.push(TestNode::new(network, Some(config.clone()), None));
-    poll::nodes(nodes);
 }
 
-pub fn _drop_node(nodes: &mut Vec<TestNode>, index: usize) {
+pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     drop(node);
-    _poll_all(nodes);
 }
 
 /// Process all events

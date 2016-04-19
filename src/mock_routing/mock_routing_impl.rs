@@ -18,7 +18,7 @@
 use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataRequest, Event, InterfaceError, MessageId, RequestContent,
+use routing::{Authority, Data, DataIdentifier, Event, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use sodiumoxide::crypto::hash::sha512;
 use std::sync::mpsc;
@@ -96,10 +96,10 @@ impl MockRoutingNodeImpl {
     }
 
     // -----------  the following methods are for testing purpose only   ------------- //
-    pub fn client_get(&mut self, src: Authority, data_request: DataRequest) {
+    pub fn client_get(&mut self, src: Authority, data_identifier: DataIdentifier) {
         let _ = self.send_request(src,
-                                  Authority::NaeManager(data_request.name()),
-                                  RequestContent::Get(data_request, MessageId::new()),
+                                  Authority::NaeManager(data_identifier.name()),
+                                  RequestContent::Get(data_identifier, MessageId::new()),
                                   "Mock Client Get Request");
     }
 
@@ -202,10 +202,10 @@ impl MockRoutingNodeImpl {
     pub fn send_get_request(&mut self,
                             src: Authority,
                             dst: Authority,
-                            data_request: DataRequest,
+                            data_identifier: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let content = RequestContent::Get(data_request, id);
+        let content = RequestContent::Get(data_identifier, id);
         let message = self.send_request(src, dst, content, "Mock Get Request");
         Ok(self.get_requests_given.push(message))
     }
@@ -273,10 +273,10 @@ impl MockRoutingNodeImpl {
     pub fn send_put_success(&mut self,
                             src: Authority,
                             dst: Authority,
-                            name: XorName,
+                            data_identifier: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let content = ResponseContent::PutSuccess(name, id);
+        let content = ResponseContent::PutSuccess(data_identifier, id);
         let message = self.send_response(src, dst, content, "Mock Put Success");
         Ok(self.put_successes_given.push(message))
     }
@@ -300,10 +300,10 @@ impl MockRoutingNodeImpl {
     pub fn send_post_success(&mut self,
                              src: Authority,
                              dst: Authority,
-                             name: XorName,
+                             data_identifier: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let content = ResponseContent::PostSuccess(name, id);
+        let content = ResponseContent::PostSuccess(data_identifier, id);
         let message = self.send_response(src, dst, content, "Mock Post Success");
         Ok(self.post_successes_given.push(message))
     }
@@ -327,10 +327,10 @@ impl MockRoutingNodeImpl {
     pub fn send_delete_success(&mut self,
                                src: Authority,
                                dst: Authority,
-                               name: XorName,
+                               data_identifier: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let content = ResponseContent::DeleteSuccess(name, id);
+        let content = ResponseContent::DeleteSuccess(data_identifier, id);
         let message = self.send_response(src, dst, content, "Mock Delete Success");
         Ok(self.delete_successes_given.push(message))
     }

@@ -1,5 +1,6 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+build = "build.rs"
 description = "This is Pre alpha, and not useful, no code worth looking at."
 documentation = "http://maidsafe.net/safe_vault/latest"
 homepage = "http://maidsafe.net"
@@ -8,17 +9,18 @@ name = "safe_vault"
 readme = "README.md"
 repository = "https://github.com/maidsafe/safe_vault"
 version = "0.5.0"
-build = "build.rs"
 
 [dependencies]
-chunk_store = "~0.3.0"
+chunk_store = "~0.4.0"
 clippy = {version = "~0.0.62", optional = true}
 config_file_handler = "~0.3.0"
 ctrlc = "~1.1.1"
-docopt = "~0.6.78"
+docopt = "~0.6.80"
+itertools = "~0.4.12"
+kademlia_routing_table = "~0.4.0"
 log = "~0.3.6"
 maidsafe_utilities = "~0.5.1"
-routing = "~0.15.0"
+routing = "~0.16.1"
 rustc-serialize = "~0.3.19"
 safe_network_common = "~0.1.1"
 sodiumoxide = "~0.0.10"
@@ -27,7 +29,6 @@ xor_name = "~0.1.0"
 safe_core = {version = "~0.14.2", optional = true}
 
 [dev-dependencies]
-kademlia_routing_table = "~0.4.0"
 rand = "~0.3.14"
 
 [build-dependencies]
