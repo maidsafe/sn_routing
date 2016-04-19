@@ -273,20 +273,20 @@ mod test {
             poll::nodes_and_client(&mut nodes, &mut client);
 
             check_data(all_data.clone(), &nodes);
+        }
 
-            for data in &all_data {
-                match *data {
-                    Data::Structured(ref sent_structured_data) => {
-                        match client.get(sent_structured_data.identifier(), &mut nodes) {
-                            Data::Structured(recovered_structured_data) => {
-                                assert_eq!(recovered_structured_data.name(),
-                                           sent_structured_data.name());
-                            }
-                            unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
+        for data in &all_data {
+            match *data {
+                Data::Structured(ref sent_structured_data) => {
+                    match client.get(sent_structured_data.identifier(), &mut nodes) {
+                        Data::Structured(recovered_structured_data) => {
+                            assert_eq!(recovered_structured_data.name(),
+                                       sent_structured_data.name());
                         }
+                        unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
                     }
-                    _ => unreachable!(),
                 }
+                _ => unreachable!(),
             }
         }
     }

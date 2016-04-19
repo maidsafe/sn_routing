@@ -190,8 +190,7 @@ impl DataManager {
                           routing_node: &RoutingNode,
                           serialised_msg: &Vec<u8>)
                           -> Result<(), InternalError> {
-        let refresh_data = try!(serialisation::deserialise::<Refresh>(serialised_msg));
-        let data = refresh_data.0;
+        let Refresh(data) = try!(serialisation::deserialise::<Refresh>(serialised_msg));
         match routing_node.close_group(data.name()) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
@@ -211,13 +210,13 @@ impl DataManager {
                 return Ok(());
             }
         }
-        // chunk_store::put() deletes the old data automatically
+        // chunk_store::put() deletes the old data automatically.
         Ok(try!(self.chunk_store
                     .put(&data.identifier(), &data)))
     }
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        // Only retain data for which we're still in the close group
+        // Only retain data for which we're still in the close group.
         let data_ids = self.chunk_store.keys();
         for data_id in data_ids {
             match routing_node.close_group(data_id.name()) {

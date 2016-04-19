@@ -24,8 +24,10 @@ use std::sync::mpsc::Receiver;
 use config_handler::{self, Config};
 #[cfg(not(feature = "use-mock-crust"))]
 use ctrlc::CtrlC;
-use routing::{Authority, Data, DataIdentifier, Event, RequestContent, RequestMessage,
-              ResponseContent, ResponseMessage, RoutingMessage};
+#[cfg(feature = "use-mock-crust")]
+use routing::DataIdentifier;
+use routing::{Authority, Data, Event, RequestContent, RequestMessage, ResponseContent,
+              ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
 use error::InternalError;

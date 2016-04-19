@@ -121,7 +121,7 @@ impl TestClient {
     }
 
     pub fn post(&mut self, data: Data) {
-        let dst = Authority::ClientManager(*self.public_id.name());
+        let dst = Authority::NaeManager(data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_post_request(dst, data, request_message_id));
     }

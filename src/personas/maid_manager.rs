@@ -150,9 +150,8 @@ impl MaidManager {
                           routing_node: &RoutingNode,
                           serialised_msg: &Vec<u8>)
                           -> Result<(), InternalError> {
-        let refresh_data = try!(serialisation::deserialise::<Refresh>(serialised_msg));
-        let maid_name = refresh_data.0;
-        let account = refresh_data.1;
+        let Refresh(maid_name, account) =
+            try!(serialisation::deserialise::<Refresh>(serialised_msg));
 
         match routing_node.close_group(maid_name) {
             Ok(None) | Err(_) => return Ok(()),
