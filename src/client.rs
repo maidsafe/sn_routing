@@ -114,10 +114,10 @@ impl Client {
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&mut self,
                             dst: Authority,
-                            data_request: DataIdentifier,
+                            data_id: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, message_id), dst)
+        self.send_action(RequestContent::Get(data_id, message_id), dst)
     }
 
     /// Add something to the network

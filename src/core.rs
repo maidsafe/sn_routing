@@ -448,7 +448,7 @@ impl Core {
 
     fn handle_action(&mut self, action: Action) -> bool {
         match action {
-            Action::NodeSendMessage { content, result_tx, } => {
+            Action::NodeSendMessage { content, result_tx } => {
                 if result_tx.send(match self.send_message(content) {
                                 Err(RoutingError::Interface(err)) => Err(err),
                                 Err(_err) => Ok(()),
@@ -458,7 +458,7 @@ impl Core {
                     return false;
                 }
             }
-            Action::ClientSendRequest { content, dst, result_tx, } => {
+            Action::ClientSendRequest { content, dst, result_tx } => {
                 if result_tx.send(if let Ok(src) = self.get_client_authority() {
                                 let request_msg = RequestMessage {
                                     content: content,
@@ -478,7 +478,7 @@ impl Core {
                     return false;
                 }
             }
-            Action::CloseGroup { name, result_tx, } => {
+            Action::CloseGroup { name, result_tx } => {
                 let close_group = self.routing_table
                                       .close_nodes(&name)
                                       .map(|infos| {
@@ -492,12 +492,12 @@ impl Core {
                     return false;
                 }
             }
-            Action::Name { result_tx, } => {
+            Action::Name { result_tx } => {
                 if result_tx.send(*self.name()).is_err() {
                     return false;
                 }
             }
-            Action::QuorumSize { result_tx, } => {
+            Action::QuorumSize { result_tx } => {
                 if result_tx.send(self.routing_table.dynamic_quorum_size()).is_err() {
                     return false;
                 }
@@ -520,14 +520,12 @@ impl Core {
             crust::Event::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
             crust::Event::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
-                    Err(RoutingError::FilterCheckFailed) | Ok(_) => (),
-                    Err(err) => error!("{:?} - {:?}", self, err),
+                    Err(RoutingError::FilterCheckFailed) |
+                    Ok(_) => (),
+                    Err(err) => debug!("{:?} - {:?}", self, err),
                 }
             }
-            crust::Event::ConnectionInfoPrepared(ConnectionInfoResult {
-                result_token,
-                result,
-            }) => {
+            crust::Event::ConnectionInfoPrepared(ConnectionInfoResult { result_token, result }) => {
                 self.handle_connection_info_prepared(result_token, result);
             }
         }
@@ -959,8 +957,7 @@ impl Core {
             Ok(())
         } else {
             match (signed_msg.content().src(), signed_msg.content().dst()) {
-                (&Authority::ManagedNode(_node_name),
-                 &Authority::NodeManager(_manager_name)) => {
+                (&Authority::ManagedNode(_node_name), &Authority::NodeManager(_manager_name)) => {
                     // TODO confirm sender is in our routing table
                     Ok(())
                 }
@@ -1095,9 +1092,7 @@ impl Core {
              Authority::NaeManager(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
-            (RequestContent::GetCloseGroup(message_id),
-             src,
-             Authority::NaeManager(dst_name)) => {
+            (RequestContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
             (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
@@ -1127,7 +1122,8 @@ impl Core {
             (RequestContent::GetPublicId,
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => self.handle_get_public_id(src_name, dst_name),
-            (RequestContent::GetPublicIdWithConnectionInfo { encrypted_connection_info, nonce_bytes, },
+            (RequestContent::GetPublicIdWithConnectionInfo { encrypted_connection_info,
+                                                             nonce_bytes },
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => {
                 self.handle_get_public_id_with_connection_info(encrypted_connection_info,
@@ -1165,15 +1161,20 @@ impl Core {
             (ResponseContent::GetNetworkName { relocated_id, close_group_ids, .. },
              Authority::NodeManager(_),
              dst) => self.handle_get_network_name_response(relocated_id, close_group_ids, dst),
-            (ResponseContent::GetPublicId { public_id, },
+            (ResponseContent::GetPublicId { public_id },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_response(public_id, dst_name)
             }
-            (ResponseContent::GetPublicIdWithConnectionInfo { public_id, encrypted_connection_info, nonce_bytes },
+            (ResponseContent::GetPublicIdWithConnectionInfo { public_id,
+                                                              encrypted_connection_info,
+                                                              nonce_bytes },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
-                self.handle_get_public_id_with_connection_info_response(public_id, encrypted_connection_info, nonce_bytes, dst_name)
+                self.handle_get_public_id_with_connection_info_response(public_id,
+                                                                        encrypted_connection_info,
+                                                                        nonce_bytes,
+                                                                        dst_name)
             }
             (ResponseContent::GetCloseGroup { close_group_ids, .. },
              Authority::NaeManager(_),
@@ -1182,10 +1183,10 @@ impl Core {
             (ResponseContent::PutSuccess(..), _, _) |
             (ResponseContent::PostSuccess(..), _, _) |
             (ResponseContent::DeleteSuccess(..), _, _) |
-            (ResponseContent::GetFailure{..}, _, _) |
-            (ResponseContent::PutFailure{..}, _, _) |
-            (ResponseContent::PostFailure{..}, _, _) |
-            (ResponseContent::DeleteFailure{..}, _, _) => {
+            (ResponseContent::GetFailure { .. }, _, _) |
+            (ResponseContent::PutFailure { .. }, _, _) |
+            (ResponseContent::PostFailure { .. }, _, _) |
+            (ResponseContent::DeleteFailure { .. }, _, _) => {
                 let event = Event::Response(response_msg);
                 let _ = self.event_sender.send(event);
                 Ok(())
@@ -1360,11 +1361,9 @@ impl Core {
                 }
                 Ok(())
             }
-            DirectMessage::ClientIdentify {
-                ref serialised_public_id,
-                ref signature,
-                client_restriction
-            } => {
+            DirectMessage::ClientIdentify { ref serialised_public_id,
+                                            ref signature,
+                                            client_restriction } => {
                 if let Ok(public_id) = Core::verify_signed_public_id(serialised_public_id,
                                                                      signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)

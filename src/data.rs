@@ -136,7 +136,7 @@ mod test {
             Ok(structured_data) => {
                 assert_eq!(structured_data.clone().name(),
                            Data::Structured(structured_data.clone()).name());
-                assert_eq!(DataIdentifier::Structured(structured_data.name(),
+                assert_eq!(DataIdentifier::Structured(*structured_data.get_identifier(),
                                                       structured_data.get_type_tag()),
                            structured_data.identifier());
             }

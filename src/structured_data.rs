@@ -111,7 +111,7 @@ impl StructuredData {
 
     /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Structured(self.name(), self.type_tag)
+        DataIdentifier::Structured(self.identifier, self.type_tag)
     }
 
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
