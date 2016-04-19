@@ -10,7 +10,7 @@ If (!$AdvancedInstallerPath) {
 
 # Update the PATH to allow us to use AdvancedInstaller and Rust
 $AdvancedInstallerPath = Join-Path $AdvancedInstallerPath bin\x86
-$env:PATH = "$env:RUST_NIGHTLY\bin;$AdvancedInstallerPath;$env:PATH"
+$env:PATH = "$AdvancedInstallerPath;$env:PATH"
 
 # Get the current project version and name
 $PSScriptRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
@@ -20,9 +20,13 @@ $ProjectVersion = (cargo pkgid) -replace '.*[:#](.*)', '$1'
 $ProjectName = (cargo pkgid) -replace '/*([^/#]*[/#])*((\w+)[:#]).*', '$3'
 
 # Build the main target
+$BuiltVault = "target\release\$ProjectName.exe"
+if (Test-Path $BuiltVault) {
+    Remove-Item $BuiltVault
+}
 cargo update
-cargo rustc --release '--' -C link-args="-Wl,--subsystem,windows"
-strip target\release\$ProjectName.exe
+cargo rustc --release --bin $ProjectName '--' -C link-args="-Wl,--subsystem,windows"
+strip $BuiltVault
 
 # Update the AdvancedInstaller project file and build the 32-bit or 64-bit package
 If ($env:PROCESSOR_ARCHITECTURE -eq "x86") {

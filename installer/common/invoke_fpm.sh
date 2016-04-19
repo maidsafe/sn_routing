@@ -362,14 +362,16 @@ function create_package {
     $OsxCommands \
     "$RootDir/target/release/$VaultName"=$VaultPath \
     "$RootDir/installer/common/$VaultName.crust.config"=$ConfigFilePath \
+    "$RootDir/installer/common/$VaultName.vault.config"=$ConfigFilePath \
     $ExtraFile1 \
     $ExtraFile2
 }
 
+BuiltVault="$RootDir/target/release/$VaultName"
+rm $BuiltVault || true
 cd "$RootDir"
 cargo update
 cargo build --release
-BuiltVault="$RootDir/target/release/$VaultName"
 strip "$BuiltVault"
 rm -rf "$RootDir/packages/$Platform" || true
 
@@ -386,6 +388,8 @@ then
   prepare_sysv_style_scripts
   create_package deb
   create_package rpm
+
+  printf '%s' "$Version" > "$RootDir/packages/$Platform/$VaultName"_latest_version.txt
 elif [[ "$1" == "osx" ]]
 then
   prepare_for_osx

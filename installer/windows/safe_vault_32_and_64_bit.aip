@@ -21,10 +21,10 @@
     <ROW Property="AppLogoIcon" Value="applogoicon" MultiBuildValue="DefaultBuild:maidsafe_triangle.png#x64_1:maidsafe_triangle.png" Type="1" MsiKey="AppLogoIcon"/>
     <ROW Property="CTRLS" Value="2"/>
     <ROW Property="Manufacturer" Value="SAFE"/>
-    <ROW Property="ProductCode" Value="1033:{F7A38A10-CEC2-4969-A03A-33A543BB80D3} " Type="16"/>
+    <ROW Property="ProductCode" Value="1033:{81BBD0B2-7C5F-49A8-A292-2A04D011E45A} " Type="16"/>
     <ROW Property="ProductLanguage" Value="1033"/>
     <ROW Property="ProductName" Value="SAFE Network Vault"/>
-    <ROW Property="ProductVersion" Value="0.2.0" Type="32"/>
+    <ROW Property="ProductVersion" Value="0.5.0" Type="32"/>
     <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND;AI_SETUPEXEPATH;SETUPEXEDIR"/>
     <ROW Property="UpgradeCode" Value="{5E9B0DC5-46AC-4ABA-B93E-5131A1EFED0A}"/>
     <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME#x64_1:Windows 9x/ME" ValueLocId="-"/>
@@ -54,8 +54,9 @@
     <ATTRIBUTE name="CurrentFeature" value="Vault"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFilesComponent">
-    <ROW File="safe_vault.crust.config" Component_="safe_vault.crust.config" FileName="SAFE_V~1.CON|safe_vault.crust.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.crust.config" SelfReg="false"/>
+    <ROW File="safe_vault.crust.config" Component_="safe_vault.crust.config" FileName="SAFE_V~1.CON|safe_vault.crust.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.crust.config" SelfReg="false" NextFile="safe_vault.vault.config"/>
     <ROW File="safe_vault.exe" Component_="safe_vault.exe" FileName="SAFE_V~1.EXE|safe_vault.exe" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\..\target\release\safe_vault.exe" SelfReg="false" NextFile="safe_vault.crust.config" DigSign="true"/>
+    <ROW File="safe_vault.vault.config" Component_="safe_vault.crust.config" FileName="SAFE_V~2.CON|safe_vault.vault.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.vault.config" SelfReg="false"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.BootstrOptComponent">
     <ROW BootstrOptKey="GlobalOptions" GeneralOptions="h" DownloadFolder="[AppDataFolder][|Manufacturer]\[|ProductName]\prerequisites"/>
