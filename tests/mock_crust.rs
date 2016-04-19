@@ -141,14 +141,17 @@ mod test {
             }
             poll::nodes_and_client(&mut nodes, &mut client);
             let count = nodes.iter()
-                         .filter(|node| {
-                             match node.get_maid_manager_put_count(client.name()) {
-                                 None => false,
-                                 Some(count) => count == put_count,
-                             }
-                         })
-                         .count();
-            assert!(GROUP_SIZE - 3 <= count, "put_count {} only found with {} nodes", put_count, count);
+                             .filter(|node| {
+                                 match node.get_maid_manager_put_count(client.name()) {
+                                     None => false,
+                                     Some(count) => count == put_count,
+                                 }
+                             })
+                             .count();
+            assert!(GROUP_SIZE - 3 <= count,
+                    "put_count {} only found with {} nodes",
+                    put_count,
+                    count);
         }
     }
 
@@ -198,8 +201,7 @@ mod test {
         for data in &all_data {
             match *data {
                 Data::Immutable(ref sent_data) => {
-                    match client.get(sent_data.identifier(),
-                                     &mut nodes) {
+                    match client.get(sent_data.identifier(), &mut nodes) {
                         Data::Immutable(recovered_data) => {
                             assert_eq!(recovered_data, *sent_data);
                         }
@@ -275,8 +277,7 @@ mod test {
             for data in &all_data {
                 match *data {
                     Data::Structured(ref sent_structured_data) => {
-                        match client.get(sent_structured_data.identifier(),
-                                         &mut nodes) {
+                        match client.get(sent_structured_data.identifier(), &mut nodes) {
                             Data::Structured(recovered_structured_data) => {
                                 assert_eq!(recovered_structured_data.name(),
                                            sent_structured_data.name());
@@ -331,8 +332,7 @@ mod test {
         for data in &all_data {
             match *data {
                 Data::Immutable(ref sent_immutable_data) => {
-                    match client.get(DataIdentifier::Immutable(data.name()),
-                                     &mut nodes) {
+                    match client.get(DataIdentifier::Immutable(data.name()), &mut nodes) {
                         Data::Immutable(recovered_immutable_data) => {
                             assert_eq!(recovered_immutable_data.name(), sent_immutable_data.name());
                             assert!(recovered_immutable_data.value() ==
@@ -494,11 +494,9 @@ mod test {
         poll::nodes_and_client(&mut nodes, &mut client);
 
         let all_data = all_immutable_data.iter()
-                                                             .cloned()
-                                                             .map(|immutable_data| {
-                                                                 Data::Immutable(immutable_data)
-                                                             })
-                                                             .collect::<Vec<Data>>();
+                                         .cloned()
+                                         .map(|immutable_data| Data::Immutable(immutable_data))
+                                         .collect::<Vec<Data>>();
         check_data(all_data, &nodes);
     }
 }

@@ -23,8 +23,8 @@ use std::collections::hash_map::Entry;
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
 use maidsafe_utilities::serialisation;
-use routing::{ImmutableData, StructuredData, Authority, Data, MessageId,
-              RequestMessage, DataIdentifier};
+use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage,
+              DataIdentifier};
 use utils;
 use vault::RoutingNode;
 use xor_name::XorName;

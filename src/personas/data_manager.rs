@@ -20,8 +20,7 @@ use std::convert::From;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage,
-              StructuredData};
+use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
