@@ -103,7 +103,7 @@ impl DataIdentifier {
     /// DataIdentifier name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataIdentifier::Structured(name, _) => name,
+            DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
             DataIdentifier::Immutable(name) |
             DataIdentifier::ImmutableBackup(name) |
             DataIdentifier::ImmutableSacrificial(name) |
@@ -136,7 +136,7 @@ mod test {
             Ok(structured_data) => {
                 assert_eq!(structured_data.clone().name(),
                            Data::Structured(structured_data.clone()).name());
-                assert_eq!(DataIdentifier::Structured(structured_data.name(),
+                assert_eq!(DataIdentifier::Structured(*structured_data.get_identifier(),
                                                       structured_data.get_type_tag()),
                            structured_data.identifier());
             }
