@@ -135,7 +135,7 @@ impl TestClient {
     pub fn put_and_verify(&mut self,
                           data: Data,
                           nodes: &mut [TestNode])
-                          -> Result<(), MutationError> {
+                          -> Result<(), Option<MutationError>> {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
@@ -161,9 +161,11 @@ impl TestClient {
                     panic!("Got wrong request included in Put response");
                 }
                 let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
-                Err(parsed_error)
+                Err(Some(parsed_error))
             }
-            event => panic!("Expected Put response got: {:?}", event),
+            Ok(response) => panic!("Expected Put response got: {:?}", response),
+            // TODO: Once the network guarantees that every request gets a response, panic!
+            Err(_) => Err(None),
         }
     }
 

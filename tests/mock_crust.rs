@@ -32,7 +32,6 @@
 #![cfg(feature = "use-mock-crust")]
 #![cfg(test)]
 
-extern crate itertools;
 extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
@@ -48,7 +47,6 @@ extern crate xor_name;
 mod mock_crust_detail;
 
 mod test {
-    use itertools::Itertools;
     use kademlia_routing_table::GROUP_SIZE;
     use mock_crust_detail::{self, poll, test_node};
     use mock_crust_detail::test_node::TestNode;
@@ -105,7 +103,6 @@ mod test {
 
     #[test]
     fn maid_manager_churn() {
-        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -127,10 +124,11 @@ mod test {
                 client.put(data.clone());
                 put_count += 1;
             }
-            trace!("Churn {}", i);
+            trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
             if nodes.len() <= GROUP_SIZE + 2 || random() {
-                trace!("Adding node.");
-                test_node::add_node(&network, &mut nodes);
+                let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+                trace!("Adding node with bootstrap node {}.", index);
+                test_node::add_node(&network, &mut nodes, index);
             } else {
                 let number = Range::new(1, 4).ind_sample(&mut rng);
                 trace!("Removing {} node(s).", number);
@@ -157,7 +155,6 @@ mod test {
 
     #[test]
     fn immutable_data_churn() {
-        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -180,10 +177,11 @@ mod test {
                 client.put(data.clone());
                 all_data.push(data);
             }
-            trace!("Churn {}", i);
+            trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
             if nodes.len() <= GROUP_SIZE + 2 || random() {
-                trace!("Adding node.");
-                test_node::add_node(&network, &mut nodes);
+                let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+                trace!("Adding node with bootstrap node {}.", index);
+                test_node::add_node(&network, &mut nodes, index);
             } else {
                 let number = Range::new(3, 4).ind_sample(&mut rng);
                 trace!("Removing {} node(s).", number);
@@ -215,7 +213,6 @@ mod test {
 
     #[test]
     fn structured_data_churn() {
-        let _ = ::maidsafe_utilities::log::init(false);
         let network = Network::new();
         let node_count = 15;
         let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -257,10 +254,11 @@ mod test {
                     client.post(data);
                 }
             }
-            trace!("Churn {}", i);
+            trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
             if nodes.len() <= GROUP_SIZE + 2 || random() {
-                trace!("Adding node.");
-                test_node::add_node(&network, &mut nodes);
+                let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+                trace!("Adding node with bootstrap node {}.", index);
+                test_node::add_node(&network, &mut nodes, index);
             } else {
                 let number = Range::new(3, 4).ind_sample(&mut rng);
                 trace!("Removing {} node(s).", number);
@@ -291,212 +289,65 @@ mod test {
         }
     }
 
-    #[ignore]
-    #[test]
-    fn data_confirmation() {
-        let network = Network::new();
-        let node_count = 24;
-        let mut nodes = test_node::create_nodes(&network, node_count, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(config));
-
-        client.ensure_connected(&mut nodes);
-        client.create_account(&mut nodes);
-
-        let mut all_data = Vec::new();
-        let mut all_immutable_data = Vec::new();
-        let mut all_structured_data = Vec::new();
-        let mut rng = thread_rng();
-        let immutable_range = Range::new(128, 1024);
-        let structured_range = Range::new(1, 10000);
-        let put_range = Range::new(5, 10);
-        let put_requests = put_range.ind_sample(&mut rng);
-
-        for _ in 0..put_requests {
-            if random::<bool>() {
-                let content =
-                    mock_crust_detail::generate_random_vec_u8(immutable_range.ind_sample(&mut rng));
-                let immutable_data = ImmutableData::new(content);
-                all_data.push(Data::Immutable(immutable_data));
-            } else {
-                let structured_data = random_structured_data(structured_range.ind_sample(&mut rng),
-                                                             client.signing_private_key().clone());
-                all_data.push(Data::Structured(structured_data));
-            }
-        }
-
-        for data in &all_data {
-            unwrap_result!(client.put_and_verify(data.clone(), &mut nodes));
-        }
-
-        for data in &all_data {
-            match *data {
-                Data::Immutable(ref sent_immutable_data) => {
-                    match client.get(DataIdentifier::Immutable(data.name()), &mut nodes) {
-                        Data::Immutable(recovered_immutable_data) => {
-                            assert_eq!(recovered_immutable_data.name(), sent_immutable_data.name());
-                            assert!(recovered_immutable_data.value() ==
-                                    sent_immutable_data.value());
-                        }
-                        unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
-                    }
-                    all_immutable_data.push(data.clone());
-                }
-                Data::Structured(ref sent_structured_data) => {
-                    match client.get(DataIdentifier::Structured(sent_structured_data.get_identifier()
-                                                                                 .clone(),
-                                                             sent_structured_data.get_type_tag()),
-                                     &mut nodes) {
-                        Data::Structured(recovered_structured_data) => {
-                            assert_eq!(recovered_structured_data.name(),
-                                       sent_structured_data.name());
-                        }
-                        unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
-                    }
-                    all_structured_data.push(data.clone());
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        poll::nodes_and_client(&mut nodes, &mut client);
-
-        check_data(all_immutable_data.iter()
-                                     .chain(all_structured_data.iter())
-                                     .cloned()
-                                     .collect_vec(),
-                   &nodes);
-
-        // for _ in 0..10 {
-        //    for _ in 0..3 {
-        //        let node_range = Range::new(1, nodes.len());
-        //        let node_index = node_range.ind_sample(&mut rng);
-
-        //        test_node::drop_node(&mut nodes, node_index);
-        //    }
-
-        //    poll::nodes_and_client(&mut nodes, &mut client);
-        //    all_stored_names.clear();
-
-        //    for node in &nodes {
-        //        all_stored_names.append(&mut node.get_stored_names());
-        //    }
-
-        //    check_data(all_immutable_data.clone(),
-        //               all_structured_data.clone(),
-        //               all_stored_names.clone());
-
-        //    test_node::add_nodes(&network, &mut nodes, 3);
-        //    poll::nodes_and_client(&mut nodes, &mut client);
-        //    all_stored_names.clear();
-
-        //    for node in &nodes {
-        //        all_stored_names.append(&mut node.get_stored_names());
-        //    }
-
-        //    check_data(all_immutable_data.clone(),
-        //               all_structured_data.clone(),
-        //               all_stored_names.clone());
-        // }
-    }
-
     // TODO: This is still flaky and occasionally fails with `Err(Empty)` in
     // `TestClient::put_and_verify`.
-    #[ignore]
     #[test]
     fn fill_network() {
         let network = Network::new();
         let config = Config {
             wallet_address: None,
-            max_capacity: Some(7000),
+            max_capacity: Some(2000),
         };
-        let mut nodes = test_node::create_nodes(&network, 24, Some(config));
+        // Use 8 nodes to avoid the case where four target nodes are full: In that case neither the
+        // PutSuccess nor the PutFailure accumulates and client.put_and_verify() would hang.
+        let mut nodes = test_node::create_nodes(&network, 8, Some(config));
         let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
         let mut client = TestClient::new(&network, Some(crust_config));
+        let client_key = client.signing_private_key().clone();
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
 
-        let mut content = vec![0u8; 1024];
-        let mut index = 0;
         loop {
-            content[index] ^= 1u8;
-            let immutable_data = ImmutableData::new(content.clone());
-            match client.put_and_verify(Data::Immutable(immutable_data), &mut nodes) {
-                Ok(()) => trace!("\nStored chunk {}\n=================\n", index),
-                Err(response) => {
-                    trace!("\nFailed storing chunk {}\n=================\n{:?}\n",
-                           index,
+            let data = if random() {
+                let content = mock_crust_detail::generate_random_vec_u8(100);
+                Data::Immutable(ImmutableData::new(content))
+            } else {
+                Data::Structured(random_structured_data(100000, client_key.clone()))
+            };
+            let data_id = data.identifier();
+            match client.put_and_verify(data, &mut nodes) {
+                Ok(()) => trace!("Stored chunk {:?}", data_id),
+                Err(None) => trace!("Got no response storing chunk {:?}", data_id),
+                Err(Some(response)) => {
+                    trace!("Failed storing chunk {:?}, response: {:?}",
+                           data_id,
                            response);
                     break;
                 }
             }
-            index += 1;
         }
-    }
-
-    #[ignore]
-    #[test]
-    fn put_get_when_churn() {
-        let network = Network::new();
-        let mut nodes = test_node::create_nodes(&network, 24, None);
-        let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(crust_config));
-
-        client.ensure_connected(&mut nodes);
-        client.create_account(&mut nodes);
-
-        let mut all_immutable_data = Vec::new();
         let mut rng = thread_rng();
-        let range = Range::new(128, 1024);
-        let put_requests = 5;
-
-        for _ in 0..put_requests {
-            let content = mock_crust_detail::generate_random_vec_u8(range.ind_sample(&mut rng));
-            let immutable_data = ImmutableData::new(content);
-            all_immutable_data.push(immutable_data);
-        }
-
-        // let node_index_range = Range::new(1, nodes.len() - 1);
-        // Churn every 10 put_requests, thats 10 churn in total
-        for i in 0..all_immutable_data.len() {
-            unwrap_result!(client.put_and_verify(Data::Immutable(all_immutable_data[i].clone()),
-                                                 &mut nodes));
-            // TODO: Re-enable churn.
-            // if i % 10 == 0 {
-            //    if i % 20 == 0 {
-            //        test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
-            //    } else {
-            //        test_node::add_node(&network, &mut nodes);
-            //    }
-            // }
-        }
-        poll::nodes_and_client(&mut nodes, &mut client);
-        // Churn every 10 put_requests, thats 10 churn in total
-        for i in 0..all_immutable_data.len() {
-            match client.get(DataIdentifier::Immutable(all_immutable_data[i].name()),
-                             &mut nodes) {
-                Data::Immutable(immutable_data) => {
-                    assert_eq!(immutable_data.name(), all_immutable_data[i].name());
-                    assert!(immutable_data.value() == all_immutable_data[i].value());
+        for _ in 0..10 {
+            let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+            trace!("Adding node with bootstrap node {}.", index);
+            test_node::add_node(&network, &mut nodes, index);
+            poll::nodes_and_client(&mut nodes, &mut client);
+            let content = mock_crust_detail::generate_random_vec_u8(100);
+            let data = Data::Immutable(ImmutableData::new(content));
+            let data_id = data.identifier();
+            match client.put_and_verify(data, &mut nodes) {
+                Ok(()) => {
+                    trace!("Stored chunk {:?}", data_id);
+                    return;
                 }
-                data => panic!("Got unexpected data: {:?}", data),
+                Err(opt_response) => {
+                    trace!("Failed storing chunk {:?}, response: {:?}",
+                           data_id,
+                           opt_response);
+                }
             }
-            // TODO: Re-enable churn.
-            // if i % 10 == 0 {
-            //    if i % 20 == 0 {
-            //        test_node::drop_node(&mut nodes, node_index_range.ind_sample(&mut rng));
-            //    } else {
-            //        test_node::add_node(&network, &mut nodes);
-            //    }
-            // }
         }
-        poll::nodes_and_client(&mut nodes, &mut client);
-
-        let all_data = all_immutable_data.iter()
-                                         .cloned()
-                                         .map(|immutable_data| Data::Immutable(immutable_data))
-                                         .collect::<Vec<Data>>();
-        check_data(all_data, &nodes);
+        panic!("Failed to put again after adding nodes.");
     }
 }
