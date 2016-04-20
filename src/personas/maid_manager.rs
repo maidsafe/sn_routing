@@ -342,7 +342,6 @@ impl Default for MaidManager {
 mod test {
     use super::*;
     use super::Refresh;
-    use std::collections::HashSet;
     use error::InternalError;
     use safe_network_common::client_errors::MutationError;
     use maidsafe_utilities::serialisation;
