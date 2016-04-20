@@ -1,6 +1,7 @@
 environment:
   global:
     RUST_BACKTRACE: 1
+    PROJECT_NAME: safe_vault
   matrix:
     - RUST_VERSION: stable
 branches:
@@ -26,7 +27,6 @@ platform:
   - x64
 
 configuration:
-#  - Debug
   - Release
 
 build_script:
@@ -34,3 +34,32 @@ build_script:
 
 test_script:
   - ps: . ".\Run Tests.ps1"
+
+before_deploy:
+  # Generate artifacts for release
+  - cargo build --release
+  - mkdir staging
+  - copy target\release\%PROJECT_NAME%.exe staging
+  - copy installer\common\%PROJECT_NAME%.crust.config staging
+  - copy installer\common\%PROJECT_NAME%.vault.config staging
+  - cd staging
+  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%PLATFORM%.zip *
+  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%PLATFORM%.zip
+
+deploy:
+  provider: GitHub
+  description: "Windows release"
+  draft: true
+  # All the zipped artifacts will be deployed
+  artifact: /.*\.zip/
+  # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
+  # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
+  # `public_repo` scope enabled
+  # - Then go to 'https://ci.appveyor.com/tools/encrypt' and enter the newly generated token.
+  # - Enter the "encrypted value" below
+  auth_token:
+    secure: C4JKw8gII6/XApU2VRAesM3kwYWVDez1qxsiqu7Jfzgfo7SlNCA1MmXGGgKne9QC
+  # deploy when a new tag is pushed and only on the stable channel
+  on:
+    RUST_VERSION: stable
+    appveyor_repo_tag: true
