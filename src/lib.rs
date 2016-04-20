@@ -68,7 +68,7 @@ extern crate xor_name;
 
 mod config_handler;
 mod error;
-#[cfg(test)]
+#[cfg(all(test, not(feature = "use-mock-crust")))]
 mod mock_routing;
 mod personas;
 mod utils;
