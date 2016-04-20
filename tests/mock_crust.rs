@@ -32,6 +32,7 @@
 #![cfg(feature = "use-mock-crust")]
 #![cfg(test)]
 
+extern crate itertools;
 extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
@@ -41,36 +42,53 @@ extern crate rand;
 extern crate routing;
 extern crate safe_network_common;
 extern crate safe_vault;
-extern crate sodiumoxide;
 extern crate xor_name;
 
 mod mock_crust_detail;
 
 mod test {
+    use itertools::Itertools;
     use kademlia_routing_table::GROUP_SIZE;
     use mock_crust_detail::{self, poll, test_node};
     use mock_crust_detail::test_node::TestNode;
     use mock_crust_detail::test_client::TestClient;
     use rand::{random, thread_rng};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Data, DataIdentifier, ImmutableData, StructuredData};
+    use routing::{Data, DataIdentifier, FullId, ImmutableData, StructuredData};
     use routing::mock_crust::{self, Network};
     use safe_vault::Config;
-    use sodiumoxide::crypto::sign;
     use std::cmp;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use xor_name::XorName;
 
-    fn random_structured_data(type_tag: u64, key: sign::SecretKey) -> StructuredData {
-        let keys = sign::gen_keypair();
-
+    fn random_structured_data(type_tag: u64, full_id: &FullId) -> StructuredData {
         unwrap_result!(StructuredData::new(type_tag,
                                            random::<XorName>(),
                                            0,
                                            mock_crust_detail::generate_random_vec_u8(10),
-                                           vec![keys.0],
+                                           vec![full_id.public_id().signing_public_key().clone()],
                                            vec![],
-                                           Some(&key)))
+                                           Some(full_id.signing_private_key())))
+    }
+
+    /// Checks that none of the given nodes has any copy of the given data left.
+    fn check_deleted_data(deleted_data: &Vec<Data>, nodes: &[TestNode]) {
+        let deleted_data_ids: HashSet<_> = deleted_data.iter()
+                                                       .map(Data::identifier)
+                                                       .collect();
+        let found_data = nodes.iter()
+                              .flat_map(TestNode::get_stored_names)
+                              .filter_map(|data_id| {
+                                  if deleted_data_ids.contains(&data_id) {
+                                      Some(data_id.name())
+                                  } else {
+                                      None
+                                  }
+                              })
+                              .collect_vec();
+        assert!(found_data.is_empty(),
+                "Found deleted data: {:?}",
+                found_data);
     }
 
     /// Checks that the given `nodes` store the expected number of copies of the given data.
@@ -115,12 +133,10 @@ mod test {
         let mut rng = thread_rng();
 
         let mut put_count = 1; // Login packet.
-        let client_key = client.signing_private_key().clone();
+        let full_id = client.full_id().clone();
 
         for i in 0..10 {
-            for data in (0..4).map(|_| {
-                Data::Structured(random_structured_data(100000, client_key.clone()))
-            }) {
+            for data in (0..4).map(|_| Data::Structured(random_structured_data(100000, &full_id))) {
                 client.put(data.clone());
                 put_count += 1;
             }
@@ -222,19 +238,20 @@ mod test {
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
 
-        let mut all_data = vec![];
+        let mut all_data: Vec<Data> = vec![];
+        let mut deleted_data = vec![];
         let mut rng = thread_rng();
 
         for i in 0..10 {
+            let mut new_data = vec![];
             for _ in 0..4 {
                 if all_data.is_empty() || random() {
-                    let data =
-                        Data::Structured(random_structured_data(100000,
-                                                                client.signing_private_key()
-                                                                      .clone()));
-                    trace!("Putting data {:?}.", data.name());
+                    let data = Data::Structured(random_structured_data(100000, client.full_id()));
+                    trace!("Putting data {:?} with name {:?}.",
+                           data.identifier(),
+                           data.name());
                     client.put(data.clone());
-                    all_data.push(data);
+                    new_data.push(data);
                 } else {
                     let j = Range::new(0, all_data.len()).ind_sample(&mut rng);
                     let data = Data::Structured(if let Data::Structured(sd) = all_data[j]
@@ -245,15 +262,27 @@ mod test {
                                                            mock_crust_detail::generate_random_vec_u8(10),
                                                            sd.get_owner_keys().clone(),
                                                            vec![],
-                                                           Some(client.signing_private_key())))
+                                                           Some(client.full_id().signing_private_key())))
                     } else {
                         panic!("Non-structured data found.");
                     });
-                    trace!("Posting data {:?}.", data.name());
-                    all_data[j] = data.clone();
-                    client.post(data);
+                    // FIXME: Fix the delete-while-churn scenario and re-enable this.
+                    if false && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+                        trace!("Deleting data {:?} with name {:?}",
+                               data.identifier(),
+                               data.name());
+                        client.delete(data);
+                        deleted_data.push(all_data.remove(j));
+                    } else {
+                        trace!("Posting data {:?} with name {:?}.",
+                               data.identifier(),
+                               data.name());
+                        all_data[j] = data.clone();
+                        client.post(data);
+                    }
                 }
             }
+            all_data.extend(new_data);
             trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
             if nodes.len() <= GROUP_SIZE + 2 || random() {
                 let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
@@ -271,6 +300,7 @@ mod test {
             poll::nodes_and_client(&mut nodes, &mut client);
 
             check_data(all_data.clone(), &nodes);
+            check_deleted_data(&deleted_data, &nodes);
         }
 
         for data in &all_data {
@@ -278,8 +308,7 @@ mod test {
                 Data::Structured(ref sent_structured_data) => {
                     match client.get(sent_structured_data.identifier(), &mut nodes) {
                         Data::Structured(recovered_structured_data) => {
-                            assert_eq!(recovered_structured_data.name(),
-                                       sent_structured_data.name());
+                            assert_eq!(recovered_structured_data, *sent_structured_data);
                         }
                         unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
                     }
@@ -303,7 +332,7 @@ mod test {
         let mut nodes = test_node::create_nodes(&network, 8, Some(config));
         let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
         let mut client = TestClient::new(&network, Some(crust_config));
-        let client_key = client.signing_private_key().clone();
+        let full_id = client.full_id().clone();
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
@@ -313,7 +342,7 @@ mod test {
                 let content = mock_crust_detail::generate_random_vec_u8(100);
                 Data::Immutable(ImmutableData::new(content))
             } else {
-                Data::Structured(random_structured_data(100000, client_key.clone()))
+                Data::Structured(random_structured_data(100000, &full_id))
             };
             let data_id = data.identifier();
             match client.put_and_verify(data, &mut nodes) {
