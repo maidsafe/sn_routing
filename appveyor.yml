@@ -29,14 +29,8 @@ configuration:
 #  - Debug
   - Release
 
-# Allowing failures for x86 to accommodate for current libsodium test failure in x86
-matrix:
-  allow_failures:
-    - platform: x86
-
 build_script:
   - ps: . ".\Build.ps1"
 
 test_script:
   - ps: . ".\Run Tests.ps1"
-#  - cargo test --release --no-run

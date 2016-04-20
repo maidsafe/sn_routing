@@ -84,23 +84,23 @@ mod test {
         use super::Config;
         use rustc_serialize::json;
 
-        let path = Path::new("installer/sample.config").to_path_buf();
+        let path = Path::new("installer/common/safe_vault.vault.config").to_path_buf();
 
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(what) => {
-                panic!(format!("Error opening sample.config: {:?}", what));
+                panic!(format!("Error opening safe_vault.vault.config: {:?}", what));
             }
         };
 
         let mut encoded_contents = String::new();
 
         if let Err(what) = file.read_to_string(&mut encoded_contents) {
-            panic!(format!("Error reading sample.config: {:?}", what));
+            panic!(format!("Error reading safe_vault.vault.config: {:?}", what));
         }
 
         if let Err(what) = json::decode::<Config>(&encoded_contents) {
-            panic!(format!("Error parsing sample.config: {:?}", what));
+            panic!(format!("Error parsing safe_vault.vault.config: {:?}", what));
         }
     }
 }
