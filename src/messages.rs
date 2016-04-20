@@ -30,6 +30,7 @@ use error::RoutingError;
 use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
+use xor_name::XorName;
 
 /// Wrapper of all messages.
 ///
@@ -118,6 +119,8 @@ pub enum DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     content: SignedMessage,
+    /// Every node this has already been sent to.
+    sent_to: Vec<XorName>,
     /// Signature to be validated against `name`'s public key.
     signature: sign::Signature,
 }
@@ -125,11 +128,13 @@ pub struct HopMessage {
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
+               sent_to: Vec<XorName>,
                sign_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
+            sent_to: sent_to,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
     }
@@ -153,6 +158,10 @@ impl HopMessage {
     /// and signed the message.
     pub fn content(&self) -> &SignedMessage {
         &self.content
+    }
+
+    pub fn sent_to(&self) -> &Vec<XorName> {
+        &self.sent_to
     }
 }
 
@@ -507,7 +516,9 @@ impl Debug for RequestContent {
 impl Debug for ResponseContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            ResponseContent::GetNetworkName { ref relocated_id, ref close_group_ids, ref message_id } => {
+            ResponseContent::GetNetworkName { ref relocated_id,
+                                              ref close_group_ids,
+                                              ref message_id } => {
                 write!(formatter,
                        "GetNetworkName {{ {:?}, {:?}, {:?} }}",
                        close_group_ids,
@@ -619,7 +630,9 @@ mod test {
 
         let signed_message = unwrap_result!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
-        let hop_message_result = HopMessage::new(signed_message.clone(), &secret_signing_key);
+        let hop_message_result = HopMessage::new(signed_message.clone(),
+                                                 vec![],
+                                                 &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 

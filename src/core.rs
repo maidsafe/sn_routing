@@ -780,7 +780,7 @@ impl Core {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
-        self.handle_signed_message(hop_msg.content(), &hop_name)
+        self.handle_signed_message(hop_msg.content(), &hop_name, hop_msg.sent_to())
     }
 
     fn check_not_get_network_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
@@ -833,7 +833,8 @@ impl Core {
 
     fn handle_signed_message(&mut self,
                              signed_msg: &SignedMessage,
-                             hop_name: &XorName)
+                             hop_name: &XorName,
+                             sent_to: &Vec<XorName>)
                              -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
@@ -859,7 +860,7 @@ impl Core {
         }
 
         match self.state {
-            State::Node => self.handle_signed_message_for_node(signed_msg, hop_name, true),
+            State::Node => self.handle_signed_message_for_node(signed_msg, hop_name, sent_to, true),
             State::Client => self.handle_signed_message_for_client(signed_msg),
             _ => Err(RoutingError::InvalidStateForOperation),
         }
@@ -868,6 +869,7 @@ impl Core {
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName,
+                                      sent_to: &Vec<XorName>,
                                       relay: bool)
                                       -> Result<(), RoutingError> {
         let dst = signed_msg.content().dst();
@@ -894,7 +896,7 @@ impl Core {
         self.add_to_cache(signed_msg.content());
 
         if relay {
-            if let Err(err) = self.send(signed_msg.clone(), hop_name, false) {
+            if let Err(err) = self.send(signed_msg.clone(), hop_name, sent_to, false) {
                 info!("Failed relaying message: {:?}", err);
             }
         }
@@ -2253,7 +2255,7 @@ impl Core {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
         let hop = *self.name();
-        self.send(signed_msg, &hop, true)
+        self.send(signed_msg, &hop, &vec![hop], true)
     }
 
     fn relay_to_client(&mut self,
@@ -2261,7 +2263,9 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            let hop_msg = try!(HopMessage::new(signed_msg, self.full_id.signing_private_key()));
+            let hop_msg = try!(HopMessage::new(signed_msg,
+                                               vec![],
+                                               self.full_id.signing_private_key()));
             let message = Message::Hop(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
             return self.send_or_drop(peer_id, raw_bytes);
@@ -2271,18 +2275,26 @@ impl Core {
         Err(RoutingError::ClientConnectionNotFound)
     }
 
-    fn to_hop_bytes(&self, signed_msg: SignedMessage) -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(), self.full_id.signing_private_key()));
+    fn to_hop_bytes(&self,
+                    signed_msg: SignedMessage,
+                    sent_to: Vec<XorName>)
+                    -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+                                           sent_to,
+                                           self.full_id.signing_private_key()));
         let message = Message::Hop(hop_msg);
         Ok(try!(serialisation::serialise(&message)))
     }
 
     fn to_tunnel_hop_bytes(&self,
                            signed_msg: SignedMessage,
+                           sent_to: Vec<XorName>,
                            src: PeerId,
                            dst: PeerId)
                            -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(), self.full_id.signing_private_key()));
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+                                           sent_to,
+                                           self.full_id.signing_private_key()));
         let message = Message::TunnelHop {
             content: hop_msg,
             src: src,
@@ -2294,16 +2306,16 @@ impl Core {
     fn send(&mut self,
             signed_msg: SignedMessage,
             hop: &XorName,
+            sent_to: &Vec<XorName>,
             handle: bool)
             -> Result<(), RoutingError> {
-        let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone()));
-
         // If we're a client going to be a node, send via our bootstrap connection.
         if self.state == State::Client {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if let Some((&peer_id, _)) = self.proxy_map
                                                  .iter()
                                                  .find(|elt| elt.1.name() == proxy_node_name) {
+                    let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), vec![]));
                     return self.send_or_drop(&peer_id, raw_bytes);
                 }
 
@@ -2319,11 +2331,21 @@ impl Core {
 
         let count = self.signed_message_filter.count(&signed_msg).saturating_sub(1);
         let destination = signed_msg.content().dst().to_destination();
-        let targets = self.routing_table.target_nodes(destination, hop, count);
+        let targets = self.routing_table
+                          .target_nodes(destination, hop, count)
+                          .into_iter()
+                          .filter(|target| !sent_to.contains(target.name()))
+                          .collect_vec();
+        let new_sent_to = sent_to.iter()
+                                 .chain(targets.iter().map(NodeInfo::name))
+                                 .cloned()
+                                 .collect_vec();
+        let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), new_sent_to.clone()));
         let mut result = Ok(());
         for target in targets {
             if let Some(&tunnel_id) = self.tunnels.tunnel_for(&target.peer_id) {
                 let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
+                                                          new_sent_to.clone(),
                                                           self.crust_service.id(),
                                                           target.peer_id));
                 if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
@@ -2342,7 +2364,7 @@ impl Core {
         if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
             let hop_name = *self.name();
-            try!(self.handle_signed_message_for_node(&signed_msg, &hop_name, false));
+            try!(self.handle_signed_message_for_node(&signed_msg, &hop_name, &new_sent_to, false));
         }
 
         result
