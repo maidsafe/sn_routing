@@ -274,7 +274,6 @@ mod test_sd {
     use super::*;
     use super::Refresh;
 
-    use std::collections::HashSet;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -888,8 +887,6 @@ mod test_im {
     use super::*;
     use super::Refresh;
 
-    use std::collections::HashSet;
-    use std::mem;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -940,14 +937,14 @@ mod test_im {
             }
         }
 
-        pub fn get_close_node(&self) -> XorName {
-            loop {
-                let name = random::<XorName>();
-                if let Ok(Some(_)) = self.routing.close_group(name) {
-                    return name;
-                }
-            }
-        }
+        // pub fn get_close_node(&self) -> XorName {
+        //     loop {
+        //         let name = random::<XorName>();
+        //         if let Ok(Some(_)) = self.routing.close_group(name) {
+        //             return name;
+        //         }
+        //     }
+        // }
 
         fn lose_close_node(&self, target: &XorName) -> XorName {
             if let Ok(Some(close_group)) = self.routing.close_group(*target) {
