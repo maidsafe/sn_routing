@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.16.2]
+- Reduce network traffic by including recipients in hop message that have handled the message.
+
 ## [0.16.1]
 - Bug fix: DataIdentifier now correctly returns the structured data computed name in its name() function
 
