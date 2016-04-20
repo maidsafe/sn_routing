@@ -68,7 +68,9 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
 const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `Heartbeat` is sent.
-const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
+const HEARTBEAT_TIMEOUT_SECS: u64 = 30;
+/// Number of missed heartbeats after which a peer is considered disconnected.
+const HEARTBEAT_ATTEMPTS: u64 = 3;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -2168,7 +2170,10 @@ impl Core {
             let now = SteadyTime::now();
             let stale_peers = self.peer_map
                                   .iter()
-                                  .filter(|&(_, timestamp)| (now - *timestamp).num_minutes() > 3)
+                                  .filter(|&(_, timestamp)| {
+                                      (now - *timestamp).num_seconds() >
+                                      (HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS) as i64
+                                  })
                                   .map(|(peer_id, _)| peer_id)
                                   .cloned()
                                   .collect_vec();
