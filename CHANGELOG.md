@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.16.3]
+- Add `HEARTBEAT_ATTEMPTS` constant to configure when an unresponsive peer is considered lost.
+- Fix a bug that caused unneeded node harvesting attempts.
+
 ## [0.16.2]
 - Reduce network traffic by including recipients in hop message that have handled the message.
 
