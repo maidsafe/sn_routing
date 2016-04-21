@@ -54,8 +54,6 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate chunk_store;
 extern crate config_file_handler;
-#[cfg(not(feature = "use-mock-crust"))]
-extern crate ctrlc;
 #[cfg(all(test, not(feature = "use-mock-crust")))]
 extern crate kademlia_routing_table;
 #[cfg(all(test, not(feature = "use-mock-crust")))]

@@ -15,15 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-crust"))]
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 #[cfg(feature = "use-mock-crust")]
 use std::sync::mpsc::Receiver;
 
 use config_handler::{self, Config};
-#[cfg(not(feature = "use-mock-crust"))]
-use ctrlc::CtrlC;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
 use routing::{Authority, Data, Event, RequestContent, RequestMessage, ResponseContent,
@@ -35,7 +31,8 @@ use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
-const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
+// FIXME - reinstate this const
+// const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;
@@ -61,11 +58,13 @@ fn init_components(optional_config: Option<Config>)
                    -> Result<(MaidManager, DataManager), InternalError> {
     ::sodiumoxide::init();
 
-    let config = match optional_config {
+    let _ = match optional_config {
         Some(config) => config,
         None => try!(config_handler::read_config_file()),
     };
-    let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+    // FIXME - reinstate use of `max_capacity`
+    // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+    let max_capacity = 30 * 1024 * 1024;
 
     Ok((MaidManager::new(), try!(DataManager::new(max_capacity))))
 }
@@ -103,25 +102,9 @@ impl Vault {
     pub fn run(&mut self) -> Result<(), InternalError> {
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = try!(RoutingNode::new(routing_sender, true));
-        let routing_node0 = Arc::new(Mutex::new(Some(routing_node)));
-        let routing_node1 = routing_node0.clone();
-
-        // Handle Ctrl+C to properly stop the vault instance.
-        // TODO: do we really need this to terminate gracefully on Ctrl+C?
-        CtrlC::set_handler(move || {
-            // Drop the routing node to close the event channel which terminates
-            // the receive loop and thus this whole function.
-            let _ = routing_node0.lock().map(|mut node| node.take());
-        });
 
         for event in routing_receiver.iter() {
-            let routing_node = routing_node1.lock().expect("Node mutex poisoned.");
-
-            if let Some(routing_node) = routing_node.as_ref() {
-                self.process_event(routing_node, event);
-            } else {
-                break;
-            }
+            self.process_event(&routing_node, event);
         }
 
         Ok(())

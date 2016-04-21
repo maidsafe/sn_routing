@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::convert::From;
+use std::fmt::{self, Debug, Formatter};
 
 use chunk_store::ChunkStore;
 use error::InternalError;
@@ -32,11 +33,27 @@ struct Refresh(Data);
 
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
+    immutable_data_count: u64,
+    structured_data_count: u64,
+}
+
+impl Debug for DataManager {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter,
+               "Data stored - ImmData {} - SD {} - total {} bytes",
+               self.immutable_data_count,
+               self.structured_data_count,
+               self.chunk_store.used_space())
+    }
 }
 
 impl DataManager {
     pub fn new(capacity: u64) -> Result<DataManager, InternalError> {
-        Ok(DataManager { chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)) })
+        Ok(DataManager {
+            chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
+            immutable_data_count: 0,
+            structured_data_count: 0,
+        })
     }
 
     pub fn handle_get(&mut self,
@@ -115,7 +132,13 @@ impl DataManager {
                                                   *msg_id);
             Err(From::from(error))
         } else {
+            match *data {
+                Data::Immutable(_) => self.immutable_data_count += 1,
+                Data::Structured(_) => self.structured_data_count += 1,
+                _ => unreachable!(),
+            }
             trace!("DM sending PutSuccess for data {:?}", data_identifier);
+            trace!("{:?}", self);
             let _ = routing_node.send_put_success(response_src,
                                                   response_dst,
                                                   data_identifier.clone(),
@@ -136,7 +159,8 @@ impl DataManager {
             if data.replace_with_other(new_data.clone()).is_ok() {
                 if let Ok(()) = self.chunk_store
                                     .put(&data.identifier(), &Data::Structured(data.clone())) {
-                    trace!("DM updated for : {:?}", data.identifier());
+                    trace!("DM updated for: {:?}", data.identifier());
+                    trace!("{:?}", self);
                     let _ = routing_node.send_post_success(request.dst.clone(),
                                                            request.src.clone(),
                                                            data.identifier(),
@@ -166,7 +190,9 @@ impl DataManager {
         if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.validate_self_against_successor(&new_data).is_ok() {
                 if let Ok(()) = self.chunk_store.delete(&data.identifier()) {
+                    self.structured_data_count -= 1;
                     trace!("DM deleted {:?}", data.identifier());
+                    trace!("{:?}", self);
                     let _ = routing_node.send_delete_success(request.dst.clone(),
                                                              request.src.clone(),
                                                              data.identifier(),
@@ -187,14 +213,15 @@ impl DataManager {
 
     pub fn handle_refresh(&mut self,
                           routing_node: &RoutingNode,
-                          serialised_msg: &Vec<u8>)
+                          serialised_msg: &[u8])
                           -> Result<(), InternalError> {
         let Refresh(data) = try!(serialisation::deserialise::<Refresh>(serialised_msg));
         match routing_node.close_group(data.name()) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
-        if let Ok(Data::Structured(struct_data)) = self.chunk_store.get(&data.identifier()) {
+        let new_data = if let Ok(Data::Structured(struct_data)) = self.chunk_store
+                                                                      .get(&data.identifier()) {
             // Make sure we don't 'update' to a lower version due to delayed accumulation.
             // We do accept any greater version, however, in case we missed some update,
             // e. g. because an earlier refresh hasn't accumulated yet. The validity of the
@@ -208,10 +235,21 @@ impl DataManager {
             if struct_data.get_version() >= new_struct_data.get_version() {
                 return Ok(());
             }
-        }
+            false
+        } else {
+            !self.chunk_store.has(&data.identifier())
+        };
         // chunk_store::put() deletes the old data automatically.
-        Ok(try!(self.chunk_store
-                    .put(&data.identifier(), &data)))
+        try!(self.chunk_store.put(&data.identifier(), &data));
+        if new_data {
+            match data {
+                Data::Immutable(_) => self.immutable_data_count += 1,
+                Data::Structured(_) => self.structured_data_count += 1,
+                _ => unreachable!(),
+            }
+        }
+        trace!("{:?}", self);
+        Ok(())
     }
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
@@ -220,6 +258,11 @@ impl DataManager {
         for data_id in data_ids {
             match routing_node.close_group(data_id.name()) {
                 Ok(None) => {
+                    match data_id {
+                        DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
+                        DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
+                        _ => unreachable!(),
+                    }
                     trace!("{} added. No longer a DM for {:?}", node_name, data_id);
                     let _ = self.chunk_store.delete(&data_id);
                 }
@@ -422,10 +465,8 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager.handle_get(&self.routing,
-                                                 &request,
-                                                 &data.identifier(),
-                                                 &msg_id);
+            let _ = self.data_manager
+                        .handle_get(&self.routing, &request, &data.identifier(), &msg_id);
             GetEnvironment {
                 client: client,
                 msg_id: msg_id,
@@ -456,10 +497,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_post(&self.routing,
-                                                  &request,
-                                                  &sd_data,
-                                                  &msg_id);
+            let _ = self.data_manager.handle_post(&self.routing, &request, &sd_data, &msg_id);
             PostEnvironment {
                 keys: keys,
                 client: client,
@@ -492,10 +530,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_delete(&self.routing,
-                                                    &request,
-                                                    &sd_data,
-                                                    &msg_id);
+            let _ = self.data_manager.handle_delete(&self.routing, &request, &sd_data, &msg_id);
             DeleteEnvironment {
                 keys: keys,
                 client: client,
@@ -506,7 +541,8 @@ mod test_sd {
         }
 
         pub fn get_from_chunkstore(&self,
-                                   data_identifier: &DataIdentifier) -> Option<StructuredData> {
+                                   data_identifier: &DataIdentifier)
+                                   -> Option<StructuredData> {
             if let Ok(data) = self.data_manager.chunk_store.get(data_identifier) {
                 if let Data::Structured(sd) = data {
                     return Some(sd);
@@ -607,7 +643,8 @@ mod test_sd {
         let mut env = Environment::new();
         // posting to non-existent data
         let post_env = env.post_sd_data();
-        assert_eq!(None, env.get_from_chunkstore(&post_env.sd_data.identifier()));
+        assert_eq!(None,
+                   env.get_from_chunkstore(&post_env.sd_data.identifier()));
         let mut post_failure = env.routing.post_failures_given();
         assert_eq!(post_failure.len(), 1);
         if let ResponseContent::PostFailure { ref external_error_indicator, ref id, .. } =
@@ -736,7 +773,8 @@ mod test_sd {
         let mut env = Environment::new();
         // posting to non-existent data
         let delete_env = env.delete_sd_data();
-        assert_eq!(None, env.get_from_chunkstore(&delete_env.sd_data.identifier()));
+        assert_eq!(None,
+                   env.get_from_chunkstore(&delete_env.sd_data.identifier()));
         let mut delete_failure = env.routing.delete_failures_given();
         assert_eq!(delete_failure.len(), 1);
         if let ResponseContent::DeleteFailure { ref external_error_indicator, ref id, .. } =
@@ -921,11 +959,10 @@ mod test_im {
     impl Environment {
         pub fn new() -> Environment {
             let _ = log::init(false);
-            let env = Environment {
+            Environment {
                 routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
                 data_manager: unwrap_result!(DataManager::new(322_122_546)),
-            };
-            env
+            }
         }
 
         pub fn get_close_data(&self) -> ImmutableData {
@@ -1004,10 +1041,8 @@ mod test_im {
                 content: content.clone(),
             };
 
-            let _ = self.data_manager.handle_get(&self.routing,
-                                                 &request,
-                                                 &data_identifier,
-                                                 &message_id);
+            let _ = self.data_manager
+                        .handle_get(&self.routing, &request, &data_identifier, &message_id);
             GetEnvironment {
                 client: client,
                 message_id: message_id,
@@ -1016,7 +1051,8 @@ mod test_im {
         }
 
         pub fn get_from_chunkstore(&self,
-                                   data_identifier: &DataIdentifier) -> Option<ImmutableData> {
+                                   data_identifier: &DataIdentifier)
+                                   -> Option<ImmutableData> {
             if let Ok(data) = self.data_manager.chunk_store.get(data_identifier) {
                 if let Data::Immutable(im_data) = data {
                     return Some(im_data);
@@ -1097,7 +1133,7 @@ mod test_im {
 
         let lost_node = env.lose_close_node(&put_env.im_data.name());
         env.routing.remove_node_from_routing_table(&lost_node);
-        let _ = env.data_manager.handle_node_lost(&env.routing, &random::<XorName>());
+        env.data_manager.handle_node_lost(&env.routing, &random::<XorName>());
 
         let refresh_requests = env.routing.refresh_requests_given();
         assert_eq!(refresh_requests.len(), 2);

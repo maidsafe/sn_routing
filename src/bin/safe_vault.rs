@@ -96,7 +96,9 @@ pub fn main() {
     if let Some(log_file) = args.flag_output {
         unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, false));
     } else {
-        let _ = maidsafe_utilities::log::init(false);
+        // FIXME - use `log::init` rather than `log::init_to_file`.
+        // let _ = maidsafe_utilities::log::init(false);
+        unwrap_result!(maidsafe_utilities::log::init_to_file(false, "vault.log", true));
     }
 
     let mut message = String::from("Running ");

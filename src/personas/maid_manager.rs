@@ -31,7 +31,8 @@ use xor_name::XorName;
 
 // It has now been decided that the charge will be by unit
 // i.e. each chunk incurs a default charge of one unit, no matter of the data size
-const DEFAULT_ACCOUNT_SIZE: u64 = 1024;  // 1024 units, max 1GB for immutable_data (1MB per chunk)
+// FIXME - restore this constant to 1024 or greater
+const DEFAULT_ACCOUNT_SIZE: u64 = 50;  // 1024 units, max 1GB for immutable_data (1MB per chunk)
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 struct Refresh(XorName, Account);
@@ -100,10 +101,10 @@ impl MaidManager {
                 self.handle_put_structured_data(routing_node, request, struct_data, msg_id)
             }
             _ => {
-                return self.reply_with_put_failure(routing_node,
-                                                   request.clone(),
-                                                   msg_id.clone(),
-                                                   &MutationError::InvalidOperation)
+                self.reply_with_put_failure(routing_node,
+                                            request.clone(),
+                                            *msg_id,
+                                            &MutationError::InvalidOperation)
             }
         }
     }
@@ -148,7 +149,7 @@ impl MaidManager {
 
     pub fn handle_refresh(&mut self,
                           routing_node: &RoutingNode,
-                          serialised_msg: &Vec<u8>)
+                          serialised_msg: &[u8])
                           -> Result<(), InternalError> {
         let Refresh(maid_name, account) =
             try!(serialisation::deserialise::<Refresh>(serialised_msg));
@@ -221,7 +222,7 @@ impl MaidManager {
                     account: &Account,
                     msg_id: MessageId) {
         let src = Authority::ClientManager(*maid_name);
-        let refresh = Refresh(maid_name.clone(), account.clone());
+        let refresh = Refresh(*maid_name, account.clone());
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
             let _ = routing_node.send_refresh_request(src.clone(),
@@ -347,7 +348,7 @@ mod test {
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
-    use routing::{Authority, Data, ImmutableData, MessageId, RequestContent,RequestMessage,
+    use routing::{Authority, Data, ImmutableData, MessageId, RequestContent, RequestMessage,
                   ResponseContent, StructuredData};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
@@ -819,7 +820,7 @@ mod test {
     //         content: RequestContent::Put(data.clone(), msg_id),
     //     };
 
-    //     let mut full_pmid_nodes = HashSet::new();
+    // let mut full_pmid_nodes = HashSet::new();
 
     //     if let Ok(Some(close_group)) = env.routing.close_group(utils::client_name(&env.client)) {
     //         full_pmid_nodes = close_group.iter()
@@ -832,7 +833,7 @@ mod test {
     //                .handle_put(&env.routing, &valid_request, &data, &msg_id)
     //                .is_ok());
 
-    //     let put_failures = env.routing.put_failures_given();
+    // let put_failures = env.routing.put_failures_given();
 
     //     assert_eq!(put_failures.len(), 1);
     //     assert_eq!(put_failures[0].src, env.our_authority);
