@@ -919,7 +919,7 @@ impl Core {
         match *routing_msg {
             RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
                 let i = self.name().bucket_index(name);
-                if self.routing_table.need_to_add(name) && self.bucket_filter.insert(&i) > 0 {
+                if self.routing_table.need_to_add(name) && self.bucket_filter.insert(&i) == 0 {
                     trace!("Harvesting on {:?} in bucket index {}.", name, i);
                     self.request_bucket_ids(i)
                 } else {
