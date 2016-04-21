@@ -1,5 +1,10 @@
 # Safe Vault - Change Log
 
+## [0.6.0]
+- Major change of persona strategy regarding `ImmutableData` (removal of three personas)
+- Major refactoring of integration tests (uses mock Crust feature)
+- Default test runner to unit tests (previously run using the mock Routing feature)
+
 ## [0.5.0]
 - Replaced use of local Client errors for those in safe_network_common
 - Swapped dependency on mpid_messaging crate for safe_network_common dependency
