@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.17.0]
+- Depend on Crust 0.11.0.
+
 ## [0.16.3]
 - Add `HEARTBEAT_ATTEMPTS` constant to configure when an unresponsive peer is considered lost.
 - Fix a bug that caused unneeded node harvesting attempts.
