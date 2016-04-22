@@ -161,7 +161,7 @@ impl Vault {
                 ret = Some(false);
                 Ok(())
             }
-            Event::StartListeningFailed => {
+            Event::NetworkStartupFailed => {
                 ret = Some(true);
                 Ok(())
             }
