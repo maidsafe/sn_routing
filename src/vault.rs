@@ -100,11 +100,17 @@ impl Vault {
     /// Run the event loop, processing events received from Routing.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
-        let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(routing_sender, true));
+        let mut exit = false;
+        while !exit {
+            let (routing_sender, routing_receiver) = mpsc::channel();
+            let routing_node = try!(RoutingNode::new(routing_sender, true));
 
-        for event in routing_receiver.iter() {
-            self.process_event(&routing_node, event);
+            for event in routing_receiver.iter() {
+                if let Some(terminate) = self.process_event(&routing_node, event) {
+                    exit = terminate;
+                    break;
+                }
+            }
         }
 
         Ok(())
@@ -118,7 +124,7 @@ impl Vault {
         let mut result = routing_node.poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
-            self.process_event(&routing_node, event);
+            let _ignored_for_mock = self.process_event(&routing_node, event);
             result = true
         }
 
@@ -138,10 +144,12 @@ impl Vault {
         self.maid_manager.get_put_count(client_name)
     }
 
-    fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
+    fn process_event(&mut self, routing_node: &RoutingNode, event: Event) -> Option<bool> {
         trace!("Vault {} received an event from routing: {:?}",
                unwrap_result!(routing_node.name()),
                event);
+
+        let mut ret = None;
 
         if let Err(error) = match event {
             Event::Request(request) => self.on_request(routing_node, request),
@@ -149,10 +157,19 @@ impl Vault {
             Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
             Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
             Event::Connected => self.on_connected(),
-            Event::Disconnected => self.on_disconnected(),
+            Event::Disconnected | Event::GetNetworkNameFailed => {
+                ret = Some(false);
+                Ok(())
+            }
+            Event::StartListeningFailed => {
+                ret = Some(true);
+                Ok(())
+            }
         } {
             debug!("Failed to handle event: {:?}", error);
         }
+
+        ret
     }
 
     fn on_request(&mut self,
@@ -253,12 +270,6 @@ impl Vault {
     fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
-        Ok(())
-    }
-
-    fn on_disconnected(&self) -> Result<(), InternalError> {
-        // TODO: restart event loop with new routing object, discarding all current data
-        debug!("Vault disconnected");
         Ok(())
     }
 }
