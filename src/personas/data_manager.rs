@@ -17,22 +17,30 @@
 
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
+use std::time::Duration;
 
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
+use sodiumoxide::crypto::hash::sha512;
+use timed_buffer::TimedBuffer;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::XorName;
 
 const MAX_FULL_PERCENT: u64 = 50;
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
-struct Refresh(Data);
+type ChunkNames = Vec<(DataIdentifier, Option<sha512::Digest>)>;
+
+struct StructuredDataInfo {
+    hash: sha512::Digest,
+    count: u8,
+}
 
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
+    refresh_accumulator: TimedBuffer<DataIdentifier, Vec<StructuredDataInfo>>,
     immutable_data_count: u64,
     structured_data_count: u64,
 }
@@ -51,6 +59,7 @@ impl DataManager {
     pub fn new(capacity: u64) -> Result<DataManager, InternalError> {
         Ok(DataManager {
             chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
+            refresh_accumulator: TimedBuffer::new(Duration::from_secs(180)),
             immutable_data_count: 0,
             structured_data_count: 0,
         })
@@ -60,7 +69,7 @@ impl DataManager {
                       routing_node: &RoutingNode,
                       request: &RequestMessage,
                       data_id: &DataIdentifier,
-                      msg_id: &MessageId)
+                      message_id: &MessageId)
                       -> Result<(), InternalError> {
         if let Ok(data) = self.chunk_store.get(&data_id) {
             trace!("As {:?} sending data {:?} to {:?}",
@@ -70,7 +79,7 @@ impl DataManager {
             let _ = routing_node.send_get_success(request.dst.clone(),
                                                   request.src.clone(),
                                                   data,
-                                                  *msg_id);
+                                                  *message_id);
             return Ok(());
         }
         trace!("DM sending get_failure of {:?}", data_id);
@@ -80,7 +89,7 @@ impl DataManager {
                                            request.src.clone(),
                                            request.clone(),
                                            external_error_indicator,
-                                           msg_id.clone()));
+                                           message_id.clone()));
         Ok(())
     }
 
@@ -88,7 +97,7 @@ impl DataManager {
                       routing_node: &RoutingNode,
                       request: &RequestMessage,
                       data: &Data,
-                      msg_id: &MessageId)
+                      message_id: &MessageId)
                       -> Result<(), InternalError> {
         let data_identifier = data.identifier();
         let response_src = request.dst.clone();
@@ -102,7 +111,7 @@ impl DataManager {
                                                   response_dst,
                                                   request.clone(),
                                                   external_error_indicator,
-                                                  *msg_id);
+                                                  *message_id);
             return Err(From::from(error));
         }
 
@@ -114,7 +123,7 @@ impl DataManager {
                                                   response_dst,
                                                   request.clone(),
                                                   external_error_indicator,
-                                                  *msg_id);
+                                                  *message_id);
             return Err(From::from(error));
         }
 
@@ -129,7 +138,7 @@ impl DataManager {
                                                   response_dst,
                                                   request.clone(),
                                                   external_error_indicator,
-                                                  *msg_id);
+                                                  *message_id);
             Err(From::from(error))
         } else {
             match *data {
@@ -142,7 +151,7 @@ impl DataManager {
             let _ = routing_node.send_put_success(response_src,
                                                   response_dst,
                                                   data_identifier.clone(),
-                                                  *msg_id);
+                                                  *message_id);
             self.send_refresh(routing_node, &data_identifier, MessageId::zero());
             Ok(())
         }
@@ -153,7 +162,7 @@ impl DataManager {
                        routing_node: &RoutingNode,
                        request: &RequestMessage,
                        new_data: &StructuredData,
-                       msg_id: &MessageId)
+                       message_id: &MessageId)
                        -> Result<(), InternalError> {
         if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.replace_with_other(new_data.clone()).is_ok() {
@@ -164,7 +173,7 @@ impl DataManager {
                     let _ = routing_node.send_post_success(request.dst.clone(),
                                                            request.src.clone(),
                                                            data.identifier(),
-                                                           *msg_id);
+                                                           *message_id);
                     self.send_refresh(routing_node, &data.identifier(), MessageId::zero());
                     return Ok(());
                 }
@@ -176,7 +185,7 @@ impl DataManager {
                                                request.src.clone(),
                                                request.clone(),
                                                try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                               *msg_id)))
+                                               *message_id)))
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
@@ -185,7 +194,7 @@ impl DataManager {
                          routing_node: &RoutingNode,
                          request: &RequestMessage,
                          new_data: &StructuredData,
-                         msg_id: &MessageId)
+                         message_id: &MessageId)
                          -> Result<(), InternalError> {
         if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.validate_self_against_successor(&new_data).is_ok() {
@@ -196,7 +205,7 @@ impl DataManager {
                     let _ = routing_node.send_delete_success(request.dst.clone(),
                                                              request.src.clone(),
                                                              data.identifier(),
-                                                             *msg_id);
+                                                             *message_id);
                     // TODO: Send a refresh message.
                     return Ok(());
                 }
@@ -207,7 +216,7 @@ impl DataManager {
                                               request.src.clone(),
                                               request.clone(),
                                               try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                              *msg_id));
+                                              *message_id));
         Ok(())
     }
 
@@ -215,7 +224,16 @@ impl DataManager {
                           routing_node: &RoutingNode,
                           serialised_msg: &[u8])
                           -> Result<(), InternalError> {
-        let Refresh(data) = try!(serialisation::deserialise::<Refresh>(serialised_msg));
+        let chunk_names = try!(serialisation::deserialise::<ChunkNames>(serialised_msg));
+        for (chunk_name, hash) in &chunk_names {
+            if self.chunk_store.has(chunk_name) {
+                continue;
+            }
+            if let Some(entry) = self.refresh_accumulator.get_mut(chunk_name) {
+
+            }
+        }
+
         match routing_node.close_group(data.name()) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
@@ -255,6 +273,7 @@ impl DataManager {
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain data for which we're still in the close group.
         let data_ids = self.chunk_store.keys();
+        let mut chunk_names = vec![];
         for data_id in data_ids {
             match routing_node.close_group(data_id.name()) {
                 Ok(None) => {
@@ -266,16 +285,37 @@ impl DataManager {
                     trace!("{} added. No longer a DM for {:?}", node_name, data_id);
                     let _ = self.chunk_store.delete(&data_id);
                 }
-                Ok(Some(_)) => {
-                    self.send_refresh(routing_node,
-                                      &data_id,
-                                      MessageId::from_added_node(*node_name))
+                Ok(Some(close_group)) => {
+                    if close_group.contains(*node_name) {
+                        match data_id {
+                            DataIdentifier::Immutable(_) => chunk_names.push((data_id, None)),
+                            DataIdentifier::Structured(_, _) => {
+                                let data = if let Ok(data) = self.chunk_store.get(data_id) {
+                                    data
+                                } else {
+                                    continue;
+                                };
+                                let hash = if let Ok(serialised_data) =
+                                                  serialisation::serialise(&data) {
+                                    sha512::hash(&serialised_data)
+                                } else {
+                                    continue;
+                                };
+                                chunk_names.push((data_id, Some(hash)));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
                 }
                 Err(error) => {
                     error!("Failed to get close group: {:?} for {:?}", error, data_id);
                 }
             }
         }
+        self.send_refresh(routing_node,
+                          node_name,
+                          chunk_names,
+                          MessageId::from_added_node(*node_name))
     }
 
     pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
@@ -293,18 +333,18 @@ impl DataManager {
 
     fn send_refresh(&self,
                     routing_node: &RoutingNode,
-                    data_id: &DataIdentifier,
-                    msg_id: MessageId) {
-        let data = match self.chunk_store.get(data_id) {
-            Ok(data) => data,
-            _ => return,
-        };
-
-        let src = Authority::NaeManager(data_id.name());
-        let refresh = Refresh(data);
-        if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
-            trace!("DM sending refresh for {:?}", data_id);
-            let _ = routing_node.send_refresh_request(src.clone(), src, serialised_refresh, msg_id);
+                    node_name: &XorName,
+                    chunk_names: ChunkNames,
+                    message_id: MessageId) {
+        let src = Authority::ManagedNode(routing_node.name());
+        let dst = Authority::ManagedNode(*node_name);
+        // FIXME - We need to handle >2MB chunks
+        match serialisation::serialise(&chunk_names) {
+            Ok(serialised_refresh) => {
+                trace!("DM sending refresh to {}", node_name);
+                let _ = routing_node.send_refresh_request(src, dst, serialised_refresh, message_id);
+            }
+            Err(error) => warn!("Failed to serialise account: {:?}", error),
         }
     }
 }
@@ -340,13 +380,13 @@ mod test_sd {
         pub client: Authority,
         pub client_manager: Authority,
         pub sd_data: StructuredData,
-        pub msg_id: MessageId,
+        pub message_id: MessageId,
         pub request: RequestMessage,
     }
 
     pub struct GetEnvironment {
         pub client: Authority,
-        pub msg_id: MessageId,
+        pub message_id: MessageId,
         pub request: RequestMessage,
     }
 
@@ -354,7 +394,7 @@ mod test_sd {
         pub keys: (PublicKey, SecretKey),
         pub client: Authority,
         pub sd_data: StructuredData,
-        pub msg_id: MessageId,
+        pub message_id: MessageId,
         pub request: RequestMessage,
     }
 
@@ -362,7 +402,7 @@ mod test_sd {
         pub keys: (PublicKey, SecretKey),
         pub client: Authority,
         pub sd_data: StructuredData,
-        pub msg_id: MessageId,
+        pub message_id: MessageId,
         pub request: RequestMessage,
     }
 
@@ -422,8 +462,8 @@ mod test_sd {
                                     sd_data: StructuredData,
                                     keys: (PublicKey, SecretKey))
                                     -> PutEnvironment {
-            let msg_id = MessageId::new();
-            let content = RequestContent::Put(Data::Structured(sd_data.clone()), msg_id);
+            let message_id = MessageId::new();
+            let content = RequestContent::Put(Data::Structured(sd_data.clone()), message_id);
             let client = Authority::Client {
                 client_key: keys.0,
                 peer_id: random(),
@@ -436,23 +476,23 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager.handle_put(&self.routing, &request, &data, &msg_id);
+            let _ = self.data_manager.handle_put(&self.routing, &request, &data, &message_id);
             PutEnvironment {
                 keys: keys,
                 client: client,
                 client_manager: client_manager,
                 sd_data: sd_data,
-                msg_id: msg_id,
+                message_id: message_id,
                 request: request,
             }
         }
 
         pub fn get_sd_data(&mut self, sd_data: StructuredData) -> GetEnvironment {
-            let msg_id = MessageId::new();
+            let message_id = MessageId::new();
             let content =
                 RequestContent::Get(DataIdentifier::Structured(*sd_data.get_identifier(),
                                                                sd_data.get_type_tag()),
-                                    msg_id);
+                                    message_id);
             let keys = sign::gen_keypair();
             let client = Authority::Client {
                 client_key: keys.0,
@@ -466,10 +506,10 @@ mod test_sd {
             };
             let data = Data::Structured(sd_data.clone());
             let _ = self.data_manager
-                        .handle_get(&self.routing, &request, &data.identifier(), &msg_id);
+                        .handle_get(&self.routing, &request, &data.identifier(), &message_id);
             GetEnvironment {
                 client: client,
-                msg_id: msg_id,
+                message_id: message_id,
                 request: request,
             }
         }
@@ -490,19 +530,19 @@ mod test_sd {
                                      keys: (PublicKey, SecretKey),
                                      client: Authority)
                                      -> PostEnvironment {
-            let msg_id = MessageId::new();
-            let content = RequestContent::Post(Data::Structured(sd_data.clone()), msg_id);
+            let message_id = MessageId::new();
+            let content = RequestContent::Post(Data::Structured(sd_data.clone()), message_id);
             let request = RequestMessage {
                 src: client.clone(),
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_post(&self.routing, &request, &sd_data, &msg_id);
+            let _ = self.data_manager.handle_post(&self.routing, &request, &sd_data, &message_id);
             PostEnvironment {
                 keys: keys,
                 client: client,
                 sd_data: sd_data,
-                msg_id: msg_id,
+                message_id: message_id,
                 request: request,
             }
         }
@@ -523,19 +563,19 @@ mod test_sd {
                                        keys: (PublicKey, SecretKey),
                                        client: Authority)
                                        -> DeleteEnvironment {
-            let msg_id = MessageId::new();
-            let content = RequestContent::Delete(Data::Structured(sd_data.clone()), msg_id);
+            let message_id = MessageId::new();
+            let content = RequestContent::Delete(Data::Structured(sd_data.clone()), message_id);
             let request = RequestMessage {
                 src: client.clone(),
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_delete(&self.routing, &request, &sd_data, &msg_id);
+            let _ = self.data_manager.handle_delete(&self.routing, &request, &sd_data, &message_id);
             DeleteEnvironment {
                 keys: keys,
                 client: client,
                 sd_data: sd_data,
-                msg_id: msg_id,
+                message_id: message_id,
                 request: request,
             }
         }
@@ -562,7 +602,7 @@ mod test_sd {
         let put_responses = env.routing.put_successes_given();
         assert_eq!(put_responses.len(), 1);
         if let ResponseContent::PutSuccess(identifier, id) = put_responses[0].content.clone() {
-            assert_eq!(put_env.msg_id, id);
+            assert_eq!(put_env.message_id, id);
             assert_eq!(put_env.sd_data.identifier(), identifier);
         } else {
             panic!("Received unexpected response {:?}", put_responses[0]);
@@ -577,7 +617,7 @@ mod test_sd {
         if let ResponseMessage { content: ResponseContent::GetSuccess(response_data, id), .. } =
                get_responses[0].clone() {
             assert_eq!(Data::Structured(put_env.sd_data.clone()), response_data);
-            assert_eq!(get_env.msg_id, id);
+            assert_eq!(get_env.message_id, id);
         } else {
             panic!("Received unexpected response {:?}", get_responses[0]);
         }
@@ -603,7 +643,7 @@ mod test_sd {
 
         if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
                put_failures[0].content {
-            assert_eq!(*id, put_existing_env.msg_id);
+            assert_eq!(*id, put_existing_env.message_id);
             assert_eq!(*request, put_existing_env.request);
             let err = unwrap_result!(
                     serialisation::deserialise::<MutationError>(external_error_indicator));
@@ -624,7 +664,7 @@ mod test_sd {
         assert_eq!(get_failure.len(), 1);
         if let ResponseContent::GetFailure { ref external_error_indicator, ref id, .. } =
                get_failure[0].content.clone() {
-            assert_eq!(get_env.msg_id, *id);
+            assert_eq!(get_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise(external_error_indicator));
             if let GetError::NoSuchData = parsed_error {} else {
                 panic!("Received unexpected external_error_indicator with parsed error as {:?}",
@@ -649,7 +689,7 @@ mod test_sd {
         assert_eq!(post_failure.len(), 1);
         if let ResponseContent::PostFailure { ref external_error_indicator, ref id, .. } =
                post_failure[0].content.clone() {
-            assert_eq!(post_env.msg_id, *id);
+            assert_eq!(post_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise::<MutationError>(
                     &external_error_indicator[..]));
             assert_eq!(parsed_error, MutationError::InvalidSuccessor);
@@ -681,7 +721,7 @@ mod test_sd {
         assert_eq!(post_failure.len(), 2);
         if let ResponseContent::PostFailure { ref external_error_indicator, ref id, .. } =
                post_failure[1].content.clone() {
-            assert_eq!(post_incorrect_env.msg_id, *id);
+            assert_eq!(post_incorrect_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise::<MutationError>(
                     &external_error_indicator[..]));
             assert_eq!(parsed_error, MutationError::InvalidSuccessor);
@@ -708,7 +748,7 @@ mod test_sd {
         let mut post_success = env.routing.post_successes_given();
         assert_eq!(post_success.len(), 1);
         if let ResponseContent::PostSuccess(identifier, id) = post_success[0].content.clone() {
-            assert_eq!(post_correct_env.msg_id, id);
+            assert_eq!(post_correct_env.message_id, id);
             assert_eq!(sd_new.identifier(), identifier);
         } else {
             panic!("Received unexpected response {:?}", post_success[0]);
@@ -759,7 +799,7 @@ mod test_sd {
         post_success = env.routing.post_successes_given();
         assert_eq!(env.routing.post_successes_given().len(), 2);
         if let ResponseContent::PostSuccess(identifier, id) = post_success[1].content.clone() {
-            assert_eq!(post_correct_env.msg_id, id);
+            assert_eq!(post_correct_env.message_id, id);
             assert_eq!(sd_new.identifier(), identifier);
         } else {
             panic!("Received unexpected response {:?}", post_success[1]);
@@ -779,7 +819,7 @@ mod test_sd {
         assert_eq!(delete_failure.len(), 1);
         if let ResponseContent::DeleteFailure { ref external_error_indicator, ref id, .. } =
                delete_failure[0].content.clone() {
-            assert_eq!(delete_env.msg_id, *id);
+            assert_eq!(delete_env.message_id, *id);
             let parsed_error = unwrap_result!(serialisation::deserialise::<MutationError>(
                     &external_error_indicator[..]));
             assert_eq!(parsed_error, MutationError::InvalidSuccessor);
@@ -832,7 +872,7 @@ mod test_sd {
         let delete_success = env.routing.delete_successes_given();
         assert_eq!(delete_success.len(), 1);
         if let ResponseContent::DeleteSuccess(identifier, id) = delete_success[0].content.clone() {
-            assert_eq!(delete_correct_env.msg_id, id);
+            assert_eq!(delete_correct_env.message_id, id);
             assert_eq!(sd_new.identifier(), identifier);
         } else {
             panic!("Received unexpected response {:?}", delete_success[0]);

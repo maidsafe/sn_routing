@@ -69,6 +69,7 @@ mod error;
 #[cfg(all(test, not(feature = "use-mock-crust")))]
 mod mock_routing;
 mod personas;
+mod timed_buffer;
 mod utils;
 mod vault;
 

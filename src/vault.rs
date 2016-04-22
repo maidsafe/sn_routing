@@ -166,6 +166,11 @@ impl Vault {
              &RequestContent::Get(ref data_id, ref msg_id)) => {
                 self.data_manager.handle_get(routing_node, &request, data_id, msg_id)
             }
+            (&Authority::ManagedNode(_),
+             &Authority::ManagedNode(_),
+             &RequestContent::Get(ref data_id, ref msg_id)) => {
+                self.data_manager.handle_get(routing_node, &request, data_id, msg_id)
+            }
             // ================== Put ==================
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
@@ -196,8 +201,8 @@ impl Vault {
              &RequestContent::Refresh(ref serialised_msg, _)) => {
                 self.maid_manager.handle_refresh(routing_node, serialised_msg)
             }
-            (&Authority::NaeManager(_),
-             &Authority::NaeManager(_),
+            (&Authority::ManagedNode(_),
+             &Authority::ManagedNode(_),
              &RequestContent::Refresh(ref serialised_msg, _)) => {
                 self.data_manager.handle_refresh(routing_node, serialised_msg)
             }
@@ -211,6 +216,23 @@ impl Vault {
                    response: ResponseMessage)
                    -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
+            // ================== GetSuccess ==================
+            (&Authority::ManagedNode(_),
+             &Authority::ManagedNode(_),
+             &ResponseContent::GetSuccess(ref data_id, ref msg_id)) => {
+                self.data_manager.handle_get_success(routing_node, data_id, msg_id)
+            }
+            // ================== GetFailure ==================
+            (&Authority::ManagedNode(_),
+             &Authority::ManagedNode(_),
+             &ResponseContent::GetFailure {
+                    request: RequestMessage {
+                        content: RequestContent::Get(ref identifier, _), ..
+                    },
+                    ref external_error_indicator,
+                    .. }) => {
+                self.data_manager.handle_get_failure(routing_node, &response.src, identifier, external_error_indicator)
+            }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
