@@ -70,7 +70,9 @@ const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `Heartbeat` is sent.
 const HEARTBEAT_TIMEOUT_SECS: u64 = 30;
 /// Number of missed heartbeats after which a peer is considered disconnected.
-const HEARTBEAT_ATTEMPTS: u64 = 3;
+const HEARTBEAT_ATTEMPTS: i64 = 3;
+/// Time (in seconds) the new close group waits for a joining node it sent a network name to.
+const SENT_NETWORK_NAME_TIMEOUT_SECS: i64 = 60;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -232,6 +234,8 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
+    /// The last joining node we have sent a `GetNetworkName` response to, and when.
+    sent_network_name_to: Option<(XorName, SteadyTime)>,
     heartbeat_timer_token: u64,
 
     // our bootstrap connections
@@ -316,6 +320,7 @@ impl Core {
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
             get_network_name_timer_token: None,
+            sent_network_name_to: None,
             heartbeat_timer_token: heartbeat_timer_token,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
@@ -1530,6 +1535,12 @@ impl Core {
             // return self.disconnect_peer(&peer_id);
         }
 
+        if let Some((name, _)) = self.sent_network_name_to {
+            if name == *public_id.name() {
+                self.sent_network_name_to = None;
+            }
+        }
+
         self.add_to_routing_table(public_id, peer_id)
     }
 
@@ -1821,6 +1832,14 @@ impl Core {
                                         client_auth: Authority,
                                         message_id: MessageId)
                                         -> Result<(), RoutingError> {
+        let now = SteadyTime::now();
+        if let Some((_, timestamp)) = self.sent_network_name_to {
+            if (now - timestamp).num_seconds() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
+                return Err(RoutingError::RejectedGetNetworkName);
+            }
+            self.sent_network_name_to = None;
+        }
+
         if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
             warn!("Previous ID {:?} with same name found during \
                    handle_expect_close_node_request. Ignoring that",
@@ -1836,6 +1855,7 @@ impl Core {
                                     .map(|info| info.public_id)
                                     .collect_vec();
 
+        self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = ResponseContent::GetNetworkName {
             relocated_id: expect_id,
@@ -2177,7 +2197,7 @@ impl Core {
                                   .iter()
                                   .filter(|&(_, timestamp)| {
                                       (now - *timestamp).num_seconds() >
-                                      (HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS) as i64
+                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS as i64
                                   })
                                   .map(|(peer_id, _)| peer_id)
                                   .cloned()
