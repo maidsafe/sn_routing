@@ -16,20 +16,24 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::{self, Debug, Formatter};
-use rustc_serialize::{Decoder, Encodable, Encoder};
+use rustc_serialize::{Decoder, Encoder};
 pub use structured_data::StructuredData;
-pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial};
 pub use plain_data::PlainData;
 use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
 pub enum Data {
-    /// StructuredData Data type.
+    /// `StructuredData` data type.
     Structured(StructuredData),
-    /// ImmutableData Data type.
+    /// `ImmutableData` data type.
     Immutable(ImmutableData),
-    /// PlainData Data type.
+    /// `ImmutableData` data type - backup copy.
+    ImmutableBackup(ImmutableDataBackup),
+    /// `ImmutableData` data type - sacrificial copy.
+    ImmutableSacrificial(ImmutableDataSacrificial),
+    /// `PlainData` data type.
     Plain(PlainData),
 }
 
@@ -39,7 +43,20 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
+            Data::ImmutableBackup(ref data) => data.name(),
+            Data::ImmutableSacrificial(ref data) => data.name(),
             Data::Plain(ref data) => data.name(),
+        }
+    }
+
+    /// Return data identifier.
+    pub fn identifier(&self) -> DataIdentifier {
+        match *self {
+            Data::Structured(ref data) => data.identifier(),
+            Data::Immutable(ref data) => data.identifier(),
+            Data::ImmutableBackup(ref data) => data.identifier(),
+            Data::ImmutableSacrificial(ref data) => data.identifier(),
+            Data::Plain(ref data) => data.identifier(),
         }
     }
 
@@ -48,18 +65,24 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.payload_size(),
             Data::Immutable(ref data) => data.payload_size(),
+            Data::ImmutableBackup(ref data) => data.payload_size(),
+            Data::ImmutableSacrificial(ref data) => data.payload_size(),
             Data::Plain(ref data) => data.payload_size(),
         }
     }
 }
 
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
-/// DataRequest.
-pub enum DataRequest {
+/// DataIdentifier.
+pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),
-    /// Data request, (Identifier, Type), for ImmutableData types.
-    Immutable(XorName, ImmutableDataType),
+    /// Data request, (Identifier), for `ImmutableData`.
+    Immutable(XorName),
+    /// Data request, (Identifier), for a backup copy of `ImmutableData`.
+    ImmutableBackup(XorName),
+    /// Data request, (Identifier), for a sacrificial copy of `ImmutableData`.
+    ImmutableSacrificial(XorName),
     /// Request for PlainData.
     Plain(XorName),
 }
@@ -69,17 +92,22 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
+            Data::ImmutableBackup(ref data) => data.fmt(formatter),
+            Data::ImmutableSacrificial(ref data) => data.fmt(formatter),
             Data::Plain(ref data) => data.fmt(formatter),
         }
     }
 }
 
-impl DataRequest {
-    /// DataRequest name.
+impl DataIdentifier {
+    /// DataIdentifier name.
     pub fn name(&self) -> XorName {
         match *self {
-            DataRequest::Structured(name, tag) => StructuredData::compute_name(tag, &name),
-            DataRequest::Immutable(name, _) | DataRequest::Plain(name) => name,
+            DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
+            DataIdentifier::Immutable(name) |
+            DataIdentifier::ImmutableBackup(name) |
+            DataIdentifier::ImmutableSacrificial(name) |
+            DataIdentifier::Plain(name) => name,
         }
     }
 }
@@ -106,22 +134,36 @@ mod test {
                                   vec![],
                                   Some(&keys.1)) {
             Ok(structured_data) => {
-                assert_eq!(structured_data.name(),
-                           Data::Structured(structured_data).name());
+                assert_eq!(structured_data.clone().name(),
+                           Data::Structured(structured_data.clone()).name());
+                assert_eq!(DataIdentifier::Structured(*structured_data.get_identifier(),
+                                                      structured_data.get_type_tag()),
+                           structured_data.identifier());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
 
+
         // name() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.name(),
-                   Data::Immutable(immutable_data).name());
+                   Data::Immutable(immutable_data.clone()).name());
+        assert_eq!(immutable_data.identifier(),
+                   DataIdentifier::Immutable(immutable_data.name()));
 
+        let backup_data = ImmutableDataBackup::new(immutable_data.clone());
+        assert_eq!(backup_data.identifier(),
+                   DataIdentifier::ImmutableBackup(backup_data.name()));
+        let sacrificial_data = ImmutableDataSacrificial::new(immutable_data.clone());
+        assert_eq!(sacrificial_data.identifier(),
+                   DataIdentifier::ImmutableSacrificial(sacrificial_data.name()));
         // name() resolves correctly for PlainData
         let name = XorName(sha512::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(), Data::Plain(plain_data).name());
+        assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
+        assert_eq!(plain_data.identifier(),
+                   DataIdentifier::Plain(plain_data.name()));
     }
 
     #[test]
@@ -145,7 +187,7 @@ mod test {
 
         // payload_size() resolves correctly for ImmutableData
         let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(ImmutableDataType::Normal, value);
+        let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.payload_size(),
                    Data::Immutable(immutable_data).payload_size());
 
@@ -163,13 +205,13 @@ mod test {
         // name() resolves correctly for StructuedData
         let tag = 0;
         assert_eq!(StructuredData::compute_name(tag, &name),
-                   DataRequest::Structured(name, tag).name());
+                   DataIdentifier::Structured(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = DataRequest::Immutable(name, ImmutableDataType::Normal).name();
+        let actual_name = DataIdentifier::Immutable(name).name();
         assert_eq!(name, actual_name);
 
         // name() resolves correctly for PlainData
-        assert_eq!(name, DataRequest::Plain(name).name());
+        assert_eq!(name, DataIdentifier::Plain(name).name());
     }
 }

@@ -89,7 +89,9 @@ impl Authority {
 impl Debug for Authority {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Authority::ClientManager(ref name) => write!(formatter, "ClientManager(name: {})", name),
+            Authority::ClientManager(ref name) => {
+                write!(formatter, "ClientManager(name: {})", name)
+            }
             Authority::NaeManager(ref name) => write!(formatter, "NaeManager(name: {})", name),
             Authority::NodeManager(ref name) => write!(formatter, "NodeManager(name: {})", name),
             Authority::ManagedNode(ref name) => write!(formatter, "ManagedNode(name: {})", name),

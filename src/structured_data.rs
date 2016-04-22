@@ -19,6 +19,7 @@ use maidsafe_utilities::serialisation::serialise;
 use sodiumoxide::crypto::sign::{PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
+use data::DataIdentifier;
 
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -106,6 +107,11 @@ impl StructuredData {
     /// Returns the name, computed from the type tag and identifier.
     pub fn name(&self) -> XorName {
         StructuredData::compute_name(self.type_tag, &self.identifier)
+    }
+
+    /// Returns `DataIdentifier` for this data element.
+    pub fn identifier(&self) -> DataIdentifier {
+        DataIdentifier::Structured(self.identifier, self.type_tag)
     }
 
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
@@ -270,7 +276,8 @@ impl Debug for StructuredData {
                 .map(|signature| ::utils::format_binary_array(&signature.0[..]))
                 .collect();
         write!(formatter,
-               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
+               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, \
+                version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
                self.type_tag,
                self.name(),
                ::utils::format_binary_array(&self.data[..]),

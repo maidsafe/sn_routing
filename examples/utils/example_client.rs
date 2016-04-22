@@ -25,8 +25,8 @@ extern crate maidsafe_utilities;
 use std::sync::mpsc;
 use self::sodiumoxide::crypto;
 use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataRequest, Authority, ResponseContent, ResponseMessage,
-                    Client, MessageId};
+use self::routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent,
+                    ResponseMessage, Client, MessageId};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -51,7 +51,7 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap_result!(Client::new(sender, Some(full_id)));
+        let routing_client = unwrap_result!(Client::new(sender, Some(full_id), false));
 
         // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
         // requests to the network.
@@ -72,7 +72,7 @@ impl ExampleClient {
     /// Send a `Get` request to the network and return the data received in the response.
     ///
     /// This is a blocking call and will wait indefinitely for the response.
-    pub fn get(&mut self, request: DataRequest) -> Option<Data> {
+    pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
                            .send_get_request(Authority::NaeManager(request.name()),
@@ -113,9 +113,9 @@ impl ExampleClient {
 
     /// Send a `Put` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` response.
-    pub fn put(&self, data: Data) {
-        let data_name = data.name();
+    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure` response.
+    pub fn put(&self, data: Data) -> Result<(), ()> {
+        let data_identifier = data.identifier();
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()),
@@ -126,23 +126,35 @@ impl ExampleClient {
         for it in self.receiver.iter() {
             match it {
                 Event::Response(ResponseMessage {
-                    content: ResponseContent::PutSuccess(_, id),
+                    content: ResponseContent::PutSuccess(identifier, id),
                     ..
                 }) => {
-                    if message_id == id {
-                        println!("Successfully stored {:?}", data_name);
+                    if message_id != id {
+                        error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
+                               data_identifier,
+                               id,
+                               message_id);
+                        return Err(());
+                    } else if data_identifier != identifier {
+                        error!("Stored {:?}, but with wrong name {:?}.", data_identifier, identifier);
+                        return Err(());
                     } else {
-                        println!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
-                                 data_name,
-                                 id,
-                                 message_id);
+                        trace!("Successfully stored {:?}", data_identifier);
+                        return Ok(());
                     }
-                    break;
+                }
+                Event::Response(ResponseMessage {
+                    content: ResponseContent::PutFailure { .. },
+                    ..
+                }) => {
+                    error!("Received PutFailure for {:?}.", data_identifier);
+                    return Err(());
                 }
                 Event::Disconnected => self.disconnected(),
                 _ => (),
             }
         }
+        Err(())
     }
 
     fn disconnected(&self) {

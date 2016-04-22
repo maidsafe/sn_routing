@@ -66,7 +66,7 @@ use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use routing::{Data, DataRequest, PlainData};
+use routing::{Data, DataIdentifier, PlainData};
 use utils::{ExampleNode, ExampleClient};
 
 // ==========================   Program Options   =================================
@@ -206,7 +206,7 @@ impl KeyValueStore {
     /// Get data from the network.
     pub fn get(&mut self, what: String) {
         let name = KeyValueStore::calculate_key_name(&what);
-        let data = self.example_client.get(DataRequest::Plain(name));
+        let data = self.example_client.get(DataIdentifier::Plain(name));
         match data {
             Some(data) => {
                 let plain_data = if let Data::Plain(plain_data) = data {
@@ -230,7 +230,9 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap_result!(serialise(&(put_where, put_what)));
-        self.example_client.put(Data::Plain(PlainData::new(name, data)));
+        if self.example_client.put(Data::Plain(PlainData::new(name, data))).is_err() {
+            error!("Failed to put data.");
+        }
     }
 
     fn calculate_key_name(key: &str) -> XorName {
@@ -240,7 +242,7 @@ impl KeyValueStore {
 
 /// /////////////////////////////////////////////////////////////////////////////
 fn main() {
-    maidsafe_utilities::log::init(false);
+    unwrap_result!(maidsafe_utilities::log::init(false));
 
     let args: Args = Docopt::new(USAGE)
                          .and_then(|docopt| docopt.decode())

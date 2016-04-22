@@ -1,5 +1,49 @@
 # Routing - Change Log
 
+## [0.17.0]
+- Depend on Crust 0.11.0.
+
+## [0.16.3]
+- Add `HEARTBEAT_ATTEMPTS` constant to configure when an unresponsive peer is considered lost.
+- Fix a bug that caused unneeded node harvesting attempts.
+
+## [0.16.2]
+- Reduce network traffic by including recipients in hop message that have handled the message.
+
+## [0.16.1]
+- Bug fix: DataIdentifier now correctly returns the structured data computed name in its name() function
+
+## [0.16.0]
+- Add `identifier()` method to all data elements (type + name)
+- All `ImmutableData` types now concrete (not variants)
+
+## [0.15.1]
+- Fix a message handling bug.
+- Add `MessageId::zero` constructor.
+- Always send `NodeAdded` for a new peer, even if not in a common group.
+
+## [0.15.0]
+- Implement Rand for mock PeerId.
+- Add data name to Put, Post and Delete success responses.
+
+## [0.14.0]
+- Add message id to Refresh messages
+- Node numbers only increase during node addition in churn for ci_test example
+- Update dependencies
+
+## [0.13.0]
+- Add tunnel nodes.
+- Optimise the `GetNetworkName` message flow for quicker joining.
+- Make caching optional.
+- Send keepalive signals to detect lost peers.
+- Implement full `Put` response flow in the example node.
+- Remove digest from success responses; it has been replaced by `MessageId`.
+- Migrate to Crust 0.10.0.
+- Various bug fixes.
+
+## [0.12.0]
+- Make the mock_crust module public
+
 ## [0.11.1]
 - Send a Disconnected event if client fails to bootstrap.
 

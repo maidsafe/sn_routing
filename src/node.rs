@@ -18,16 +18,17 @@
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use action::Action;
 use authority::Authority;
 use core::Core;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
-use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
 use types::MessageId;
 
@@ -47,7 +48,7 @@ pub struct Node {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    core: Core,
+    core: RefCell<Core>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -61,11 +62,11 @@ impl Node {
     ///
     /// The intial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, false, None);
+        let (action_sender, mut core) = Core::new(event_sender, false, None, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -82,32 +83,32 @@ impl Node {
 
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, false, None);
+        let (action_sender, core) = Core::new(event_sender, false, None, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            core: core,
+            core: RefCell::new(core),
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[allow(missing_docs)]
-    pub fn poll(&mut self) -> bool {
-        self.core.poll()
+    /// Poll and process all events in this node's `Core` instance.
+    pub fn poll(&self) -> bool {
+        self.core.borrow_mut().poll()
     }
 
     /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
                             src: Authority,
                             dst: Authority,
-                            data_request: DataRequest,
+                            data_request: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
@@ -202,13 +203,13 @@ impl Node {
     pub fn send_put_success(&self,
                             src: Authority,
                             dst: Authority,
-                            request_hash: sha512::Digest,
+                            name: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutSuccess(request_hash, id),
+            content: ResponseContent::PutSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
@@ -237,13 +238,13 @@ impl Node {
     pub fn send_post_success(&self,
                              src: Authority,
                              dst: Authority,
-                             request_hash: sha512::Digest,
+                             name: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostSuccess(request_hash, id),
+            content: ResponseContent::PostSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
@@ -272,13 +273,13 @@ impl Node {
     pub fn send_delete_success(&self,
                                src: Authority,
                                dst: Authority,
-                               request_hash: sha512::Digest,
+                               name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Response(ResponseMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteSuccess(request_hash, id),
+            content: ResponseContent::DeleteSuccess(name, id),
         });
         self.send_action(routing_msg)
     }
@@ -310,12 +311,14 @@ impl Node {
     /// happened, the churn mechanism is triggered to adapt to the change.
     pub fn send_refresh_request(&self,
                                 src: Authority,
-                                content: Vec<u8>)
+                                dst: Authority,
+                                content: Vec<u8>,
+                                id: MessageId)
                                 -> Result<(), InterfaceError> {
         let routing_msg = RoutingMessage::Request(RequestMessage {
-            src: src.clone(),
-            dst: src,
-            content: RequestContent::Refresh(content),
+            src: src,
+            dst: dst,
+            content: RequestContent::Refresh(content, id),
         });
         self.send_action(routing_msg)
     }
@@ -327,14 +330,24 @@ impl Node {
             name: name,
             result_tx: result_tx,
         }));
-        Ok(try!(result_rx.recv()))
+
+        self.receive_action_result(&result_rx)
     }
 
     /// Returns the name of this node.
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
-        Ok(try!(result_rx.recv()))
+
+        self.receive_action_result(&result_rx)
+    }
+
+    /// Returns the name of this node.
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::QuorumSize { result_tx: result_tx }));
+
+        self.receive_action_result(&result_rx)
     }
 
     fn send_action(&self, routing_msg: RoutingMessage) -> Result<(), InterfaceError> {
@@ -343,7 +356,18 @@ impl Node {
             result_tx: self.interface_result_tx.clone(),
         }));
 
-        try!(self.interface_result_rx.recv())
+        try!(self.receive_action_result(&self.interface_result_rx))
+    }
+
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
+        Ok(try!(rx.recv()))
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
+        while self.poll() {}
+        Ok(try!(rx.recv()))
     }
 }
 
@@ -397,7 +421,7 @@ impl Drop for Node {
 //         client.put(data.clone());
 //         ::std::thread::sleep_ms(5000);
 
-//         let recovered_data = match client.get(::data::DataRequest::PlainData(name)) {
+//         let recovered_data = match client.get(::data::DataIdentifier::PlainData(name)) {
 //             Some(data) => data,
 //             None => panic!("Failed to recover stored data: {}.", name),
 //         };

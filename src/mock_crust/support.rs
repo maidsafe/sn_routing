@@ -22,6 +22,7 @@
 
 use rand;
 use std::cell::RefCell;
+use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::rc::{Rc, Weak};
@@ -37,6 +38,7 @@ pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
     next_endpoint: usize,
     queue: VecDeque<(Endpoint, Endpoint, Packet)>,
+    blocked_connections: HashSet<(Endpoint, Endpoint)>,
 }
 
 impl Network {
@@ -46,13 +48,17 @@ impl Network {
             services: HashMap::new(),
             next_endpoint: 0,
             queue: VecDeque::new(),
+            blocked_connections: HashSet::new(),
         })))
     }
 
     /// Create new ServiceHandle.
-    pub fn new_service_handle(&self, config: Option<Config>, endpoint: Option<Endpoint>) -> ServiceHandle {
-        let config = config.unwrap_or_else(Config::new);
-        let endpoint = endpoint.unwrap_or_else(|| self.gen_endpoint());
+    pub fn new_service_handle(&self,
+                              opt_config: Option<Config>,
+                              opt_endpoint: Option<Endpoint>)
+                              -> ServiceHandle {
+        let config = opt_config.unwrap_or_else(Config::new);
+        let endpoint = self.gen_endpoint(opt_endpoint);
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
         let _ = self.0
@@ -63,18 +69,34 @@ impl Network {
         handle
     }
 
-    pub fn gen_endpoint(&self) -> Endpoint {
+    /// Generate unique Endpoint
+    pub fn gen_endpoint(&self, opt_endpoint: Option<Endpoint>) -> Endpoint {
         let mut imp = self.0.borrow_mut();
-        let num = imp.next_endpoint;
-        imp.next_endpoint += 1;
-
-        Endpoint(num)
+        let endpoint = if let Some(endpoint) = opt_endpoint {
+            endpoint
+        } else {
+            Endpoint(imp.next_endpoint)
+        };
+        imp.next_endpoint = cmp::max(imp.next_endpoint, endpoint.0 + 1);
+        endpoint
     }
 
+    /// Poll and process all queued Packets.
     pub fn poll(&self) {
         while let Some((sender, receiver, packet)) = self.pop_packet() {
             self.process_packet(sender, receiver, packet);
         }
+    }
+
+    /// Causes all packets from `sender` to `receiver` to fail.
+    pub fn block_connection(&self, sender: Endpoint, receiver: Endpoint) {
+        let mut imp = self.0.borrow_mut();
+        imp.blocked_connections.insert((sender, receiver));
+        imp.blocked_connections.insert((receiver, sender));
+    }
+
+    fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
+        self.0.borrow_mut().blocked_connections.contains(&(sender, receiver))
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
@@ -86,6 +108,12 @@ impl Network {
     }
 
     fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
+        if self.connection_blocked(sender, receiver) {
+            if let Some(failure) = packet.to_failure() {
+                self.send(receiver, sender, failure);
+                return;
+            }
+        }
         if let Some(service) = self.find_service(receiver) {
             service.borrow_mut().receive_packet(sender, packet);
         } else {
@@ -111,6 +139,7 @@ impl ServiceHandle {
         ServiceHandle(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
+    /// Endpoint of the Service bound to this handle.
     pub fn endpoint(&self) -> Endpoint {
         self.0.borrow().endpoint
     }
@@ -148,7 +177,7 @@ impl ServiceImpl {
     pub fn start(&mut self, event_sender: CrustEventSender, _beacon_port: u16) {
         let mut pending_bootstraps = 0;
 
-        for endpoint in self.config.hard_coded_contacts.iter() {
+        for endpoint in &self.config.hard_coded_contacts {
             if *endpoint == self.endpoint {
                 continue;
             }
@@ -160,7 +189,7 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFinished
         // immediately.
         if pending_bootstraps == 0 {
-            let _ = event_sender.send(Event::BootstrapFinished).unwrap();
+            unwrap_result!(event_sender.send(Event::BootstrapFinished));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -201,8 +230,9 @@ impl ServiceImpl {
     }
 
     pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        let TheirConnectionInfo(_, peer_endpoint) = their_info;
-        self.send_packet(peer_endpoint, Packet::ConnectRequest(self.peer_id));
+        let TheirConnectionInfo(their_id, peer_endpoint) = their_info;
+        let packet = Packet::ConnectRequest(self.peer_id, their_id);
+        self.send_packet(peer_endpoint, packet);
     }
 
     fn send_packet(&self, receiver: Endpoint, packet: Packet) {
@@ -216,9 +246,15 @@ impl ServiceImpl {
             Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
             Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
-            Packet::ConnectRequest(peer_id) => self.handle_connect_request(sender, peer_id),
-            Packet::ConnectSuccess(peer_id) => self.handle_connect_success(sender, peer_id),
-            Packet::ConnectFailure(peer_id) => self.handle_connect_failure(sender, peer_id),
+            Packet::ConnectRequest(their_id, our_id) => {
+                self.handle_connect_request(sender, their_id, our_id)
+            }
+            Packet::ConnectSuccess(our_id, their_id) => {
+                self.handle_connect_success(sender, our_id, their_id)
+            }
+            Packet::ConnectFailure(our_id, their_id) => {
+                self.handle_connect_failure(sender, our_id, their_id)
+            }
             Packet::Message(data) => self.handle_message(sender, data),
             Packet::Disconnect => self.handle_disconnect(sender),
         }
@@ -248,22 +284,44 @@ impl ServiceImpl {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        if self.is_connected(&peer_endpoint, &peer_id) && !self.pending_connects.contains(&peer_id) {
-            warn!("Connection already exist");
+    fn handle_connect_request(&mut self,
+                              peer_endpoint: Endpoint,
+                              their_id: PeerId,
+                              our_id: PeerId) {
+        if self.is_connected(&peer_endpoint, &their_id) &&
+           !self.pending_connects.contains(&their_id) {
+            warn!("Connection already exists");
+        }
+        if our_id != self.peer_id {
+            warn!("Got connect request for {:?} as {:?}.",
+                  our_id,
+                  self.peer_id);
         }
 
-        self.add_rendezvous_connection(peer_id, peer_endpoint);
-        self.send_packet(peer_endpoint, Packet::ConnectSuccess(self.peer_id));
+        self.add_rendezvous_connection(their_id, peer_endpoint);
+        self.send_packet(peer_endpoint, Packet::ConnectSuccess(their_id, our_id));
     }
 
-    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
-        self.add_rendezvous_connection(peer_id, peer_endpoint);
+    fn handle_connect_success(&mut self,
+                              peer_endpoint: Endpoint,
+                              our_id: PeerId,
+                              their_id: PeerId) {
+        if our_id != self.peer_id {
+            warn!("Got connect success for {:?} as {:?}.",
+                  our_id,
+                  self.peer_id);
+        }
+        self.add_rendezvous_connection(their_id, peer_endpoint);
     }
 
-    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, peer_id: PeerId) {
+    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, our_id: PeerId, their_id: PeerId) {
+        if our_id != self.peer_id {
+            warn!("Got connect failure for {:?} as {:?}.",
+                  our_id,
+                  self.peer_id);
+        }
         let err = io::Error::new(io::ErrorKind::NotFound, "Peer not found");
-        self.send_event(Event::NewPeer(Err(err), peer_id));
+        self.send_event(Event::NewPeer(Err(err), their_id));
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
@@ -281,7 +339,8 @@ impl ServiceImpl {
     }
 
     fn send_event(&self, event: Event) {
-        let _ = self.event_sender.as_ref().unwrap().send(event);
+        let sender = unwrap_option!(self.event_sender.as_ref(), "Could not get event sender.");
+        unwrap_result!(sender.send(event));
     }
 
     fn is_listening(&self) -> bool {
@@ -393,23 +452,26 @@ fn gen_peer_id(endpoint: Endpoint) -> PeerId {
 /// Simulated crust config file.
 #[derive(Clone)]
 pub struct Config {
+    /// Contacts to bootstrap against.
     pub hard_coded_contacts: Vec<Endpoint>,
 }
 
 impl Config {
+    /// Create default Config.
     pub fn new() -> Self {
         Self::with_contacts(&[])
     }
 
+    /// Create Config with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
     }
 }
 
-/// Simulated network endpoint (socket address). This is used to identify and
-/// address Services in the mock network.
+/// Simulated network endpoint (think socket address). This is used to identify
+/// and address Services in the mock network.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
-pub struct Endpoint(usize);
+pub struct Endpoint(pub usize);
 
 #[derive(Clone, Debug)]
 enum Packet {
@@ -417,9 +479,9 @@ enum Packet {
     BootstrapSuccess(PeerId),
     BootstrapFailure,
 
-    ConnectRequest(PeerId),
-    ConnectSuccess(PeerId),
-    ConnectFailure(PeerId),
+    ConnectRequest(PeerId, PeerId),
+    ConnectSuccess(PeerId, PeerId),
+    ConnectFailure(PeerId, PeerId),
 
     Message(Vec<u8>),
     Disconnect,
@@ -430,7 +492,9 @@ impl Packet {
     fn to_failure(&self) -> Option<Packet> {
         match *self {
             Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
-            Packet::ConnectRequest(peer_id) => Some(Packet::ConnectFailure(peer_id)),
+            Packet::ConnectRequest(peer_id, their_id) => {
+                Some(Packet::ConnectFailure(peer_id, their_id))
+            }
             _ => None,
         }
     }
@@ -456,5 +520,5 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
 }
 
 pub fn get_current() -> ServiceHandle {
-    CURRENT.with(|current| current.borrow_mut().take().unwrap())
+    CURRENT.with(|current| unwrap_option!(current.borrow_mut().take(), "Couldn't borrow service."))
 }

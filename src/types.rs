@@ -37,6 +37,12 @@ impl MessageId {
         MessageId(random::<XorName>())
     }
 
+    /// Generate a `MessageId` with value 0. This should only be used for messages where there is
+    /// no danger of duplication.
+    pub fn zero() -> MessageId {
+        MessageId(XorName([0; 64]))
+    }
+
     /// Generate a new `MessageId` with contents extracted from lost node.
     pub fn from_lost_node(mut name: XorName) -> MessageId {
         name.0[0] = 'L' as u8;
@@ -54,5 +60,40 @@ impl MessageId {
         let MessageId(XorName(mut name_mut)) = *name;
         name_mut.reverse();
         MessageId(XorName(name_mut))
+    }
+
+    /// Generate the increment (on the MSB only) of the given `MessageId`.
+    pub fn increment_first_byte(message_id: &MessageId) -> MessageId {
+        let MessageId(XorName(mut vec_mut)) = *message_id;
+        vec_mut[0] = vec_mut[0].wrapping_add(1);
+        MessageId(XorName(vec_mut))
+    }
+
+    /// Generate the decrement (on the MSB only) of the given `MessageId`.
+    pub fn decrement_first_byte(message_id: &MessageId) -> MessageId {
+        let MessageId(XorName(mut vec_mut)) = *message_id;
+        vec_mut[0] = vec_mut[0].wrapping_sub(1);
+        MessageId(XorName(vec_mut))
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
+mod test {
+    use super::MessageId;
+    use xor_name::{XorName, XOR_NAME_LEN};
+
+    #[test]
+    fn increment() {
+        let message_id = MessageId::increment_first_byte(&MessageId(XorName([255; XOR_NAME_LEN])));
+        let MessageId(XorName(vec_bytes)) = message_id;
+        assert_eq!(vec_bytes[0], 0);
+    }
+
+    #[test]
+    fn decrement() {
+        let message_id = MessageId::decrement_first_byte(&MessageId(XorName([0; XOR_NAME_LEN])));
+        let MessageId(XorName(vec_bytes)) = message_id;
+        assert_eq!(vec_bytes[0], 255);
     }
 }

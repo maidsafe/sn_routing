@@ -61,7 +61,7 @@
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
 //! let full_id = FullId::new(); // Generate new keys.
-//! let _ = Client::new(sender, Some(full_id.clone())).unwrap();
+//! let _ = Client::new(sender, Some(full_id.clone()), true).unwrap();
 //!
 //! let _ = full_id.public_id().name();
 //! ```
@@ -79,7 +79,7 @@
 //! use routing::{Node, Event};
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::new(sender).unwrap();
+//! let _ = Node::new(sender, true).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -190,22 +190,26 @@ mod node;
 mod plain_data;
 mod structured_data;
 mod timer;
+mod tunnels;
 mod types;
 mod utils;
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod core_tests;
 
+/// Mock crust
 #[cfg(feature = "use-mock-crust")]
-mod mock_crust;
+pub mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
-pub use data::{Data, DataRequest};
+pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, ImmutableDataType};
+pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial,
+                         normal_to_backup, backup_to_normal, normal_to_sacrificial,
+                         sacrificial_to_normal, backup_to_sacrificial, sacrificial_to_backup};
 pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
                    RoutingMessage, SignedMessage};
 pub use node::Node;

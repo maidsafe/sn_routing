@@ -18,13 +18,15 @@
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use sodiumoxide;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use id::FullId;
 use action::Action;
 use event::Event;
 use core::Core;
-use data::{Data, DataRequest};
+use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::RequestContent;
@@ -43,7 +45,7 @@ pub struct Client {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    core: Core,
+    core: RefCell<Core>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -61,11 +63,14 @@ impl Client {
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               use_data_cache: bool)
+               -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, true, keys);
+        let (action_sender, mut core) = Core::new(event_sender, true, keys, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -82,34 +87,37 @@ impl Client {
 
     /// Create a new `Client` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               keys: Option<FullId>,
+               use_data_cache: bool)
+               -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, true, keys);
+        let (action_sender, core) = Core::new(event_sender, true, keys, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            core: core,
+            core: RefCell::new(core),
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
-    #[allow(missing_docs)]
-    pub fn poll(&mut self) -> bool {
-        self.core.poll()
+    /// Poll and process all events in this client's `Core` instance.
+    pub fn poll(&self) -> bool {
+        self.core.borrow_mut().poll()
     }
 
-    /// Send a Get message with a DataRequest to an Authority, signed with given keys.
+    /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&mut self,
                             dst: Authority,
-                            data_request: DataRequest,
+                            data_id: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, message_id), dst)
+        self.send_action(RequestContent::Get(data_id, message_id), dst)
     }
 
     /// Add something to the network
@@ -147,7 +155,17 @@ impl Client {
         };
 
         try!(self.action_sender.send(action));
+        self.receive_action_result()
+    }
 
+    #[cfg(not(feature = "use-mock-crust"))]
+    fn receive_action_result(&self) -> Result<(), InterfaceError> {
+        try!(self.interface_result_rx.recv())
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn receive_action_result(&self) -> Result<(), InterfaceError> {
+        while self.poll() {}
         try!(self.interface_result_rx.recv())
     }
 }

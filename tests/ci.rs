@@ -70,6 +70,7 @@ use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use utils::recv_with_timeout;
 use xor_name::XorName;
+use routing::DataIdentifier;
 
 const QUORUM_SIZE: usize = 5;
 
@@ -87,7 +88,7 @@ impl TestNode {
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
-            node: unwrap_result!(Node::new(sender)),
+            node: unwrap_result!(Node::new(sender, false)),
             _thread_joiner: joiner,
         }
     }
@@ -116,7 +117,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id))),
+            client: unwrap_result!(Client::new(sender, Some(full_id), false)),
             _thread_joiner: joiner,
         }
     }
@@ -154,7 +155,7 @@ fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
     let mut limits = unwrap_result!(get_open_file_limits());
     if limits.rlim_cur < 1024 {
         limits.rlim_cur = 1024;
@@ -164,7 +165,7 @@ fn init() {
 
 #[cfg(not(target_os = "macos"))]
 fn init() {
-    maidsafe_utilities::log::init(true);
+    unwrap_result!(maidsafe_utilities::log::init(true));
 }
 
 // Spawns a thread that received events from a node a routes them to the main channel.
@@ -280,22 +281,22 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, ref id) = message.content {
-                            let encoded = unwrap_result!(serialisation::serialise(&message));
                             let node = &nodes[index].node;
 
                             unwrap_result!(node.send_put_success(message.dst,
                                                                  message.src,
-                                                                 sha512::hash(&encoded),
+                                                                 DataIdentifier::Plain(data.name()),
                                                                  id.clone()));
                         }
                     }
 
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(_, id), .. }))
+                                content: ResponseContent::PutSuccess(ref identifier, ref id), .. }))
                         if index == client.index => {
                         // The client received response to its request. We are done.
-                        assert_eq!(message_id, id);
+                        assert_eq!(&message_id, id);
+                        assert_eq!(identifier.name(), data.name());
                         break;
                     }
 
@@ -524,21 +525,20 @@ fn core() {
                     TestEvent(index, Event::Request(message)) => {
                         // A node received request from the client. Reply with a success.
                         if let RequestContent::Put(_, id) = message.content {
-                            let encoded = unwrap_result!(serialisation::serialise(&message));
-
                             unwrap_result!(nodes[index]
                                                .node
                                                .send_put_success(message.dst,
                                                                  message.src,
-                                                                 sha512::hash(&encoded),
+                                                                 DataIdentifier::Plain(data.name()),
                                                                  id));
                         }
                     }
                     TestEvent(index,
                               Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(_, id), .. }))
+                                content: ResponseContent::PutSuccess(ref name, ref id), .. }))
                         if index == client.index => {
-                        assert!(received_ids.insert(id));
+                        assert!(received_ids.insert(*id));
+                        assert_eq!(name, &DataIdentifier::Plain(data.name()));
                     }
                     _ => (),
                 }
