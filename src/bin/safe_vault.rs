@@ -61,12 +61,13 @@ use safe_vault::Vault;
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
-  safe_vault [options]
+  safe_vault [--first | (--output=<file> [--first]) | --version | --help]
 
 Options:
   -o <file>, --output=<file>    Direct log output to stderr _and_ <file>.  If
                                 <file> does not exist it will be created,
                                 otherwise it will be truncated.
+  -f, --first                   First vault on the local machine
   -V, --version                 Display version info and exit.
   -h, --help                    Display this help message and exit.
 ";
@@ -74,6 +75,7 @@ Options:
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
     flag_output: Option<String>,
+    flag_first: bool,
     flag_version: bool,
     flag_help: bool,
 }
@@ -107,7 +109,7 @@ pub fn main() {
     info!("\n\n{}\n{}", message, underline);
 
     let mut vault = unwrap_result!(Vault::new());
-    unwrap_result!(vault.run());
+    unwrap_result!(vault.run(args.flag_first));
 }
 
 #[cfg(feature = "use-mock-crust")]

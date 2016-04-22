@@ -99,7 +99,7 @@ impl Vault {
 
     /// Run the event loop, processing events received from Routing.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn run(&mut self) -> Result<(), InternalError> {
+    pub fn run(&mut self, is_first_node: bool) -> Result<(), InternalError> {
         let mut exit = false;
         while !exit {
             let (routing_sender, routing_receiver) = mpsc::channel();
@@ -107,7 +107,7 @@ impl Vault {
 
             for event in routing_receiver.iter() {
                 if let Some(terminate) = self.process_event(&routing_node, event) {
-                    exit = terminate;
+                    exit = terminate && is_first_node;
                     break;
                 }
             }
