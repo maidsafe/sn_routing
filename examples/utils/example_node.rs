@@ -18,7 +18,7 @@
 use lru_time_cache::LruCache;
 use xor_name::XorName;
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              Authority, Node, Event, Data, DataRequest};
+              Authority, Node, Event, Data, DataIdentifier};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -107,8 +107,8 @@ impl ExampleNode {
 
     fn handle_request(&mut self, msg: RequestMessage) {
         match msg.content {
-            RequestContent::Get(data_request, id) => {
-                self.handle_get_request(data_request, id, msg.src, msg.dst);
+            RequestContent::Get(data_id, id) => {
+                self.handle_get_request(data_id, id, msg.src, msg.dst);
             }
             RequestContent::Put(data, id) => {
                 self.handle_put_request(data, id, msg.src, msg.dst);
@@ -130,16 +130,15 @@ impl ExampleNode {
 
     fn handle_response(&mut self, msg: ResponseMessage) {
         match (msg.content, msg.dst.clone()) {
-            (ResponseContent::GetSuccess(data, id),
-             Authority::NaeManager(_)) => {
+            (ResponseContent::GetSuccess(data, id), Authority::NaeManager(_)) => {
                 self.handle_get_success(data, id, msg.src, msg.dst);
             }
             (ResponseContent::GetFailure { id, request: RequestMessage {
-                content: RequestContent::Get(data_request, _),
+                content: RequestContent::Get(data_id, _),
                 ..
             }, ..},
              Authority::NaeManager(_)) => {
-                self.process_failed_dm(&data_request.name(), msg.src.name(), id);
+                self.process_failed_dm(&data_id.name(), msg.src.name(), id);
             }
             (ResponseContent::PutFailure { id, request: RequestMessage {
                 content: RequestContent::Put(data, _),
@@ -148,14 +147,12 @@ impl ExampleNode {
              Authority::NaeManager(_)) => {
                 self.process_failed_dm(&data.name(), msg.src.name(), id);
             }
-            (ResponseContent::PutSuccess(data_name, id),
-             Authority::ClientManager(name)) => {
+            (ResponseContent::PutSuccess(data_id, id), Authority::ClientManager(name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
-                    unwrap_result!(self.node.send_put_success(src, dst, data_name, id));
+                    unwrap_result!(self.node.send_put_success(src, dst, data_id, id));
                 }
             }
-            (ResponseContent::PutSuccess(data_name, id),
-             Authority::NaeManager(name)) => {
+            (ResponseContent::PutSuccess(data_name, id), Authority::NaeManager(name)) => {
                 trace!("Received PutSuccess for {:?} with ID {:?}", data_name, id);
             }
             _ => unreachable!(),
@@ -176,44 +173,44 @@ impl ExampleNode {
     }
 
     fn handle_get_request(&mut self,
-                          data_request: DataRequest,
+                          data_id: DataIdentifier,
                           id: MessageId,
                           src: Authority,
                           dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                if let Some(managed_nodes) = self.dm_accounts.get(&data_request.name()) {
+                if let Some(managed_nodes) = self.dm_accounts.get(&data_id.name()) {
                     {
                         let requests = self.client_request_cache
-                                           .entry(data_request.name())
+                                           .entry(data_id.name())
                                            .or_insert_with(Vec::new);
                         requests.push((src, id));
                         if requests.len() > 1 {
                             trace!("Added Get request to request cache: data {:?}.",
-                                   data_request.name());
+                                   data_id.name());
                             return;
                         }
                     }
                     for it in managed_nodes.iter() {
                         trace!("{:?} Handle Get request for NaeManager: data {:?} from {:?}",
                                self.get_debug_name(),
-                               data_request.name(),
+                               data_id.name(),
                                it);
                         unwrap_result!(self.node
                                            .send_get_request(dst.clone(),
                                                              Authority::ManagedNode(it.clone()),
-                                                             data_request.clone(),
+                                                             data_id,
                                                              id));
                     }
                 } else {
                     error!("{:?} Data name {:?} not found in NaeManager. Current DM Account: {:?}",
                            self.get_debug_name(),
-                           data_request.name(),
+                           data_id.name(),
                            self.dm_accounts);
                     let msg = RequestMessage {
                         src: src.clone(),
                         dst: dst.clone(),
-                        content: RequestContent::Get(data_request, id),
+                        content: RequestContent::Get(data_id, id),
                     };
                     let text = "Data not found".to_owned().into_bytes();
                     unwrap_result!(self.node.send_get_failure(dst, src, msg, text, id));
@@ -222,17 +219,17 @@ impl ExampleNode {
             Authority::ManagedNode(_) => {
                 trace!("{:?} Handle get request for ManagedNode: data {:?}",
                        self.get_debug_name(),
-                       data_request.name());
-                if let Some(data) = self.db.get(&data_request.name()) {
+                       data_id.name());
+                if let Some(data) = self.db.get(&data_id.name()) {
                     unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {
                     trace!("{:?} GetDataRequest failed for {:?}.",
                            self.get_debug_name(),
-                           data_request.name());
+                           data_id.name());
                     let msg = RequestMessage {
                         src: src.clone(),
                         dst: dst.clone(),
-                        content: RequestContent::Get(data_request, id),
+                        content: RequestContent::Get(data_id, id),
                     };
                     let text = "Data not found".to_owned().into_bytes();
                     unwrap_result!(self.node.send_get_failure(dst, src, msg, text, id));
@@ -246,7 +243,8 @@ impl ExampleNode {
     fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                self.node.send_put_success(dst.clone(), src, data.name(), id);
+                self.node
+                    .send_put_success(dst.clone(), src, DataIdentifier::Plain(data.name()), id);
                 if self.dm_accounts.contains_key(&data.name()) {
                     return; // Don't allow duplicate put.
                 }
@@ -292,7 +290,7 @@ impl ExampleNode {
                        self.get_debug_name(),
                        data.name(),
                        data);
-                self.node.send_put_success(dst, src, data.name(), id);
+                self.node.send_put_success(dst, src, DataIdentifier::Plain(data.name()), id);
                 let _ = self.db.insert(data.name(), data);
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
@@ -457,7 +455,7 @@ impl ExampleNode {
                     if let Err(err) = self.node
                                           .send_get_request(src.clone(),
                                                             Authority::ManagedNode(*dm),
-                                                            DataRequest::Plain(*data_name),
+                                                            DataIdentifier::Plain(*data_name),
                                                             id) {
                         error!("Failed to send get request to retrieve chunk - {:?}", err);
                     }
@@ -495,13 +493,13 @@ impl ExampleNode {
     /// the group agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
         match unwrap_result!(deserialise(&content)) {
-            RefreshContent::Client { client_name, data, } => {
+            RefreshContent::Client { client_name, data } => {
                 trace!("{:?} handle_refresh for ClientManager. client - {:?}",
                        self.get_debug_name(),
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::Nae { data_name, pmid_nodes, } => {
+            RefreshContent::Nae { data_name, pmid_nodes } => {
                 let old_val = self.dm_accounts.insert(data_name, pmid_nodes.clone());
                 if old_val != Some(pmid_nodes.clone()) {
                     trace!("{:?} DM for {:?} refreshed from {:?} to {:?}.",

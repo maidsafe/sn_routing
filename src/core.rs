@@ -2164,7 +2164,7 @@ impl Core {
         }
         if self.get_network_name_timer_token == Some(token) {
             if let Err(err) = self.relocate() {
-                error!("Failed to resend GetNetworkName response: {:?}", err);
+                error!("Failed to resend GetNetworkName request: {:?}", err);
             } else {
                 trace!("Timeout waiting for GetNetworkName response. Resent request.");
             }
