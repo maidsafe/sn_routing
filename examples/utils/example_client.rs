@@ -115,7 +115,7 @@ impl ExampleClient {
     ///
     /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure` response.
     pub fn put(&self, data: Data) -> Result<(), ()> {
-        let data_identifier = data.identifier();
+        let data_id = data.identifier();
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
                            .send_put_request(Authority::ClientManager(*self.name()),
@@ -125,21 +125,22 @@ impl ExampleClient {
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::PutSuccess(identifier, id),
-                    ..
-                }) => {
+                Event::Response(ResponseMessage { content: ResponseContent::PutSuccess(rec_data_id,
+                                                                              id),
+                                                  .. }) => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
-                               data_identifier,
+                               data_id.name(),
                                id,
                                message_id);
                         return Err(());
-                    } else if data_identifier != identifier {
-                        error!("Stored {:?}, but with wrong name {:?}.", data_identifier, identifier);
+                    } else if data_id != rec_data_id {
+                        error!("Stored {:?}, but with wrong name {:?}.",
+                               data_id.name(),
+                               rec_data_id.name());
                         return Err(());
                     } else {
-                        trace!("Successfully stored {:?}", data_identifier);
+                        trace!("Successfully stored {:?}", data_id.name());
                         return Ok(());
                     }
                 }
@@ -147,7 +148,7 @@ impl ExampleClient {
                     content: ResponseContent::PutFailure { .. },
                     ..
                 }) => {
-                    error!("Received PutFailure for {:?}.", data_identifier);
+                    error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }
                 Event::Disconnected => self.disconnected(),

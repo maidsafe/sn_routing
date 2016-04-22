@@ -1229,7 +1229,7 @@ impl Core {
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
             Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
-            Err(err) => warn!("Failed to start listening: {:?}", err),
+            Err(err) => panic!("Failed to start listening: {:?}", err),
         }
     }
 
@@ -1317,7 +1317,8 @@ impl Core {
         }
 
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
-            info!("Connection to {:?} failed. Dropping peer.", peer_id);
+            info!("Connection to {:?} failed. Calling crust::Service::disconnect.",
+                  peer_id);
             self.crust_service.disconnect(peer_id);
             self.handle_lost_peer(*peer_id);
             return Err(err.into());
@@ -1742,10 +1743,11 @@ impl Core {
         } else if self.client_map.contains_key(peer_id) {
             warn!("Not disconnecting client {:?}.", peer_id);
         } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
-            warn!("Disconnecting {:?} (indirect).", peer_id);
+            debug!("Disconnecting {:?} (indirect).", peer_id);
             try!(self.send_direct_message(&tunnel_id, DirectMessage::TunnelDisconnect(*peer_id)));
         } else {
-            warn!("Disconnecting {:?}.", peer_id);
+            debug!("Disconnecting {:?}. Calling crust::Service::disconnect.",
+                   peer_id);
             let _ = self.crust_service.disconnect(peer_id);
             let _ = self.peer_map.remove(peer_id);
         }
@@ -2175,7 +2177,7 @@ impl Core {
         }
         if self.get_network_name_timer_token == Some(token) {
             if let Err(err) = self.relocate() {
-                error!("Failed to resend GetNetworkName response: {:?}", err);
+                error!("Failed to resend GetNetworkName request: {:?}", err);
             } else {
                 trace!("Timeout waiting for GetNetworkName response. Resent request.");
             }
@@ -2191,6 +2193,8 @@ impl Core {
                                   .cloned()
                                   .collect_vec();
             for peer_id in stale_peers {
+                debug!("Heartbeat from {:?} timed out. Calling crust::Service::disconnect.",
+                       peer_id);
                 self.crust_service.disconnect(&peer_id);
                 self.handle_lost_peer(peer_id);
             }
