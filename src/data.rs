@@ -72,7 +72,7 @@ impl Data {
     }
 }
 
-#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, RustcEncodable, RustcDecodable)]
 /// DataIdentifier.
 pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
