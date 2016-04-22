@@ -1229,7 +1229,7 @@ impl Core {
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
             Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
-            Err(err) => warn!("Failed to start listening: {:?}", err),
+            Err(err) => panic!("Failed to start listening: {:?}", err),
         }
     }
 
