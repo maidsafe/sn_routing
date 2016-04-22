@@ -544,7 +544,7 @@ impl Core {
         match self.state {
             State::Disconnected => {
                 if !self.client_restriction {
-                    self.start_listening();
+                    let _ = self.start_listening();
                 }
                 trace!("Received BootstrapConnect from {:?}.", peer_id);
                 // Established connection. Pending Validity checks
@@ -1228,15 +1228,17 @@ impl Core {
                 debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
                         incoming connections.",
                        self);
-                self.start_listening();
+                if !self.start_listening() {
+                    let _ = self.event_sender.send(Event::NetworkStartupFailed);
+                }
             }
         }
     }
 
-    fn start_listening(&mut self) {
+    fn start_listening(&mut self) -> bool {
         if self.is_listening {
             // TODO Implement a better call once fn
-            return;
+            return true;
         }
         self.is_listening = true;
 
@@ -1244,10 +1246,13 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
+            Ok(()) => {
+                info!("Running listener.");
+                true
+            }
             Err(err) => {
                 error!("Failed to start listening: {:?}", err);
-                let _ = self.event_sender.send(Event::StartListeningFailed);
+                false
             }
         }
     }

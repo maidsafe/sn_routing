@@ -41,6 +41,6 @@ pub enum Event {
     Disconnected,
     /// We failed to relocate as a new node in the network.
     GetNetworkNameFailed,
-    /// We failed to start listening for incoming connections.
-    StartListeningFailed,
+    /// We failed to start listening for incoming connections as the first node.
+    NetworkStartupFailed,
 }
