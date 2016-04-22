@@ -1022,17 +1022,27 @@ impl Core {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            // TODO(afck): Currently we don't accumulate GetCloseGroup responses, because while a
-            // node is joining, the responses can disagree. Some of the group members might already
-            // have the new node in their routing table and others might not. To resolve this, we
-            // will need a cleaner algorithm for joining nodes: They should connect to all their
-            // future routing table entries, and once these connections are established, send a
-            // direct message to these contacts. Only when they receive that message, the contacts
-            // should add the new node to their routing tables in turn, because only then it can
-            // act as a fully functioning routing node.
-            if let RoutingMessage::Response(ResponseMessage {
-                    content: ResponseContent::GetCloseGroup { .. }, ..
-            }) = routing_msg {
+            // TODO(afck): Currently we don't accumulate GetCloseGroup, GetPublicId and
+            // GetPublicIdWithConnectionInfo responses, because while a node is joining,
+            // the responses can disagree. Some of the group members might already have
+            // the new node in their routing table and others might not. To resolve this,
+            // we will need a cleaner algorithm for joining nodes: They should connect to
+            // all their future routing table entries, and once these connections are
+            // established, send a direct message to these contacts. Only when they receive
+            // that message, the contacts should add the new node to their routing tables in
+            // turn, because only then it can act as a fully functioning routing node.
+            let skip_accumulate = if let RoutingMessage::Response(ResponseMessage { ref content, .. }) = routing_msg {
+                match *content {
+                    ResponseContent::GetCloseGroup { .. } |
+                    ResponseContent::GetPublicId { .. } |
+                    ResponseContent::GetPublicIdWithConnectionInfo { .. } => true,
+                    _ => false
+                }
+            } else {
+                false
+            };
+
+            if skip_accumulate {
                 let _ = self.grp_msg_filter.insert(&routing_msg);
             } else if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                 let _ = self.grp_msg_filter.insert(&output_msg);
@@ -1040,6 +1050,7 @@ impl Core {
                 return Ok(());
             }
         }
+
         self.dispatch_request_response(routing_msg)
     }
 
