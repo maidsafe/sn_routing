@@ -1422,6 +1422,23 @@ impl Core {
                 }
                 Ok(())
             }
+            DirectMessage::ConnectionUnneeded(ref name) => {
+                if let Some(node_info) = self.routing_table.get(name) {
+                    if node_info.peer_id != peer_id {
+                        error!("Received ConnectionUnneeded from {:?} with name {:?}, but that \
+                                name actually belongs to {:?}.",
+                               peer_id,
+                               name,
+                               node_info.peer_id);
+                        return Err(RoutingError::InvalidSource);
+                    }
+                }
+                trace!("Received ConnectionUnneeded from {:?}.", peer_id);
+                if self.routing_table.remove_if_unneeded(name) {
+                    self.crust_service.disconnect(&peer_id);
+                }
+                Ok(())
+            }
             DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
@@ -1581,7 +1598,7 @@ impl Core {
                        peer_id);
                 return self.disconnect_peer(&peer_id);
             }
-            Some(AddedNodeDetails { must_notify, .. }) => {
+            Some(AddedNodeDetails { must_notify, unneeded, .. }) => {
                 trace!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
@@ -1590,6 +1607,12 @@ impl Core {
                     try!(self.send_direct_message(&notify_info.peer_id,
                                                   DirectMessage::NewNode(public_id)));
                 }
+                for node_info in unneeded {
+                    let our_name = self.name().clone();
+                    try!(self.send_direct_message(&node_info.peer_id,
+                                                  DirectMessage::ConnectionUnneeded(our_name)));
+                }
+
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
                 let event = Event::NodeAdded(name);

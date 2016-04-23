@@ -100,6 +100,9 @@ pub enum DirectMessage {
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
+    /// Sent to a node that, on the addition of a node at a given bucket index, we no longer need to
+    /// be connected to.
+    ConnectionUnneeded(XorName),
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
@@ -434,6 +437,7 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
+            DirectMessage::ConnectionUnneeded(ref name) => write!(formatter, "ConnectionUnneeded({:?})", name),
             DirectMessage::Heartbeat => write!(formatter, "Heartbeat"),
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
