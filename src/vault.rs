@@ -153,6 +153,8 @@ impl Vault {
         } {
             debug!("Failed to handle event: {:?}", error);
         }
+
+        self.data_manager.check_timeouts(routing_node);
     }
 
     fn on_request(&mut self,
@@ -163,37 +165,37 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(ref data_id, ref msg_id)) => {
-                self.data_manager.handle_get(routing_node, &request, data_id, msg_id)
+             &RequestContent::Get(ref data_id, ref message_id)) => {
+                self.data_manager.handle_get(routing_node, &request, data_id, message_id)
             }
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Get(ref data_id, ref msg_id)) => {
-                self.data_manager.handle_get(routing_node, &request, data_id, msg_id)
+             &RequestContent::Get(ref data_id, ref message_id)) => {
+                self.data_manager.handle_get(routing_node, &request, data_id, message_id)
             }
             // ================== Put ==================
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(ref data, ref msg_id)) => {
-                self.maid_manager.handle_put(routing_node, &request, data, msg_id)
+             &RequestContent::Put(ref data, ref message_id)) => {
+                self.maid_manager.handle_put(routing_node, &request, data, message_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(ref data, ref msg_id)) => {
+             &RequestContent::Put(ref data, ref message_id)) => {
                 self.data_manager
-                    .handle_put(routing_node, &request, data, msg_id)
+                    .handle_put(routing_node, &request, data, message_id)
             }
             // ================== Post ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::Structured(ref data), ref msg_id)) => {
-                self.data_manager.handle_post(routing_node, &request, data, msg_id)
+             &RequestContent::Post(Data::Structured(ref data), ref message_id)) => {
+                self.data_manager.handle_post(routing_node, &request, data, message_id)
             }
             // ================== Delete ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Delete(Data::Structured(ref data), ref msg_id)) => {
-                self.data_manager.handle_delete(routing_node, &request, data, msg_id)
+             &RequestContent::Delete(Data::Structured(ref data), ref message_id)) => {
+                self.data_manager.handle_delete(routing_node, &request, data, message_id)
             }
             // ================== Refresh ==================
             (&Authority::ClientManager(_),
@@ -203,8 +205,8 @@ impl Vault {
             }
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Refresh(ref serialised_msg, _)) => {
-                self.data_manager.handle_refresh(routing_node, serialised_msg)
+             &RequestContent::Refresh(ref serialised_msg, ref message_id)) => {
+                self.data_manager.handle_refresh(routing_node, serialised_msg, message_id)
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
@@ -219,25 +221,25 @@ impl Vault {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &ResponseContent::GetSuccess(ref data_id, ref msg_id)) => {
-                self.data_manager.handle_get_success(routing_node, data_id, msg_id)
+             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
+                self.data_manager.handle_get_success(routing_node, data, message_id)
             }
             // ================== GetFailure ==================
-            (&Authority::ManagedNode(_),
+            (&Authority::ManagedNode(ref src),
              &Authority::ManagedNode(_),
              &ResponseContent::GetFailure {
+                    ref id,
                     request: RequestMessage {
                         content: RequestContent::Get(ref identifier, _), ..
                     },
-                    ref external_error_indicator,
                     .. }) => {
-                self.data_manager.handle_get_failure(routing_node, &response.src, identifier, external_error_indicator)
+                self.data_manager.handle_get_failure(routing_node, src, identifier, id)
             }
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutSuccess(ref data_id, ref msg_id)) => {
-                self.maid_manager.handle_put_success(routing_node, data_id, msg_id)
+             &ResponseContent::PutSuccess(ref data_id, ref message_id)) => {
+                self.maid_manager.handle_put_success(routing_node, data_id, message_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),

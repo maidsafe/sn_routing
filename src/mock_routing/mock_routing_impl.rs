@@ -371,6 +371,10 @@ impl MockRoutingNodeImpl {
         Ok(self.name)
     }
 
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        Ok(5)
+    }
+
     fn send_request(&mut self,
                     src: Authority,
                     dst: Authority,

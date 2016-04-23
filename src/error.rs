@@ -36,6 +36,7 @@ pub enum InternalError {
     RoutingInternal(RoutingError),
     Serialisation(SerialisationError),
     UnknownMessageType(RoutingMessage),
+    InvalidMessage,
 }
 
 impl From<MutationError> for InternalError {

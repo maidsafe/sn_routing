@@ -271,6 +271,10 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).name()
     }
 
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).quorum_size()
+    }
+
     fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {
         Authority::Client {
             client_key: client_pub_key,

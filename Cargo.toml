@@ -16,20 +16,18 @@ clippy = {version = "~0.0.63", optional = true}
 config_file_handler = "~0.3.0"
 docopt = "~0.6.80"
 itertools = "~0.4.13"
-kademlia_routing_table = "~0.4.1"
+kademlia_routing_table = "~0.5.0"
 log = "~0.3.6"
 maidsafe_utilities = "~0.5.3"
+rand = "~0.3.14"
 routing = "~0.17.0"
 rustc-serialize = "~0.3.19"
 safe_network_common = "~0.1.1"
 sodiumoxide = "~0.0.10"
 xor_name = "~0.1.0"
 
-[dev-dependencies]
-rand = "~0.3.14"
-
 [build-dependencies]
-hyper = {version = "~0.8.1", optional = true}
+hyper = {version = "~0.9.1", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]

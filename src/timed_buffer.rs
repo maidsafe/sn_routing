@@ -19,7 +19,11 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::time::{Duration, Instant};
 
-/// TimedBuffer
+/// A map whose entries can time out.
+///
+/// This is similar to an LRU cache, but never silently drops entries without returning them.
+/// Expired entries need to be retrieved with `get_expired`, so that every expiry can be acted
+/// upon.
 pub struct TimedBuffer<Key, Value> {
     map: HashMap<Key, (Value, Instant)>,
     time_to_live: Duration,
@@ -39,10 +43,11 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
         self.map.insert(key, (value, Instant::now())).map_or(None, |(value, _)| Some(value))
     }
 
-    /// Get a value meanwhile update it's timestamp
+    /// Returns a mutable reference to the value corresponding to the key.  This updates the entry's
+    /// timestamp.
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
-        self.map.get_mut(key).map(|&mut (ref mut value, ref mut time_stamp)| {
-            *time_stamp = Instant::now();
+        self.map.get_mut(key).map(|&mut (ref mut value, ref mut timestamp)| {
+            *timestamp = Instant::now();
             value
         })
     }
@@ -62,28 +67,31 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
             .collect()
     }
 
-    // Returns true if the map contains a value for the specified key.
-    pub fn contains_key(&self, key: &Key) -> bool {
-        self.map.contains_key(key)
+    /// Updates the entry's timestamp if it exists.
+    pub fn update_timestamp(&mut self, key: &Key) {
+        let _ = self.map
+                    .get_mut(key)
+                    .map(|&mut (_, ref mut timestamp)| *timestamp = Instant::now());
     }
 
     /// Returns the number of entries.
-    #[cfg(all(test, feature = "use-mock-routing"))]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.map.len()
     }
 }
 
 
-#[cfg(all(test, feature = "use-mock-routing"))]
+
+#[cfg(test)]
 mod test {
     use super::*;
-    use time::Duration;
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn construct_insert() {
-        let time_to_live = Duration::milliseconds(100);
+        let time_to_live = Duration::from_millis(100);
         let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
 
         for i in 0..10 {
@@ -95,17 +103,17 @@ mod test {
 
     #[test]
     fn get_expired() {
-        let time_to_live = Duration::milliseconds(100);
+        let time_to_live = Duration::from_millis(100);
         let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
         let insertions = 10;
 
         for i in 0..insertions {
-            assert!(!timed_buffer.contains_key(&i));
+            assert!(!timed_buffer.map.contains_key(&i));
             let _ = timed_buffer.insert(i, i);
-            assert!(timed_buffer.contains_key(&i));
+            assert!(timed_buffer.map.contains_key(&i));
         }
 
-        thread::sleep(::std::time::Duration::from_millis(100));
+        thread::sleep(time_to_live);
 
         let mut expired = timed_buffer.get_expired();
 
@@ -119,11 +127,11 @@ mod test {
 
     #[test]
     fn get_mut() {
-        let time_to_live = Duration::milliseconds(100);
+        let time_to_live = Duration::from_millis(100);
         let mut timed_buffer = TimedBuffer::<usize, usize>::new(time_to_live);
         let key = 1;
         let _ = timed_buffer.insert(key, 1);
-        thread::sleep(::std::time::Duration::from_millis(100));
+        thread::sleep(time_to_live);
         if let Some(mut value) = timed_buffer.get_mut(&key) {
             *value = 2;
         } else {
