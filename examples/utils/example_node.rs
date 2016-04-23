@@ -96,6 +96,9 @@ impl ExampleNode {
                     trace!("{} Received disconnected event", self.get_debug_name());
                     self.connected = false;
                 }
+                event => {
+                    trace!("{} Received {:?} event", self.get_debug_name(), event);
+                }
             }
         }
     }
