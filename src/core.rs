@@ -1423,6 +1423,16 @@ impl Core {
                 Ok(())
             }
             DirectMessage::ConnectionUnneeded(ref name) => {
+                if let Some(node_info) = self.routing_table.get(name) {
+                    if node_info.peer_id != peer_id {
+                        error!("Received ConnectionUnneeded from {:?} with name {:?}, but that \
+                                name actually belongs to {:?}.",
+                               peer_id,
+                               name,
+                               node_info.peer_id);
+                        return Err(RoutingError::InvalidSource);
+                    }
+                }
                 trace!("Received ConnectionUnneeded from {:?}.", peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
                     self.crust_service.disconnect(&peer_id);
