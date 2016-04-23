@@ -66,11 +66,13 @@ const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
-const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
+const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Time (in seconds) after which a `Heartbeat` is sent.
 const HEARTBEAT_TIMEOUT_SECS: u64 = 30;
 /// Number of missed heartbeats after which a peer is considered disconnected.
-const HEARTBEAT_ATTEMPTS: u64 = 3;
+const HEARTBEAT_ATTEMPTS: i64 = 3;
+/// Time (in seconds) the new close group waits for a joining node it sent a network name to.
+const SENT_NETWORK_NAME_TIMEOUT_SECS: i64 = 30;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -232,6 +234,8 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
+    /// The last joining node we have sent a `GetNetworkName` response to, and when.
+    sent_network_name_to: Option<(XorName, SteadyTime)>,
     heartbeat_timer_token: u64,
 
     // our bootstrap connections
@@ -316,6 +320,7 @@ impl Core {
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
             get_network_name_timer_token: None,
+            sent_network_name_to: None,
             heartbeat_timer_token: heartbeat_timer_token,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
@@ -539,7 +544,7 @@ impl Core {
         match self.state {
             State::Disconnected => {
                 if !self.client_restriction {
-                    self.start_listening();
+                    let _ = self.start_listening();
                 }
                 trace!("Received BootstrapConnect from {:?}.", peer_id);
                 // Established connection. Pending Validity checks
@@ -1031,16 +1036,18 @@ impl Core {
             // established, send a direct message to these contacts. Only when they receive
             // that message, the contacts should add the new node to their routing tables in
             // turn, because only then it can act as a fully functioning routing node.
-            let skip_accumulate = if let RoutingMessage::Response(ResponseMessage { ref content, .. }) = routing_msg {
-                match *content {
-                    ResponseContent::GetCloseGroup { .. } |
-                    ResponseContent::GetPublicId { .. } |
-                    ResponseContent::GetPublicIdWithConnectionInfo { .. } => true,
-                    _ => false
-                }
-            } else {
-                false
-            };
+            let skip_accumulate =
+                if let RoutingMessage::Response(ResponseMessage { ref content, .. }) =
+                       routing_msg {
+                    match *content {
+                        ResponseContent::GetCloseGroup { .. } |
+                        ResponseContent::GetPublicId { .. } |
+                        ResponseContent::GetPublicIdWithConnectionInfo { .. } => true,
+                        _ => false,
+                    }
+                } else {
+                    false
+                };
 
             if skip_accumulate {
                 let _ = self.grp_msg_filter.insert(&routing_msg);
@@ -1223,15 +1230,17 @@ impl Core {
                 debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
                         incoming connections.",
                        self);
-                self.start_listening();
+                if !self.start_listening() {
+                    let _ = self.event_sender.send(Event::NetworkStartupFailed);
+                }
             }
         }
     }
 
-    fn start_listening(&mut self) {
+    fn start_listening(&mut self) -> bool {
         if self.is_listening {
             // TODO Implement a better call once fn
-            return;
+            return true;
         }
         self.is_listening = true;
 
@@ -1239,8 +1248,14 @@ impl Core {
         match self.crust_service
                   .start_listening_tcp()
                   .and_then(|_| self.crust_service.start_listening_utp()) {
-            Ok(()) => info!("Running listener."), // Temporarily error for ci_test.
-            Err(err) => panic!("Failed to start listening: {:?}", err),
+            Ok(()) => {
+                info!("Running listener.");
+                true
+            }
+            Err(err) => {
+                error!("Failed to start listening: {:?}", err);
+                false
+            }
         }
     }
 
@@ -1538,6 +1553,12 @@ impl Core {
             // return self.disconnect_peer(&peer_id);
         }
 
+        if let Some((name, _)) = self.sent_network_name_to {
+            if name == *public_id.name() {
+                self.sent_network_name_to = None;
+            }
+        }
+
         self.add_to_routing_table(public_id, peer_id)
     }
 
@@ -1768,6 +1789,8 @@ impl Core {
             content: request_content,
         };
 
+        info!("Sending GetNetworkName request with: {:?}. This can take a while.",
+              self.full_id.public_id());
         self.send_request(request_msg)
     }
 
@@ -1829,12 +1852,24 @@ impl Core {
                                         client_auth: Authority,
                                         message_id: MessageId)
                                         -> Result<(), RoutingError> {
+        // Add expect_id to node_id_cache regardless of whether we can
+        // accommodate entry in sent_network_name_to. This prevents us from rejecting
+        // connect request from nodes that have been accepted by majority in group
         if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
             warn!("Previous ID {:?} with same name found during \
                    handle_expect_close_node_request. Ignoring that",
                   prev_id);
             return Err(RoutingError::RejectedPublicId);
         }
+
+        let now = SteadyTime::now();
+        if let Some((_, timestamp)) = self.sent_network_name_to {
+            if (now - timestamp).num_seconds() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
+                return Err(RoutingError::RejectedGetNetworkName);
+            }
+            self.sent_network_name_to = None;
+        }
+
 
         let close_group = match self.routing_table.close_nodes(expect_id.name()) {
             Some(close_group) => close_group,
@@ -1844,6 +1879,7 @@ impl Core {
                                     .map(|info| info.public_id)
                                     .collect_vec();
 
+        self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = ResponseContent::GetNetworkName {
             relocated_id: expect_id,
@@ -2174,18 +2210,15 @@ impl Core {
             return;
         }
         if self.get_network_name_timer_token == Some(token) {
-            if let Err(err) = self.relocate() {
-                error!("Failed to resend GetNetworkName request: {:?}", err);
-            } else {
-                trace!("Timeout waiting for GetNetworkName response. Resent request.");
-            }
+            error!("Failed to get GetNetworkName response");
+            let _ = self.event_sender.send(Event::Disconnected);
         } else if self.heartbeat_timer_token == token {
             let now = SteadyTime::now();
             let stale_peers = self.peer_map
                                   .iter()
                                   .filter(|&(_, timestamp)| {
                                       (now - *timestamp).num_seconds() >
-                                      (HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS) as i64
+                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS as i64
                                   })
                                   .map(|(peer_id, _)| peer_id)
                                   .cloned()
