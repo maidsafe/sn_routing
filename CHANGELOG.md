@@ -1,5 +1,12 @@
 # Routing - Change Log
 
+## [0.18.0]
+- Add `NetworkStartupFailed` and `StartListeningFailed` events.
+- Improve join limit to prevent damage to the network in case of many
+  simultaneously joining nodes.
+- Drop unneeded connections from the routing table.
+- Re-enable node harvesting.
+
 ## [0.17.0]
 - Depend on Crust 0.11.0.
 
