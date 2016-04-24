@@ -18,7 +18,6 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
-use std::ops::Add;
 use std::time::Duration;
 use itertools::Itertools;
 use chunk_store::ChunkStore;
@@ -295,7 +294,7 @@ impl DataManager {
             if self.chunk_store.has(&data_id) {
                 continue;
             }
-            // exclude data we are not close to
+            // Exclude data we are not close to
             if !self.close_to_address(routing_node, &data_id.name()) {
                 continue;
             }
@@ -333,8 +332,7 @@ impl DataManager {
                             // If we have `quorum_size()` disagreeing entries, send Gets to the
                             // group
                             // TODO replace `fold` with `sum` once it's stable.
-                            if hashes_and_counts.values().fold::<u8, _>(0, Add::add) as usize ==
-                               quorum_size {
+                            if hashes_and_counts.values().count() == quorum_size {
                                 let _ = Self::send_group_get(routing_node,
                                                              data_id.clone(),
                                                              *message_id);
