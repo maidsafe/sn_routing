@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::Add;
 use std::time::Duration;
-
+use itertools::Itertools;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use maidsafe_utilities::serialisation;
@@ -358,8 +358,24 @@ impl DataManager {
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
         // Only retain data for which we're still in the close group.
+        match self.in_range_data_keys(routing_node, Some(node_name)) {
+            Ok(data) => {
+                let _ = self.send_refresh(routing_node,
+                                          node_name,
+                                          data,
+                                          MessageId::from_added_node(*node_name));
+            }
+            Err(error) => error!("No data to send to {:?} due to {:?}", node_name, error),
+        };
+    }
+
+    fn in_range_data_keys
+        (&mut self,
+         routing_node: &RoutingNode,
+         node_name: Option<&XorName>)
+         -> Result<Vec<(DataIdentifier, Option<sha512::Digest>)>, InternalError> {
         let data_ids = self.chunk_store.keys();
-        let mut data_list = vec![];
+        let mut data_list = Vec::new();
         for data_id in data_ids {
             match routing_node.close_group(data_id.name()) {
                 Ok(None) => {
@@ -368,30 +384,33 @@ impl DataManager {
                         DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
                         _ => unreachable!(),
                     }
-                    trace!("{} added. No longer a DM for {:?}", node_name, data_id);
+                    trace!("No longer a DM for {:?}", data_id);
                     let _ = self.chunk_store.delete(&data_id);
                     let _ = self.refresh_accumulator.remove(&data_id);
                 }
                 Ok(Some(close_group)) => {
-                    if close_group.contains(node_name) {
-                        match data_id {
-                            DataIdentifier::Immutable(_) => data_list.push((data_id, None)),
-                            DataIdentifier::Structured(_, _) => {
-                                let data = if let Ok(data) = self.chunk_store.get(&data_id) {
-                                    data
-                                } else {
-                                    continue;
-                                };
-                                let hash = if let Ok(serialised_data) =
-                                                  serialisation::serialise(&data) {
-                                    sha512::hash(&serialised_data)
-                                } else {
-                                    continue;
-                                };
-                                data_list.push((data_id, Some(hash)));
-                            }
-                            _ => unreachable!(),
+                    if let Some(node) = node_name {
+                        if !close_group.contains(node) {
+                            continue;
                         }
+                    }
+                    match data_id {
+                        DataIdentifier::Immutable(_) => data_list.push((data_id, None)),
+                        DataIdentifier::Structured(_, _) => {
+                            let data = if let Ok(data) = self.chunk_store.get(&data_id) {
+                                data
+                            } else {
+                                continue;
+                            };
+                            let hash = if let Ok(serialised_data) =
+                                              serialisation::serialise(&data) {
+                                sha512::hash(&serialised_data)
+                            } else {
+                                continue;
+                            };
+                            data_list.push((data_id, Some(hash)));
+                        }
+                        _ => unreachable!(),
                     }
                 }
                 Err(error) => {
@@ -399,18 +418,41 @@ impl DataManager {
                 }
             }
         }
-        let _ = self.send_refresh(routing_node,
-                                  node_name,
-                                  data_list,
-                                  MessageId::from_added_node(*node_name));
+        Ok(data_list)
     }
 
-    pub fn handle_node_lost(&mut self, _routing_node: &RoutingNode, _node_name: &XorName) {
-        // for data_id in self.chunk_store.keys() {
-        //     self.send_refresh(routing_node,
-        //                       &data_id,
-        //                       MessageId::from_lost_node(*node_name));
-        // }
+    /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
+    /// Send o all members of group of data
+    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+        let mut node_list = HashSet::new();
+        match self.in_range_data_keys(routing_node, None) {
+            Ok(data_list) => {
+                for data_id in &data_list {
+                    match routing_node.close_group(data_id.0.name()) {
+                        Ok(close_group) => {
+                            if let Some(nodes) = close_group {
+                                let _ = nodes.iter()
+                                             .foreach(|&x| {
+                                                 node_list.insert(x);
+                                             });
+                            }
+                        }
+                        Err(error) => {
+                            error!("Failed to get close group: {:?} for {:?}", error, data_id);
+                        }
+                    };
+                }
+                for node in &node_list {
+                    let _ = self.send_refresh(routing_node,
+                                              node,
+                                              data_list.clone(),
+                                              MessageId::from_lost_node(*node_name));
+                }
+            }
+            Err(error) => {
+                error!("Error in node lost: {:?}", error);
+            }
+        };
     }
 
     pub fn check_timeouts(&mut self, routing_node: &RoutingNode) {
