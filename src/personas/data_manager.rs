@@ -432,8 +432,9 @@ impl DataManager {
                         Ok(close_group) => {
                             if let Some(nodes) = close_group {
                                 let _ = nodes.iter()
-                                             .map(|&x| node_list.insert(x))
-                                             .collect_vec();
+                                             .foreach(|&x| {
+                                                 node_list.insert(x);
+                                             });
                             }
                         }
                         Err(error) => {
