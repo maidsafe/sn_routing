@@ -295,9 +295,9 @@ impl DataManager {
             if self.chunk_store.has(&data_id) {
                 continue;
             }
-            match routing_node.close_group(data_id.name()) {
-                Ok(Some(_)) => {}
-                _ => continue,
+            // exclude data we are not close to
+            if !self.close_to_address(routing_node, &data_id.name()) {
+                continue;
             }
             let mut have_entry = false;
             {
@@ -358,6 +358,13 @@ impl DataManager {
             }
         }
         Ok(())
+    }
+
+    fn close_to_address(&self, routing_node: &RoutingNode, address: &XorName) -> bool {
+        match routing_node.close_group(*address) {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
     }
 
     pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
