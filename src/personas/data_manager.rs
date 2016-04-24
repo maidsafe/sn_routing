@@ -295,6 +295,10 @@ impl DataManager {
             if self.chunk_store.has(&data_id) {
                 continue;
             }
+            match routing_node.close_group(data_id.name()) {
+                Ok(Some(_)) => {}
+                _ => continue,
+            }
             let mut have_entry = false;
             {
                 if let Some(info) = self.refresh_accumulator.get_mut(&data_id) {
