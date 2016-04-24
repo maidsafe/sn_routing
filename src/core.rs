@@ -43,7 +43,7 @@ use std::thread;
 use time::{Duration, PreciseTime, SteadyTime};
 use tunnels::Tunnels;
 use xor_name;
-use xor_name::XorName;
+use xor_name::{XorName, XOR_NAME_BITS};
 
 use action::Action;
 use authority::Authority;
@@ -312,7 +312,7 @@ impl Core {
             timer: timer,
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
             // TODO Needs further discussion on interval
-            bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(20)),
+            bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(60)),
             node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
             message_accumulator: Accumulator::with_duration(1, Duration::minutes(20)),
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
@@ -881,8 +881,6 @@ impl Core {
                                       -> Result<(), RoutingError> {
         let dst = signed_msg.content().dst();
 
-        try!(self.harvest_node(signed_msg.public_id().name(), &signed_msg.content()));
-
         if let Authority::Client { ref peer_id, .. } = *dst {
             if self.name() == dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
@@ -912,26 +910,6 @@ impl Core {
             self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id())
         } else {
             Ok(())
-        }
-    }
-
-    /// Checks if the given name is missing from our routing table. If so, tries to refill the
-    /// bucket.
-    fn harvest_node(&mut self,
-                    name: &XorName,
-                    routing_msg: &RoutingMessage)
-                    -> Result<(), RoutingError> {
-        match *routing_msg {
-            RoutingMessage::Response(ResponseMessage { content: ResponseContent::GetSuccess(..), .. }) => {
-                let i = self.name().bucket_index(name);
-                if self.routing_table.need_to_add(name) && self.bucket_filter.insert(&i) == 0 {
-                    trace!("Harvesting on {:?} in bucket index {}.", name, i);
-                    self.request_bucket_ids(i)
-                } else {
-                    Ok(())
-                }
-            }
-            _ => Ok(()),
         }
     }
 
@@ -1658,7 +1636,7 @@ impl Core {
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
     /// address.
     fn request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
-        if bucket_index >= xor_name::XOR_NAME_BITS {
+        if bucket_index >= XOR_NAME_BITS {
             return Ok(());
         }
         trace!("Send GetCloseGroup to bucket {}.", bucket_index);
@@ -2236,6 +2214,7 @@ impl Core {
             error!("Failed to get GetNetworkName response");
             let _ = self.event_sender.send(Event::Disconnected);
         } else if self.heartbeat_timer_token == token {
+            self.request_bucket_close_groups();
             let now = SteadyTime::now();
             let stale_peers = self.peer_map
                                   .iter()
@@ -2257,6 +2236,29 @@ impl Core {
             }
             self.heartbeat_timer_token =
                 self.timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        }
+    }
+
+    /// Sends `GetCloseGroup` requests to all incompletely filled buckets and our own address.
+    fn request_bucket_close_groups(&mut self) {
+        if !self.bucket_filter.contains(&XOR_NAME_BITS) {
+            let _ = self.bucket_filter.insert(&XOR_NAME_BITS);
+            let our_name = *self.name();
+            if let Err(err) = self.request_close_group(our_name) {
+                error!("Failed to request our own close group: {:?}", err);
+            }
+        }
+        for index in 0..self.routing_table.bucket_count() {
+            if self.routing_table.bucket_len(index) < GROUP_SIZE &&
+               !self.bucket_filter.contains(&index) {
+                let _ = self.bucket_filter.insert(&index);
+                if let Err(err) = self.request_bucket_ids(index) {
+                    error!("{:?} Failed to request public IDs from bucket {}: {:?}.",
+                           self,
+                           index,
+                           err);
+                }
+            }
         }
     }
 
