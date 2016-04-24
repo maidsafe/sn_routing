@@ -841,7 +841,7 @@ impl Core {
     fn handle_signed_message(&mut self,
                              signed_msg: &SignedMessage,
                              hop_name: &XorName,
-                             sent_to: &Vec<XorName>)
+                             sent_to: &[XorName])
                              -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
 
@@ -876,7 +876,7 @@ impl Core {
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage,
                                       hop_name: &XorName,
-                                      sent_to: &Vec<XorName>,
+                                      sent_to: &[XorName],
                                       relay: bool)
                                       -> Result<(), RoutingError> {
         let dst = signed_msg.content().dst();
@@ -1313,7 +1313,7 @@ impl Core {
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
         match try!(serialisation::deserialise(&bytes)) {
             Message::Hop(_) => {
-                if self.send_filter.insert((bytes.clone(), peer_id.clone()), ()).is_some() {
+                if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
                     return Ok(());
                 }
             }
@@ -1586,7 +1586,7 @@ impl Core {
                                                   DirectMessage::NewNode(public_id)));
                 }
                 for node_info in unneeded {
-                    let our_name = self.name().clone();
+                    let our_name = *self.name();
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
@@ -2333,7 +2333,7 @@ impl Core {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
         let hop = *self.name();
-        self.send(signed_msg, &hop, &vec![hop], true)
+        self.send(signed_msg, &hop, &[hop], true)
     }
 
     fn relay_to_client(&mut self,
@@ -2384,7 +2384,7 @@ impl Core {
     fn send(&mut self,
             signed_msg: SignedMessage,
             hop: &XorName,
-            sent_to: &Vec<XorName>,
+            sent_to: &[XorName],
             handle: bool)
             -> Result<(), RoutingError> {
         // If we're a client going to be a node, send via our bootstrap connection.

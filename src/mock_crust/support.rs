@@ -129,7 +129,7 @@ impl Network {
     }
 }
 
-/// ServiceHandle is associated with the mock Service and allows to configrue
+/// `ServiceHandle` is associated with the mock `Service` and allows to configure
 /// and instrument it.
 #[derive(Clone)]
 pub struct ServiceHandle(pub Rc<RefCell<ServiceImpl>>);
@@ -139,7 +139,7 @@ impl ServiceHandle {
         ServiceHandle(Rc::new(RefCell::new(ServiceImpl::new(network, config, endpoint))))
     }
 
-    /// Endpoint of the Service bound to this handle.
+    /// Endpoint of the `Service` bound to this handle.
     pub fn endpoint(&self) -> Endpoint {
         self.0.borrow().endpoint
     }
@@ -457,19 +457,19 @@ pub struct Config {
 }
 
 impl Config {
-    /// Create default Config.
+    /// Create default `Config`.
     pub fn new() -> Self {
         Self::with_contacts(&[])
     }
 
-    /// Create Config with the given hardcoded contacts.
+    /// Create `Config` with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
     }
 }
 
 /// Simulated network endpoint (think socket address). This is used to identify
-/// and address Services in the mock network.
+/// and address `Service`s in the mock network.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, RustcEncodable, RustcDecodable)]
 pub struct Endpoint(pub usize);
 
@@ -506,7 +506,7 @@ thread_local! {
     static CURRENT: RefCell<Option<ServiceHandle>> = RefCell::new(None)
 }
 
-/// Make the ServiceHandle current so it can be picked up by mock Services created
+/// Make the `ServiceHandle` current so it can be picked up by mock `Service`s created
 /// inside the passed-in lambda.
 pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
     where F: FnOnce() -> R

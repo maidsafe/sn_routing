@@ -17,7 +17,7 @@
 
 //! Client and node implementations for a resilient decentralised network.
 //!
-//! The network is based on the [kademlia_routing_table][1] and uses the XOR metric to define the
+//! The network is based on the [`kademlia_routing_table`][1] and uses the XOR metric to define the
 //! "distance" between two [`XorName`][2]s. `XorName`s are used as addresses of nodes, clients as
 //! well as data.
 //!
@@ -155,7 +155,8 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
+                                   option_unwrap_used))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
 #[macro_use]

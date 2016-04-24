@@ -61,7 +61,8 @@ impl Authority {
             Authority::ClientManager(_) |
             Authority::NaeManager(_) |
             Authority::NodeManager(_) => true,
-            Authority::ManagedNode(_) | Authority::Client { .. } => false,
+            Authority::ManagedNode(_) |
+            Authority::Client { .. } => false,
         }
     }
 

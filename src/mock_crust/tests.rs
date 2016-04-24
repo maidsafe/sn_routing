@@ -23,18 +23,12 @@ use std::sync::mpsc::{self, Receiver};
 use super::crust::{CrustEventSender, Event, Service};
 use super::support::{Config, Network};
 
-fn get_event_sender()
-    -> (CrustEventSender,
-        Receiver<MaidSafeEventCategory>,
-        Receiver<Event>)
-{
+fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Receiver<Event>) {
     let (category_tx, category_rx) = mpsc::channel();
     let event_category = MaidSafeEventCategory::Crust;
     let (event_tx, event_rx) = mpsc::channel();
 
-    (MaidSafeObserver::new(event_tx, event_category, category_tx),
-     category_rx,
-     event_rx)
+    (MaidSafeObserver::new(event_tx, event_category, category_tx), category_rx, event_rx)
 }
 
 #[test]

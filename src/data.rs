@@ -73,7 +73,7 @@ impl Data {
 }
 
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, RustcEncodable, RustcDecodable)]
-/// DataIdentifier.
+/// An identifier to address a data chunk.
 pub enum DataIdentifier {
     /// Data request, (Identifier, TypeTag) pair for name resolution, for StructuredData.
     Structured(XorName, u64),

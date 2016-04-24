@@ -437,7 +437,9 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
-            DirectMessage::ConnectionUnneeded(ref name) => write!(formatter, "ConnectionUnneeded({:?})", name),
+            DirectMessage::ConnectionUnneeded(ref name) => {
+                write!(formatter, "ConnectionUnneeded({:?})", name)
+            }
             DirectMessage::Heartbeat => write!(formatter, "Heartbeat"),
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
