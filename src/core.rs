@@ -99,7 +99,7 @@ enum ConnectState {
 pub type RoutingTable = ::kademlia_routing_table::RoutingTable<NodeInfo>;
 
 /// Info about nodes in the routing table.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct NodeInfo {
     public_id: PublicId,
     peer_id: PeerId,
@@ -1594,7 +1594,7 @@ impl Core {
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
-                let event = Event::NodeAdded(name);
+                let event = Event::NodeAdded(name, self.routing_table.clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
@@ -2530,7 +2530,7 @@ impl Core {
                 trace!("Dropped {:?} from the routing table.", node.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send a NodeLost event.
-                    let event = Event::NodeLost(*node.public_id.name());
+                    let event = Event::NodeLost(*node.public_id.name(), self.routing_table.clone());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("Error sending event to routing user - {:?}", err);
                     }

@@ -203,6 +203,7 @@ mod core_tests;
 pub mod mock_crust;
 
 pub use authority::Authority;
+pub use core::NodeInfo;
 pub use client::Client;
 pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
