@@ -18,8 +18,8 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
+use std::rc::Rc;
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
 use itertools::Itertools;
 use chunk_store::ChunkStore;
 use error::InternalError;
@@ -45,7 +45,7 @@ enum DataInfo {
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
     refresh_accumulator: TimedBuffer<DataIdentifier, DataInfo>,
-    routing_node: Arc<Mutex<RoutingNode>>,
+    routing_node: Rc<RoutingNode>,
     immutable_data_count: u64,
     structured_data_count: u64,
 }
@@ -61,7 +61,7 @@ impl Debug for DataManager {
 }
 
 impl DataManager {
-    pub fn new(routing_node: Arc<Mutex<RoutingNode>>,
+    pub fn new(routing_node: Rc<RoutingNode>,
                capacity: u64)
                -> Result<DataManager, InternalError> {
         Ok(DataManager {
@@ -84,8 +84,6 @@ impl DataManager {
                    data,
                    request.src);
             let _ = self.routing_node
-                        .lock()
-                        .expect("Mutex poisoned")
                         .send_get_success(request.dst.clone(),
                                           request.src.clone(),
                                           data,
@@ -96,8 +94,6 @@ impl DataManager {
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(self.routing_node
-                 .lock()
-                 .expect("Mutex poisoned - handle_get")
                  .send_get_failure(request.dst.clone(),
                                    request.src.clone(),
                                    request.clone(),
@@ -120,8 +116,6 @@ impl DataManager {
             let external_error_indicator = try!(serialisation::serialise(&error));
             trace!("DM sending PutFailure for data {:?}", data_identifier);
             let _ = self.routing_node
-                        .lock()
-                        .expect("Mutex poisoned - handle_put")
                         .send_put_failure(response_src,
                                           response_dst,
                                           request.clone(),
@@ -135,8 +129,6 @@ impl DataManager {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                        .lock()
-                        .expect("Mutex poisoned - handle_put")
                         .send_put_failure(response_src,
                                           response_dst,
                                           request.clone(),
@@ -153,8 +145,6 @@ impl DataManager {
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                        .lock()
-                        .expect("handle_put")
                         .send_put_failure(response_src,
                                           response_dst,
                                           request.clone(),
@@ -170,8 +160,6 @@ impl DataManager {
             trace!("DM sending PutSuccess for data {:?}", data_identifier);
             trace!("{:?}", self);
             let _ = self.routing_node
-                        .lock()
-                        .expect("handle_put")
                         .send_put_success(response_src,
                                           response_dst,
                                           data_identifier.clone(),
@@ -194,8 +182,6 @@ impl DataManager {
                     trace!("DM updated for: {:?}", data.identifier());
                     trace!("{:?}", self);
                     let _ = self.routing_node
-                                .lock()
-                                .expect("Mutex poisoned - handle_post")
                                 .send_post_success(request.dst.clone(),
                                                    request.src.clone(),
                                                    data.identifier(),
@@ -207,13 +193,11 @@ impl DataManager {
         }
 
         trace!("DM sending post_failure {:?}", new_data.identifier());
-        Ok(try!(self.routing_node.lock()
-                                  .expect("mutex poisoned - handle_post")
-                                  .send_post_failure(request.dst.clone(),
-                                               request.src.clone(),
-                                               request.clone(),
-                                               try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                               *message_id)))
+        Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
+                                                    request.src.clone(),
+                                                    request.clone(),
+                                                    try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                                                    *message_id)))
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
@@ -230,8 +214,6 @@ impl DataManager {
                     trace!("DM deleted {:?}", data.identifier());
                     trace!("{:?}", self);
                     let _ = self.routing_node
-                                .lock()
-                                .expect("Mutex poisoned")
                                 .send_delete_success(request.dst.clone(),
                                                      request.src.clone(),
                                                      data.identifier(),
@@ -242,11 +224,11 @@ impl DataManager {
             }
         }
         trace!("DM sending delete_failure for {:?}", new_data.identifier());
-        try!(self.routing_node.lock().expect("mutex poisoned").send_delete_failure(request.dst.clone(),
-                                              request.src.clone(),
-                                              request.clone(),
-                                              try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                              *message_id));
+        try!(self.routing_node.send_delete_failure(request.dst.clone(),
+                                                   request.src.clone(),
+                                                   request.clone(),
+                                                   try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                                                   *message_id));
         Ok(())
     }
 
@@ -311,7 +293,7 @@ impl DataManager {
                           serialised_data_list: &[u8],
                           message_id: &MessageId)
                           -> Result<(), InternalError> {
-        let quorum_size = try!(self.routing_node.lock().expect("mutex poisoned").quorum_size());
+        let quorum_size = try!(self.routing_node.quorum_size());
         let data_list = try!(serialisation::deserialise::<DataList>(serialised_data_list));
         for (data_id, opt_hash) in data_list {
             if self.chunk_store.has(&data_id) {
@@ -377,7 +359,7 @@ impl DataManager {
     }
 
     fn close_to_address(&self, address: &XorName) -> bool {
-        match self.routing_node.lock().expect("mutex poisoned").close_group(*address) {
+        match self.routing_node.close_group(*address) {
             Ok(Some(_)) => true,
             _ => false,
         }
@@ -400,7 +382,7 @@ impl DataManager {
         let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
         for data_id in data_ids {
-            match self.routing_node.lock().expect("mutex poisoned").close_group(data_id.name()) {
+            match self.routing_node.close_group(data_id.name()) {
                 Ok(None) => {
                     match data_id {
                         DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
@@ -452,8 +434,6 @@ impl DataManager {
             Ok(data_list) => {
                 for data_id in &data_list {
                     match self.routing_node
-                              .lock()
-                              .expect("Mutex poisoned")
                               .close_group(data_id.0.name()) {
                         Ok(close_group) => {
                             if let Some(nodes) = close_group {
@@ -500,8 +480,6 @@ impl DataManager {
                     message_id: MessageId)
                     -> Result<(), InternalError> {
         let src = Authority::ManagedNode(try!(self.routing_node
-                                                  .lock()
-                                                  .expect("mutex poisoned")
                                                   .name()));
         let dst = Authority::ManagedNode(*node_name);
         // FIXME - We need to handle >2MB chunks
@@ -509,8 +487,6 @@ impl DataManager {
             Ok(serialised_list) => {
                 trace!("DM sending refresh to {}", node_name);
                 let _ = self.routing_node
-                            .lock()
-                            .expect("Mutex poisoned")
                             .send_refresh_request(src, dst, serialised_list, message_id);
                 Ok(())
             }
@@ -533,8 +509,6 @@ impl DataManager {
                 single: bool)
                 -> Result<(), InternalError> {
         let close_group = match self.routing_node
-                                    .lock()
-                                    .expect("mutex poisoned")
                                     .close_group(data_id.name()) {
             Ok(Some(close_group)) => {
                 if let Some(to_exclude) = exclude_peer {
@@ -552,23 +526,16 @@ impl DataManager {
                 return Err(From::from(error));
             }
         };
-        let src = Authority::ManagedNode(try!(self.routing_node
-                                                  .lock()
-                                                  .expect("mutex poisoned")
-                                                  .name()));
+        let src = Authority::ManagedNode(try!(self.routing_node.name()));
         if single {
             let index = rand::random::<usize>() % close_group.len();
             let dst = Authority::ManagedNode(close_group[index]);
             let _ = self.routing_node
-                        .lock()
-                        .expect("mutex poisoned")
                         .send_get_request(src, dst, data_id, message_id);
         } else {
             for peer in close_group {
                 let dst = Authority::ManagedNode(peer);
                 let _ = self.routing_node
-                            .lock()
-                            .expect("mutex poisoned")
                             .send_get_request(src.clone(), dst, data_id.clone(), message_id);
             }
         }
@@ -609,6 +576,7 @@ impl DataManager {
 mod test_sd {
     use super::*;
 
+    use std::rc::Rc;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -623,7 +591,7 @@ mod test_sd {
     use xor_name::XorName;
 
     pub struct Environment {
-        pub routing: RoutingNode,
+        pub routing: Rc<RoutingNode>,
         pub data_manager: DataManager,
     }
 
@@ -662,9 +630,11 @@ mod test_sd {
         pub fn new() -> Environment {
             let _ = log::init(true);
             let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
+            let routing = Rc::new(routing);
+
             Environment {
-                routing: routing,
-                data_manager: unwrap_result!(DataManager::new(322_122_546)),
+                routing: routing.clone(),
+                data_manager: unwrap_result!(DataManager::new(routing.clone(), 322_122_546)),
             }
         }
 
@@ -730,7 +700,7 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager.handle_put(&self.routing, &request, &data, &message_id);
+            let _ = self.data_manager.handle_put(&request, &data, &message_id);
             PutEnvironment {
                 keys: keys,
                 client: client,
@@ -759,8 +729,7 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager
-                        .handle_get(&self.routing, &request, &data.identifier(), &message_id);
+            let _ = self.data_manager.handle_get(&request, &data.identifier(), &message_id);
             GetEnvironment {
                 client: client,
                 message_id: message_id,
@@ -791,7 +760,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_post(&self.routing, &request, &sd_data, &message_id);
+            let _ = self.data_manager.handle_post(&request, &sd_data, &message_id);
             PostEnvironment {
                 keys: keys,
                 client: client,
@@ -824,7 +793,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_delete(&self.routing, &request, &sd_data, &message_id);
+            let _ = self.data_manager.handle_delete(&request, &sd_data, &message_id);
             DeleteEnvironment {
                 keys: keys,
                 client: client,
@@ -1218,6 +1187,7 @@ mod test_sd {
 mod test_im {
     use super::*;
 
+    use std::rc::Rc;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -1245,16 +1215,19 @@ mod test_im {
     }
 
     struct Environment {
-        pub routing: RoutingNode,
+        pub routing: Rc<RoutingNode>,
         pub data_manager: DataManager,
     }
 
     impl Environment {
         pub fn new() -> Environment {
             let _ = log::init(false);
+            let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
+            let routing = Rc::new(routing);
+
             Environment {
-                routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
-                data_manager: unwrap_result!(DataManager::new(322_122_546)),
+                routing: routing.clone(),
+                data_manager: unwrap_result!(DataManager::new(routing.clone(), 322_122_546)),
             }
         }
 
@@ -1310,7 +1283,7 @@ mod test_im {
             };
             let data = Data::Immutable(im_data.clone());
             unwrap_result!(self.data_manager
-                               .handle_put(&self.routing, &client_request, &data, &message_id));
+                               .handle_put(&client_request, &data, &message_id));
 
             PutEnvironment {
                 client_manager: client_manager,
@@ -1337,7 +1310,7 @@ mod test_im {
             };
 
             let _ = self.data_manager
-                        .handle_get(&self.routing, &request, &data_identifier, &message_id);
+                        .handle_get(&request, &data_identifier, &message_id);
             GetEnvironment {
                 client: client,
                 message_id: message_id,
