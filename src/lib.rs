@@ -50,6 +50,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate kademlia_routing_table;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate chunk_store;

@@ -23,9 +23,10 @@ use std::sync::{Arc, Mutex};
 use itertools::Itertools;
 use chunk_store::ChunkStore;
 use error::InternalError;
+use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::serialisation;
 use rand;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataIdentifier, MessageId, NodeInfo, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use sodiumoxide::crypto::hash::sha512;
 use timed_buffer::TimedBuffer;
@@ -383,7 +384,9 @@ impl DataManager {
         }
     }
 
-    pub fn handle_node_added(&mut self, node_name: &XorName) {
+    pub fn handle_node_added(&mut self,
+                             node_name: &XorName,
+                             _routing_table: &RoutingTable<NodeInfo>) {
         // Only retain data for which we're still in the close group.
         match self.in_range_data_keys(Some(node_name)) {
             Ok(data) => {
@@ -446,27 +449,19 @@ impl DataManager {
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
     /// Send o all members of group of data
-    pub fn handle_node_lost(&mut self, node_name: &XorName) {
+    pub fn handle_node_lost(&mut self,
+                            node_name: &XorName,
+                            routing_table: &RoutingTable<NodeInfo>) {
         let mut node_list = HashSet::new();
         match self.in_range_data_keys(None) {
             Ok(data_list) => {
                 for data_id in &data_list {
-                    match self.routing_node
-                              .lock()
-                              .expect("Mutex poisoned")
-                              .close_group(data_id.0.name()) {
-                        Ok(close_group) => {
-                            if let Some(nodes) = close_group {
-                                let _ = nodes.iter()
-                                             .foreach(|&x| {
-                                                 node_list.insert(x);
-                                             });
-                            }
-                        }
-                        Err(error) => {
-                            error!("Failed to get close group: {:?} for {:?}", error, data_id);
-                        }
-                    };
+                    if let Some(nodes) = routing_table.close_nodes(&data_id.0.name()) {
+                        let _ = nodes.iter()
+                                     .foreach(|&x| {
+                                         node_list.insert(*x.name());
+                                     });
+                    }
                 }
                 for node in &node_list {
                     let _ = self.send_refresh(node,

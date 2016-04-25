@@ -19,10 +19,11 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::sync::mpsc::Receiver;
 use sodiumoxide;
 
+use kademlia_routing_table::RoutingTable;
 // use config_handler::Config;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
-use routing::{Authority, Data, Event, RequestContent, RequestMessage, ResponseContent,
+use routing::{Authority, Data, Event, NodeInfo, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
@@ -98,7 +99,7 @@ impl Vault {
             self.maid_manager = MaidManager::new(self.routing_node.clone());
             self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
 
-            for event in routing_receiver.iter() {
+            while let Ok(event) = self.routing_receiver.recv() {
                 if let Some(terminate) = self.process_event(event) {
                     exit = terminate;
                     break;
@@ -149,8 +150,12 @@ impl Vault {
         if let Err(error) = match event {
             Event::Request(request) => self.on_request(request),
             Event::Response(response) => self.on_response(response),
-            Event::NodeAdded(node_added) => self.on_node_added(node_added),
-            Event::NodeLost(node_lost) => self.on_node_lost(node_lost),
+            Event::NodeAdded(node_added, routing_table) => {
+                self.on_node_added(node_added, routing_table)
+            }
+            Event::NodeLost(node_lost, routing_table) => {
+                self.on_node_lost(node_lost, routing_table)
+            }
             Event::Connected => self.on_connected(),
             Event::Disconnected |
             Event::GetNetworkNameFailed => {
@@ -260,15 +265,21 @@ impl Vault {
         }
     }
 
-    fn on_node_added(&mut self, node_added: XorName) -> Result<(), InternalError> {
+    fn on_node_added(&mut self,
+                     node_added: XorName,
+                     routing_table: RoutingTable<NodeInfo>)
+                     -> Result<(), InternalError> {
         self.maid_manager.handle_node_added(&node_added);
-        self.data_manager.handle_node_added(&node_added);
+        self.data_manager.handle_node_added(&node_added, &routing_table);
         Ok(())
     }
 
-    fn on_node_lost(&mut self, node_lost: XorName) -> Result<(), InternalError> {
+    fn on_node_lost(&mut self,
+                    node_lost: XorName,
+                    routing_table: RoutingTable<NodeInfo>)
+                    -> Result<(), InternalError> {
         self.maid_manager.handle_node_lost(&node_lost);
-        self.data_manager.handle_node_lost(&node_lost);
+        self.data_manager.handle_node_lost(&node_lost, &routing_table);
         Ok(())
     }
 
