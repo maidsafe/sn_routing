@@ -19,7 +19,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::sync::mpsc::Receiver;
 use sodiumoxide;
 
-use config_handler::{self, Config};
+// use config_handler::Config;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
 use routing::{Authority, Data, Event, RequestContent, RequestMessage, ResponseContent,
@@ -44,7 +44,6 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
-    routing_node: Arc<Mutex<RoutingNode>>,
     routing_receiver: Receiver<Event>,
 }
 
@@ -61,7 +60,6 @@ impl Vault {
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
             data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
-            routing_node: routing_node,
             routing_receiver: routing_receiver,
         })
     }
@@ -70,7 +68,7 @@ impl Vault {
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
 
-        for event in self.routing_receiver.iter() {
+        while let Ok(event) = self.routing_receiver.try_recv() {
             self.process_event(event);
         }
 

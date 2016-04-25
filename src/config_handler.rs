@@ -39,6 +39,7 @@ impl Default for Config {
 }
 
 /// Reads the default vault config file.
+#[allow(dead_code)]
 pub fn read_config_file() -> Result<Config, InternalError> {
     // if the config file is not present, a default one will be generated
     let file_handler = try!(FileHandler::new(&try!(get_file_name())));
