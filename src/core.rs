@@ -68,7 +68,7 @@ const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
 const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Time (in seconds) after which a `Heartbeat` is sent.
-const HEARTBEAT_TIMEOUT_SECS: u64 = 30;
+const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 /// Number of missed heartbeats after which a peer is considered disconnected.
 const HEARTBEAT_ATTEMPTS: i64 = 3;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
@@ -1413,6 +1413,7 @@ impl Core {
                 }
                 trace!("Received ConnectionUnneeded from {:?}.", peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
+                    trace!("Dropped {:?} from the routing table.", name);
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
