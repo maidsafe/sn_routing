@@ -1567,6 +1567,7 @@ impl Core {
             return Ok(());
         }
 
+        let _ = self.node_id_cache.remove(&name);
         let info = NodeInfo::new(public_id, peer_id);
 
         match self.routing_table.add(info) {
@@ -1603,18 +1604,7 @@ impl Core {
         self.state = State::Node;
 
         if self.routing_table.len() == 1 {
-            let our_name = *self.name();
-            if let Err(e) = self.request_close_group(our_name) {
-                error!("{:?} Failed to request close public IDs: {:?}.", self, e);
-            }
-            for i in 0..(our_name.bucket_index(&name) + 1) {
-                if let Err(e) = self.request_bucket_ids(i) {
-                    error!("{:?} Failed to request public IDs from bucket {}: {:?}.",
-                           self,
-                           i,
-                           e);
-                }
-            }
+            self.request_bucket_close_groups();
         }
 
         for (dst_id, (name, state)) in self.connecting_peers.retrieve_all() {
@@ -1963,14 +1953,16 @@ impl Core {
         for close_node_id in close_group_ids {
             if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
                 if self.routing_table.contains(close_node_id.name()) {
+                    let _ = self.node_id_cache.remove(close_node_id.name());
                     trace!("Routing table already contains {:?}.", close_node_id);
-                } else if self.routing_table.allow_connection(close_node_id.name()) {
+                } else if self.routing_table.need_to_add(close_node_id.name()) {
                     trace!("Sending connection info to {:?} on GetCloseGroup response.",
                            close_node_id);
                     try!(self.send_connection_info(close_node_id,
                                                    dst.clone(),
                                                    Authority::ManagedNode(*close_node_id.name())));
                 } else {
+                    let _ = self.node_id_cache.remove(close_node_id.name());
                     trace!("Routing table does not allow {:?}.", close_node_id);
                 }
             }
