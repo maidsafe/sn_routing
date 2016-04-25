@@ -59,18 +59,18 @@ impl TestClient {
         }
     }
 
-    pub fn poll(&mut self) -> bool {
-        let mut result = false;
+    pub fn poll(&mut self) -> usize {
+        let mut result = 0;
 
         while self.routing_client.poll() {
-            result = true;
+            result += 1;
         }
 
         result
     }
 
     pub fn ensure_connected(&mut self, nodes: &mut [TestNode]) {
-        poll::nodes_and_client(nodes, self);
+        let _ = poll::nodes_and_client(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Connected) => (),
@@ -100,7 +100,7 @@ impl TestClient {
         self.flush();
 
         unwrap_result!(self.routing_client.send_get_request(dst, request, request_message_id));
-        poll::nodes_and_client(nodes, self);
+        let _ = poll::nodes_and_client(nodes, self);
 
         loop {
             match self.routing_rx.try_recv() {
@@ -144,7 +144,7 @@ impl TestClient {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
-        poll::nodes_and_client(nodes, self);
+        let _ = poll::nodes_and_client(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response(ResponseMessage{

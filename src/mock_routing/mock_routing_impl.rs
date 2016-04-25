@@ -20,7 +20,6 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
 use routing::{Authority, Data, DataIdentifier, Event, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
-use sodiumoxide::crypto::hash::sha512;
 use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::Duration;
@@ -370,6 +369,10 @@ impl MockRoutingNodeImpl {
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         Ok(self.name)
+    }
+
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        Ok(5)
     }
 
     fn send_request(&mut self,

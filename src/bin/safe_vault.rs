@@ -64,9 +64,6 @@ Usage:
   safe_vault [options]
 
 Options:
-  -o <file>, --output=<file>    Direct log output to stderr _and_ <file>.  If
-                                <file> does not exist it will be created,
-                                otherwise it will be truncated.
   -V, --version                 Display version info and exit.
   -h, --help                    Display this help message and exit.
 ";
@@ -93,13 +90,7 @@ pub fn main() {
         process::exit(0);
     }
 
-    if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, false));
-    } else {
-        // FIXME - use `log::init` rather than `log::init_to_file`.
-        // let _ = maidsafe_utilities::log::init(false);
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, "vault.log", true));
-    }
+    let _ = maidsafe_utilities::log::init(false);
 
     let mut message = String::from("Running ");
     message.push_str(&name_and_version);

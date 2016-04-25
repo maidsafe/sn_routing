@@ -25,7 +25,6 @@ use self::mock_routing_impl::MockRoutingNodeImpl;
 use rand::random;
 use routing::{Authority, Data, DataIdentifier, Event, ImmutableData, InterfaceError, MessageId,
               RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingError};
-use sodiumoxide::crypto::hash::sha512;
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
 use xor_name::XorName;
@@ -270,6 +269,10 @@ impl MockRoutingNode {
 
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         unwrap_result!(self.pimpl.lock()).name()
+    }
+
+    pub fn quorum_size(&self) -> Result<usize, InterfaceError> {
+        unwrap_result!(self.pimpl.lock()).quorum_size()
     }
 
     fn client_authority(client_address: XorName, client_pub_key: PublicKey) -> Authority {
