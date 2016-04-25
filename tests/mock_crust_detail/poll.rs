@@ -23,7 +23,7 @@ pub fn nodes(nodes: &mut [TestNode]) {
         let mut next = false;
 
         for node in nodes.iter_mut() {
-            if node.poll() {
+            if node.poll() > 0 {
                 next = true;
                 break;
             }
@@ -35,24 +35,20 @@ pub fn nodes(nodes: &mut [TestNode]) {
     }
 }
 
-pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) {
+pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
     let mut count: usize = 0;
     loop {
         let prev_count = count;
 
         for node in nodes.iter_mut() {
-            if node.poll() {
-                count += 1;
-            }
+            count += node.poll();
         }
 
-        if client.poll() {
-            count += 1;
-        }
+        count += client.poll();
 
         if prev_count == count {
             break;
         }
     }
-    trace!("Processed {} events.", count);
+    count
 }

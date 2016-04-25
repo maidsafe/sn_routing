@@ -153,7 +153,7 @@ mod test {
                     test_node::drop_node(&mut nodes, node_index);
                 }
             }
-            poll::nodes_and_client(&mut nodes, &mut client);
+            let _ = poll::nodes_and_client(&mut nodes, &mut client);
             let count = nodes.iter()
                              .filter(|node| {
                                  match node.get_maid_manager_put_count(client.name()) {
@@ -207,7 +207,7 @@ mod test {
                     test_node::drop_node(&mut nodes, node_index);
                 }
             }
-            poll::nodes_and_client(&mut nodes, &mut client);
+            let _ = poll::nodes_and_client(&mut nodes, &mut client);
 
             check_data(all_data.clone(), &nodes);
         }
@@ -241,6 +241,7 @@ mod test {
         let mut all_data: Vec<Data> = vec![];
         let mut deleted_data = vec![];
         let mut rng = thread_rng();
+        let mut event_count = 0;
 
         for i in 0..10 {
             let mut new_data = vec![];
@@ -297,7 +298,9 @@ mod test {
                     test_node::drop_node(&mut nodes, node_index);
                 }
             }
-            poll::nodes_and_client(&mut nodes, &mut client);
+            let count = poll::nodes_and_client(&mut nodes, &mut client);
+            trace!("Processed {} events.", count);
+            event_count += count;
 
             check_data(all_data.clone(), &nodes);
             check_deleted_data(&deleted_data, &nodes);
@@ -316,6 +319,8 @@ mod test {
                 _ => unreachable!(),
             }
         }
+
+        trace!("Processed {} events.", event_count);
     }
 
     // FIXME - re-enable once the hard-coded `max_capacity` is removed from vault.rs
@@ -363,7 +368,7 @@ mod test {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
             test_node::add_node(&network, &mut nodes, index);
-            poll::nodes_and_client(&mut nodes, &mut client);
+            let _ = poll::nodes_and_client(&mut nodes, &mut client);
             let content = mock_crust_detail::generate_random_vec_u8(100);
             let data = Data::Immutable(ImmutableData::new(content));
             let data_id = data.identifier();
