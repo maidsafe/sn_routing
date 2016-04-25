@@ -151,11 +151,17 @@ impl DataManager {
                                           *message_id);
             Err(From::from(error))
         } else {
-            match *data {
-                Data::Immutable(_) => self.immutable_data_count += 1,
-                Data::Structured(_) => self.structured_data_count += 1,
+            let data_hash = match *data {
+                Data::Immutable(_) => {
+                    self.immutable_data_count += 1;
+                    None
+                }
+                Data::Structured(_) => {
+                    self.structured_data_count += 1;
+                    Some(sha512::hash(&try!(serialisation::serialise(data))))
+                }
                 _ => unreachable!(),
-            }
+            };
             trace!("DM sending PutSuccess for data {:?}", data_identifier);
             trace!("{:?}", self);
             let _ = self.routing_node
@@ -163,7 +169,12 @@ impl DataManager {
                                           response_dst,
                                           data_identifier.clone(),
                                           *message_id);
-            // self.send_refresh(routing_node, &data_identifier, MessageId::zero());
+            let data_list = vec![(data_identifier, data_hash)];
+            if let Ok(Some(close_group)) = self.routing_node.close_group(data.name()) {
+                for node_name in close_group {
+                    let _ = self.send_refresh(&node_name, data_list.clone(), MessageId::new());
+                }
+            }
             Ok(())
         }
     }
@@ -185,7 +196,15 @@ impl DataManager {
                                                    request.src.clone(),
                                                    data.identifier(),
                                                    *message_id);
-                    // self.send_refresh(routing_node, &data.identifier(), MessageId::zero());
+                    let data_hash = Some(sha512::hash(&try!(serialisation::serialise(new_data))));
+                    let data_list = vec![(new_data.identifier(), data_hash)];
+                    if let Ok(Some(close_group)) = self.routing_node.close_group(data.name()) {
+                        for node_name in close_group {
+                            let _ = self.send_refresh(&node_name,
+                                                      data_list.clone(),
+                                                      MessageId::new());
+                        }
+                    }
                     return Ok(());
                 }
             }
