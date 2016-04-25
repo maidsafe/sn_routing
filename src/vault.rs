@@ -236,11 +236,10 @@ impl Vault {
             (&Authority::ManagedNode(ref src),
              &Authority::ManagedNode(_),
              &ResponseContent::GetFailure {
-                    ref id,
                     request: RequestMessage {
                         content: RequestContent::Get(ref identifier, _), ..
                     },
-                    .. }) => self.data_manager.handle_get_failure(src, identifier, id),
+                    .. }) => self.data_manager.handle_get_failure(src, identifier),
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),

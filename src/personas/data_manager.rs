@@ -15,15 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
+use std::ops::Add;
 use std::rc::Rc;
 use std::time::Duration;
-use itertools::Itertools;
 use chunk_store::ChunkStore;
 use error::InternalError;
-use kademlia_routing_table::{ContactInfo, RoutingTable};
+use kademlia_routing_table::{ContactInfo, GROUP_SIZE, RoutingTable};
 use maidsafe_utilities::serialisation;
 use rand;
 use routing::{Authority, Data, DataIdentifier, MessageId, NodeInfo, RequestMessage, StructuredData};
@@ -31,7 +31,7 @@ use safe_network_common::client_errors::{MutationError, GetError};
 use sodiumoxide::crypto::hash::sha512;
 use timed_buffer::TimedBuffer;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
-use xor_name::XorName;
+use xor_name::{self, XorName};
 
 const MAX_FULL_PERCENT: u64 = 50;
 
@@ -240,28 +240,31 @@ impl DataManager {
             return Ok(());
         }
         // If we don't have an entry for this in the `refresh_accumulator`, return.
-        // let data_info = match self.refresh_accumulator.get_mut(&data.identifier()) {
-        //     Some(entry) => entry,
-        //     None => return Ok(()),
-        // };
-        let got_new_data = if let Ok(Data::Structured(structured_data)) =
-                                  self.chunk_store
-                                      .get(&data.identifier()) {
-            // Make sure we don't 'update' to a lower version.
-            let new_structured_data = if let Data::Structured(ref sd) = *data {
-                sd
-            } else {
-                unreachable!();
-            };
-            if structured_data.get_version() >= new_structured_data.get_version() {
-                return Ok(());
-            }
-            // Check the received data is valid by comparing to `data_info` retrieved from
-            // accumulator.
-            true
-        } else {
-            !self.chunk_store.has(&data.identifier())
+        let _data_info = match self.refresh_accumulator.remove(&data.identifier()) {
+            Some(entry) => entry,
+            None => return Ok(()),
         };
+        // TODO: Check that the data's hash actually agrees with an accumulated entry.
+        let mut got_new_data = true;
+        match *data {
+            Data::Structured(ref new_structured_data) => {
+                if let Ok(Data::Structured(structured_data)) = self.chunk_store
+                                                                   .get(&data.identifier()) {
+                    // Make sure we don't 'update' to a lower version.
+                    if structured_data.validate_self_against_successor(new_structured_data)
+                                      .is_err() {
+                        return Ok(());
+                    }
+                    got_new_data = false;
+                }
+            }
+            Data::Immutable(_) => {
+                if self.chunk_store.has(&data.identifier()) {
+                    return Ok(()); // Immutable data is already there.
+                }
+            }
+            _ => unreachable!(),
+        }
 
         // chunk_store::put() deletes the old data automatically.
         try!(self.chunk_store.put(&data.identifier(), &data));
@@ -278,14 +281,13 @@ impl DataManager {
 
     pub fn handle_get_failure(&mut self,
                               src: &XorName,
-                              data_id: &DataIdentifier,
-                              message_id: &MessageId)
+                              data_id: &DataIdentifier)
                               -> Result<(), InternalError> {
         // If we're no longer in the close group, return.
         if !self.close_to_address(&data_id.name()) {
             return Ok(());
         }
-        self.send_single_get(data_id.clone(), *message_id, Some(*src))
+        self.send_single_get(data_id.clone(), MessageId::new(), Some(*src))
     }
 
     pub fn handle_refresh(&mut self,
@@ -296,6 +298,7 @@ impl DataManager {
         let data_list = try!(serialisation::deserialise::<DataList>(serialised_data_list));
         for (data_id, opt_hash) in data_list {
             if self.chunk_store.has(&data_id) {
+                // TODO: If our data is outdated, send a Get request.
                 continue;
             }
             // Exclude data we are not close to
@@ -328,7 +331,7 @@ impl DataManager {
                         }
                         // If we have `quorum_size()` disagreeing entries, send Gets to the
                         // group
-                        if hashes_and_counts.values().count() == quorum_size {
+                        if hashes_and_counts.values().fold(0, Add::add) as usize == quorum_size {
                             send_group = true;
                         }
                     }
@@ -346,10 +349,9 @@ impl DataManager {
                 };
             }
             if send_single {
-                try!(self.send_single_get(data_id.clone(), *message_id, None))
+                let _ = self.send_single_get(data_id.clone(), *message_id, None);
             } else if send_group {
-
-                try!(self.send_group_get(data_id.clone(), *message_id))
+                let _ = self.send_group_get(data_id.clone(), *message_id);
             } else {
                 let _ = self.refresh_accumulator.insert(data_id, data_info);
             }
@@ -368,23 +370,10 @@ impl DataManager {
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
         // Only retain data for which we're still in the close group.
-        match self.in_range_data_keys(Some(node_name), routing_table) {
-            Ok(data) => {
-                let _ = self.send_refresh(node_name, data, MessageId::from_added_node(*node_name));
-            }
-            Err(error) => error!("No data to send to {:?} due to {:?}", node_name, error),
-        };
-    }
-
-    fn in_range_data_keys
-        (&mut self,
-         node_name: Option<&XorName>,
-         routing_table: &RoutingTable<NodeInfo>)
-         -> Result<Vec<(DataIdentifier, Option<sha512::Digest>)>, InternalError> {
         let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
         for data_id in data_ids {
-            match routing_table.close_nodes(&data_id.name()) {
+            match routing_table.other_close_nodes(&data_id.name()) {
                 None => {
                     match data_id {
                         DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
@@ -396,10 +385,8 @@ impl DataManager {
                     let _ = self.refresh_accumulator.remove(&data_id);
                 }
                 Some(close_group) => {
-                    if let Some(node) = node_name {
-                        if !close_group.into_iter().any(|node_info| node_info.name() == node) {
-                            continue;
-                        }
+                    if !close_group.into_iter().any(|node_info| node_info.name() == node_name) {
+                        continue;
                     }
                     match data_id {
                         DataIdentifier::Immutable(_) => data_list.push((data_id, None)),
@@ -407,12 +394,14 @@ impl DataManager {
                             let data = if let Ok(data) = self.chunk_store.get(&data_id) {
                                 data
                             } else {
+                                error!("Failed to get {:?} from chunk store.", data_id);
                                 continue;
                             };
                             let hash = if let Ok(serialised_data) =
                                               serialisation::serialise(&data) {
                                 sha512::hash(&serialised_data)
                             } else {
+                                error!("Failed to serialise {:?}.", data_id);
                                 continue;
                             };
                             data_list.push((data_id, Some(hash)));
@@ -422,7 +411,7 @@ impl DataManager {
                 }
             }
         }
-        Ok(data_list)
+        let _ = self.send_refresh(node_name, data_list, MessageId::new());
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
@@ -430,27 +419,54 @@ impl DataManager {
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
-        let mut node_list = HashSet::new();
-        match self.in_range_data_keys(None, routing_table) {
-            Ok(data_list) => {
-                for data_id in &data_list {
-                    if let Some(nodes) = routing_table.close_nodes(&data_id.0.name()) {
-                        let _ = nodes.iter()
-                                     .foreach(|&x| {
-                                         node_list.insert(*x.name());
-                                     });
+        let data_ids = self.chunk_store.keys();
+        let mut data_lists: HashMap<XorName, DataList> = HashMap::new();
+        for data_id in data_ids {
+            match routing_table.other_close_nodes(&data_id.name()) {
+                None => {
+                    error!("Moved out of close group of {:?} in a NodeLost event!",
+                           node_name);
+                    continue;
+                }
+                Some(close_group) => {
+                    // If no new node joined the group due to this event, continue:
+                    // If the group has fewer than GROUP_SIZE elements, the lost node was not
+                    // replaced at all. Otherwise, if the group's last node is closer to the data
+                    // than the lost node, the lost node was not in the group in the first place.
+                    let outer_node = if let Some(node) = close_group.get(GROUP_SIZE - 2) {
+                        *node.name()
+                    } else {
+                        continue;
+                    };
+                    if !xor_name::closer_to_target(node_name, &outer_node, &data_id.name()) {
+                        continue;
                     }
-                }
-                for node in &node_list {
-                    let _ = self.send_refresh(node,
-                                              data_list.clone(),
-                                              MessageId::from_lost_node(*node_name));
+                    data_lists.entry(outer_node).or_insert_with(Vec::new).push(match data_id {
+                        DataIdentifier::Immutable(_) => (data_id, None),
+                        DataIdentifier::Structured(_, _) => {
+                            let data = if let Ok(data) = self.chunk_store.get(&data_id) {
+                                data
+                            } else {
+                                error!("Failed to get {:?} from chunk store.", data_id);
+                                continue;
+                            };
+                            let hash = if let Ok(serialised_data) =
+                                              serialisation::serialise(&data) {
+                                sha512::hash(&serialised_data)
+                            } else {
+                                error!("Failed to serialise {:?}.", data_id);
+                                continue;
+                            };
+                            (data_id, Some(hash))
+                        }
+                        _ => unreachable!(),
+                    });
                 }
             }
-            Err(error) => {
-                error!("Error in node lost: {:?}", error);
-            }
-        };
+        }
+        for (node_name, data_list) in data_lists {
+            let _ = self.send_refresh(&node_name, data_list, MessageId::new());
+        }
     }
 
     pub fn check_timeouts(&mut self) {
@@ -472,8 +488,7 @@ impl DataManager {
                     data_list: DataList,
                     message_id: MessageId)
                     -> Result<(), InternalError> {
-        let src = Authority::ManagedNode(try!(self.routing_node
-                                                  .name()));
+        let src = Authority::ManagedNode(try!(self.routing_node.name()));
         let dst = Authority::ManagedNode(*node_name);
         // FIXME - We need to handle >2MB chunks
         match serialisation::serialise(&data_list) {

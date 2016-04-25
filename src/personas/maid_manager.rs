@@ -721,8 +721,9 @@ mod test {
             content: RequestContent::Put(data.clone(), msg_id),
         };
 
-        assert!(env.maid_manager.handle_put(&valid_request, &data, &msg_id)
-                                .is_ok());
+        assert!(env.maid_manager
+                   .handle_put(&valid_request, &data, &msg_id)
+                   .is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
