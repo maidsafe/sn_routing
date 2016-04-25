@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::sync::{mpsc, Arc, Mutex};
-use std::sync::mpsc::Receiver;
+use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver};
 use sodiumoxide;
 
 use kademlia_routing_table::RoutingTable;
@@ -45,7 +45,7 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
-    routing_node: Arc<Mutex<RoutingNode>>,
+    routing_node: Rc<RoutingNode>,
     routing_receiver: Receiver<Event>,
 }
 
@@ -58,7 +58,7 @@ impl Vault {
         // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         let max_capacity = 30 * 1024 * 1024;
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Arc::new(Mutex::new(try!(RoutingNode::new(routing_sender, true))));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
@@ -76,7 +76,7 @@ impl Vault {
         // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         let max_capacity = 30 * 1024 * 1024;
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Arc::new(Mutex::new(try!(RoutingNode::new(routing_sender, true))));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
@@ -93,7 +93,7 @@ impl Vault {
         while !exit {
             let (routing_sender, routing_receiver) = mpsc::channel();
             self.routing_receiver = routing_receiver;
-            self.routing_node = Arc::new(Mutex::new(try!(RoutingNode::new(routing_sender, true))));
+            self.routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
             // FIXME: See Vault::new.
             let max_capacity = 30 * 1024 * 1024;
             self.maid_manager = MaidManager::new(self.routing_node.clone());
@@ -114,8 +114,7 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        let routing_node = self.routing_node.take().expect("routing_node should never be None");
-        let mut result = routing_node.poll();
+        let mut result = self.routing_node.poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
             let _ignored_for_mock = self.process_event(event);
@@ -139,8 +138,6 @@ impl Vault {
 
     fn process_event(&mut self, event: Event) -> Option<bool> {
         let name = self.routing_node
-                       .lock()
-                       .expect("routing_node should never be None")
                        .name()
                        .expect("Failed to get name from routing node.");
         trace!("Vault {} received an event from routing: {:?}", name, event);

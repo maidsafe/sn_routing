@@ -19,7 +19,7 @@ use std::mem;
 use std::convert::From;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
@@ -76,13 +76,13 @@ impl Account {
 
 
 pub struct MaidManager {
-    routing_node: Arc<Mutex<RoutingNode>>,
+    routing_node: Rc<RoutingNode>,
     accounts: HashMap<XorName, Account>,
     request_cache: HashMap<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
-    pub fn new(routing_node: Arc<Mutex<RoutingNode>>) -> MaidManager {
+    pub fn new(routing_node: Rc<RoutingNode>) -> MaidManager {
         MaidManager {
             routing_node: routing_node,
             accounts: HashMap::new(),
@@ -120,8 +120,6 @@ impl MaidManager {
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = self.routing_node
-                            .lock()
-                            .expect("mutex poisoned")
                             .send_put_success(src, dst, data_id.clone(), *msg_id);
                 Ok(())
             }
@@ -153,7 +151,7 @@ impl MaidManager {
         let Refresh(maid_name, account) =
             try!(serialisation::deserialise::<Refresh>(serialised_msg));
 
-        match self.routing_node.lock().expect("mutex poisoned").close_group(maid_name) {
+        match self.routing_node.close_group(maid_name) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
@@ -176,8 +174,6 @@ impl MaidManager {
         self.accounts = accounts.into_iter()
                                 .filter(|&(ref maid_name, ref account)| {
                                     match self.routing_node
-                                              .lock()
-                                              .expect("mutex poisoned")
                                               .close_group(*maid_name) {
                                         Ok(None) => {
                                             trace!("No longer a MM for {}", maid_name);
@@ -221,8 +217,6 @@ impl MaidManager {
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
             let _ = self.routing_node
-                        .lock()
-                        .expect("mutex poisoned")
                         .send_refresh_request(src.clone(), src.clone(), serialised_refresh, msg_id);
         }
     }
@@ -290,8 +284,6 @@ impl MaidManager {
             let dst = Authority::NaeManager(data.name());
             trace!("MM forwarding put request to {:?}", dst);
             let _ = self.routing_node
-                        .lock()
-                        .expect("mutexpoisoned")
                         .send_put_request(src, dst, data, msg_id);
         }
 
@@ -312,8 +304,6 @@ impl MaidManager {
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
         let _ = self.routing_node
-                    .lock()
-                    .expect("mutex poisoned")
                     .send_put_failure(src, dst, request, external_error_indicator, msg_id);
         Ok(())
     }
@@ -340,6 +330,7 @@ mod test {
                   ResponseContent, StructuredData};
     use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign;
+    use std::rc::Rc;
     use std::sync::mpsc;
     use utils;
     use utils::generate_random_vec_u8;
@@ -385,7 +376,7 @@ mod test {
     struct Environment {
         our_authority: Authority,
         client: Authority,
-        routing: RoutingNode,
+        routing: Rc<RoutingNode>,
         maid_manager: MaidManager,
     }
 
@@ -407,11 +398,13 @@ mod test {
             }
         }
 
+        let routing = Rc::new(routing);
+
         Environment {
             our_authority: Authority::ClientManager(utils::client_name(&client)),
             client: client,
-            routing: routing,
-            maid_manager: MaidManager::new(),
+            routing: routing.clone(),
+            maid_manager: MaidManager::new(routing.clone()),
         }
     }
 
@@ -434,7 +427,7 @@ mod test {
             };
 
             assert!(env.maid_manager
-                       .handle_put(&env.routing, &request, &data, &msg_id)
+                       .handle_put(&request, &data, &msg_id)
                        .is_ok());
         };
     }
@@ -487,8 +480,7 @@ mod test {
         };
 
         if let Err(InternalError::ClientMutation(MutationError::NoSuchAccount)) =
-               env.maid_manager
-                  .handle_put(&env.routing, &valid_request, &data, &msg_id) {
+               env.maid_manager.handle_put(&valid_request, &data, &msg_id) {
         } else {
             unreachable!()
         }
@@ -532,7 +524,7 @@ mod test {
         };
 
         assert!(env.maid_manager
-                   .handle_put(&env.routing, &valid_request, &data, &msg_id)
+                   .handle_put(&valid_request, &data, &msg_id)
                    .is_ok());
 
         let put_failures = env.routing.put_failures_given();
@@ -569,7 +561,7 @@ mod test {
         };
 
         assert!(env.maid_manager
-                   .handle_put(&env.routing, &valid_request, &data, &msg_id)
+                   .handle_put(&valid_request, &data, &msg_id)
                    .is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
@@ -613,7 +605,7 @@ mod test {
 
         if let Err(InternalError::ClientMutation(MutationError::AccountExists)) =
                env.maid_manager
-                  .handle_put(&env.routing, &valid_request, &sd_data, &msg_id) {
+                  .handle_put(&valid_request, &sd_data, &msg_id) {
         } else {
             unreachable!()
         }
@@ -652,7 +644,7 @@ mod test {
         };
 
         assert!(env.maid_manager
-                   .handle_put(&env.routing, &valid_request, &data, &msg_id)
+                   .handle_put(&valid_request, &data, &msg_id)
                    .is_ok());
 
         let put_failures = env.routing.put_failures_given();
@@ -676,7 +668,7 @@ mod test {
 
         // Valid case.
         assert!(env.maid_manager
-                   .handle_put_success(&env.routing, &data.identifier(), &msg_id)
+                   .handle_put_success(&data.identifier(), &msg_id)
                    .is_ok());
 
         let put_successes = env.routing.put_successes_given();
@@ -696,8 +688,7 @@ mod test {
         msg_id = MessageId::new();
 
         if let Err(InternalError::FailedToFindCachedRequest(id)) =
-               env.maid_manager
-                  .handle_put_success(&env.routing, &data.identifier(), &msg_id) {
+               env.maid_manager.handle_put_success(&data.identifier(), &msg_id) {
             assert_eq!(msg_id, id);
         } else {
             unreachable!()
@@ -730,9 +721,8 @@ mod test {
             content: RequestContent::Put(data.clone(), msg_id),
         };
 
-        assert!(env.maid_manager
-                   .handle_put(&env.routing, &valid_request, &data, &msg_id)
-                   .is_ok());
+        assert!(env.maid_manager.handle_put(&valid_request, &data, &msg_id)
+                                .is_ok());
 
         let mut put_failures = env.routing.put_failures_given();
         assert!(put_failures.is_empty());
@@ -754,7 +744,7 @@ mod test {
         let error = MutationError::NoSuchData;
         if let Ok(error_indicator) = serialisation::serialise(&error) {
             assert!(env.maid_manager
-                       .handle_put_failure(&env.routing, &msg_id, &error_indicator[..])
+                       .handle_put_failure(&msg_id, &error_indicator[..])
                        .is_ok());
         } else {
             unreachable!()
@@ -783,8 +773,7 @@ mod test {
         msg_id = MessageId::new();
         if let Ok(error_indicator) = serialisation::serialise(&error) {
             if let Err(InternalError::FailedToFindCachedRequest(id)) =
-                   env.maid_manager
-                      .handle_put_failure(&env.routing, &msg_id, &error_indicator[..]) {
+                   env.maid_manager.handle_put_failure(&msg_id, &error_indicator[..]) {
                 assert_eq!(msg_id, id);
             } else {
                 unreachable!()
@@ -853,7 +842,7 @@ mod test {
         assert_eq!(refresh_requests[0].dst, env.our_authority);
 
         env.routing.node_added_event(get_close_node(&env));
-        env.maid_manager.handle_node_added(&env.routing, &random::<XorName>());
+        env.maid_manager.handle_node_added(&random::<XorName>());
 
         refresh_requests = env.routing.refresh_requests_given();
 
@@ -879,7 +868,7 @@ mod test {
         }
 
         env.routing.node_lost_event(lose_close_node(&env));
-        env.maid_manager.handle_node_lost(&env.routing, &random::<XorName>());
+        env.maid_manager.handle_node_lost(&random::<XorName>());
 
         refresh_requests = env.routing.refresh_requests_given();
 
