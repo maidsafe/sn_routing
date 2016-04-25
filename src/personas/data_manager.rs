@@ -65,7 +65,7 @@ impl DataManager {
     pub fn new(routing_node: Rc<RoutingNode>, capacity: u64) -> Result<DataManager, InternalError> {
         Ok(DataManager {
             chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
-            refresh_accumulator: TimedBuffer::new(Duration::from_secs(180)),
+            refresh_accumulator: TimedBuffer::new(Duration::from_secs(60)),
             routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
@@ -326,6 +326,7 @@ impl DataManager {
             }
             let mut send_single = false;
             let mut send_group = false;
+            let mut add_entry = false;
             let mut data_info = DataInfo::Immutable(1);
             if let Some(info) = self.refresh_accumulator.get_mut(&data_id) {
                 // TODO - since we're using dynamic quorum size here, the following equality
@@ -356,6 +357,7 @@ impl DataManager {
                     }
                 }
             } else {
+                add_entry = true;
                 data_info = match data_id {
                     DataIdentifier::Immutable(_) => DataInfo::Immutable(1),
                     DataIdentifier::Structured(_, _) => {
@@ -371,7 +373,7 @@ impl DataManager {
                 let _ = self.send_single_get(data_id.clone(), *message_id, None);
             } else if send_group {
                 let _ = self.send_group_get(data_id.clone(), *message_id);
-            } else {
+            } else if add_entry {
                 let _ = self.refresh_accumulator.insert(data_id, data_info);
             }
         }
@@ -430,7 +432,9 @@ impl DataManager {
                 }
             }
         }
-        let _ = self.send_refresh(node_name, data_list, MessageId::new());
+        if !data_list.is_empty() {
+            let _ = self.send_refresh(node_name, data_list, MessageId::new());
+        }
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
