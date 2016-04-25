@@ -44,7 +44,6 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
-    #[cfg(feature = "use-mock-crust")]
     routing_node: Arc<Mutex<RoutingNode>>,
     routing_receiver: Receiver<Event>,
 }
@@ -81,6 +80,7 @@ impl Vault {
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
             data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
     }
@@ -88,9 +88,22 @@ impl Vault {
     /// Run the event loop, processing events received from Routing.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
+        let mut exit = false;
+        while !exit {
+            let (routing_sender, routing_receiver) = mpsc::channel();
+            self.routing_receiver = routing_receiver;
+            self.routing_node = Arc::new(Mutex::new(try!(RoutingNode::new(routing_sender, true))));
+            // FIXME: See Vault::new.
+            let max_capacity = 30 * 1024 * 1024;
+            self.maid_manager = MaidManager::new(self.routing_node.clone());
+            self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
 
-        while let Ok(event) = self.routing_receiver.try_recv() {
-            self.process_event(event);
+            for event in routing_receiver.iter() {
+                if let Some(terminate) = self.process_event(event) {
+                    exit = terminate;
+                    break;
+                }
+            }
         }
 
         Ok(())
@@ -100,11 +113,11 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-
-        let mut result = self.routing_node.lock().unwrap().take().poll();
+        let routing_node = self.routing_node.take().expect("routing_node should never be None");
+        let mut result = routing_node.poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
-            self.process_event(event);
+            let _ignored_for_mock = self.process_event(event);
             result = true
         }
 
@@ -123,8 +136,15 @@ impl Vault {
         self.maid_manager.get_put_count(client_name)
     }
 
-    fn process_event(&mut self, event: Event) {
-        trace!("Vault  received an event from routing: {:?}", event);
+    fn process_event(&mut self, event: Event) -> Option<bool> {
+        let name = self.routing_node
+                       .lock()
+                       .expect("routing_node should never be None")
+                       .name()
+                       .expect("Failed to get name from routing node.");
+        trace!("Vault {} received an event from routing: {:?}", name, event);
+
+        let mut ret = None;
 
         if let Err(error) = match event {
             Event::Request(request) => self.on_request(request),
@@ -132,12 +152,21 @@ impl Vault {
             Event::NodeAdded(node_added) => self.on_node_added(node_added),
             Event::NodeLost(node_lost) => self.on_node_lost(node_lost),
             Event::Connected => self.on_connected(),
-            Event::Disconnected => self.on_disconnected(),
+            Event::Disconnected |
+            Event::GetNetworkNameFailed => {
+                ret = Some(false);
+                Ok(())
+            }
+            Event::NetworkStartupFailed => {
+                ret = Some(true);
+                Ok(())
+            }
         } {
             debug!("Failed to handle event: {:?}", error);
         }
 
         self.data_manager.check_timeouts();
+        ret
     }
 
     fn on_request(&mut self, request: RequestMessage) -> Result<(), InternalError> {
@@ -246,12 +275,6 @@ impl Vault {
     fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
-        Ok(())
-    }
-
-    fn on_disconnected(&self) -> Result<(), InternalError> {
-        // TODO: restart event loop with new routing object, discarding all current data
-        debug!("Vault disconnected");
         Ok(())
     }
 }
