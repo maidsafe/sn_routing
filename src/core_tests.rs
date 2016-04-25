@@ -281,7 +281,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::NodeLost(lost_name)) if lost_name == name => break,
+                Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
                 Ok(_) => (),
                 _ => panic!("Event::NodeLost({:?}) not received", name),
             }
@@ -484,9 +484,13 @@ fn successful_put_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name())) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable, ref id), .. })) => {
+                Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable,
+                                                                       ref id),
+                                                   .. })) => {
                     request_received_count += 1;
-                    if data == *immutable && message_id == *id { break; }
+                    if data == *immutable && message_id == *id {
+                        break;
+                    }
                 }
                 Ok(_) => (),
                 _ => panic!("Event::Request(..) not received"),

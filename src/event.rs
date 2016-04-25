@@ -15,7 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::RoutingTable;
 use xor_name::XorName;
+
+use core::NodeInfo;
 use messages::{RequestMessage, ResponseMessage};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -32,9 +35,9 @@ pub enum Event {
     /// Response.
     Response(ResponseMessage),
     /// A new node joined the network and may be a member of group authorities we also belong to.
-    NodeAdded(XorName),
+    NodeAdded(XorName, RoutingTable<NodeInfo>),
     /// A node left the network and may have been a member of group authorities we also belong to.
-    NodeLost(XorName),
+    NodeLost(XorName, RoutingTable<NodeInfo>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// We have disconnected from the network.

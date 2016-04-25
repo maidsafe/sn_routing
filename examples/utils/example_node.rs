@@ -15,10 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
 use xor_name::XorName;
-use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              Authority, Node, Event, Data, DataIdentifier};
+use routing::{NodeInfo, RequestMessage, ResponseMessage, RequestContent, ResponseContent,
+              MessageId, Authority, Node, Event, Data, DataIdentifier};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -76,17 +77,17 @@ impl ExampleNode {
             match event {
                 Event::Request(msg) => self.handle_request(msg),
                 Event::Response(msg) => self.handle_response(msg),
-                Event::NodeAdded(name) => {
+                Event::NodeAdded(name, routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
-                    self.handle_node_added(name);
+                    self.handle_node_added(name, routing_table);
                 }
-                Event::NodeLost(name) => {
+                Event::NodeLost(name, routing_table) => {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
-                    self.handle_node_lost(name);
+                    self.handle_node_lost(name, routing_table);
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
@@ -378,7 +379,8 @@ impl ExampleNode {
 
     // While handling churn messages, we first "action" it ourselves and then
     // send the corresponding refresh messages out to our close group.
-    fn handle_node_added(&mut self, name: XorName) {
+    fn handle_node_added(&mut self, name: XorName, _routing_table: RoutingTable<NodeInfo>) {
+        // TODO: Use the given routing table instead of repeatedly querying the routing node.
         let id = MessageId::from_added_node(name);
         for (client_name, stored) in &self.client_accounts {
             // TODO: Check whether name is actually close to client_name.
@@ -400,7 +402,8 @@ impl ExampleNode {
         self.send_data_manager_refresh_messages(id);
     }
 
-    fn handle_node_lost(&mut self, name: XorName) {
+    fn handle_node_lost(&mut self, name: XorName, _routing_table: RoutingTable<NodeInfo>) {
+        // TODO: Use the given routing table instead of repeatedly querying the routing node.
         let id = MessageId::from_lost_node(name);
         // TODO: Check whether name was actually close to client_name.
         for (client_name, stored) in &self.client_accounts {

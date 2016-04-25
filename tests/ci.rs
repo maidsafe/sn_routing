@@ -190,7 +190,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
         if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
-            if let TestEvent(index, Event::NodeAdded(_)) = test_event {
+            if let TestEvent(index, Event::NodeAdded(..)) = test_event {
                 connection_counts[index] += 1;
 
                 let k = nodes.len();
@@ -415,8 +415,8 @@ fn core() {
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeLost(lost_name)) if index < nodes.len() &&
-                                                                    lost_name == name => {
+                    TestEvent(index, Event::NodeLost(lost_name, _)) if index < nodes.len() &&
+                                                                       lost_name == name => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;
@@ -441,7 +441,7 @@ fn core() {
         loop {
             if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(20)) {
                 match test_event {
-                    TestEvent(index, Event::NodeAdded(_)) if index < nodes.len() => {
+                    TestEvent(index, Event::NodeAdded(..)) if index < nodes.len() => {
                         churns[index] = true;
                         if churns.iter().all(|b| *b) {
                             break;

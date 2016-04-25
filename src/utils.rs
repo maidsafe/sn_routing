@@ -50,11 +50,11 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
 /// To meet these requirements, the relocated name is computed from the two closest nodes and the
 /// client's original name: It is the SHA512 hash of:
 ///
-/// [original_name, 1st closest node id, 2nd closest node id]
+/// [`original_name`, 1st closest node id, 2nd closest node id]
 ///
 /// In case of only one close node provided (in initial network setup scenario):
 ///
-/// [original_name, 1st closest node id]
+/// [`original_name`, 1st closest node id]
 pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
                                 original_name: &XorName)
                                 -> Result<XorName, ::error::RoutingError> {
