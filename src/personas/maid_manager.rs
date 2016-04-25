@@ -19,6 +19,7 @@ use std::mem;
 use std::convert::From;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::sync::{Arc, Mutex};
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
@@ -75,34 +76,34 @@ impl Account {
 
 
 pub struct MaidManager {
+    routing_node: Arc<Mutex<RoutingNode>>,
     accounts: HashMap<XorName, Account>,
     request_cache: HashMap<MessageId, RequestMessage>,
 }
 
 impl MaidManager {
-    pub fn new() -> MaidManager {
+    pub fn new(routing_node: Arc<Mutex<RoutingNode>>) -> MaidManager {
         MaidManager {
+            routing_node: routing_node,
             accounts: HashMap::new(),
             request_cache: HashMap::new(),
         }
     }
 
     pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
                       request: &RequestMessage,
                       data: &Data,
                       msg_id: &MessageId)
                       -> Result<(), InternalError> {
         match *data {
             Data::Immutable(ref immut_data) => {
-                self.handle_put_immutable_data(routing_node, request, immut_data, msg_id)
+                self.handle_put_immutable_data(request, immut_data, msg_id)
             }
             Data::Structured(ref struct_data) => {
-                self.handle_put_structured_data(routing_node, request, struct_data, msg_id)
+                self.handle_put_structured_data(request, struct_data, msg_id)
             }
             _ => {
-                self.reply_with_put_failure(routing_node,
-                                            request.clone(),
+                self.reply_with_put_failure(request.clone(),
                                             *msg_id,
                                             &MutationError::InvalidOperation)
             }
@@ -110,7 +111,6 @@ impl MaidManager {
     }
 
     pub fn handle_put_success(&mut self,
-                              routing_node: &RoutingNode,
                               data_id: &DataIdentifier,
                               msg_id: &MessageId)
                               -> Result<(), InternalError> {
@@ -119,7 +119,10 @@ impl MaidManager {
                 // Send success response back to client
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = routing_node.send_put_success(src, dst, data_id.clone(), *msg_id);
+                let _ = self.routing_node
+                            .lock()
+                            .expect("mutex poisoned")
+                            .send_put_success(src, dst, data_id.clone(), *msg_id);
                 Ok(())
             }
             None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
@@ -127,7 +130,6 @@ impl MaidManager {
     }
 
     pub fn handle_put_failure(&mut self,
-                              routing_node: &RoutingNode,
                               msg_id: &MessageId,
                               external_error_indicator: &[u8])
                               -> Result<(), InternalError> {
@@ -141,20 +143,17 @@ impl MaidManager {
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<MutationError>(external_error_indicator));
-                self.reply_with_put_failure(routing_node, client_request, *msg_id, &error)
+                self.reply_with_put_failure(client_request, *msg_id, &error)
             }
             None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
         }
     }
 
-    pub fn handle_refresh(&mut self,
-                          routing_node: &RoutingNode,
-                          serialised_msg: &[u8])
-                          -> Result<(), InternalError> {
+    pub fn handle_refresh(&mut self, serialised_msg: &[u8]) -> Result<(), InternalError> {
         let Refresh(maid_name, account) =
             try!(serialisation::deserialise::<Refresh>(serialised_msg));
 
-        match routing_node.close_group(maid_name) {
+        match self.routing_node.lock().expect("mutex poisoned").close_group(maid_name) {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
@@ -171,12 +170,15 @@ impl MaidManager {
         Ok(())
     }
 
-    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+    pub fn handle_node_added(&mut self, node_name: &XorName) {
         // Only retain accounts for which we're still in the close group
         let accounts = mem::replace(&mut self.accounts, HashMap::new());
         self.accounts = accounts.into_iter()
                                 .filter(|&(ref maid_name, ref account)| {
-                                    match routing_node.close_group(*maid_name) {
+                                    match self.routing_node
+                                              .lock()
+                                              .expect("mutex poisoned")
+                                              .close_group(*maid_name) {
                                         Ok(None) => {
                                             trace!("No longer a MM for {}", maid_name);
                                             let requests = mem::replace(&mut self.request_cache,
@@ -190,7 +192,7 @@ impl MaidManager {
                                             false
                                         }
                                         Ok(Some(_)) => {
-                                            self.send_refresh(routing_node,
+                                            self.send_refresh(
                                                   maid_name,
                                                   account,
                                                   MessageId::from_added_node(*node_name));
@@ -207,48 +209,38 @@ impl MaidManager {
                                 .collect();
     }
 
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
+    pub fn handle_node_lost(&mut self, node_name: &XorName) {
         for (maid_name, account) in &self.accounts {
-            self.send_refresh(routing_node,
-                              maid_name,
-                              account,
-                              MessageId::from_lost_node(*node_name));
+            self.send_refresh(maid_name, account, MessageId::from_lost_node(*node_name));
         }
     }
 
-    fn send_refresh(&self,
-                    routing_node: &RoutingNode,
-                    maid_name: &XorName,
-                    account: &Account,
-                    msg_id: MessageId) {
+    fn send_refresh(&self, maid_name: &XorName, account: &Account, msg_id: MessageId) {
         let src = Authority::ClientManager(*maid_name);
         let refresh = Refresh(*maid_name, account.clone());
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
-            let _ = routing_node.send_refresh_request(src.clone(),
-                                                      src.clone(),
-                                                      serialised_refresh,
-                                                      msg_id);
+            let _ = self.routing_node
+                        .lock()
+                        .expect("mutex poisoned")
+                        .send_refresh_request(src.clone(), src.clone(), serialised_refresh, msg_id);
         }
     }
 
     #[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss,
                                        cast_sign_loss))]
     fn handle_put_immutable_data(&mut self,
-                                 routing_node: &RoutingNode,
                                  request: &RequestMessage,
                                  data: &ImmutableData,
                                  msg_id: &MessageId)
                                  -> Result<(), InternalError> {
-        self.forward_put_request(routing_node,
-                                 utils::client_name(&request.src),
+        self.forward_put_request(utils::client_name(&request.src),
                                  Data::Immutable(data.clone()),
                                  *msg_id,
                                  request)
     }
 
     fn handle_put_structured_data(&mut self,
-                                  routing_node: &RoutingNode,
                                   request: &RequestMessage,
                                   data: &StructuredData,
                                   msg_id: &MessageId)
@@ -258,22 +250,20 @@ impl MaidManager {
         if data.get_type_tag() == 0 {
             if self.accounts.contains_key(&client_name) {
                 let error = MutationError::AccountExists;
-                try!(self.reply_with_put_failure(routing_node, request.clone(), *msg_id, &error));
+                try!(self.reply_with_put_failure(request.clone(), *msg_id, &error));
                 return Err(From::from(error));
             }
 
             // Create the account, the SD incurs charge later on
             let _ = self.accounts.insert(client_name, Account::default());
         }
-        self.forward_put_request(routing_node,
-                                 client_name,
+        self.forward_put_request(client_name,
                                  Data::Structured(data.clone()),
                                  *msg_id,
                                  request)
     }
 
     fn forward_put_request(&mut self,
-                           routing_node: &RoutingNode,
                            client_name: XorName,
                            data: Data,
                            msg_id: MessageId,
@@ -288,11 +278,10 @@ impl MaidManager {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
                    error);
-            try!(self.reply_with_put_failure(routing_node, request.clone(), msg_id, &error));
+            try!(self.reply_with_put_failure(request.clone(), msg_id, &error));
             return Err(From::from(error));
         }
-        self.send_refresh(routing_node,
-                          &client_name,
+        self.send_refresh(&client_name,
                           self.accounts.get(&client_name).expect("Account not found."),
                           MessageId::zero());
         {
@@ -300,7 +289,10 @@ impl MaidManager {
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
             trace!("MM forwarding put request to {:?}", dst);
-            let _ = routing_node.send_put_request(src, dst, data, msg_id);
+            let _ = self.routing_node
+                        .lock()
+                        .expect("mutexpoisoned")
+                        .send_put_request(src, dst, data, msg_id);
         }
 
         if let Some(prior_request) = self.request_cache
@@ -312,7 +304,6 @@ impl MaidManager {
     }
 
     fn reply_with_put_failure(&self,
-                              routing_node: &RoutingNode,
                               request: RequestMessage,
                               msg_id: MessageId,
                               error: &MutationError)
@@ -320,19 +311,16 @@ impl MaidManager {
         let src = request.dst.clone();
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
-        let _ = routing_node.send_put_failure(src, dst, request, external_error_indicator, msg_id);
+        let _ = self.routing_node
+                    .lock()
+                    .expect("mutex poisoned")
+                    .send_put_failure(src, dst, request, external_error_indicator, msg_id);
         Ok(())
     }
 
     #[cfg(feature = "use-mock-crust")]
     pub fn get_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.accounts.get(client_name).map(|account| account.data_stored)
-    }
-}
-
-impl Default for MaidManager {
-    fn default() -> MaidManager {
-        MaidManager::new()
     }
 }
 

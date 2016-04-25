@@ -43,6 +43,12 @@ impl<Key: Hash + PartialOrd + Ord + Clone, Value: Clone> TimedBuffer<Key, Value>
         self.map.insert(key, (value, Instant::now())).map_or(None, |(value, _)| Some(value))
     }
 
+    /// Returns an immutable reference to the value corresponding to the key.  This updates the entry's
+    /// timestamp.
+    pub fn get(&self, key: &Key) -> Option<&Value> {
+        self.map.get(key).map(|&(ref value, ref timestamp)| value)
+    }
+
     /// Returns a mutable reference to the value corresponding to the key.  This updates the entry's
     /// timestamp.
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Value> {
