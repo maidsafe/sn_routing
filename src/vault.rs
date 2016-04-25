@@ -44,11 +44,32 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
+    #[cfg(feature = "use-mock-crust")]
+    routing_node: Arc<Mutex<RoutingNode>>,
     routing_receiver: Receiver<Event>,
 }
 
 impl Vault {
     /// Creates a network Vault instance.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn new() -> Result<Self, InternalError> {
+        sodiumoxide::init();
+        // FIXME - reinstate use of `max_capacity`
+        // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+        let max_capacity = 30 * 1024 * 1024;
+        let (routing_sender, routing_receiver) = mpsc::channel();
+        let routing_node = Arc::new(Mutex::new(try!(RoutingNode::new(routing_sender, true))));
+
+        Ok(Vault {
+            maid_manager: MaidManager::new(routing_node.clone()),
+            data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            routing_node: routing_node.clone(),
+            routing_receiver: routing_receiver,
+        })
+    }
+
+    /// Creates a network Vault instance.
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn new() -> Result<Self, InternalError> {
         sodiumoxide::init();
         // FIXME - reinstate use of `max_capacity`
@@ -79,7 +100,8 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        let mut result = self.routing_node.poll();
+
+        let mut result = self.routing_node.lock().unwrap().take().poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
             self.process_event(event);
