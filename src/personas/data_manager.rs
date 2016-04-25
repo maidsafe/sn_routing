@@ -366,9 +366,9 @@ impl DataManager {
 
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
-                             _routing_table: &RoutingTable<NodeInfo>) {
+                             routing_table: &RoutingTable<NodeInfo>) {
         // Only retain data for which we're still in the close group.
-        match self.in_range_data_keys(Some(node_name)) {
+        match self.in_range_data_keys(Some(node_name), routing_table) {
             Ok(data) => {
                 let _ = self.send_refresh(node_name, data, MessageId::from_added_node(*node_name));
             }
@@ -378,13 +378,14 @@ impl DataManager {
 
     fn in_range_data_keys
         (&mut self,
-         node_name: Option<&XorName>)
+         node_name: Option<&XorName>,
+         routing_table: &RoutingTable<NodeInfo>)
          -> Result<Vec<(DataIdentifier, Option<sha512::Digest>)>, InternalError> {
         let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
         for data_id in data_ids {
-            match self.routing_node.close_group(data_id.name()) {
-                Ok(None) => {
+            match routing_table.close_nodes(&data_id.name()) {
+                None => {
                     match data_id {
                         DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
                         DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
@@ -394,9 +395,9 @@ impl DataManager {
                     let _ = self.chunk_store.delete(&data_id);
                     let _ = self.refresh_accumulator.remove(&data_id);
                 }
-                Ok(Some(close_group)) => {
+                Some(close_group) => {
                     if let Some(node) = node_name {
-                        if !close_group.contains(node) {
+                        if !close_group.into_iter().any(|node_info| node_info.name() == node) {
                             continue;
                         }
                     }
@@ -419,9 +420,6 @@ impl DataManager {
                         _ => unreachable!(),
                     }
                 }
-                Err(error) => {
-                    error!("Failed to get close group: {:?} for {:?}", error, data_id);
-                }
             }
         }
         Ok(data_list)
@@ -433,7 +431,7 @@ impl DataManager {
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
         let mut node_list = HashSet::new();
-        match self.in_range_data_keys(None) {
+        match self.in_range_data_keys(None, routing_table) {
             Ok(data_list) => {
                 for data_id in &data_list {
                     if let Some(nodes) = routing_table.close_nodes(&data_id.0.name()) {
