@@ -50,6 +50,7 @@
 
 #[macro_use]
 extern crate log;
+extern crate kademlia_routing_table;
 #[macro_use]
 extern crate maidsafe_utilities;
 extern crate chunk_store;
@@ -58,7 +59,6 @@ extern crate config_file_handler;
 extern crate kademlia_routing_table;
 extern crate rand;
 extern crate routing;
-extern crate itertools;
 extern crate rustc_serialize;
 extern crate safe_network_common;
 extern crate sodiumoxide;

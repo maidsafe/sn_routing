@@ -15,22 +15,23 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::Add;
+use std::rc::Rc;
 use std::time::Duration;
-use itertools::Itertools;
 use chunk_store::ChunkStore;
 use error::InternalError;
+use kademlia_routing_table::{ContactInfo, GROUP_SIZE, RoutingTable};
 use maidsafe_utilities::serialisation;
 use rand;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataIdentifier, MessageId, NodeInfo, RequestMessage, StructuredData};
 use safe_network_common::client_errors::{MutationError, GetError};
 use sodiumoxide::crypto::hash::sha512;
 use timed_buffer::TimedBuffer;
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
-use xor_name::XorName;
+use xor_name::{self, XorName};
 
 const MAX_FULL_PERCENT: u64 = 50;
 
@@ -45,6 +46,7 @@ enum DataInfo {
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
     refresh_accumulator: TimedBuffer<DataIdentifier, DataInfo>,
+    routing_node: Rc<RoutingNode>,
     immutable_data_count: u64,
     structured_data_count: u64,
 }
@@ -60,17 +62,17 @@ impl Debug for DataManager {
 }
 
 impl DataManager {
-    pub fn new(capacity: u64) -> Result<DataManager, InternalError> {
+    pub fn new(routing_node: Rc<RoutingNode>, capacity: u64) -> Result<DataManager, InternalError> {
         Ok(DataManager {
             chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
             refresh_accumulator: TimedBuffer::new(Duration::from_secs(180)),
+            routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
         })
     }
 
     pub fn handle_get(&mut self,
-                      routing_node: &RoutingNode,
                       request: &RequestMessage,
                       data_id: &DataIdentifier,
                       message_id: &MessageId)
@@ -80,25 +82,26 @@ impl DataManager {
                    request.dst,
                    data,
                    request.src);
-            let _ = routing_node.send_get_success(request.dst.clone(),
-                                                  request.src.clone(),
-                                                  data,
-                                                  *message_id);
+            let _ = self.routing_node
+                        .send_get_success(request.dst.clone(),
+                                          request.src.clone(),
+                                          data,
+                                          *message_id);
             return Ok(());
         }
         trace!("DM sending get_failure of {:?}", data_id);
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
-        try!(routing_node.send_get_failure(request.dst.clone(),
-                                           request.src.clone(),
-                                           request.clone(),
-                                           external_error_indicator,
-                                           message_id.clone()));
+        try!(self.routing_node
+                 .send_get_failure(request.dst.clone(),
+                                   request.src.clone(),
+                                   request.clone(),
+                                   external_error_indicator,
+                                   message_id.clone()));
         Ok(())
     }
 
     pub fn handle_put(&mut self,
-                      routing_node: &RoutingNode,
                       request: &RequestMessage,
                       data: &Data,
                       message_id: &MessageId)
@@ -111,11 +114,12 @@ impl DataManager {
             let error = MutationError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
             trace!("DM sending PutFailure for data {:?}", data_identifier);
-            let _ = routing_node.send_put_failure(response_src,
-                                                  response_dst,
-                                                  request.clone(),
-                                                  external_error_indicator,
-                                                  *message_id);
+            let _ = self.routing_node
+                        .send_put_failure(response_src,
+                                          response_dst,
+                                          request.clone(),
+                                          external_error_indicator,
+                                          *message_id);
             return Err(From::from(error));
         }
 
@@ -123,11 +127,12 @@ impl DataManager {
         if self.chunk_store.used_space() > (self.chunk_store.max_space() / 100) * MAX_FULL_PERCENT {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
-            let _ = routing_node.send_put_failure(response_src,
-                                                  response_dst,
-                                                  request.clone(),
-                                                  external_error_indicator,
-                                                  *message_id);
+            let _ = self.routing_node
+                        .send_put_failure(response_src,
+                                          response_dst,
+                                          request.clone(),
+                                          external_error_indicator,
+                                          *message_id);
             return Err(From::from(error));
         }
 
@@ -138,32 +143,44 @@ impl DataManager {
                    err);
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
-            let _ = routing_node.send_put_failure(response_src,
-                                                  response_dst,
-                                                  request.clone(),
-                                                  external_error_indicator,
-                                                  *message_id);
+            let _ = self.routing_node
+                        .send_put_failure(response_src,
+                                          response_dst,
+                                          request.clone(),
+                                          external_error_indicator,
+                                          *message_id);
             Err(From::from(error))
         } else {
-            match *data {
-                Data::Immutable(_) => self.immutable_data_count += 1,
-                Data::Structured(_) => self.structured_data_count += 1,
+            let data_hash = match *data {
+                Data::Immutable(_) => {
+                    self.immutable_data_count += 1;
+                    None
+                }
+                Data::Structured(_) => {
+                    self.structured_data_count += 1;
+                    Some(sha512::hash(&try!(serialisation::serialise(data))))
+                }
                 _ => unreachable!(),
-            }
+            };
             trace!("DM sending PutSuccess for data {:?}", data_identifier);
             trace!("{:?}", self);
-            let _ = routing_node.send_put_success(response_src,
-                                                  response_dst,
-                                                  data_identifier.clone(),
-                                                  *message_id);
-            // self.send_refresh(routing_node, &data_identifier, MessageId::zero());
+            let _ = self.routing_node
+                        .send_put_success(response_src,
+                                          response_dst,
+                                          data_identifier.clone(),
+                                          *message_id);
+            let data_list = vec![(data_identifier, data_hash)];
+            if let Ok(Some(close_group)) = self.routing_node.close_group(data.name()) {
+                for node_name in close_group {
+                    let _ = self.send_refresh(&node_name, data_list.clone(), MessageId::new());
+                }
+            }
             Ok(())
         }
     }
 
     // This function is only for SD
     pub fn handle_post(&mut self,
-                       routing_node: &RoutingNode,
                        request: &RequestMessage,
                        new_data: &StructuredData,
                        message_id: &MessageId)
@@ -174,28 +191,36 @@ impl DataManager {
                                     .put(&data.identifier(), &Data::Structured(data.clone())) {
                     trace!("DM updated for: {:?}", data.identifier());
                     trace!("{:?}", self);
-                    let _ = routing_node.send_post_success(request.dst.clone(),
-                                                           request.src.clone(),
-                                                           data.identifier(),
-                                                           *message_id);
-                    // self.send_refresh(routing_node, &data.identifier(), MessageId::zero());
+                    let _ = self.routing_node
+                                .send_post_success(request.dst.clone(),
+                                                   request.src.clone(),
+                                                   data.identifier(),
+                                                   *message_id);
+                    let data_hash = Some(sha512::hash(&try!(serialisation::serialise(new_data))));
+                    let data_list = vec![(new_data.identifier(), data_hash)];
+                    if let Ok(Some(close_group)) = self.routing_node.close_group(data.name()) {
+                        for node_name in close_group {
+                            let _ = self.send_refresh(&node_name,
+                                                      data_list.clone(),
+                                                      MessageId::new());
+                        }
+                    }
                     return Ok(());
                 }
             }
         }
 
         trace!("DM sending post_failure {:?}", new_data.identifier());
-        Ok(try!(routing_node.send_post_failure(request.dst.clone(),
-                                               request.src.clone(),
-                                               request.clone(),
-                                               try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                               *message_id)))
+        Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
+                                                    request.src.clone(),
+                                                    request.clone(),
+                                                    try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                                                    *message_id)))
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
     // This function is only for SD
     pub fn handle_delete(&mut self,
-                         routing_node: &RoutingNode,
                          request: &RequestMessage,
                          new_data: &StructuredData,
                          message_id: &MessageId)
@@ -206,57 +231,59 @@ impl DataManager {
                     self.structured_data_count -= 1;
                     trace!("DM deleted {:?}", data.identifier());
                     trace!("{:?}", self);
-                    let _ = routing_node.send_delete_success(request.dst.clone(),
-                                                             request.src.clone(),
-                                                             data.identifier(),
-                                                             *message_id);
+                    let _ = self.routing_node
+                                .send_delete_success(request.dst.clone(),
+                                                     request.src.clone(),
+                                                     data.identifier(),
+                                                     *message_id);
                     // TODO: Send a refresh message.
                     return Ok(());
                 }
             }
         }
         trace!("DM sending delete_failure for {:?}", new_data.identifier());
-        try!(routing_node.send_delete_failure(request.dst.clone(),
-                                              request.src.clone(),
-                                              request.clone(),
-                                              try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                              *message_id));
+        try!(self.routing_node.send_delete_failure(request.dst.clone(),
+                                                   request.src.clone(),
+                                                   request.clone(),
+                                                   try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                                                   *message_id));
         Ok(())
     }
 
     pub fn handle_get_success(&mut self,
-                              routing_node: &RoutingNode,
                               data: &Data,
                               _message_id: &MessageId)
                               -> Result<(), InternalError> {
         // If we're no longer in the close group, return.
-        match routing_node.close_group(data.name()) {
-            Ok(None) | Err(_) => return Ok(()),
-            Ok(Some(_)) => (),
+        if !self.close_to_address(&data.name()) {
+            return Ok(());
         }
         // If we don't have an entry for this in the `refresh_accumulator`, return.
-        // let data_info = match self.refresh_accumulator.get_mut(&data.identifier()) {
-        //     Some(entry) => entry,
-        //     None => return Ok(()),
-        // };
-        let got_new_data = if let Ok(Data::Structured(structured_data)) =
-                                  self.chunk_store
-                                      .get(&data.identifier()) {
-            // Make sure we don't 'update' to a lower version.
-            let new_structured_data = if let Data::Structured(ref sd) = *data {
-                sd
-            } else {
-                unreachable!();
-            };
-            if structured_data.get_version() >= new_structured_data.get_version() {
-                return Ok(());
-            }
-            // Check the received data is valid by comparing to `data_info` retrieved from
-            // accumulator.
-            true
-        } else {
-            !self.chunk_store.has(&data.identifier())
+        let _data_info = match self.refresh_accumulator.remove(&data.identifier()) {
+            Some(entry) => entry,
+            None => return Ok(()),
         };
+        // TODO: Check that the data's hash actually agrees with an accumulated entry.
+        let mut got_new_data = true;
+        match *data {
+            Data::Structured(ref new_structured_data) => {
+                if let Ok(Data::Structured(structured_data)) = self.chunk_store
+                                                                   .get(&data.identifier()) {
+                    // Make sure we don't 'update' to a lower version.
+                    if structured_data.validate_self_against_successor(new_structured_data)
+                                      .is_err() {
+                        return Ok(());
+                    }
+                    got_new_data = false;
+                }
+            }
+            Data::Immutable(_) => {
+                if self.chunk_store.has(&data.identifier()) {
+                    return Ok(()); // Immutable data is already there.
+                }
+            }
+            _ => unreachable!(),
+        }
 
         // chunk_store::put() deletes the old data automatically.
         try!(self.chunk_store.put(&data.identifier(), &data));
@@ -272,75 +299,64 @@ impl DataManager {
     }
 
     pub fn handle_get_failure(&mut self,
-                              routing_node: &RoutingNode,
                               src: &XorName,
-                              data_id: &DataIdentifier,
-                              message_id: &MessageId)
+                              data_id: &DataIdentifier)
                               -> Result<(), InternalError> {
-        match routing_node.close_group(data_id.name()) {
-            Ok(None) | Err(_) => return Ok(()),
-            Ok(Some(_)) => (),
+        // If we're no longer in the close group, return.
+        if !self.close_to_address(&data_id.name()) {
+            return Ok(());
         }
-        Self::send_single_get(routing_node, data_id.clone(), *message_id, Some(*src))
+        self.send_single_get(data_id.clone(), MessageId::new(), Some(*src))
     }
 
     pub fn handle_refresh(&mut self,
-                          routing_node: &RoutingNode,
                           serialised_data_list: &[u8],
                           message_id: &MessageId)
                           -> Result<(), InternalError> {
-        let quorum_size = try!(routing_node.quorum_size());
+        let quorum_size = try!(self.routing_node.quorum_size());
         let data_list = try!(serialisation::deserialise::<DataList>(serialised_data_list));
         for (data_id, opt_hash) in data_list {
             if self.chunk_store.has(&data_id) {
+                // TODO: If our data is outdated, send a Get request.
                 continue;
             }
-            let mut have_entry = false;
-            {
-                if let Some(info) = self.refresh_accumulator.get_mut(&data_id) {
-                    have_entry = true;
-                    // TODO - since we're using dynamic quorum size here, the following equality
-                    // checks could trigger more than once.  Should refactor to avoid this.
-                    match *info {
-                        DataInfo::Immutable(ref mut count) => {
+            // Exclude data we are not close to
+            if !self.close_to_address(&data_id.name()) {
+                continue;
+            }
+            let mut send_single = false;
+            let mut send_group = false;
+            let mut data_info = DataInfo::Immutable(1);
+            if let Some(info) = self.refresh_accumulator.get_mut(&data_id) {
+                // TODO - since we're using dynamic quorum size here, the following equality
+                // checks could trigger more than once.  Should refactor to avoid this.
+                match *info {
+                    DataInfo::Immutable(ref mut count) => {
+                        *count += 1;
+                        if *count as usize == quorum_size {
+                            send_single = true;
+                        }
+                    }
+                    DataInfo::Structured(ref mut hashes_and_counts) => {
+                        let hash = try!(Self::get_expected_hash(opt_hash));
+                        {
+                            let count = hashes_and_counts.entry(hash).or_insert(0);
                             *count += 1;
+                            // If we have agreement for a single hash value, send Get to a
+                            // single peer
                             if *count as usize == quorum_size {
-                                let _ = Self::send_single_get(routing_node,
-                                                              data_id.clone(),
-                                                              *message_id,
-                                                              None);
+                                send_single = true;
                             }
                         }
-                        DataInfo::Structured(ref mut hashes_and_counts) => {
-                            let hash = try!(Self::get_expected_hash(opt_hash));
-                            {
-                                let count = hashes_and_counts.entry(hash).or_insert(0);
-                                *count += 1;
-                                // If we have agreement for a single hash value, send Get to a
-                                // single peer
-                                if *count as usize == quorum_size {
-                                    let _ = Self::send_single_get(routing_node,
-                                                                  data_id.clone(),
-                                                                  *message_id,
-                                                                  None);
-                                    return Ok(());
-                                }
-                            }
-                            // If we have `quorum_size()` disagreeing entries, send Gets to the
-                            // group
-                            // TODO replace `fold` with `sum` once it's stable.
-                            if hashes_and_counts.values().fold::<u8, _>(0, Add::add) as usize ==
-                               quorum_size {
-                                let _ = Self::send_group_get(routing_node,
-                                                             data_id.clone(),
-                                                             *message_id);
-                            }
+                        // If we have `quorum_size()` disagreeing entries, send Gets to the
+                        // group
+                        if hashes_and_counts.values().fold(0, Add::add) as usize == quorum_size {
+                            send_group = true;
                         }
                     }
                 }
-            }
-            if !have_entry {
-                let data_info = match data_id {
+            } else {
+                data_info = match data_id {
                     DataIdentifier::Immutable(_) => DataInfo::Immutable(1),
                     DataIdentifier::Structured(_, _) => {
                         let hash = try!(Self::get_expected_hash(opt_hash));
@@ -350,35 +366,34 @@ impl DataManager {
                     }
                     _ => unreachable!(),
                 };
+            }
+            if send_single {
+                let _ = self.send_single_get(data_id.clone(), *message_id, None);
+            } else if send_group {
+                let _ = self.send_group_get(data_id.clone(), *message_id);
+            } else {
                 let _ = self.refresh_accumulator.insert(data_id, data_info);
             }
         }
         Ok(())
     }
 
-    pub fn handle_node_added(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        // Only retain data for which we're still in the close group.
-        match self.in_range_data_keys(routing_node, Some(node_name)) {
-            Ok(data) => {
-                let _ = self.send_refresh(routing_node,
-                                          node_name,
-                                          data,
-                                          MessageId::from_added_node(*node_name));
-            }
-            Err(error) => error!("No data to send to {:?} due to {:?}", node_name, error),
-        };
+    fn close_to_address(&self, address: &XorName) -> bool {
+        match self.routing_node.close_group(*address) {
+            Ok(Some(_)) => true,
+            _ => false,
+        }
     }
 
-    fn in_range_data_keys
-        (&mut self,
-         routing_node: &RoutingNode,
-         node_name: Option<&XorName>)
-         -> Result<Vec<(DataIdentifier, Option<sha512::Digest>)>, InternalError> {
+    pub fn handle_node_added(&mut self,
+                             node_name: &XorName,
+                             routing_table: &RoutingTable<NodeInfo>) {
+        // Only retain data for which we're still in the close group.
         let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
         for data_id in data_ids {
-            match routing_node.close_group(data_id.name()) {
-                Ok(None) => {
+            match routing_table.other_close_nodes(&data_id.name()) {
+                None => {
                     match data_id {
                         DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
                         DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
@@ -388,11 +403,9 @@ impl DataManager {
                     let _ = self.chunk_store.delete(&data_id);
                     let _ = self.refresh_accumulator.remove(&data_id);
                 }
-                Ok(Some(close_group)) => {
-                    if let Some(node) = node_name {
-                        if !close_group.contains(node) {
-                            continue;
-                        }
+                Some(close_group) => {
+                    if !close_group.into_iter().any(|node_info| node_info.name() == node_name) {
+                        continue;
                     }
                     match data_id {
                         DataIdentifier::Immutable(_) => data_list.push((data_id, None)),
@@ -400,12 +413,14 @@ impl DataManager {
                             let data = if let Ok(data) = self.chunk_store.get(&data_id) {
                                 data
                             } else {
+                                error!("Failed to get {:?} from chunk store.", data_id);
                                 continue;
                             };
                             let hash = if let Ok(serialised_data) =
                                               serialisation::serialise(&data) {
                                 sha512::hash(&serialised_data)
                             } else {
+                                error!("Failed to serialise {:?}.", data_id);
                                 continue;
                             };
                             data_list.push((data_id, Some(hash)));
@@ -413,54 +428,72 @@ impl DataManager {
                         _ => unreachable!(),
                     }
                 }
-                Err(error) => {
-                    error!("Failed to get close group: {:?} for {:?}", error, data_id);
-                }
             }
         }
-        Ok(data_list)
+        let _ = self.send_refresh(node_name, data_list, MessageId::new());
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
     /// Send o all members of group of data
-    pub fn handle_node_lost(&mut self, routing_node: &RoutingNode, node_name: &XorName) {
-        let mut node_list = HashSet::new();
-        match self.in_range_data_keys(routing_node, None) {
-            Ok(data_list) => {
-                for data_id in &data_list {
-                    match routing_node.close_group(data_id.0.name()) {
-                        Ok(close_group) => {
-                            if let Some(nodes) = close_group {
-                                let _ = nodes.iter()
-                                             .foreach(|&x| {
-                                                 node_list.insert(x);
-                                             });
-                            }
-                        }
-                        Err(error) => {
-                            error!("Failed to get close group: {:?} for {:?}", error, data_id);
-                        }
+    pub fn handle_node_lost(&mut self,
+                            node_name: &XorName,
+                            routing_table: &RoutingTable<NodeInfo>) {
+        let data_ids = self.chunk_store.keys();
+        let mut data_lists: HashMap<XorName, DataList> = HashMap::new();
+        for data_id in data_ids {
+            match routing_table.other_close_nodes(&data_id.name()) {
+                None => {
+                    error!("Moved out of close group of {:?} in a NodeLost event!",
+                           node_name);
+                    continue;
+                }
+                Some(close_group) => {
+                    // If no new node joined the group due to this event, continue:
+                    // If the group has fewer than GROUP_SIZE elements, the lost node was not
+                    // replaced at all. Otherwise, if the group's last node is closer to the data
+                    // than the lost node, the lost node was not in the group in the first place.
+                    let outer_node = if let Some(node) = close_group.get(GROUP_SIZE - 2) {
+                        *node.name()
+                    } else {
+                        continue;
                     };
-                }
-                for node in &node_list {
-                    let _ = self.send_refresh(routing_node,
-                                              node,
-                                              data_list.clone(),
-                                              MessageId::from_lost_node(*node_name));
+                    if !xor_name::closer_to_target(node_name, &outer_node, &data_id.name()) {
+                        continue;
+                    }
+                    data_lists.entry(outer_node).or_insert_with(Vec::new).push(match data_id {
+                        DataIdentifier::Immutable(_) => (data_id, None),
+                        DataIdentifier::Structured(_, _) => {
+                            let data = if let Ok(data) = self.chunk_store.get(&data_id) {
+                                data
+                            } else {
+                                error!("Failed to get {:?} from chunk store.", data_id);
+                                continue;
+                            };
+                            let hash = if let Ok(serialised_data) =
+                                              serialisation::serialise(&data) {
+                                sha512::hash(&serialised_data)
+                            } else {
+                                error!("Failed to serialise {:?}.", data_id);
+                                continue;
+                            };
+                            (data_id, Some(hash))
+                        }
+                        _ => unreachable!(),
+                    });
                 }
             }
-            Err(error) => {
-                error!("Error in node lost: {:?}", error);
-            }
-        };
+        }
+        for (node_name, data_list) in data_lists {
+            let _ = self.send_refresh(&node_name, data_list, MessageId::new());
+        }
     }
 
-    pub fn check_timeouts(&mut self, routing_node: &RoutingNode) {
+    pub fn check_timeouts(&mut self) {
         for data_id in self.refresh_accumulator.get_expired() {
             trace!("Timed out waiting for {:?}", data_id);
             self.refresh_accumulator.update_timestamp(&data_id);
             // TODO: should keep the original MessageId and which peer we're waiting for?
-            let _ = Self::send_single_get(routing_node, data_id, MessageId::new(), None);
+            let _ = self.send_single_get(data_id, MessageId::new(), None);
         }
     }
 
@@ -470,18 +503,18 @@ impl DataManager {
     }
 
     fn send_refresh(&self,
-                    routing_node: &RoutingNode,
                     node_name: &XorName,
                     data_list: DataList,
                     message_id: MessageId)
                     -> Result<(), InternalError> {
-        let src = Authority::ManagedNode(try!(routing_node.name()));
+        let src = Authority::ManagedNode(try!(self.routing_node.name()));
         let dst = Authority::ManagedNode(*node_name);
         // FIXME - We need to handle >2MB chunks
         match serialisation::serialise(&data_list) {
             Ok(serialised_list) => {
                 trace!("DM sending refresh to {}", node_name);
-                let _ = routing_node.send_refresh_request(src, dst, serialised_list, message_id);
+                let _ = self.routing_node
+                            .send_refresh_request(src, dst, serialised_list, message_id);
                 Ok(())
             }
             Err(error) => {
@@ -496,13 +529,14 @@ impl DataManager {
     // sends to all group members.  When sending to all group members, this is done as multiple
     // ManagedNode (MN) to MN messages so that responses (which may all be different) can also be
     // sent as MN to MN, hence circumventing Routing's accumulation checks.
-    fn send_get(routing_node: &RoutingNode,
+    fn send_get(&self,
                 data_id: DataIdentifier,
                 message_id: MessageId,
                 exclude_peer: Option<XorName>,
                 single: bool)
                 -> Result<(), InternalError> {
-        let close_group = match routing_node.close_group(data_id.name()) {
+        let close_group = match self.routing_node
+                                    .close_group(data_id.name()) {
             Ok(Some(close_group)) => {
                 if let Some(to_exclude) = exclude_peer {
                     close_group.into_iter().filter(|name| *name != to_exclude).collect()
@@ -519,38 +553,37 @@ impl DataManager {
                 return Err(From::from(error));
             }
         };
-        let src = Authority::ManagedNode(try!(routing_node.name()));
+        let src = Authority::ManagedNode(try!(self.routing_node.name()));
         if single {
             let index = rand::random::<usize>() % close_group.len();
             let dst = Authority::ManagedNode(close_group[index]);
-            let _ = routing_node.send_get_request(src, dst, data_id, message_id);
+            let _ = self.routing_node
+                        .send_get_request(src, dst, data_id, message_id);
         } else {
             for peer in close_group {
                 let dst = Authority::ManagedNode(peer);
-                let _ = routing_node.send_get_request(src.clone(),
-                                                      dst,
-                                                      data_id.clone(),
-                                                      message_id);
+                let _ = self.routing_node
+                            .send_get_request(src.clone(), dst, data_id.clone(), message_id);
             }
         }
         Ok(())
     }
 
     // See comments for `send_get()`.
-    fn send_single_get(routing_node: &RoutingNode,
+    fn send_single_get(&self,
                        data_id: DataIdentifier,
                        message_id: MessageId,
                        exclude_peer: Option<XorName>)
                        -> Result<(), InternalError> {
-        Self::send_get(routing_node, data_id, message_id, exclude_peer, true)
+        self.send_get(data_id, message_id, exclude_peer, true)
     }
 
     // See comments for `send_get()`.
-    fn send_group_get(routing_node: &RoutingNode,
+    fn send_group_get(&self,
                       data_id: DataIdentifier,
                       message_id: MessageId)
                       -> Result<(), InternalError> {
-        Self::send_get(routing_node, data_id, message_id, None, false)
+        self.send_get(data_id, message_id, None, false)
     }
 
     fn get_expected_hash(opt_hash: Option<sha512::Digest>) -> Result<sha512::Digest, InternalError> {
@@ -570,6 +603,7 @@ impl DataManager {
 mod test_sd {
     use super::*;
 
+    use std::rc::Rc;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -584,7 +618,7 @@ mod test_sd {
     use xor_name::XorName;
 
     pub struct Environment {
-        pub routing: RoutingNode,
+        pub routing: Rc<RoutingNode>,
         pub data_manager: DataManager,
     }
 
@@ -623,9 +657,11 @@ mod test_sd {
         pub fn new() -> Environment {
             let _ = log::init(true);
             let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
+            let routing = Rc::new(routing);
+
             Environment {
-                routing: routing,
-                data_manager: unwrap_result!(DataManager::new(322_122_546)),
+                routing: routing.clone(),
+                data_manager: unwrap_result!(DataManager::new(routing.clone(), 322_122_546)),
             }
         }
 
@@ -691,7 +727,7 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager.handle_put(&self.routing, &request, &data, &message_id);
+            let _ = self.data_manager.handle_put(&request, &data, &message_id);
             PutEnvironment {
                 keys: keys,
                 client: client,
@@ -720,8 +756,7 @@ mod test_sd {
                 content: content.clone(),
             };
             let data = Data::Structured(sd_data.clone());
-            let _ = self.data_manager
-                        .handle_get(&self.routing, &request, &data.identifier(), &message_id);
+            let _ = self.data_manager.handle_get(&request, &data.identifier(), &message_id);
             GetEnvironment {
                 client: client,
                 message_id: message_id,
@@ -752,7 +787,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_post(&self.routing, &request, &sd_data, &message_id);
+            let _ = self.data_manager.handle_post(&request, &sd_data, &message_id);
             PostEnvironment {
                 keys: keys,
                 client: client,
@@ -785,7 +820,7 @@ mod test_sd {
                 dst: Authority::NaeManager(sd_data.name()),
                 content: content.clone(),
             };
-            let _ = self.data_manager.handle_delete(&self.routing, &request, &sd_data, &message_id);
+            let _ = self.data_manager.handle_delete(&request, &sd_data, &message_id);
             DeleteEnvironment {
                 keys: keys,
                 client: client,
@@ -1179,6 +1214,7 @@ mod test_sd {
 mod test_im {
     use super::*;
 
+    use std::rc::Rc;
     use std::sync::mpsc;
 
     use maidsafe_utilities::{log, serialisation};
@@ -1206,16 +1242,19 @@ mod test_im {
     }
 
     struct Environment {
-        pub routing: RoutingNode,
+        pub routing: Rc<RoutingNode>,
         pub data_manager: DataManager,
     }
 
     impl Environment {
         pub fn new() -> Environment {
             let _ = log::init(false);
+            let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
+            let routing = Rc::new(routing);
+
             Environment {
-                routing: unwrap_result!(RoutingNode::new(mpsc::channel().0, false)),
-                data_manager: unwrap_result!(DataManager::new(322_122_546)),
+                routing: routing.clone(),
+                data_manager: unwrap_result!(DataManager::new(routing.clone(), 322_122_546)),
             }
         }
 
@@ -1271,7 +1310,7 @@ mod test_im {
             };
             let data = Data::Immutable(im_data.clone());
             unwrap_result!(self.data_manager
-                               .handle_put(&self.routing, &client_request, &data, &message_id));
+                               .handle_put(&client_request, &data, &message_id));
 
             PutEnvironment {
                 client_manager: client_manager,
@@ -1298,7 +1337,7 @@ mod test_im {
             };
 
             let _ = self.data_manager
-                        .handle_get(&self.routing, &request, &data_identifier, &message_id);
+                        .handle_get(&request, &data_identifier, &message_id);
             GetEnvironment {
                 client: client,
                 message_id: message_id,

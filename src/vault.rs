@@ -15,14 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::sync::mpsc;
-#[cfg(feature = "use-mock-crust")]
-use std::sync::mpsc::Receiver;
+use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver};
+use sodiumoxide;
 
-use config_handler::{self, Config};
+use kademlia_routing_table::RoutingTable;
+// use config_handler::Config;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
-use routing::{Authority, Data, Event, RequestContent, RequestMessage, ResponseContent,
+use routing::{Authority, Data, Event, NodeInfo, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
@@ -44,55 +45,43 @@ pub use mock_routing::MockRoutingNode as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
-
-    #[cfg(feature = "use-mock-crust")]
-    routing_node: Option<RoutingNode>,
-    #[cfg(feature = "use-mock-crust")]
+    routing_node: Rc<RoutingNode>,
     routing_receiver: Receiver<Event>,
-}
-
-// TODO: Consider specifying allowances in percent instead of using f64 to avoid floating point
-// issues.
-#[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss, cast_sign_loss))]
-fn init_components(optional_config: Option<Config>)
-                   -> Result<(MaidManager, DataManager), InternalError> {
-    ::sodiumoxide::init();
-
-    let _ = match optional_config {
-        Some(config) => config,
-        None => try!(config_handler::read_config_file()),
-    };
-    // FIXME - reinstate use of `max_capacity`
-    // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-    let max_capacity = 30 * 1024 * 1024;
-
-    Ok((MaidManager::new(), try!(DataManager::new(max_capacity))))
 }
 
 impl Vault {
     /// Creates a network Vault instance.
-    #[cfg(not(feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn new() -> Result<Self, InternalError> {
-        let (maid_manager, data_manager) = try!(init_components(None));
+        sodiumoxide::init();
+        // FIXME - reinstate use of `max_capacity`
+        // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+        let max_capacity = 30 * 1024 * 1024;
+        let (routing_sender, routing_receiver) = mpsc::channel();
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
-            maid_manager: maid_manager,
-            data_manager: data_manager,
+            maid_manager: MaidManager::new(routing_node.clone()),
+            data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            routing_node: routing_node.clone(),
+            routing_receiver: routing_receiver,
         })
     }
 
-    /// Creates a Vault instance for use with the mock-crust feature enabled.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn new(config: Option<Config>) -> Result<Self, InternalError> {
-        let (maid_manager, data_manager) = try!(init_components(config));
-
+    /// Creates a network Vault instance.
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn new() -> Result<Self, InternalError> {
+        sodiumoxide::init();
+        // FIXME - reinstate use of `max_capacity`
+        // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+        let max_capacity = 30 * 1024 * 1024;
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(routing_sender, false));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
-            maid_manager: maid_manager,
-            data_manager: data_manager,
-            routing_node: Some(routing_node),
+            maid_manager: MaidManager::new(routing_node.clone()),
+            data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
     }
@@ -100,11 +89,22 @@ impl Vault {
     /// Run the event loop, processing events received from Routing.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<(), InternalError> {
-        let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = try!(RoutingNode::new(routing_sender, true));
+        let mut exit = false;
+        while !exit {
+            let (routing_sender, routing_receiver) = mpsc::channel();
+            self.routing_receiver = routing_receiver;
+            self.routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
+            // FIXME: See Vault::new.
+            let max_capacity = 30 * 1024 * 1024;
+            self.maid_manager = MaidManager::new(self.routing_node.clone());
+            self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
 
-        for event in routing_receiver.iter() {
-            self.process_event(&routing_node, event);
+            while let Ok(event) = self.routing_receiver.recv() {
+                if let Some(terminate) = self.process_event(event) {
+                    exit = terminate;
+                    break;
+                }
+            }
         }
 
         Ok(())
@@ -114,15 +114,13 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        let routing_node = self.routing_node.take().expect("routing_node should never be None");
-        let mut result = routing_node.poll();
+        let mut result = self.routing_node.poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
-            self.process_event(&routing_node, event);
+            let _ignored_for_mock = self.process_event(event);
             result = true
         }
 
-        self.routing_node = Some(routing_node);
         result
     }
 
@@ -138,108 +136,115 @@ impl Vault {
         self.maid_manager.get_put_count(client_name)
     }
 
-    fn process_event(&mut self, routing_node: &RoutingNode, event: Event) {
-        trace!("Vault {} received an event from routing: {:?}",
-               unwrap_result!(routing_node.name()),
-               event);
+    fn process_event(&mut self, event: Event) -> Option<bool> {
+        let name = self.routing_node
+                       .name()
+                       .expect("Failed to get name from routing node.");
+        trace!("Vault {} received an event from routing: {:?}", name, event);
+
+        let mut ret = None;
 
         if let Err(error) = match event {
-            Event::Request(request) => self.on_request(routing_node, request),
-            Event::Response(response) => self.on_response(routing_node, response),
-            Event::NodeAdded(node_added) => self.on_node_added(routing_node, node_added),
-            Event::NodeLost(node_lost) => self.on_node_lost(routing_node, node_lost),
+            Event::Request(request) => self.on_request(request),
+            Event::Response(response) => self.on_response(response),
+            Event::NodeAdded(node_added, routing_table) => {
+                self.on_node_added(node_added, routing_table)
+            }
+            Event::NodeLost(node_lost, routing_table) => {
+                self.on_node_lost(node_lost, routing_table)
+            }
             Event::Connected => self.on_connected(),
-            Event::Disconnected => self.on_disconnected(),
+            Event::Disconnected |
+            Event::GetNetworkNameFailed => {
+                ret = Some(false);
+                Ok(())
+            }
+            Event::NetworkStartupFailed => {
+                ret = Some(true);
+                Ok(())
+            }
         } {
             debug!("Failed to handle event: {:?}", error);
         }
 
-        self.data_manager.check_timeouts(routing_node);
+        self.data_manager.check_timeouts();
+        ret
     }
 
-    fn on_request(&mut self,
-                  routing_node: &RoutingNode,
-                  request: RequestMessage)
-                  -> Result<(), InternalError> {
+    fn on_request(&mut self, request: RequestMessage) -> Result<(), InternalError> {
         match (&request.src, &request.dst, &request.content) {
             // ================== Get ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(ref data_id, ref message_id)) => {
-                self.data_manager.handle_get(routing_node, &request, data_id, message_id)
+             &RequestContent::Get(ref data_id, ref msg_id)) => {
+                self.data_manager.handle_get(&request, data_id, msg_id)
             }
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Get(ref data_id, ref message_id)) => {
-                self.data_manager.handle_get(routing_node, &request, data_id, message_id)
+             &RequestContent::Get(ref data_id, ref msg_id)) => {
+                self.data_manager.handle_get(&request, data_id, msg_id)
             }
             // ================== Put ==================
             (&Authority::Client { .. },
              &Authority::ClientManager(_),
-             &RequestContent::Put(ref data, ref message_id)) => {
-                self.maid_manager.handle_put(routing_node, &request, data, message_id)
+             &RequestContent::Put(ref data, ref msg_id)) => {
+                self.maid_manager.handle_put(&request, data, msg_id)
             }
             (&Authority::ClientManager(_),
              &Authority::NaeManager(_),
-             &RequestContent::Put(ref data, ref message_id)) => {
+             &RequestContent::Put(ref data, ref msg_id)) => {
                 self.data_manager
-                    .handle_put(routing_node, &request, data, message_id)
+                    .handle_put(&request, data, msg_id)
             }
             // ================== Post ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Post(Data::Structured(ref data), ref message_id)) => {
-                self.data_manager.handle_post(routing_node, &request, data, message_id)
+             &RequestContent::Post(Data::Structured(ref data), ref msg_id)) => {
+                self.data_manager.handle_post(&request, data, msg_id)
             }
             // ================== Delete ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Delete(Data::Structured(ref data), ref message_id)) => {
-                self.data_manager.handle_delete(routing_node, &request, data, message_id)
+             &RequestContent::Delete(Data::Structured(ref data), ref msg_id)) => {
+                self.data_manager.handle_delete(&request, data, msg_id)
             }
             // ================== Refresh ==================
             (&Authority::ClientManager(_),
              &Authority::ClientManager(_),
              &RequestContent::Refresh(ref serialised_msg, _)) => {
-                self.maid_manager.handle_refresh(routing_node, serialised_msg)
+                self.maid_manager.handle_refresh(serialised_msg)
             }
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &RequestContent::Refresh(ref serialised_msg, ref message_id)) => {
-                self.data_manager.handle_refresh(routing_node, serialised_msg, message_id)
+             &RequestContent::Refresh(ref serialised_msg, ref msg_id)) => {
+                self.data_manager.handle_refresh(serialised_msg, msg_id)
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
         }
     }
 
-    fn on_response(&mut self,
-                   routing_node: &RoutingNode,
-                   response: ResponseMessage)
-                   -> Result<(), InternalError> {
+    fn on_response(&mut self, response: ResponseMessage) -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
-             &ResponseContent::GetSuccess(ref data, ref message_id)) => {
-                self.data_manager.handle_get_success(routing_node, data, message_id)
+             &ResponseContent::GetSuccess(ref data, ref msg_id)) => {
+                self.data_manager.handle_get_success(data, msg_id)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(ref src),
              &Authority::ManagedNode(_),
              &ResponseContent::GetFailure {
-                    ref id,
                     request: RequestMessage {
                         content: RequestContent::Get(ref identifier, _), ..
                     },
-                    .. }) => {
-                self.data_manager.handle_get_failure(routing_node, src, identifier, id)
-            }
+                    .. }) => self.data_manager.handle_get_failure(src, identifier),
             // ================== PutSuccess ==================
             (&Authority::NaeManager(_),
              &Authority::ClientManager(_),
-             &ResponseContent::PutSuccess(ref data_id, ref message_id)) => {
-                self.maid_manager.handle_put_success(routing_node, data_id, message_id)
+             &ResponseContent::PutSuccess(ref data_id, ref msg_id)) => {
+                self.maid_manager.handle_put_success(data_id, msg_id)
             }
             // ================== PutFailure ==================
             (&Authority::NaeManager(_),
@@ -249,7 +254,7 @@ impl Vault {
                     request: RequestMessage {
                         content: RequestContent::Put(_, _), .. },
                     ref external_error_indicator }) => {
-                self.maid_manager.handle_put_failure(routing_node, id, external_error_indicator)
+                self.maid_manager.handle_put_failure(id, external_error_indicator)
             }
             // ================== Invalid Response ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Response(response.clone()))),
@@ -257,32 +262,26 @@ impl Vault {
     }
 
     fn on_node_added(&mut self,
-                     routing_node: &RoutingNode,
-                     node_added: XorName)
+                     node_added: XorName,
+                     routing_table: RoutingTable<NodeInfo>)
                      -> Result<(), InternalError> {
-        self.maid_manager.handle_node_added(routing_node, &node_added);
-        self.data_manager.handle_node_added(routing_node, &node_added);
+        self.maid_manager.handle_node_added(&node_added);
+        self.data_manager.handle_node_added(&node_added, &routing_table);
         Ok(())
     }
 
     fn on_node_lost(&mut self,
-                    routing_node: &RoutingNode,
-                    node_lost: XorName)
+                    node_lost: XorName,
+                    routing_table: RoutingTable<NodeInfo>)
                     -> Result<(), InternalError> {
-        self.maid_manager.handle_node_lost(routing_node, &node_lost);
-        self.data_manager.handle_node_lost(routing_node, &node_lost);
+        self.maid_manager.handle_node_lost(&node_lost);
+        self.data_manager.handle_node_lost(&node_lost, &routing_table);
         Ok(())
     }
 
     fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
-        Ok(())
-    }
-
-    fn on_disconnected(&self) -> Result<(), InternalError> {
-        // TODO: restart event loop with new routing object, discarding all current data
-        debug!("Vault disconnected");
         Ok(())
     }
 }

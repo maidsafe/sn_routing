@@ -30,10 +30,10 @@ pub struct TestNode {
 impl TestNode {
     pub fn new(network: &Network,
                crust_config: Option<mock_crust::Config>,
-               config: Option<Config>)
+               _config: Option<Config>)
                -> Self {
         let handle = network.new_service_handle(crust_config, None);
-        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new(config)));
+        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
 
         TestNode {
             handle: handle,
@@ -41,11 +41,11 @@ impl TestNode {
         }
     }
 
-    pub fn poll(&mut self) -> bool {
-        let mut result = false;
+    pub fn poll(&mut self) -> usize {
+        let mut result = 0;
 
         while self.vault.poll() {
-            result = true;
+            result += 1;
         }
 
         result
@@ -69,7 +69,7 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
 
     // Create the seed node.
     nodes.push(TestNode::new(network, None, config.clone()));
-    while nodes[0].poll() {}
+    while nodes[0].poll() > 0 {}
 
     let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
@@ -107,5 +107,5 @@ pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
 /// Process all events
 fn _poll_all(nodes: &mut [TestNode]) {
-    while nodes.iter_mut().any(TestNode::poll) {}
+    while nodes.iter_mut().any(|node| node.poll() > 0) {}
 }
