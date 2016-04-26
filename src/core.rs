@@ -2203,7 +2203,9 @@ impl Core {
             error!("Failed to get GetNetworkName response");
             let _ = self.event_sender.send(Event::Disconnected);
         } else if self.heartbeat_timer_token == token {
-            self.request_bucket_close_groups();
+            if self.state == State::Node {
+                self.request_bucket_close_groups();
+            }
             let now = SteadyTime::now();
             let stale_peers = self.peer_map
                                   .iter()
