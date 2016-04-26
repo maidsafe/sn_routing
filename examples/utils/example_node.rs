@@ -530,6 +530,12 @@ impl ExampleNode {
     }
 }
 
+impl Default for ExampleNode {
+    fn default() -> ExampleNode {
+        ExampleNode::new()
+    }
+}
+
 /// Refresh messages.
 #[allow(unused)]
 #[derive(RustcEncodable, RustcDecodable)]

@@ -151,8 +151,8 @@ struct DebugStats {
     tunnel_connections: usize,
 }
 
-impl DebugStats {
-    fn new() -> Self {
+impl Default for DebugStats {
+    fn default() -> Self {
         DebugStats {
             cur_routing_table_size: 0,
             cur_client_num: 0,
@@ -332,7 +332,7 @@ impl Core {
             their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
             tunnels: Default::default(),
-            debug_stats: DebugStats::new(),
+            debug_stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::minutes(10)),
         };
 
@@ -856,12 +856,11 @@ impl Core {
         // to a client we still need to accept these msgs sent to us even if we have become a node.
         if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
             if client_key == self.full_id.public_id().signing_public_key() {
-                match *signed_msg.content() {
-                    RoutingMessage::Request(RequestMessage {
+                if let RoutingMessage::Request(RequestMessage {
                         content: RequestContent::ConnectionInfo { .. },
                         ..
-                    }) => return self.handle_signed_message_for_client(&signed_msg),
-                    _ => (),
+                    }) = *signed_msg.content() {
+                     return self.handle_signed_message_for_client(&signed_msg);
                 }
             }
         }
@@ -1311,13 +1310,10 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        match try!(serialisation::deserialise(&bytes)) {
-            Message::Hop(_) => {
-                if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
-                    return Ok(());
-                }
+        if let Message::Hop(_) = try!(serialisation::deserialise(&bytes)) {
+            if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
+                return Ok(());
             }
-            _ => (),
         }
 
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {

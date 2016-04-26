@@ -134,14 +134,14 @@ impl ExampleClient {
                                id,
                                message_id);
                         return Err(());
-                    } else if data_id != rec_data_id {
+                    } else if data_id == rec_data_id {
+                        trace!("Successfully stored {:?}", data_id.name());
+                        return Ok(());
+                    } else {
                         error!("Stored {:?}, but with wrong name {:?}.",
                                data_id.name(),
                                rec_data_id.name());
                         return Err(());
-                    } else {
-                        trace!("Successfully stored {:?}", data_id.name());
-                        return Ok(());
                     }
                 }
                 Event::Response(ResponseMessage {
@@ -177,5 +177,11 @@ impl ExampleClient {
     /// Return network name.
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
+    }
+}
+
+impl Default for ExampleClient {
+    fn default() -> ExampleClient {
+        ExampleClient::new()
     }
 }

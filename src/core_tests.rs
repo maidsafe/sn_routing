@@ -253,12 +253,12 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
-        poll_all(&mut nodes, &mut vec![]);
+        poll_all(&mut nodes, &mut []);
     }
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
-    for node in nodes.iter() {
+    for node in &nodes {
         expect_event!(node, Event::Connected);
         for _ in 0..n {
             expect_event!(node, Event::NodeAdded(..))
@@ -271,12 +271,12 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 // Drop node at index and verify its close group receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
-    let name = node.name().clone();
+    let name = *node.name();
     let close_names = node.close_group();
 
     drop(node);
 
-    poll_all(nodes, &mut vec![]);
+    poll_all(nodes, &mut []);
 
     for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
         loop {
@@ -296,7 +296,7 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
 
     table.closest_nodes_to(&far_name, GROUP_SIZE, false)
          .into_iter()
-         .map(|info| info.name().clone())
+         .map(|info| *info.name())
          .filter(|name| our_name.bucket_index(name) == bucket_index)
          .collect()
 }
@@ -309,7 +309,7 @@ fn node_names_in_bucket(nodes: &[TestNode],
                         -> HashSet<XorName> {
     nodes.iter()
          .filter(|node| name.bucket_index(node.name()) == bucket_index)
-         .map(|node| node.name().clone())
+         .map(|node| *node.name())
          .collect()
 }
 
@@ -396,7 +396,7 @@ fn client_connects_to_nodes() {
 
     nodes.push(client);
 
-    poll_all(&mut nodes, &mut vec![]);
+    poll_all(&mut nodes, &mut []);
 
     expect_event!(nodes.iter().last().unwrap(), Event::Connected);
 }
@@ -417,7 +417,7 @@ fn node_joins_in_front() {
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
                  TestNode::new(&network, false, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut vec![]);
+    poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -434,9 +434,9 @@ fn multiple_joining_nodes() {
     nodes.insert(0,
                  TestNode::new(&network, false, Some(config.clone()), None));
     nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut vec![]);
+    poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.core.routing_table().is_empty());
-    poll_all(&mut nodes, &mut vec![]);
+    poll_all(&mut nodes, &mut []);
     assert!(nodes.len() > network_size); // At least one node should have succeeded.
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -445,16 +445,10 @@ fn multiple_joining_nodes() {
 #[test]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
-
-    assert!(nodes.iter().all(|n| {
-        nodes.iter().all(|m| {
-            if m.name() != n.name() {
-                m.close_group().contains(n.name())
-            } else {
-                true
-            }
-        })
-    }));
+    let close_groups_complete = nodes.iter().all(|n| {
+        nodes.iter().all(|m| m.name() == n.name() || m.close_group().contains(n.name()))
+    });
+    assert!(close_groups_complete);
 }
 
 #[test]
@@ -470,7 +464,7 @@ fn successful_put_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let dst = Authority::ClientManager(clients[0].name().clone());
+    let dst = Authority::ClientManager(*clients[0].name());
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
@@ -517,8 +511,8 @@ fn successful_get_request() {
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
-    let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataIdentifier::Immutable(data.name().clone());
+    let dst = Authority::NaeManager(data.name());
+    let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
     assert!(clients[0]
@@ -558,7 +552,7 @@ fn successful_get_request() {
 
     let mut response_received_count = 0;
 
-    for client in clients.iter() {
+    for client in clients {
         loop {
             match client.event_rx.try_recv() {
                 Ok(Event::Response(ResponseMessage {
@@ -593,8 +587,8 @@ fn failed_get_request() {
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
-    let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataIdentifier::Immutable(data.name().clone());
+    let dst = Authority::NaeManager(data.name());
+    let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
     assert!(clients[0]
@@ -615,7 +609,7 @@ fn failed_get_request() {
                         let request = RequestMessage {
                             src: src.clone(),
                             dst: dst.clone(),
-                            content: RequestContent::Get(request.clone(), *id),
+                            content: RequestContent::Get(*request, *id),
                         };
                         if let Err(_) = node.send_get_failure(dst.clone(),
                                                               src.clone(),
@@ -640,10 +634,12 @@ fn failed_get_request() {
 
     let mut response_received_count = 0;
 
-    for client in clients.iter() {
+    for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(ResponseMessage { content: ResponseContent::GetFailure { ref id, .. }, .. })) => {
+                Ok(Event::Response(ResponseMessage {
+                    content: ResponseContent::GetFailure { ref id, .. },
+                    .. })) => {
                     response_received_count += 1;
                     if message_id == *id { break; }
                 }
@@ -672,8 +668,8 @@ fn disconnect_on_get_request() {
     let bytes = rand::thread_rng().gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
-    let dst = Authority::NaeManager(data.name().clone());
-    let data_request = DataIdentifier::Immutable(data.name().clone());
+    let dst = Authority::NaeManager(data.name());
+    let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
     assert!(clients[0]
@@ -714,12 +710,9 @@ fn disconnect_on_get_request() {
 
     poll_all(&mut nodes, &mut clients);
 
-    for client in clients.iter() {
-        loop {
-            match client.event_rx.try_recv() {
-                Ok(Event::Response(..)) => panic!("Unexpected Event::Response(..) received"),
-                _ => break,
-            }
+    for client in clients {
+        if let Ok(Event::Response(..)) = client.event_rx.try_recv() {
+            panic!("Unexpected Event::Response(..) received");
         }
     }
 }
