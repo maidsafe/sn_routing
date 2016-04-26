@@ -1,14 +1,24 @@
 environment:
   global:
-    RUST_BACKTRACE: 1
+    GH_TOKEN:
+      # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
+      # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
+      # `public_repo` scope enabled
+      # - Then go to 'https://ci.appveyor.com/tools/encrypt' and enter the newly generated token.
+      # - Enter the "encrypted value" below
+      secure: ipSdOqm+lOjEMrx4ABEQkxlQ/9x/aEmx0fRVqr7rC335sS24z+t/9/fFQKWBx3wV
     PROJECT_NAME: safe_vault
+    RUST_BACKTRACE: 1
   matrix:
     - RUST_VERSION: stable
 branches:
   only:
-    - master
+    # TODO: switch to master once we are done testing
+    # - master
+    - autorelease
 
 clone_depth: 50
+skip_tags: true
 
 install:
   - ps: |
@@ -21,6 +31,11 @@ install:
         . ".\Install Rust.ps1"
         . ".\Install MinGW.ps1"
         . ".\Install libsodium.ps1"
+
+        if ($env:APPVEYOR_REPO_COMMIT_MESSAGE -match "[vV]ersion change to v?(.*)") {
+          $env:PROJECT_VERSION = $matches[1]
+          $env:DEPLOY = "true"
+        }
 
 platform:
   - x86
@@ -36,30 +51,15 @@ test_script:
   - ps: . ".\Run Tests.ps1"
 
 before_deploy:
-  # Generate artifacts for release
-  - cargo build --release
-  - mkdir staging
-  - copy target\release\%PROJECT_NAME%.exe staging
-  - copy installer\common\%PROJECT_NAME%.crust.config staging
-  - copy installer\common\%PROJECT_NAME%.vault.config staging
-  - cd staging
-  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%PLATFORM%.zip *
-  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%PLATFORM%.zip
+  - ps: . ".\ci\appveyor\before_deploy.ps1"
 
 deploy:
   provider: GitHub
-  description: "Windows release"
+  tag: $(PROJECT_VERSION)
   draft: true
   # All the zipped artifacts will be deployed
   artifact: /.*\.zip/
-  # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
-  # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
-  # `public_repo` scope enabled
-  # - Then go to 'https://ci.appveyor.com/tools/encrypt' and enter the newly generated token.
-  # - Enter the "encrypted value" below
-  auth_token:
-    secure: C4JKw8gII6/XApU2VRAesM3kwYWVDez1qxsiqu7Jfzgfo7SlNCA1MmXGGgKne9QC
-  # deploy when a new tag is pushed and only on the stable channel
+  auth_token: $(GH_TOKEN)
   on:
+    DEPLOY: true
     RUST_VERSION: stable
-    appveyor_repo_tag: true

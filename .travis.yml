@@ -17,7 +17,9 @@ language: generic
 
 env:
   global:
-    - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
+    # TODO: set correct token
+    # - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
+    - secure: "bvyT7ztCuuv1Itqk2Axb9DYxP4Y9ezAFWfWfHxjlU2Of3AY6hduWsizfjq4gWvh8uTkvgsI36UhMnQwpWmdmdwExHF88Yl7ex2vchXPyQZo2agECzf32fFURbKlsAjiOSotbzC1kCE6kdMITLe2hhaE35q0d9A4zF65sXs3ytdaPNGv/q8kUCCfQnvxwX7pJ8I0JO8BBSSy30KRk8ttxozRED5zO2WmUzgZ7SJrAH0bBncLz9xlQ2TrT40p5mKRaS2R4Dpchxp3pxwKLMzuODbF50BOWwAuwNq3HO3rfk3IJXxGUjWPicrzpBl/nc2Ku63vAaEtZ+WIeDTzMgOYwU/pvxBKNy465uUmTWblQUyBTQo+DpGP9AXTO2FiMo8eI9qRnNqYjugiCgCwV0q0bfTz5a/fO7NAptpSNlojKZasGH2E6lUlvPp5oKDhhWc7JJ+Jb0CNZoAq8Qwo2KhpiM7YZstuaKkUvNlm304pAcyPausHouuWDkWKnDynT7LLbnGT1KgDXgEk/NKuCK+eH6GSOZ2ohrWOszyxR8iRhuEyH//Zp7Z99w2TJAYuP1ZYKHoFPmq57tPkGgfhabAz9OlVpWPaTesZg73GGqFeSgC7ePMv5jTTFIPYb7PN0rkSNKSRLM5xwhUOqs+Bs7/hW+4ibbm6wnVMkeqoZZWO5NO8="
     - PROJECT_NAME=safe_vault
     - LibSodiumVersion=1.0.9
 
@@ -89,11 +91,9 @@ matrix:
 
 branches:
   only:
-    # Pushes and PRs to the master branch
-    - master
-    # Pushes to tags (will trigger deploy)
-    # This regex matches semantic versions like v1.2.3-rc4+2016.02.22
-    - /^v\d+\.\d+\.\d+.*$/
+    # TODO: switch to master once we are done testing
+    # - master
+    - autorelease
 
 cache:
   directories:
@@ -101,6 +101,7 @@ cache:
     - $HOME/.cargo
 
 before_install:
+  - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
   - export PATH="$PATH:$HOME/.cargo/bin"
   - export PKG_CONFIG_PATH="$HOME/libsodium/$LibSodiumVersion/lib/pkgconfig:$PKG_CONFIG_PATH"
   - export PKG_CONFIG_ALLOW_CROSS=1
@@ -117,23 +118,14 @@ after_success:
 before_deploy:
   - ./ci/travis/before_deploy.sh
 
-# Deploy happens only when pushing a tag and only for stable rust.
 deploy:
   provider: releases
-
-  # TODO Regenerate this api_key for your project, this one won't work for you. Here's how:
-  # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
-  # `public_repo` scope enabled
-  # - Call `travis encrypt $github_token` where $github_token is the token you got in the previous
-  # step and `travis` is the official Travis CI gem (see https://rubygems.org/gems/travis/)
-  # - Enter the "encrypted value" below
-  api_key:
-    secure: "jYtMFjw2vGqiakmUOH9H/4lN+iPDwtG2IoCTsGF8Jn5c74pebASN5so6nDkGhyZuo52hM1Q60xvhJU0eblA+7ryv2JV1kEnINFuJ31bnWf81oSEGmN3aEla2OWZe/nS8taVbIYEYA2DqNQeo6UX/sMUTCrWbh1VGnqNiWQv6j/wuAEKRlNVFqhnA42zsbTtX+Jzr+hdnrs33GbnRl8geDjDuqGb7Pk6FdDPysALuQmwRsrj3/IG6k/1AMDtFf8RSD0hFezoNvwq2k9b1iji5hJJDOAjHL74XDRGWg4dZovw1ImFSSeuHg86uRyxFj3b3OgP4MS32UxLQJ+yZvlKLOJ09AWBYmEpNdFL+GX4UIr99NMhT/5CPJNtWed8Lttr3p3RZCFVMNMWHFkI7aNbGZr0OVdDvX0zsRvKt+SPBB0N7EGlGaUKNiL6DuPMRLr0xSN224dsY8TTlfWWPYc3NYNaeRAFLGx7OZIlcB1S95zElgJD16DPTiGg9gs/8R10zKWcqklprvFF5f9yg53Fbuq6xrwhPWoRKFCVQjgBvKedTWtnYxu1RrtF7IuesGFWVK8I/6OJw5IIdvSy2ieDdXehZQoyw1LQQ4smwAZQjCdwfaCBZarSeqi2yYMRx+QZicUHEQM8G+GafhMEYDC8zRRTxvqTGgu79chFxczhcpJI="
-
-  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${PLATFORM}.tar.gz
+  api_key: ${GH_TOKEN}
+  file: ${PROJECT_NAME}-v${PROJECT_VERSION}-${PLATFORM}.tar.gz
   skip_cleanup: true
   draft: true
-  tag_name: ${TRAVIS_TAG}
+  tag_name: ${PROJECT_VERSION}
   on:
-      tags: true
-      condition: (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
+      # Deploy only on version bump commits (must contain "Version change to x.y.z"
+      # in the commit message), and only for stable rust.
+      condition: (-n "$PROJECT_VERSION") && (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
