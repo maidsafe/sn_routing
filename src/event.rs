@@ -20,6 +20,7 @@ use xor_name::XorName;
 
 use core::NodeInfo;
 use messages::{RequestMessage, ResponseMessage};
+use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
@@ -28,7 +29,7 @@ use messages::{RequestMessage, ResponseMessage};
 ///
 /// `Request` and `Response` events from group authorities are only raised once the quorum has been
 /// reached, i. e. enough members of the group have sent the same message.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     /// Request.
     Request(RequestMessage),
@@ -46,4 +47,25 @@ pub enum Event {
     GetNetworkNameFailed,
     /// We failed to start listening for incoming connections as the first node.
     NetworkStartupFailed,
+}
+
+impl Debug for Event {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match *self {
+            Event::Request(ref request) => write!(formatter, "Event::Request({:?})", request),
+            Event::Response(ref response) => write!(formatter, "Event::Response({:?})", response),
+            Event::NodeAdded(ref node_name, _) => {
+                write!(formatter,
+                       "Event::NodeAdded({:?}, routing_table)",
+                       node_name)
+            }
+            Event::NodeLost(ref node_name, _) => {
+                write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
+            }
+            Event::Connected => write!(formatter, "Event::Connected"),
+            Event::Disconnected => write!(formatter, "Event::Disconnected"),
+            Event::GetNetworkNameFailed => write!(formatter, "Event::GetNetworkNameFailed"),
+            Event::NetworkStartupFailed => write!(formatter, "Event::NetworkStartupFailed"),
+        }
+    }
 }
