@@ -13,11 +13,14 @@ cargo build --target $TARGET --release
 TMP_DIR=$(mktempd)
 OUT_DIR=$(pwd)
 
-cp target/$TARGET/release/$PROJECT_NAME $TMP_DIR
-cp installer/common/*.config $TMP_DIR
+NAME=$PROJECT_NAME-$TRAVIS_TAG-$PLATFORM
+
+mkdir $TMP_DIR/$NAME
+cp target/$TARGET/release/$PROJECT_NAME $TMP_DIR/$NAME
+cp installer/bundle* $TMP_DIR/$NAME
 
 pushd $TMP_DIR
-tar czf $OUT_DIR/${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.tar.gz *
+tar czf $OUT_DIR/$NAME.tar.gz *
 popd
 
 rm -r $TMP_DIR

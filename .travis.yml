@@ -7,6 +7,7 @@ language: generic
 # Env variables:
 #
 #   TARGET:      target triplet
+#   PLATFORM:    platform suffix for the release file name (e.g. linux-x64)
 #   CHANNEL:     rust channel: stable/beta/nightly. If not specified, defaults
 #                to stable.
 #   FEATURES:    build with --features "$FEATURES". Will also build (but not
@@ -23,17 +24,32 @@ env:
 matrix:
   include:
     - os: linux
-      env: TARGET=x86_64-unknown-linux-gnu FEATURES=use-mock-crust
+      env: >
+        TARGET=x86_64-unknown-linux-gnu
+        PLATFORM=linux-x64
+        FEATURES=use-mock-crust
 
     # TODO: Figure out cross-compilation and uncomment these:
     # - os: linux
-    #   env: TARGET=i686-unknown-linux-gnu FEATURES=use-mock-crust ONLY_DEPLOY=1
+    #   env: >
+    #     TARGET=i686-unknown-linux-gnu
+    #     PLATFORM=linux-x86
+    #     FEATURES=use-mock-crust
+    #     ONLY_DEPLOY=1
 
     # - os: linux
-    #   env: TARGET=x86_64-unknown-linux-musl FEATURES=use-mock-crust ONLY_DEPLOY=1
+    #   env: >
+    #     TARGET=x86_64-unknown-linux-musl
+    #     PLATFORM=linux-musl-x64
+    #     FEATURES=use-mock-crust
+    #     ONLY_DEPLOY=1
 
     # - os: linux
-    #   env: TARGET=armv7-unknown-linux-gnueabihf FEATURES=use-mock-crust ONLY_DEPLOY=1
+    #   env: >
+    #     TARGET=armv7-unknown-linux-gnueabihf
+    #     PLATFORM=armv7
+    #     FEATURES=use-mock-crust
+    #     ONLY_DEPLOY=1
     #   # Extra packages only for this job
     #   addons:
     #     apt:
@@ -47,14 +63,21 @@ matrix:
     #         - binfmt-support
 
     - os: linux
-      env: CHANNEL=nightly FEATURES="clippy use-mock-crust"
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
       allow_failures: true
 
     - os: osx
-      env: TARGET=x86_64-apple-darwin FEATURES=use-mock-crust
+      env: >
+        TARGET=x86_64-apple-darwin
+        PLATFORM=osx-x64
+        FEATURES=use-mock-crust
 
     - os: osx
-      env: CHANNEL=nightly FEATURES="clippy use-mock-crust"
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
       allow_failures: true
 
   # Add "allow_failures: true" to rows which are allowed to fail without making
@@ -107,10 +130,10 @@ deploy:
   api_key:
     secure: "jYtMFjw2vGqiakmUOH9H/4lN+iPDwtG2IoCTsGF8Jn5c74pebASN5so6nDkGhyZuo52hM1Q60xvhJU0eblA+7ryv2JV1kEnINFuJ31bnWf81oSEGmN3aEla2OWZe/nS8taVbIYEYA2DqNQeo6UX/sMUTCrWbh1VGnqNiWQv6j/wuAEKRlNVFqhnA42zsbTtX+Jzr+hdnrs33GbnRl8geDjDuqGb7Pk6FdDPysALuQmwRsrj3/IG6k/1AMDtFf8RSD0hFezoNvwq2k9b1iji5hJJDOAjHL74XDRGWg4dZovw1ImFSSeuHg86uRyxFj3b3OgP4MS32UxLQJ+yZvlKLOJ09AWBYmEpNdFL+GX4UIr99NMhT/5CPJNtWed8Lttr3p3RZCFVMNMWHFkI7aNbGZr0OVdDvX0zsRvKt+SPBB0N7EGlGaUKNiL6DuPMRLr0xSN224dsY8TTlfWWPYc3NYNaeRAFLGx7OZIlcB1S95zElgJD16DPTiGg9gs/8R10zKWcqklprvFF5f9yg53Fbuq6xrwhPWoRKFCVQjgBvKedTWtnYxu1RrtF7IuesGFWVK8I/6OJw5IIdvSy2ieDdXehZQoyw1LQQ4smwAZQjCdwfaCBZarSeqi2yYMRx+QZicUHEQM8G+GafhMEYDC8zRRTxvqTGgu79chFxczhcpJI="
 
-  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${TARGET}.tar.gz
+  file: ${PROJECT_NAME}-${TRAVIS_TAG}-${PLATFORM}.tar.gz
   skip_cleanup: true
   draft: true
   tag_name: ${TRAVIS_TAG}
   on:
       tags: true
-      condition: (-n "$TARGET") && ("${CHANNEL:-stable}"=stable)
+      condition: (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
