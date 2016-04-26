@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.18.1]
+- Some improvements to the log messages.
+- Fix several lint warnings.
+
 ## [0.18.0]
 - Add the routing table to `NodeAdded` and `NodeLost` events.
 - Add `NetworkStartupFailed` and `StartListeningFailed` events.
