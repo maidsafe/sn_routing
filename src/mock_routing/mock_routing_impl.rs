@@ -124,17 +124,11 @@ impl MockRoutingNodeImpl {
     }
 
     pub fn node_added_event(&mut self, node_added: XorName) {
-        let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeAdded Event", move || {
-            let _ = cloned_sender.send(Event::NodeAdded(node_added));
-        })));
+        let _ = self.routing_table.add(NodeInfo(node_added));
     }
 
     pub fn node_lost_event(&mut self, node_lost: XorName) {
-        let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeLost Event", move || {
-            let _ = cloned_sender.send(Event::NodeLost(node_lost));
-        })));
+        let _ = self.routing_table.remove(&node_lost);
     }
 
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
@@ -187,14 +181,6 @@ impl MockRoutingNodeImpl {
 
     pub fn refresh_requests_given(&self) -> Vec<RequestMessage> {
         self.refresh_requests_given.clone()
-    }
-
-    pub fn remove_node_from_routing_table(&mut self, node_lost: &XorName) {
-        let _ = self.routing_table.remove(node_lost);
-    }
-
-    pub fn add_node_into_routing_table(&mut self, new_node: &XorName) {
-        let _ = self.routing_table.add(NodeInfo(*new_node));
     }
 
     // -----------  the following methods are expected to be API functions   ------------- //
