@@ -97,8 +97,12 @@ pub fn main() {
     let underline = unwrap_result!(String::from_utf8(vec!['=' as u8; message.len()]));
     info!("\n\n{}\n{}", message, underline);
 
-    let mut vault = unwrap_result!(Vault::new());
-    unwrap_result!(vault.run());
+    loop {
+        let mut vault = unwrap_result!(Vault::new());
+        if let Ok(true) = vault.run() {
+            break;
+        }
+    }
 }
 
 #[cfg(feature = "use-mock-crust")]
