@@ -18,7 +18,7 @@
 use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataIdentifier, Event, InterfaceError, MessageId, RequestContent,
+use routing::{Authority, Data, DataIdentifier, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use std::sync::mpsc;
 use std::thread::sleep;
@@ -26,12 +26,32 @@ use std::time::Duration;
 use xor_name::XorName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct NodeInfo(XorName);
+pub struct NodeInfo(XorName);
 
 impl ContactInfo for NodeInfo {
     fn name(&self) -> &XorName {
         &self.0
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Event {
+    /// Request.
+    Request(RequestMessage),
+    /// Response.
+    Response(ResponseMessage),
+    /// A new node joined the network and may be a member of group authorities we also belong to.
+    NodeAdded(XorName, RoutingTable<NodeInfo>),
+    /// A node left the network and may have been a member of group authorities we also belong to.
+    NodeLost(XorName, RoutingTable<NodeInfo>),
+    /// The client has successfully connected to a proxy node on the network.
+    Connected,
+    /// We have disconnected from the network.
+    Disconnected,
+    /// We failed to relocate as a new node in the network.
+    GetNetworkNameFailed,
+    /// We failed to start listening for incoming connections as the first node.
+    NetworkStartupFailed,
 }
 
 pub struct MockRoutingNodeImpl {
@@ -121,6 +141,10 @@ impl MockRoutingNodeImpl {
                                   Authority::ClientManager(data.name()),
                                   RequestContent::Delete(data, MessageId::new()),
                                   "Mock Client Delete Request");
+    }
+
+    pub fn get_routing_table(&self) -> RoutingTable<NodeInfo> {
+        self.routing_table.clone()
     }
 
     pub fn node_added_event(&mut self, node_added: XorName) {
