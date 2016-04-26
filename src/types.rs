@@ -77,6 +77,12 @@ impl MessageId {
     }
 }
 
+impl Default for MessageId {
+    fn default() -> MessageId {
+        MessageId::zero()
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {

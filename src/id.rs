@@ -73,6 +73,12 @@ impl FullId {
     }
 }
 
+impl Default for FullId {
+    fn default() -> FullId {
+        FullId::new()
+    }
+}
+
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 /// Network identity component containing name and public keys.
 pub struct PublicId {

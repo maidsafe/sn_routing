@@ -33,8 +33,9 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
-#![cfg_attr(feature="clippy", allow(shadow_unrelated, print_stdout, use_debug))]
+#![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
+                                   option_unwrap_used))]
+#![cfg_attr(feature="clippy", allow(use_debug))]
 
 #![cfg(not(feature = "use-mock-crust"))]
 
@@ -198,7 +199,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
                        node_count: &mut usize)
                        -> Result<(), io::Error> {
     print!("Churning on {} active nodes. ", nodes.len());
-    io::stdout().flush().ok().expect("Could not flush stdout");
+    io::stdout().flush().expect("Could not flush stdout");
 
     let kill_node = match nodes.len() {
         size if size == GROUP_SIZE => false,
@@ -214,7 +215,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         let kill_at_index = Range::new(1, nodes.len()).ind_sample(rng);
         let node = nodes.remove(kill_at_index);
         print!("Killing Node #{}: ", node.1);
-        io::stdout().flush().ok().expect("Could not flush stdout");
+        io::stdout().flush().expect("Could not flush stdout");
     } else {
         *node_count += 1;
         log_path.set_file_name(&format!("Node_{:02}.log", node_count));
@@ -239,7 +240,7 @@ fn print_color(text: &str, color: color::Color) {
     term.fg(color).expect("Failed to set color");
     print!("{}", text);
     term.reset().expect("Failed to restore stdout attributes.");
-    io::stdout().flush().ok().expect("Could not flush stdout");
+    io::stdout().flush().expect("Could not flush stdout");
 }
 
 fn store_and_verify(requests: usize, batches: usize) {
@@ -256,11 +257,11 @@ fn store_and_verify(requests: usize, batches: usize) {
         let data = Data::Plain(PlainData::new(name, data));
 
         print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
-        io::stdout().flush().ok().expect("Could not flush stdout");
+        io::stdout().flush().expect("Could not flush stdout");
         if example_client.put(data.clone()).is_ok() {
             print_color("OK", color::GREEN);
             print!(" - getting - ");
-            io::stdout().flush().ok().expect("Could not flush stdout");
+            io::stdout().flush().expect("Could not flush stdout");
             stored_data.push(data.clone());
             if let Some(got_data) = example_client.get(DataIdentifier::Plain(data.name())) {
                 assert_eq!(got_data, data);
@@ -284,7 +285,7 @@ fn store_and_verify(requests: usize, batches: usize) {
                  batches);
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
-            io::stdout().flush().ok().expect("Could not flush stdout");
+            io::stdout().flush().expect("Could not flush stdout");
             if let Some(data) = example_client.get(DataIdentifier::Plain(data_item.name())) {
                 assert_eq!(data, stored_data[i]);
                 print_color("OK\n", color::GREEN);

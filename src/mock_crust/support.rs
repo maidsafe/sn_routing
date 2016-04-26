@@ -129,6 +129,12 @@ impl Network {
     }
 }
 
+impl Default for Network {
+    fn default() -> Network {
+        Network::new()
+    }
+}
+
 /// `ServiceHandle` is associated with the mock `Service` and allows to configure
 /// and instrument it.
 #[derive(Clone)]
@@ -465,6 +471,12 @@ impl Config {
     /// Create `Config` with the given hardcoded contacts.
     pub fn with_contacts(contacts: &[Endpoint]) -> Self {
         Config { hard_coded_contacts: contacts.into_iter().cloned().collect() }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Config {
+        Config::new()
     }
 }
 
