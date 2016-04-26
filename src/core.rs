@@ -40,7 +40,7 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
 use std::thread;
-use time::{Duration, PreciseTime, SteadyTime};
+use std::time::{Duration, Instant};
 use tunnels::Tunnels;
 use xor_name;
 use xor_name::{XorName, XOR_NAME_BITS};
@@ -61,7 +61,7 @@ type StdDuration = ::std::time::Duration;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
-const JOINING_NODE_TIMEOUT_SECS: i64 = 300;
+const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
@@ -70,9 +70,9 @@ const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Time (in seconds) after which a `Heartbeat` is sent.
 const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 /// Number of missed heartbeats after which a peer is considered disconnected.
-const HEARTBEAT_ATTEMPTS: i64 = 3;
+const HEARTBEAT_ATTEMPTS: u64 = 3;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
-const SENT_NETWORK_NAME_TIMEOUT_SECS: i64 = 30;
+const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -124,7 +124,7 @@ impl ContactInfo for NodeInfo {
 struct ClientInfo {
     public_key: sign::PublicKey,
     client_restriction: bool,
-    timestamp: PreciseTime,
+    timestamp: Instant,
 }
 
 impl ClientInfo {
@@ -132,13 +132,13 @@ impl ClientInfo {
         ClientInfo {
             public_key: public_key,
             client_restriction: client_restriction,
-            timestamp: PreciseTime::now(),
+            timestamp: Instant::now(),
         }
     }
 
     fn is_stale(&self) -> bool {
         !self.client_restriction &&
-        self.timestamp.to(PreciseTime::now()) > Duration::seconds(JOINING_NODE_TIMEOUT_SECS)
+        self.timestamp.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
     }
 }
 
@@ -235,7 +235,7 @@ pub struct Core {
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
-    sent_network_name_to: Option<(XorName, SteadyTime)>,
+    sent_network_name_to: Option<(XorName, Instant)>,
     heartbeat_timer_token: u64,
 
     // our bootstrap connections
@@ -244,7 +244,7 @@ pub struct Core {
     client_map: HashMap<PeerId, ClientInfo>,
     /// All directly connected peers (proxies, clients and routing nodes), and the timestamps of
     /// their most recent message.
-    peer_map: HashMap<PeerId, SteadyTime>,
+    peer_map: HashMap<PeerId, Instant>,
     use_data_cache: bool,
     data_cache: LruCache<XorName, Data>,
     // TODO(afck): Move these three fields into their own struct.
@@ -310,12 +310,13 @@ impl Core {
             event_sender: event_sender,
             crust_sender: crust_sender,
             timer: timer,
-            signed_message_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
+                                                                                           20)),
             // TODO Needs further discussion on interval
-            bucket_filter: MessageFilter::with_expiry_duration(Duration::seconds(60)),
-            node_id_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            message_accumulator: Accumulator::with_duration(1, Duration::minutes(20)),
-            grp_msg_filter: MessageFilter::with_expiry_duration(Duration::minutes(20)),
+            bucket_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
+            node_id_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            message_accumulator: Accumulator::with_duration(1, Duration::from_secs(60 * 20)),
+            grp_msg_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
             full_id: full_id,
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
@@ -326,14 +327,14 @@ impl Core {
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
             use_data_cache: use_data_cache,
-            data_cache: LruCache::with_expiry_duration(Duration::minutes(10)),
-            connection_token_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-            our_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-            their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
-            connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
+            data_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
+            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
+            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
+            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
             tunnels: Default::default(),
             debug_stats: Default::default(),
-            send_filter: LruCache::with_expiry_duration(Duration::minutes(10)),
+            send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         };
 
         (action_sender, core)
@@ -539,7 +540,7 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        let _ = self.peer_map.insert(peer_id, SteadyTime::now());
+        let _ = self.peer_map.insert(peer_id, Instant::now());
         self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
@@ -562,8 +563,8 @@ impl Core {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
-        let _ = self.peer_map.insert(peer_id, SteadyTime::now());
-        debug!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
+        let _ = self.peer_map.insert(peer_id, Instant::now());
+        trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
         if self.state == State::Disconnected {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
@@ -608,7 +609,7 @@ impl Core {
                     }
                     debug!("Received NewPeer with Ok from {:?}. Sending NodeIdentify.",
                            peer_id);
-                    let _ = self.peer_map.insert(peer_id, SteadyTime::now());
+                    let _ = self.peer_map.insert(peer_id, Instant::now());
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
@@ -705,7 +706,7 @@ impl Core {
     fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
         match self.peer_map.get_mut(&peer_id) {
             None => return Err(RoutingError::UnknownConnection(peer_id)),
-            Some(timestamp) => *timestamp = SteadyTime::now(),
+            Some(timestamp) => *timestamp = Instant::now(),
         }
         match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
@@ -1850,9 +1851,9 @@ impl Core {
             return Err(RoutingError::RejectedPublicId);
         }
 
-        let now = SteadyTime::now();
+        let now = Instant::now();
         if let Some((_, timestamp)) = self.sent_network_name_to {
-            if (now - timestamp).num_seconds() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
+            if (now - timestamp).as_secs() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
                 return Err(RoutingError::RejectedGetNetworkName);
             }
             self.sent_network_name_to = None;
@@ -2206,12 +2207,12 @@ impl Core {
             if self.state == State::Node {
                 self.request_bucket_close_groups();
             }
-            let now = SteadyTime::now();
+            let now = Instant::now();
             let stale_peers = self.peer_map
                                   .iter()
                                   .filter(|&(_, timestamp)| {
-                                      (now - *timestamp).num_seconds() >
-                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS as i64
+                                      (now - *timestamp).as_secs() >
+                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS
                                   })
                                   .map(|(peer_id, _)| peer_id)
                                   .cloned()

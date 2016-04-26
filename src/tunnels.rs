@@ -23,7 +23,7 @@ use message_filter::MessageFilter;
 use mock_crust::crust::PeerId;
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
-use time::Duration;
+use std::time::Duration;
 
 
 /// The maximum number of pairs of nodes that this node will act as a tunnel for.
@@ -167,7 +167,7 @@ impl Default for Tunnels {
     fn default() -> Tunnels {
         Tunnels {
             tunnels: HashMap::new(),
-            new_clients: MessageFilter::with_expiry_duration(Duration::minutes(1)),
+            new_clients: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
             clients: HashSet::new(),
         }
     }
