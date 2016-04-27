@@ -11,6 +11,7 @@ repository = "https://github.com/maidsafe/safe_vault"
 version = "0.6.0"
 
 [dependencies]
+accumulator = "~0.3.0"
 chunk_store = "~0.4.0"
 clippy = {version = "~0.0.63", optional = true}
 config_file_handler = "~0.3.0"

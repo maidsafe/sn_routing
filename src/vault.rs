@@ -23,8 +23,8 @@ use kademlia_routing_table::RoutingTable;
 // use config_handler::Config;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
-use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent,
-              ResponseMessage, RoutingMessage};
+use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
+              RoutingMessage};
 use xor_name::XorName;
 
 use error::InternalError;
@@ -35,16 +35,16 @@ pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 100 * 1024 * 1024;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
-pub use routing::Event as Event;
+pub use routing::Event;
 
 #[cfg(all(test, not(feature = "use-mock-crust")))]
-pub use mock_routing::Event as Event;
+pub use mock_routing::Event;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
-pub use routing::NodeInfo as NodeInfo;
+pub use routing::NodeInfo;
 
 #[cfg(all(test, not(feature = "use-mock-crust")))]
-pub use mock_routing::NodeInfo as NodeInfo;
+pub use mock_routing::NodeInfo;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;
@@ -207,10 +207,13 @@ impl Vault {
              &RequestContent::Refresh(ref serialised_msg, _)) => {
                 self.maid_manager.handle_refresh(serialised_msg)
             }
-            (&Authority::ManagedNode(_),
+            (&Authority::ManagedNode(ref src),
              &Authority::ManagedNode(_),
-             &RequestContent::Refresh(ref serialised_msg, ref msg_id)) => {
-                self.data_manager.handle_refresh(serialised_msg, msg_id)
+             &RequestContent::Refresh(ref serialised_msg, _)) |
+            (&Authority::ManagedNode(ref src),
+             &Authority::NaeManager(_),
+             &RequestContent::Refresh(ref serialised_msg, _)) => {
+                self.data_manager.handle_refresh(src, serialised_msg)
             }
             // ================== Invalid Request ==================
             _ => Err(InternalError::UnknownMessageType(RoutingMessage::Request(request.clone()))),
@@ -220,10 +223,10 @@ impl Vault {
     fn on_response(&mut self, response: ResponseMessage) -> Result<(), InternalError> {
         match (&response.src, &response.dst, &response.content) {
             // ================== GetSuccess ==================
-            (&Authority::ManagedNode(_),
+            (&Authority::ManagedNode(ref src),
              &Authority::ManagedNode(_),
-             &ResponseContent::GetSuccess(ref data, ref msg_id)) => {
-                self.data_manager.handle_get_success(data, msg_id)
+             &ResponseContent::GetSuccess(ref data, _)) => {
+                self.data_manager.handle_get_success(src, data)
             }
             // ================== GetFailure ==================
             (&Authority::ManagedNode(ref src),
