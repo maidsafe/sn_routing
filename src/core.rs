@@ -51,6 +51,7 @@ use data::{Data, DataIdentifier};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
+use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
@@ -139,28 +140,6 @@ impl ClientInfo {
     fn is_stale(&self) -> bool {
         !self.client_restriction &&
         self.timestamp.to(PreciseTime::now()) > Duration::seconds(JOINING_NODE_TIMEOUT_SECS)
-    }
-}
-
-struct DebugStats {
-    cur_routing_table_size: usize,
-    cur_client_num: usize,
-    cumulative_client_num: usize,
-    get_request_count: usize,
-    tunnel_client_pairs: usize,
-    tunnel_connections: usize,
-}
-
-impl Default for DebugStats {
-    fn default() -> Self {
-        DebugStats {
-            cur_routing_table_size: 0,
-            cur_client_num: 0,
-            cumulative_client_num: 0,
-            get_request_count: 0,
-            tunnel_client_pairs: 0,
-            tunnel_connections: 0,
-        }
     }
 }
 
@@ -255,7 +234,7 @@ pub struct Core {
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     tunnels: Tunnels,
-    debug_stats: DebugStats,
+    stats: Stats,
     send_filter: LruCache<(Vec<u8>, PeerId), ()>,
 }
 
@@ -332,7 +311,7 @@ impl Core {
             their_connection_info_map: LruCache::with_expiry_duration(Duration::minutes(5)),
             connecting_peers: LruCache::with_expiry_duration(Duration::minutes(2)),
             tunnels: Default::default(),
-            debug_stats: Default::default(),
+            stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::minutes(10)),
         };
 
@@ -391,34 +370,33 @@ impl Core {
         &self.routing_table
     }
 
-    fn update_debug_stats(&mut self) {
+    fn update_stats(&mut self) {
         if self.state == State::Node {
-            let old_client_num = self.debug_stats.cur_client_num;
-            self.debug_stats.cur_client_num = self.client_map.len() - self.joining_nodes_num();
-            if self.debug_stats.cur_client_num != old_client_num {
-                if self.debug_stats.cur_client_num > old_client_num {
-                    self.debug_stats.cumulative_client_num += self.debug_stats.cur_client_num -
-                                                              old_client_num;
+            let old_client_num = self.stats.cur_client_num;
+            self.stats.cur_client_num = self.client_map.len() - self.joining_nodes_num();
+            if self.stats.cur_client_num != old_client_num {
+                if self.stats.cur_client_num > old_client_num {
+                    self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
                 }
                 info!("{:?} - Connected clients: {}, cumulative: {}",
                       self,
-                      self.debug_stats.cur_client_num,
-                      self.debug_stats.cumulative_client_num);
+                      self.stats.cur_client_num,
+                      self.stats.cumulative_client_num);
             }
-            if self.debug_stats.tunnel_connections != self.tunnels.tunnel_count() ||
-               self.debug_stats.tunnel_client_pairs != self.tunnels.client_count() {
-                self.debug_stats.tunnel_connections = self.tunnels.tunnel_count();
-                self.debug_stats.tunnel_client_pairs = self.tunnels.client_count();
+            if self.stats.tunnel_connections != self.tunnels.tunnel_count() ||
+               self.stats.tunnel_client_pairs != self.tunnels.client_count() {
+                self.stats.tunnel_connections = self.tunnels.tunnel_count();
+                self.stats.tunnel_client_pairs = self.tunnels.client_count();
                 info!("{:?} - Indirect connections: {}, tunneling for: {}",
                       self,
-                      self.debug_stats.tunnel_connections,
-                      self.debug_stats.tunnel_client_pairs);
+                      self.stats.tunnel_connections,
+                      self.stats.tunnel_client_pairs);
             }
         }
 
         if self.state == State::Node &&
-           self.debug_stats.cur_routing_table_size != self.routing_table.len() {
-            self.debug_stats.cur_routing_table_size = self.routing_table.len();
+           self.stats.cur_routing_table_size != self.routing_table.len() {
+            self.stats.cur_routing_table_size = self.routing_table.len();
 
             let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
                                      self,
@@ -448,7 +426,7 @@ impl Core {
             }
         } // Category Match
 
-        self.update_debug_stats();
+        self.update_stats();
 
         true
     }
@@ -772,9 +750,8 @@ impl Core {
                 return Err(RoutingError::UnknownConnection(peer_id));
             }
             if relayed_get_request {
-                self.debug_stats.get_request_count += 1;
-                debug!("Total get request count: {}",
-                       self.debug_stats.get_request_count);
+                self.stats.get_request_count += 1;
+                debug!("Total get request count: {}", self.stats.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1293,6 +1270,7 @@ impl Core {
                            dst_id: &PeerId,
                            direct_message: DirectMessage)
                            -> Result<(), RoutingError> {
+        self.stats.count_direct_message(&direct_message);
         let (message, peer_id) = if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
             let message = Message::TunnelDirect {
                 content: direct_message,
@@ -1310,10 +1288,11 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Message::Hop(_) = try!(serialisation::deserialise(&bytes)) {
+        if let Message::Hop(signed_msg) = try!(serialisation::deserialise(&bytes)) {
             if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
                 return Ok(());
             }
+            self.stats.count_routing_message(signed_msg.content().content());
         }
 
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
