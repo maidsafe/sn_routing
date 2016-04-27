@@ -13,13 +13,11 @@ language: generic
 #   FEATURES:    build with --features "$FEATURES". Will also build (but not
 #                run) without those features.
 #   ONLY_DEPLOY: build this configuration only if we are deploying a release
-#                (pushing a tag).
+#                (on version bump).
 
 env:
   global:
-    # TODO: set correct token
-    # - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
-    - secure: "bvyT7ztCuuv1Itqk2Axb9DYxP4Y9ezAFWfWfHxjlU2Of3AY6hduWsizfjq4gWvh8uTkvgsI36UhMnQwpWmdmdwExHF88Yl7ex2vchXPyQZo2agECzf32fFURbKlsAjiOSotbzC1kCE6kdMITLe2hhaE35q0d9A4zF65sXs3ytdaPNGv/q8kUCCfQnvxwX7pJ8I0JO8BBSSy30KRk8ttxozRED5zO2WmUzgZ7SJrAH0bBncLz9xlQ2TrT40p5mKRaS2R4Dpchxp3pxwKLMzuODbF50BOWwAuwNq3HO3rfk3IJXxGUjWPicrzpBl/nc2Ku63vAaEtZ+WIeDTzMgOYwU/pvxBKNy465uUmTWblQUyBTQo+DpGP9AXTO2FiMo8eI9qRnNqYjugiCgCwV0q0bfTz5a/fO7NAptpSNlojKZasGH2E6lUlvPp5oKDhhWc7JJ+Jb0CNZoAq8Qwo2KhpiM7YZstuaKkUvNlm304pAcyPausHouuWDkWKnDynT7LLbnGT1KgDXgEk/NKuCK+eH6GSOZ2ohrWOszyxR8iRhuEyH//Zp7Z99w2TJAYuP1ZYKHoFPmq57tPkGgfhabAz9OlVpWPaTesZg73GGqFeSgC7ePMv5jTTFIPYb7PN0rkSNKSRLM5xwhUOqs+Bs7/hW+4ibbm6wnVMkeqoZZWO5NO8="
+    - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
     - PROJECT_NAME=safe_vault
     - LibSodiumVersion=1.0.9
 
@@ -91,9 +89,7 @@ matrix:
 
 branches:
   only:
-    # TODO: switch to master once we are done testing
-    # - master
-    - autorelease
+    - master
 
 cache:
   directories:
@@ -126,6 +122,6 @@ deploy:
   draft: true
   tag_name: ${PROJECT_VERSION}
   on:
-      # Deploy only on version bump commits (must contain "Version change to x.y.z"
-      # in the commit message), and only for stable rust.
-      condition: (-n "$PROJECT_VERSION") && (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
+    # Deploy only on version bump commits (must contain "Version change to x.y.z"
+    # in the commit message), and only for stable rust.
+    condition: (-n "$PROJECT_VERSION") && (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)

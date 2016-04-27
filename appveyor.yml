@@ -13,9 +13,7 @@ environment:
     - RUST_VERSION: stable
 branches:
   only:
-    # TODO: switch to master once we are done testing
-    # - master
-    - autorelease
+    - master
 
 clone_depth: 50
 skip_tags: true
@@ -55,11 +53,11 @@ before_deploy:
 
 deploy:
   provider: GitHub
-  tag: $(PROJECT_VERSION)
-  draft: true
+  auth_token: $(GH_TOKEN)
   # All the zipped artifacts will be deployed
   artifact: /.*\.zip/
-  auth_token: $(GH_TOKEN)
+  draft: true
+  tag: $(PROJECT_VERSION)
   on:
     DEPLOY: true
     RUST_VERSION: stable
