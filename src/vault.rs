@@ -32,8 +32,7 @@ use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
-// FIXME - reinstate this const
-// const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
+const DEFAULT_MAX_CAPACITY: u64 = 100 * 1024 * 1024;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Event as Event;
@@ -66,15 +65,12 @@ impl Vault {
     #[cfg(feature = "use-mock-crust")]
     pub fn new() -> Result<Self, InternalError> {
         sodiumoxide::init();
-        // FIXME - reinstate use of `max_capacity`
-        // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-        let max_capacity = 30 * 1024 * 1024;
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
-            data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            data_manager: try!(DataManager::new(routing_node.clone(), DEFAULT_MAX_CAPACITY)),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
@@ -84,15 +80,12 @@ impl Vault {
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new() -> Result<Self, InternalError> {
         sodiumoxide::init();
-        // FIXME - reinstate use of `max_capacity`
-        // let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-        let max_capacity = 30 * 1024 * 1024;
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
-            data_manager: try!(DataManager::new(routing_node.clone(), max_capacity)),
+            data_manager: try!(DataManager::new(routing_node.clone(), DEFAULT_MAX_CAPACITY)),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
@@ -100,26 +93,14 @@ impl Vault {
 
     /// Run the event loop, processing events received from Routing.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn run(&mut self) -> Result<(), InternalError> {
-        let mut exit = false;
-        while !exit {
-            let (routing_sender, routing_receiver) = mpsc::channel();
-            self.routing_receiver = routing_receiver;
-            self.routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
-            // FIXME: See Vault::new.
-            let max_capacity = 30 * 1024 * 1024;
-            self.maid_manager = MaidManager::new(self.routing_node.clone());
-            self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
-
-            while let Ok(event) = self.routing_receiver.recv() {
-                if let Some(terminate) = self.process_event(event) {
-                    exit = terminate;
-                    break;
-                }
+    pub fn run(&mut self) -> Result<bool, InternalError> {
+        while let Ok(event) = self.routing_receiver.recv() {
+            if let Some(terminate) = self.process_event(event) {
+                return Ok(terminate);
             }
         }
-
-        Ok(())
+        // FIXME: decide if we want to restart here (in which case return `Ok(false)`).
+        Ok(true)
     }
 
     /// Non-blocking call to process any events in the event queue, returning true if
