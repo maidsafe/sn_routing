@@ -323,6 +323,7 @@ mod test {
     use super::Refresh;
     use error::InternalError;
     use safe_network_common::client_errors::MutationError;
+    use kademlia_routing_table::GROUP_SIZE;
     use maidsafe_utilities::serialisation;
     use rand::{thread_rng, random};
     use rand::distributions::{IndependentSample, Range};
@@ -445,22 +446,23 @@ mod test {
     }
 
     fn lose_close_node(env: &Environment) -> XorName {
-        loop {
-            if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
-                let mut rng = thread_rng();
-                let range = Range::new(0, close_group.len());
-                let our_name = if let Ok(ref name) = env.routing.name() {
-                    *name
-                } else {
-                    unreachable!()
-                };
-                loop {
-                    let index = range.ind_sample(&mut rng);
-                    if close_group[index] != our_name {
-                        return close_group[index];
-                    }
+        let our_name = if let Ok(ref name) = env.routing.name() {
+            *name
+        } else {
+            unreachable!()
+        };
+        if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
+            let mut rng = thread_rng();
+            let range = Range::new(0, close_group.len());
+            assert_eq!(close_group.len(), GROUP_SIZE);
+            loop {
+                let index = range.ind_sample(&mut rng);
+                if close_group[index] != our_name {
+                    return close_group[index];
                 }
             }
+        } else {
+            unreachable!()
         }
     }
 
@@ -868,8 +870,9 @@ mod test {
             assert_eq!(refresh_requests.len(), refresh_count);
         }
 
-        env.routing.node_lost_event(lose_close_node(&env));
-        env.maid_manager.handle_node_lost(&random::<XorName>());
+        let node_lost = lose_close_node(&env);
+        env.routing.node_lost_event(node_lost.clone());
+        env.maid_manager.handle_node_lost(&node_lost);
 
         refresh_requests = env.routing.refresh_requests_given();
 
