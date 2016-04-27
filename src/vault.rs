@@ -23,7 +23,7 @@ use kademlia_routing_table::RoutingTable;
 // use config_handler::Config;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
-use routing::{Authority, Data, Event, NodeInfo, RequestContent, RequestMessage, ResponseContent,
+use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent,
               ResponseMessage, RoutingMessage};
 use xor_name::XorName;
 
@@ -34,6 +34,18 @@ use personas::data_manager::DataManager;
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 // FIXME - reinstate this const
 // const DEFAULT_MAX_CAPACITY: u64 = 1024 * 1024 * 1024;
+
+#[cfg(any(not(test), feature = "use-mock-crust"))]
+pub use routing::Event as Event;
+
+#[cfg(all(test, not(feature = "use-mock-crust")))]
+pub use mock_routing::Event as Event;
+
+#[cfg(any(not(test), feature = "use-mock-crust"))]
+pub use routing::NodeInfo as NodeInfo;
+
+#[cfg(all(test, not(feature = "use-mock-crust")))]
+pub use mock_routing::NodeInfo as NodeInfo;
 
 #[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;

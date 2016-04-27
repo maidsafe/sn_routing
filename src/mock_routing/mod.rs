@@ -21,9 +21,12 @@
 
 mod mock_routing_impl;
 
+pub use self::mock_routing_impl::{Event, NodeInfo};
+
 use self::mock_routing_impl::MockRoutingNodeImpl;
+use kademlia_routing_table::RoutingTable;
 use rand::random;
-use routing::{Authority, Data, DataIdentifier, Event, ImmutableData, InterfaceError, MessageId,
+use routing::{Authority, Data, DataIdentifier, ImmutableData, InterfaceError, MessageId,
               RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingError};
 use sodiumoxide::crypto::sign::PublicKey;
 use std::sync::{Arc, Mutex, mpsc};
@@ -129,12 +132,8 @@ impl MockRoutingNode {
         unwrap_result!(self.pimpl.lock()).refresh_requests_given()
     }
 
-    pub fn remove_node_from_routing_table(&mut self, node_lost: &XorName) {
-        unwrap_result!(self.pimpl.lock()).remove_node_from_routing_table(node_lost)
-    }
-
-    pub fn add_node_into_routing_table(&mut self, new_node: &XorName) {
-        unwrap_result!(self.pimpl.lock()).add_node_into_routing_table(new_node)
+    pub fn get_routing_table(&self) -> RoutingTable<NodeInfo> {
+        unwrap_result!(self.pimpl.lock()).get_routing_table()
     }
 
     // -----------  the following methods are expected to be API functions   ------------- //

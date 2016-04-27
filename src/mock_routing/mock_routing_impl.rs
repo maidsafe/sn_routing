@@ -18,7 +18,7 @@
 use kademlia_routing_table::{ContactInfo, RoutingTable};
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use rand::random;
-use routing::{Authority, Data, DataIdentifier, Event, InterfaceError, MessageId, RequestContent,
+use routing::{Authority, Data, DataIdentifier, InterfaceError, MessageId, RequestContent,
               RequestMessage, ResponseContent, ResponseMessage};
 use std::sync::mpsc;
 use std::thread::sleep;
@@ -26,12 +26,32 @@ use std::time::Duration;
 use xor_name::XorName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct NodeInfo(XorName);
+pub struct NodeInfo(XorName);
 
 impl ContactInfo for NodeInfo {
     fn name(&self) -> &XorName {
         &self.0
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Event {
+    /// Request.
+    Request(RequestMessage),
+    /// Response.
+    Response(ResponseMessage),
+    /// A new node joined the network and may be a member of group authorities we also belong to.
+    NodeAdded(XorName, RoutingTable<NodeInfo>),
+    /// A node left the network and may have been a member of group authorities we also belong to.
+    NodeLost(XorName, RoutingTable<NodeInfo>),
+    /// The client has successfully connected to a proxy node on the network.
+    Connected,
+    /// We have disconnected from the network.
+    Disconnected,
+    /// We failed to relocate as a new node in the network.
+    GetNetworkNameFailed,
+    /// We failed to start listening for incoming connections as the first node.
+    NetworkStartupFailed,
 }
 
 pub struct MockRoutingNodeImpl {
@@ -123,18 +143,16 @@ impl MockRoutingNodeImpl {
                                   "Mock Client Delete Request");
     }
 
+    pub fn get_routing_table(&self) -> RoutingTable<NodeInfo> {
+        self.routing_table.clone()
+    }
+
     pub fn node_added_event(&mut self, node_added: XorName) {
-        let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeAdded Event", move || {
-            let _ = cloned_sender.send(Event::NodeAdded(node_added));
-        })));
+        let _ = self.routing_table.add(NodeInfo(node_added));
     }
 
     pub fn node_lost_event(&mut self, node_lost: XorName) {
-        let cloned_sender = self.sender.clone();
-        self.thread_joiners.push(RaiiThreadJoiner::new(thread!("Mock NodeLost Event", move || {
-            let _ = cloned_sender.send(Event::NodeLost(node_lost));
-        })));
+        let _ = self.routing_table.remove(&node_lost);
     }
 
     pub fn get_requests_given(&self) -> Vec<RequestMessage> {
@@ -187,14 +205,6 @@ impl MockRoutingNodeImpl {
 
     pub fn refresh_requests_given(&self) -> Vec<RequestMessage> {
         self.refresh_requests_given.clone()
-    }
-
-    pub fn remove_node_from_routing_table(&mut self, node_lost: &XorName) {
-        let _ = self.routing_table.remove(node_lost);
-    }
-
-    pub fn add_node_into_routing_table(&mut self, new_node: &XorName) {
-        let _ = self.routing_table.add(NodeInfo(*new_node));
     }
 
     // -----------  the following methods are expected to be API functions   ------------- //
