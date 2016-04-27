@@ -1,12 +1,7 @@
 environment:
   global:
     GH_TOKEN:
-      # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
-      # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
-      # `public_repo` scope enabled
-      # - Then go to 'https://ci.appveyor.com/tools/encrypt' and enter the newly generated token.
-      # - Enter the "encrypted value" below
-      secure: ipSdOqm+lOjEMrx4ABEQkxlQ/9x/aEmx0fRVqr7rC335sS24z+t/9/fFQKWBx3wV
+      secure: Plf6CbvLc5BWpB51EU9Sk/RMow47fZp74uSKt1Wv20kFRf1OQS2pVuEzgXQPuyhW
     PROJECT_NAME: safe_vault
     RUST_BACKTRACE: 1
   matrix:
