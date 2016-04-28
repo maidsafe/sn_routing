@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.18.2]
+- Add a periodic tick event.
+- Increase the timeout for polling bucket groups.
+- Extract the statistics module and gather more statistics.
+
 ## [0.18.1]
 - Some improvements to the log messages.
 - Fix several lint warnings.
