@@ -17,6 +17,9 @@
 
 use messages::{DirectMessage, RequestContent, ResponseContent, RoutingMessage};
 
+/// The number of messages after which the message statistics should be printed.
+const MSG_LOG_COUNT: usize = 5000;
+
 /// A collection of counters to gather Routing statistics.
 #[derive(Default)]
 pub struct Stats {
@@ -118,7 +121,7 @@ impl Stats {
     /// Increment the total message count, and if divisible by 100, log a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
-        if self.msg_total % 100 == 0 {
+        if self.msg_total % MSG_LOG_COUNT == 0 {
             debug!("Stats - Sent {} messages in total, {} uncategorised",
                    self.msg_total,
                    self.msg_other);
