@@ -874,7 +874,7 @@ impl Core {
 
         if relay {
             if let Err(err) = self.send(signed_msg.clone(), hop_name, sent_to, false) {
-                info!("Failed relaying message: {:?}", err);
+                trace!("Failed relaying message: {:?}", err);
             }
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
