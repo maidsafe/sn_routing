@@ -30,10 +30,13 @@ pub struct TestNode {
 impl TestNode {
     pub fn new(network: &Network,
                crust_config: Option<mock_crust::Config>,
-               _config: Option<Config>)
+               config: Option<Config>)
                -> Self {
         let handle = network.new_service_handle(crust_config, None);
-        let vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
+        let mut vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
+        if let Some(replacement_config) = config {
+            unwrap_result!(vault.apply_config(replacement_config));
+        }
 
         TestNode {
             handle: handle,
