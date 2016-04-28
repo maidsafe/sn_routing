@@ -38,6 +38,7 @@ use std::iter;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher, SipHasher};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -235,7 +236,7 @@ pub struct Core {
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     tunnels: Tunnels,
     stats: Stats,
-    send_filter: LruCache<(Vec<u8>, PeerId), ()>,
+    send_filter: LruCache<(u64, PeerId), ()>,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -1289,13 +1290,6 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Message::Hop(signed_msg) = try!(serialisation::deserialise(&bytes)) {
-            if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
-                return Ok(());
-            }
-            self.stats.count_routing_message(signed_msg.content().content());
-        }
-
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
             info!("Connection to {:?} failed. Calling crust::Service::disconnect.",
                   peer_id);
@@ -1304,6 +1298,18 @@ impl Core {
             return Err(err.into());
         }
         Ok(())
+    }
+
+    /// Adds the signed message to the statistics and returns `true` if it should be blocked due
+    /// to deduplication.
+    fn filter_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId) -> bool {
+        let mut hasher = SipHasher::new();
+        msg.hash(&mut hasher);
+        if self.send_filter.insert((hasher.finish(), *peer_id), ()).is_some() {
+            return true;
+        }
+        self.stats.count_routing_message(msg.content());
+        false
     }
 
     fn verify_signed_public_id(serialised_public_id: &[u8],
@@ -2312,12 +2318,14 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            let hop_msg = try!(HopMessage::new(signed_msg,
-                                               vec![],
-                                               self.full_id.signing_private_key()));
-            let message = Message::Hop(hop_msg);
-            let raw_bytes = try!(serialisation::serialise(&message));
-            return self.send_or_drop(peer_id, raw_bytes);
+            if !self.filter_signed_msg(&signed_msg, peer_id) {
+                let hop_msg = try!(HopMessage::new(signed_msg,
+                                                   vec![],
+                                                   self.full_id.signing_private_key()));
+                let message = Message::Hop(hop_msg);
+                let raw_bytes = try!(serialisation::serialise(&message));
+                return self.send_or_drop(peer_id, raw_bytes);
+            }
         }
 
         error!("Client connection not found for message {:?}.", signed_msg);
@@ -2328,7 +2336,7 @@ impl Core {
                     signed_msg: SignedMessage,
                     sent_to: Vec<XorName>)
                     -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+        let hop_msg = try!(HopMessage::new(signed_msg,
                                            sent_to,
                                            self.full_id.signing_private_key()));
         let message = Message::Hop(hop_msg);
@@ -2397,14 +2405,18 @@ impl Core {
                                                           new_sent_to.clone(),
                                                           self.crust_service.id(),
                                                           target.peer_id));
-                if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
-                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
-                    result = Err(err);
+                if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
+                    if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
+                        info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                        result = Err(err);
+                    }
                 }
             } else {
-                if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
-                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
-                    result = Err(err);
+                if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
+                    if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
+                        info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                        result = Err(err);
+                    }
                 }
             }
         }
