@@ -119,8 +119,7 @@ impl MaidManager {
                 // Send success response back to client
                 let src = client_request.dst;
                 let dst = client_request.src;
-                let _ = self.routing_node
-                            .send_put_success(src, dst, data_id.clone(), *msg_id);
+                let _ = self.routing_node.send_put_success(src, dst, *data_id, *msg_id);
                 Ok(())
             }
             None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
