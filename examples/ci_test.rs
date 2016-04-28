@@ -52,7 +52,6 @@ extern crate xor_name;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate term;
-extern crate time;
 
 mod utils;
 

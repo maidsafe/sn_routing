@@ -2180,6 +2180,7 @@ impl Core {
         } else if self.heartbeat_timer_token == token {
             if self.state == State::Node {
                 self.request_bucket_close_groups();
+                let _ = self.event_sender.send(Event::Tick);
             }
             let now = Instant::now();
             let stale_peers = self.peer_map

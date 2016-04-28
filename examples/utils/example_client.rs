@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 extern crate log;
-extern crate time;
 extern crate routing;
 extern crate xor_name;
 extern crate sodiumoxide;
