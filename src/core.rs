@@ -38,6 +38,7 @@ use std::iter;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use std::hash::{Hash, Hasher, SipHasher};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -51,6 +52,7 @@ use data::{Data, DataIdentifier};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
+use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
@@ -73,6 +75,9 @@ const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 const HEARTBEAT_ATTEMPTS: u64 = 3;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+/// Initial period for requesting bucket close groups of all non-full buckets. This is doubled each
+/// time.
+const REFRESH_BUCKET_GROUPS_SECS: u64 = 120;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -139,28 +144,6 @@ impl ClientInfo {
     fn is_stale(&self) -> bool {
         !self.client_restriction &&
         self.timestamp.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
-    }
-}
-
-struct DebugStats {
-    cur_routing_table_size: usize,
-    cur_client_num: usize,
-    cumulative_client_num: usize,
-    get_request_count: usize,
-    tunnel_client_pairs: usize,
-    tunnel_connections: usize,
-}
-
-impl Default for DebugStats {
-    fn default() -> Self {
-        DebugStats {
-            cur_routing_table_size: 0,
-            cur_client_num: 0,
-            cumulative_client_num: 0,
-            get_request_count: 0,
-            tunnel_client_pairs: 0,
-            tunnel_connections: 0,
-        }
     }
 }
 
@@ -234,6 +217,7 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
+    bucket_refresh_token_and_delay: Option<(u64, u64)>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
     heartbeat_timer_token: u64,
@@ -255,8 +239,8 @@ pub struct Core {
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     tunnels: Tunnels,
-    debug_stats: DebugStats,
-    send_filter: LruCache<(Vec<u8>, PeerId), ()>,
+    stats: Stats,
+    send_filter: LruCache<(u64, PeerId), ()>,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -321,6 +305,7 @@ impl Core {
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
             get_network_name_timer_token: None,
+            bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
             heartbeat_timer_token: heartbeat_timer_token,
             proxy_map: HashMap::new(),
@@ -333,7 +318,7 @@ impl Core {
             their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
             tunnels: Default::default(),
-            debug_stats: Default::default(),
+            stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         };
 
@@ -392,34 +377,33 @@ impl Core {
         &self.routing_table
     }
 
-    fn update_debug_stats(&mut self) {
+    fn update_stats(&mut self) {
         if self.state == State::Node {
-            let old_client_num = self.debug_stats.cur_client_num;
-            self.debug_stats.cur_client_num = self.client_map.len() - self.joining_nodes_num();
-            if self.debug_stats.cur_client_num != old_client_num {
-                if self.debug_stats.cur_client_num > old_client_num {
-                    self.debug_stats.cumulative_client_num += self.debug_stats.cur_client_num -
-                                                              old_client_num;
+            let old_client_num = self.stats.cur_client_num;
+            self.stats.cur_client_num = self.client_map.len() - self.joining_nodes_num();
+            if self.stats.cur_client_num != old_client_num {
+                if self.stats.cur_client_num > old_client_num {
+                    self.stats.cumulative_client_num += self.stats.cur_client_num - old_client_num;
                 }
                 info!("{:?} - Connected clients: {}, cumulative: {}",
                       self,
-                      self.debug_stats.cur_client_num,
-                      self.debug_stats.cumulative_client_num);
+                      self.stats.cur_client_num,
+                      self.stats.cumulative_client_num);
             }
-            if self.debug_stats.tunnel_connections != self.tunnels.tunnel_count() ||
-               self.debug_stats.tunnel_client_pairs != self.tunnels.client_count() {
-                self.debug_stats.tunnel_connections = self.tunnels.tunnel_count();
-                self.debug_stats.tunnel_client_pairs = self.tunnels.client_count();
+            if self.stats.tunnel_connections != self.tunnels.tunnel_count() ||
+               self.stats.tunnel_client_pairs != self.tunnels.client_count() {
+                self.stats.tunnel_connections = self.tunnels.tunnel_count();
+                self.stats.tunnel_client_pairs = self.tunnels.client_count();
                 info!("{:?} - Indirect connections: {}, tunneling for: {}",
                       self,
-                      self.debug_stats.tunnel_connections,
-                      self.debug_stats.tunnel_client_pairs);
+                      self.stats.tunnel_connections,
+                      self.stats.tunnel_client_pairs);
             }
         }
 
         if self.state == State::Node &&
-           self.debug_stats.cur_routing_table_size != self.routing_table.len() {
-            self.debug_stats.cur_routing_table_size = self.routing_table.len();
+           self.stats.cur_routing_table_size != self.routing_table.len() {
+            self.stats.cur_routing_table_size = self.routing_table.len();
 
             let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
                                      self,
@@ -449,7 +433,7 @@ impl Core {
             }
         } // Category Match
 
-        self.update_debug_stats();
+        self.update_stats();
 
         true
     }
@@ -744,7 +728,6 @@ impl Core {
                           -> Result<(), RoutingError> {
         let hop_name;
         if self.state == State::Node {
-            let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.find(|node| node.peer_id == peer_id) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
@@ -753,12 +736,6 @@ impl Core {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
-                }
-                if let RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(_, _),
-                    ..
-                }) = *hop_msg.content().content() {
-                    relayed_get_request = true;
                 }
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -771,11 +748,6 @@ impl Core {
                 //        peer_id);
                 // self.disconnect_peer(&peer_id);
                 return Err(RoutingError::UnknownConnection(peer_id));
-            }
-            if relayed_get_request {
-                self.debug_stats.get_request_count += 1;
-                debug!("Total get request count: {}",
-                       self.debug_stats.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -1294,6 +1266,7 @@ impl Core {
                            dst_id: &PeerId,
                            direct_message: DirectMessage)
                            -> Result<(), RoutingError> {
+        self.stats.count_direct_message(&direct_message);
         let (message, peer_id) = if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
             let message = Message::TunnelDirect {
                 content: direct_message,
@@ -1311,12 +1284,6 @@ impl Core {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
     fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Message::Hop(_) = try!(serialisation::deserialise(&bytes)) {
-            if self.send_filter.insert((bytes.clone(), *peer_id), ()).is_some() {
-                return Ok(());
-            }
-        }
-
         if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
             info!("Connection to {:?} failed. Calling crust::Service::disconnect.",
                   peer_id);
@@ -1325,6 +1292,18 @@ impl Core {
             return Err(err.into());
         }
         Ok(())
+    }
+
+    /// Adds the signed message to the statistics and returns `true` if it should be blocked due
+    /// to deduplication.
+    fn filter_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId) -> bool {
+        let mut hasher = SipHasher::new();
+        msg.hash(&mut hasher);
+        if self.send_filter.insert((hasher.finish(), *peer_id), ()).is_some() {
+            return true;
+        }
+        self.stats.count_routing_message(msg.content());
+        false
     }
 
     fn verify_signed_public_id(serialised_public_id: &[u8],
@@ -1589,6 +1568,9 @@ impl Core {
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
+                let new_token = self.timer
+                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
@@ -2205,7 +2187,7 @@ impl Core {
             let _ = self.event_sender.send(Event::Disconnected);
         } else if self.heartbeat_timer_token == token {
             if self.state == State::Node {
-                self.request_bucket_close_groups();
+                let _ = self.event_sender.send(Event::Tick);
             }
             let now = Instant::now();
             let stale_peers = self.peer_map
@@ -2228,6 +2210,13 @@ impl Core {
             }
             self.heartbeat_timer_token =
                 self.timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
+            if bucket_token == token {
+                self.request_bucket_close_groups();
+                let new_delay = delay.saturating_mul(2);
+                let new_token = self.timer.schedule(StdDuration::from_secs(new_delay));
+                self.bucket_refresh_token_and_delay = Some((new_token, new_delay));
+            }
         }
     }
 
@@ -2333,12 +2322,14 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            let hop_msg = try!(HopMessage::new(signed_msg,
-                                               vec![],
-                                               self.full_id.signing_private_key()));
-            let message = Message::Hop(hop_msg);
-            let raw_bytes = try!(serialisation::serialise(&message));
-            return self.send_or_drop(peer_id, raw_bytes);
+            if !self.filter_signed_msg(&signed_msg, peer_id) {
+                let hop_msg = try!(HopMessage::new(signed_msg,
+                                                   vec![],
+                                                   self.full_id.signing_private_key()));
+                let message = Message::Hop(hop_msg);
+                let raw_bytes = try!(serialisation::serialise(&message));
+                return self.send_or_drop(peer_id, raw_bytes);
+            }
         }
 
         error!("Client connection not found for message {:?}.", signed_msg);
@@ -2349,7 +2340,7 @@ impl Core {
                     signed_msg: SignedMessage,
                     sent_to: Vec<XorName>)
                     -> Result<Vec<u8>, RoutingError> {
-        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+        let hop_msg = try!(HopMessage::new(signed_msg,
                                            sent_to,
                                            self.full_id.signing_private_key()));
         let message = Message::Hop(hop_msg);
@@ -2418,14 +2409,18 @@ impl Core {
                                                           new_sent_to.clone(),
                                                           self.crust_service.id(),
                                                           target.peer_id));
-                if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
-                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
-                    result = Err(err);
+                if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
+                    if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
+                        info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                        result = Err(err);
+                    }
                 }
             } else {
-                if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
-                    info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
-                    result = Err(err);
+                if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
+                    if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
+                        info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
+                        result = Err(err);
+                    }
                 }
             }
         }
@@ -2547,6 +2542,9 @@ impl Core {
                     debug!("Lost last routing node connection.");
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
+                let new_token = self.timer
+                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
             }
         };
     }

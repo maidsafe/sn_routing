@@ -47,6 +47,9 @@ pub enum Event {
     GetNetworkNameFailed,
     /// We failed to start listening for incoming connections as the first node.
     NetworkStartupFailed,
+    // TODO: Find a better solution for periodic tasks.
+    /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
+    Tick,
 }
 
 impl Debug for Event {
@@ -66,6 +69,7 @@ impl Debug for Event {
             Event::Disconnected => write!(formatter, "Event::Disconnected"),
             Event::GetNetworkNameFailed => write!(formatter, "Event::GetNetworkNameFailed"),
             Event::NetworkStartupFailed => write!(formatter, "Event::NetworkStartupFailed"),
+            Event::Tick => write!(formatter, "Event::Tick"),
         }
     }
 }

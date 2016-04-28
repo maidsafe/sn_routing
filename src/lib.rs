@@ -188,6 +188,7 @@ mod immutable_data;
 mod messages;
 mod node;
 mod plain_data;
+mod stats;
 mod structured_data;
 mod timer;
 mod tunnels;

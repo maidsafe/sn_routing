@@ -23,8 +23,8 @@ use routing::{NodeInfo, RequestMessage, ResponseMessage, RequestContent, Respons
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::time::Duration;
 use rustc_serialize::{Encoder, Decoder};
-use time;
 
 const STORE_REDUNDANCY: usize = 4;
 
@@ -66,8 +66,8 @@ impl ExampleNode {
             dm_accounts: HashMap::new(),
             client_accounts: HashMap::new(),
             connected: false,
-            client_request_cache: LruCache::with_expiry_duration(time::Duration::minutes(10)),
-            put_request_cache: LruCache::with_expiry_duration(time::Duration::minutes(10)),
+            client_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            put_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         }
     }
 
