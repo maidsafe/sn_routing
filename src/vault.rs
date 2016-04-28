@@ -169,9 +169,7 @@ impl Vault {
             // ================== Get ==================
             (&Authority::Client { .. },
              &Authority::NaeManager(_),
-             &RequestContent::Get(ref data_id, ref msg_id)) => {
-                self.data_manager.handle_get(&request, data_id, msg_id)
-            }
+             &RequestContent::Get(ref data_id, ref msg_id)) |
             (&Authority::ManagedNode(_),
              &Authority::ManagedNode(_),
              &RequestContent::Get(ref data_id, ref msg_id)) => {

@@ -43,7 +43,7 @@ const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 60;
 
 /// Specification of a particular version of a data chunk. For immutable data, the `u64` is always
 /// 0; for structured data, it specifies the version.
-type IdAndVersion = (DataIdentifier, u64);
+pub type IdAndVersion = (DataIdentifier, u64);
 
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
@@ -176,10 +176,7 @@ impl DataManager {
             trace!("DM sending PutSuccess for data {:?}", data_identifier);
             info!("{:?}", self);
             let _ = self.routing_node
-                        .send_put_success(response_src,
-                                          response_dst,
-                                          data_identifier.clone(),
-                                          *message_id);
+                        .send_put_success(response_src, response_dst, data_identifier, *message_id);
             let data_list = vec![(data_identifier, version)];
             let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
             Ok(())
@@ -411,6 +408,9 @@ impl DataManager {
                 }
             }
         }
+        debug!("Stats - Expecting {} Get responses. {} entries in data_holders.",
+               self.ongoing_gets.len(),
+               self.data_holders.values().map(HashSet::len).fold(0, Add::add));
         // TODO: Check whether we can do without a return value.
         Ok(())
     }
@@ -425,6 +425,7 @@ impl DataManager {
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
+        self.prune_ongoing_gets(routing_table);
         // Only retain data for which we're still in the close group.
         let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
@@ -467,6 +468,7 @@ impl DataManager {
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
+        self.prune_ongoing_gets(routing_table);
         let data_ids = self.chunk_store.keys();
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_id in data_ids {
@@ -518,6 +520,29 @@ impl DataManager {
         self.chunk_store.keys()
     }
 
+    /// Remove entries from `ongoing_gets` that are no longer responsible for the data or that
+    /// disconnected.
+    fn prune_ongoing_gets(&mut self, routing_table: &RoutingTable<NodeInfo>) {
+        let lost_gets = self.ongoing_gets
+                            .iter()
+                            .filter(|&(ref holder, &(_, ref data_id))| {
+                                routing_table.other_close_nodes(&data_id.name())
+                                             .map_or(true, |group| {
+                                                 !group.iter()
+                                                       .map(NodeInfo::name)
+                                                       .any(|name| name == *holder)
+                                             })
+                            })
+                            .map(|(holder, _)| *holder)
+                            .collect_vec();
+        if !lost_gets.is_empty() {
+            for holder in lost_gets {
+                let _ = self.ongoing_gets.remove(&holder);
+            }
+            let _ = self.send_gets_for_needed_data();
+        }
+    }
+
     fn send_refresh(&self,
                     dst: Authority,
                     data_list: Vec<IdAndVersion>)
@@ -545,7 +570,6 @@ impl DataManager {
 #[cfg(not(feature="use-mock-crust"))]
 mod test_sd {
     use super::*;
-    use super::DataList;
 
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -1133,7 +1157,7 @@ mod test_sd {
                    Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
                refresh_requests[GROUP_SIZE].content.clone() {
-            let parsed_data_list = unwrap_result!(serialisation::deserialise::<DataList>(
+            let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.sd_data.identifier());
@@ -1156,7 +1180,7 @@ mod test_sd {
                    Authority::ManagedNode(node_added.clone()));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
                refresh_requests[GROUP_SIZE + 1].content.clone() {
-            let parsed_data_list = unwrap_result!(serialisation::deserialise::<DataList>(
+            let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.sd_data.identifier());
@@ -1264,7 +1288,6 @@ mod test_sd {
 #[cfg(not(feature="use-mock-crust"))]
 mod test_im {
     use super::*;
-    use super::DataList;
 
     use std::rc::Rc;
     use std::sync::mpsc;
@@ -1506,7 +1529,7 @@ mod test_im {
                    Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
                refresh_requests[GROUP_SIZE].content.clone() {
-            let parsed_data_list = unwrap_result!(serialisation::deserialise::<DataList>(
+            let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.im_data.identifier());
@@ -1529,7 +1552,7 @@ mod test_im {
                    Authority::ManagedNode(node_added.clone()));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
                refresh_requests[GROUP_SIZE + 1].content.clone() {
-            let parsed_data_list = unwrap_result!(serialisation::deserialise::<DataList>(
+            let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.im_data.identifier());
@@ -1544,7 +1567,7 @@ mod test_im {
     fn handle_refresh() {
         let mut env = Environment::new();
         let im_data = env.get_close_data();
-        let data_list: DataList = vec![(im_data.identifier(), None)];
+        let data_list = vec![(im_data.identifier(), 0)];
         let serialised_data_list = if let Ok(serialised_data) =
                                           serialisation::serialise(&data_list) {
             serialised_data
