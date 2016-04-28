@@ -52,6 +52,8 @@ pub enum Event {
     GetNetworkNameFailed,
     /// We failed to start listening for incoming connections as the first node.
     NetworkStartupFailed,
+    /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
+    Tick
 }
 
 pub struct MockRoutingNodeImpl {
