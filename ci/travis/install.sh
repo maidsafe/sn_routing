@@ -42,12 +42,7 @@ if [ -n "$GCC_PREFIX" ]; then
   mkdir -p .cargo
   echo "[target.$TARGET]" >> .cargo/config
   echo "linker = \"${GCC_PREFIX}gcc\"" >> .cargo/config
-
-  export CC=${GCC_PREFIX}gcc
 fi
 
 # Install libsodium
-# (curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh &&
-#  chmod a+x install_libsodium.sh &&
-#  ./install_libsodium.sh)
 ./ci/travis/install_libsodium.sh

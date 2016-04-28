@@ -25,20 +25,23 @@ env:
 
 matrix:
   include:
-    # TODO: uncomment this
-    # - os: linux
-    #   env: >
-    #     TARGET=x86_64-unknown-linux-gnu
-    #     PLATFORM=linux-x64
-    #     FEATURES=use-mock-crust
+    - os: linux
+      env: >
+        TARGET=x86_64-unknown-linux-gnu
+        PLATFORM=linux-x64
+        FEATURES=use-mock-crust
 
-    # TODO: Figure out cross-compilation and uncomment these:
-    # - os: linux
-    #   env: >
-    #     TARGET=i686-unknown-linux-gnu
-    #     PLATFORM=linux-x86
-    #     FEATURES=use-mock-crust
-    #     ONLY_DEPLOY=1
+    - os: linux
+      env: >
+        TARGET=i686-unknown-linux-gnu
+        PLATFORM=linux-x86
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - gcc-multilib
 
     - os: linux
       env: >
@@ -53,40 +56,38 @@ matrix:
       #     packages:
       #       - musl-tools
 
-    # TODO: uncomment this
-    # - os: linux
-    #   env: >
-    #     TARGET=armv7-unknown-linux-gnueabihf
-    #     PLATFORM=armv7
-    #     FEATURES=use-mock-crust
-    #     ONLY_DEPLOY=1
-    #   sudo: required
-    #   addons:
-    #     apt:
-    #       packages:
-    #         # Cross compiler and cross compiled C libraries
-    #         - gcc-arm-linux-gnueabihf
-    #         - libc6-armhf-cross
-    #         - libc6-dev-armhf-cross
+    - os: linux
+      env: >
+        TARGET=armv7-unknown-linux-gnueabihf
+        PLATFORM=armv7
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
+      sudo: required
+      addons:
+        apt:
+          packages:
+            # Cross compiler and cross compiled C libraries
+            - gcc-arm-linux-gnueabihf
+            - libc6-armhf-cross
+            - libc6-dev-armhf-cross
 
-    # TODO: uncomment these
-    # - os: linux
-    #   env: >
-    #     CHANNEL=nightly
-    #     FEATURES="clippy use-mock-crust"
-    #   allow_failures: true
+    - os: linux
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
+      allow_failures: true
 
-    # - os: osx
-    #   env: >
-    #     TARGET=x86_64-apple-darwin
-    #     PLATFORM=osx-x64
-    #     FEATURES=use-mock-crust
+    - os: osx
+      env: >
+        TARGET=x86_64-apple-darwin
+        PLATFORM=osx-x64
+        FEATURES=use-mock-crust
 
-    # - os: osx
-    #   env: >
-    #     CHANNEL=nightly
-    #     FEATURES="clippy use-mock-crust"
-    #   allow_failures: true
+    - os: osx
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
+      allow_failures: true
 
   # Add "allow_failures: true" to rows which are allowed to fail without making
   # the whole build fail. This is useful for nightly builds.
@@ -103,14 +104,15 @@ branches:
 
 cache:
   directories:
-    - $HOME/libsodium
+    - $HOME/libsodium/$LibSodiumVersion/$TARGET
     - $HOME/musl
     - $HOME/.cargo
+    - target
 
 before_install:
   - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
   - export PATH="$PATH:$HOME/.cargo/bin:$HOME/musl/bin"
-  - export PKG_CONFIG_PATH="$HOME/libsodium/$LibSodiumVersion/lib/pkgconfig:$PKG_CONFIG_PATH"
+  - export PKG_CONFIG_PATH="$HOME/libsodium/$LibSodiumVersion/$TARGET/lib/pkgconfig:$PKG_CONFIG_PATH"
   - export PKG_CONFIG_ALLOW_CROSS=1
 
 install:

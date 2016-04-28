@@ -7,12 +7,14 @@ set -ex
 
 # Check to see if musl is in the cache
 if [ ! -f "$HOME/musl/bin/musl-gcc" ]; then
-  git clone git://git.musl-libc.org/musl musl-src
-  pushd musl-src
+  rm -rf $HOME/musl
+
+  git clone git://git.musl-libc.org/musl musl-build
+  pushd musl-build
   ./configure --prefix=$HOME/musl
   make
   make install
   popd
 
-  rm -rf musl-src
+  rm -rf musl-build
 fi
