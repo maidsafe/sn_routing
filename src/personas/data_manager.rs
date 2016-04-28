@@ -461,6 +461,7 @@ impl DataManager {
         if !data_list.is_empty() {
             let _ = self.send_refresh(Authority::ManagedNode(*node_name), data_list);
         }
+        info!("{:?}", self);
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
@@ -1124,7 +1125,8 @@ mod test_sd {
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.sd_data.name()));
+        assert_eq!(refresh_requests[0].dst,
+                   Authority::NaeManager(put_env.sd_data.name()));
 
         // handle_node_lost
         let lost_node = env.lose_close_node(&put_env.sd_data.name());
@@ -1137,11 +1139,12 @@ mod test_sd {
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
         let close_group = unwrap_option!(unwrap_result!(env.routing
                                                            .close_group(put_env.sd_data.name())),
-                                     "");
+                                         "");
         assert_eq!(refresh_requests[1].dst,
                    Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
-        if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[1].content.clone() {
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[1]
+                                                                             .content
+                                                                             .clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
@@ -1162,8 +1165,9 @@ mod test_sd {
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
         assert_eq!(refresh_requests[2].dst,
                    Authority::ManagedNode(node_added.clone()));
-        if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[2].content.clone() {
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[2]
+                                                                             .content
+                                                                             .clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
@@ -1454,7 +1458,8 @@ mod test_im {
         assert_eq!(refresh_requests.len(), 1);
         assert_eq!(refresh_requests[0].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.im_data.name()));
+        assert_eq!(refresh_requests[0].dst,
+                   Authority::NaeManager(put_env.im_data.name()));
 
         // handle_node_lost
         let lost_node = env.lose_close_node(&put_env.im_data.name());
@@ -1467,10 +1472,12 @@ mod test_im {
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
         let close_group = unwrap_option!(unwrap_result!(env.routing
                                                            .close_group(put_env.im_data.name())),
-                                     "");
-        assert_eq!(refresh_requests[1].dst, Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
-        if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[1].content.clone() {
+                                         "");
+        assert_eq!(refresh_requests[1].dst,
+                   Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[1]
+                                                                             .content
+                                                                             .clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
@@ -1489,9 +1496,11 @@ mod test_im {
         assert_eq!(refresh_requests.len(), 3);
         assert_eq!(refresh_requests[2].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        assert_eq!(refresh_requests[2].dst, Authority::ManagedNode(node_added.clone()));
-        if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[2].content.clone() {
+        assert_eq!(refresh_requests[2].dst,
+                   Authority::ManagedNode(node_added.clone()));
+        if let RequestContent::Refresh(received_serialised_refresh, _) = refresh_requests[2]
+                                                                             .content
+                                                                             .clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
@@ -1506,7 +1515,7 @@ mod test_im {
     fn handle_refresh() {
         let mut env = Environment::new();
         let im_data = env.get_close_data();
-        let data_list : Vec<IdAndVersion>= vec![(im_data.identifier(), 0)];
+        let data_list: Vec<IdAndVersion> = vec![(im_data.identifier(), 0)];
         let serialised_data_list = if let Ok(serialised_data) =
                                           serialisation::serialise(&data_list) {
             serialised_data
