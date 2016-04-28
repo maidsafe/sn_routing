@@ -581,7 +581,6 @@ mod test_sd {
     use routing::{Authority, Data, DataIdentifier, MessageId, RequestContent, RequestMessage,
                   ResponseContent, ResponseMessage, StructuredData};
     use safe_network_common::client_errors::{GetError, MutationError};
-    use sodiumoxide::crypto::hash::sha512;
     use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey};
     use utils;
     use vault::RoutingNode;
@@ -1122,24 +1121,10 @@ mod test_sd {
         let put_env = env.put_sd_data();
         assert_eq!(env.routing.put_successes_given().len(), 1);
         let mut refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE);
-        let mut close_group = unwrap_option!(unwrap_result!(env.routing
-                                                               .close_group(put_env.sd_data
-                                                                                   .name())),
-                                             "");
-        for i in 0..GROUP_SIZE {
-            assert_eq!(refresh_requests[i].src,
-                       Authority::ManagedNode(unwrap_result!(env.routing.name())));
-            assert_eq!(refresh_requests[i].dst,
-                       Authority::ManagedNode(close_group[i]));
-        }
-
-        let hash = if let Ok(serialised_data) =
-                          serialisation::serialise(&Data::Structured(put_env.sd_data.clone())) {
-            sha512::hash(&serialised_data)
-        } else {
-            panic!("Failed to serialise {:?}.", put_env.sd_data.identifier());
-        };
+        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests[0].src,
+                   Authority::ManagedNode(unwrap_result!(env.routing.name())));
+        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.sd_data.name()));
 
         // handle_node_lost
         let lost_node = env.lose_close_node(&put_env.sd_data.name());
@@ -1147,24 +1132,23 @@ mod test_sd {
         let _ = env.data_manager.handle_node_lost(&lost_node, &env.routing.get_routing_table());
 
         refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE + 1);
-        assert_eq!(refresh_requests[GROUP_SIZE].src,
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[1].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        close_group = unwrap_option!(unwrap_result!(env.routing
-                                                       .close_group(put_env.sd_data.name())),
+        let close_group = unwrap_option!(unwrap_result!(env.routing
+                                                           .close_group(put_env.sd_data.name())),
                                      "");
-        assert_eq!(refresh_requests[GROUP_SIZE].dst,
+        assert_eq!(refresh_requests[1].dst,
                    Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[GROUP_SIZE].content.clone() {
+               refresh_requests[1].content.clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.sd_data.identifier());
-            assert_eq!(parsed_data_list[0].1, Some(hash));
+            assert_eq!(parsed_data_list[0].1, put_env.sd_data.get_version());
         } else {
-            panic!("Received unexpected refresh {:?}",
-                   refresh_requests[GROUP_SIZE]);
+            panic!("Received unexpected refresh {:?}", refresh_requests[1]);
         }
 
         // handle_node_added
@@ -1173,21 +1157,20 @@ mod test_sd {
         let _ = env.data_manager.handle_node_added(&node_added, &env.routing.get_routing_table());
 
         refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE + 2);
-        assert_eq!(refresh_requests[GROUP_SIZE + 1].src,
+        assert_eq!(refresh_requests.len(), 3);
+        assert_eq!(refresh_requests[2].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        assert_eq!(refresh_requests[GROUP_SIZE + 1].dst,
+        assert_eq!(refresh_requests[2].dst,
                    Authority::ManagedNode(node_added.clone()));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[GROUP_SIZE + 1].content.clone() {
+               refresh_requests[2].content.clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.sd_data.identifier());
-            assert_eq!(parsed_data_list[0].1, Some(hash));
+            assert_eq!(parsed_data_list[0].1, put_env.sd_data.get_version());
         } else {
-            panic!("Received unexpected refresh {:?}",
-                   refresh_requests[GROUP_SIZE + 1]);
+            panic!("Received unexpected refresh {:?}", refresh_requests[2]);
         }
     }
 
@@ -1197,13 +1180,8 @@ mod test_sd {
         let keys = sign::gen_keypair();
         let sd_data = env.get_close_data(keys.clone());
 
-        let hash_1 = if let Ok(serialised_data) =
-                            serialisation::serialise(&Data::Structured(sd_data.clone())) {
-            sha512::hash(&serialised_data)
-        } else {
-            panic!("Failed to serialise {:?}.", sd_data.identifier());
-        };
-        let data_list_1 = vec![(sd_data.identifier(), Some(hash_1.clone()))];
+        let version_1 = sd_data.get_version();
+        let data_list_1 = vec![(sd_data.identifier(), version_1)];
         let serialised_data_list_1 = if let Ok(serialised_data) =
                                             serialisation::serialise(&data_list_1) {
             serialised_data
@@ -1211,12 +1189,8 @@ mod test_sd {
             panic!("Failed to serialise {:?}.", data_list_1);
         };
 
-        let hash_2 = if let Ok(serialised_data) = serialisation::serialise(&sd_data) {
-            sha512::hash(&serialised_data)
-        } else {
-            panic!("Failed to serialise {:?}.", sd_data.identifier());
-        };
-        let data_list_2 = vec![(sd_data.identifier(), Some(hash_2.clone()))];
+        let version_2 = version_1 + 1;
+        let data_list_2 = vec![(sd_data.identifier(), version_2)];
         let serialised_data_list_2 = if let Ok(serialised_data) =
                                             serialisation::serialise(&data_list_2) {
             serialised_data
@@ -1226,56 +1200,32 @@ mod test_sd {
 
         let close_group = unwrap_option!(unwrap_result!(env.routing.close_group(sd_data.name())),
                                          "");
-
-        for i in 0..10 {
+        let mut index = 0;
+        for i in 0..16 {
             if i % 2 == 0 {
-                let _ = env.data_manager.handle_refresh(&serialised_data_list_1, &MessageId::new());
+                let src = close_group[index].clone();
+                let _ = env.data_manager.handle_refresh(&src, &serialised_data_list_1);
             } else {
-                let _ = env.data_manager.handle_refresh(&serialised_data_list_2, &MessageId::new());
+                let src = close_group[GROUP_SIZE - index - 1].clone();
+                let _ = env.data_manager.handle_refresh(&src, &serialised_data_list_2);
+                index += 1;
             }
-            if i < 4 {
+            if i < 8 {
                 assert_eq!(env.routing.get_requests_given().len(), 0);
             }
-            if i == 4 {
-                let get_requests = env.routing.get_requests_given();
-                assert_eq!(get_requests.len(), GROUP_SIZE);
-                for j in 0..GROUP_SIZE {
-                    assert_eq!(get_requests[j].src,
-                               Authority::ManagedNode(unwrap_result!(env.routing.name())));
-                    assert_eq!(get_requests[j].dst, Authority::ManagedNode(close_group[j]));
-                    if let RequestContent::Get(ref data_identifier, _) = get_requests[j].content {
-                        assert_eq!(*data_identifier, sd_data.identifier());
-                    } else {
-                        panic!("Received unexpected get request {:?}", get_requests[j]);
-                    }
-                }
+            if i > 8 {
+                assert_eq!(env.routing.get_requests_given().len(), 1);
             }
             if i == 8 {
                 let get_requests = env.routing.get_requests_given();
-                assert_eq!(get_requests.len(), GROUP_SIZE + 1);
-                assert_eq!(get_requests[GROUP_SIZE].src,
+                assert_eq!(get_requests.len(), 1);
+                assert_eq!(get_requests[0].src,
                            Authority::ManagedNode(unwrap_result!(env.routing.name())));
-                assert!(close_group.contains(get_requests[GROUP_SIZE].dst.name()));
-                if let RequestContent::Get(ref data_identifier, _) = get_requests[GROUP_SIZE]
-                                                                         .content {
+                assert!(close_group.contains(get_requests[0].dst.name()));
+                if let RequestContent::Get(ref data_identifier, _) = get_requests[0].content {
                     assert_eq!(*data_identifier, sd_data.identifier());
                 } else {
-                    panic!("Received unexpected get request {:?}",
-                           get_requests[GROUP_SIZE]);
-                }
-            }
-            if i == 9 {
-                let get_requests = env.routing.get_requests_given();
-                assert_eq!(get_requests.len(), GROUP_SIZE + 2);
-                assert_eq!(get_requests[GROUP_SIZE + 1].src,
-                           Authority::ManagedNode(unwrap_result!(env.routing.name())));
-                assert!(close_group.contains(get_requests[GROUP_SIZE + 1].dst.name()));
-                if let RequestContent::Get(ref data_identifier, _) = get_requests[GROUP_SIZE + 1]
-                                                                         .content {
-                    assert_eq!(*data_identifier, sd_data.identifier());
-                } else {
-                    panic!("Received unexpected get request {:?}",
-                           get_requests[GROUP_SIZE + 1]);
+                    panic!("Received unexpected get request {:?}", get_requests[0]);
                 }
             }
         }
@@ -1501,17 +1451,10 @@ mod test_im {
         let put_env = env.put_im_data();
         assert_eq!(env.routing.put_successes_given().len(), 1);
         let mut refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE);
-        let mut close_group = unwrap_option!(unwrap_result!(env.routing
-                                                               .close_group(put_env.im_data
-                                                                                   .name())),
-                                             "");
-        for i in 0..GROUP_SIZE {
-            assert_eq!(refresh_requests[i].src,
-                       Authority::ManagedNode(unwrap_result!(env.routing.name())));
-            assert_eq!(refresh_requests[i].dst,
-                       Authority::ManagedNode(close_group[i]));
-        }
+        assert_eq!(refresh_requests.len(), 1);
+        assert_eq!(refresh_requests[0].src,
+                   Authority::ManagedNode(unwrap_result!(env.routing.name())));
+        assert_eq!(refresh_requests[0].dst, Authority::NaeManager(put_env.im_data.name()));
 
         // handle_node_lost
         let lost_node = env.lose_close_node(&put_env.im_data.name());
@@ -1519,24 +1462,22 @@ mod test_im {
         let _ = env.data_manager.handle_node_lost(&lost_node, &env.routing.get_routing_table());
 
         refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE + 1);
-        assert_eq!(refresh_requests[GROUP_SIZE].src,
+        assert_eq!(refresh_requests.len(), 2);
+        assert_eq!(refresh_requests[1].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        close_group = unwrap_option!(unwrap_result!(env.routing
-                                                       .close_group(put_env.im_data.name())),
+        let close_group = unwrap_option!(unwrap_result!(env.routing
+                                                           .close_group(put_env.im_data.name())),
                                      "");
-        assert_eq!(refresh_requests[GROUP_SIZE].dst,
-                   Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
+        assert_eq!(refresh_requests[1].dst, Authority::ManagedNode(close_group[GROUP_SIZE - 1]));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[GROUP_SIZE].content.clone() {
+               refresh_requests[1].content.clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.im_data.identifier());
-            assert_eq!(parsed_data_list[0].1, None);
+            assert_eq!(parsed_data_list[0].1, 0);
         } else {
-            panic!("Received unexpected refresh {:?}",
-                   refresh_requests[GROUP_SIZE]);
+            panic!("Received unexpected refresh {:?}", refresh_requests[1]);
         }
 
         // handle_node_added
@@ -1545,21 +1486,19 @@ mod test_im {
         let _ = env.data_manager.handle_node_added(&node_added, &env.routing.get_routing_table());
 
         refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), GROUP_SIZE + 2);
-        assert_eq!(refresh_requests[GROUP_SIZE + 1].src,
+        assert_eq!(refresh_requests.len(), 3);
+        assert_eq!(refresh_requests[2].src,
                    Authority::ManagedNode(unwrap_result!(env.routing.name())));
-        assert_eq!(refresh_requests[GROUP_SIZE + 1].dst,
-                   Authority::ManagedNode(node_added.clone()));
+        assert_eq!(refresh_requests[2].dst, Authority::ManagedNode(node_added.clone()));
         if let RequestContent::Refresh(received_serialised_refresh, _) =
-               refresh_requests[GROUP_SIZE + 1].content.clone() {
+               refresh_requests[2].content.clone() {
             let parsed_data_list = unwrap_result!(serialisation::deserialise::<Vec<IdAndVersion>>(
                     &received_serialised_refresh[..]));
             assert_eq!(parsed_data_list.len(), 1);
             assert_eq!(parsed_data_list[0].0, put_env.im_data.identifier());
-            assert_eq!(parsed_data_list[0].1, None);
+            assert_eq!(parsed_data_list[0].1, 0);
         } else {
-            panic!("Received unexpected refresh {:?}",
-                   refresh_requests[GROUP_SIZE + 1]);
+            panic!("Received unexpected refresh {:?}", refresh_requests[2]);
         }
     }
 
@@ -1567,7 +1506,7 @@ mod test_im {
     fn handle_refresh() {
         let mut env = Environment::new();
         let im_data = env.get_close_data();
-        let data_list = vec![(im_data.identifier(), 0)];
+        let data_list : Vec<IdAndVersion>= vec![(im_data.identifier(), 0)];
         let serialised_data_list = if let Ok(serialised_data) =
                                           serialisation::serialise(&data_list) {
             serialised_data
@@ -1578,7 +1517,7 @@ mod test_im {
                                          "");
 
         for i in 0..GROUP_SIZE {
-            let _ = env.data_manager.handle_refresh(&serialised_data_list, &MessageId::new());
+            let _ = env.data_manager.handle_refresh(&close_group[i], &serialised_data_list);
             if i < 4 {
                 assert_eq!(env.routing.get_requests_given().len(), 0);
             }
