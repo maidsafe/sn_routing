@@ -33,7 +33,7 @@ use xor_name::XorName;
 // It has now been decided that the charge will be by unit
 // i.e. each chunk incurs a default charge of one unit, no matter of the data size
 // FIXME - restore this constant to 1024 or greater
-const DEFAULT_ACCOUNT_SIZE: u64 = 50;  // 1024 units, max 1GB for immutable_data (1MB per chunk)
+const DEFAULT_ACCOUNT_SIZE: u64 = 100;  // 100 units, max 100MB for immutable_data (1MB per chunk)
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 struct Refresh(XorName, Account);

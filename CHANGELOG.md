@@ -1,5 +1,10 @@
 # Safe Vault - Change Log
 
+## [0.7.0]
+- Restart routing if it failed to join the network.
+- Reimplement the refresh algorithm for structured and immutable data to make it
+  less wasteful and more reliable.
+
 ## [0.6.0]
 - Major change of persona strategy regarding `ImmutableData` (removal of three personas)
 - Major refactoring of integration tests (uses mock Crust feature)
