@@ -46,6 +46,12 @@ matrix:
         PLATFORM=linux-musl-x64
         FEATURES=use-mock-crust
         ONLY_DEPLOY=1
+      # TODO: uncommend once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
+      # sudo: required
+      # addons:
+      #   apt:
+      #     packages:
+      #       - musl-tools
 
     # TODO: uncomment this
     # - os: linux
@@ -54,9 +60,7 @@ matrix:
     #     PLATFORM=armv7
     #     FEATURES=use-mock-crust
     #     ONLY_DEPLOY=1
-    #     LibSodiumHost=arm-linux-gnueabihf
     #   sudo: required
-    #   # Extra packages only for this job
     #   addons:
     #     apt:
     #       packages:
@@ -95,16 +99,17 @@ branches:
   only:
     # TODO: change to master once done testing
     # - master
-    - arm
+    - more-platforms
 
 cache:
   directories:
     - $HOME/libsodium
+    - $HOME/musl
     - $HOME/.cargo
 
 before_install:
   - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
-  - export PATH="$PATH:$HOME/.cargo/bin"
+  - export PATH="$PATH:$HOME/.cargo/bin:$HOME/musl/bin"
   - export PKG_CONFIG_PATH="$HOME/libsodium/$LibSodiumVersion/lib/pkgconfig:$PKG_CONFIG_PATH"
   - export PKG_CONFIG_ALLOW_CROSS=1
 

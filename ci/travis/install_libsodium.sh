@@ -7,9 +7,14 @@ if [ -z "$LibSodiumVersion" ]; then
   LibSodiumVersion=1.0.9
 fi
 
-if [ -n "$LibSodiumHost" ]; then
-  HOST="--host=$LibSodiumHost"
-fi
+case $TARGET; in
+  arm*-gnueabihf)
+    HOST="--host=arm-linux-gnueabihf"
+    ;;
+  x86_64-unknown-linux-musl)
+    HOST="--host=x86_64-linux-musl"
+    ;;
+esac
 
 # Check to see if libsodium dir has been retrieved from cache
 LibSodiumInstallPath=$HOME/libsodium/$LibSodiumVersion
