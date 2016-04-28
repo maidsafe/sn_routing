@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.18.3]
+- Depend on latest Crust.
+- Add the 'Stats' prefix to all statistics log messages.
+
 ## [0.18.2]
 - Add a periodic tick event.
 - Increase the timeout for polling bucket groups.
