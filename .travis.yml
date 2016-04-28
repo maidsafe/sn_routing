@@ -17,17 +17,20 @@ language: generic
 
 env:
   global:
-    - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
+    # TODO: use this token
+    # - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
+    - secure: "WiQayBkjssLXvHwBU1xkyLInIVcSnzNdHy7pmHVK0C15iftvqCbgix2cfb8M4C5QziQ/Wh6q/3vPg53eFbcaKrdriA2AeDcR7YPyd7tbITwuJpkITCcZtfcXFQnepGE1fItIA3aom5Y1b3pyJhSTVFUF99sgm5zZgH9Fvq/e8hHU7FsnlWYE7hfdN+Vexmpv1vgsVYKrfpHvc0YmgOOy4/Vn37lvWRN/xrgOtERqjSv7dun2dHr6KFhha3fhB2P3eluVs6E7cMH8rJK7xi3uJP+F1VzDzRKRY+JhsT+9svlVxtwslS6E7OnMywPTocz2h1srQunsPM53jfXRoz+G1WliV/aesy0n1GcuZsPI4730IhbHpZV1/Y8K0YzHxEz5AO9888ReeYTArTJvSUo7ss/prV0DaEU1sW+lgYibG/ZnaTbhuaJSf77/sEWpynruJ8lvy3FZ3KspGPw/CfX3Ld2vPrtJp3m8bumrRhdzbkTOiyZnTBcA6LG/CkueY4Vit9MRlZQxr/FKUJ6BXIKRj3qqDJC3B+GqLS0PWnndQPKqdpIc/dKe8D1xf/cyZPf0jofsnxkg8eiqDK02+4a6DAO2C+ADzMtidbuHeK5H+AgM4763WEDodDoGSEWbOHTEbmzGVE0MUCpzw+6TQrEg+UiqfZExHpyKy0sMVKuYyQU="
     - PROJECT_NAME=safe_vault
     - LibSodiumVersion=1.0.9
 
 matrix:
   include:
-    - os: linux
-      env: >
-        TARGET=x86_64-unknown-linux-gnu
-        PLATFORM=linux-x64
-        FEATURES=use-mock-crust
+    # TODO: uncomment this
+    # - os: linux
+    #   env: >
+    #     TARGET=x86_64-unknown-linux-gnu
+    #     PLATFORM=linux-x64
+    #     FEATURES=use-mock-crust
 
     # TODO: Figure out cross-compilation and uncomment these:
     # - os: linux
@@ -37,19 +40,22 @@ matrix:
     #     FEATURES=use-mock-crust
     #     ONLY_DEPLOY=1
 
-    # - os: linux
-    #   env: >
-    #     TARGET=x86_64-unknown-linux-musl
-    #     PLATFORM=linux-musl-x64
-    #     FEATURES=use-mock-crust
-    #     ONLY_DEPLOY=1
+    - os: linux
+      env: >
+        TARGET=x86_64-unknown-linux-musl
+        PLATFORM=linux-musl-x64
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
 
+    # TODO: uncomment this
     # - os: linux
     #   env: >
     #     TARGET=armv7-unknown-linux-gnueabihf
     #     PLATFORM=armv7
     #     FEATURES=use-mock-crust
     #     ONLY_DEPLOY=1
+    #     LibSodiumHost=arm-linux-gnueabihf
+    #   sudo: required
     #   # Extra packages only for this job
     #   addons:
     #     apt:
@@ -58,27 +64,25 @@ matrix:
     #         - gcc-arm-linux-gnueabihf
     #         - libc6-armhf-cross
     #         - libc6-dev-armhf-cross
-    #         # Transparent emulation
-    #         - qemu-user-static
-    #         - binfmt-support
 
-    - os: linux
-      env: >
-        CHANNEL=nightly
-        FEATURES="clippy use-mock-crust"
-      allow_failures: true
+    # TODO: uncomment these
+    # - os: linux
+    #   env: >
+    #     CHANNEL=nightly
+    #     FEATURES="clippy use-mock-crust"
+    #   allow_failures: true
 
-    - os: osx
-      env: >
-        TARGET=x86_64-apple-darwin
-        PLATFORM=osx-x64
-        FEATURES=use-mock-crust
+    # - os: osx
+    #   env: >
+    #     TARGET=x86_64-apple-darwin
+    #     PLATFORM=osx-x64
+    #     FEATURES=use-mock-crust
 
-    - os: osx
-      env: >
-        CHANNEL=nightly
-        FEATURES="clippy use-mock-crust"
-      allow_failures: true
+    # - os: osx
+    #   env: >
+    #     CHANNEL=nightly
+    #     FEATURES="clippy use-mock-crust"
+    #   allow_failures: true
 
   # Add "allow_failures: true" to rows which are allowed to fail without making
   # the whole build fail. This is useful for nightly builds.
@@ -89,7 +93,9 @@ matrix:
 
 branches:
   only:
-    - master
+    # TODO: change to master once done testing
+    # - master
+    - arm
 
 cache:
   directories:
@@ -125,3 +131,6 @@ deploy:
     # Deploy only on version bump commits (must contain "Version change to x.y.z"
     # in the commit message), and only for stable rust.
     condition: (-n "$PROJECT_VERSION") && (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
+
+    # TODO: remove this
+    all_branches: true
