@@ -17,19 +17,19 @@
 
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
-use sodiumoxide;
 
+#[cfg(feature = "use-mock-crust")]
+use config_handler::Config;
+use error::InternalError;
 use kademlia_routing_table::RoutingTable;
-// use config_handler::Config;
+use personas::maid_manager::MaidManager;
+use personas::data_manager::DataManager;
 #[cfg(feature = "use-mock-crust")]
 use routing::DataIdentifier;
 use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
               RoutingMessage};
+use sodiumoxide;
 use xor_name::XorName;
-
-use error::InternalError;
-use personas::maid_manager::MaidManager;
-use personas::data_manager::DataManager;
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 100 * 1024 * 1024;
@@ -73,6 +73,15 @@ impl Vault {
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
+    }
+
+    /// Allow replacing the default config values for use with the mock-crust tests.  This should
+    /// only be called immediately after constructing a new Vault.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
+        let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
+        self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
+        Ok(())
     }
 
     /// Run the event loop, processing events received from Routing.
