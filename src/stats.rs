@@ -24,7 +24,6 @@ pub struct Stats {
     pub cur_routing_table_size: usize,
     pub cur_client_num: usize,
     pub cumulative_client_num: usize,
-    pub get_request_count: usize,
     pub tunnel_client_pairs: usize,
     pub tunnel_connections: usize,
 
@@ -120,7 +119,7 @@ impl Stats {
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % 100 == 0 {
-            debug!("Sent {} messages in total, {} uncategorised",
+            debug!("Stats - Sent {} messages in total, {} uncategorised",
                    self.msg_total,
                    self.msg_other);
             debug!("Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, ConnectionUnneeded: {}",

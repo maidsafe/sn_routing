@@ -313,7 +313,7 @@ impl Core {
             their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
             tunnels: Default::default(),
-            debug_stats: Default::default(),
+            stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         };
 
@@ -723,7 +723,6 @@ impl Core {
                           -> Result<(), RoutingError> {
         let hop_name;
         if self.state == State::Node {
-            let mut relayed_get_request = false;
             if let Some(info) = self.routing_table.find(|node| node.peer_id == peer_id) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
@@ -732,12 +731,6 @@ impl Core {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
                     try!(self.check_not_get_network_name(hop_msg.content().content()));
-                }
-                if let RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(_, _),
-                    ..
-                }) = *hop_msg.content().content() {
-                    relayed_get_request = true;
                 }
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.proxy_map.get(&peer_id) {
@@ -750,10 +743,6 @@ impl Core {
                 //        peer_id);
                 // self.disconnect_peer(&peer_id);
                 return Err(RoutingError::UnknownConnection(peer_id));
-            }
-            if relayed_get_request {
-                self.stats.get_request_count += 1;
-                debug!("Total get request count: {}", self.stats.get_request_count);
             }
         } else if self.state == State::Client {
             if let Some(pub_id) = self.proxy_map.get(&peer_id) {
