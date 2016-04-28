@@ -61,7 +61,7 @@ pub struct DataManager {
 impl Debug for DataManager {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "Data stored - ImmData {} - SD {} - total {} bytes",
+               "Stats - Data stored - ImmData {} - SD {} - total {} bytes",
                self.immutable_data_count,
                self.structured_data_count,
                self.chunk_store.used_space())

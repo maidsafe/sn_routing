@@ -62,22 +62,6 @@ pub struct Vault {
 
 impl Vault {
     /// Creates a network Vault instance.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn new() -> Result<Self, InternalError> {
-        sodiumoxide::init();
-        let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
-
-        Ok(Vault {
-            maid_manager: MaidManager::new(routing_node.clone()),
-            data_manager: try!(DataManager::new(routing_node.clone(), DEFAULT_MAX_CAPACITY)),
-            routing_node: routing_node.clone(),
-            routing_receiver: routing_receiver,
-        })
-    }
-
-    /// Creates a network Vault instance.
-    #[cfg(not(feature = "use-mock-crust"))]
     pub fn new() -> Result<Self, InternalError> {
         sodiumoxide::init();
         let (routing_sender, routing_receiver) = mpsc::channel();
@@ -156,6 +140,7 @@ impl Vault {
                 ret = Some(true);
                 Ok(())
             }
+            Event::Tick => Ok(()),
         } {
             debug!("Failed to handle event: {:?}", error);
         }
