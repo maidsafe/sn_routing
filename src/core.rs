@@ -241,6 +241,8 @@ pub struct Core {
     tunnels: Tunnels,
     stats: Stats,
     send_filter: LruCache<(u64, PeerId), ()>,
+    /// This is set to `false` as soon as we know we are not the first node.
+    maybe_first_node: bool,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -320,6 +322,7 @@ impl Core {
             tunnels: Default::default(),
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            maybe_first_node: true,
         };
 
         (action_sender, core)
@@ -526,6 +529,7 @@ impl Core {
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
         let _ = self.peer_map.insert(peer_id, Instant::now());
         self.crust_service.stop_bootstrap();
+        self.maybe_first_node = false;
         match self.state {
             State::Disconnected => {
                 if !self.client_restriction {
@@ -549,7 +553,7 @@ impl Core {
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
         let _ = self.peer_map.insert(peer_id, Instant::now());
         trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
-        if self.state == State::Disconnected {
+        if self.state == State::Disconnected && self.maybe_first_node {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
             let new_name = XorName::new(hash::sha512::hash(&self.full_id
