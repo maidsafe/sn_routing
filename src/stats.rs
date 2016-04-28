@@ -122,13 +122,14 @@ impl Stats {
             debug!("Stats - Sent {} messages in total, {} uncategorised",
                    self.msg_total,
                    self.msg_other);
-            debug!("Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, ConnectionUnneeded: {}",
+            debug!("Stats - Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, \
+                    ConnectionUnneeded: {}",
                    self.msg_direct_node_identify,
                    self.msg_direct_heartbeat,
                    self.msg_direct_new_node,
                    self.msg_direct_connection_unneeded);
-            debug!("Requests - Get: {}, Put: {}, Post: {}, Delete: {}, GetCloseGroup: {}, \
-                    Refresh: {}, Connect: {}, ConnectionInfo: {}, GetPublicId: {}, \
+            debug!("Stats - Requests - Get: {}, Put: {}, Post: {}, Delete: {}, GetCloseGroup: \
+                    {}, Refresh: {}, Connect: {}, ConnectionInfo: {}, GetPublicId: {}, \
                     GetPublicIdWithConnectionInfo: {}",
                    self.msg_req_get,
                    self.msg_req_put,
@@ -140,9 +141,10 @@ impl Stats {
                    self.msg_req_connection_info,
                    self.msg_req_get_public_id,
                    self.msg_req_get_public_id_with_connection_info);
-            debug!("Responses - GetSuccess: {}, GetFailure: {}, PutSuccess: {}, PutFailure: {}, \
-                    PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, DeleteFailure: {}, \
-                    GetCloseGroup: {}, GetPublicId: {}, GetPublicIdWithConnectionInfo: {}",
+            debug!("Stats - Responses - GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
+                    PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
+                    DeleteFailure: {}, GetCloseGroup: {}, GetPublicId: {}, \
+                    GetPublicIdWithConnectionInfo: {}",
                    self.msg_rsp_get_success,
                    self.msg_rsp_get_failure,
                    self.msg_rsp_put_success,
