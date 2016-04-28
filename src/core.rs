@@ -75,6 +75,9 @@ const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
 const HEARTBEAT_ATTEMPTS: u64 = 3;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+/// Initial period for requesting bucket close groups of all non-full buckets. This is doubled each
+/// time.
+const REFRESH_BUCKET_GROUPS_SECS: u64 = 120;
 
 /// The state of the connection to the network.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
@@ -214,6 +217,7 @@ pub struct Core {
     state: State,
     routing_table: RoutingTable,
     get_network_name_timer_token: Option<u64>,
+    bucket_refresh_token_and_delay: Option<(u64, u64)>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
     heartbeat_timer_token: u64,
@@ -301,6 +305,7 @@ impl Core {
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info),
             get_network_name_timer_token: None,
+            bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
             heartbeat_timer_token: heartbeat_timer_token,
             proxy_map: HashMap::new(),
@@ -1563,6 +1568,9 @@ impl Core {
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
+                let new_token = self.timer
+                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
@@ -2179,7 +2187,6 @@ impl Core {
             let _ = self.event_sender.send(Event::Disconnected);
         } else if self.heartbeat_timer_token == token {
             if self.state == State::Node {
-                self.request_bucket_close_groups();
                 let _ = self.event_sender.send(Event::Tick);
             }
             let now = Instant::now();
@@ -2203,6 +2210,13 @@ impl Core {
             }
             self.heartbeat_timer_token =
                 self.timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
+            if bucket_token == token {
+                self.request_bucket_close_groups();
+                let new_delay = delay.saturating_mul(2);
+                let new_token = self.timer.schedule(StdDuration::from_secs(new_delay));
+                self.bucket_refresh_token_and_delay = Some((new_token, new_delay));
+            }
         }
     }
 
@@ -2528,6 +2542,9 @@ impl Core {
                     debug!("Lost last routing node connection.");
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
+                let new_token = self.timer
+                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
             }
         };
     }
