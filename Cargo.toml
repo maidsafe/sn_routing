@@ -10,20 +10,19 @@ repository = "https://github.com/maidsafe/routing"
 version = "0.18.1"
 
 [dependencies]
-accumulator = "~0.2.0"
+accumulator = "~0.3.0"
 clippy = {version = "~0.0.63", optional = true}
 crust = "~0.11.0"
 itertools = "~0.4.13"
 kademlia_routing_table = "~0.5.1"
 log = "~0.3.6"
-lru_time_cache = "~0.2.7"
+lru_time_cache = "~0.3.1"
 maidsafe_utilities = "~0.5.3"
-message_filter = "~0.3.1"
+message_filter = "~0.5.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
 sodiumoxide = "~0.0.10"
 term = "~0.4.4"
-time = "~0.1.35"
 xor_name = "~0.1.0"
 
 [dev-dependencies]
