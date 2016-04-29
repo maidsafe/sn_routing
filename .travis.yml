@@ -44,13 +44,17 @@ matrix:
             - gcc-multilib
 
     - os: linux
+      # TODO: change docker image to msafe/vault
       env: >
         TARGET=x86_64-unknown-linux-musl
         PLATFORM=linux-musl-x64
         FEATURES=use-mock-crust
         ONLY_DEPLOY=1
+        DOCKER_IMAGE=madadam/vault
+      sudo: required
+      services:
+        - docker
       # TODO: uncommend once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
-      # sudo: required
       # addons:
       #   apt:
       #     packages:
@@ -100,14 +104,14 @@ branches:
   only:
     # TODO: change to master once done testing
     # - master
-    - more-platforms
+    - docker-alpine
 
 cache:
   directories:
     - $HOME/libsodium/$LibSodiumVersion/$TARGET
     - $HOME/musl
     - $HOME/.cargo
-    - target
+    - $TRAVIS_BUILD_DIR/target
 
 before_install:
   - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
@@ -128,16 +132,30 @@ before_deploy:
   - ./ci/travis/before_deploy.sh
 
 deploy:
-  provider: releases
-  api_key: ${GH_TOKEN}
-  file: ${PROJECT_NAME}-v${PROJECT_VERSION}-${PLATFORM}.tar.gz
-  skip_cleanup: true
-  draft: true
-  tag_name: ${PROJECT_VERSION}
-  on:
-    # Deploy only on version bump commits (must contain "Version change to x.y.z"
-    # in the commit message), and only for stable rust.
-    condition: (-n "$PROJECT_VERSION") && (-n "$PLATFORM") && ("${CHANNEL:-stable}"=stable)
-
-    # TODO: remove this
-    all_branches: true
+  - provider: releases
+    api_key: ${GH_TOKEN}
+    file: ${PROJECT_NAME}-v${PROJECT_VERSION}-${PLATFORM}.tar.gz
+    skip_cleanup: true
+    draft: true
+    tag_name: ${PROJECT_VERSION}
+    on:
+      condition: >
+        (-n "$PROJECT_VERSION") &&
+        (-n "$PLATFORM") &&
+        ("${CHANNEL:-stable}"=stable)
+      # TODO: remove this
+      all_branches: true
+  - provider: script
+    script: ./ci/travis/deploy_docker_image.sh
+    skip_cleanup: true
+    on:
+      condition: >
+        (-n "$DOCKER_IMAGE") &&
+        (-n "$DOCKER_EMAIL") &&
+        (-n "$DOCKER_USERNAME") &&
+        (-n "$DOCKER_PASSWORD") &&
+        (-n "$PROJECT_VERSION") &&
+        (-n "$PLATFORM") &&
+        ("${CHANNEL:-stable}"=stable)
+      # TODO: remove this
+      all_branches: true
