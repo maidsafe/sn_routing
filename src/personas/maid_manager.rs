@@ -117,6 +117,10 @@ impl MaidManager {
         match self.request_cache.remove(msg_id) {
             Some(client_request) => {
                 // Send success response back to client
+                let client_name = utils::client_name(&client_request.src);
+                self.send_refresh(&client_name,
+                                  self.accounts.get(&client_name).expect("Account not found."),
+                                  MessageId::zero());
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = self.routing_node.send_put_success(src, dst, *data_id, *msg_id);
@@ -137,6 +141,10 @@ impl MaidManager {
                     Some(account) => account.delete_data(),
                     None => return Ok(()),
                 }
+                let client_name = utils::client_name(&client_request.src);
+                self.send_refresh(&client_name,
+                                  self.accounts.get(&client_name).expect("Account not found."),
+                                  MessageId::zero());
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<MutationError>(external_error_indicator));
@@ -279,9 +287,6 @@ impl MaidManager {
             try!(self.reply_with_put_failure(request.clone(), msg_id, &error));
             return Err(From::from(error));
         }
-        self.send_refresh(&client_name,
-                          self.accounts.get(&client_name).expect("Account not found."),
-                          MessageId::zero());
         {
             // forwarding data_request to NAE Manager
             let src = request.dst.clone();
