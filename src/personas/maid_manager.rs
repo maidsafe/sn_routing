@@ -117,6 +117,10 @@ impl MaidManager {
         match self.request_cache.remove(msg_id) {
             Some(client_request) => {
                 // Send success response back to client
+                let client_name = utils::client_name(&client_request.src);
+                self.send_refresh(&client_name,
+                                  self.accounts.get(&client_name).expect("Account not found."),
+                                  MessageId::zero());
                 let src = client_request.dst;
                 let dst = client_request.src;
                 let _ = self.routing_node.send_put_success(src, dst, *data_id, *msg_id);
@@ -137,6 +141,10 @@ impl MaidManager {
                     Some(account) => account.delete_data(),
                     None => return Ok(()),
                 }
+                let client_name = utils::client_name(&client_request.src);
+                self.send_refresh(&client_name,
+                                  self.accounts.get(&client_name).expect("Account not found."),
+                                  MessageId::zero());
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<MutationError>(external_error_indicator));
@@ -160,6 +168,7 @@ impl MaidManager {
             }
             Entry::Occupied(mut entry) => {
                 if entry.get().version < account.version {
+                    trace!("Client account {:?}: {:?}", maid_name, account);
                     let _ = entry.insert(account);
                 }
             }
@@ -266,7 +275,11 @@ impl MaidManager {
         let result = self.accounts
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
-                         .and_then(|account| account.put_data());
+                         .and_then(|account| {
+                             let result = account.put_data();
+                             trace!("Client account {:?}: {:?}", client_name, account);
+                             result
+                         });
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
@@ -274,9 +287,6 @@ impl MaidManager {
             try!(self.reply_with_put_failure(request.clone(), msg_id, &error));
             return Err(From::from(error));
         }
-        self.send_refresh(&client_name,
-                          self.accounts.get(&client_name).expect("Account not found."),
-                          MessageId::zero());
         {
             // forwarding data_request to NAE Manager
             let src = request.dst.clone();
