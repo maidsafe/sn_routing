@@ -29,6 +29,13 @@ xor_name = "~0.1.0"
 docopt = "~0.6.80"
 libc = "~0.2.10"
 
+[build-dependencies]
+hyper = "0.8.0"
+
+[features]
+use-mock-crust = []
+generate-diagrams = []
+
 [[example]]
 bench = false
 name = "key_value_store"
@@ -38,6 +45,3 @@ test = false
 bench = false
 name = "ci_test"
 test = false
-
-[features]
-use-mock-crust = []
