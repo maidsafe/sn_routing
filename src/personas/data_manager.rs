@@ -56,6 +56,8 @@ pub struct DataManager {
     routing_node: Rc<RoutingNode>,
     immutable_data_count: u64,
     structured_data_count: u64,
+    ongoing_gets_count: usize,
+    data_holder_items_count: usize,
 }
 
 impl Debug for DataManager {
@@ -80,6 +82,8 @@ impl DataManager {
             routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
+            ongoing_gets_count: 0,
+            data_holder_items_count: 0,
         })
     }
 
@@ -408,9 +412,16 @@ impl DataManager {
                 }
             }
         }
-        debug!("Stats - Expecting {} Get responses. {} entries in data_holders.",
-               self.ongoing_gets.len(),
-               self.data_holders.values().map(HashSet::len).fold(0, Add::add));
+        let new_og_count = self.ongoing_gets.len();
+        let new_dhi_count = self.data_holders.values().map(HashSet::len).fold(0, Add::add);
+        if new_og_count != self.ongoing_gets_count ||
+           new_dhi_count != self.data_holder_items_count {
+            self.ongoing_gets_count = new_og_count;
+            self.data_holder_items_count = new_dhi_count;
+            info!("Stats - Expecting {} Get responses. {} entries in data_holders.",
+                  new_og_count,
+                  new_dhi_count);
+        }
         // TODO: Check whether we can do without a return value.
         Ok(())
     }
