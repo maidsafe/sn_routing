@@ -160,6 +160,7 @@ impl MaidManager {
             }
             Entry::Occupied(mut entry) => {
                 if entry.get().version < account.version {
+                    trace!("Client account {:?}: {:?}", maid_name, account);
                     let _ = entry.insert(account);
                 }
             }
@@ -266,7 +267,11 @@ impl MaidManager {
         let result = self.accounts
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
-                         .and_then(|account| account.put_data());
+                         .and_then(|account| {
+                             let result = account.put_data();
+                             trace!("Client account {:?}: {:?}", client_name, account);
+                             result
+                         });
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
