@@ -59,8 +59,6 @@ use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessag
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
 
-type StdDuration = ::std::time::Duration;
-
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
@@ -284,7 +282,7 @@ impl Core {
 
         let mut timer = Timer::new(action_sender2);
 
-        let heartbeat_timer_token = timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        let heartbeat_timer_token = timer.schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
 
         let core = Core {
             crust_service: crust_service,
@@ -1240,7 +1238,7 @@ impl Core {
     fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
-        let token = self.timer.schedule(StdDuration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
+        let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
         self.state = State::Bootstrapping(peer_id, token);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
@@ -1573,7 +1571,7 @@ impl Core {
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
                 let new_token = self.timer
-                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
                 self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
@@ -1655,7 +1653,7 @@ impl Core {
         self.crust_service.stop_bootstrap();
         self.state = State::Disconnected;
         self.proxy_map.clear();
-        thread::sleep(StdDuration::from_secs(5));
+        thread::sleep(Duration::from_secs(5));
         self.restart_crust_service();
         // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
         //               Currently, ci_test's nodes all connect via the same beacon.
@@ -1750,7 +1748,7 @@ impl Core {
 
     // Constructed by A; From A -> X
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let duration = StdDuration::from_secs(GET_NETWORK_NAME_TIMEOUT_SECS);
+        let duration = Duration::from_secs(GET_NETWORK_NAME_TIMEOUT_SECS);
         self.get_network_name_timer_token = Some(self.timer.schedule(duration));
 
         let request_content = RequestContent::GetNetworkName {
@@ -2212,13 +2210,13 @@ impl Core {
             for peer_id in self.peer_map.keys().cloned().collect_vec() {
                 let _ = self.send_direct_message(&peer_id, DirectMessage::Heartbeat);
             }
-            self.heartbeat_timer_token =
-                self.timer.schedule(StdDuration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+            self.heartbeat_timer_token = self.timer
+                                             .schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
         } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
             if bucket_token == token {
                 self.request_bucket_close_groups();
                 let new_delay = delay.saturating_mul(2);
-                let new_token = self.timer.schedule(StdDuration::from_secs(new_delay));
+                let new_token = self.timer.schedule(Duration::from_secs(new_delay));
                 self.bucket_refresh_token_and_delay = Some((new_token, new_delay));
             }
         }
@@ -2336,7 +2334,7 @@ impl Core {
             }
         }
 
-        error!("Client connection not found for message {:?}.", signed_msg);
+        debug!("Client connection not found for message {:?}.", signed_msg);
         Err(RoutingError::ClientConnectionNotFound)
     }
 
@@ -2547,7 +2545,7 @@ impl Core {
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
                 let new_token = self.timer
-                                    .schedule(StdDuration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
                 self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
             }
         };
