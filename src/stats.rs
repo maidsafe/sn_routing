@@ -17,6 +17,9 @@
 
 use messages::{DirectMessage, RequestContent, ResponseContent, RoutingMessage};
 
+/// The number of messages after which the message statistics should be printed.
+const MSG_LOG_COUNT: usize = 1000;
+
 /// A collection of counters to gather Routing statistics.
 #[derive(Default)]
 pub struct Stats {
@@ -118,44 +121,44 @@ impl Stats {
     /// Increment the total message count, and if divisible by 100, log a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
-        if self.msg_total % 100 == 0 {
-            debug!("Stats - Sent {} messages in total, {} uncategorised",
-                   self.msg_total,
-                   self.msg_other);
-            debug!("Stats - Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, \
+        if self.msg_total % MSG_LOG_COUNT == 0 {
+            info!("Stats - Sent {} messages in total, {} uncategorised",
+                  self.msg_total,
+                  self.msg_other);
+            info!("Stats - Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, \
                     ConnectionUnneeded: {}",
-                   self.msg_direct_node_identify,
-                   self.msg_direct_heartbeat,
-                   self.msg_direct_new_node,
-                   self.msg_direct_connection_unneeded);
-            debug!("Stats - Requests - Get: {}, Put: {}, Post: {}, Delete: {}, GetCloseGroup: \
+                  self.msg_direct_node_identify,
+                  self.msg_direct_heartbeat,
+                  self.msg_direct_new_node,
+                  self.msg_direct_connection_unneeded);
+            info!("Stats - Requests - Get: {}, Put: {}, Post: {}, Delete: {}, GetCloseGroup: \
                     {}, Refresh: {}, Connect: {}, ConnectionInfo: {}, GetPublicId: {}, \
                     GetPublicIdWithConnectionInfo: {}",
-                   self.msg_req_get,
-                   self.msg_req_put,
-                   self.msg_req_post,
-                   self.msg_req_delete,
-                   self.msg_req_get_close_group,
-                   self.msg_req_refresh,
-                   self.msg_req_connect,
-                   self.msg_req_connection_info,
-                   self.msg_req_get_public_id,
-                   self.msg_req_get_public_id_with_connection_info);
-            debug!("Stats - Responses - GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
+                  self.msg_req_get,
+                  self.msg_req_put,
+                  self.msg_req_post,
+                  self.msg_req_delete,
+                  self.msg_req_get_close_group,
+                  self.msg_req_refresh,
+                  self.msg_req_connect,
+                  self.msg_req_connection_info,
+                  self.msg_req_get_public_id,
+                  self.msg_req_get_public_id_with_connection_info);
+            info!("Stats - Responses - GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
                     PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
                     DeleteFailure: {}, GetCloseGroup: {}, GetPublicId: {}, \
                     GetPublicIdWithConnectionInfo: {}",
-                   self.msg_rsp_get_success,
-                   self.msg_rsp_get_failure,
-                   self.msg_rsp_put_success,
-                   self.msg_rsp_put_failure,
-                   self.msg_rsp_post_success,
-                   self.msg_rsp_post_failure,
-                   self.msg_rsp_delete_success,
-                   self.msg_rsp_delete_failure,
-                   self.msg_rsp_get_close_group,
-                   self.msg_rsp_get_public_id,
-                   self.msg_rsp_get_public_id_with_connection_info);
+                  self.msg_rsp_get_success,
+                  self.msg_rsp_get_failure,
+                  self.msg_rsp_put_success,
+                  self.msg_rsp_put_failure,
+                  self.msg_rsp_post_success,
+                  self.msg_rsp_post_failure,
+                  self.msg_rsp_delete_success,
+                  self.msg_rsp_delete_failure,
+                  self.msg_rsp_get_close_group,
+                  self.msg_rsp_get_public_id,
+                  self.msg_rsp_get_public_id_with_connection_info);
         }
     }
 }
