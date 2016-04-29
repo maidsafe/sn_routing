@@ -2324,18 +2324,19 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            if !self.filter_signed_msg(&signed_msg, peer_id) {
-                let hop_msg = try!(HopMessage::new(signed_msg,
-                                                   vec![],
-                                                   self.full_id.signing_private_key()));
-                let message = Message::Hop(hop_msg);
-                let raw_bytes = try!(serialisation::serialise(&message));
-                return self.send_or_drop(peer_id, raw_bytes);
+            if self.filter_signed_msg(&signed_msg, peer_id) {
+                return Ok(());
             }
+            let hop_msg = try!(HopMessage::new(signed_msg,
+                                               vec![],
+                                               self.full_id.signing_private_key()));
+            let message = Message::Hop(hop_msg);
+            let raw_bytes = try!(serialisation::serialise(&message));
+            self.send_or_drop(peer_id, raw_bytes)
+        } else {
+            debug!("Client connection not found for message {:?}.", signed_msg);
+            Err(RoutingError::ClientConnectionNotFound)
         }
-
-        debug!("Client connection not found for message {:?}.", signed_msg);
-        Err(RoutingError::ClientConnectionNotFound)
     }
 
     fn to_hop_bytes(&self,
