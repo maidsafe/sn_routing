@@ -17,8 +17,9 @@
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::DataIdentifier;
-use safe_vault::{Config, Vault};
 use xor_name::XorName;
+use vault::Vault;
+use config_handler::Config;
 
 use super::poll;
 

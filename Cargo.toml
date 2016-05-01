@@ -31,13 +31,14 @@ xor_name = "~0.1.0"
 hyper = {version = "~0.9.1", optional = true}
 
 [features]
+default = ["use-mock-crust"]
 generate-diagrams = ["hyper"]
 use-mock-crust = ["routing/use-mock-crust"]
-
 
 [[test]]
 name = "mock_crust"
 
 [[bin]]
+default-features = false
 name = "safe_vault"
 doc = false

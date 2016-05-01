@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
 use routing::Authority;
 use sodiumoxide::crypto::hash::sha512;
 use xor_name::XorName;
@@ -25,10 +26,4 @@ pub fn client_name(authority: &Authority) -> XorName {
     } else {
         unreachable!("Logic error")
     }
-}
-
-#[cfg(all(test, not(feature = "use-mock-crust")))]
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::{self, Rng};
-    rand::thread_rng().gen_iter().take(size).collect()
 }
