@@ -244,25 +244,18 @@ impl DataManager {
         try!(self.routing_node.send_delete_failure(request.dst.clone(),
                                                    request.src.clone(),
                                                    request.clone(),
-                                                   try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                                                   try!(serialisation::serialise(
+                                                           &MutationError::InvalidSuccessor)),
                                                    *message_id));
         Ok(())
     }
 
     pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
-        let mut unexpected = true;
         if let Some((timestamp, data_id)) = self.ongoing_gets.remove(src) {
-            if data_id == data.identifier() {
-                unexpected = false;
-            } else {
+            if data_id != data.identifier() {
                 let _ = self.ongoing_gets.insert(*src, (timestamp, data_id));
             }
         };
-        if unexpected {
-            warn!("Got unexpected GetSuccess for data {:?}.",
-                  data.identifier());
-            return Err(InternalError::InvalidMessage);
-        }
         for (_, data_ids) in &mut self.data_holders {
             let _ = data_ids.remove(&data.identifier());
         }
