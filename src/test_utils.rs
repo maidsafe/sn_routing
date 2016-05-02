@@ -1,4 +1,4 @@
-// Copyright 2015 MaidSafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,18 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(any(test, feature = "use-mock-crust"))]
+#![cfg(feature = "use-mock-crust")]
 
 use xor_name::XorName;
 use routing::{FullId, StructuredData};
-use rand::random;
-use itertools::Itertools;
+use rand::{self, random, Rng};
 
-
-/// utility to create randome vec u8 of a given size ??
+/// utility to create random vec u8 of a given size
 pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::{self, Rng};
-    rand::thread_rng().gen_iter::<u8>().take(size).collect_vec()
+    rand::thread_rng().gen_iter().take(size).collect()
 }
 
 /// creates random structured data - tests only

@@ -42,8 +42,6 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
-#![cfg_attr(test, allow(unused, unused_extern_crates))]
-
 #[macro_use]
 extern crate log;
 #[macro_use]

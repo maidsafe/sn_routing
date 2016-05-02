@@ -47,7 +47,7 @@ impl TestNode {
             vault: vault,
         }
     }
-    /// Empty the event queueu for this node on the mock network
+    /// Empty the event queue for this node on the mock network
     pub fn poll(&mut self) -> usize {
         let mut result = 0;
 
@@ -110,7 +110,7 @@ pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
     nodes.push(TestNode::new(network, Some(config.clone()), None));
 }
 
-/// remove this node form the mock network
+/// remove this node from the mock network
 pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     drop(node);

@@ -324,9 +324,9 @@ impl MaidManager {
 }
 
 #[cfg(test)]
-mod test_unit {
-
+mod test {
     use super::*;
+
     #[test]
     fn account_ok() {
         let mut account = Account::default();
@@ -362,132 +362,4 @@ mod test_unit {
         assert_eq!(0, account.space_available);
     }
 
-}
-
-#[cfg(test)]
-#[cfg(feature = "use-mock-crust")]
-#[cfg_attr(feature="clippy", allow(indexing_slicing))]
-mod test {
-    use test_utils;
-    use mock_crust_detail::{poll, test_node};
-    use mock_crust_detail::test_client::TestClient;
-    use rand::{random, thread_rng};
-    use rand::distributions::{IndependentSample, Range};
-    use routing::{Data, ImmutableData};
-    use routing::mock_crust::{self, Network};
-    use kademlia_routing_table::GROUP_SIZE;
-    use mock_crust_detail;
-    const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
-
-
-    #[test]
-    fn handle_put_without_account() {
-        let network = Network::new();
-        let node_count = TEST_NET_SIZE;
-        let mut nodes = test_node::create_nodes(&network, node_count, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(config));
-
-        client.ensure_connected(&mut nodes);
-
-        let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
-        client.put(Data::Immutable(immutable_data));
-        let _ = poll::nodes_and_client(&mut nodes, &mut client);
-        let count = nodes.iter()
-                         .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
-                         .count();
-        assert!(0 == count, "put_count {} found with {} nodes", count, count);
-    }
-
-    #[test]
-    fn handle_put_with_account() {
-        let network = Network::new();
-        let node_count = TEST_NET_SIZE;
-        let mut nodes = test_node::create_nodes(&network, node_count, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(config));
-
-        client.ensure_connected(&mut nodes);
-        client.create_account(&mut nodes);
-
-        let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
-        client.put(Data::Immutable(immutable_data.clone()));
-        let _ = poll::nodes_and_client(&mut nodes, &mut client);
-        let count = nodes.iter()
-                         .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
-                         .count();
-        assert!(GROUP_SIZE == count,
-                "clinet account {} found on {} nodes",
-                count,
-                count);
-        let mut stored_immutable = Vec::new();
-        stored_immutable.push(Data::Immutable(immutable_data));
-        mock_crust_detail::check_data(stored_immutable, &nodes);
-    }
-
-    #[test]
-    #[should_panic] // TODO Look at using std::panic::catch_unwind (1.9)
-    fn invalid_put_for_previously_created_account() {
-        let network = Network::new();
-        let node_count = TEST_NET_SIZE;
-        let mut nodes = test_node::create_nodes(&network, node_count, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(config));
-
-        client.ensure_connected(&mut nodes);
-        client.create_account(&mut nodes);
-        client.create_account(&mut nodes);
-    }
-
-    #[test]
-    fn maid_manager_churn() {
-        let network = Network::new();
-        let node_count = 15;
-        let mut nodes = test_node::create_nodes(&network, node_count, None);
-        let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
-        let mut client = TestClient::new(&network, Some(config));
-
-        client.ensure_connected(&mut nodes);
-        client.create_account(&mut nodes);
-
-        let mut rng = thread_rng();
-
-        let mut put_count = 1; // Login packet.
-        let full_id = client.full_id().clone();
-
-        for i in 0..10 {
-            for data in (0..4).map(|_| {
-                Data::Structured(test_utils::random_structured_data(100000, &full_id))
-            }) {
-                client.put(data.clone());
-                put_count += 1;
-            }
-            trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
-            if nodes.len() <= GROUP_SIZE + 2 || random() {
-                let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
-                trace!("Adding node with bootstrap node {}.", index);
-                test_node::add_node(&network, &mut nodes, index);
-            } else {
-                let number = Range::new(1, 4).ind_sample(&mut rng);
-                trace!("Removing {} node(s).", number);
-                for _ in 0..number {
-                    let node_index = Range::new(1, nodes.len()).ind_sample(&mut rng);
-                    test_node::drop_node(&mut nodes, node_index);
-                }
-            }
-            let _ = poll::nodes_and_client(&mut nodes, &mut client);
-            let count = nodes.iter()
-                             .filter(|node| {
-                                 match node.get_maid_manager_put_count(client.name()) {
-                                     None => false,
-                                     Some(count) => count == put_count,
-                                 }
-                             })
-                             .count();
-            assert!(GROUP_SIZE - 3 <= count,
-                    "put_count {} only found with {} nodes",
-                    put_count,
-                    count);
-        }
-    }
 }

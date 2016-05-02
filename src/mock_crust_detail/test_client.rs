@@ -71,7 +71,7 @@ impl TestClient {
         result
     }
 
-    /// check cleint sucessfully connected to mock network
+    /// check client successfully connected to mock network
     pub fn ensure_connected(&mut self, nodes: &mut [TestNode]) {
         let _ = poll::nodes_and_client(nodes, self);
 
@@ -182,7 +182,7 @@ impl TestClient {
     pub fn full_id(&self) -> &FullId {
         &self.full_id
     }
-    /// Return clients network name
+    /// Return client's network name
     pub fn name(&self) -> &XorName {
         &self.name
     }

@@ -36,10 +36,10 @@
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused_allocation, unused_attributes,
+        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_import_braces,
-        unused_qualifications, unused, unused_extern_crates, unused_results)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+        unused_qualifications, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
@@ -57,7 +57,7 @@ extern crate kademlia_routing_table;
 extern crate maidsafe_utilities;
 extern crate chunk_store;
 extern crate config_file_handler;
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(feature = "use-mock-crust")]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;

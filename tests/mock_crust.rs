@@ -22,27 +22,21 @@
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code,
+        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
-// #![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-// unused_qualifications, unused_results)]
-#![allow(dead_code, box_pointers, fat_ptr_transmutes, missing_copy_implementations,
+#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
+        unused_qualifications, unused_results)]
+#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
 #![cfg(feature = "use-mock-crust")]
 #![cfg(test)]
 
-extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate safe_network_common;
 extern crate safe_vault;
-extern crate xor_name;
-
 
 mod test {
     use safe_vault::mock_crust_detail::{poll, test_node};
