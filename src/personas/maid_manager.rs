@@ -364,10 +364,10 @@ mod test_unit {
 
 }
 
-#[cfg(all(test, features = "use-mock-crust"))]
+#[cfg(test)]
+#[cfg(feature = "use-mock-crust")]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
-    use super::*;
     use test_utils;
     use mock_crust_detail::{poll, test_node};
     use mock_crust_detail::test_client::TestClient;
