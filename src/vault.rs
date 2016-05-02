@@ -87,7 +87,7 @@ impl Vault {
 
     /// Non-blocking call to process any events in the event queue, returning true if
     /// any received, otherwise returns false.
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
         let mut result = self.routing_node.poll();
 

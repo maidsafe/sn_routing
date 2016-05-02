@@ -324,7 +324,7 @@ impl MaidManager {
 }
 
 
-#[cfg(test)]
+#[cfg(features = "use-mock-crust")]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
 mod test {
     use super::*;

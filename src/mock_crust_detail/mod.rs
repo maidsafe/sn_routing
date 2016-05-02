@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(any(test, feature = "use-mock-crust"))]
+#![cfg(feature = "use-mock-crust")]
 
 /// Poll events
 pub mod poll;
