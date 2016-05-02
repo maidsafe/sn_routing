@@ -50,14 +50,23 @@ pub struct DataManager {
     /// Accumulates refresh messages and the peers we received them from.
     refresh_accumulator: Accumulator<IdAndVersion, XorName>,
     /// Maps the peers to the set of data chunks that we need and we know they hold.
-    data_holders: HashMap<XorName, HashSet<DataIdentifier>>,
+    data_holders: HashMap<XorName, HashSet<IdAndVersion>>,
     /// Maps the peers to the data chunks we requested from them, and the timestamp of the request.
-    ongoing_gets: HashMap<XorName, (Instant, DataIdentifier)>,
+    ongoing_gets: HashMap<XorName, (Instant, IdAndVersion)>,
     routing_node: Rc<RoutingNode>,
     immutable_data_count: u64,
     structured_data_count: u64,
     ongoing_gets_count: usize,
     data_holder_items_count: usize,
+}
+
+fn id_and_version_of(data: &Data) -> IdAndVersion {
+    (data.identifier(),
+     if let Data::Structured(ref sd) = *data {
+        sd.get_version()
+    } else {
+        0
+    })
 }
 
 impl Debug for DataManager {
@@ -121,14 +130,14 @@ impl DataManager {
                       data: &Data,
                       message_id: &MessageId)
                       -> Result<(), InternalError> {
-        let data_identifier = data.identifier();
+        let (data_id, version) = id_and_version_of(&data);
         let response_src = request.dst.clone();
         let response_dst = request.src.clone();
 
-        if self.chunk_store.has(&data_identifier) {
+        if self.chunk_store.has(&data_id) {
             let error = MutationError::DataExists;
             let external_error_indicator = try!(serialisation::serialise(&error));
-            trace!("DM sending PutFailure for data {:?}", data_identifier);
+            trace!("DM sending PutFailure for data {:?}", data_id);
             let _ = self.routing_node
                         .send_put_failure(response_src,
                                           response_dst,
@@ -151,11 +160,8 @@ impl DataManager {
             return Err(From::from(error));
         }
 
-        if let Err(err) = self.chunk_store
-                              .put(&data_identifier, data) {
-            trace!("DM failed to store {:?} in chunkstore: {:?}",
-                   data_identifier,
-                   err);
+        if let Err(err) = self.chunk_store.put(&data_id, data) {
+            trace!("DM failed to store {:?} in chunkstore: {:?}", data_id, err);
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
@@ -166,22 +172,12 @@ impl DataManager {
                                           *message_id);
             Err(From::from(error))
         } else {
-            let version = match *data {
-                Data::Immutable(_) => {
-                    self.immutable_data_count += 1;
-                    0
-                }
-                Data::Structured(ref sd) => {
-                    self.structured_data_count += 1;
-                    sd.get_version()
-                }
-                _ => unreachable!(),
-            };
-            trace!("DM sending PutSuccess for data {:?}", data_identifier);
+            self.count_added_data(&data_id);
+            trace!("DM sending PutSuccess for data {:?}", data_id);
             info!("{:?}", self);
             let _ = self.routing_node
-                        .send_put_success(response_src, response_dst, data_identifier, *message_id);
-            let data_list = vec![(data_identifier, version)];
+                        .send_put_success(response_src, response_dst, data_id, *message_id);
+            let data_list = vec![(data_id, version)];
             let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
             Ok(())
         }
@@ -251,34 +247,36 @@ impl DataManager {
     }
 
     pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
-        if let Some((timestamp, data_id)) = self.ongoing_gets.remove(src) {
-            if data_id != data.identifier() {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, data_id));
+        let data_idv = id_and_version_of(&data);
+        if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(src) {
+            if expected_idv.0 != data_idv.0 {
+                let _ = self.ongoing_gets.insert(*src, (timestamp, expected_idv));
             }
         };
-        for (_, data_ids) in &mut self.data_holders {
-            let _ = data_ids.remove(&data.identifier());
+        for (_, data_idvs) in &mut self.data_holders {
+            let _ = data_idvs.remove(&data_idv);
         }
         try!(self.send_gets_for_needed_data());
+        let (data_id, version) = data_idv;
         // If we're no longer in the close group, return.
-        if !self.close_to_address(&data.name()) {
+        if !self.close_to_address(&data_id.name()) {
             return Ok(());
         }
         // TODO: Check that the data's hash actually agrees with an accumulated entry.
         let mut got_new_data = true;
         match *data {
-            Data::Structured(ref new_structured_data) => {
+            Data::Structured(_) => {
                 if let Ok(Data::Structured(structured_data)) = self.chunk_store
                                                                    .get(&data.identifier()) {
                     // Make sure we don't 'update' to a lower version.
-                    if structured_data.get_version() >= new_structured_data.get_version() {
+                    if structured_data.get_version() >= version {
                         return Ok(());
                     }
                     got_new_data = false;
                 }
             }
             Data::Immutable(_) => {
-                if self.chunk_store.has(&data.identifier()) {
+                if self.chunk_store.has(&data_id) {
                     return Ok(()); // Immutable data is already there.
                 }
             }
@@ -286,13 +284,9 @@ impl DataManager {
         }
 
         // chunk_store::put() deletes the old data automatically.
-        try!(self.chunk_store.put(&data.identifier(), &data));
+        try!(self.chunk_store.put(&data_id, &data));
         if got_new_data {
-            match *data {
-                Data::Immutable(_) => self.immutable_data_count += 1,
-                Data::Structured(_) => self.structured_data_count += 1,
-                _ => unreachable!(),
-            }
+            self.count_added_data(&data_id);
         }
         info!("{:?}", self);
         Ok(())
@@ -303,11 +297,11 @@ impl DataManager {
                               data_id: &DataIdentifier)
                               -> Result<(), InternalError> {
         let mut unexpected = true;
-        if let Some((timestamp, expected_id)) = self.ongoing_gets.remove(src) {
-            if expected_id == *data_id {
+        if let Some((timestamp, data_idv)) = self.ongoing_gets.remove(src) {
+            if data_idv.0 == *data_id {
                 unexpected = false;
             } else {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, expected_id));
+                let _ = self.ongoing_gets.insert(*src, (timestamp, data_idv));
             }
         };
         if unexpected {
@@ -322,17 +316,18 @@ impl DataManager {
                           serialised_data_list: &[u8])
                           -> Result<(), InternalError> {
         let data_list = try!(serialisation::deserialise::<Vec<IdAndVersion>>(serialised_data_list));
-        for (data_id, version) in data_list {
-            if self.data_holders.values().any(|data_ids| data_ids.contains(&data_id)) {
-                let _ = self.data_holders.entry(*src).or_insert_with(HashSet::new).insert(data_id);
-            } else if let Some(holders) = self.refresh_accumulator.add((data_id, version), *src) {
-                self.refresh_accumulator.delete(&(data_id, version));
-                let data_needed = match data_id {
-                    DataIdentifier::Immutable(..) => !self.chunk_store.has(&data_id),
+        for data_idv in data_list {
+            if self.data_holders.values().any(|data_idvs| data_idvs.contains(&data_idv)) {
+                let _ = self.data_holders.entry(*src).or_insert_with(HashSet::new).insert(data_idv);
+            } else if let Some(holders) = self.refresh_accumulator.add(data_idv, *src) {
+                self.refresh_accumulator.delete(&data_idv);
+                let (ref data_id, ref version) = data_idv;
+                let data_needed = match *data_id {
+                    DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
                     DataIdentifier::Structured(..) => {
-                        match self.chunk_store.get(&data_id) {
+                        match self.chunk_store.get(data_id) {
                             Err(_) => true, // We don't have the data, so we need to retrieve it.
-                            Ok(Data::Structured(sd)) => sd.get_version() < version,
+                            Ok(Data::Structured(sd)) => sd.get_version() < *version,
                             _ => unreachable!(),
                         }
                     }
@@ -348,7 +343,7 @@ impl DataManager {
                     let _ = self.data_holders
                                 .entry(holder)
                                 .or_insert_with(HashSet::new)
-                                .insert(data_id);
+                                .insert(data_idv);
                 }
             }
         }
@@ -358,7 +353,7 @@ impl DataManager {
     fn send_gets_for_needed_data(&mut self) -> Result<(), InternalError> {
         let empty_holders = self.data_holders
                                 .iter()
-                                .filter(|&(_, ref data_ids)| data_ids.is_empty())
+                                .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
                                 .map(|(holder, _)| *holder)
                                 .collect_vec();
         for holder in empty_holders {
@@ -374,27 +369,28 @@ impl DataManager {
         for holder in expired_gets {
             let _ = self.ongoing_gets.remove(&holder);
         }
-        let mut outstanding_data_ids: HashSet<DataIdentifier> = self.ongoing_gets
-                                                                    .values()
-                                                                    .map(|&(_, data_id)| data_id)
-                                                                    .collect();
+        let mut outstanding_data_idvs: HashSet<_> = self.ongoing_gets
+                                                        .values()
+                                                        .map(|&(_, data_idv)| data_idv)
+                                                        .collect();
         let idle_holders = self.data_holders
                                .keys()
                                .filter(|holder| !self.ongoing_gets.contains_key(holder))
                                .cloned()
                                .collect_vec();
         for idle_holder in idle_holders {
-            if let Some(data_ids) = self.data_holders.get_mut(&idle_holder) {
-                if let Some(&data_id) = data_ids.iter()
-                                                .find(|data_id| {
-                                                    !outstanding_data_ids.contains(data_id)
-                                                }) {
-                    let _ = data_ids.remove(&data_id);
-                    if let Ok(Some(group)) = self.routing_node.close_group(data_id.name()) {
+            if let Some(data_idvs) = self.data_holders.get_mut(&idle_holder) {
+                if let Some(&data_idv) = data_idvs.iter()
+                                                  .find(|data_idv| {
+                                                      !outstanding_data_idvs.contains(data_idv)
+                                                  }) {
+                    let _ = data_idvs.remove(&data_idv);
+                    if let Ok(Some(group)) = self.routing_node.close_group(data_idv.0.name()) {
                         if group.contains(&idle_holder) {
                             let now = Instant::now();
-                            let _ = self.ongoing_gets.insert(idle_holder, (now, data_id));
-                            let _ = outstanding_data_ids.insert(data_id);
+                            let _ = self.ongoing_gets.insert(idle_holder, (now, data_idv));
+                            let _ = outstanding_data_idvs.insert(data_idv);
+                            let (data_id, _) = data_idv;
                             let src = Authority::ManagedNode(try!(self.routing_node.name()));
                             let dst = Authority::ManagedNode(idle_holder);
                             let msg_id = MessageId::new();
@@ -429,34 +425,27 @@ impl DataManager {
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
         self.prune_ongoing_gets(routing_table);
+        let data_idvs = self.chunk_store
+                            .keys()
+                            .into_iter()
+                            .filter_map(|data_id| self.to_id_and_version(data_id))
+                            .chain(self.data_holders
+                                       .values()
+                                       .flat_map(|idvs| idvs.iter().cloned()))
+                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                            .collect::<HashSet<_>>();
         // Only retain data for which we're still in the close group.
-        let data_ids = self.chunk_store.keys();
         let mut data_list = Vec::new();
-        for data_id in data_ids {
-            match routing_table.other_close_nodes(&data_id.name()) {
+        for data_idv in data_idvs {
+            match routing_table.other_close_nodes(&data_idv.0.name()) {
                 None => {
-                    match data_id {
-                        DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
-                        DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
-                        _ => unreachable!(),
-                    }
-                    trace!("No longer a DM for {:?}", data_id);
-                    let _ = self.chunk_store.delete(&data_id);
+                    self.count_removed_data(&data_idv.0);
+                    trace!("No longer a DM for {:?}", data_idv.0);
+                    let _ = self.chunk_store.delete(&data_idv.0);
                 }
                 Some(close_group) => {
-                    if !close_group.into_iter().any(|node_info| node_info.name() == node_name) {
-                        continue;
-                    }
-                    match data_id {
-                        DataIdentifier::Immutable(_) => data_list.push((data_id, 0)),
-                        DataIdentifier::Structured(_, _) => {
-                            if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
-                                data_list.push((data_id, data.get_version()));
-                            } else {
-                                error!("Failed to get {:?} from chunk store.", data_id);
-                            };
-                        }
-                        _ => unreachable!(),
+                    if close_group.into_iter().any(|node_info| node_info.name() == node_name) {
+                        data_list.push(data_idv);
                     }
                 }
             }
@@ -473,40 +462,32 @@ impl DataManager {
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
         self.prune_ongoing_gets(routing_table);
-        let data_ids = self.chunk_store.keys();
+        let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
+        let data_idvs = self.chunk_store
+                            .keys()
+                            .into_iter()
+                            .filter_map(|data_id| self.to_id_and_version(data_id))
+                            .chain(holder_idvs)
+                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                            .collect::<HashSet<_>>();
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
-        for data_id in data_ids {
-            match routing_table.other_close_nodes(&data_id.name()) {
+        for data_idv in data_idvs {
+            match routing_table.other_close_nodes(&data_idv.0.name()) {
                 None => {
                     error!("Moved out of close group of {:?} in a NodeLost event!",
                            node_name);
-                    continue;
                 }
                 Some(close_group) => {
                     // If no new node joined the group due to this event, continue:
                     // If the group has fewer than GROUP_SIZE elements, the lost node was not
                     // replaced at all. Otherwise, if the group's last node is closer to the data
                     // than the lost node, the lost node was not in the group in the first place.
-                    let outer_node = if let Some(node) = close_group.get(GROUP_SIZE - 2) {
-                        *node.name()
-                    } else {
-                        continue;
-                    };
-                    if !xor_name::closer_to_target(node_name, &outer_node, &data_id.name()) {
-                        continue;
-                    }
-                    data_lists.entry(outer_node).or_insert_with(Vec::new).push(match data_id {
-                        DataIdentifier::Immutable(_) => (data_id, 0),
-                        DataIdentifier::Structured(_, _) => {
-                            if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
-                                (data_id, data.get_version())
-                            } else {
-                                error!("Failed to get {:?} from chunk store.", data_id);
-                                continue;
-                            }
+                    if let Some(node) = close_group.get(GROUP_SIZE - 2) {
+                        let outer_node = *node.name();
+                        if xor_name::closer_to_target(node_name, &outer_node, &data_idv.0.name()) {
+                            data_lists.entry(outer_node).or_insert_with(Vec::new).push(data_idv);
                         }
-                        _ => unreachable!(),
-                    });
+                    }
                 }
             }
         }
@@ -529,7 +510,7 @@ impl DataManager {
     fn prune_ongoing_gets(&mut self, routing_table: &RoutingTable<NodeInfo>) {
         let lost_gets = self.ongoing_gets
                             .iter()
-                            .filter(|&(ref holder, &(_, ref data_id))| {
+                            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
                                 routing_table.other_close_nodes(&data_id.name())
                                              .map_or(true, |group| {
                                                  !group.iter()
@@ -544,6 +525,38 @@ impl DataManager {
                 let _ = self.ongoing_gets.remove(&holder);
             }
             let _ = self.send_gets_for_needed_data();
+        }
+    }
+
+    /// Returns the `IdAndVersion` for the given data identifier, or `None` if not stored.
+    fn to_id_and_version(&self, data_id: DataIdentifier) -> Option<IdAndVersion> {
+        match data_id {
+            DataIdentifier::Immutable(_) => Some((data_id, 0)),
+            DataIdentifier::Structured(_, _) => {
+                if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
+                    Some((data_id, data.get_version()))
+                } else {
+                    error!("Failed to get {:?} from chunk store.", data_id);
+                    None
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn count_added_data(&mut self, data_id: &DataIdentifier) {
+        match *data_id {
+            DataIdentifier::Immutable(_) => self.immutable_data_count += 1,
+            DataIdentifier::Structured(_, _) => self.structured_data_count += 1,
+            _ => unreachable!(),
+        }
+    }
+
+    fn count_removed_data(&mut self, data_id: &DataIdentifier) {
+        match *data_id {
+            DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
+            DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
+            _ => unreachable!(),
         }
     }
 
