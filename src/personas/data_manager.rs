@@ -577,7 +577,7 @@ impl DataManager {
 
 
 
-#[cfg(any(test, features = "use-mock-crust"))]
+#[cfg(all(test, features = "use-mock-crust"))]
 mod test {
     use test_utils;
     use config_handler::Config;
