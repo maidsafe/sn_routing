@@ -39,7 +39,7 @@ const ACCUMULATOR_QUORUM: usize = GROUP_SIZE / 2 + 1;
 /// The timeout for accumulating refresh messages.
 const ACCUMULATOR_TIMEOUT_SECS: u64 = 180;
 /// The timeout for retrieving data chunks from individual peers.
-const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 60;
+const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 20;
 
 /// Specification of a particular version of a data chunk. For immutable data, the `u64` is always
 /// 0; for structured data, it specifies the version.
@@ -219,7 +219,6 @@ impl DataManager {
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
-    // This function is only for SD
     pub fn handle_delete(&mut self,
                          request: &RequestMessage,
                          new_data: &StructuredData,
@@ -527,7 +526,7 @@ impl DataManager {
         let _ = self.send_gets_for_needed_data();
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.chunk_store.keys()
     }
@@ -578,7 +577,6 @@ impl DataManager {
 
 
 #[cfg(test)]
-#[cfg(feature="use-mock-crust")]
 mod test {
     use test_utils;
     use config_handler::Config;
@@ -594,6 +592,7 @@ mod test {
     const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
 
 
+    #[cfg(feature = "use-mock-crust")]
     #[test]
     fn immutable_data_churn() {
         let network = Network::new();
@@ -810,6 +809,7 @@ mod test {
         }
         panic!("Failed to put again after adding nodes.");
     }
+
     #[test]
     fn handle_put_get_normal_flow() {}
 
@@ -823,31 +823,10 @@ mod test {
     fn handle_delete() {}
 
     #[test]
-    fn handle_churn() {}
-
-    #[test]
-    fn handle_refresh() {}
-}
-
-
-#[cfg(test)]
-#[cfg_attr(feature="clippy", allow(indexing_slicing))]
-#[cfg(not(feature="use-mock-crust"))]
-mod test {
-
-    #[test]
-    fn handle_put() {}
-
-    #[test]
     fn get_non_existing_data() {}
 
     #[test]
     fn get_existing_data() {}
 
-    #[test]
-    fn handle_churn() {}
-
-    #[test]
-    fn handle_refresh() {}
 
 }

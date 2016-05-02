@@ -45,7 +45,7 @@ extern crate xor_name;
 
 
 mod test {
-    use safe_vault::mock_crust_detail::{self, poll, test_node};
+    use safe_vault::mock_crust_detail::{poll, test_node};
     use safe_vault::mock_crust_detail::test_client::TestClient;
     use safe_vault::test_utils;
     use rand::{random, thread_rng};
@@ -73,7 +73,7 @@ mod test {
 
         loop {
             let data = if random() {
-                let content = mock_crust_detail::generate_random_vec_u8(100);
+                let content = test_utils::generate_random_vec_u8(100);
                 Data::Immutable(ImmutableData::new(content))
             } else {
                 Data::Structured(test_utils::random_structured_data(100000, &full_id))
@@ -96,7 +96,7 @@ mod test {
             trace!("Adding node with bootstrap node {}.", index);
             test_node::add_node(&network, &mut nodes, index);
             let _ = poll::nodes_and_client(&mut nodes, &mut client);
-            let content = mock_crust_detail::generate_random_vec_u8(100);
+            let content = test_utils::generate_random_vec_u8(100);
             let data = Data::Immutable(ImmutableData::new(content));
             let data_id = data.identifier();
             match client.put_and_verify(data, &mut nodes) {

@@ -317,7 +317,7 @@ impl MaidManager {
         Ok(())
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.accounts.get(client_name).map(|account| account.data_stored)
     }
@@ -326,7 +326,6 @@ impl MaidManager {
 
 #[cfg(test)]
 #[cfg_attr(feature="clippy", allow(indexing_slicing))]
-#[cfg(feature="use-mock-crust")]
 mod test {
     use super::*;
     use test_utils;

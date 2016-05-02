@@ -9,6 +9,8 @@ name = "safe_vault"
 readme = "README.md"
 repository = "https://github.com/maidsafe/safe_vault"
 version = "0.7.0"
+default-features = "false"
+
 
 [dependencies]
 accumulator = "~0.3.0"
@@ -27,18 +29,23 @@ safe_network_common = "~0.1.1"
 sodiumoxide = "~0.0.10"
 xor_name = "~0.1.0"
 
+
 [build-dependencies]
 hyper = {version = "~0.9.1", optional = true}
+
+#[dev-dependencies.routing]
+#version = "*"
+#features = ["use-mock-crust"]
 
 [features]
 default = ["use-mock-crust"]
 generate-diagrams = ["hyper"]
 use-mock-crust = ["routing/use-mock-crust"]
 
+
 [[test]]
 name = "mock_crust"
 
 [[bin]]
-default-features = false
 name = "safe_vault"
 doc = false

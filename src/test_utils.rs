@@ -1,4 +1,4 @@
-// Copyright 2016 MaidSafe.net limited.
+// Copyright 2015 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -15,42 +15,28 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::test_client::TestClient;
-use super::test_node::TestNode;
+#![cfg(any(test, feature = "use-mock-crust"))]
 
-/// Empty event queue of nodes provided
-pub fn nodes(nodes: &mut [TestNode]) {
-    loop {
-        let mut next = false;
+use xor_name::XorName;
+use routing::{FullId, StructuredData};
+use rand::random;
+use itertools::Itertools;
 
-        for node in nodes.iter_mut() {
-            if node.poll() > 0 {
-                next = true;
-                break;
-            }
-        }
 
-        if !next {
-            break;
-        }
-    }
+/// utility to create randome vec u8 of a given size ??
+pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
+    use rand::{self, Rng};
+    rand::thread_rng().gen_iter::<u8>().take(size).collect_vec()
 }
 
-/// Empty event queue of nodes and clients provided
-pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
-    let mut count: usize = 0;
-    loop {
-        let prev_count = count;
-
-        for node in nodes.iter_mut() {
-            count += node.poll();
-        }
-
-        count += client.poll();
-
-        if prev_count == count {
-            break;
-        }
-    }
-    count
+/// creates random structured data - tests only
+pub fn random_structured_data(type_tag: u64, full_id: &FullId) -> StructuredData {
+    StructuredData::new(type_tag,
+                        random::<XorName>(),
+                        0,
+                        generate_random_vec_u8(10),
+                        vec![full_id.public_id().signing_public_key().clone()],
+                        vec![],
+                        Some(full_id.signing_private_key()))
+        .expect("Cannot create structured data for test")
 }

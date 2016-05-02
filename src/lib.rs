@@ -36,16 +36,16 @@
 #![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
+        unknown_lints, unsafe_code, unused_allocation, unused_attributes,
         unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
+#![warn(trivial_casts, trivial_numeric_casts, unused_import_braces,
+        unused_qualifications, unused, unused_extern_crates, unused_results)]
 #![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
          missing_debug_implementations, variant_size_differences)]
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", deny(clippy))]
 #![cfg_attr(feature="clippy", allow(use_debug, similar_names))] // "mpid" and "maid" are similar.
 
 extern crate accumulator;
@@ -67,14 +67,14 @@ extern crate xor_name;
 
 mod config_handler;
 mod error;
-#[cfg(any(test, feature = "use-mock-crust"))]
 /// For integration tests only
+#[cfg(any(test, feature = "use-mock-crust"))]
 pub mod test_utils;
 mod personas;
 mod utils;
 mod vault;
-#[cfg(any(test, feature = "use-mock-crust"))]
 /// For integration tests only
+#[cfg(any(test, feature = "use-mock-crust"))]
 pub mod mock_crust_detail;
 pub use vault::Vault;
 pub use config_handler::Config;

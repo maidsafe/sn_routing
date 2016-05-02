@@ -42,7 +42,7 @@
 #![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
-#![cfg_attr(feature = "use-mock-crust", allow(unused, unused_extern_crates))]
+#![cfg_attr(test, allow(unused, unused_extern_crates))]
 
 #[macro_use]
 extern crate log;
@@ -76,7 +76,6 @@ struct Args {
 }
 
 /// Runs a SAFE Network vault.
-#[cfg(not(feature = "use-mock-crust"))]
 #[cfg_attr(feature="clippy", allow(print_stdout))]
 pub fn main() {
     let args: Args = Docopt::new(USAGE)
@@ -103,9 +102,4 @@ pub fn main() {
             break;
         }
     }
-}
-
-#[cfg(feature = "use-mock-crust")]
-fn main() {
-    println!("Error: mock crust not supported");
 }
