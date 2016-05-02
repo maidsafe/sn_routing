@@ -45,7 +45,7 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", deny(clippy))]
 #![cfg_attr(feature="clippy", allow(use_debug, similar_names))] // "mpid" and "maid" are similar.
 
 extern crate accumulator;
@@ -57,7 +57,7 @@ extern crate kademlia_routing_table;
 extern crate maidsafe_utilities;
 extern crate chunk_store;
 extern crate config_file_handler;
-#[cfg(all(test, not(feature = "use-mock-crust")))]
+#[cfg(feature = "use-mock-crust")]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
@@ -67,11 +67,14 @@ extern crate xor_name;
 
 mod config_handler;
 mod error;
-#[cfg(all(test, not(feature = "use-mock-crust")))]
-mod mock_routing;
+/// For integration tests only
+#[cfg(any(test, feature = "use-mock-crust"))]
+pub mod test_utils;
 mod personas;
 mod utils;
 mod vault;
-
+/// For integration tests only
+#[cfg(any(test, feature = "use-mock-crust"))]
+pub mod mock_crust_detail;
 pub use vault::Vault;
 pub use config_handler::Config;

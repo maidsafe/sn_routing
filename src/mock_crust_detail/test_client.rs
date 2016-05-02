@@ -28,6 +28,7 @@ use xor_name::XorName;
 use super::test_node::TestNode;
 use super::poll;
 
+/// Client for use in tests only
 pub struct TestClient {
     _handle: ServiceHandle,
     routing_client: routing::Client,
@@ -38,6 +39,7 @@ pub struct TestClient {
 }
 
 impl TestClient {
+    /// Create a test client for the mock network
     pub fn new(network: &Network, config: Option<Config>) -> Self {
         let (routing_tx, routing_rx) = mpsc::channel();
 
@@ -58,7 +60,7 @@ impl TestClient {
             name: *public_id.name(),
         }
     }
-
+    /// empty this client event loop
     pub fn poll(&mut self) -> usize {
         let mut result = 0;
 
@@ -69,6 +71,7 @@ impl TestClient {
         result
     }
 
+    /// check client successfully connected to mock network
     pub fn ensure_connected(&mut self, nodes: &mut [TestNode]) {
         let _ = poll::nodes_and_client(nodes, self);
 
@@ -78,6 +81,7 @@ impl TestClient {
         }
     }
 
+    /// create an account and store it
     pub fn create_account(&mut self, nodes: &mut [TestNode]) {
         let account = unwrap_result!(StructuredData::new(0,
                                                          random(),
@@ -94,6 +98,7 @@ impl TestClient {
         while let Ok(_) = self.routing_rx.try_recv() {}
     }
 
+    /// Try and get data from nodes provided
     pub fn get(&mut self, request: DataIdentifier, nodes: &mut [TestNode]) -> Data {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
@@ -118,25 +123,25 @@ impl TestClient {
             }
         }
     }
-
+    /// Post request
     pub fn post(&mut self, data: Data) {
         let dst = Authority::NaeManager(data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_post_request(dst, data, request_message_id));
     }
-
+    /// Put request
     pub fn put(&mut self, data: Data) {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
     }
-
+    /// Delete request
     pub fn delete(&mut self, data: Data) {
         let dst = Authority::NaeManager(data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_delete_request(dst, data, request_message_id));
     }
-
+    /// Put data and read from mock network
     pub fn put_and_verify(&mut self,
                           data: Data,
                           nodes: &mut [TestNode])
@@ -173,11 +178,11 @@ impl TestClient {
             Err(_) => Err(None),
         }
     }
-
+    /// Return a full id for this client
     pub fn full_id(&self) -> &FullId {
         &self.full_id
     }
-
+    /// Return client's network name
     pub fn name(&self) -> &XorName {
         &self.name
     }

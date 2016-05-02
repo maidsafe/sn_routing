@@ -17,17 +17,21 @@
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::DataIdentifier;
-use safe_vault::{Config, Vault};
 use xor_name::XorName;
+use vault::Vault;
+use config_handler::Config;
 
 use super::poll;
 
+
+/// Test node for mock network
 pub struct TestNode {
     handle: ServiceHandle,
     vault: Vault,
 }
 
 impl TestNode {
+    /// create a test node for mock network
     pub fn new(network: &Network,
                crust_config: Option<mock_crust::Config>,
                config: Option<Config>)
@@ -43,7 +47,7 @@ impl TestNode {
             vault: vault,
         }
     }
-
+    /// Empty the event queue for this node on the mock network
     pub fn poll(&mut self) -> usize {
         let mut result = 0;
 
@@ -53,20 +57,21 @@ impl TestNode {
 
         result
     }
-
+    /// Return endpoint for this node
     pub fn endpoint(&self) -> Endpoint {
         self.handle.endpoint()
     }
-
+    /// return names of all data stored on mock network
     pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.vault.get_stored_names()
     }
-
+    /// return the number of account packets stored for the given client
     pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.vault.get_maid_manager_put_count(client_name)
     }
 }
 
+/// Create nodes for mock network
 pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
@@ -85,6 +90,7 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
     nodes
 }
 
+/// Add several nodes at once
 pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize) {
     let mut config = None;
 
@@ -98,11 +104,13 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
     }
 }
 
+/// Add node to the mock network
 pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
     let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
     nodes.push(TestNode::new(network, Some(config.clone()), None));
 }
 
+/// remove this node from the mock network
 pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
     drop(node);

@@ -56,7 +56,7 @@ impl Default for Account {
 }
 
 impl Account {
-    fn put_data(&mut self) -> Result<(), MutationError> {
+    fn add_entry(&mut self) -> Result<(), MutationError> {
         if self.space_available < 1 {
             return Err(MutationError::LowBalance);
         }
@@ -66,7 +66,7 @@ impl Account {
         Ok(())
     }
 
-    fn delete_data(&mut self) {
+    fn remove_entry(&mut self) {
         self.data_stored -= 1;
         self.space_available += 1;
         self.version += 1;
@@ -138,7 +138,7 @@ impl MaidManager {
             Some(client_request) => {
                 // Refund account
                 match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
-                    Some(account) => account.delete_data(),
+                    Some(account) => account.remove_entry(),
                     None => return Ok(()),
                 }
                 let client_name = utils::client_name(&client_request.src);
@@ -276,7 +276,7 @@ impl MaidManager {
                          .get_mut(&client_name)
                          .ok_or(MutationError::NoSuchAccount)
                          .and_then(|account| {
-                             let result = account.put_data();
+                             let result = account.add_entry();
                              trace!("Client account {:?}: {:?}", client_name, account);
                              result
                          });
@@ -317,35 +317,15 @@ impl MaidManager {
         Ok(())
     }
 
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.accounts.get(client_name).map(|account| account.data_stored)
     }
 }
 
-
 #[cfg(test)]
-#[cfg_attr(feature="clippy", allow(indexing_slicing))]
-#[cfg(not(feature="use-mock-crust"))]
 mod test {
     use super::*;
-    use super::Refresh;
-    use error::InternalError;
-    use safe_network_common::client_errors::MutationError;
-    use kademlia_routing_table::GROUP_SIZE;
-    use maidsafe_utilities::serialisation;
-    use rand::{thread_rng, random};
-    use rand::distributions::{IndependentSample, Range};
-    use routing::{Authority, Data, ImmutableData, MessageId, RequestContent, RequestMessage,
-                  ResponseContent, StructuredData};
-    use sodiumoxide::crypto::hash::sha512;
-    use sodiumoxide::crypto::sign;
-    use std::rc::Rc;
-    use std::sync::mpsc;
-    use utils;
-    use utils::generate_random_vec_u8;
-    use vault::RoutingNode;
-    use xor_name::XorName;
 
     #[test]
     fn account_ok() {
@@ -354,13 +334,13 @@ mod test {
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
         for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
-            assert!(account.put_data().is_ok());
+            assert!(account.add_entry().is_ok());
         }
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
 
         for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
-            account.delete_data();
+            account.remove_entry();
         }
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
@@ -373,537 +353,13 @@ mod test {
         assert_eq!(0, account.data_stored);
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.space_available);
         for _ in 0..super::DEFAULT_ACCOUNT_SIZE {
-            assert!(account.put_data().is_ok());
+            assert!(account.add_entry().is_ok());
         }
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
-        assert!(account.put_data().is_err());
+        assert!(account.add_entry().is_err());
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
     }
 
-
-    struct Environment {
-        our_authority: Authority,
-        client: Authority,
-        routing: Rc<RoutingNode>,
-        maid_manager: MaidManager,
-    }
-
-    fn environment_setup() -> Environment {
-        let routing = unwrap_result!(RoutingNode::new(mpsc::channel().0, false));
-        let from = random::<XorName>();
-        let client;
-
-        loop {
-            let keys = sign::gen_keypair();
-            let name = XorName(sha512::hash(&keys.0[..]).0);
-            if let Ok(Some(_)) = routing.close_group(name) {
-                client = Authority::Client {
-                    client_key: keys.0,
-                    peer_id: random(),
-                    proxy_node_name: from,
-                };
-                break;
-            }
-        }
-
-        let routing = Rc::new(routing);
-
-        Environment {
-            our_authority: Authority::ClientManager(utils::client_name(&client)),
-            client: client,
-            routing: routing.clone(),
-            maid_manager: MaidManager::new(routing.clone()),
-        }
-    }
-
-    fn create_account(env: &mut Environment) {
-        if let Authority::Client { client_key, .. } = env.client {
-            let identifier = random::<XorName>();
-            let sd = unwrap_result!(StructuredData::new(0,
-                                                        identifier,
-                                                        0,
-                                                        vec![],
-                                                        vec![client_key],
-                                                        vec![],
-                                                        None));
-            let msg_id = MessageId::new();
-            let data = Data::Structured(sd);
-            let request = RequestMessage {
-                src: env.client.clone(),
-                dst: env.our_authority.clone(),
-                content: RequestContent::Put(data.clone(), msg_id),
-            };
-
-            assert!(env.maid_manager
-                       .handle_put(&request, &data, &msg_id)
-                       .is_ok());
-        };
-    }
-
-    fn get_close_node(env: &Environment) -> XorName {
-        let mut name = random::<XorName>();
-
-        loop {
-            if let Ok(Some(_)) = env.routing.close_group(name) {
-                return name;
-            } else {
-                name = random::<XorName>();
-            }
-        }
-    }
-
-    fn lose_close_node(env: &Environment) -> XorName {
-        let our_name = if let Ok(ref name) = env.routing.name() {
-            *name
-        } else {
-            unreachable!()
-        };
-        if let Ok(Some(close_group)) = env.routing.close_group(*env.our_authority.name()) {
-            let mut rng = thread_rng();
-            let range = Range::new(0, close_group.len());
-            assert_eq!(close_group.len(), GROUP_SIZE);
-            loop {
-                let index = range.ind_sample(&mut rng);
-                if close_group[index] != our_name {
-                    return close_group[index];
-                }
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
-
-    #[test]
-    fn handle_put_without_account() {
-        let mut env = environment_setup();
-
-        // Try with valid ImmutableData before account is created
-        let immutable_data = ImmutableData::new(generate_random_vec_u8(1024));
-        let msg_id = MessageId::new();
-        let data = Data::Immutable(immutable_data);
-        let valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(data.clone(), msg_id),
-        };
-
-        if let Err(InternalError::ClientMutation(MutationError::NoSuchAccount)) =
-               env.maid_manager.handle_put(&valid_request, &data, &msg_id) {
-        } else {
-            unreachable!()
-        }
-
-        let put_requests = env.routing.put_requests_given();
-
-        assert!(put_requests.is_empty());
-
-        let put_failures = env.routing.put_failures_given();
-
-        assert_eq!(put_failures.len(), 1);
-        assert_eq!(put_failures[0].src, env.our_authority);
-        assert_eq!(put_failures[0].dst, env.client);
-
-        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
-            assert_eq!(*id, msg_id);
-            assert_eq!(*request, valid_request);
-            if let MutationError::NoSuchAccount =
-                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {
-            } else {
-                unreachable!()
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[test]
-    fn handle_put_with_account() {
-        let mut env = environment_setup();
-        create_account(&mut env);
-
-        let immutable_data = ImmutableData::new(generate_random_vec_u8(1024));
-        let msg_id = MessageId::new();
-        let data = Data::Immutable(immutable_data.clone());
-        let valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(data.clone(), msg_id),
-        };
-
-        assert!(env.maid_manager
-                   .handle_put(&valid_request, &data, &msg_id)
-                   .is_ok());
-
-        let put_failures = env.routing.put_failures_given();
-        assert!(put_failures.is_empty());
-
-        let put_requests = env.routing.put_requests_given();
-
-        // put_requests[0] - account creation.
-        assert_eq!(put_requests.len(), 2);
-        assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst,
-                   Authority::NaeManager(immutable_data.name()));
-
-        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
-            assert_eq!(*data, immutable_data);
-            assert_eq!(*id, msg_id);
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[test]
-    fn invalid_put_for_previously_created_account() {
-        let mut env = environment_setup();
-        create_account(&mut env);
-
-        let immutable_data = ImmutableData::new(generate_random_vec_u8(1024));
-        let mut msg_id = MessageId::new();
-        let data = Data::Immutable(immutable_data.clone());
-        let mut valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(data.clone(), msg_id),
-        };
-
-        assert!(env.maid_manager
-                   .handle_put(&valid_request, &data, &msg_id)
-                   .is_ok());
-
-        let mut put_failures = env.routing.put_failures_given();
-        assert!(put_failures.is_empty());
-
-        let put_requests = env.routing.put_requests_given();
-
-        assert_eq!(put_requests.len(), 2);
-        assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst,
-                   Authority::NaeManager(immutable_data.name()));
-
-        if let RequestContent::Put(Data::Immutable(ref data), ref id) = put_requests[1].content {
-            assert_eq!(*data, immutable_data);
-            assert_eq!(*id, msg_id);
-        } else {
-            unreachable!()
-        }
-
-        let client_key = if let Authority::Client { client_key, .. } = env.client {
-            client_key
-        } else {
-            unreachable!()
-        };
-
-        let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(0,
-                                                    identifier,
-                                                    0,
-                                                    vec![],
-                                                    vec![client_key],
-                                                    vec![],
-                                                    None));
-        msg_id = MessageId::new();
-        let sd_data = Data::Structured(sd);
-        valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(sd_data.clone(), msg_id),
-        };
-
-        if let Err(InternalError::ClientMutation(MutationError::AccountExists)) =
-               env.maid_manager
-                  .handle_put(&valid_request, &sd_data, &msg_id) {
-        } else {
-            unreachable!()
-        }
-
-        put_failures = env.routing.put_failures_given();
-
-        assert_eq!(put_failures.len(), 1);
-        assert_eq!(put_failures[0].src, env.our_authority);
-        assert_eq!(put_failures[0].dst, env.client);
-
-        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
-            assert_eq!(*id, msg_id);
-            assert_eq!(*request, valid_request);
-            if let MutationError::AccountExists =
-                   unwrap_result!(serialisation::deserialise(external_error_indicator)) {} else {
-                unreachable!()
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[test]
-    fn handle_put_success() {
-        let mut env = environment_setup();
-        create_account(&mut env);
-
-        let immutable_data = ImmutableData::new(generate_random_vec_u8(1024));
-        let mut msg_id = MessageId::new();
-        let data = Data::Immutable(immutable_data.clone());
-        let valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(data.clone(), msg_id),
-        };
-
-        assert!(env.maid_manager
-                   .handle_put(&valid_request, &data, &msg_id)
-                   .is_ok());
-
-        let put_failures = env.routing.put_failures_given();
-        assert!(put_failures.is_empty());
-
-        let put_requests = env.routing.put_requests_given();
-
-        assert_eq!(put_requests.len(), 2);
-        assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst,
-                   Authority::NaeManager(immutable_data.name()));
-
-        let data = if let RequestContent::Put(Data::Immutable(ref data), ref id) =
-                          put_requests[1].content {
-            assert_eq!(*data, immutable_data);
-            assert_eq!(*id, msg_id);
-            data
-        } else {
-            unreachable!()
-        };
-
-        // Valid case.
-        assert!(env.maid_manager
-                   .handle_put_success(&data.identifier(), &msg_id)
-                   .is_ok());
-
-        let put_successes = env.routing.put_successes_given();
-
-        assert_eq!(put_successes.len(), 1);
-        assert_eq!(put_successes[0].src, env.our_authority);
-        assert_eq!(put_successes[0].dst, env.client);
-
-        if let ResponseContent::PutSuccess(ref name, ref id) = put_successes[0].content {
-            assert_eq!(*id, msg_id);
-            assert_eq!(*name, data.identifier());
-        } else {
-            unreachable!()
-        }
-
-        // Invalid case.
-        msg_id = MessageId::new();
-
-        if let Err(InternalError::FailedToFindCachedRequest(id)) =
-               env.maid_manager.handle_put_success(&data.identifier(), &msg_id) {
-            assert_eq!(msg_id, id);
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[test]
-    fn handle_put_failure() {
-        let mut env = environment_setup();
-        create_account(&mut env);
-
-        let client_key = if let Authority::Client { client_key, .. } = env.client {
-            client_key
-        } else {
-            unreachable!()
-        };
-        let identifier = random::<XorName>();
-        let sd = unwrap_result!(StructuredData::new(1,
-                                                    identifier,
-                                                    0,
-                                                    vec![],
-                                                    vec![client_key],
-                                                    vec![],
-                                                    None));
-        let mut msg_id = MessageId::new();
-        let data = Data::Structured(sd.clone());
-        let valid_request = RequestMessage {
-            src: env.client.clone(),
-            dst: env.our_authority.clone(),
-            content: RequestContent::Put(data.clone(), msg_id),
-        };
-
-        assert!(env.maid_manager
-                   .handle_put(&valid_request, &data, &msg_id)
-                   .is_ok());
-
-        let mut put_failures = env.routing.put_failures_given();
-        assert!(put_failures.is_empty());
-
-        let put_requests = env.routing.put_requests_given();
-
-        assert_eq!(put_requests.len(), 2);
-        assert_eq!(put_requests[1].src, env.our_authority);
-        assert_eq!(put_requests[1].dst, Authority::NaeManager(sd.name()));
-
-        if let RequestContent::Put(Data::Structured(ref data), ref id) = put_requests[1].content {
-            assert_eq!(*data, sd);
-            assert_eq!(*id, msg_id);
-        } else {
-            unreachable!()
-        }
-
-        // Valid case.
-        let error = MutationError::NoSuchData;
-        if let Ok(error_indicator) = serialisation::serialise(&error) {
-            assert!(env.maid_manager
-                       .handle_put_failure(&msg_id, &error_indicator[..])
-                       .is_ok());
-        } else {
-            unreachable!()
-        }
-
-        put_failures = env.routing.put_failures_given();
-
-        assert_eq!(put_failures.len(), 1);
-        assert_eq!(put_failures[0].src, env.our_authority);
-        assert_eq!(put_failures[0].dst, env.client);
-
-        if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
-               put_failures[0].content {
-            assert_eq!(*id, msg_id);
-            assert_eq!(*request, valid_request);
-            if let Ok(error_indicator) = serialisation::serialise(&error) {
-                assert_eq!(*external_error_indicator, error_indicator);
-            } else {
-                unreachable!()
-            }
-        } else {
-            unreachable!()
-        }
-
-        // Invalid case.
-        msg_id = MessageId::new();
-        if let Ok(error_indicator) = serialisation::serialise(&error) {
-            if let Err(InternalError::FailedToFindCachedRequest(id)) =
-                   env.maid_manager.handle_put_failure(&msg_id, &error_indicator[..]) {
-                assert_eq!(msg_id, id);
-            } else {
-                unreachable!()
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
-    // #[test]
-    // fn network_full() {
-    //     let mut env = environment_setup();
-    //     create_account(&mut env);
-
-    //     let immutable_data = ImmutableData::new(generate_random_vec_u8(1024));
-    //     let msg_id = MessageId::new();
-    //     let data = Data::Immutable(immutable_data.clone());
-    //     let valid_request = RequestMessage {
-    //         src: env.client.clone(),
-    //         dst: env.our_authority.clone(),
-    //         content: RequestContent::Put(data.clone(), msg_id),
-    //     };
-
-    // let mut full_pmid_nodes = HashSet::new();
-
-    //     if let Ok(Some(close_group)) = env.routing.close_group(utils::client_name(&env.client)) {
-    //         full_pmid_nodes = close_group.iter()
-    //                                      .take(close_group.len() / 2)
-    //                                      .cloned()
-    //                                      .collect::<HashSet<XorName>>();
-    //     }
-
-    //     assert!(env.maid_manager
-    //                .handle_put(&env.routing, &valid_request, &data, &msg_id)
-    //                .is_ok());
-
-    // let put_failures = env.routing.put_failures_given();
-
-    //     assert_eq!(put_failures.len(), 1);
-    //     assert_eq!(put_failures[0].src, env.our_authority);
-    //     assert_eq!(put_failures[0].dst, env.client);
-
-    //     if let ResponseContent::PutFailure { ref id, ref request, ref external_error_indicator } =
-    //            put_failures[0].content {
-    //         assert_eq!(*id, msg_id);
-    //         assert_eq!(*request, valid_request);
-    //         if let Ok(error_indicator) = serialisation::serialise(&MutationError::NetworkFull) {
-    //             assert_eq!(*external_error_indicator, error_indicator);
-    //         } else {
-    //             unreachable!()
-    //         }
-    //     } else {
-    //         unreachable!()
-    //     }
-    // }
-
-    #[test]
-    fn churn_refresh() {
-        let mut env = environment_setup();
-        create_account(&mut env);
-
-        let mut refresh_count = 1;
-        let mut refresh_requests = env.routing.refresh_requests_given();
-        assert_eq!(refresh_requests.len(), refresh_count);
-        assert_eq!(refresh_requests[0].src, env.our_authority);
-        assert_eq!(refresh_requests[0].dst, env.our_authority);
-
-        env.routing.node_added_event(get_close_node(&env));
-        env.maid_manager.handle_node_added(&random::<XorName>());
-
-        refresh_requests = env.routing.refresh_requests_given();
-
-        if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
-            assert_eq!(refresh_requests.len(), refresh_count + 1);
-            assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
-            assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
-            refresh_count += 1;
-
-            if let RequestContent::Refresh(ref serialised_refresh, _) = refresh_requests[0]
-                                                                            .content {
-                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
-                    let refresh: Refresh = refresh;
-                    assert_eq!(refresh.0, utils::client_name(&env.client));
-                } else {
-                    unreachable!()
-                }
-            } else {
-                unreachable!()
-            }
-        } else {
-            assert_eq!(refresh_requests.len(), refresh_count);
-        }
-
-        let node_lost = lose_close_node(&env);
-        env.routing.node_lost_event(node_lost.clone());
-        env.maid_manager.handle_node_lost(&node_lost);
-
-        refresh_requests = env.routing.refresh_requests_given();
-
-        if let Ok(Some(_)) = env.routing.close_group(utils::client_name(&env.client)) {
-            assert_eq!(refresh_requests.len(), refresh_count + 1);
-            assert_eq!(refresh_requests[refresh_count].src, env.our_authority);
-            assert_eq!(refresh_requests[refresh_count].dst, env.our_authority);
-            // refresh_count += 1;
-
-            if let RequestContent::Refresh(ref serialised_refresh, _) =
-                   refresh_requests[refresh_count].content {
-                if let Ok(refresh) = serialisation::deserialise(&serialised_refresh) {
-                    let refresh: Refresh = refresh;
-                    assert_eq!(refresh.0, utils::client_name(&env.client));
-                } else {
-                    unreachable!()
-                }
-            } else {
-                unreachable!()
-            }
-        } else {
-            assert_eq!(refresh_requests.len(), refresh_count);
-        }
-    }
 }

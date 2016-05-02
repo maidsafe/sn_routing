@@ -18,13 +18,13 @@
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
-#[cfg(feature = "use-mock-crust")]
+#[cfg(any(test, feature = "use-mock-crust"))]
 use config_handler::Config;
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
 use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
-#[cfg(feature = "use-mock-crust")]
+#[cfg(any(test, feature = "use-mock-crust"))]
 use routing::DataIdentifier;
 use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
               RoutingMessage};
@@ -34,23 +34,13 @@ use xor_name::XorName;
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;
 
-#[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Event;
 
-#[cfg(all(test, not(feature = "use-mock-crust")))]
-pub use mock_routing::Event;
-
-#[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::NodeInfo;
 
-#[cfg(all(test, not(feature = "use-mock-crust")))]
-pub use mock_routing::NodeInfo;
 
-#[cfg(any(not(test), feature = "use-mock-crust"))]
 pub use routing::Node as RoutingNode;
 
-#[cfg(all(test, not(feature = "use-mock-crust")))]
-pub use mock_routing::MockRoutingNode as RoutingNode;
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
@@ -77,7 +67,7 @@ impl Vault {
 
     /// Allow replacing the default config values for use with the mock-crust tests.  This should
     /// only be called immediately after constructing a new Vault.
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
         let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
@@ -85,7 +75,6 @@ impl Vault {
     }
 
     /// Run the event loop, processing events received from Routing.
-    #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) -> Result<bool, InternalError> {
         while let Ok(event) = self.routing_receiver.recv() {
             if let Some(terminate) = self.process_event(event) {
@@ -111,13 +100,13 @@ impl Vault {
     }
 
     /// Get the names of all the data chunks stored in a personas' chunk store.
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.data_manager.get_stored_names()
     }
 
     /// Get the number of put requests the network processed for the given client.
-    #[cfg(feature = "use-mock-crust")]
+    #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.maid_manager.get_put_count(client_name)
     }

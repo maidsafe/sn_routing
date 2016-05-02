@@ -15,40 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use super::test_client::TestClient;
-use super::test_node::TestNode;
+#![cfg(feature = "use-mock-crust")]
 
-pub fn nodes(nodes: &mut [TestNode]) {
-    loop {
-        let mut next = false;
+use xor_name::XorName;
+use routing::{FullId, StructuredData};
+use rand::{self, random, Rng};
 
-        for node in nodes.iter_mut() {
-            if node.poll() > 0 {
-                next = true;
-                break;
-            }
-        }
-
-        if !next {
-            break;
-        }
-    }
+/// utility to create random vec u8 of a given size
+pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
+    rand::thread_rng().gen_iter().take(size).collect()
 }
 
-pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
-    let mut count: usize = 0;
-    loop {
-        let prev_count = count;
-
-        for node in nodes.iter_mut() {
-            count += node.poll();
-        }
-
-        count += client.poll();
-
-        if prev_count == count {
-            break;
-        }
-    }
-    count
+/// creates random structured data - tests only
+pub fn random_structured_data(type_tag: u64, full_id: &FullId) -> StructuredData {
+    StructuredData::new(type_tag,
+                        random::<XorName>(),
+                        0,
+                        generate_random_vec_u8(10),
+                        vec![full_id.public_id().signing_public_key().clone()],
+                        vec![],
+                        Some(full_id.signing_private_key()))
+        .expect("Cannot create structured data for test")
 }

@@ -15,11 +15,42 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-pub mod poll;
-pub mod test_client;
-pub mod test_node;
+use super::test_client::TestClient;
+use super::test_node::TestNode;
 
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    use rand::{self, Rng};
-    rand::thread_rng().gen_iter().take(size).collect()
+/// Empty event queue of nodes provided
+pub fn nodes(nodes: &mut [TestNode]) {
+    loop {
+        let mut next = false;
+
+        for node in nodes.iter_mut() {
+            if node.poll() > 0 {
+                next = true;
+                break;
+            }
+        }
+
+        if !next {
+            break;
+        }
+    }
+}
+
+/// Empty event queue of nodes and clients provided
+pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
+    let mut count: usize = 0;
+    loop {
+        let prev_count = count;
+
+        for node in nodes.iter_mut() {
+            count += node.poll();
+        }
+
+        count += client.poll();
+
+        if prev_count == count {
+            break;
+        }
+    }
+    count
 }
