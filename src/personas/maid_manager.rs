@@ -323,22 +323,10 @@ impl MaidManager {
     }
 }
 
+#[cfg(test)]
+mod test_unit {
 
-#[cfg(features = "use-mock-crust")]
-#[cfg_attr(feature="clippy", allow(indexing_slicing))]
-mod test {
     use super::*;
-    use test_utils;
-    use mock_crust_detail::{poll, test_node};
-    use mock_crust_detail::test_client::TestClient;
-    use rand::{random, thread_rng};
-    use rand::distributions::{IndependentSample, Range};
-    use routing::{Data, ImmutableData};
-    use routing::mock_crust::{self, Network};
-    use kademlia_routing_table::GROUP_SIZE;
-    use mock_crust_detail;
-    const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
-
     #[test]
     fn account_ok() {
         let mut account = Account::default();
@@ -373,6 +361,24 @@ mod test {
         assert_eq!(super::DEFAULT_ACCOUNT_SIZE, account.data_stored);
         assert_eq!(0, account.space_available);
     }
+
+}
+
+#[cfg(all(test, features = "use-mock-crust"))]
+#[cfg_attr(feature="clippy", allow(indexing_slicing))]
+mod test {
+    use super::*;
+    use test_utils;
+    use mock_crust_detail::{poll, test_node};
+    use mock_crust_detail::test_client::TestClient;
+    use rand::{random, thread_rng};
+    use rand::distributions::{IndependentSample, Range};
+    use routing::{Data, ImmutableData};
+    use routing::mock_crust::{self, Network};
+    use kademlia_routing_table::GROUP_SIZE;
+    use mock_crust_detail;
+    const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
+
 
     #[test]
     fn handle_put_without_account() {
