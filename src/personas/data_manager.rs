@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::Add;
@@ -47,6 +47,8 @@ pub type IdAndVersion = (DataIdentifier, u64);
 
 pub struct DataManager {
     chunk_store: ChunkStore<DataIdentifier, Data>,
+    /// Chunks we are no longer responsible for. These can be deleted from the chunk store.
+    unneeded_chunks: VecDeque<DataIdentifier>,
     /// Accumulates refresh messages and the peers we received them from.
     refresh_accumulator: Accumulator<IdAndVersion, XorName>,
     /// Maps the peers to the set of data chunks that we need and we know they hold.
@@ -83,6 +85,7 @@ impl DataManager {
     pub fn new(routing_node: Rc<RoutingNode>, capacity: u64) -> Result<DataManager, InternalError> {
         Ok(DataManager {
             chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
+            unneeded_chunks: VecDeque::new(),
             refresh_accumulator:
                 Accumulator::with_duration(ACCUMULATOR_QUORUM,
                                            Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),
@@ -147,8 +150,9 @@ impl DataManager {
             return Err(From::from(error));
         }
 
-        // Check there aren't too many full nodes in the close group to this data
-        if self.chunk_store.used_space() > (self.chunk_store.max_space() / 100) * MAX_FULL_PERCENT {
+        self.clean_chunk_store();
+
+        if self.chunk_store_full() {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
@@ -247,27 +251,25 @@ impl DataManager {
     }
 
     pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
-        let data_idv = id_and_version_of(&data);
+        let (data_id, version) = id_and_version_of(&data);
         if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(src) {
-            if expected_idv.0 != data_idv.0 {
+            if expected_idv.0 != data_id {
                 let _ = self.ongoing_gets.insert(*src, (timestamp, expected_idv));
             }
         };
         for (_, data_idvs) in &mut self.data_holders {
-            let _ = data_idvs.remove(&data_idv);
+            let _ = data_idvs.remove(&(data_id, version));
         }
         try!(self.send_gets_for_needed_data());
-        let (data_id, version) = data_idv;
         // If we're no longer in the close group, return.
         if !self.close_to_address(&data_id.name()) {
             return Ok(());
         }
         // TODO: Check that the data's hash actually agrees with an accumulated entry.
         let mut got_new_data = true;
-        match *data {
-            Data::Structured(_) => {
-                if let Ok(Data::Structured(structured_data)) = self.chunk_store
-                                                                   .get(&data.identifier()) {
+        match data_id {
+            DataIdentifier::Structured(..) => {
+                if let Ok(Data::Structured(structured_data)) = self.chunk_store.get(&data_id) {
                     // Make sure we don't 'update' to a lower version.
                     if structured_data.get_version() >= version {
                         return Ok(());
@@ -275,7 +277,7 @@ impl DataManager {
                     got_new_data = false;
                 }
             }
-            Data::Immutable(_) => {
+            DataIdentifier::Immutable(..) => {
                 if self.chunk_store.has(&data_id) {
                     return Ok(()); // Immutable data is already there.
                 }
@@ -283,6 +285,7 @@ impl DataManager {
             _ => unreachable!(),
         }
 
+        self.clean_chunk_store();
         // chunk_store::put() deletes the old data automatically.
         try!(self.chunk_store.put(&data_id, &data));
         if got_new_data {
@@ -436,16 +439,20 @@ impl DataManager {
                             .collect::<HashSet<_>>();
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
-        for data_idv in data_idvs {
-            match routing_table.other_close_nodes(&data_idv.0.name()) {
+        for (data_id, version) in data_idvs {
+            match routing_table.other_close_nodes(&data_id.name()) {
                 None => {
-                    self.count_removed_data(&data_idv.0);
-                    trace!("No longer a DM for {:?}", data_idv.0);
-                    let _ = self.chunk_store.delete(&data_idv.0);
+                    trace!("No longer a DM for {:?}", data_id);
+                    if let DataIdentifier::Structured(..) = data_id {
+                        self.count_removed_data(&data_id);
+                        let _ = self.chunk_store.delete(&data_id);
+                    } else {
+                        self.unneeded_chunks.push_back(data_id);
+                    }
                 }
                 Some(close_group) => {
                     if close_group.into_iter().any(|node_info| node_info.name() == node_name) {
-                        data_list.push(data_idv);
+                        data_list.push((data_id, version));
                     }
                 }
             }
@@ -461,6 +468,7 @@ impl DataManager {
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
+        self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
         self.prune_ongoing_gets(routing_table);
         let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
         let data_idvs = self.chunk_store
@@ -557,6 +565,24 @@ impl DataManager {
             DataIdentifier::Immutable(_) => self.immutable_data_count -= 1,
             DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
             _ => unreachable!(),
+        }
+    }
+
+    /// Returns whether our data uses more than `MAX_FULL_PERCENT` percent of available space.
+    fn chunk_store_full(&self) -> bool {
+        self.chunk_store.used_space() > (self.chunk_store.max_space() / 100) * MAX_FULL_PERCENT
+    }
+
+    /// Removes data chunks we are no longer responsible for until the chunk store is not full
+    /// anymore.
+    fn clean_chunk_store(&mut self) {
+        while self.chunk_store_full() {
+            if let Some(data_id) = self.unneeded_chunks.pop_front() {
+                self.count_removed_data(&data_id);
+                let _ = self.chunk_store.delete(&data_id);
+            } else {
+                break;
+            }
         }
     }
 
