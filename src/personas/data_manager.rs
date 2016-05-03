@@ -372,10 +372,10 @@ impl DataManager {
         for holder in expired_gets {
             let _ = self.ongoing_gets.remove(&holder);
         }
-        let mut outstanding_data_idvs: HashSet<_> = self.ongoing_gets
-                                                        .values()
-                                                        .map(|&(_, data_idv)| data_idv)
-                                                        .collect();
+        let mut outstanding_data_ids: HashSet<_> = self.ongoing_gets
+                                                       .values()
+                                                       .map(|&(_, (data_id, _))| data_id)
+                                                       .collect();
         let idle_holders = self.data_holders
                                .keys()
                                .filter(|holder| !self.ongoing_gets.contains_key(holder))
@@ -384,16 +384,16 @@ impl DataManager {
         for idle_holder in idle_holders {
             if let Some(data_idvs) = self.data_holders.get_mut(&idle_holder) {
                 if let Some(&data_idv) = data_idvs.iter()
-                                                  .find(|data_idv| {
-                                                      !outstanding_data_idvs.contains(data_idv)
+                                                  .find(|&&(ref data_id, _)| {
+                                                      !outstanding_data_ids.contains(data_id)
                                                   }) {
                     let _ = data_idvs.remove(&data_idv);
                     if let Ok(Some(group)) = self.routing_node.close_group(data_idv.0.name()) {
                         if group.contains(&idle_holder) {
                             let now = Instant::now();
                             let _ = self.ongoing_gets.insert(idle_holder, (now, data_idv));
-                            let _ = outstanding_data_idvs.insert(data_idv);
                             let (data_id, _) = data_idv;
+                            let _ = outstanding_data_ids.insert(data_id);
                             let src = Authority::ManagedNode(try!(self.routing_node.name()));
                             let dst = Authority::ManagedNode(idle_holder);
                             let msg_id = MessageId::new();
@@ -443,11 +443,14 @@ impl DataManager {
             match routing_table.other_close_nodes(&data_id.name()) {
                 None => {
                     trace!("No longer a DM for {:?}", data_id);
-                    if let DataIdentifier::Structured(..) = data_id {
+                    if self.chunk_store.has(&data_id) &&
+                       self.unneeded_chunks.iter().all(|id| *id != data_id) {
                         self.count_removed_data(&data_id);
-                        let _ = self.chunk_store.delete(&data_id);
-                    } else {
-                        self.unneeded_chunks.push_back(data_id);
+                        if let DataIdentifier::Structured(..) = data_id {
+                            let _ = self.chunk_store.delete(&data_id);
+                        } else {
+                            self.unneeded_chunks.push_back(data_id);
+                        }
                     }
                 }
                 Some(close_group) => {
@@ -464,10 +467,16 @@ impl DataManager {
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
-    /// Send o all members of group of data
+    /// Send to all members of group of data.
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
+        self.immutable_data_count += self.unneeded_chunks
+                                         .iter()
+                                         .filter(|data_id| {
+                                             routing_table.is_close(&data_id.name())
+                                         })
+                                         .count() as u64;
         self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
         self.prune_ongoing_gets(routing_table);
         let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
@@ -502,6 +511,7 @@ impl DataManager {
         for (node_name, data_list) in data_lists {
             let _ = self.send_refresh(Authority::ManagedNode(node_name), data_list);
         }
+        info!("{:?}", self);
     }
 
     pub fn check_timeouts(&mut self) {
@@ -578,7 +588,6 @@ impl DataManager {
     fn clean_chunk_store(&mut self) {
         while self.chunk_store_full() {
             if let Some(data_id) = self.unneeded_chunks.pop_front() {
-                self.count_removed_data(&data_id);
                 let _ = self.chunk_store.delete(&data_id);
             } else {
                 break;
