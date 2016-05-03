@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::mem;
 use std::convert::From;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -23,11 +22,13 @@ use std::rc::Rc;
 
 use error::InternalError;
 use safe_network_common::client_errors::MutationError;
+use itertools::Itertools;
+use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage,
               DataIdentifier};
 use utils;
-use vault::RoutingNode;
+use vault::{NodeInfo, RoutingNode};
 use xor_name::XorName;
 
 // It has now been decided that the charge will be by unit
@@ -176,41 +177,31 @@ impl MaidManager {
         Ok(())
     }
 
-    pub fn handle_node_added(&mut self, node_name: &XorName) {
-        // Only retain accounts for which we're still in the close group
-        let accounts = mem::replace(&mut self.accounts, HashMap::new());
-        self.accounts = accounts.into_iter()
-                                .filter(|&(ref maid_name, ref account)| {
-                                    match self.routing_node
-                                              .close_group(*maid_name) {
-                                        Ok(None) => {
-                                            trace!("No longer a MM for {}", maid_name);
-                                            let requests = mem::replace(&mut self.request_cache,
-                                                                        HashMap::new());
-                                            self.request_cache =
-                                                requests.into_iter()
-                                                        .filter(|&(_, ref r)| {
-                                                            utils::client_name(&r.src) != *maid_name
-                                                        })
-                                                        .collect();
-                                            false
-                                        }
-                                        Ok(Some(_)) => {
-                                            self.send_refresh(
-                                                  maid_name,
-                                                  account,
-                                                  MessageId::from_added_node(*node_name));
-                                            true
-                                        }
-                                        Err(error) => {
-                                            error!("Failed to get close group: {:?} for {}",
-                                                   error,
-                                                   maid_name);
-                                            false
-                                        }
-                                    }
-                                })
-                                .collect();
+    pub fn handle_node_added(&mut self,
+                             node_name: &XorName,
+                             routing_table: &RoutingTable<NodeInfo>) {
+        // Remove all accounts which we are no longer responsible for.
+        let not_close = |name: &&XorName| !routing_table.is_close(*name);
+        let accounts_to_delete = self.accounts.keys().filter(not_close).cloned().collect_vec();
+        // Remove all requests from the cache that we are no longer responsible for.
+        let msg_ids_to_delete = self.request_cache
+                                    .iter()
+                                    .filter(|&(_, ref req)| {
+                                        accounts_to_delete.contains(req.src.name())
+                                    })
+                                    .map(|(msg_id, _)| *msg_id)
+                                    .collect_vec();
+        for msg_id in msg_ids_to_delete {
+            let _ = self.request_cache.remove(&msg_id);
+        }
+        for maid_name in accounts_to_delete {
+            trace!("No longer a MM for {}", maid_name);
+            let _ = self.accounts.remove(&maid_name);
+        }
+        // Send refresh messages for the remaining accounts.
+        for (maid_name, account) in &self.accounts {
+            self.send_refresh(maid_name, account, MessageId::from_added_node(*node_name));
+        }
     }
 
     pub fn handle_node_lost(&mut self, node_name: &XorName) {
@@ -292,12 +283,10 @@ impl MaidManager {
             let src = request.dst.clone();
             let dst = Authority::NaeManager(data.name());
             trace!("MM forwarding put request to {:?}", dst);
-            let _ = self.routing_node
-                        .send_put_request(src, dst, data, msg_id);
+            let _ = self.routing_node.send_put_request(src, dst, data, msg_id);
         }
 
-        if let Some(prior_request) = self.request_cache
-                                         .insert(msg_id, request.clone()) {
+        if let Some(prior_request) = self.request_cache.insert(msg_id, request.clone()) {
             error!("Overwrote existing cached request: {:?}", prior_request);
         }
 

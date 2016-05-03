@@ -226,8 +226,9 @@ impl DataManager {
                          -> Result<(), InternalError> {
         if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.validate_self_against_successor(&new_data).is_ok() {
-                if let Ok(()) = self.chunk_store.delete(&data.identifier()) {
-                    self.structured_data_count -= 1;
+                let data_id = data.identifier();
+                if let Ok(()) = self.chunk_store.delete(&data_id) {
+                    self.count_removed_data(&data_id);
                     trace!("DM deleted {:?}", data.identifier());
                     info!("{:?}", self);
                     let _ = self.routing_node
