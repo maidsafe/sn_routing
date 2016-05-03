@@ -1,5 +1,8 @@
 environment:
   global:
+    GH_TOKEN:
+      secure: Plf6CbvLc5BWpB51EU9Sk/RMow47fZp74uSKt1Wv20kFRf1OQS2pVuEzgXQPuyhW
+    PROJECT_NAME: safe_vault
     RUST_BACKTRACE: 1
   matrix:
     - RUST_VERSION: stable
@@ -8,6 +11,7 @@ branches:
     - master
 
 clone_depth: 50
+skip_tags: true
 
 install:
   - ps: |
@@ -21,12 +25,16 @@ install:
         . ".\Install MinGW.ps1"
         . ".\Install libsodium.ps1"
 
+        if ($env:APPVEYOR_REPO_COMMIT_MESSAGE -match "[vV]ersion change to v?(.*)") {
+          $env:PROJECT_VERSION = $matches[1]
+          $env:DEPLOY = "true"
+        }
+
 platform:
   - x86
   - x64
 
 configuration:
-#  - Debug
   - Release
 
 build_script:
@@ -34,3 +42,17 @@ build_script:
 
 test_script:
   - ps: . ".\Run Tests.ps1"
+
+before_deploy:
+  - ps: . ".\ci\appveyor\before_deploy.ps1"
+
+deploy:
+  provider: GitHub
+  auth_token: $(GH_TOKEN)
+  # All the zipped artifacts will be deployed
+  artifact: /.*\.zip/
+  draft: true
+  tag: $(PROJECT_VERSION)
+  on:
+    DEPLOY: true
+    RUST_VERSION: stable

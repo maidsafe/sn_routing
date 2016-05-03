@@ -1,32 +1,152 @@
+sudo: false
+# Note: cannot use "rust" here, because that doesn't give us the "rustup"
+# binary, which we need for cross-compilation.
+# As a workaround, we use "generic" and install the rust ecosystem ourselves.
+language: generic
+
+# Env variables:
+#
+#   TARGET:      target triplet
+#   PLATFORM:    platform suffix for the release file name (e.g. linux-x64)
+#   CHANNEL:     rust channel: stable/beta/nightly. If not specified, defaults
+#                to stable.
+#   FEATURES:    build with --features "$FEATURES". Will also build (but not
+#                run) without those features.
+#   ONLY_DEPLOY: build this configuration only if we are deploying a release
+#                (on version bump).
+
 env:
   global:
     - secure: GXW0WyMkipF5lh29QHMxSKl6Dpvd4Qqggu5SBGymS5KQ7VPuqgEE2A8YwQDIGf4IEZUoAcAb1W7oPwQ0/kv7omlF2S8gmals1BeGKStU1np6lIIH64B87w4RIDhD+limVAfKgWb3Oldj6PDAm8gjbWjPiZF/6oxH4hd/+d9r2GY=
-    - Features="use-mock-crust"
-os:
-  - linux
-  - osx
-language: rust
-rust:
-  - stable
-  - nightly
-sudo: false
+    - PROJECT_NAME=safe_vault
+    - LibSodiumVersion=1.0.9
+
+matrix:
+  include:
+    - os: linux
+      env: >
+        TARGET=x86_64-unknown-linux-gnu
+        PLATFORM=linux-x64
+        FEATURES=use-mock-crust
+
+    - os: linux
+      env: >
+        TARGET=i686-unknown-linux-gnu
+        PLATFORM=linux-x86
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - gcc-multilib
+
+    - os: linux
+      env: >
+        TARGET=x86_64-unknown-linux-musl
+        PLATFORM=linux-musl-x64
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
+        DOCKER_IMAGE=msafe/vault
+      sudo: required
+      services:
+        - docker
+      # TODO: uncommend once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
+      # addons:
+      #   apt:
+      #     packages:
+      #       - musl-tools
+
+    - os: linux
+      env: >
+        TARGET=armv7-unknown-linux-gnueabihf
+        PLATFORM=armv7
+        FEATURES=use-mock-crust
+        ONLY_DEPLOY=1
+      sudo: required
+      addons:
+        apt:
+          packages:
+            # Cross compiler and cross compiled C libraries
+            - gcc-arm-linux-gnueabihf
+            - libc6-armhf-cross
+            - libc6-dev-armhf-cross
+
+    - os: linux
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
+      allow_failures: true
+
+    - os: osx
+      env: >
+        TARGET=x86_64-apple-darwin
+        PLATFORM=osx-x64
+        FEATURES=use-mock-crust
+
+    - os: osx
+      env: >
+        CHANNEL=nightly
+        FEATURES="clippy use-mock-crust"
+      allow_failures: true
+
+  # Add "allow_failures: true" to rows which are allowed to fail without making
+  # the whole build fail. This is useful for nightly builds.
+  allow_failures:
+    - allow_failures: true
+  # Don't wait for the rows that are allowed to fail.
+  fast_finish: true
+
 branches:
   only:
     - master
+
 cache:
-  cargo: true
   directories:
-    - $HOME/libsodium
-    - $HOME/elfutils
+    - $HOME/libsodium/$LibSodiumVersion/$TARGET
+    - $HOME/musl
+    - $HOME/.cargo
+    - $TRAVIS_BUILD_DIR/target
+
+before_install:
+  - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
+  - export PATH="$PATH:$HOME/.cargo/bin:$HOME/musl/bin"
+  - export PKG_CONFIG_PATH="$HOME/libsodium/$LibSodiumVersion/$TARGET/lib/pkgconfig:$PKG_CONFIG_PATH"
+  - export PKG_CONFIG_ALLOW_CROSS=1
+
 install:
-  - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh
-  - . install_libsodium.sh
+  - ./ci/travis/install.sh
+
 script:
-  - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
-  - cd $TRAVIS_BUILD_DIR
-  - cargo test --release
-before_cache:
-  - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_elfutils.sh
-  - . install_elfutils.sh
+  - ./ci/travis/script.sh
+
 after_success:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/after_success.sh | bash
+
+before_deploy:
+  - ./ci/travis/before_deploy.sh
+
+deploy:
+  - provider: releases
+    api_key: ${GH_TOKEN}
+    file: ${PROJECT_NAME}-v${PROJECT_VERSION}-${PLATFORM}.tar.gz
+    skip_cleanup: true
+    draft: true
+    tag_name: ${PROJECT_VERSION}
+    on:
+      condition: >
+        (-n "$PROJECT_VERSION") &&
+        (-n "$PLATFORM") &&
+        ("${CHANNEL:-stable}"=stable)
+  - provider: script
+    script: ./ci/travis/deploy_docker_image.sh
+    skip_cleanup: true
+    on:
+      condition: >
+        (-n "$DOCKER_IMAGE") &&
+        (-n "$DOCKER_EMAIL") &&
+        (-n "$DOCKER_USERNAME") &&
+        (-n "$DOCKER_PASSWORD") &&
+        (-n "$PROJECT_VERSION") &&
+        (-n "$PLATFORM") &&
+        ("${CHANNEL:-stable}"=stable)

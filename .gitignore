@@ -15,3 +15,6 @@ target/
 packages/
 .DS_Store
 *.back.aip
+installer/docker/safe_vault
+installer/docker/safe_vault.*.config
+
