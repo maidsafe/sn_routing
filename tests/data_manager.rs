@@ -158,8 +158,7 @@ fn structured_data_churn() {
                 } else {
                     panic!("Non-structured data found.");
                 });
-                // FIXME: Fix the delete-while-churn scenario and re-enable this.
-                if false && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+                if Range::new(0, 3).ind_sample(&mut rng) == 0 {
                     trace!("Deleting data {:?} with name {:?}",
                            data.identifier(),
                            data.name());

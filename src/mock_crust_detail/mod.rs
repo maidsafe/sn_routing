@@ -31,7 +31,7 @@ use mock_crust_detail::test_node::TestNode;
 
 /// Checks that none of the given nodes has any copy of the given data left.
 #[cfg(any(test, feature = "use-mock-crust"))]
-pub fn check_deleted_data(deleted_data: &Vec<Data>, nodes: &[TestNode]) {
+pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
     let deleted_data_ids: HashSet<_> = deleted_data.iter()
                                                    .map(Data::identifier)
                                                    .collect();

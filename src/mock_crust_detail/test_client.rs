@@ -44,7 +44,7 @@ impl TestClient {
         let (routing_tx, routing_rx) = mpsc::channel();
 
         let full_id = FullId::new();
-        let public_id = full_id.public_id().clone();
+        let public_id = *full_id.public_id();
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
