@@ -2,14 +2,23 @@
 #
 # Create a package for Vault Release binaries
 
-# Stop the script if any command fails
-set -o errtrace
-trap 'exit' ERR
+set -ev
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-Version=$(cargo pkgid | sed -e "s/.*[:#]\(.*\)/\1/")
-VaultName=$(cargo pkgid | sed -e "s/.*\(\<.*\>\)[:#].*/\1/")
+
+if [ -n "$PROJECT_NAME" ]; then
+  VaultName="$PROJECT_NAME"
+else
+  VaultName=$(cargo pkgid | sed -e "s/.*\(\<.*\>\)[:#].*/\1/")
+fi
+
+if [ -n "$PROJECT_VERSION" ]; then
+  Version="$PROJECT_VERSION"
+else
+  Version=$(cargo pkgid | sed -e "s/.*[:#]\(.*\)/\1/")
+fi
+
 if [[ "$1" == "linux" ]]
 then
   VaultPath=/usr/bin/
@@ -344,6 +353,12 @@ function prepare_for_osx {
 }
 
 function create_package {
+  if [ -n "$TARGET" ]; then
+    local vault_binary="$RootDir/target/$TARGET/release/$VaultName"
+  else
+    local vault_binary="$RootDir/target/release/$VaultName"
+  fi
+
   fpm \
     -t $1 \
     -s dir \
@@ -360,18 +375,31 @@ function create_package {
     $AfterInstallCommand \
     $BeforeRemoveCommand \
     $OsxCommands \
-    "$RootDir/target/release/$VaultName"=$VaultPath \
-    "$RootDir/installer/common/$VaultName.crust.config"=$ConfigFilePath \
-    "$RootDir/installer/common/$VaultName.vault.config"=$ConfigFilePath \
+    "$vault_binary"=$VaultPath \
+    "$RootDir/installer/bundle/$VaultName.crust.config"=$ConfigFilePath \
+    "$RootDir/installer/bundle/$VaultName.vault.config"=$ConfigFilePath \
     $ExtraFile1 \
     $ExtraFile2
 }
 
-BuiltVault="$RootDir/target/release/$VaultName"
-rm $BuiltVault || true
-cd "$RootDir"
-cargo update
-cargo build --release
+
+if [ -n "$TARGET" ]; then
+  BuiltVault="$RootDir/target/$TARGET/release/$VaultName"
+else
+  BuiltVault="$RootDir/target/release/$VaultName"
+fi
+
+if [ ! -f BuiltVault ]; then
+  cd "$RootDir"
+  cargo update
+
+  if [ -n "$TARGET" ]; then
+    cargo build --target $TARGET --release
+  else
+    cargo build --release
+  fi
+fi
+
 strip "$BuiltVault"
 rm -rf "$RootDir/packages/$Platform" || true
 
@@ -394,15 +422,19 @@ elif [[ "$1" == "osx" ]]
 then
   prepare_for_osx
 
-  # Sign the binary
-  codesign -s "Developer ID Application: MaidSafe.net Ltd (MEGSB2GXGZ)" "$BuiltVault"
-  codesign -vvv -d "$BuiltVault"
+  if [ -z "$SKIP_SIGN_PACKAGE" ]; then
+    # Sign the binary
+    codesign -s "Developer ID Application: MaidSafe.net Ltd (MEGSB2GXGZ)" "$BuiltVault"
+    codesign -vvv -d "$BuiltVault"
+  fi
 
   create_package osxpkg
 
-  # Sign the installer
-  OsxPackage="$RootDir/packages/$Platform/$PackageName-$Version.pkg"
-  productsign --sign "Developer ID Installer: MaidSafe.net Ltd (MEGSB2GXGZ)" "$OsxPackage" "$OsxPackage.signed"
-  mv "$OsxPackage.signed" "$OsxPackage"
-  spctl -a -v --type install "$OsxPackage"
+  if [ -z "$SKIP_SIGN_PACKAGE" ]; then
+    # Sign the installer
+    OsxPackage="$RootDir/packages/$Platform/$PackageName-$Version.pkg"
+    productsign --sign "Developer ID Installer: MaidSafe.net Ltd (MEGSB2GXGZ)" "$OsxPackage" "$OsxPackage.signed"
+    mv "$OsxPackage.signed" "$OsxPackage"
+    spctl -a -v --type install "$OsxPackage"
+  fi
 fi
