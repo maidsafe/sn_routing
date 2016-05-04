@@ -74,7 +74,7 @@ fn id_and_version_of(data: &Data) -> IdAndVersion {
 impl Debug for DataManager {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "Stats - Data stored - ImmData {} - SD {} - total {} bytes",
+               "Stats - Data stored - ID {} - SD {} - total {} bytes",
                self.immutable_data_count,
                self.structured_data_count,
                self.chunk_store.used_space())
@@ -138,16 +138,29 @@ impl DataManager {
         let response_dst = request.src.clone();
 
         if self.chunk_store.has(&data_id) {
-            let error = MutationError::DataExists;
-            let external_error_indicator = try!(serialisation::serialise(&error));
-            trace!("DM sending PutFailure for data {:?}", data_id);
-            let _ = self.routing_node
-                        .send_put_failure(response_src,
-                                          response_dst,
-                                          request.clone(),
-                                          external_error_indicator,
-                                          *message_id);
-            return Err(From::from(error));
+            match data_id {
+                DataIdentifier::Structured(..) => {
+                    let error = MutationError::DataExists;
+                    let external_error_indicator = try!(serialisation::serialise(&error));
+                    trace!("DM sending PutFailure for data {:?}, it already exists.",
+                           data_id);
+                    let _ = self.routing_node
+                                .send_put_failure(response_src,
+                                                  response_dst,
+                                                  request.clone(),
+                                                  external_error_indicator,
+                                                  *message_id);
+                    return Err(From::from(error));
+                }
+                DataIdentifier::Immutable(..) => {
+                    trace!("DM sending PutSuccess for data {:?}, it already exists.",
+                           data_id);
+                    let _ = self.routing_node
+                                .send_put_success(response_src, response_dst, data_id, *message_id);
+                    return Ok(());
+                }
+                _ => unimplemented!(),
+            }
         }
 
         self.clean_chunk_store();
@@ -429,15 +442,18 @@ impl DataManager {
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
         self.prune_ongoing_gets(routing_table);
-        let data_idvs = self.chunk_store
-                            .keys()
-                            .into_iter()
-                            .filter_map(|data_id| self.to_id_and_version(data_id))
-                            .chain(self.data_holders
-                                       .values()
-                                       .flat_map(|idvs| idvs.iter().cloned()))
-                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                            .collect::<HashSet<_>>();
+        let mut data_idvs = self.chunk_store
+                                .keys()
+                                .into_iter()
+                                .filter_map(|data_id| self.to_id_and_version(data_id))
+                                .chain(self.data_holders
+                                           .values()
+                                           .flat_map(|idvs| idvs.iter().cloned()))
+                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                                .collect::<HashSet<_>>();
+        for data_id in &self.unneeded_chunks {
+            data_idvs.remove(&(*data_id, 0));
+        }
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
         for (data_id, version) in data_idvs {
@@ -481,13 +497,16 @@ impl DataManager {
         self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
         self.prune_ongoing_gets(routing_table);
         let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
-        let data_idvs = self.chunk_store
-                            .keys()
-                            .into_iter()
-                            .filter_map(|data_id| self.to_id_and_version(data_id))
-                            .chain(holder_idvs)
-                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                            .collect::<HashSet<_>>();
+        let mut data_idvs = self.chunk_store
+                                .keys()
+                                .into_iter()
+                                .filter_map(|data_id| self.to_id_and_version(data_id))
+                                .chain(holder_idvs)
+                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                                .collect::<HashSet<_>>();
+        for data_id in &self.unneeded_chunks {
+            data_idvs.remove(&(*data_id, 0));
+        }
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
             match routing_table.other_close_nodes(&data_idv.0.name()) {
