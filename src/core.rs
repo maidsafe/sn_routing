@@ -1198,8 +1198,7 @@ impl Core {
 
         self.crust_service.start_service_discovery();
         match self.crust_service
-                  .start_listening_tcp()
-                  .and_then(|_| self.crust_service.start_listening_utp()) {
+                  .start_listening_tcp() {
             Ok(()) => {
                 info!("Running listener.");
                 true
