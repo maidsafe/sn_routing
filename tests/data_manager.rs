@@ -17,34 +17,6 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-        unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences)]
-
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy))]
-
-#![cfg(test)]
-#![cfg(feature = "use-mock-crust")]
-
-extern crate kademlia_routing_table;
-#[macro_use]
-extern crate log;
-#[macro_use]
-#[allow(unused_extern_crates)]  // Only using macros from maidsafe_utilites
-extern crate maidsafe_utilities;
-extern crate rand;
-extern crate routing;
-extern crate safe_vault;
 
 use std::cmp;
 
@@ -158,8 +130,7 @@ fn structured_data_churn() {
                 } else {
                     panic!("Non-structured data found.");
                 });
-                // FIXME: Fix the delete-while-churn scenario and re-enable this.
-                if false && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+                if Range::new(0, 3).ind_sample(&mut rng) == 0 {
                     trace!("Deleting data {:?} with name {:?}",
                            data.identifier(),
                            data.name());

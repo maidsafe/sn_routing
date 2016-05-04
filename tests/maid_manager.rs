@@ -17,33 +17,6 @@
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
-#![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
-          unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
-        non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
-        private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
-        unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
-        unused_comparisons, unused_features, unused_parens, while_true)]
-#![warn(trivial_casts, trivial_numeric_casts, unused_extern_crates, unused_import_braces,
-        unused_qualifications, unused_results)]
-#![allow(box_pointers, fat_ptr_transmutes, missing_copy_implementations,
-         missing_debug_implementations, variant_size_differences)]
-
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy))]
-#![cfg_attr(feature="clippy", allow(indexing_slicing))]
-
-#![cfg(test)]
-#![cfg(feature = "use-mock-crust")]
-
-extern crate kademlia_routing_table;
-#[macro_use]
-extern crate log;
-extern crate rand;
-extern crate routing;
-extern crate safe_network_common;
-extern crate safe_vault;
 
 use kademlia_routing_table::GROUP_SIZE;
 use rand::{random, thread_rng};
@@ -121,6 +94,8 @@ fn invalid_put_for_previously_created_account() {
 
 #[test]
 fn account_full() {
+    // This needs to be kept in sync with maid_manager.rs
+    // Ideally, a setter is preferred, so that this test can be completed quicker.
     const DEFAULT_ACCOUNT_SIZE: u64 = 100;
     let network = Network::new();
     let node_count = 15;
