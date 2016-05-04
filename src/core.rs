@@ -2185,7 +2185,7 @@ impl Core {
         }
         if self.get_network_name_timer_token == Some(token) {
             error!("Failed to get GetNetworkName response.");
-            let _ = self.event_sender.send(Event::Disconnected);
+            let _ = self.event_sender.send(Event::GetNetworkNameFailed);
         } else if self.heartbeat_timer_token == token {
             if self.state == State::Node {
                 let _ = self.event_sender.send(Event::Tick);
