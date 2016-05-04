@@ -2540,8 +2540,8 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.is_empty() {
-                    debug!("Lost last routing node connection.");
+                if self.routing_table.len() < GROUP_SIZE {
+                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
                 let new_token = self.timer
