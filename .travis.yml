@@ -32,11 +32,12 @@ matrix:
       sudo: required
       services:
         - docker
-      # TODO: uncomment once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
-      # addons:
-      #   apt:
-      #     packages:
-      #       - musl-tools
+      addons:
+        apt:
+          packages:
+            - rpm
+            # TODO: uncomment once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
+            # - musl-tools
 
     - os: linux
       env: >
@@ -49,6 +50,7 @@ matrix:
         apt:
           packages:
             - gcc-multilib
+            - rpm
 
     - os: linux
       env: >
@@ -101,6 +103,7 @@ cache:
     - $HOME/musl
     - $HOME/.cargo
     - $TRAVIS_BUILD_DIR/target
+    - $HOME/.gem
 
 before_install:
   - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")

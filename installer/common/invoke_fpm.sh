@@ -359,12 +359,25 @@ function create_package {
     local vault_binary="$RootDir/target/release/$VaultName"
   fi
 
+  case $TARGET in
+  *x86_64*)
+    local arch=x86_64
+    ;;
+  *i386*|*i686*)
+    local arch=i386
+    ;;
+  *)
+    local arch=native
+    ;;
+  esac
+
   fpm \
     -t $1 \
     -s dir \
     --force \
     --name $PackageName \
     --version $Version \
+    --architecture $arch \
     --license GPLv3 \
     --vendor MaidSafe \
     --directories $ConfigFilePath \
