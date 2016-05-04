@@ -1198,8 +1198,7 @@ impl Core {
 
         self.crust_service.start_service_discovery();
         match self.crust_service
-                  .start_listening_tcp()
-                  .and_then(|_| self.crust_service.start_listening_utp()) {
+                  .start_listening_tcp() {
             Ok(()) => {
                 info!("Running listener.");
                 true
@@ -2186,7 +2185,7 @@ impl Core {
         }
         if self.get_network_name_timer_token == Some(token) {
             error!("Failed to get GetNetworkName response.");
-            let _ = self.event_sender.send(Event::Disconnected);
+            let _ = self.event_sender.send(Event::GetNetworkNameFailed);
         } else if self.heartbeat_timer_token == token {
             if self.state == State::Node {
                 let _ = self.event_sender.send(Event::Tick);
@@ -2324,18 +2323,19 @@ impl Core {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         if self.client_map.contains_key(peer_id) {
-            if !self.filter_signed_msg(&signed_msg, peer_id) {
-                let hop_msg = try!(HopMessage::new(signed_msg,
-                                                   vec![],
-                                                   self.full_id.signing_private_key()));
-                let message = Message::Hop(hop_msg);
-                let raw_bytes = try!(serialisation::serialise(&message));
-                return self.send_or_drop(peer_id, raw_bytes);
+            if self.filter_signed_msg(&signed_msg, peer_id) {
+                return Ok(());
             }
+            let hop_msg = try!(HopMessage::new(signed_msg,
+                                               vec![],
+                                               self.full_id.signing_private_key()));
+            let message = Message::Hop(hop_msg);
+            let raw_bytes = try!(serialisation::serialise(&message));
+            self.send_or_drop(peer_id, raw_bytes)
+        } else {
+            debug!("Client connection not found for message {:?}.", signed_msg);
+            Err(RoutingError::ClientConnectionNotFound)
         }
-
-        debug!("Client connection not found for message {:?}.", signed_msg);
-        Err(RoutingError::ClientConnectionNotFound)
     }
 
     fn to_hop_bytes(&self,
@@ -2540,8 +2540,8 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.is_empty() {
-                    debug!("Lost last routing node connection.");
+                if self.routing_table.len() < GROUP_SIZE {
+                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
                 let new_token = self.timer
