@@ -23,6 +23,7 @@ use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, ImmutableData};
 use routing::mock_crust::{self, Network};
+use safe_network_common::client_errors::MutationError;
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
@@ -89,6 +90,36 @@ fn invalid_put_for_previously_created_account() {
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
     client.create_account(&mut nodes);
+}
+
+#[test]
+fn account_full() {
+    // This needs to be kept in sync with maid_manager.rs
+    // Ideally, a setter is preferred, so that this test can be completed quicker.
+    const DEFAULT_ACCOUNT_SIZE: u64 = 100;
+    let network = Network::new();
+    let node_count = 15;
+    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut client = TestClient::new(&network, Some(config));
+
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+    let full_id = client.full_id().clone();
+
+    for i in 0..(DEFAULT_ACCOUNT_SIZE + 5) {
+        let data = if i % 2 == 0 {
+            Data::Structured(test_utils::random_structured_data(100000, &full_id))
+        } else {
+            Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(10)))
+        };
+        let result = client.put_and_verify(data.clone(), &mut nodes);
+        if i < DEFAULT_ACCOUNT_SIZE - 1 {
+            assert_eq!(result, Ok(()));
+        } else {
+            assert_eq!(result, Err(Some(MutationError::LowBalance)));
+        }
+    }
 }
 
 #[test]

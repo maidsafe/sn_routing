@@ -41,6 +41,7 @@ extern crate log;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
+extern crate safe_network_common;
 extern crate safe_vault;
 
 mod network;
