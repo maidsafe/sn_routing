@@ -21,7 +21,7 @@ install:
         . ".\Install libsodium.ps1"
 
 platform:
-  - x86
+  #- x86 // TODO: Re-enable once https://github.com/maidsafe/routing/issues/1008 is fixed.
   - x64
 
 configuration:
