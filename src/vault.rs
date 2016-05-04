@@ -242,7 +242,7 @@ impl Vault {
                      node_added: XorName,
                      routing_table: RoutingTable<NodeInfo>)
                      -> Result<(), InternalError> {
-        self.maid_manager.handle_node_added(&node_added);
+        self.maid_manager.handle_node_added(&node_added, &routing_table);
         self.data_manager.handle_node_added(&node_added, &routing_table);
         Ok(())
     }

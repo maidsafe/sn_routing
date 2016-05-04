@@ -35,13 +35,7 @@ generate-diagrams = ["hyper"]
 use-mock-crust = ["routing/use-mock-crust"]
 
 [[test]]
-name = "mock_crust"
-
-[[test]]
-name = "data_manager"
-
-[[test]]
-name = "maid_manager"
+name = "tests"
 
 [[bin]]
 name = "safe_vault"
