@@ -138,24 +138,28 @@ impl DataManager {
         let response_dst = request.src.clone();
 
         if self.chunk_store.has(&data_id) {
-            if let DataIdentifier::Structured(..) = data_id {
-                let error = MutationError::DataExists;
-                let external_error_indicator = try!(serialisation::serialise(&error));
-                trace!("DM sending PutFailure for data {:?}, it already exists.",
-                       data_id);
-                let _ = self.routing_node
-                            .send_put_failure(response_src,
-                                              response_dst,
-                                              request.clone(),
-                                              external_error_indicator,
-                                              *message_id);
-                return Err(From::from(error));
-            } else {
-                trace!("DM sending PutSuccess for data {:?}, it already exists.",
-                       data_id);
-                let _ = self.routing_node
-                            .send_put_success(response_src, response_dst, data_id, *message_id);
-                return Ok(());
+            match data_id {
+                DataIdentifier::Structured(..) => {
+                    let error = MutationError::DataExists;
+                    let external_error_indicator = try!(serialisation::serialise(&error));
+                    trace!("DM sending PutFailure for data {:?}, it already exists.",
+                           data_id);
+                    let _ = self.routing_node
+                                .send_put_failure(response_src,
+                                                  response_dst,
+                                                  request.clone(),
+                                                  external_error_indicator,
+                                                  *message_id);
+                    return Err(From::from(error));
+                }
+                DataIdentifier::Immutable(..) => {
+                    trace!("DM sending PutSuccess for data {:?}, it already exists.",
+                           data_id);
+                    let _ = self.routing_node
+                                .send_put_success(response_src, response_dst, data_id, *message_id);
+                    return Ok(());
+                }
+                _ => unimplemented!(),
             }
         }
 
