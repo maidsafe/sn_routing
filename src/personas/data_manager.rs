@@ -74,7 +74,7 @@ fn id_and_version_of(data: &Data) -> IdAndVersion {
 impl Debug for DataManager {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "Stats - Data stored - ImmData {} - SD {} - total {} bytes",
+               "Stats - Data stored - ID {} - SD {} - total {} bytes",
                self.immutable_data_count,
                self.structured_data_count,
                self.chunk_store.used_space())
@@ -138,16 +138,25 @@ impl DataManager {
         let response_dst = request.src.clone();
 
         if self.chunk_store.has(&data_id) {
-            let error = MutationError::DataExists;
-            let external_error_indicator = try!(serialisation::serialise(&error));
-            trace!("DM sending PutFailure for data {:?}", data_id);
-            let _ = self.routing_node
-                        .send_put_failure(response_src,
-                                          response_dst,
-                                          request.clone(),
-                                          external_error_indicator,
-                                          *message_id);
-            return Err(From::from(error));
+            if let DataIdentifier::Structured(..) = data_id {
+                let error = MutationError::DataExists;
+                let external_error_indicator = try!(serialisation::serialise(&error));
+                trace!("DM sending PutFailure for data {:?}, it already exists.",
+                       data_id);
+                let _ = self.routing_node
+                            .send_put_failure(response_src,
+                                              response_dst,
+                                              request.clone(),
+                                              external_error_indicator,
+                                              *message_id);
+                return Err(From::from(error));
+            } else {
+                trace!("DM sending PutSuccess for data {:?}, it already exists.",
+                       data_id);
+                let _ = self.routing_node
+                            .send_put_success(response_src, response_dst, data_id, *message_id);
+                return Ok(());
+            }
         }
 
         self.clean_chunk_store();
