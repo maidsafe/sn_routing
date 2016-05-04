@@ -163,9 +163,11 @@ impl MaidManager {
             Ok(None) | Err(_) => return Ok(()),
             Ok(Some(_)) => (),
         }
+        let account_count = self.accounts.len();
         match self.accounts.entry(maid_name) {
             Entry::Vacant(entry) => {
                 let _ = entry.insert(account);
+                info!("Stats - {} client accounts.", account_count + 1);
             }
             Entry::Occupied(mut entry) => {
                 if entry.get().version < account.version {
@@ -193,6 +195,10 @@ impl MaidManager {
                                     .collect_vec();
         for msg_id in msg_ids_to_delete {
             let _ = self.request_cache.remove(&msg_id);
+        }
+        if !accounts_to_delete.is_empty() {
+            info!("Stats - {} client accounts.",
+                  self.accounts.len() - accounts_to_delete.len());
         }
         for maid_name in accounts_to_delete {
             trace!("No longer a MM for {}", maid_name);
@@ -249,6 +255,7 @@ impl MaidManager {
 
             // Create the account, the SD incurs charge later on
             let _ = self.accounts.insert(client_name, Account::default());
+            info!("Stats - {} client accounts.", self.accounts.len());
         }
         self.forward_put_request(client_name,
                                  Data::Structured(data.clone()),
@@ -317,7 +324,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn account_ok() {
+    fn account_struct_normal_updates() {
         let mut account = Account::default();
 
         assert_eq!(0, account.data_stored);
@@ -336,7 +343,7 @@ mod test {
     }
 
     #[test]
-    fn account_err() {
+    fn account_struct_error_updates() {
         let mut account = Account::default();
 
         assert_eq!(0, account.data_stored);

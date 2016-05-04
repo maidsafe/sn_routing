@@ -93,7 +93,7 @@ fn invalid_put_for_previously_created_account() {
 }
 
 #[test]
-fn account_full() {
+fn storing_till_client_account_full() {
     // This needs to be kept in sync with maid_manager.rs
     // Ideally, a setter is preferred, so that this test can be completed quicker.
     const DEFAULT_ACCOUNT_SIZE: u64 = 100;
@@ -123,7 +123,7 @@ fn account_full() {
 }
 
 #[test]
-fn maid_manager_churn() {
+fn maid_manager_account_updates_with_churn() {
     let network = Network::new();
     let node_count = 15;
     let mut nodes = test_node::create_nodes(&network, node_count, None);

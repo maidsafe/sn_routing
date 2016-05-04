@@ -131,6 +131,7 @@ impl Vault {
             Event::Connected => self.on_connected(),
             Event::Disconnected |
             Event::GetNetworkNameFailed => {
+                warn!("Received {:?}. Restarting Vault", event);
                 ret = Some(false);
                 Ok(())
             }

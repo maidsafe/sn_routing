@@ -22,7 +22,7 @@ use rand::random;
 use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId,
               RequestContent, ResponseContent, ResponseMessage, StructuredData};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
-use safe_network_common::client_errors::MutationError;
+use safe_network_common::client_errors::{MutationError, GetError};
 use xor_name::XorName;
 
 use super::test_node::TestNode;
@@ -116,13 +116,126 @@ impl TestClient {
                     if request_message_id == response_message_id {
                         return data;
                     } else {
-                        println!("{:?}  --   {:?}", request_message_id, response_message_id);
+                        warn!("{:?}  --   {:?}", request_message_id, response_message_id);
                     }
                 }
                 event => panic!("Expected GetSuccess, got: {:?}", event),
             }
         }
     }
+
+    /// Sends a Get request, polls the mock network and expects a Get response
+    pub fn get_response(&mut self,
+                        request: DataIdentifier,
+                        nodes: &mut [TestNode])
+                        -> Result<Data, Option<GetError>> {
+        let dst = Authority::NaeManager(request.name());
+        let request_message_id = MessageId::new();
+        self.flush();
+        unwrap_result!(self.routing_client.send_get_request(dst.clone(),
+                                                            request,
+                                                            request_message_id));
+        let events_count = poll::nodes_and_client(nodes, self);
+        trace!("totally {} events got processed during the get_response", events_count);
+        loop {
+            match self.routing_rx.try_recv() {
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::GetSuccess(data, response_message_id),
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, response_message_id);
+                    return Ok(data);
+                }
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::GetFailure{ id, request, external_error_indicator },
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, id);
+                    assert_eq!(request.dst, dst);
+                    let parsed_error : GetError =
+                        unwrap_result!(serialisation::deserialise(&external_error_indicator));
+                    return Err(Some(parsed_error));
+                }
+                Ok(response) => panic!("Unexpected Get response : {:?}", response),
+                Err(err) => panic!("Unexpected error : {:?}", err),
+            }
+        }
+    }
+
+    /// Sends a Post request, polls the mock network and expects a Post response
+    pub fn post_response(&mut self,
+                         data: Data,
+                         nodes: &mut [TestNode])
+                         -> Result<DataIdentifier, Option<MutationError>> {
+        let dst = Authority::NaeManager(data.name());
+        let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_post_request(dst.clone(), data, request_message_id));
+        let events_count = poll::nodes_and_client(nodes, self);
+        trace!("totally {} events got processed during the post_response", events_count);
+        loop {
+            match self.routing_rx.try_recv() {
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::PostSuccess(data_id, response_message_id),
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, response_message_id);
+                    return Ok(data_id);
+                }
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::PostFailure{ id, request, external_error_indicator },
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, id);
+                    assert_eq!(request.dst, dst);
+                    let parsed_error : MutationError =
+                        unwrap_result!(serialisation::deserialise(&external_error_indicator));
+                    return Err(Some(parsed_error));
+                }
+                Ok(response) => panic!("Unexpected Post response : {:?}", response),
+                Err(err) => panic!("Unexpected error : {:?}", err),
+            }
+        }
+    }
+
+    /// Sends a Delete request, polls the mock network and expects a Delete response
+    pub fn delete_response(&mut self,
+                           data: Data,
+                           nodes: &mut [TestNode])
+                           -> Result<DataIdentifier, Option<MutationError>> {
+        let dst = Authority::NaeManager(data.name());
+        let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_delete_request(dst.clone(),
+                                                               data,
+                                                               request_message_id));
+        let events_count = poll::nodes_and_client(nodes, self);
+        trace!("totally {} events got processed during the delete_response", events_count);
+        loop {
+            match self.routing_rx.try_recv() {
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::DeleteSuccess(data_id, response_message_id),
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, response_message_id);
+                    return Ok(data_id);
+                }
+                Ok(Event::Response(ResponseMessage{
+                    content: ResponseContent::DeleteFailure{ id,
+                                                             request,
+                                                             external_error_indicator },
+                    ..
+                })) => {
+                    assert_eq!(request_message_id, id);
+                    assert_eq!(request.dst, dst);
+                    let parsed_error : MutationError =
+                        unwrap_result!(serialisation::deserialise(&external_error_indicator));
+                    return Err(Some(parsed_error));
+                }
+                Ok(response) => panic!("Unexpected Delete response : {:?}", response),
+                Err(err) => panic!("Unexpected error : {:?}", err),
+            }
+        }
+    }
+
     /// Post request
     pub fn post(&mut self, data: Data) {
         let dst = Authority::NaeManager(data.name());
@@ -173,7 +286,7 @@ impl TestClient {
                 let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
                 Err(Some(parsed_error))
             }
-            Ok(response) => panic!("Expected Put response got: {:?}", response),
+            Ok(response) => panic!("Unexpected Put response : {:?}", response),
             // TODO: Once the network guarantees that every request gets a response, panic!
             Err(_) => Err(None),
         }
