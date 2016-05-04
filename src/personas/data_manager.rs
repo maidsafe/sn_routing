@@ -438,15 +438,18 @@ impl DataManager {
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
         self.prune_ongoing_gets(routing_table);
-        let data_idvs = self.chunk_store
-                            .keys()
-                            .into_iter()
-                            .filter_map(|data_id| self.to_id_and_version(data_id))
-                            .chain(self.data_holders
-                                       .values()
-                                       .flat_map(|idvs| idvs.iter().cloned()))
-                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                            .collect::<HashSet<_>>();
+        let mut data_idvs = self.chunk_store
+                                .keys()
+                                .into_iter()
+                                .filter_map(|data_id| self.to_id_and_version(data_id))
+                                .chain(self.data_holders
+                                           .values()
+                                           .flat_map(|idvs| idvs.iter().cloned()))
+                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                                .collect::<HashSet<_>>();
+        for data_id in &self.unneeded_chunks {
+            data_idvs.remove(&(*data_id, 0));
+        }
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
         for (data_id, version) in data_idvs {
@@ -490,13 +493,16 @@ impl DataManager {
         self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
         self.prune_ongoing_gets(routing_table);
         let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
-        let data_idvs = self.chunk_store
-                            .keys()
-                            .into_iter()
-                            .filter_map(|data_id| self.to_id_and_version(data_id))
-                            .chain(holder_idvs)
-                            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                            .collect::<HashSet<_>>();
+        let mut data_idvs = self.chunk_store
+                                .keys()
+                                .into_iter()
+                                .filter_map(|data_id| self.to_id_and_version(data_id))
+                                .chain(holder_idvs)
+                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                                .collect::<HashSet<_>>();
+        for data_id in &self.unneeded_chunks {
+            data_idvs.remove(&(*data_id, 0));
+        }
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
             match routing_table.other_close_nodes(&data_idv.0.name()) {
