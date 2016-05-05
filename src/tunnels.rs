@@ -27,7 +27,7 @@ use std::time::Duration;
 
 
 /// The maximum number of pairs of nodes that this node will act as a tunnel for.
-const MAX_TUNNEL_CLIENT_PAIRS: usize = 3;
+const MAX_TUNNEL_CLIENT_PAIRS: usize = 40;
 
 /// A container for managing tunnel connections.
 ///
