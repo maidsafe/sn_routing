@@ -1384,7 +1384,7 @@ impl Core {
                 }
                 debug!("Received ConnectionUnneeded from {:?}.", peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
-                    debug!("Dropped {:?} from the routing table.", name);
+                    info!("Dropped {:?} from the routing table.", name);
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
@@ -1550,7 +1550,7 @@ impl Core {
                 return self.disconnect_peer(&peer_id);
             }
             Some(AddedNodeDetails { must_notify, unneeded, .. }) => {
-                debug!("{:?} Added {:?} to routing table.", self, name);
+                info!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
                 }
@@ -2499,7 +2499,7 @@ impl Core {
         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
                    self.routing_table.remove(node.public_id.name()) {
-                debug!("Dropped {:?} from the routing table.", node.name());
+                info!("Dropped {:?} from the routing table.", node.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send a NodeLost event.
                     let event = Event::NodeLost(*node.public_id.name(), self.routing_table.clone());
