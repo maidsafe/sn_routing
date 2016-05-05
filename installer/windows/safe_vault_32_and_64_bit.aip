@@ -54,9 +54,9 @@
     <ATTRIBUTE name="CurrentFeature" value="Vault"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.MsiFilesComponent">
-    <ROW File="safe_vault.crust.config" Component_="safe_vault.crust.config" FileName="SAFE_V~1.CON|safe_vault.crust.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\bundle\safe_vault.crust.config" SelfReg="false" NextFile="safe_vault.vault.config"/>
+    <ROW File="safe_vault.crust.config" Component_="safe_vault.crust.config" FileName="SAFE_V~1.CON|safe_vault.crust.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.crust.config" SelfReg="false" NextFile="safe_vault.vault.config"/>
     <ROW File="safe_vault.exe" Component_="safe_vault.exe" FileName="SAFE_V~1.EXE|safe_vault.exe" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\..\target\release\safe_vault.exe" SelfReg="false" NextFile="safe_vault.crust.config" DigSign="true"/>
-    <ROW File="safe_vault.vault.config" Component_="safe_vault.crust.config" FileName="SAFE_V~2.CON|safe_vault.vault.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\bundle\safe_vault.vault.config" SelfReg="false"/>
+    <ROW File="safe_vault.vault.config" Component_="safe_vault.crust.config" FileName="SAFE_V~2.CON|safe_vault.vault.config" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\common\safe_vault.vault.config" SelfReg="false"/>
   </COMPONENT>
   <COMPONENT cid="caphyon.advinst.msicomp.BootstrOptComponent">
     <ROW BootstrOptKey="GlobalOptions" GeneralOptions="h" DownloadFolder="[AppDataFolder][|Manufacturer]\[|ProductName]\prerequisites"/>

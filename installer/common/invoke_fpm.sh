@@ -2,10 +2,12 @@
 #
 # Create a package for Vault Release binaries
 
-set -ev
+set -e
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+
+ConfigSourceDir="$HOME/config/safe_vault"
 
 if [ -n "$PROJECT_NAME" ]; then
   VaultName="$PROJECT_NAME"
@@ -26,7 +28,9 @@ elif [[ "$1" == "osx" ]]
 then
   VaultPath=/usr/local/bin/
 fi
-ConfigFilePath=/var/cache/$VaultName/
+
+ConfigFileParentDir=/var/cache
+ConfigFileDir="$ConfigFileParentDir/$VaultName/"
 Platform=$1
 Description="SAFE Network vault"
 
@@ -47,7 +51,7 @@ function remove_safe_user {
 }
 
 function set_owner {
-  printf 'chown -R safe:safe %s\n' "$ConfigFilePath" >> after_install.sh
+  printf 'chown -R safe:safe %s\n' "$ConfigFileDir" >> after_install.sh
   printf 'chown safe:safe %s\n' "$VaultPath$VaultName" >> after_install.sh
   printf 'chmod 775 %s\n' "$VaultPath$VaultName" >> after_install.sh
 }
@@ -321,7 +325,7 @@ function prepare_for_osx {
   printf 'rm /Library/LaunchDaemons/%s\n\n' "$PlistFile" >> $UninstallScript
   printf 'dscl . -delete /Users/safe\n' >> $UninstallScript
   printf 'dseditgroup -o delete safe\n\n' >> $UninstallScript
-  printf 'rm -rf %s\n' "$ConfigFilePath" >> $UninstallScript
+  printf 'rm -rf %s\n' "$ConfigFileDir" >> $UninstallScript
   printf 'rm %s\n' "$VaultPath$VaultName" >> $UninstallScript
   printf 'rm %s\n\n' "$VaultPath$UninstallScript" >> $UninstallScript
   printf 'if [[ "$1" == "-y" ]]; then\n' >> $UninstallScript
@@ -380,7 +384,7 @@ function create_package {
     --architecture $arch \
     --license GPLv3 \
     --vendor MaidSafe \
-    --directories $ConfigFilePath \
+    --directories $ConfigFileDir \
     --maintainer "MaidSafe QA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
@@ -389,8 +393,7 @@ function create_package {
     $BeforeRemoveCommand \
     $OsxCommands \
     "$vault_binary"=$VaultPath \
-    "$RootDir/installer/bundle/$VaultName.crust.config"=$ConfigFilePath \
-    "$RootDir/installer/bundle/$VaultName.vault.config"=$ConfigFilePath \
+    "$ConfigSourceDir"="$ConfigFileParentDir" \
     $ExtraFile1 \
     $ExtraFile2
 }
