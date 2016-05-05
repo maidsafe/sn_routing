@@ -481,7 +481,7 @@ mod test {
                     Ok(mut new_structured_data) => {
                         assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
                         match orig_structured_data.replace_with_other(new_structured_data) {
-                            Ok(()) => println!("All good"),
+                            Ok(()) => (),
                             Err(e) => panic!("Error {:?}", e),
                         }
                         // transfer ownership back to keys1 only
@@ -494,7 +494,7 @@ mod test {
                                                          Some(&new_owner.1)) {
                             Ok(another_new_structured_data) => {
                                 match orig_structured_data.replace_with_other(another_new_structured_data) {
-                                    Ok(()) => println!("All good"),
+                                    Ok(()) => (),
                                     Err(e) => panic!("Error {:?}", e),
                                 }
                             }
