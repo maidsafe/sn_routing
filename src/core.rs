@@ -617,7 +617,7 @@ impl Core {
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, name: XorName) {
         let _ = self.connecting_peers.insert(peer_id, (name, ConnectState::Tunnel));
         for node in self.routing_table.closest_nodes_to(&name, GROUP_SIZE, false) {
-            warn!("Asking {:?} to serve as a tunnel.", node.name());
+            trace!("Asking {:?} to serve as a tunnel.", node.name());
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
             if let Err(err) = self.send_direct_message(&node.peer_id, tunnel_request) {
                 error!("Failed to send tunnel request: {:?}.", err);
@@ -1371,7 +1371,7 @@ impl Core {
             }
             DirectMessage::Heartbeat => Ok(()),
             DirectMessage::NewNode(public_id) => {
-                debug!("Received NewNode({:?}).", public_id);
+                trace!("Received NewNode({:?}).", public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }

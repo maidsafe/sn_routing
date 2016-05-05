@@ -18,7 +18,7 @@
 use messages::{DirectMessage, RequestContent, ResponseContent, RoutingMessage};
 
 /// The number of messages after which the message statistics should be printed.
-const MSG_LOG_COUNT: usize = 1000;
+const MSG_LOG_COUNT: usize = 500;
 
 /// A collection of counters to gather Routing statistics.
 #[derive(Default)]
