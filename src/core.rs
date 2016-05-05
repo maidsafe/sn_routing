@@ -67,10 +67,8 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
 const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
-/// Time (in seconds) after which a `Heartbeat` is sent.
-const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
-/// Number of missed heartbeats after which a peer is considered disconnected.
-const HEARTBEAT_ATTEMPTS: u64 = 3;
+/// Time (in seconds) after which a `Tick` event is sent.
+const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Initial period for requesting bucket close groups of all non-full buckets. This is doubled each
@@ -218,7 +216,7 @@ pub struct Core {
     bucket_refresh_token_and_delay: Option<(u64, u64)>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
-    heartbeat_timer_token: u64,
+    tick_timer_token: u64,
 
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
@@ -282,7 +280,7 @@ impl Core {
 
         let mut timer = Timer::new(action_sender2);
 
-        let heartbeat_timer_token = timer.schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        let tick_timer_token = timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
 
         let core = Core {
             crust_service: crust_service,
@@ -307,7 +305,7 @@ impl Core {
             get_network_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
-            heartbeat_timer_token: heartbeat_timer_token,
+            tick_timer_token: tick_timer_token,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
@@ -1369,7 +1367,6 @@ impl Core {
                     self.disconnect_peer(&peer_id)
                 }
             }
-            DirectMessage::Heartbeat => Ok(()),
             DirectMessage::NewNode(public_id) => {
                 trace!("Received NewNode({:?}).", public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
@@ -2186,31 +2183,11 @@ impl Core {
         if self.get_network_name_timer_token == Some(token) {
             error!("Failed to get GetNetworkName response.");
             let _ = self.event_sender.send(Event::GetNetworkNameFailed);
-        } else if self.heartbeat_timer_token == token {
+        } else if self.tick_timer_token == token {
             if self.state == State::Node {
                 let _ = self.event_sender.send(Event::Tick);
+                self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
             }
-            let now = Instant::now();
-            let stale_peers = self.peer_map
-                                  .iter()
-                                  .filter(|&(_, timestamp)| {
-                                      (now - *timestamp).as_secs() >
-                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS
-                                  })
-                                  .map(|(peer_id, _)| peer_id)
-                                  .cloned()
-                                  .collect_vec();
-            for peer_id in stale_peers {
-                debug!("Heartbeat from {:?} timed out. Calling crust::Service::disconnect.",
-                       peer_id);
-                self.crust_service.disconnect(&peer_id);
-                self.handle_lost_peer(peer_id);
-            }
-            for peer_id in self.peer_map.keys().cloned().collect_vec() {
-                let _ = self.send_direct_message(&peer_id, DirectMessage::Heartbeat);
-            }
-            self.heartbeat_timer_token = self.timer
-                                             .schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
         } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
             if bucket_token == token {
                 self.request_bucket_close_groups();

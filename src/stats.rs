@@ -31,7 +31,6 @@ pub struct Stats {
     pub tunnel_connections: usize,
 
     msg_direct_node_identify: usize,
-    msg_direct_heartbeat: usize,
     msg_direct_new_node: usize,
     msg_direct_connection_unneeded: usize,
 
@@ -110,7 +109,6 @@ impl Stats {
     pub fn count_direct_message(&mut self, msg: &DirectMessage) {
         match *msg {
             DirectMessage::NodeIdentify { .. } => self.msg_direct_node_identify += 1,
-            DirectMessage::Heartbeat => self.msg_direct_heartbeat += 1,
             DirectMessage::NewNode(_) => self.msg_direct_new_node += 1,
             DirectMessage::ConnectionUnneeded(..) => self.msg_direct_connection_unneeded += 1,
             _ => self.msg_other += 1,
@@ -125,10 +123,8 @@ impl Stats {
             info!("Stats - Sent {} messages in total, {} uncategorised",
                   self.msg_total,
                   self.msg_other);
-            info!("Stats - Direct - NodeIdentify: {}, Heartbeat: {}, NewNode: {}, \
-                    ConnectionUnneeded: {}",
+            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, ConnectionUnneeded: {}",
                   self.msg_direct_node_identify,
-                  self.msg_direct_heartbeat,
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
             info!("Stats - Requests - Get: {}, Put: {}, Post: {}, Delete: {}, GetCloseGroup: \
