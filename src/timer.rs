@@ -61,7 +61,7 @@ impl Timer {
         self.next_token = token.wrapping_add(1);
         let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
         let mut detail = mutex.lock().expect("Failed to lock.");
-        detail.deadlines.entry(Instant::now() + duration).or_insert(vec![]).push(token);
+        detail.deadlines.entry(Instant::now() + duration).or_insert_with(Vec::new).push(token);
         cond_var.notify_one();
         token
     }

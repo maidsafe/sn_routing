@@ -163,7 +163,7 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
                                    option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug))]
+#![cfg_attr(feature="clippy", allow(use_debug, doc_markdown))]
 
 #[macro_use]
 extern crate log;

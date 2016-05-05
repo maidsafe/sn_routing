@@ -278,10 +278,6 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
-        let mut timer = Timer::new(action_sender2);
-
-        let tick_timer_token = timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
-
         let core = Core {
             crust_service: crust_service,
             client_restriction: client_restriction,
@@ -291,7 +287,7 @@ impl Core {
             action_rx: action_rx,
             event_sender: event_sender,
             crust_sender: crust_sender,
-            timer: timer,
+            timer: Timer::new(action_sender2),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
             // TODO Needs further discussion on interval
@@ -305,7 +301,7 @@ impl Core {
             get_network_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
-            tick_timer_token: tick_timer_token,
+            tick_timer_token: 0,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
@@ -561,6 +557,7 @@ impl Core {
             // This will give me a new RT and set state to Relocated
             self.set_self_node_name(new_name);
             self.state = State::Node;
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
             info!("{:?} - Started a new network as a seed node.", self)
         }
         // TODO: Keep track of that peer to make sure we receive a message from them.
@@ -1579,7 +1576,10 @@ impl Core {
             }
         }
 
-        self.state = State::Node;
+        if self.state != State::Node {
+            self.state = State::Node;
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
+        }
 
         if self.routing_table.len() == 1 {
             self.request_bucket_close_groups();
@@ -2184,10 +2184,8 @@ impl Core {
             error!("Failed to get GetNetworkName response.");
             let _ = self.event_sender.send(Event::GetNetworkNameFailed);
         } else if self.tick_timer_token == token {
-            if self.state == State::Node {
-                let _ = self.event_sender.send(Event::Tick);
-                self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
-            }
+            let _ = self.event_sender.send(Event::Tick);
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
         } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
             if bucket_token == token {
                 self.request_bucket_close_groups();

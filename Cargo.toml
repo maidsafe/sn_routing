@@ -11,13 +11,13 @@ version = "0.18.3"
 
 [dependencies]
 accumulator = "~0.3.0"
-clippy = {version = "~0.0.63", optional = true}
+clippy = {version = "~0.0.64", optional = true}
 crust = "~0.11.1"
 itertools = "~0.4.13"
 kademlia_routing_table = "~0.5.1"
 log = "~0.3.6"
 lru_time_cache = "~0.3.1"
-maidsafe_utilities = "~0.5.3"
+maidsafe_utilities = "~0.5.4"
 message_filter = "~0.5.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
