@@ -58,6 +58,7 @@ pub struct DataManager {
     routing_node: Rc<RoutingNode>,
     immutable_data_count: u64,
     structured_data_count: u64,
+    client_get_requests: u64,
     ongoing_gets_count: usize,
     data_holder_items_count: usize,
 }
@@ -74,7 +75,8 @@ fn id_and_version_of(data: &Data) -> IdAndVersion {
 impl Debug for DataManager {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "Stats - Data stored - ID {} - SD {} - total {} bytes",
+               "Stats : Client Get requests received {} ; Data stored - ID {} - SD {} - total {} bytes",
+               self.client_get_requests,
                self.immutable_data_count,
                self.structured_data_count,
                self.chunk_store.used_space())
@@ -94,6 +96,7 @@ impl DataManager {
             routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
+            client_get_requests: 0,
             ongoing_gets_count: 0,
             data_holder_items_count: 0,
         })
@@ -104,6 +107,10 @@ impl DataManager {
                       data_id: &DataIdentifier,
                       message_id: &MessageId)
                       -> Result<(), InternalError> {
+        if let Authority::Client{..} = request.src {
+            self.client_get_requests += 1;
+            info!("{:?}", self);
+        }
         if let Ok(data) = self.chunk_store.get(&data_id) {
             trace!("As {:?} sending data {:?} to {:?}",
                    request.dst,
@@ -304,8 +311,8 @@ impl DataManager {
         try!(self.chunk_store.put(&data_id, &data));
         if got_new_data {
             self.count_added_data(&data_id);
+            info!("{:?}", self);
         }
-        info!("{:?}", self);
         Ok(())
     }
 
@@ -454,6 +461,7 @@ impl DataManager {
         for data_id in &self.unneeded_chunks {
             data_idvs.remove(&(*data_id, 0));
         }
+        let mut has_pruned_data = false;
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
         for (data_id, version) in data_idvs {
@@ -463,6 +471,7 @@ impl DataManager {
                     if self.chunk_store.has(&data_id) &&
                        self.unneeded_chunks.iter().all(|id| *id != data_id) {
                         self.count_removed_data(&data_id);
+                        has_pruned_data = true;
                         if let DataIdentifier::Structured(..) = data_id {
                             let _ = self.chunk_store.delete(&data_id);
                         } else {
@@ -480,7 +489,9 @@ impl DataManager {
         if !data_list.is_empty() {
             let _ = self.send_refresh(Authority::ManagedNode(*node_name), data_list);
         }
-        info!("{:?}", self);
+        if has_pruned_data {
+            info!("{:?}", self);
+        }
     }
 
     /// Get all names and hashes of all data. // [TODO]: Can be optimised - 2016-04-23 09:11pm
@@ -488,13 +499,18 @@ impl DataManager {
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
-        self.immutable_data_count += self.unneeded_chunks
+        let pruned_unneeded_chunks = self.unneeded_chunks
                                          .iter()
                                          .filter(|data_id| {
                                              routing_table.is_close(&data_id.name())
                                          })
-                                         .count() as u64;
-        self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
+                                         .count();
+        if pruned_unneeded_chunks != 0 {
+            self.immutable_data_count += pruned_unneeded_chunks as u64;
+            self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
+            info!("{:?}", self);
+        }
+
         self.prune_ongoing_gets(routing_table);
         let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
         let mut data_idvs = self.chunk_store
@@ -531,7 +547,6 @@ impl DataManager {
         for (node_name, data_list) in data_lists {
             let _ = self.send_refresh(Authority::ManagedNode(node_name), data_list);
         }
-        info!("{:?}", self);
     }
 
     pub fn check_timeouts(&mut self) {
