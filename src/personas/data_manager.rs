@@ -45,22 +45,199 @@ const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 20;
 /// 0; for structured data, it specifies the version.
 pub type IdAndVersion = (DataIdentifier, u64);
 
-pub struct DataManager {
-    chunk_store: ChunkStore<DataIdentifier, Data>,
+struct Cache {
     /// Chunks we are no longer responsible for. These can be deleted from the chunk store.
     unneeded_chunks: VecDeque<DataIdentifier>,
-    /// Accumulates refresh messages and the peers we received them from.
-    refresh_accumulator: Accumulator<IdAndVersion, XorName>,
     /// Maps the peers to the set of data chunks that we need and we know they hold.
     data_holders: HashMap<XorName, HashSet<IdAndVersion>>,
     /// Maps the peers to the data chunks we requested from them, and the timestamp of the request.
     ongoing_gets: HashMap<XorName, (Instant, IdAndVersion)>,
+    ongoing_gets_count: usize,
+    data_holder_items_count: usize,
+}
+
+impl Cache {
+    fn new() -> Cache {
+        Cache {
+            unneeded_chunks: VecDeque::new(),
+            data_holders: HashMap::new(),
+            ongoing_gets: HashMap::new(),
+            ongoing_gets_count: 0,
+            data_holder_items_count: 0,
+        }
+    }
+
+    fn insert_into_ongoing_gets(&mut self, idle_holder: &XorName, data_idv: &IdAndVersion) {
+        let _ = self.ongoing_gets.insert(*idle_holder, (Instant::now(), *data_idv));
+    }
+
+    fn handle_get_success(&mut self, src: &XorName, data_id: &DataIdentifier, version: &u64) {
+        if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(src) {
+            if &expected_idv.0 != data_id {
+                let _ = self.ongoing_gets.insert(*src, (timestamp, expected_idv));
+            }
+        }
+        for (_, data_idvs) in &mut self.data_holders {
+            let _ = data_idvs.remove(&(*data_id, *version));
+        }
+    }
+
+    fn handle_get_failure(&mut self, src: &XorName, data_id: &DataIdentifier) -> bool {
+        if let Some((timestamp, data_idv)) = self.ongoing_gets.remove(src) {
+            if data_idv.0 == *data_id {
+                return true;
+            } else {
+                let _ = self.ongoing_gets.insert(*src, (timestamp, data_idv));
+            }
+        };
+        false
+    }
+
+    fn register_data_with_holder(&mut self, src: &XorName, data_idv: &IdAndVersion) -> bool {
+        if self.data_holders.values().any(|data_idvs| data_idvs.contains(data_idv)) {
+            let _ = self.data_holders.entry(*src).or_insert_with(HashSet::new).insert(*data_idv);
+            return true;
+        }
+        false
+    }
+
+    fn add_records(&mut self, data_idv: IdAndVersion, holders: Vec<XorName>) {
+        for holder in holders {
+            let _ = self.data_holders.entry(holder).or_insert_with(HashSet::new).insert(data_idv);
+        }
+    }
+
+    fn is_in_unneeded(&self, data_id: &DataIdentifier) -> bool {
+        self.unneeded_chunks.iter().any(|id| id == data_id)
+    }
+
+    fn add_as_unneeded(&mut self, data_id: DataIdentifier) {
+        self.unneeded_chunks.push_back(data_id);
+    }
+
+    fn chain_records_in_cache(&self, records_in_store: Vec<IdAndVersion>) -> HashSet<IdAndVersion> {
+        let mut records = self.data_holders.values()
+                                           .flat_map(|idvs| idvs.iter().cloned())
+                                           .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+                                           .chain(records_in_store)
+                                           .collect_vec();
+        for data_id in &self.unneeded_chunks {
+            records.retain(|&idv| idv != (*data_id, 0));
+        }
+        records.iter().cloned().collect::<HashSet<_>>()
+    }
+
+    fn prune_unneeded_chunks<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> u64 {
+        let pruned_unneeded_chunks = self.unneeded_chunks
+                                         .iter()
+                                         .filter(|data_id| {
+                                             routing_table.is_close(&data_id.name())
+                                         })
+                                         .cloned()
+                                         .collect_vec();
+        if pruned_unneeded_chunks.len() != 0 {
+            self.unneeded_chunks.retain(|data_id| !pruned_unneeded_chunks.contains(&data_id));
+        }
+        pruned_unneeded_chunks.len() as u64
+    }
+
+    fn pop_unneeded_chunk(&mut self) -> Option<DataIdentifier> {
+        self.unneeded_chunks.pop_front()
+    }
+
+    /// Remove entries from `ongoing_gets` that are no longer responsible for the data or that
+    /// disconnected.
+    fn prune_ongoing_gets<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> bool {
+        let lost_gets = self.ongoing_gets
+                            .iter()
+                            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
+                                routing_table.other_close_nodes(&data_id.name())
+                                             .map_or(true, |group| {
+                                                 !group.iter()
+                                                       .map(T::name)
+                                                       .any(|name| name == *holder)
+                                             })
+                            })
+                            .map(|(holder, _)| *holder)
+                            .collect_vec();
+        if !lost_gets.is_empty() {
+            for holder in lost_gets {
+                let _ = self.ongoing_gets.remove(&holder);
+            }
+            return true;
+        }
+        false
+    }
+
+    fn needed_data(&mut self) -> Vec<(XorName, IdAndVersion)> {
+        let empty_holders = self.data_holders
+                                .iter()
+                                .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
+                                .map(|(holder, _)| *holder)
+                                .collect_vec();
+        for holder in empty_holders {
+            let _ = self.data_holders.remove(&holder);
+        }
+        let expired_gets = self.ongoing_gets
+                               .iter()
+                               .filter(|&(_, &(ref timestamp, _))| {
+                                   timestamp.elapsed().as_secs() > GET_FROM_DATA_HOLDER_TIMEOUT_SECS
+                               })
+                               .map(|(holder, _)| *holder)
+                               .collect_vec();
+        for holder in expired_gets {
+            let _ = self.ongoing_gets.remove(&holder);
+        }
+        let mut outstanding_data_ids: HashSet<_> = self.ongoing_gets
+                                                       .values()
+                                                       .map(|&(_, (data_id, _))| data_id)
+                                                       .collect();
+        let idle_holders = self.data_holders
+                               .keys()
+                               .filter(|holder| !self.ongoing_gets.contains_key(holder))
+                               .cloned()
+                               .collect_vec();
+        let mut candidates = Vec::new();
+        for idle_holder in idle_holders {
+            if let Some(data_idvs) = self.data_holders.get_mut(&idle_holder) {
+                if let Some(&data_idv) = data_idvs.iter()
+                                                  .find(|&&(ref data_id, _)| {
+                                                      !outstanding_data_ids.contains(data_id)
+                                                  }) {
+                    let _ = data_idvs.remove(&data_idv);
+                    let (data_id, _) = data_idv;
+                    let _ = outstanding_data_ids.insert(data_id);
+                    candidates.push((idle_holder, data_idv));
+                }
+            }
+        }
+        candidates
+    }
+
+    fn print_stats(&mut self) {
+        let new_og_count = self.ongoing_gets.len();
+        let new_dhi_count = self.data_holders.values().map(HashSet::len).fold(0, Add::add);
+        if new_og_count != self.ongoing_gets_count ||
+           new_dhi_count != self.data_holder_items_count {
+            self.ongoing_gets_count = new_og_count;
+            self.data_holder_items_count = new_dhi_count;
+            info!("Cache Stats - Expecting {} Get responses. {} entries in data_holders.",
+                  new_og_count,
+                  new_dhi_count);
+        }
+    }
+}
+
+
+pub struct DataManager {
+    chunk_store: ChunkStore<DataIdentifier, Data>,
     routing_node: Rc<RoutingNode>,
+    /// Accumulates refresh messages and the peers we received them from.
+    refresh_accumulator: Accumulator<IdAndVersion, XorName>,
+    cache: Cache,
     immutable_data_count: u64,
     structured_data_count: u64,
     client_get_requests: u64,
-    ongoing_gets_count: usize,
-    data_holder_items_count: usize,
 }
 
 fn id_and_version_of(data: &Data) -> IdAndVersion {
@@ -87,18 +264,14 @@ impl DataManager {
     pub fn new(routing_node: Rc<RoutingNode>, capacity: u64) -> Result<DataManager, InternalError> {
         Ok(DataManager {
             chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
-            unneeded_chunks: VecDeque::new(),
             refresh_accumulator:
                 Accumulator::with_duration(ACCUMULATOR_QUORUM,
                                            Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),
-            data_holders: HashMap::new(),
-            ongoing_gets: HashMap::new(),
+            cache: Cache::new(),
             routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
             client_get_requests: 0,
-            ongoing_gets_count: 0,
-            data_holder_items_count: 0,
         })
     }
 
@@ -273,14 +446,7 @@ impl DataManager {
 
     pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
         let (data_id, version) = id_and_version_of(&data);
-        if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(src) {
-            if expected_idv.0 != data_id {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, expected_idv));
-            }
-        };
-        for (_, data_idvs) in &mut self.data_holders {
-            let _ = data_idvs.remove(&(data_id, version));
-        }
+        self.cache.handle_get_success(src, &data_id, &version);
         try!(self.send_gets_for_needed_data());
         // If we're no longer in the close group, return.
         if !self.close_to_address(&data_id.name()) {
@@ -320,15 +486,7 @@ impl DataManager {
                               src: &XorName,
                               data_id: &DataIdentifier)
                               -> Result<(), InternalError> {
-        let mut unexpected = true;
-        if let Some((timestamp, data_idv)) = self.ongoing_gets.remove(src) {
-            if data_idv.0 == *data_id {
-                unexpected = false;
-            } else {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, data_idv));
-            }
-        };
-        if unexpected {
+        if !self.cache.handle_get_failure(src, data_id) {
             warn!("Got unexpected GetFailure for data {:?}.", data_id);
             return Err(InternalError::InvalidMessage);
         }
@@ -341,33 +499,28 @@ impl DataManager {
                           -> Result<(), InternalError> {
         let data_list = try!(serialisation::deserialise::<Vec<IdAndVersion>>(serialised_data_list));
         for data_idv in data_list {
-            if self.data_holders.values().any(|data_idvs| data_idvs.contains(&data_idv)) {
-                let _ = self.data_holders.entry(*src).or_insert_with(HashSet::new).insert(data_idv);
-            } else if let Some(holders) = self.refresh_accumulator.add(data_idv, *src) {
-                self.refresh_accumulator.delete(&data_idv);
-                let (ref data_id, ref version) = data_idv;
-                let data_needed = match *data_id {
-                    DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
-                    DataIdentifier::Structured(..) => {
-                        match self.chunk_store.get(data_id) {
-                            Err(_) => true, // We don't have the data, so we need to retrieve it.
-                            Ok(Data::Structured(sd)) => sd.get_version() < *version,
-                            _ => unreachable!(),
+            if !self.cache.register_data_with_holder(src, &data_idv) {
+                if let Some(holders) = self.refresh_accumulator.add(data_idv, *src) {
+                    self.refresh_accumulator.delete(&data_idv);
+                    let (ref data_id, ref version) = data_idv;
+                    let data_needed = match *data_id {
+                        DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
+                        DataIdentifier::Structured(..) => {
+                            match self.chunk_store.get(data_id) {
+                                Err(_) => true, // We don't have the data, so we need to retrieve it.
+                                Ok(Data::Structured(sd)) => sd.get_version() < *version,
+                                _ => unreachable!(),
+                            }
                         }
-                    }
-                    _ => {
-                        error!("Received unexpected refresh for {:?}.", data_id);
+                        _ => {
+                            error!("Received unexpected refresh for {:?}.", data_id);
+                            continue;
+                        }
+                    };
+                    if !data_needed {
                         continue;
                     }
-                };
-                if !data_needed {
-                    continue;
-                }
-                for holder in holders {
-                    let _ = self.data_holders
-                                .entry(holder)
-                                .or_insert_with(HashSet::new)
-                                .insert(data_idv);
+                    self.cache.add_records(data_idv, holders);
                 }
             }
         }
@@ -375,66 +528,23 @@ impl DataManager {
     }
 
     fn send_gets_for_needed_data(&mut self) -> Result<(), InternalError> {
-        let empty_holders = self.data_holders
-                                .iter()
-                                .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
-                                .map(|(holder, _)| *holder)
-                                .collect_vec();
-        for holder in empty_holders {
-            let _ = self.data_holders.remove(&holder);
-        }
-        let expired_gets = self.ongoing_gets
-                               .iter()
-                               .filter(|&(_, &(ref timestamp, _))| {
-                                   timestamp.elapsed().as_secs() > GET_FROM_DATA_HOLDER_TIMEOUT_SECS
-                               })
-                               .map(|(holder, _)| *holder)
-                               .collect_vec();
-        for holder in expired_gets {
-            let _ = self.ongoing_gets.remove(&holder);
-        }
-        let mut outstanding_data_ids: HashSet<_> = self.ongoing_gets
-                                                       .values()
-                                                       .map(|&(_, (data_id, _))| data_id)
-                                                       .collect();
-        let idle_holders = self.data_holders
-                               .keys()
-                               .filter(|holder| !self.ongoing_gets.contains_key(holder))
-                               .cloned()
-                               .collect_vec();
-        for idle_holder in idle_holders {
-            if let Some(data_idvs) = self.data_holders.get_mut(&idle_holder) {
-                if let Some(&data_idv) = data_idvs.iter()
-                                                  .find(|&&(ref data_id, _)| {
-                                                      !outstanding_data_ids.contains(data_id)
-                                                  }) {
-                    let _ = data_idvs.remove(&data_idv);
-                    if let Ok(Some(group)) = self.routing_node.close_group(data_idv.0.name()) {
-                        if group.contains(&idle_holder) {
-                            let now = Instant::now();
-                            let _ = self.ongoing_gets.insert(idle_holder, (now, data_idv));
-                            let (data_id, _) = data_idv;
-                            let _ = outstanding_data_ids.insert(data_id);
-                            let src = Authority::ManagedNode(try!(self.routing_node.name()));
-                            let dst = Authority::ManagedNode(idle_holder);
-                            let msg_id = MessageId::new();
-                            let _ = self.routing_node.send_get_request(src, dst, data_id, msg_id);
-                        }
-                    }
+        let src = Authority::ManagedNode(try!(self.routing_node.name()));
+        let candidates = self.cache.needed_data();
+        for (idle_holder, data_idv) in candidates {
+            if let Ok(Some(group)) = self.routing_node.close_group(data_idv.0.name()) {
+                if group.contains(&idle_holder) {
+                    self.cache.insert_into_ongoing_gets(&idle_holder, &data_idv);
+                    let (data_id, _) = data_idv;
+                    let dst = Authority::ManagedNode(idle_holder);
+                    let msg_id = MessageId::new();
+                    let _ = self.routing_node.send_get_request(src.clone(),
+                                                               dst,
+                                                               data_id,
+                                                               msg_id);
                 }
             }
         }
-        let new_og_count = self.ongoing_gets.len();
-        let new_dhi_count = self.data_holders.values().map(HashSet::len).fold(0, Add::add);
-        if new_og_count != self.ongoing_gets_count ||
-           new_dhi_count != self.data_holder_items_count {
-            self.ongoing_gets_count = new_og_count;
-            self.data_holder_items_count = new_dhi_count;
-            info!("Stats - Expecting {} Get responses. {} entries in data_holders.",
-                  new_og_count,
-                  new_dhi_count);
-        }
-        // TODO: Check whether we can do without a return value.
+        self.cache.print_stats();
         Ok(())
     }
 
@@ -448,19 +558,15 @@ impl DataManager {
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
-        self.prune_ongoing_gets(routing_table);
-        let mut data_idvs = self.chunk_store
-                                .keys()
-                                .into_iter()
-                                .filter_map(|data_id| self.to_id_and_version(data_id))
-                                .chain(self.data_holders
-                                           .values()
-                                           .flat_map(|idvs| idvs.iter().cloned()))
-                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                                .collect::<HashSet<_>>();
-        for data_id in &self.unneeded_chunks {
-            data_idvs.remove(&(*data_id, 0));
+        if self.cache.prune_ongoing_gets(routing_table) {
+            let _ = self.send_gets_for_needed_data();
         }
+        let data_idvs = self.cache.chain_records_in_cache(self.chunk_store
+                                                              .keys()
+                                                              .into_iter()
+                                                              .filter_map(|data_id|
+                                                                  self.to_id_and_version(data_id))
+                                                              .collect_vec());
         let mut has_pruned_data = false;
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
@@ -469,13 +575,13 @@ impl DataManager {
                 None => {
                     trace!("No longer a DM for {:?}", data_id);
                     if self.chunk_store.has(&data_id) &&
-                       self.unneeded_chunks.iter().all(|id| *id != data_id) {
+                       !self.cache.is_in_unneeded(&data_id) {
                         self.count_removed_data(&data_id);
                         has_pruned_data = true;
                         if let DataIdentifier::Structured(..) = data_id {
                             let _ = self.chunk_store.delete(&data_id);
                         } else {
-                            self.unneeded_chunks.push_back(data_id);
+                            self.cache.add_as_unneeded(data_id);
                         }
                     }
                 }
@@ -499,30 +605,21 @@ impl DataManager {
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
                             routing_table: &RoutingTable<NodeInfo>) {
-        let pruned_unneeded_chunks = self.unneeded_chunks
-                                         .iter()
-                                         .filter(|data_id| {
-                                             routing_table.is_close(&data_id.name())
-                                         })
-                                         .count();
+        let pruned_unneeded_chunks = self.cache.prune_unneeded_chunks(routing_table);
         if pruned_unneeded_chunks != 0 {
-            self.immutable_data_count += pruned_unneeded_chunks as u64;
-            self.unneeded_chunks.retain(|data_id| !routing_table.is_close(&data_id.name()));
+            self.immutable_data_count += pruned_unneeded_chunks;
             info!("{:?}", self);
         }
-
-        self.prune_ongoing_gets(routing_table);
-        let holder_idvs = self.data_holders.values().flat_map(|idvs| idvs.iter().cloned());
-        let mut data_idvs = self.chunk_store
-                                .keys()
-                                .into_iter()
-                                .filter_map(|data_id| self.to_id_and_version(data_id))
-                                .chain(holder_idvs)
-                                .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                                .collect::<HashSet<_>>();
-        for data_id in &self.unneeded_chunks {
-            data_idvs.remove(&(*data_id, 0));
+        if self.cache.prune_ongoing_gets(routing_table) {
+            let _ = self.send_gets_for_needed_data();
         }
+
+        let data_idvs = self.cache.chain_records_in_cache(self.chunk_store
+                                                              .keys()
+                                                              .into_iter()
+                                                              .filter_map(|data_id|
+                                                                  self.to_id_and_version(data_id))
+                                                              .collect_vec());
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
             match routing_table.other_close_nodes(&data_idv.0.name()) {
@@ -556,29 +653,6 @@ impl DataManager {
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
         self.chunk_store.keys()
-    }
-
-    /// Remove entries from `ongoing_gets` that are no longer responsible for the data or that
-    /// disconnected.
-    fn prune_ongoing_gets(&mut self, routing_table: &RoutingTable<NodeInfo>) {
-        let lost_gets = self.ongoing_gets
-                            .iter()
-                            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
-                                routing_table.other_close_nodes(&data_id.name())
-                                             .map_or(true, |group| {
-                                                 !group.iter()
-                                                       .map(NodeInfo::name)
-                                                       .any(|name| name == *holder)
-                                             })
-                            })
-                            .map(|(holder, _)| *holder)
-                            .collect_vec();
-        if !lost_gets.is_empty() {
-            for holder in lost_gets {
-                let _ = self.ongoing_gets.remove(&holder);
-            }
-            let _ = self.send_gets_for_needed_data();
-        }
     }
 
     /// Returns the `IdAndVersion` for the given data identifier, or `None` if not stored.
@@ -622,7 +696,7 @@ impl DataManager {
     /// anymore.
     fn clean_chunk_store(&mut self) {
         while self.chunk_store_full() {
-            if let Some(data_id) = self.unneeded_chunks.pop_front() {
+            if let Some(data_id) = self.cache.pop_unneeded_chunk() {
                 let _ = self.chunk_store.delete(&data_id);
             } else {
                 break;
