@@ -1,5 +1,12 @@
 # Safe Vault - Change Log
 
+## [0.8.0]
+- Several tweaks to churn handling in data_manager.
+- Implement process to automatically build release binaries.
+- Re-organise the tests to use mock Crust instead of mock Routing.
+- Improve logging.
+- Fix several bugs.
+
 ## [0.7.0]
 - Restart routing if it failed to join the network.
 - Reimplement the refresh algorithm for structured and immutable data to make it
