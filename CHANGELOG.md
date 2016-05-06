@@ -1,5 +1,12 @@
 # Routing - Change Log
 
+## [0.18.4]
+- Allow up to 40 tunnel client pairs.
+- Migrate to Crust 0.12.0.
+- Add sequence diagrams to the documentation.
+- Improve logging.
+- Fix several bugs.
+
 ## [0.18.3]
 - Depend on latest Crust.
 - Add the 'Stats' prefix to all statistics log messages.
