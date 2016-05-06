@@ -216,7 +216,7 @@ pub struct Core {
     bucket_refresh_token_and_delay: Option<(u64, u64)>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
-    tick_timer_token: u64,
+    tick_timer_token: Option<u64>,
 
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
@@ -301,7 +301,7 @@ impl Core {
             get_network_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
-            tick_timer_token: 0,
+            tick_timer_token: None,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
@@ -557,7 +557,8 @@ impl Core {
             // This will give me a new RT and set state to Relocated
             self.set_self_node_name(new_name);
             self.state = State::Node;
-            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
+            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+            self.tick_timer_token = Some(self.timer.schedule(tick_period));
             info!("{:?} - Started a new network as a seed node.", self)
         }
         // TODO: Keep track of that peer to make sure we receive a message from them.
@@ -1577,7 +1578,8 @@ impl Core {
 
         if self.state != State::Node {
             self.state = State::Node;
-            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
+            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+            self.tick_timer_token = Some(self.timer.schedule(tick_period));
         }
 
         if self.routing_table.len() == 1 {
@@ -2186,9 +2188,10 @@ impl Core {
         if self.get_network_name_timer_token == Some(token) {
             error!("Failed to get GetNetworkName response.");
             let _ = self.event_sender.send(Event::GetNetworkNameFailed);
-        } else if self.tick_timer_token == token {
+        } else if self.tick_timer_token == Some(token) {
             let _ = self.event_sender.send(Event::Tick);
-            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
+            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+            self.tick_timer_token = Some(self.timer.schedule(tick_period));
         } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
             if bucket_token == token {
                 self.request_bucket_close_groups();
