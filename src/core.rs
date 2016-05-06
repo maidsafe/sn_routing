@@ -1563,9 +1563,8 @@ impl Core {
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
-                let new_token = self.timer
-                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
-                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
+
+                self.reset_bucket_refresh_timer();
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
@@ -1599,6 +1598,14 @@ impl Core {
         }
 
         Ok(())
+    }
+
+    fn reset_bucket_refresh_timer(&mut self) {
+        if let Some((_, REFRESH_BUCKET_GROUPS_SECS)) = self.bucket_refresh_token_and_delay {
+            return; // Timer has already been reset.
+        }
+        let new_token = self.timer.schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+        self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
     }
 
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
@@ -2519,9 +2526,7 @@ impl Core {
                     debug!("Lost connection, less than {} remaining.", GROUP_SIZE);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
-                let new_token = self.timer
-                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
-                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
+                self.reset_bucket_refresh_timer();
             }
         };
     }
