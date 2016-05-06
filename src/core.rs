@@ -67,10 +67,8 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
 const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
-/// Time (in seconds) after which a `Heartbeat` is sent.
-const HEARTBEAT_TIMEOUT_SECS: u64 = 60;
-/// Number of missed heartbeats after which a peer is considered disconnected.
-const HEARTBEAT_ATTEMPTS: u64 = 3;
+/// Time (in seconds) after which a `Tick` event is sent.
+const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
 /// Initial period for requesting bucket close groups of all non-full buckets. This is doubled each
@@ -218,7 +216,7 @@ pub struct Core {
     bucket_refresh_token_and_delay: Option<(u64, u64)>,
     /// The last joining node we have sent a `GetNetworkName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
-    heartbeat_timer_token: u64,
+    tick_timer_token: u64,
 
     // our bootstrap connections
     proxy_map: HashMap<PeerId, PublicId>,
@@ -280,10 +278,6 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
-        let mut timer = Timer::new(action_sender2);
-
-        let heartbeat_timer_token = timer.schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
-
         let core = Core {
             crust_service: crust_service,
             client_restriction: client_restriction,
@@ -293,7 +287,7 @@ impl Core {
             action_rx: action_rx,
             event_sender: event_sender,
             crust_sender: crust_sender,
-            timer: timer,
+            timer: Timer::new(action_sender2),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
             // TODO Needs further discussion on interval
@@ -307,7 +301,7 @@ impl Core {
             get_network_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
-            heartbeat_timer_token: heartbeat_timer_token,
+            tick_timer_token: 0,
             proxy_map: HashMap::new(),
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
@@ -563,6 +557,7 @@ impl Core {
             // This will give me a new RT and set state to Relocated
             self.set_self_node_name(new_name);
             self.state = State::Node;
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
             info!("{:?} - Started a new network as a seed node.", self)
         }
         // TODO: Keep track of that peer to make sure we receive a message from them.
@@ -617,7 +612,7 @@ impl Core {
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, name: XorName) {
         let _ = self.connecting_peers.insert(peer_id, (name, ConnectState::Tunnel));
         for node in self.routing_table.closest_nodes_to(&name, GROUP_SIZE, false) {
-            warn!("Asking {:?} to serve as a tunnel.", node.name());
+            trace!("Asking {:?} to serve as a tunnel.", node.name());
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
             if let Err(err) = self.send_direct_message(&node.peer_id, tunnel_request) {
                 error!("Failed to send tunnel request: {:?}.", err);
@@ -1369,9 +1364,8 @@ impl Core {
                     self.disconnect_peer(&peer_id)
                 }
             }
-            DirectMessage::Heartbeat => Ok(()),
             DirectMessage::NewNode(public_id) => {
-                debug!("Received NewNode({:?}).", public_id);
+                trace!("Received NewNode({:?}).", public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
                     return self.send_connect_request(public_id.name());
                 }
@@ -1390,7 +1384,7 @@ impl Core {
                 }
                 debug!("Received ConnectionUnneeded from {:?}.", peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
-                    debug!("Dropped {:?} from the routing table.", name);
+                    info!("Dropped {:?} from the routing table.", name);
                     self.crust_service.disconnect(&peer_id);
                 }
                 Ok(())
@@ -1556,7 +1550,7 @@ impl Core {
                 return self.disconnect_peer(&peer_id);
             }
             Some(AddedNodeDetails { must_notify, unneeded, .. }) => {
-                debug!("{:?} Added {:?} to routing table.", self, name);
+                info!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
                 }
@@ -1569,9 +1563,8 @@ impl Core {
                     try!(self.send_direct_message(&node_info.peer_id,
                                                   DirectMessage::ConnectionUnneeded(our_name)));
                 }
-                let new_token = self.timer
-                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
-                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
+
+                self.reset_bucket_refresh_timer();
 
                 // TODO: Figure out whether common_groups makes sense: Do we need to send a
                 // NodeAdded event for _every_ new peer?
@@ -1582,7 +1575,10 @@ impl Core {
             }
         }
 
-        self.state = State::Node;
+        if self.state != State::Node {
+            self.state = State::Node;
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
+        }
 
         if self.routing_table.len() == 1 {
             self.request_bucket_close_groups();
@@ -1602,6 +1598,14 @@ impl Core {
         }
 
         Ok(())
+    }
+
+    fn reset_bucket_refresh_timer(&mut self) {
+        if let Some((_, REFRESH_BUCKET_GROUPS_SECS)) = self.bucket_refresh_token_and_delay {
+            return; // Timer has already been reset.
+        }
+        let new_token = self.timer.schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
+        self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
     }
 
     /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
@@ -1932,20 +1936,16 @@ impl Core {
                                        dst: Authority)
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
-            if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
-                if self.routing_table.contains(close_node_id.name()) {
-                    let _ = self.node_id_cache.remove(close_node_id.name());
-                    trace!("Routing table already contains {:?}.", close_node_id);
-                } else if self.routing_table.need_to_add(close_node_id.name()) {
+            if self.routing_table.need_to_add(close_node_id.name()) {
+                if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
                     debug!("Sending connection info to {:?} on GetCloseGroup response.",
                            close_node_id);
                     try!(self.send_connection_info(close_node_id,
                                                    dst.clone(),
                                                    Authority::ManagedNode(*close_node_id.name())));
-                } else {
-                    let _ = self.node_id_cache.remove(close_node_id.name());
-                    trace!("Routing table does not need {:?}.", close_node_id);
                 }
+            } else {
+                trace!("Routing table does not need {:?}.", close_node_id);
             }
         }
 
@@ -2186,31 +2186,9 @@ impl Core {
         if self.get_network_name_timer_token == Some(token) {
             error!("Failed to get GetNetworkName response.");
             let _ = self.event_sender.send(Event::GetNetworkNameFailed);
-        } else if self.heartbeat_timer_token == token {
-            if self.state == State::Node {
-                let _ = self.event_sender.send(Event::Tick);
-            }
-            let now = Instant::now();
-            let stale_peers = self.peer_map
-                                  .iter()
-                                  .filter(|&(_, timestamp)| {
-                                      (now - *timestamp).as_secs() >
-                                      HEARTBEAT_ATTEMPTS * HEARTBEAT_TIMEOUT_SECS
-                                  })
-                                  .map(|(peer_id, _)| peer_id)
-                                  .cloned()
-                                  .collect_vec();
-            for peer_id in stale_peers {
-                debug!("Heartbeat from {:?} timed out. Calling crust::Service::disconnect.",
-                       peer_id);
-                self.crust_service.disconnect(&peer_id);
-                self.handle_lost_peer(peer_id);
-            }
-            for peer_id in self.peer_map.keys().cloned().collect_vec() {
-                let _ = self.send_direct_message(&peer_id, DirectMessage::Heartbeat);
-            }
-            self.heartbeat_timer_token = self.timer
-                                             .schedule(Duration::from_secs(HEARTBEAT_TIMEOUT_SECS));
+        } else if self.tick_timer_token == token {
+            let _ = self.event_sender.send(Event::Tick);
+            self.tick_timer_token = self.timer.schedule(Duration::from_secs(TICK_TIMEOUT_SECS));
         } else if let Some((bucket_token, delay)) = self.bucket_refresh_token_and_delay {
             if bucket_token == token {
                 self.request_bucket_close_groups();
@@ -2524,7 +2502,7 @@ impl Core {
         if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
             if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
                    self.routing_table.remove(node.public_id.name()) {
-                debug!("Dropped {:?} from the routing table.", node.name());
+                info!("Dropped {:?} from the routing table.", node.name());
                 if common_groups {
                     // If the lost node shared some close group with us, send a NodeLost event.
                     let event = Event::NodeLost(*node.public_id.name(), self.routing_table.clone());
@@ -2540,13 +2518,11 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.len() < GROUP_SIZE {
-                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE);
+                if self.routing_table.len() < GROUP_SIZE - 1 {
+                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE - 1);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
-                let new_token = self.timer
-                                    .schedule(Duration::from_secs(REFRESH_BUCKET_GROUPS_SECS));
-                self.bucket_refresh_token_and_delay = Some((new_token, REFRESH_BUCKET_GROUPS_SECS));
+                self.reset_bucket_refresh_timer();
             }
         };
     }
@@ -2554,7 +2530,7 @@ impl Core {
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
     /// there. If not, returns an error.
     fn check_address_for_routing_table(&self, name: &XorName) -> Result<(), RoutingError> {
-        if self.routing_table.allow_connection(name) {
+        if !self.routing_table.contains(name) && self.routing_table.allow_connection(name) {
             Ok(())
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
