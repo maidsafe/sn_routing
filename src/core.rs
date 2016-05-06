@@ -2518,8 +2518,8 @@ impl Core {
                                e);
                     }
                 }
-                if self.routing_table.len() < GROUP_SIZE {
-                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE);
+                if self.routing_table.len() < GROUP_SIZE - 1 {
+                    debug!("Lost connection, less than {} remaining.", GROUP_SIZE - 1);
                     let _ = self.event_sender.send(Event::Disconnected);
                 }
                 self.reset_bucket_refresh_timer();
