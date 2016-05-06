@@ -1936,20 +1936,16 @@ impl Core {
                                        dst: Authority)
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
-            if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
-                if self.routing_table.contains(close_node_id.name()) {
-                    let _ = self.node_id_cache.remove(close_node_id.name());
-                    trace!("Routing table already contains {:?}.", close_node_id);
-                } else if self.routing_table.need_to_add(close_node_id.name()) {
+            if self.routing_table.need_to_add(close_node_id.name()) {
+                if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
                     debug!("Sending connection info to {:?} on GetCloseGroup response.",
                            close_node_id);
                     try!(self.send_connection_info(close_node_id,
                                                    dst.clone(),
                                                    Authority::ManagedNode(*close_node_id.name())));
-                } else {
-                    let _ = self.node_id_cache.remove(close_node_id.name());
-                    trace!("Routing table does not need {:?}.", close_node_id);
                 }
+            } else {
+                trace!("Routing table does not need {:?}.", close_node_id);
             }
         }
 
@@ -2534,7 +2530,7 @@ impl Core {
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
     /// there. If not, returns an error.
     fn check_address_for_routing_table(&self, name: &XorName) -> Result<(), RoutingError> {
-        if self.routing_table.allow_connection(name) {
+        if !self.routing_table.contains(name) && self.routing_table.allow_connection(name) {
             Ok(())
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
