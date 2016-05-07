@@ -66,7 +66,7 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
-const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
