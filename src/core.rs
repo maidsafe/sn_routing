@@ -306,7 +306,7 @@ impl Core {
             client_map: HashMap::new(),
             peer_map: HashMap::new(),
             use_data_cache: use_data_cache,
-            data_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            data_cache: LruCache::with_capacity(100),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
             their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
