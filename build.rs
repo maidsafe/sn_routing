@@ -23,50 +23,56 @@
 
 #![allow(unused)]
 
+#[cfg(feature = "generate-diagrams")]
 extern crate hyper;
 
-use hyper::Client;
-use hyper::client::IntoUrl;
-use std::env;
-use std::fs::{self, File};
-use std::io;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "generate-diagrams")]
+mod generate_diagrams {
+    use hyper::Client;
+    use hyper::client::IntoUrl;
+    use std::fs::{self, File};
+    use std::io;
+    use std::path::{Path, PathBuf};
 
+    pub fn download_image<U: IntoUrl>(name: &str, src: U) {
+        download(src, image_path(name))
+    }
+
+    fn download<U: IntoUrl, P: AsRef<Path>>(src: U, dst: P) {
+        let client = Client::new();
+        let mut res = client.get(src).send().unwrap();
+
+        if let Some(dir) = dst.as_ref().parent() {
+            fs::create_dir_all(dir).unwrap();
+        }
+
+        let mut file = File::create(dst).unwrap();
+
+        io::copy(&mut res, &mut file).unwrap();
+    }
+
+    fn image_path(name: &str) -> PathBuf {
+        let mut path = PathBuf::from("target/doc/routing");
+        path.push(name);
+        path.set_extension("png");
+        path
+    }
+}
+
+// Only generate the diagrams when "generate-diagrams" feature is enabled.
+// TODO: instead of this feature, detect that cargo is run in the "doc" profile.
+#[cfg(feature = "generate-diagrams")]
 fn main() {
-  // Only generate the diagrams when "generate-diagrams" feature is enabled.
-  // TODO: instead of this feature, detect that cargo is run in the "doc"
-  // profile.
-  if env::var("CARGO_FEATURE_GENERATE_DIAGRAMS").is_err() {
-    return;
-  }
-
-  // List all diagrams names and URLs to download them from.
-  download_image("bootstrap",       "https://cacoo.com/diagrams/cqX6QPN90ZuKXZ0n-F56A2.png");
-  download_image("get-close-group", "https://cacoo.com/diagrams/PTBt1OgHVcdu0PKt-F56A2.png");
-  download_image("new-node",        "https://cacoo.com/diagrams/5VCFe286q4yfQ6Pm-F56A2.png");
-  download_image("tunnel",          "https://cacoo.com/diagrams/ALXyW2ugR92IxgWd-F56A2.png");
+    // List all diagrams names and URLs to download them from.
+    generate_diagrams::download_image("bootstrap",
+                                      "https://cacoo.com/diagrams/cqX6QPN90ZuKXZ0n-F56A2.png");
+    generate_diagrams::download_image("get-close-group",
+                                      "https://cacoo.com/diagrams/PTBt1OgHVcdu0PKt-F56A2.png");
+    generate_diagrams::download_image("new-node",
+                                      "https://cacoo.com/diagrams/5VCFe286q4yfQ6Pm-F56A2.png");
+    generate_diagrams::download_image("tunnel",
+                                      "https://cacoo.com/diagrams/ALXyW2ugR92IxgWd-F56A2.png");
 }
 
-fn download_image<U: IntoUrl>(name: &str, src: U) {
-  download(src, image_path(name))
-}
-
-fn download<U: IntoUrl, P: AsRef<Path>>(src: U, dst: P) {
-  let client = Client::new();
-  let mut res = client.get(src).send().unwrap();
-
-  if let Some(dir) = dst.as_ref().parent() {
-    fs::create_dir_all(dir).unwrap();
-  }
-
-  let mut file = File::create(dst).unwrap();
-
-  io::copy(&mut res, &mut file).unwrap();
-}
-
-fn image_path(name: &str) -> PathBuf {
-  let mut path = PathBuf::from("target/doc/routing");
-  path.push(name);
-  path.set_extension("png");
-  path
-}
+#[cfg(not(feature = "generate-diagrams"))]
+fn main() {}
