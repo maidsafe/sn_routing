@@ -136,8 +136,8 @@
 //! # Sequence diagrams
 //!
 //! - [Bootstrapping](bootstrap.png)
-//! - [GetCloseGroup](get-close-group.png)
-//! - [Churn (NewNode)](new-node.png)
+//! - [`GetCloseGroup`](get-close-group.png)
+//! - [Churn (`NewNode`)](new-node.png)
 //! - [Tunnel](tunnel.png)
 
 #![doc(html_logo_url =
@@ -163,7 +163,7 @@
 #![cfg_attr(feature="clippy", plugin(clippy))]
 #![cfg_attr(feature="clippy", deny(clippy, unicode_not_nfc, wrong_pub_self_convention,
                                    option_unwrap_used))]
-#![cfg_attr(feature="clippy", allow(use_debug, doc_markdown))]
+#![cfg_attr(feature="clippy", allow(use_debug))]
 
 #[macro_use]
 extern crate log;
