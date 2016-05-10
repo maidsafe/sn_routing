@@ -1,5 +1,6 @@
 [package]
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+build = "build.rs"
 description = "A secured storage DHT"
 documentation = "http://maidsafe.net/routing/latest"
 homepage = "http://maidsafe.net"
@@ -30,11 +31,11 @@ docopt = "~0.6.80"
 libc = "~0.2.10"
 
 [build-dependencies]
-hyper = "0.8.0"
+hyper = {version = "~0.9.4", optional = true}
 
 [features]
+generate-diagrams = ["hyper"]
 use-mock-crust = []
-generate-diagrams = []
 
 [[example]]
 bench = false
