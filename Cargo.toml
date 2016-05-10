@@ -8,6 +8,7 @@ name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
 version = "0.18.4"
+build = "build.rs"
 
 [dependencies]
 accumulator = "~0.3.0"
