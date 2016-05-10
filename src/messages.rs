@@ -114,7 +114,7 @@ pub enum DirectMessage {
 impl DirectMessage {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
-        1 // Currently all direct messages are small and should be treated with high priority.
+        0 // Currently all direct messages are small and should be treated with high priority.
     }
 }
 
@@ -351,7 +351,7 @@ impl RequestContent {
             RequestContent::Connect |
             RequestContent::ConnectionInfo { .. } |
             RequestContent::GetPublicId |
-            RequestContent::GetPublicIdWithConnectionInfo { .. } => 1,
+            RequestContent::GetPublicIdWithConnectionInfo { .. } => 0,
             RequestContent::Refresh(..) => 2,
             RequestContent::Get(..) => 3,
             RequestContent::Put(ref data, _) |
@@ -468,7 +468,7 @@ impl ResponseContent {
             ResponseContent::GetNetworkName { .. } |
             ResponseContent::GetCloseGroup { .. } |
             ResponseContent::GetPublicId { .. } |
-            ResponseContent::GetPublicIdWithConnectionInfo { .. } => 1,
+            ResponseContent::GetPublicIdWithConnectionInfo { .. } => 0,
             ResponseContent::GetSuccess(ref data, _) => {
                 match *data {
                     Data::Structured(..) => 4,
