@@ -698,10 +698,10 @@ impl Core {
                    self.tunnels.tunnel_for(&src) == Some(&peer_id) {
                     self.handle_direct_message(content, src)
                 } else if self.tunnels.has_clients(src, dst) {
-                    self.send_or_drop(&dst, bytes)
+                    self.send_or_drop(&dst, bytes, content.priority())
                 } else if self.tunnels.accept_clients(src, dst) {
                     try!(self.send_direct_message(&dst, DirectMessage::TunnelSuccess(src)));
-                    self.send_or_drop(&dst, bytes)
+                    self.send_or_drop(&dst, bytes, content.priority())
                 } else {
                     Err(RoutingError::InvalidDestination)
                 }
@@ -711,7 +711,7 @@ impl Core {
                    self.tunnels.tunnel_for(&src) == Some(&peer_id) {
                     self.handle_hop_message(&content, src)
                 } else if self.tunnels.has_clients(src, dst) {
-                    self.send_or_drop(&dst, bytes)
+                    self.send_or_drop(&dst, bytes, content.content().priority())
                 } else {
                     Err(RoutingError::InvalidDestination)
                 }
@@ -1264,6 +1264,7 @@ impl Core {
                            direct_message: DirectMessage)
                            -> Result<(), RoutingError> {
         self.stats.count_direct_message(&direct_message);
+        let priority = direct_message.priority();
         let (message, peer_id) = if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
             let message = Message::TunnelDirect {
                 content: direct_message,
@@ -1275,13 +1276,17 @@ impl Core {
             (Message::Direct(direct_message), *dst_id)
         };
         let raw_bytes = try!(serialisation::serialise(&message));
-        self.send_or_drop(&peer_id, raw_bytes)
+        self.send_or_drop(&peer_id, raw_bytes, priority)
     }
 
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
-    fn send_or_drop(&mut self, peer_id: &PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if let Err(err) = self.crust_service.send(peer_id, bytes.clone()) {
+    fn send_or_drop(&mut self,
+                    peer_id: &PeerId,
+                    bytes: Vec<u8>,
+                    priority: u8)
+                    -> Result<(), RoutingError> {
+        if let Err(err) = self.crust_service.send(peer_id, bytes.clone(), priority) {
             info!("Connection to {:?} failed. Calling crust::Service::disconnect.",
                   peer_id);
             self.crust_service.disconnect(peer_id);
@@ -2303,6 +2308,7 @@ impl Core {
                        signed_msg: SignedMessage,
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
+        let priority = signed_msg.priority();
         if self.client_map.contains_key(peer_id) {
             if self.filter_signed_msg(&signed_msg, peer_id) {
                 return Ok(());
@@ -2312,7 +2318,7 @@ impl Core {
                                                self.full_id.signing_private_key()));
             let message = Message::Hop(hop_msg);
             let raw_bytes = try!(serialisation::serialise(&message));
-            self.send_or_drop(peer_id, raw_bytes)
+            self.send_or_drop(peer_id, raw_bytes, priority)
         } else {
             debug!("Client connection not found for message {:?}.", signed_msg);
             Err(RoutingError::ClientConnectionNotFound)
@@ -2353,6 +2359,7 @@ impl Core {
             sent_to: &[XorName],
             handle: bool)
             -> Result<(), RoutingError> {
+        let priority = signed_msg.priority();
         // If we're a client going to be a node, send via our bootstrap connection.
         if self.state == State::Client {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
@@ -2360,7 +2367,7 @@ impl Core {
                                                  .iter()
                                                  .find(|elt| elt.1.name() == proxy_node_name) {
                     let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), vec![]));
-                    return self.send_or_drop(&peer_id, raw_bytes);
+                    return self.send_or_drop(&peer_id, raw_bytes, priority);
                 }
 
                 error!("{:?} - Unable to find connection to proxy node in proxy map",
@@ -2393,14 +2400,16 @@ impl Core {
                                                           self.crust_service.id(),
                                                           target.peer_id));
                 if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
-                    if let Err(err) = self.send_or_drop(&tunnel_id, bytes) {
+                    if let Err(err) = self.send_or_drop(&tunnel_id, bytes, priority) {
                         info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                         result = Err(err);
                     }
                 }
             } else {
                 if !self.filter_signed_msg(&signed_msg, &target.peer_id) {
-                    if let Err(err) = self.send_or_drop(&target.peer_id, raw_bytes.clone()) {
+                    if let Err(err) = self.send_or_drop(&target.peer_id,
+                                                        raw_bytes.clone(),
+                                                        priority) {
                         info!("Error sending message to {:?}: {:?}.", target.peer_id, err);
                         result = Err(err);
                     }

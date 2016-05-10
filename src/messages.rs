@@ -111,6 +111,13 @@ pub enum DirectMessage {
     TunnelDisconnect(PeerId),
 }
 
+impl DirectMessage {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        1 // Currently all direct messages are small and should be treated with high priority.
+    }
+}
+
 /// And individual hop message that represents a part of the route of a message in transit.
 ///
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
@@ -211,6 +218,11 @@ impl SignedMessage {
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
     }
+
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        self.content.priority()
+    }
 }
 
 /// Variant type to hold `either` a request or response.
@@ -236,6 +248,14 @@ impl RoutingMessage {
         match *self {
             RoutingMessage::Request(ref msg) => &msg.dst,
             RoutingMessage::Response(ref msg) => &msg.dst,
+        }
+    }
+
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        match *self {
+            RoutingMessage::Request(ref msg) => msg.content.priority(),
+            RoutingMessage::Response(ref msg) => msg.content.priority(),
         }
     }
 }
@@ -319,6 +339,31 @@ pub enum RequestContent {
     Post(Data, MessageId),
     /// Delete data from network. Provide actual data as parameter
     Delete(Data, MessageId),
+}
+
+impl RequestContent {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        match *self {
+            RequestContent::GetNetworkName { .. } |
+            RequestContent::ExpectCloseNode { .. } |
+            RequestContent::GetCloseGroup(..) |
+            RequestContent::Connect |
+            RequestContent::ConnectionInfo { .. } |
+            RequestContent::GetPublicId |
+            RequestContent::GetPublicIdWithConnectionInfo { .. } => 1,
+            RequestContent::Refresh(..) => 2,
+            RequestContent::Get(..) => 3,
+            RequestContent::Put(ref data, _) |
+            RequestContent::Post(ref data, _) |
+            RequestContent::Delete(ref data, _) => {
+                match *data {
+                    Data::Structured(..) => 4,
+                    _ => 5,
+                }
+            }
+        }
+    }
 }
 
 /// The response types
@@ -414,6 +459,31 @@ pub enum ResponseContent {
         /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
+}
+
+impl ResponseContent {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        match *self {
+            ResponseContent::GetNetworkName { .. } |
+            ResponseContent::GetCloseGroup { .. } |
+            ResponseContent::GetPublicId { .. } |
+            ResponseContent::GetPublicIdWithConnectionInfo { .. } => 1,
+            ResponseContent::GetSuccess(ref data, _) => {
+                match *data {
+                    Data::Structured(..) => 4,
+                    _ => 5,
+                }
+            }
+            ResponseContent::PutSuccess(..) |
+            ResponseContent::PostSuccess(..) |
+            ResponseContent::DeleteSuccess(..) => 3,
+            ResponseContent::GetFailure { ref request, .. } |
+            ResponseContent::PutFailure { ref request, .. } |
+            ResponseContent::PostFailure { ref request, .. } |
+            ResponseContent::DeleteFailure { ref request, .. } => request.content.priority(),
+        }
+    }
 }
 
 impl Debug for DirectMessage {
