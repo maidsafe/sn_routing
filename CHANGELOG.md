@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.18.5]
+- Don't send `Tick` events to clients.
+- Use a size limit for the data cache instead of a timeout.
+- More detailed message stats logging.
+
 ## [0.18.4]
 - Allow up to 40 tunnel client pairs.
 - Migrate to Crust 0.12.0.
