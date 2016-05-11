@@ -307,10 +307,10 @@ impl Core {
             peer_map: HashMap::new(),
             use_data_cache: use_data_cache,
             data_cache: LruCache::with_capacity(100),
-            connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
-            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
-            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
-            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
+            connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
+            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
+            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
+            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             tunnels: Default::default(),
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
@@ -640,7 +640,7 @@ impl Core {
                 Ok(encoded_connection_info) => encoded_connection_info,
             };
         let (their_public_id, src, dst) = if let Some(entry) = self.connection_token_map
-                                                                   .get(&result_token) {
+                                                                   .remove(&result_token) {
             entry.clone()
         } else {
             error!("Prepared connection info, but no entry found in token map.");
