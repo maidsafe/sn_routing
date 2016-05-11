@@ -1950,13 +1950,12 @@ impl Core {
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
             if self.routing_table.need_to_add(close_node_id.name()) {
-                if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
-                    debug!("Sending connection info to {:?} on GetCloseGroup response.",
-                           close_node_id);
-                    try!(self.send_connection_info(close_node_id,
-                                                   dst.clone(),
-                                                   Authority::ManagedNode(*close_node_id.name())));
-                }
+                let _ = self.node_id_cache.insert(*close_node_id.name(), close_node_id);
+                debug!("Sending connection info to {:?} on GetCloseGroup response.",
+                       close_node_id);
+                try!(self.send_connection_info(close_node_id,
+                                               dst.clone(),
+                                               Authority::ManagedNode(*close_node_id.name())));
             } else {
                 trace!("Routing table does not need {:?}.", close_node_id);
             }
