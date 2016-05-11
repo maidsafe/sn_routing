@@ -652,10 +652,10 @@ impl Core {
                                                    their_public_id.encrypting_public_key(),
                                                    self.full_id.encrypting_private_key());
 
+        let their_name = *their_public_id.name();
         if let Some(their_connection_info) = self.their_connection_info_map
                                                  .remove(&their_public_id) {
             let peer_id = their_connection_info.id();
-            let their_name = *their_public_id.name();
             if let Some((name, _)) = self.connecting_peers
                                          .insert(peer_id, (their_name, ConnectState::Crust)) {
                 warn!("Prepared connection info for {:?} as {:?}, but already tried as {:?}.",
@@ -667,6 +667,7 @@ impl Core {
             self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
             let _ = self.our_connection_info_map.insert(their_public_id, our_connection_info);
+            debug!("Prepared connection info for {:?}.", their_name);
         }
 
         let request_content = RequestContent::ConnectionInfo {
@@ -681,7 +682,9 @@ impl Core {
         };
 
         if let Err(err) = self.send_request(request_msg) {
-            error!("Failed to send connection info: {:?}.", err);
+            error!("Failed to send connection info for {:?}: {:?}.",
+                   their_name,
+                   err);
         }
     }
 
