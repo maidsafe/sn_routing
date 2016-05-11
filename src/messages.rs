@@ -318,6 +318,9 @@ pub enum RequestContent {
         encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrytped message.
         nonce_bytes: [u8; box_::NONCEBYTES],
+        // TODO: The receiver should have that in the node_id_cache.
+        /// The sender's public ID.
+        public_id: PublicId,
     },
     /// Ask each member of a group near a node address for the `PublicId`.
     GetPublicId,

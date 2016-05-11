@@ -308,8 +308,8 @@ impl Core {
             use_data_cache: use_data_cache,
             data_cache: LruCache::with_capacity(100),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
-            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
-            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 5)),
+            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
+            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(60 * 2)),
             tunnels: Default::default(),
             stats: Default::default(),
@@ -673,6 +673,7 @@ impl Core {
         let request_content = RequestContent::ConnectionInfo {
             encrypted_connection_info: encrypted_connection_info,
             nonce_bytes: nonce.0,
+            public_id: *self.full_id.public_id(),
         };
 
         let request_msg = RequestMessage {
@@ -1068,7 +1069,7 @@ impl Core {
             (RequestContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
+            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::ManagedNode(dst_name)) => {
                 self.handle_connection_info_from_client(encrypted_connection_info,
@@ -1076,18 +1077,20 @@ impl Core {
                                                         client_key,
                                                         proxy_node_name,
                                                         dst_name,
-                                                        peer_id)
+                                                        peer_id,
+                                                        public_id)
             }
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
+            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::ManagedNode(src_name),
              Authority::Client { .. }) |
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes },
+            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(encrypted_connection_info,
                                                       nonce_bytes,
                                                       src_name,
-                                                      request_msg.dst)
+                                                      request_msg.dst,
+                                                      public_id)
             }
             (RequestContent::Connect,
              Authority::ManagedNode(src_name),
@@ -1968,25 +1971,37 @@ impl Core {
                                           client_key: sign::PublicKey,
                                           proxy_name: XorName,
                                           dst_name: XorName,
-                                          peer_id: PeerId)
+                                          peer_id: PeerId,
+                                          their_public_id: PublicId)
                                           -> Result<(), RoutingError> {
-        if let Some(&(ref name, ref their_public_id)) = self.node_id_cache
-                                                            .retrieve_all()
-                                                            .iter()
-                                                            .find(|elt| {
-                                                                *elt.1.signing_public_key() ==
-                                                                client_key
-                                                            }) {
-            try!(self.check_address_for_routing_table(&name));
-            self.connect(encrypted_connection_info,
-                         nonce_bytes,
-                         *their_public_id,
-                         Authority::ManagedNode(dst_name),
-                         Authority::Client {
-                             client_key: client_key,
-                             proxy_node_name: proxy_name,
-                             peer_id: peer_id,
-                         })
+        try!(self.check_address_for_routing_table(their_public_id.name()));
+        try!(self.connect(encrypted_connection_info,
+                          nonce_bytes,
+                          their_public_id,
+                          Authority::ManagedNode(dst_name),
+                          Authority::Client {
+                              client_key: client_key,
+                              proxy_node_name: proxy_name,
+                              peer_id: peer_id,
+                          }));
+        if let Some(&(ref _name, ref _their_public_id)) = self.node_id_cache
+                                                              .retrieve_all()
+                                                              .iter()
+                                                              .find(|elt| {
+                                                                  *elt.1.signing_public_key() ==
+                                                                  client_key
+                                                              }) {
+            // try!(self.check_address_for_routing_table(&name));
+            // self.connect(encrypted_connection_info,
+            //              nonce_bytes,
+            //              *their_public_id,
+            //              Authority::ManagedNode(dst_name),
+            //              Authority::Client {
+            //                  client_key: client_key,
+            //                  proxy_node_name: proxy_name,
+            //                  peer_id: peer_id,
+            //              })
+            Ok(())
         } else {
             warn!("Client with key {:?} not found in node_id_cache.",
                   client_key);
@@ -1998,28 +2013,36 @@ impl Core {
                                         encrypted_connection_info: Vec<u8>,
                                         nonce_bytes: [u8; box_::NONCEBYTES],
                                         src_name: XorName,
-                                        dst: Authority)
+                                        dst: Authority,
+                                        their_public_id: PublicId)
                                         -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(&src_name));
-        if let Some(their_public_id) = self.node_id_cache.get(&src_name).cloned() {
-            self.connect(encrypted_connection_info,
-                         nonce_bytes,
-                         their_public_id,
-                         dst,
-                         Authority::ManagedNode(src_name))
+        try!(self.connect(encrypted_connection_info,
+                          nonce_bytes,
+                          their_public_id,
+                          dst,
+                          Authority::ManagedNode(src_name)));
+        if let Some(_their_public_id) = self.node_id_cache.get(&src_name).cloned() {
+            // self.connect(encrypted_connection_info,
+            //              nonce_bytes,
+            //              their_public_id,
+            //              dst,
+            //              Authority::ManagedNode(src_name))
+            Ok(())
         } else {
-            let request_content = RequestContent::GetPublicIdWithConnectionInfo {
-                encrypted_connection_info: encrypted_connection_info,
-                nonce_bytes: nonce_bytes,
-            };
+            // let request_content = RequestContent::GetPublicIdWithConnectionInfo {
+            //     encrypted_connection_info: encrypted_connection_info,
+            //     nonce_bytes: nonce_bytes,
+            // };
 
-            let request_msg = RequestMessage {
-                src: dst,
-                dst: Authority::NodeManager(src_name),
-                content: request_content,
-            };
+            // let request_msg = RequestMessage {
+            //     src: dst,
+            //     dst: Authority::NodeManager(src_name),
+            //     content: request_content,
+            // };
 
-            self.send_request(request_msg)
+            // self.send_request(request_msg)
+            Ok(())
         }
     }
 
