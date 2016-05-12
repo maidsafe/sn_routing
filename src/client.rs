@@ -25,7 +25,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use id::FullId;
 use action::Action;
 use event::Event;
-use core::Core;
+use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
@@ -70,7 +70,7 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, true, keys, use_data_cache);
+        let (action_sender, mut core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {

@@ -143,6 +143,17 @@ impl ClientInfo {
     }
 }
 
+/// The role this `Core` instance intends to act as once it joined the network.
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+pub enum Role {
+    /// Remain a client and not become a full routing node.
+    Client,
+    /// Join an existing network as a routing node.
+    RoutingNode,
+    /// Start a new network as its first node.
+    FirstNode,
+}
+
 /// An interface for clients and nodes that handles routing and connecting to the network.
 ///
 ///
@@ -192,10 +203,8 @@ impl ClientInfo {
 /// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
 pub struct Core {
-    // for CRUST
     crust_service: Service,
-    // for Core
-    client_restriction: bool,
+    role: Role,
     is_listening: bool,
     category_rx: mpsc::Receiver<MaidSafeEventCategory>,
     crust_rx: mpsc::Receiver<crust::Event>,
@@ -237,8 +246,6 @@ pub struct Core {
     tunnels: Tunnels,
     stats: Stats,
     send_filter: LruCache<(u64, PeerId), ()>,
-    /// This is set to `false` as soon as we know we are not the first node.
-    maybe_first_node: bool,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -246,7 +253,7 @@ impl Core {
     /// A Core instance for a client or node with the given id. Sends events to upper layer via the
     /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
-               client_restriction: bool,
+               role: Role,
                keys: Option<FullId>,
                use_data_cache: bool)
                -> (RoutingActionSender, Self) {
@@ -280,7 +287,7 @@ impl Core {
 
         let core = Core {
             crust_service: crust_service,
-            client_restriction: client_restriction,
+            role: role,
             is_listening: false,
             category_rx: category_rx,
             crust_rx: crust_rx,
@@ -314,7 +321,6 @@ impl Core {
             tunnels: Default::default(),
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
-            maybe_first_node: true,
         };
 
         (action_sender, core)
@@ -521,10 +527,13 @@ impl Core {
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
         let _ = self.peer_map.insert(peer_id, Instant::now());
         self.crust_service.stop_bootstrap();
-        self.maybe_first_node = false;
+        if self.role == Role::FirstNode {
+            error!("Received BootstrapConnect as the first node.");
+            return;
+        }
         match self.state {
             State::Disconnected => {
-                if !self.client_restriction {
+                if self.role == Role::RoutingNode {
                     let _ = self.start_listening();
                 }
                 debug!("Received BootstrapConnect from {:?}.", peer_id);
@@ -545,7 +554,7 @@ impl Core {
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
         let _ = self.peer_map.insert(peer_id, Instant::now());
         trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
-        if self.state == State::Disconnected && self.maybe_first_node {
+        if self.state == State::Disconnected && self.role == Role::FirstNode {
             // I am the first node in the network, and I got an incoming connection so I'll
             // promote myself as a node.
             let new_name = XorName::new(hash::sha512::hash(&self.full_id
@@ -569,7 +578,7 @@ impl Core {
             error!("NewPeer fired with our crust peer id");
             return;
         }
-        if self.client_restriction {
+        if self.role == Role::Client {
             warn!("{:?} Received NewPeer event as a client.", self);
         } else {
             match result {
@@ -1178,7 +1187,7 @@ impl Core {
         debug!("{:?} Finished bootstrapping.", self);
         // If we have no connections, we should start listening to allow incoming connections
         if self.state == State::Disconnected {
-            if self.client_restriction {
+            if self.role == Role::Client {
                 let _ = self.event_sender.send(Event::Disconnected);
             } else {
                 debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
@@ -1219,7 +1228,7 @@ impl Core {
             return;
         }
         debug!("Received LostPeer - {:?}", peer_id);
-        if !self.client_restriction {
+        if self.role != Role::Client {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
             self.dropped_client_connection(&peer_id);
@@ -1249,7 +1258,7 @@ impl Core {
         let direct_message = DirectMessage::ClientIdentify {
             serialised_public_id: serialised_public_id,
             signature: signature,
-            client_restriction: self.client_restriction,
+            client_restriction: self.role == Role::Client,
         };
         self.send_direct_message(&peer_id, direct_message)
     }
@@ -1444,10 +1453,12 @@ impl Core {
                current_quorum_size);
         self.message_accumulator.set_quorum_size(current_quorum_size);
 
-        if self.client_restriction {
-            let _ = self.event_sender.send(Event::Connected);
-        } else {
-            try!(self.relocate());
+        match self.role {
+            Role::Client => {
+                let _ = self.event_sender.send(Event::Connected);
+            }
+            Role::RoutingNode => try!(self.relocate()),
+            Role::FirstNode => error!("Received BootstrapIdentify as the first node."),
         };
         Ok(())
     }
@@ -1518,7 +1529,7 @@ impl Core {
                             public_id: PublicId,
                             peer_id: PeerId)
                             -> Result<(), RoutingError> {
-        if self.client_restriction {
+        if self.role == Role::Client {
             debug!("Received node identify as a client.");
             return Ok(());
         }
@@ -2496,7 +2507,8 @@ impl Core {
                    peer_id);
             if self.proxy_map.is_empty() {
                 debug!("Lost connection to last proxy node {:?}", peer_id);
-                if self.client_restriction || self.routing_table.is_empty() {
+                if self.role == Role::Client ||
+                   (self.role == Role::RoutingNode && self.routing_table.is_empty()) {
                     let _ = self.event_sender.send(Event::Disconnected);
                     self.retry_bootstrap_with_blacklist(peer_id);
                 }

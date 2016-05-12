@@ -24,7 +24,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use action::Action;
 use authority::Authority;
-use core::Core;
+use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -62,11 +62,19 @@ impl Node {
     ///
     /// The intial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               use_data_cache: bool,
+               first_node: bool)
+               -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
+        let role = if first_node {
+            Role::FirstNode
+        } else {
+            Role::RoutingNode
+        };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, false, None, use_data_cache);
+        let (action_sender, mut core) = Core::new(event_sender, role, None, use_data_cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
