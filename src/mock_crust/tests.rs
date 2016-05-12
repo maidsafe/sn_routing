@@ -95,7 +95,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // send data from 0 to 1
     {
         let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(&id_1, data_sent.clone()));
+        unwrap_result!(service_0.send(&id_1, data_sent.clone(), 0));
 
         // 1 should rx data
         let (data_recvd, peer_id) = {
@@ -113,7 +113,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // send data from 1 to 0
     {
         let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(&id_0, data_sent.clone()));
+        unwrap_result!(service_1.send(&id_0, data_sent.clone(), 0));
 
         // 0 should rx data
         let (data_recvd, peer_id) = {
@@ -212,7 +212,7 @@ fn start_two_services_rendezvous_connect() {
     // send data from 0 to 1
     {
         let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(&id_1, data_sent.clone()));
+        unwrap_result!(service_0.send(&id_1, data_sent.clone(), 0));
 
         // 1 should rx data
         let (data_recvd, peer_id) = {
@@ -230,7 +230,7 @@ fn start_two_services_rendezvous_connect() {
     // send data from 1 to 0
     {
         let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(&id_0, data_sent.clone()));
+        unwrap_result!(service_1.send(&id_0, data_sent.clone(), 0));
 
         // 0 should rx data
         let (data_recvd, peer_id) = {

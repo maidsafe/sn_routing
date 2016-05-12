@@ -103,7 +103,8 @@ impl Service {
     }
 
     /// Send message to the given peer.
-    pub fn send(&self, id: &PeerId, data: Vec<u8>) -> io::Result<()> {
+    // TODO: Implement tests that drop low-priority messages.
+    pub fn send(&self, id: &PeerId, data: Vec<u8>, _priority: u8) -> io::Result<()> {
         if self.lock_and_poll(|imp| imp.send_message(id, data)) {
             Ok(())
         } else {

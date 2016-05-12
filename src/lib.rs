@@ -79,7 +79,9 @@
 //! use routing::{Node, Event};
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let _ = Node::new(sender, true).unwrap();
+//! let use_data_cache = true;
+//! let first_node = false;
+//! let _ = Node::new(sender, use_data_cache, first_node).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client

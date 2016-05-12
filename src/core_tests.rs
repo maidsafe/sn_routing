@@ -23,7 +23,7 @@ use xor_name::XorName;
 
 use action::Action;
 use authority::Authority;
-use core::{Core, RoutingTable};
+use core::{Core, Role, RoutingTable};
 use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
@@ -49,16 +49,15 @@ struct TestNode {
 
 impl TestNode {
     fn new(network: &Network,
-           client_restriction: bool,
+           role: Role,
            config: Option<Config>,
            endpoint: Option<Endpoint>)
            -> Self {
         let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
 
-        let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, client_restriction, None, false)
-        });
+        let (action_tx, core) = mock_crust::make_current(&handle,
+                                                         || Core::new(event_tx, role, None, false));
 
         TestNode {
             handle: handle,
@@ -153,7 +152,7 @@ impl TestClient {
         let full_id = FullId::new();
 
         let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, true, Some(full_id), false)
+            Core::new(event_tx, Role::Client, Some(full_id), false)
         });
 
         TestClient {
@@ -245,14 +244,17 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, false, None, Some(Endpoint(0))));
+    nodes.push(TestNode::new(network, Role::FirstNode, None, Some(Endpoint(0))));
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
-        nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
+        nodes.push(TestNode::new(network,
+                                 Role::RoutingNode,
+                                 Some(config.clone()),
+                                 Some(Endpoint(i))));
         poll_all(&mut nodes, &mut []);
     }
 
@@ -390,7 +392,7 @@ fn client_connects_to_nodes() {
 
     // Create one client that tries to connect to the network.
     let client = TestNode::new(&network,
-                               true,
+                               Role::Client,
                                Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
                                None);
 
@@ -416,7 +418,7 @@ fn node_joins_in_front() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
+                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
     poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -430,10 +432,10 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
+                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
     nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
-    nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
+                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
+    nodes.push(TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
     poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.core.routing_table().is_empty());
     poll_all(&mut nodes, &mut []);
