@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.19.0]
+- Only start a network if explicitly designated as first node.
+- Use a Crust priority based on message type.
+
 ## [0.18.5]
 - Don't send `Tick` events to clients.
 - Use a size limit for the data cache instead of a timeout.
