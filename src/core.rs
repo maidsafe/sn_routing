@@ -845,7 +845,7 @@ impl Core {
                         content: RequestContent::ConnectionInfo { .. },
                         ..
                     }) = *signed_msg.content() {
-                     return self.handle_signed_message_for_client(&signed_msg);
+                     return self.handle_signed_message_for_client(signed_msg);
                 }
             }
         }
@@ -954,7 +954,7 @@ impl Core {
                     content: RequestContent::Get(DataIdentifier::Immutable(ref name), id),
                     ..
                 }) => {
-                match self.data_cache.get(&name) {
+                match self.data_cache.get(name) {
                     Some(data) => ResponseContent::GetSuccess(data.clone(), id),
                     _ => return None,
                 }
@@ -1508,14 +1508,14 @@ impl Core {
                   peer_id);
             return false;
         }
-        if self.client_map.contains_key(&peer_id) {
+        if self.client_map.contains_key(peer_id) {
             // TODO(afck): At this point we probably haven't verified that the client's new name is
             // correct.
             debug!("Public ID not in cache, but peer {:?} is a client.",
                    peer_id);
             return true;
         }
-        if self.proxy_map.get(&peer_id) == Some(&public_id) {
+        if self.proxy_map.get(peer_id) == Some(public_id) {
             // TODO(afck): Maybe we should verify the proxy's public ID.
             debug!("Public ID not in cache, but peer {:?} is a proxy.", peer_id);
             return true;
@@ -2490,7 +2490,7 @@ impl Core {
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
-        if let Some(info) = self.client_map.remove(&peer_id) {
+        if let Some(info) = self.client_map.remove(peer_id) {
             if info.client_restriction {
                 debug!("Client disconnected: {:?}", peer_id);
             } else {
