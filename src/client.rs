@@ -94,7 +94,7 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, true, keys, use_data_cache);
+        let (action_sender, core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Client {

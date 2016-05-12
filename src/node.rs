@@ -60,7 +60,7 @@ impl Node {
     /// It will automatically connect to the network in the same way a client does, but then
     /// request a new name and integrate itself into the network using the new name.
     ///
-    /// The intial `Node` object will have newly generated keys.
+    /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(event_sender: Sender<Event>,
                use_data_cache: bool,
@@ -91,11 +91,19 @@ impl Node {
 
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>, use_data_cache: bool) -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>,
+               use_data_cache: bool,
+               first_node: bool)
+               -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
+        let role = if first_node {
+            Role::FirstNode
+        } else {
+            Role::RoutingNode
+        };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, false, None, use_data_cache);
+        let (action_sender, core) = Core::new(event_sender, role, None, use_data_cache);
         let (tx, rx) = channel();
 
         Ok(Node {

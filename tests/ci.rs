@@ -84,12 +84,14 @@ struct TestNode {
 }
 
 impl TestNode {
+    // If `index` is `0`, this will be treated as the first node of the network.
     fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
         let thread_name = format!("TestNode {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
+        let first_node = index == 0;
 
         TestNode {
-            node: unwrap_result!(Node::new(sender, false)),
+            node: unwrap_result!(Node::new(sender, false, first_node)),
             _thread_joiner: joiner,
         }
     }
