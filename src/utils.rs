@@ -62,7 +62,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
         return Err(::error::RoutingError::RoutingTableEmpty);
     }
     close_nodes.sort_by(|a, b| {
-        if ::xor_name::closer_to_target(&a, &b, original_name) {
+        if ::xor_name::closer_to_target(a, b, original_name) {
             ::std::cmp::Ordering::Less
         } else {
             ::std::cmp::Ordering::Greater
@@ -128,7 +128,7 @@ mod test {
             unwrap_result!(super::calculate_relocated_name(close_nodes.clone(), &original_name));
         assert!(original_name != actual_relocated_name);
         close_nodes.sort_by(|a, b| {
-            if ::xor_name::closer_to_target(&a, &b, &original_name) {
+            if ::xor_name::closer_to_target(a, b, &original_name) {
                 ::std::cmp::Ordering::Less
             } else {
                 ::std::cmp::Ordering::Greater
