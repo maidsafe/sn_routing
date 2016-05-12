@@ -285,7 +285,7 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
-        let core = Core {
+        let mut core = Core {
             crust_service: crust_service,
             role: role,
             is_listening: false,
@@ -322,6 +322,10 @@ impl Core {
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         };
+
+        if role == Role::FirstNode {
+            core.start_new_network();
+        }
 
         (action_sender, core)
     }
@@ -525,12 +529,13 @@ impl Core {
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
-        let _ = self.peer_map.insert(peer_id, Instant::now());
-        self.crust_service.stop_bootstrap();
         if self.role == Role::FirstNode {
             error!("Received BootstrapConnect as the first node.");
+            let _ = self.disconnect_peer(&peer_id);
             return;
         }
+        let _ = self.peer_map.insert(peer_id, Instant::now());
+        self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
                 if self.role == Role::RoutingNode {
@@ -551,25 +556,21 @@ impl Core {
         }
     }
 
+    fn start_new_network(&mut self) {
+        self.crust_service.stop_bootstrap();
+        let _ = self.start_listening();
+        let new_name = XorName::new(hash::sha512::hash(&self.full_id.public_id().name().0).0);
+        // This will give me a new RT and set state to Relocated
+        self.set_self_node_name(new_name);
+        self.state = State::Node;
+        let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
+        self.tick_timer_token = Some(self.timer.schedule(tick_period));
+        info!("{:?} - Started a new network as a seed node.", self)
+    }
+
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
         let _ = self.peer_map.insert(peer_id, Instant::now());
         trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
-        if self.state == State::Disconnected && self.role == Role::FirstNode {
-            // I am the first node in the network, and I got an incoming connection so I'll
-            // promote myself as a node.
-            let new_name = XorName::new(hash::sha512::hash(&self.full_id
-                                                                .public_id()
-                                                                .name()
-                                                                .0)
-                                            .0);
-
-            // This will give me a new RT and set state to Relocated
-            self.set_self_node_name(new_name);
-            self.state = State::Node;
-            let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
-            self.tick_timer_token = Some(self.timer.schedule(tick_period));
-            info!("{:?} - Started a new network as a seed node.", self)
-        }
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 

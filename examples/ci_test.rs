@@ -55,9 +55,9 @@ extern crate term;
 
 mod utils;
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::time::Duration;
-use std::{cmp, io, env, thread};
+use std::{io, env, thread};
 use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
@@ -84,22 +84,8 @@ const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
-/// Only start the next node when the previous one has reached this routing table size.
-const DELAY_RT_SIZE: usize = GROUP_SIZE;
 
 struct NodeProcess(Child, usize);
-
-impl NodeProcess {
-    fn wait_for_output<T: AsRef<str>>(&mut self, pat: T) {
-        if let Some(ref mut stdout) = self.0.stdout {
-            for line in BufReader::new(stdout).lines() {
-                if line.unwrap().contains(pat.as_ref()) {
-                    break;
-                }
-            }
-        }
-    }
-}
 
 impl Drop for NodeProcess {
     fn drop(&mut self) {
@@ -126,22 +112,21 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
                              let mut args = vec![format!("--output={}", log_path.display())];
                              if i == 0 {
                                  args.push("-d".to_owned());
+                                 args.push("-f".to_owned());
                              }
 
-                             let mut node = NodeProcess(try!(Command::new(current_exe_path.clone())
-                                                                 .args(&args)
-                                                                 .stdout(Stdio::piped())
-                                                                 .stderr(Stdio::inherit())
-                                                                 .spawn()),
-                                                        i + 1);
+                             let node = NodeProcess(try!(Command::new(current_exe_path.clone())
+                                                             .args(&args)
+                                                             .stdout(Stdio::piped())
+                                                             .stderr(Stdio::inherit())
+                                                             .spawn()),
+                                                    i + 1);
 
                              println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
                              if i == 0 {
-                                 node.wait_for_output("Running listener");
-                             } else {
-                                 node.wait_for_output(format!("Routing Table size: {:3}",
-                                                              cmp::min(i, DELAY_RT_SIZE)));
+                                 thread::sleep(Duration::from_secs(5));
                              }
+                             thread::sleep(Duration::from_secs(1));
                              Ok(node)
                          })
                          .collect::<io::Result<Vec<NodeProcess>>>());
@@ -301,7 +286,7 @@ fn store_and_verify(requests: usize, batches: usize) {
 static USAGE: &'static str = "
 Usage:
   ci_test -h
-  ci_test --output=<log_file> [-c [<requests> [<batches>]]] [-d]
+  ci_test --output=<log_file> [-c [<requests> [<batches>]]] [-f] [-d]
   ci_test [<nodes> <requests> [<batches>]]
 
 Options:
@@ -309,6 +294,7 @@ Options:
   -c, --client                  Run as an individual client.
   -d, --delete-bootstrap-cache  Delete existing bootstrap-cache.
   -h, --help                    Display this help message.
+  -f, --first                   This is the first node of a new network.
 ";
 // ================================================================================
 
@@ -317,6 +303,7 @@ struct Args {
     arg_batches: Option<usize>,
     arg_nodes: Option<usize>,
     arg_requests: Option<usize>,
+    flag_first: Option<bool>,
     flag_output: Option<String>,
     flag_client: Option<bool>,
     flag_delete_bootstrap_cache: Option<bool>,
@@ -333,6 +320,7 @@ fn main() {
                              args.flag_delete_bootstrap_cache.is_some());
     let requests = args.arg_requests.unwrap_or(DEFAULT_REQUESTS);
     let batches = args.arg_batches.unwrap_or(DEFAULT_BATCHES);
+    let first = args.flag_first.unwrap_or(false);
 
     if run_network_test {
         let node_count = match args.arg_nodes {
@@ -370,7 +358,7 @@ fn main() {
         if Some(true) == args.flag_client {
             store_and_verify(requests, batches);
         } else {
-            ExampleNode::new().run();
+            ExampleNode::new(first).run();
         }
     }
 }

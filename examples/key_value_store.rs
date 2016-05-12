@@ -75,12 +75,14 @@ static USAGE: &'static str = "
 Usage:
   key_value_store
   key_value_store --node
+  key_value_store --first
   \
                               key_value_store --help
 
 Options:
   -n, --node   Run as a \
                               non-interactive routing node in the network.
+  -f, --first  Start a new network as the first node.
   -h, --help   Display \
                               this help message.
 
@@ -102,6 +104,7 @@ Options:
 
 #[derive(RustcDecodable, Debug)]
 struct Args {
+    flag_first: bool,
     flag_node: bool,
     flag_help: bool,
 }
@@ -249,8 +252,10 @@ fn main() {
                          .and_then(|docopt| docopt.decode())
                          .unwrap_or_else(|error| error.exit());
 
-    if args.flag_node {
-        ExampleNode::new().run();
+    if args.flag_first {
+        ExampleNode::new(true).run();
+    } else if args.flag_node {
+        ExampleNode::new(false).run();
     } else {
         KeyValueStore::new().run();
     }

@@ -43,7 +43,6 @@ pub struct ExampleNode {
     /// for storing that chunk.
     dm_accounts: HashMap<XorName, Vec<XorName>>,
     client_accounts: HashMap<XorName, u64>,
-    connected: bool,
     /// A cache that contains for each data chunk name the list of client authorities that recently
     /// asked for that data.
     client_request_cache: LruCache<XorName, Vec<(Authority, MessageId)>>,
@@ -54,9 +53,9 @@ pub struct ExampleNode {
 #[allow(unused)]
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
-    pub fn new() -> ExampleNode {
+    pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone(), false));
+        let node = unwrap_result!(Node::new(sender.clone(), false, first));
 
         ExampleNode {
             node: node,
@@ -65,7 +64,6 @@ impl ExampleNode {
             db: HashMap::new(),
             dm_accounts: HashMap::new(),
             client_accounts: HashMap::new(),
-            connected: false,
             client_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             put_request_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
         }
@@ -91,11 +89,15 @@ impl ExampleNode {
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
-                    self.connected = true;
                 }
                 Event::Disconnected => {
                     trace!("{} Received disconnected event", self.get_debug_name());
-                    self.connected = false;
+                }
+                Event::GetNetworkNameFailed => {
+                    let _ = mem::replace(&mut self.node,
+                                         unwrap_result!(Node::new(self.sender.clone(),
+                                                                  false,
+                                                                  false)));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -527,12 +529,6 @@ impl ExampleNode {
                         panic!("Could not get node name - {:?}", err);
                     }
                 })
-    }
-}
-
-impl Default for ExampleNode {
-    fn default() -> ExampleNode {
-        ExampleNode::new()
     }
 }
 
