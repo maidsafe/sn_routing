@@ -40,7 +40,6 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher, SipHasher};
 use std::sync::mpsc;
-use std::thread;
 use std::time::{Duration, Instant};
 use tunnels::Tunnels;
 use xor_name;
@@ -210,7 +209,6 @@ pub struct Core {
     crust_rx: mpsc::Receiver<crust::Event>,
     action_rx: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
-    crust_sender: crust::CrustEventSender,
     timer: Timer,
     signed_message_filter: MessageFilter<SignedMessage>,
     bucket_filter: MessageFilter<usize>,
@@ -273,7 +271,7 @@ impl Core {
                                                         category_tx);
 
         // TODO(afck): Add the listening port to the Service constructor.
-        let crust_service = match Service::new(crust_sender.clone()) {
+        let crust_service = match Service::new(crust_sender) {
             Ok(service) => service,
             Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
         };
@@ -293,7 +291,6 @@ impl Core {
             crust_rx: crust_rx,
             action_rx: action_rx,
             event_sender: event_sender,
-            crust_sender: crust_sender,
             timer: Timer::new(action_sender2),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
@@ -1347,7 +1344,7 @@ impl Core {
             DirectMessage::BootstrapDeny => {
                 warn!("Connection failed: Proxy node needs a larger routing table to accept \
                        clients.");
-                self.retry_bootstrap_with_blacklist(&peer_id);
+                let _ = self.event_sender.send(Event::Disconnected);
                 Ok(())
             }
             DirectMessage::ClientToNode => {
@@ -1427,7 +1424,7 @@ impl Core {
         if *public_id.name() ==
            XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("Incoming Connection not validated as a proper node - dropping");
-            self.retry_bootstrap_with_blacklist(&peer_id);
+            let _ = self.event_sender.send(Event::Disconnected);
 
             return Ok(());
         }
@@ -1476,7 +1473,8 @@ impl Core {
 
         self.remove_stale_joining_nodes();
 
-        if client_restriction && self.routing_table.len() < GROUP_SIZE - 1 {
+        if (client_restriction || self.role != Role::FirstNode) &&
+           self.routing_table.len() < GROUP_SIZE - 1 {
             debug!("Client {:?} rejected: Routing table has {} entries. {} required.",
                    public_id.name(),
                    self.routing_table.len(),
@@ -1673,19 +1671,6 @@ impl Core {
                 }
             }
         }
-    }
-
-    fn retry_bootstrap_with_blacklist(&mut self, peer_id: &PeerId) {
-        debug!("Retry bootstrap without {:?}.", peer_id);
-        self.crust_service.stop_bootstrap();
-        self.state = State::Disconnected;
-        self.proxy_map.clear();
-        thread::sleep(Duration::from_secs(5));
-        self.restart_crust_service();
-        // TODO(andreas): Enable blacklisting once a solution for ci_test is found.
-        //               Currently, ci_test's nodes all connect via the same beacon.
-        // self.crust_service
-        //    .bootstrap_with_blacklist(0u32, Some(CRUST_DEFAULT_BEACON_PORT), &[endpoint]);
     }
 
     /// Handle a request by `peer_id` to act as a tunnel connecting it with `dst_id`.
@@ -2225,7 +2210,7 @@ impl Core {
         if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
             if bootstrap_token == token {
                 debug!("Timeout when trying to bootstrap against {:?}.", peer_id);
-                self.retry_bootstrap_with_blacklist(&peer_id);
+                let _ = self.event_sender.send(Event::Disconnected);
             }
             return;
         }
@@ -2513,7 +2498,6 @@ impl Core {
                 if self.role == Role::Client ||
                    (self.role == Role::Node && self.routing_table.is_empty()) {
                     let _ = self.event_sender.send(Event::Disconnected);
-                    self.retry_bootstrap_with_blacklist(peer_id);
                 }
             }
         }
@@ -2587,19 +2571,6 @@ impl Core {
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
         }
-    }
-
-    #[cfg(not(feature = "use-mock-crust"))]
-    fn restart_crust_service(&mut self) {
-        self.crust_service = match Service::new(self.crust_sender.clone()) {
-            Ok(service) => service,
-            Err(err) => panic!(format!("Unable to restart crust::Service {:?}", err)),
-        };
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    fn restart_crust_service(&mut self) {
-        self.crust_service.restart(self.crust_sender.clone())
     }
 }
 
