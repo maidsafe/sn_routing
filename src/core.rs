@@ -1476,7 +1476,8 @@ impl Core {
 
         self.remove_stale_joining_nodes();
 
-        if client_restriction && self.routing_table.len() < GROUP_SIZE - 1 {
+        if (client_restriction || self.role != Role::FirstNode) &&
+           self.routing_table.len() < GROUP_SIZE - 1 {
             debug!("Client {:?} rejected: Routing table has {} entries. {} required.",
                    public_id.name(),
                    self.routing_table.len(),
