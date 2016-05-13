@@ -20,7 +20,6 @@ use crust::PeerId;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use maidsafe_utilities::serialisation::serialise;
-use rustc_serialize::{Decoder, Encoder};
 use sodiumoxide::crypto::{box_, sign};
 use std::fmt::{self, Debug, Formatter};
 

@@ -17,7 +17,6 @@
 
 use rand::random;
 use xor_name::XorName;
-use rustc_serialize::{Encoder, Decoder};
 use maidsafe_utilities::event_sender::MaidSafeObserver;
 
 pub type RoutingActionSender = MaidSafeObserver<::action::Action>;

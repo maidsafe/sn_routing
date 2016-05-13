@@ -192,7 +192,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                              event_receiver: &Receiver<TestEvent>) {
     // Wait for each node to connect to all the other nodes by counting churns.
     loop {
-        if let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(30)) {
+        if let Ok(test_event) = recv_with_timeout(event_receiver, Duration::from_secs(30)) {
             if let TestEvent(index, Event::NodeAdded(..)) = test_event {
                 connection_counts[index] += 1;
 
