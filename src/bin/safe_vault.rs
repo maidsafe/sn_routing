@@ -62,13 +62,14 @@ Usage:
   safe_vault [options]
 
 Options:
-  -V, --version                 Display version info and exit.
-  -h, --help                    Display this help message and exit.
+  -f, --first     Run as the first Vault of a new network.
+  -V, --version   Display version info and exit.
+  -h, --help      Display this help message and exit.
 ";
 
 #[derive(PartialEq, Eq, Debug, Clone, RustcDecodable)]
 struct Args {
-    flag_output: Option<String>,
+    flag_first: bool,
     flag_version: bool,
     flag_help: bool,
 }
@@ -95,7 +96,7 @@ pub fn main() {
     info!("\n\n{}\n{}", message, underline);
 
     loop {
-        let mut vault = unwrap_result!(Vault::new());
+        let mut vault = unwrap_result!(Vault::new(args.flag_first));
         if let Ok(true) = vault.run() {
             break;
         }

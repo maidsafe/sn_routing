@@ -52,10 +52,10 @@ pub struct Vault {
 
 impl Vault {
     /// Creates a network Vault instance.
-    pub fn new() -> Result<Self, InternalError> {
+    pub fn new(first_vault: bool) -> Result<Self, InternalError> {
         sodiumoxide::init();
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true)));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true, first_vault)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),

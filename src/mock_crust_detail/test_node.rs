@@ -34,10 +34,12 @@ impl TestNode {
     /// create a test node for mock network
     pub fn new(network: &Network,
                crust_config: Option<mock_crust::Config>,
-               config: Option<Config>)
+               config: Option<Config>,
+               first_node: bool)
                -> Self {
         let handle = network.new_service_handle(crust_config, None);
-        let mut vault = mock_crust::make_current(&handle, || unwrap_result!(Vault::new()));
+        let mut vault = mock_crust::make_current(&handle,
+                                                 || unwrap_result!(Vault::new(first_node)));
         if let Some(replacement_config) = config {
             unwrap_result!(vault.apply_config(replacement_config));
         }
@@ -76,14 +78,14 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, None, config.clone()));
+    nodes.push(TestNode::new(network, None, config.clone(), true));
     while nodes[0].poll() > 0 {}
 
     let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
-        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone()));
+        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone(), false));
         poll::nodes(&mut nodes);
     }
 
@@ -99,7 +101,7 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
     }
 
     for _ in 0..size {
-        nodes.push(TestNode::new(network, config.clone(), None));
+        nodes.push(TestNode::new(network, config.clone(), None, false));
         poll::nodes(&mut nodes);
     }
 }
@@ -107,7 +109,7 @@ pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize)
 /// Add node to the mock network
 pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
     let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
-    nodes.push(TestNode::new(network, Some(config.clone()), None));
+    nodes.push(TestNode::new(network, Some(config.clone()), None, false));
 }
 
 /// remove this node from the mock network
