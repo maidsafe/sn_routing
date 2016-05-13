@@ -16,8 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 //! usage example (using default methods of connecting to the network):
-//!      starting a passive node:       simple_key_value_store --node
-//!      starting an interactive node:  simple_key_value_store
+//!      starting the first node:       `key_value_store --first`
+//!      starting a passive node:       `key_value_store --node`
+//!      starting an interactive node:  `key_value_store`
 
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
@@ -63,7 +64,6 @@ use std::io::Write;
 
 use docopt::Docopt;
 use xor_name::XorName;
-use rustc_serialize::{Decodable, Decoder};
 use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
@@ -241,6 +241,12 @@ impl KeyValueStore {
 
     fn calculate_key_name(key: &str) -> XorName {
         XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+    }
+}
+
+impl Default for KeyValueStore {
+    fn default() -> KeyValueStore {
+        KeyValueStore::new()
     }
 }
 

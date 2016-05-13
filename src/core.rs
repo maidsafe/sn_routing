@@ -149,7 +149,7 @@ pub enum Role {
     /// Remain a client and not become a full routing node.
     Client,
     /// Join an existing network as a routing node.
-    RoutingNode,
+    Node,
     /// Start a new network as its first node.
     FirstNode,
 }
@@ -538,7 +538,7 @@ impl Core {
         self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
-                if self.role == Role::RoutingNode {
+                if self.role == Role::Node {
                     let _ = self.start_listening();
                 }
                 debug!("Received BootstrapConnect from {:?}.", peer_id);
@@ -560,7 +560,6 @@ impl Core {
         self.crust_service.stop_bootstrap();
         let _ = self.start_listening();
         let new_name = XorName::new(hash::sha512::hash(&self.full_id.public_id().name().0).0);
-        // This will give me a new RT and set state to Relocated
         self.set_self_node_name(new_name);
         self.state = State::Node;
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -1458,7 +1457,7 @@ impl Core {
             Role::Client => {
                 let _ = self.event_sender.send(Event::Connected);
             }
-            Role::RoutingNode => try!(self.relocate()),
+            Role::Node => try!(self.relocate()),
             Role::FirstNode => error!("Received BootstrapIdentify as the first node."),
         };
         Ok(())
@@ -1976,6 +1975,9 @@ impl Core {
         Ok(())
     }
 
+    // It is preferable to destructure the message and the request in `handle_request_message`,
+    // even if that requires a long list of arguments.
+    #[cfg_attr(feature="clippy", allow(too_many_arguments))]
     fn handle_connection_info_from_client(&mut self,
                                           encrypted_connection_info: Vec<u8>,
                                           nonce_bytes: [u8; box_::NONCEBYTES],
@@ -2509,7 +2511,7 @@ impl Core {
             if self.proxy_map.is_empty() {
                 debug!("Lost connection to last proxy node {:?}", peer_id);
                 if self.role == Role::Client ||
-                   (self.role == Role::RoutingNode && self.routing_table.is_empty()) {
+                   (self.role == Role::Node && self.routing_table.is_empty()) {
                     let _ = self.event_sender.send(Event::Disconnected);
                     self.retry_bootstrap_with_blacklist(peer_id);
                 }

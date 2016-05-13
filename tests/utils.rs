@@ -28,8 +28,9 @@ pub enum RecvWithTimeoutError {
     Timeout,
 }
 
-/// Blocks until something is received on the Receiver, or timeout, whichever
-/// happens sooner.
+/// Blocks until something is received on the `Receiver`, or timeout, whichever happens sooner.
+// TODO: Deny this lint again once `elapsed += interval` works with Rust stable.
+#[cfg_attr(feature="clippy", allow(assign_op_pattern))]
 pub fn recv_with_timeout<T>(receiver: &Receiver<T>,
                             timeout: Duration)
                             -> Result<T, RecvWithTimeoutError> {

@@ -24,7 +24,6 @@ use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::time::Duration;
-use rustc_serialize::{Encoder, Decoder};
 
 const STORE_REDUNDANCY: usize = 4;
 
@@ -166,7 +165,7 @@ impl ExampleNode {
     }
 
     fn process_failed_dm(&mut self, data_name: &XorName, dm_name: &XorName, id: MessageId) {
-        if let Some(dms) = self.dm_accounts.get_mut(&data_name) {
+        if let Some(dms) = self.dm_accounts.get_mut(data_name) {
             if let Some(i) = dms.iter().position(|n| n == dm_name) {
                 let _ = dms.remove(i);
             } else {

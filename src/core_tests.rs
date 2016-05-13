@@ -251,10 +251,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
-        nodes.push(TestNode::new(network,
-                                 Role::RoutingNode,
-                                 Some(config.clone()),
-                                 Some(Endpoint(i))));
+        nodes.push(TestNode::new(network, Role::Node, Some(config.clone()), Some(Endpoint(i))));
         poll_all(&mut nodes, &mut []);
     }
 
@@ -418,7 +415,7 @@ fn node_joins_in_front() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
-                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
+                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
     poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -432,10 +429,10 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
-                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
+                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
     nodes.insert(0,
-                 TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
-    nodes.push(TestNode::new(&network, Role::RoutingNode, Some(config.clone()), None));
+                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
+    nodes.push(TestNode::new(&network, Role::Node, Some(config.clone()), None));
     poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.core.routing_table().is_empty());
     poll_all(&mut nodes, &mut []);

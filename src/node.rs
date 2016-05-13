@@ -71,7 +71,7 @@ impl Node {
         let role = if first_node {
             Role::FirstNode
         } else {
-            Role::RoutingNode
+            Role::Node
         };
         // start the handler for routing without a restriction to become a full node
         let (action_sender, mut core) = Core::new(event_sender, role, None, use_data_cache);
@@ -100,7 +100,7 @@ impl Node {
         let role = if first_node {
             Role::FirstNode
         } else {
-            Role::RoutingNode
+            Role::Node
         };
         // start the handler for routing without a restriction to become a full node
         let (action_sender, core) = Core::new(event_sender, role, None, use_data_cache);
