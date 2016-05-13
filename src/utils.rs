@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::Write;
+use std::hash::{Hash, Hasher, SipHasher};
 use xor_name::XorName;
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
@@ -80,12 +81,18 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
     Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
 }
 
+/// Returns the SipHash of `input`.
+pub fn sip_hash<T: Hash>(input: &T) -> u64 {
+    let mut hasher = SipHasher::new();
+    input.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[cfg(test)]
 mod test {
     extern crate rand;
 
     use xor_name::XorName;
-
 
     #[test]
     fn calculate_relocated_name() {
