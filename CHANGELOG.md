@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.19.1]
+- network size < GROUP_SIZE will only accept new nodes via first node
+
 ## [0.19.0]
 - Only start a network if explicitly designated as first node.
 - Use a Crust priority based on message type.
