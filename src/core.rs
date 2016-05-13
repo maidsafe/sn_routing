@@ -334,6 +334,18 @@ impl Core {
         &self.routing_table
     }
 
+    /// Resends all unacknowledged messages.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn resend_unacknowledged(&mut self) {
+        let timer_tokens = self.pending_acks
+            .iter()
+            .map(|(_, unacked_msg)| unacked_msg.timer_token)
+            .collect_vec();
+        for timer_token in &timer_tokens {
+            self.handle_timeout(*timer_token);
+        }
+    }
+
     fn update_stats(&mut self) {
         if self.state == State::Node {
             let old_client_num = self.stats.cur_client_num;
@@ -850,7 +862,7 @@ impl Core {
            self.routing_table.is_recipient(dst.to_destination()) {
             self.handle_routing_message(signed_msg.content().clone(),
                                         *signed_msg.public_id(),
-                                        Some(utils::sip_hash(signed_msg)))
+                                        Some(utils::sip_hash(signed_msg.content())))
         } else {
             Ok(())
         }
@@ -870,7 +882,7 @@ impl Core {
             }
             _ => return Err(RoutingError::BadAuthority),
         }
-        try!(self.send_ack(signed_msg.content(), utils::sip_hash(signed_msg)));
+        try!(self.send_ack(signed_msg.content(), utils::sip_hash(signed_msg.content())));
         self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id(), None)
     }
 
@@ -2164,8 +2176,8 @@ impl Core {
                 let new_delay = delay.saturating_mul(2);
                 let new_token = self.timer.schedule(Duration::from_secs(new_delay));
                 self.bucket_refresh_token_and_delay = Some((new_token, new_delay));
+                return;
             }
-            return;
         }
         let timed_out_ack = if let Some((sip_hash, _)) = self.pending_acks
             .iter()
@@ -2177,11 +2189,10 @@ impl Core {
         if let Some(timed_out) = timed_out_ack {
             // Safe to use `expect` here as we just got a valid key in the `find` call above.
             let mut unacked_msg = self.pending_acks.remove(&timed_out).expect("Bug in HashMap.");
+            warn!("Failed to get ack for {:?}", unacked_msg);
             unacked_msg.route += 1;
             // If we've tried all `GROUP_SIZE` routes, give up.  Otherwise resend on next route.
-            if unacked_msg.route as usize == GROUP_SIZE {
-                debug!("Failed to get ack for {:?}", unacked_msg);
-            } else {
+            if unacked_msg.route as usize != GROUP_SIZE {
                 let hop = *self.name();
                 let _ = self.send(unacked_msg.signed_msg,
                                   unacked_msg.route,
@@ -2438,7 +2449,7 @@ impl Core {
         }
 
         let token = self.timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
-        let ack = utils::sip_hash(&signed_msg);
+        let ack = utils::sip_hash(signed_msg.content());
         let unacked_msg = UnacknowledgedMessage {
             signed_msg: signed_msg.clone(),
             route: route,
