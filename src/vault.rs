@@ -111,6 +111,12 @@ impl Vault {
         self.maid_manager.get_put_count(client_name)
     }
 
+    /// Resend all unacknowledged messages.
+    #[cfg(any(test, feature = "use-mock-crust"))]
+    pub fn resend_unacknowledged(&self) {
+        self.routing_node.resend_unacknowledged()
+    }
+
     fn process_event(&mut self, event: Event) -> Option<bool> {
         let name = self.routing_node
             .name()

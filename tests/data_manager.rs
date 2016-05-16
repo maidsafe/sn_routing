@@ -161,7 +161,9 @@ fn structured_data_operations_with_churn() {
                 test_node::drop_node(&mut nodes, node_index);
             }
         }
-        let count = poll::nodes_and_client(&mut nodes, &mut client);
+        let mut count = poll::nodes_and_client(&mut nodes, &mut client);
+        mock_crust_detail::resend_unacknowledged(&nodes);
+        count += poll::nodes_and_client(&mut nodes, &mut client);
         trace!("Processed {} events.", count);
         event_count += count;
 

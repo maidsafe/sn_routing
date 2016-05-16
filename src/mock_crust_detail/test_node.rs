@@ -71,6 +71,10 @@ impl TestNode {
     pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.vault.get_maid_manager_put_count(client_name)
     }
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) {
+        self.vault.resend_unacknowledged()
+    }
 }
 
 /// Create nodes for mock network

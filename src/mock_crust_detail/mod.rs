@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(feature = "use-mock-crust")]
+#![cfg(any(test, feature = "use-mock-crust"))]
 
 /// Poll events
 pub mod poll;
@@ -74,5 +74,12 @@ pub fn check_data(all_data: Vec<Data>, nodes: &[TestNode]) {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+/// Resends all unacknowledged messages on all nodes.
+pub fn resend_unacknowledged(nodes: &[TestNode]) {
+    for node in nodes {
+        node.resend_unacknowledged()
     }
 }
