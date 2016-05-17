@@ -83,13 +83,8 @@ impl TestClient {
 
     /// create an account and store it
     pub fn create_account(&mut self, nodes: &mut [TestNode]) {
-        let account = unwrap_result!(StructuredData::new(0,
-                                                         random(),
-                                                         0,
-                                                         vec![],
-                                                         vec![],
-                                                         vec![],
-                                                         None));
+        let account =
+            unwrap_result!(StructuredData::new(0, random(), 0, vec![], vec![], vec![], None));
 
         unwrap_result!(self.put_and_verify(Data::Structured(account), nodes));
     }
@@ -132,11 +127,11 @@ impl TestClient {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
         self.flush();
-        unwrap_result!(self.routing_client.send_get_request(dst.clone(),
-                                                            request,
-                                                            request_message_id));
+        unwrap_result!(self.routing_client
+            .send_get_request(dst.clone(), request, request_message_id));
         let events_count = poll::nodes_and_client(nodes, self);
-        trace!("totally {} events got processed during the get_response", events_count);
+        trace!("totally {} events got processed during the get_response",
+               events_count);
         loop {
             match self.routing_rx.try_recv() {
                 Ok(Event::Response(ResponseMessage{
@@ -169,9 +164,11 @@ impl TestClient {
                          -> Result<DataIdentifier, Option<MutationError>> {
         let dst = Authority::NaeManager(data.name());
         let request_message_id = MessageId::new();
-        unwrap_result!(self.routing_client.send_post_request(dst.clone(), data, request_message_id));
+        unwrap_result!(self.routing_client
+            .send_post_request(dst.clone(), data, request_message_id));
         let events_count = poll::nodes_and_client(nodes, self);
-        trace!("totally {} events got processed during the post_response", events_count);
+        trace!("totally {} events got processed during the post_response",
+               events_count);
         loop {
             match self.routing_rx.try_recv() {
                 Ok(Event::Response(ResponseMessage{
@@ -204,11 +201,11 @@ impl TestClient {
                            -> Result<DataIdentifier, Option<MutationError>> {
         let dst = Authority::NaeManager(data.name());
         let request_message_id = MessageId::new();
-        unwrap_result!(self.routing_client.send_delete_request(dst.clone(),
-                                                               data,
-                                                               request_message_id));
+        unwrap_result!(self.routing_client
+            .send_delete_request(dst.clone(), data, request_message_id));
         let events_count = poll::nodes_and_client(nodes, self);
-        trace!("totally {} events got processed during the delete_response", events_count);
+        trace!("totally {} events got processed during the delete_response",
+               events_count);
         loop {
             match self.routing_rx.try_recv() {
                 Ok(Event::Response(ResponseMessage{
@@ -273,7 +270,11 @@ impl TestClient {
                 Ok(())
             }
             Ok(Event::Response(ResponseMessage{
-                content: ResponseContent::PutFailure{ id: response_id, request, external_error_indicator: response_error },
+                content: ResponseContent::PutFailure{
+                    id: response_id,
+                    request,
+                    external_error_indicator: response_error
+                },
                 ..
             })) => {
                 assert_eq!(request_message_id, response_id);

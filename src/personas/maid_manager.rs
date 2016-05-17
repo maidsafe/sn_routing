@@ -187,12 +187,10 @@ impl MaidManager {
         let accounts_to_delete = self.accounts.keys().filter(not_close).cloned().collect_vec();
         // Remove all requests from the cache that we are no longer responsible for.
         let msg_ids_to_delete = self.request_cache
-                                    .iter()
-                                    .filter(|&(_, ref req)| {
-                                        accounts_to_delete.contains(req.src.name())
-                                    })
-                                    .map(|(msg_id, _)| *msg_id)
-                                    .collect_vec();
+            .iter()
+            .filter(|&(_, ref req)| accounts_to_delete.contains(req.src.name()))
+            .map(|(msg_id, _)| *msg_id)
+            .collect_vec();
         for msg_id in msg_ids_to_delete {
             let _ = self.request_cache.remove(&msg_id);
         }
@@ -222,7 +220,7 @@ impl MaidManager {
         if let Ok(serialised_refresh) = serialisation::serialise(&refresh) {
             trace!("MM sending refresh for account {}", src.name());
             let _ = self.routing_node
-                        .send_refresh_request(src.clone(), src.clone(), serialised_refresh, msg_id);
+                .send_refresh_request(src.clone(), src.clone(), serialised_refresh, msg_id);
         }
     }
 
@@ -271,13 +269,13 @@ impl MaidManager {
                            -> Result<(), InternalError> {
         // Account must already exist to Put Data.
         let result = self.accounts
-                         .get_mut(&client_name)
-                         .ok_or(MutationError::NoSuchAccount)
-                         .and_then(|account| {
-                             let result = account.add_entry();
-                             trace!("Client account {:?}: {:?}", client_name, account);
-                             result
-                         });
+            .get_mut(&client_name)
+            .ok_or(MutationError::NoSuchAccount)
+            .and_then(|account| {
+                let result = account.add_entry();
+                trace!("Client account {:?}: {:?}", client_name, account);
+                result
+            });
         if let Err(error) = result {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
@@ -309,7 +307,7 @@ impl MaidManager {
         let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
         let _ = self.routing_node
-                    .send_put_failure(src, dst, request, external_error_indicator, msg_id);
+            .send_put_failure(src, dst, request, external_error_indicator, msg_id);
         Ok(())
     }
 

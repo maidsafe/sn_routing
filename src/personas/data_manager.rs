@@ -116,11 +116,12 @@ impl Cache {
     }
 
     fn chain_records_in_cache(&self, records_in_store: Vec<IdAndVersion>) -> HashSet<IdAndVersion> {
-        let mut records = self.data_holders.values()
-                                           .flat_map(|idvs| idvs.iter().cloned())
-                                           .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
-                                           .chain(records_in_store)
-                                           .collect_vec();
+        let mut records = self.data_holders
+            .values()
+            .flat_map(|idvs| idvs.iter().cloned())
+            .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
+            .chain(records_in_store)
+            .collect_vec();
         for data_id in &self.unneeded_chunks {
             records.retain(|&idv| idv != (*data_id, 0));
         }
@@ -129,12 +130,10 @@ impl Cache {
 
     fn prune_unneeded_chunks<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> u64 {
         let pruned_unneeded_chunks = self.unneeded_chunks
-                                         .iter()
-                                         .filter(|data_id| {
-                                             routing_table.is_close(&data_id.name())
-                                         })
-                                         .cloned()
-                                         .collect_vec();
+            .iter()
+            .filter(|data_id| routing_table.is_close(&data_id.name()))
+            .cloned()
+            .collect_vec();
         if pruned_unneeded_chunks.len() != 0 {
             self.unneeded_chunks.retain(|data_id| !pruned_unneeded_chunks.contains(&data_id));
         }
@@ -149,17 +148,17 @@ impl Cache {
     /// disconnected.
     fn prune_ongoing_gets<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> bool {
         let lost_gets = self.ongoing_gets
-                            .iter()
-                            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
-                                routing_table.other_close_nodes(&data_id.name())
-                                             .map_or(true, |group| {
-                                                 !group.iter()
-                                                       .map(T::name)
-                                                       .any(|name| name == *holder)
-                                             })
-                            })
-                            .map(|(holder, _)| *holder)
-                            .collect_vec();
+            .iter()
+            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
+                routing_table.other_close_nodes(&data_id.name())
+                    .map_or(true, |group| {
+                        !group.iter()
+                            .map(T::name)
+                            .any(|name| name == *holder)
+                    })
+            })
+            .map(|(holder, _)| *holder)
+            .collect_vec();
         if !lost_gets.is_empty() {
             for holder in lost_gets {
                 let _ = self.ongoing_gets.remove(&holder);
@@ -171,39 +170,37 @@ impl Cache {
 
     fn needed_data(&mut self) -> Vec<(XorName, IdAndVersion)> {
         let empty_holders = self.data_holders
-                                .iter()
-                                .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
-                                .map(|(holder, _)| *holder)
-                                .collect_vec();
+            .iter()
+            .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
+            .map(|(holder, _)| *holder)
+            .collect_vec();
         for holder in empty_holders {
             let _ = self.data_holders.remove(&holder);
         }
         let expired_gets = self.ongoing_gets
-                               .iter()
-                               .filter(|&(_, &(ref timestamp, _))| {
-                                   timestamp.elapsed().as_secs() > GET_FROM_DATA_HOLDER_TIMEOUT_SECS
-                               })
-                               .map(|(holder, _)| *holder)
-                               .collect_vec();
+            .iter()
+            .filter(|&(_, &(ref timestamp, _))| {
+                timestamp.elapsed().as_secs() > GET_FROM_DATA_HOLDER_TIMEOUT_SECS
+            })
+            .map(|(holder, _)| *holder)
+            .collect_vec();
         for holder in expired_gets {
             let _ = self.ongoing_gets.remove(&holder);
         }
         let mut outstanding_data_ids: HashSet<_> = self.ongoing_gets
-                                                       .values()
-                                                       .map(|&(_, (data_id, _))| data_id)
-                                                       .collect();
+            .values()
+            .map(|&(_, (data_id, _))| data_id)
+            .collect();
         let idle_holders = self.data_holders
-                               .keys()
-                               .filter(|holder| !self.ongoing_gets.contains_key(holder))
-                               .cloned()
-                               .collect_vec();
+            .keys()
+            .filter(|holder| !self.ongoing_gets.contains_key(holder))
+            .cloned()
+            .collect_vec();
         let mut candidates = Vec::new();
         for idle_holder in idle_holders {
             if let Some(data_idvs) = self.data_holders.get_mut(&idle_holder) {
                 if let Some(&data_idv) = data_idvs.iter()
-                                                  .find(|&&(ref data_id, _)| {
-                                                      !outstanding_data_ids.contains(data_id)
-                                                  }) {
+                    .find(|&&(ref data_id, _)| !outstanding_data_ids.contains(data_id)) {
                     let _ = data_idvs.remove(&data_idv);
                     let (data_id, _) = data_idv;
                     let _ = outstanding_data_ids.insert(data_id);
@@ -252,7 +249,8 @@ fn id_and_version_of(data: &Data) -> IdAndVersion {
 impl Debug for DataManager {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "Stats : Client Get requests received {} ; Data stored - ID {} - SD {} - total {} bytes",
+               "Stats : Client Get requests received {} ; Data stored - ID {} - SD {} - total {} \
+                bytes",
                self.client_get_requests,
                self.immutable_data_count,
                self.structured_data_count,
@@ -280,7 +278,7 @@ impl DataManager {
                       data_id: &DataIdentifier,
                       message_id: &MessageId)
                       -> Result<(), InternalError> {
-        if let Authority::Client{..} = request.src {
+        if let Authority::Client { .. } = request.src {
             self.client_get_requests += 1;
             info!("{:?}", self);
         }
@@ -290,21 +288,18 @@ impl DataManager {
                    data,
                    request.src);
             let _ = self.routing_node
-                        .send_get_success(request.dst.clone(),
-                                          request.src.clone(),
-                                          data,
-                                          *message_id);
+                .send_get_success(request.dst.clone(), request.src.clone(), data, *message_id);
             return Ok(());
         }
         trace!("DM sending get_failure of {:?}", data_id);
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(self.routing_node
-                 .send_get_failure(request.dst.clone(),
-                                   request.src.clone(),
-                                   request.clone(),
-                                   external_error_indicator,
-                                   message_id.clone()));
+            .send_get_failure(request.dst.clone(),
+                              request.src.clone(),
+                              request.clone(),
+                              external_error_indicator,
+                              message_id.clone()));
         Ok(())
     }
 
@@ -325,18 +320,18 @@ impl DataManager {
                     trace!("DM sending PutFailure for data {:?}, it already exists.",
                            data_id);
                     let _ = self.routing_node
-                                .send_put_failure(response_src,
-                                                  response_dst,
-                                                  request.clone(),
-                                                  external_error_indicator,
-                                                  *message_id);
+                        .send_put_failure(response_src,
+                                          response_dst,
+                                          request.clone(),
+                                          external_error_indicator,
+                                          *message_id);
                     return Err(From::from(error));
                 }
                 DataIdentifier::Immutable(..) => {
                     trace!("DM sending PutSuccess for data {:?}, it already exists.",
                            data_id);
                     let _ = self.routing_node
-                                .send_put_success(response_src, response_dst, data_id, *message_id);
+                        .send_put_success(response_src, response_dst, data_id, *message_id);
                     return Ok(());
                 }
                 _ => unimplemented!(),
@@ -349,11 +344,11 @@ impl DataManager {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                        .send_put_failure(response_src,
-                                          response_dst,
-                                          request.clone(),
-                                          external_error_indicator,
-                                          *message_id);
+                .send_put_failure(response_src,
+                                  response_dst,
+                                  request.clone(),
+                                  external_error_indicator,
+                                  *message_id);
             return Err(From::from(error));
         }
 
@@ -362,18 +357,18 @@ impl DataManager {
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                        .send_put_failure(response_src,
-                                          response_dst,
-                                          request.clone(),
-                                          external_error_indicator,
-                                          *message_id);
+                .send_put_failure(response_src,
+                                  response_dst,
+                                  request.clone(),
+                                  external_error_indicator,
+                                  *message_id);
             Err(From::from(error))
         } else {
             self.count_added_data(&data_id);
             trace!("DM sending PutSuccess for data {:?}", data_id);
             info!("{:?}", self);
             let _ = self.routing_node
-                        .send_put_success(response_src, response_dst, data_id, *message_id);
+                .send_put_success(response_src, response_dst, data_id, *message_id);
             let data_list = vec![(data_id, version)];
             let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
             Ok(())
@@ -389,13 +384,13 @@ impl DataManager {
         if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&new_data.identifier()) {
             if data.replace_with_other(new_data.clone()).is_ok() {
                 if let Ok(()) = self.chunk_store
-                                    .put(&data.identifier(), &Data::Structured(data.clone())) {
+                    .put(&data.identifier(), &Data::Structured(data.clone())) {
                     trace!("DM updated for: {:?}", data.identifier());
                     let _ = self.routing_node
-                                .send_post_success(request.dst.clone(),
-                                                   request.src.clone(),
-                                                   data.identifier(),
-                                                   *message_id);
+                        .send_post_success(request.dst.clone(),
+                                           request.src.clone(),
+                                           data.identifier(),
+                                           *message_id);
                     let data_list = vec![(new_data.identifier(), new_data.get_version())];
                     let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
                     return Ok(());
@@ -404,11 +399,12 @@ impl DataManager {
         }
 
         trace!("DM sending post_failure {:?}", new_data.identifier());
-        Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
-                                                    request.src.clone(),
-                                                    request.clone(),
-                                                    try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                                                    *message_id)))
+        Ok(try!(self.routing_node
+            .send_post_failure(request.dst.clone(),
+                               request.src.clone(),
+                               request.clone(),
+                               try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
+                               *message_id)))
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
@@ -425,10 +421,10 @@ impl DataManager {
                     trace!("DM deleted {:?}", data.identifier());
                     info!("{:?}", self);
                     let _ = self.routing_node
-                                .send_delete_success(request.dst.clone(),
-                                                     request.src.clone(),
-                                                     data.identifier(),
-                                                     *message_id);
+                        .send_delete_success(request.dst.clone(),
+                                             request.src.clone(),
+                                             data.identifier(),
+                                             *message_id);
                     // TODO: Send a refresh message.
                     return Ok(());
                 }
@@ -507,7 +503,7 @@ impl DataManager {
                         DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
                         DataIdentifier::Structured(..) => {
                             match self.chunk_store.get(data_id) {
-                                Err(_) => true, // We don't have the data, so we need to retrieve it.
+                                Err(_) => true, // We don't have the data, so we need to retrieve it
                                 Ok(Data::Structured(sd)) => sd.get_version() < *version,
                                 _ => unreachable!(),
                             }
@@ -537,10 +533,7 @@ impl DataManager {
                     let (data_id, _) = data_idv;
                     let dst = Authority::ManagedNode(idle_holder);
                     let msg_id = MessageId::new();
-                    let _ = self.routing_node.send_get_request(src.clone(),
-                                                               dst,
-                                                               data_id,
-                                                               msg_id);
+                    let _ = self.routing_node.send_get_request(src.clone(), dst, data_id, msg_id);
                 }
             }
         }
@@ -562,11 +555,10 @@ impl DataManager {
             let _ = self.send_gets_for_needed_data();
         }
         let data_idvs = self.cache.chain_records_in_cache(self.chunk_store
-                                                              .keys()
-                                                              .into_iter()
-                                                              .filter_map(|data_id|
-                                                                  self.to_id_and_version(data_id))
-                                                              .collect_vec());
+            .keys()
+            .into_iter()
+            .filter_map(|data_id| self.to_id_and_version(data_id))
+            .collect_vec());
         let mut has_pruned_data = false;
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
@@ -574,8 +566,7 @@ impl DataManager {
             match routing_table.other_close_nodes(&data_id.name()) {
                 None => {
                     trace!("No longer a DM for {:?}", data_id);
-                    if self.chunk_store.has(&data_id) &&
-                       !self.cache.is_in_unneeded(&data_id) {
+                    if self.chunk_store.has(&data_id) && !self.cache.is_in_unneeded(&data_id) {
                         self.count_removed_data(&data_id);
                         has_pruned_data = true;
                         if let DataIdentifier::Structured(..) = data_id {
@@ -615,11 +606,10 @@ impl DataManager {
         }
 
         let data_idvs = self.cache.chain_records_in_cache(self.chunk_store
-                                                              .keys()
-                                                              .into_iter()
-                                                              .filter_map(|data_id|
-                                                                  self.to_id_and_version(data_id))
-                                                              .collect_vec());
+            .keys()
+            .into_iter()
+            .filter_map(|data_id| self.to_id_and_version(data_id))
+            .collect_vec());
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
             match routing_table.other_close_nodes(&data_idv.0.name()) {
@@ -714,7 +704,7 @@ impl DataManager {
             Ok(serialised_list) => {
                 trace!("DM sending refresh to {:?}.", dst);
                 let _ = self.routing_node
-                            .send_refresh_request(src, dst, serialised_list, MessageId::new());
+                    .send_refresh_request(src, dst, serialised_list, MessageId::new());
                 Ok(())
             }
             Err(error) => {

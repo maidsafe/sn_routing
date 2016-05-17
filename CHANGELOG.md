@@ -1,5 +1,9 @@
 # Safe Vault - Change Log
 
+## [0.8.1]
+- Allow passing `--first` via command line to start the first Vault of a new network.
+- Updated dependencies.
+
 ## [0.8.0]
 - Several tweaks to churn handling in data_manager.
 - Implement process to automatically build release binaries.
