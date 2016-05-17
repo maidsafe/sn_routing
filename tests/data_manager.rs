@@ -91,7 +91,7 @@ fn immutable_data_operations_with_churn() {
 }
 
 #[test]
-fn structured_data_opertions_with_churn() {
+fn structured_data_operations_with_churn() {
     let network = Network::new();
     let node_count = TEST_NET_SIZE;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -127,7 +127,7 @@ fn structured_data_opertions_with_churn() {
                                                        sd.get_owner_keys().clone(),
                                                        vec![],
                                                        Some(client.full_id()
-                                                                  .signing_private_key())))
+                                                           .signing_private_key())))
                 } else {
                     panic!("Non-structured data found.");
                 });
@@ -294,11 +294,11 @@ fn handle_post_error_flow() {
                                                1,
                                                sd.get_data().clone(),
                                                vec![full_id.public_id()
-                                                           .signing_public_key()
-                                                           .clone()],
+                                                        .signing_public_key()
+                                                        .clone()],
                                                vec![],
                                                Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.post_response(Data::Structured(incorrect_tag_sd), &mut nodes) {
         // TODO: MutationError::NoSuchData is preferred to be returned in this scenario
         //       As `type_tag` is part of the name
@@ -312,11 +312,11 @@ fn handle_post_error_flow() {
                                                    3,
                                                    sd.get_data().clone(),
                                                    vec![full_id.public_id()
-                                                               .signing_public_key()
-                                                               .clone()],
+                                                            .signing_public_key()
+                                                            .clone()],
                                                    vec![],
                                                    Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.post_response(Data::Structured(incorrect_version_sd), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -329,11 +329,11 @@ fn handle_post_error_flow() {
                                                   1,
                                                   sd.get_data().clone(),
                                                   vec![new_full_id.public_id()
-                                                                  .signing_public_key()
-                                                                  .clone()],
+                                                           .signing_public_key()
+                                                           .clone()],
                                                   vec![],
                                                   Some(new_full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.post_response(Data::Structured(incorrect_signed_sd), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -347,7 +347,7 @@ fn handle_post_error_flow() {
                                      vec![full_id.public_id().signing_public_key().clone()],
                                      vec![],
                                      Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.post_response(Data::Structured(new_sd), &mut nodes) {
         Ok(data_id) => assert_eq!(data_id, sd.identifier()),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -383,11 +383,11 @@ fn handle_delete_error_flow() {
                                                1,
                                                sd.get_data().clone(),
                                                vec![full_id.public_id()
-                                                           .signing_public_key()
-                                                           .clone()],
+                                                        .signing_public_key()
+                                                        .clone()],
                                                vec![],
                                                Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.delete_response(Data::Structured(incorrect_tag_sd), &mut nodes) {
         // TODO: MutationError::NoSuchData is preferred to be returned in this scenario
         //       As `type_tag` is part of the name
@@ -401,11 +401,11 @@ fn handle_delete_error_flow() {
                                                    3,
                                                    sd.get_data().clone(),
                                                    vec![full_id.public_id()
-                                                               .signing_public_key()
-                                                               .clone()],
+                                                            .signing_public_key()
+                                                            .clone()],
                                                    vec![],
                                                    Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.delete_response(Data::Structured(incorrect_version_sd), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -418,11 +418,11 @@ fn handle_delete_error_flow() {
                                                   1,
                                                   sd.get_data().clone(),
                                                   vec![new_full_id.public_id()
-                                                                  .signing_public_key()
-                                                                  .clone()],
+                                                           .signing_public_key()
+                                                           .clone()],
                                                   vec![],
                                                   Some(new_full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.delete_response(Data::Structured(incorrect_signed_sd), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -436,7 +436,7 @@ fn handle_delete_error_flow() {
                                      vec![full_id.public_id().signing_public_key().clone()],
                                      vec![],
                                      Some(full_id.signing_private_key()))
-                                    .expect("Cannot create structured data for test");
+        .expect("Cannot create structured data for test");
     match client.delete_response(Data::Structured(new_sd), &mut nodes) {
         Ok(data_id) => assert_eq!(data_id, sd.identifier()),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),

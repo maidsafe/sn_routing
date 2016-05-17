@@ -113,8 +113,8 @@ impl Vault {
 
     fn process_event(&mut self, event: Event) -> Option<bool> {
         let name = self.routing_node
-                       .name()
-                       .expect("Failed to get name from routing node.");
+            .name()
+            .expect("Failed to get name from routing node.");
         trace!("Vault {} received an event from routing: {:?}", name, event);
 
         let mut ret = None;

@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(feature = "use-mock-crust")]
+#![cfg(any(test, feature = "use-mock-crust"))]
 
 /// Poll events
 pub mod poll;
@@ -30,28 +30,26 @@ use std::collections::{HashMap, HashSet};
 use mock_crust_detail::test_node::TestNode;
 
 /// Checks that none of the given nodes has any copy of the given data left.
-#[cfg(any(test, feature = "use-mock-crust"))]
 pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
     let deleted_data_ids: HashSet<_> = deleted_data.iter()
-                                                   .map(Data::identifier)
-                                                   .collect();
+        .map(Data::identifier)
+        .collect();
     let found_data = nodes.iter()
-                          .flat_map(TestNode::get_stored_names)
-                          .filter_map(|data_id| {
-                              if deleted_data_ids.contains(&data_id) {
-                                  Some(data_id.name())
-                              } else {
-                                  None
-                              }
-                          })
-                          .collect_vec();
+        .flat_map(TestNode::get_stored_names)
+        .filter_map(|data_id| {
+            if deleted_data_ids.contains(&data_id) {
+                Some(data_id.name())
+            } else {
+                None
+            }
+        })
+        .collect_vec();
     assert!(found_data.is_empty(),
             "Found deleted data: {:?}",
             found_data);
 }
 
 /// Checks that the given `nodes` store the expected number of copies of the given data.
-#[cfg(any(test, feature = "use-mock-crust"))]
 pub fn check_data(all_data: Vec<Data>, nodes: &[TestNode]) {
     let mut data_count: HashMap<DataIdentifier, usize> = HashMap::new();
     for data_id in nodes.iter().flat_map(TestNode::get_stored_names) {
