@@ -149,7 +149,7 @@ mod test {
         }
 
         let expected_relocated_name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined)
-                                                  .0);
+            .0);
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();

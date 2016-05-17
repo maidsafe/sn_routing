@@ -89,20 +89,20 @@ impl Tunnels {
     /// tunnel for them.
     pub fn drop_client(&mut self, peer_id: &PeerId) -> Vec<PeerId> {
         let pairs = self.clients
-                        .iter()
-                        .filter(|pair| pair.0 == *peer_id || pair.1 == *peer_id)
-                        .cloned()
-                        .collect_vec();
+            .iter()
+            .filter(|pair| pair.0 == *peer_id || pair.1 == *peer_id)
+            .cloned()
+            .collect_vec();
         pairs.into_iter()
-             .map(|pair| {
-                 self.clients.remove(&pair);
-                 if pair.0 == *peer_id {
-                     pair.1
-                 } else {
-                     pair.0
-                 }
-             })
-             .collect()
+            .map(|pair| {
+                self.clients.remove(&pair);
+                if pair.0 == *peer_id {
+                    pair.1
+                } else {
+                    pair.0
+                }
+            })
+            .collect()
     }
 
     /// Adds the given `tunnel_id` as a tunnel to `dst_id` if one is needed, otherwise returns
@@ -137,10 +137,10 @@ impl Tunnels {
     /// for.
     pub fn remove_tunnel(&mut self, tunnel_id: &PeerId) -> Vec<PeerId> {
         let dst_ids = self.tunnels
-                          .iter()
-                          .filter(|&(_, id)| id == tunnel_id)
-                          .map(|(&dst_id, _)| dst_id)
-                          .collect_vec();
+            .iter()
+            .filter(|&(_, id)| id == tunnel_id)
+            .map(|(&dst_id, _)| dst_id)
+            .collect_vec();
         for dst_id in &dst_ids {
             let _ = self.tunnels.remove(dst_id);
         }
@@ -205,8 +205,8 @@ mod tests {
         tunnels.add(id(2), id(0));
         tunnels.add(id(3), id(4));
         let removed_peers = tunnels.remove_tunnel(&id(0))
-                                   .into_iter()
-                                   .sorted();
+            .into_iter()
+            .sorted();
         assert_eq!(&[id(1), id(2)], &*removed_peers);
         assert_eq!(None, tunnels.tunnel_for(&id(1)));
         assert_eq!(None, tunnels.tunnel_for(&id(2)));

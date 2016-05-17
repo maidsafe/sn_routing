@@ -75,10 +75,10 @@ impl StructuredData {
         let type_tag_as_string = type_tag.to_string();
 
         let chain = identifier.0
-                              .iter()
-                              .cloned()
-                              .chain(type_tag_as_string.as_bytes().iter().cloned())
-                              .map(|a| a);
+            .iter()
+            .cloned()
+            .chain(type_tag_as_string.as_bytes().iter().cloned())
+            .map(|a| a);
 
         XorName(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
@@ -163,15 +163,15 @@ impl StructuredData {
 
         let check_all_keys = |&sig| {
             owner_keys.iter()
-                      .any(|ref pub_key| {
-                          ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
-                      })
+                .any(|ref pub_key| {
+                    ::sodiumoxide::crypto::sign::verify_detached(&sig, &data, pub_key)
+                })
         };
 
         if self.previous_owner_signatures
-               .iter()
-               .filter(|&sig| check_all_keys(sig))
-               .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
+            .iter()
+            .filter(|&sig| check_all_keys(sig))
+            .count() < (owner_keys.len() / 2 + owner_keys.len() % 2) {
             return Err(::error::RoutingError::NotEnoughSignatures);
         }
         Ok(())
@@ -259,22 +259,17 @@ impl StructuredData {
 impl Debug for StructuredData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         let previous_owner_keys: Vec<String> = self.previous_owner_keys
-                                                   .iter()
-                                                   .map(|pub_key| {
-                                                       ::utils::format_binary_array(&pub_key.0)
-                                                   })
-                                                   .collect();
+            .iter()
+            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
+            .collect();
         let current_owner_keys: Vec<String> = self.current_owner_keys
-                                                  .iter()
-                                                  .map(|pub_key| {
-                                                      ::utils::format_binary_array(&pub_key.0)
-                                                  })
-                                                  .collect();
-        let previous_owner_signatures: Vec<String> =
-            self.previous_owner_signatures
-                .iter()
-                .map(|signature| ::utils::format_binary_array(&signature.0[..]))
-                .collect();
+            .iter()
+            .map(|pub_key| ::utils::format_binary_array(&pub_key.0))
+            .collect();
+        let previous_owner_signatures: Vec<String> = self.previous_owner_signatures
+            .iter()
+            .map(|signature| ::utils::format_binary_array(&signature.0[..]))
+            .collect();
         write!(formatter,
                "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, \
                 version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
