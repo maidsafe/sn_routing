@@ -32,6 +32,7 @@ use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectState, PeerManager};
 use rand;
+use std::collections::HashMap;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::{self, sha512};
 use std::io;
@@ -2189,10 +2190,17 @@ impl Core {
         if let Some(timed_out) = timed_out_ack {
             // Safe to use `expect` here as we just got a valid key in the `find` call above.
             let mut unacked_msg = self.pending_acks.remove(&timed_out).expect("Bug in HashMap.");
-            warn!("Failed to get ack for {:?}", unacked_msg);
+            trace!("{:?} - Timed out waiting for ack({}) {:?}",
+                   self,
+                   timed_out,
+                   unacked_msg);
             unacked_msg.route += 1;
             // If we've tried all `GROUP_SIZE` routes, give up.  Otherwise resend on next route.
-            if unacked_msg.route as usize != GROUP_SIZE {
+            if unacked_msg.route as usize == GROUP_SIZE {
+                debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
+                       self,
+                       unacked_msg);
+            } else {
                 let hop = *self.name();
                 let _ = self.send(unacked_msg.signed_msg,
                                   unacked_msg.route,
@@ -2350,6 +2358,7 @@ impl Core {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                     let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, vec![]));
+                    self.add_to_pending_acks(&signed_msg, route);
                     return self.send_or_drop(&peer_id, raw_bytes, priority);
                 }
 
