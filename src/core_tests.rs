@@ -294,10 +294,10 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
     let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
 
     table.closest_nodes_to(&far_name, GROUP_SIZE, false)
-         .into_iter()
-         .map(|info| *info.name())
-         .filter(|name| our_name.bucket_index(name) == bucket_index)
-         .collect()
+        .into_iter()
+        .map(|info| *info.name())
+        .filter(|name| our_name.bucket_index(name) == bucket_index)
+        .collect()
 }
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
@@ -307,9 +307,9 @@ fn node_names_in_bucket(nodes: &[TestNode],
                         bucket_index: usize)
                         -> HashSet<XorName> {
     nodes.iter()
-         .filter(|node| name.bucket_index(node.name()) == bucket_index)
-         .map(|node| *node.name())
-         .collect()
+        .filter(|node| name.bucket_index(node.name()) == bucket_index)
+        .map(|node| *node.name())
+        .collect()
 }
 
 // Verify that the kademlia invariant is upheld for the node at `index`.
@@ -444,9 +444,8 @@ fn multiple_joining_nodes() {
 #[test]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
-    let close_groups_complete = nodes.iter().all(|n| {
-        nodes.iter().all(|m| m.name() == n.name() || m.close_group().contains(n.name()))
-    });
+    let close_groups_complete = nodes.iter()
+        .all(|n| nodes.iter().all(|m| m.name() == n.name() || m.close_group().contains(n.name())));
     assert!(close_groups_complete);
 }
 
@@ -515,8 +514,8 @@ fn successful_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-                .is_ok());
+        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+        .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 
@@ -591,8 +590,8 @@ fn failed_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-                .is_ok());
+        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+        .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 
@@ -672,8 +671,8 @@ fn disconnect_on_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0]
-                .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-                .is_ok());
+        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+        .is_ok());
 
     poll_all(&mut nodes, &mut clients);
 

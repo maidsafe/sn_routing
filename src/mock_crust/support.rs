@@ -62,9 +62,9 @@ impl Network {
 
         let handle = ServiceHandle::new(self.clone(), config, endpoint);
         let _ = self.0
-                    .borrow_mut()
-                    .services
-                    .insert(endpoint, Rc::downgrade(&handle.0));
+            .borrow_mut()
+            .services
+            .insert(endpoint, Rc::downgrade(&handle.0));
 
         handle
     }
@@ -388,8 +388,8 @@ impl ServiceImpl {
     // or None if no such peer exists.
     fn remove_connection_by_peer_id(&mut self, peer_id: &PeerId) -> Option<Endpoint> {
         if let Some(i) = self.connections
-                             .iter()
-                             .position(|&(id, _)| id == *peer_id) {
+            .iter()
+            .position(|&(id, _)| id == *peer_id) {
             Some(self.connections.swap_remove(i).1)
         } else {
             None
@@ -398,8 +398,8 @@ impl ServiceImpl {
 
     fn remove_connection_by_endpoint(&mut self, endpoint: Endpoint) -> Option<PeerId> {
         if let Some(i) = self.connections
-                             .iter()
-                             .position(|&(_, ep)| ep == endpoint) {
+            .iter()
+            .position(|&(_, ep)| ep == endpoint) {
             Some(self.connections.swap_remove(i).0)
         } else {
             None
@@ -435,9 +435,9 @@ impl ServiceImpl {
 
     pub fn disconnect_all(&mut self) {
         let endpoints = self.connections
-                            .drain(..)
-                            .map(|(_, ep)| ep)
-                            .collect::<Vec<_>>();
+            .drain(..)
+            .map(|(_, ep)| ep)
+            .collect::<Vec<_>>();
 
         for endpoint in endpoints {
             self.send_packet(endpoint, Packet::Disconnect);
