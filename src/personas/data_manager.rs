@@ -56,8 +56,8 @@ struct Cache {
     data_holder_items_count: usize,
 }
 
-impl Cache {
-    fn new() -> Cache {
+impl Default for Cache {
+    fn default() -> Cache {
         Cache {
             unneeded_chunks: VecDeque::new(),
             data_holders: HashMap::new(),
@@ -66,7 +66,9 @@ impl Cache {
             data_holder_items_count: 0,
         }
     }
+}
 
+impl Cache {
     fn insert_into_ongoing_gets(&mut self, idle_holder: &XorName, data_idv: &IdAndVersion) {
         let _ = self.ongoing_gets.insert(*idle_holder, (Instant::now(), *data_idv));
     }
@@ -134,8 +136,8 @@ impl Cache {
             .filter(|data_id| routing_table.is_close(&data_id.name()))
             .cloned()
             .collect_vec();
-        if pruned_unneeded_chunks.len() != 0 {
-            self.unneeded_chunks.retain(|data_id| !pruned_unneeded_chunks.contains(&data_id));
+        if !pruned_unneeded_chunks.is_empty() {
+            self.unneeded_chunks.retain(|data_id| !pruned_unneeded_chunks.contains(data_id));
         }
         pruned_unneeded_chunks.len() as u64
     }
@@ -265,7 +267,7 @@ impl DataManager {
             refresh_accumulator:
                 Accumulator::with_duration(ACCUMULATOR_QUORUM,
                                            Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),
-            cache: Cache::new(),
+            cache: Default::default(),
             routing_node: routing_node,
             immutable_data_count: 0,
             structured_data_count: 0,
@@ -282,7 +284,7 @@ impl DataManager {
             self.client_get_requests += 1;
             info!("{:?}", self);
         }
-        if let Ok(data) = self.chunk_store.get(&data_id) {
+        if let Ok(data) = self.chunk_store.get(data_id) {
             trace!("As {:?} sending data {:?} to {:?}",
                    request.dst,
                    data,
@@ -308,7 +310,7 @@ impl DataManager {
                       data: &Data,
                       message_id: &MessageId)
                       -> Result<(), InternalError> {
-        let (data_id, version) = id_and_version_of(&data);
+        let (data_id, version) = id_and_version_of(data);
         let response_src = request.dst.clone();
         let response_dst = request.src.clone();
 
@@ -414,7 +416,7 @@ impl DataManager {
                          message_id: &MessageId)
                          -> Result<(), InternalError> {
         if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
-            if data.validate_self_against_successor(&new_data).is_ok() {
+            if data.validate_self_against_successor(new_data).is_ok() {
                 let data_id = data.identifier();
                 if let Ok(()) = self.chunk_store.delete(&data_id) {
                     self.count_removed_data(&data_id);
@@ -441,7 +443,7 @@ impl DataManager {
     }
 
     pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
-        let (data_id, version) = id_and_version_of(&data);
+        let (data_id, version) = id_and_version_of(data);
         self.cache.handle_get_success(src, &data_id, &version);
         try!(self.send_gets_for_needed_data());
         // If we're no longer in the close group, return.

@@ -28,7 +28,7 @@ use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
 
-const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
+const TEST_NET_SIZE: usize = 20;
 
 #[test]
 fn handle_put_without_account() {
@@ -44,8 +44,8 @@ fn handle_put_without_account() {
     client.put(Data::Immutable(immutable_data));
     let _ = poll::nodes_and_client(&mut nodes, &mut client);
     let count = nodes.iter()
-                     .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
-                     .count();
+        .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
+        .count();
     assert!(0 == count,
             "put_count {} found with {} nodes",
             count,
@@ -67,8 +67,8 @@ fn handle_put_with_account() {
     client.put(Data::Immutable(immutable_data.clone()));
     let _ = poll::nodes_and_client(&mut nodes, &mut client);
     let count = nodes.iter()
-                     .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
-                     .count();
+        .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
+        .count();
     assert!(GROUP_SIZE == count,
             "client account {} found on {} nodes",
             count,
@@ -139,9 +139,8 @@ fn maid_manager_account_updates_with_churn() {
     let full_id = client.full_id().clone();
 
     for i in 0..10 {
-        for data in (0..4).map(|_| {
-            Data::Structured(test_utils::random_structured_data(100000, &full_id))
-        }) {
+        for data in (0..4)
+            .map(|_| Data::Structured(test_utils::random_structured_data(100000, &full_id))) {
             client.put(data.clone());
             put_count += 1;
         }
@@ -160,13 +159,13 @@ fn maid_manager_account_updates_with_churn() {
         }
         let _ = poll::nodes_and_client(&mut nodes, &mut client);
         let count = nodes.iter()
-                         .filter(|node| {
-                             match node.get_maid_manager_put_count(client.name()) {
-                                 None => false,
-                                 Some(count) => count == put_count,
-                             }
-                         })
-                         .count();
+            .filter(|node| {
+                match node.get_maid_manager_put_count(client.name()) {
+                    None => false,
+                    Some(count) => count == put_count,
+                }
+            })
+            .count();
         assert!(GROUP_SIZE - 3 <= count,
                 "put_count {} only found with {} nodes",
                 put_count,

@@ -30,7 +30,7 @@ use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
 
-const TEST_NET_SIZE: usize = GROUP_SIZE + 2; // just larger than CLOSE_GROUP
+const TEST_NET_SIZE: usize = 20;
 
 #[cfg(feature = "use-mock-crust")]
 #[test]
