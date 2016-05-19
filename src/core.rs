@@ -1891,9 +1891,8 @@ impl Core {
                               proxy_node_name: proxy_name,
                               peer_id: peer_id,
                           }));
-        if let Some(&(ref _name, ref _their_public_id)) = self.node_id_cache
-            .retrieve_all()
-            .iter()
+        if let Some((_name, _their_public_id)) = self.node_id_cache
+            .peek_iter()
             .find(|elt| *elt.1.signing_public_key() == client_key) {
             // try!(self.check_address_for_routing_table(&name));
             // self.connect(encrypted_connection_info,
@@ -2096,9 +2095,11 @@ impl Core {
            self.routing_table.allow_connection(their_public_id.name()) {
             if self.peer_mgr
                 .connection_token_map
-                .retrieve_all()
-                .into_iter()
-                .any(|(_, (public_id, _, _))| public_id == their_public_id) {
+                .peek_iter()
+                .any(|(_, &(ref public_id, _, _))| *public_id == their_public_id) ||
+               self.peer_mgr.our_connection_info_map.contains_key(&their_public_id) ||
+               self.peer_mgr.connecting_peer_state(their_public_id.name()) ==
+               Some(ConnectState::Crust) {
                 debug!("Already sent connection info to {:?}!",
                        their_public_id.name());
             } else {

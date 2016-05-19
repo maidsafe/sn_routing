@@ -240,8 +240,17 @@ impl PeerManager {
         self.insert_peer(peer_id);
     }
 
+    /// Returns the name and state of the given peer, if present.
     pub fn get_connecting_peer(&mut self, peer_id: &PeerId) -> Option<&(XorName, ConnectState)> {
-        self.connecting_peers.get(peer_id)
+        self.connecting_peers.peek(peer_id)
+    }
+
+    /// Returns the state of the given peer, if present.
+    pub fn connecting_peer_state(&self, name: &XorName) -> Option<ConnectState> {
+        self.connecting_peers
+            .peek_iter()
+            .find(|&(_, &(ref n, _))| n == name)
+            .map(|(_, &(_, state))| state)
     }
 
     /// Adds the given peer and sets the given connection status.
@@ -262,10 +271,9 @@ impl PeerManager {
     pub fn peers_with_state(&mut self, state: ConnectState) -> Vec<(PeerId, XorName)> {
         // TODO: Add a peek_all method to LruCache that doesn't update the timestamps.
         self.connecting_peers
-            .retrieve_all()
-            .into_iter()
-            .filter(|&(_, (_, s))| s == state)
-            .map(|(dst_id, (name, _))| (dst_id, name))
+            .peek_iter()
+            .filter(|&(_, &(_, s))| s == state)
+            .map(|(dst_id, &(name, _))| (*dst_id, name))
             .collect()
     }
 }
