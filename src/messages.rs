@@ -717,7 +717,7 @@ mod test {
         let signed_message = unwrap_result!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result =
-            HopMessage::new(signed_message.clone(), vec![], &secret_signing_key);
+            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 

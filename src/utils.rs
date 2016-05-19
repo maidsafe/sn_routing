@@ -81,7 +81,7 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
     Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
 }
 
-/// Returns the SipHash of `input`.
+/// Returns the `SipHash` of `input`.
 pub fn sip_hash<T: Hash>(input: &T) -> u64 {
     let mut hasher = SipHasher::new();
     input.hash(&mut hasher);

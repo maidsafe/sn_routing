@@ -188,6 +188,7 @@ pub struct Core {
     timer: Timer,
     signed_message_filter: MessageFilter<SignedMessage>,
     pending_acks: HashMap<u64, UnacknowledgedMessage>,
+    received_acks: MessageFilter<u64>,
     bucket_filter: MessageFilter<usize>,
     node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
@@ -256,6 +257,7 @@ impl Core {
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
             pending_acks: HashMap::new(),
+            received_acks: MessageFilter::with_expiry_duration(Duration::from_secs(4 * 60)),
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
             node_id_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
@@ -1901,7 +1903,7 @@ impl Core {
 
     fn handle_ack_response(&mut self, ack: u64) -> Result<(), RoutingError> {
         if self.pending_acks.remove(&ack).is_none() {
-            trace!("Didn't have a pending ack for {}", ack);
+            let _ = self.received_acks.insert(&ack);
         }
         Ok(())
     }
@@ -2197,9 +2199,9 @@ impl Core {
             unacked_msg.route += 1;
             // If we've tried all `GROUP_SIZE` routes, give up.  Otherwise resend on next route.
             if unacked_msg.route as usize == GROUP_SIZE {
-                debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
-                       self,
-                       unacked_msg);
+                info!("{:?} - Message unable to be acknowledged - giving up. {:?}",
+                      self,
+                      unacked_msg);
             } else {
                 let hop = *self.name();
                 let _ = self.send(unacked_msg.signed_msg,
@@ -2358,8 +2360,11 @@ impl Core {
             if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
                 if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                     let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, vec![]));
-                    self.add_to_pending_acks(&signed_msg, route);
-                    return self.send_or_drop(&peer_id, raw_bytes, priority);
+                    if self.add_to_pending_acks(&signed_msg, route) {
+                        return self.send_or_drop(&peer_id, raw_bytes, priority);
+                    } else {
+                        return Ok(());
+                    }
                 }
 
                 error!("{:?} - Unable to find connection to proxy node in proxy map",
@@ -2384,7 +2389,9 @@ impl Core {
             .collect_vec();
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
 
-        self.add_to_pending_acks(&signed_msg, route);
+        if !self.add_to_pending_acks(&signed_msg, route) {
+            return Ok(());
+        }
 
         let mut result = Ok(());
         for target in targets {
@@ -2426,8 +2433,8 @@ impl Core {
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, ack: u64) -> Result<(), RoutingError> {
-        if let &RoutingMessage::Response(
-                ResponseMessage { content: ResponseContent::Ack(_), .. }) = routing_msg {
+        if let RoutingMessage::Response(
+                ResponseMessage { content: ResponseContent::Ack(_), .. }) = *routing_msg {
             return Ok(());
         }
         let response = ResponseMessage {
@@ -2438,27 +2445,35 @@ impl Core {
         self.send_response(response)
     }
 
-    fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) {
+    /// Adds the given message to the pending acks, if it has not already been received.
+    ///
+    /// Returns whether the message should actually be sent. This is always `true` except if the
+    /// ack for this message has already been received.
+    fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let &RoutingMessage::Response(
-                ResponseMessage { content: ResponseContent::Ack(_), .. }) = signed_msg.content() {
-            return;
+        if let RoutingMessage::Response(
+                ResponseMessage { content: ResponseContent::Ack(_), .. }) = *signed_msg.content() {
+            return true;
         }
         match *signed_msg.content().src() {
             Authority::Client { ref client_key, .. } => {
                 if XorName::new(sha512::hash(&client_key[..]).0) != *self.name() {
-                    return;
+                    return true;
                 }
             }
             _ => {
                 if !self.routing_table.is_recipient(signed_msg.content().src().to_destination()) {
-                    return;
+                    return true;
                 }
             }
         }
 
-        let token = self.timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let ack = utils::sip_hash(signed_msg.content());
+        if self.received_acks.contains(&ack) {
+            return false;
+        }
+
+        let token = self.timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
             signed_msg: signed_msg.clone(),
             route: route,
@@ -2468,6 +2483,7 @@ impl Core {
         if let Some(ejected) = self.pending_acks.insert(ack, unacked_msg) {
             debug!("Ejected pending ack: {:?}", ejected);
         }
+        true
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
