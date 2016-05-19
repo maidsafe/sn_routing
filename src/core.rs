@@ -499,7 +499,10 @@ impl Core {
 
     fn start_new_network(&mut self) {
         self.crust_service.stop_bootstrap();
-        let _ = self.start_listening();
+        if !self.start_listening() {
+            error!("Failed to start listening.");
+            let _ = self.event_sender.send(Event::NetworkStartupFailed);
+        }
         let new_name = XorName::new(hash::sha512::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
         self.state = State::Node;
@@ -1122,18 +1125,8 @@ impl Core {
 
     fn handle_bootstrap_finished(&mut self) {
         debug!("{:?} Finished bootstrapping.", self);
-        // If we have no connections, we should start listening to allow incoming connections
-        if self.state == State::Disconnected {
-            if self.role == Role::Client {
-                let _ = self.event_sender.send(Event::Disconnected);
-            } else {
-                debug!("{:?} Bootstrap finished with no connections. Start Listening to allow \
-                        incoming connections.",
-                       self);
-                if !self.start_listening() {
-                    let _ = self.event_sender.send(Event::NetworkStartupFailed);
-                }
-            }
+        if self.state == State::Disconnected && self.role != Role::FirstNode {
+            let _ = self.event_sender.send(Event::Disconnected);
         }
     }
 
