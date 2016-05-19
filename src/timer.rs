@@ -73,10 +73,10 @@ impl Timer {
             // Handle expired deadlines.
             let now = Instant::now();
             let expired_list = detail.deadlines
-                                     .keys()
-                                     .take_while(|&&deadline| deadline < now)
-                                     .cloned()
-                                     .collect_vec();
+                .keys()
+                .take_while(|&&deadline| deadline < now)
+                .cloned()
+                .collect_vec();
             for expired in expired_list {
                 // Safe to call `expect()` as we just got the key we're removing from `deadlines`.
                 let tokens = detail.deadlines.remove(&expired).expect("Bug in `BTreeMap`.");

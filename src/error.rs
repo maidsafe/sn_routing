@@ -25,7 +25,7 @@ use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 
 #[derive(Debug)]
-/// The type of errors that can occur if routing is unable to handle a send request. 
+/// The type of errors that can occur if routing is unable to handle a send request.
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,

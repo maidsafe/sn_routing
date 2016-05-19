@@ -28,14 +28,11 @@ const NORMAL_TO_BACKUP: [u8; XOR_NAME_LEN] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 const NORMAL_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] = [255; XOR_NAME_LEN];
 
-const BACKUP_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] = [127, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255, 255, 255, 255, 255, 255, 255, 255, 255,
-                                                   255];
+const BACKUP_TO_SACRIFICIAL: [u8; XOR_NAME_LEN] =
+    [127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+     255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
 
 fn xor(lhs: &[u8; XOR_NAME_LEN], mut rhs: [u8; XOR_NAME_LEN]) -> XorName {
     for i in 0..XOR_NAME_LEN {
@@ -225,18 +222,16 @@ mod test {
         // Normal
         let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
-        let expected_immutable_data_name = "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f\
-                                            2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c\
-                                            2311650df1ee24107371935b6be88a10cbf4cd2f8f";
+        let expected_immutable_data_name =
+            "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c2311650df1ee24107371935b6be88a10cbf4cd2f8f";
 
         assert_eq!(&expected_immutable_data_name, &immutable_data_name);
 
         // Backup
         let immutable_data_backup = ImmutableDataBackup::new(immutable_data.clone());
         let immutable_data_backup_name = immutable_data_backup.name().0.as_ref().to_hex();
-        let expected_immutable_data_backup_name = "1f1c9e526f47e36d782de464ea9df0a31a5c19c321f\
-                                                   2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c\
-                                                   2311650df1ee24107371935b6be88a10cbf4cd2f8f";
+        let expected_immutable_data_backup_name =
+            "1f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faacdda4d59abc713445c8c853e1842d7c2c2311650df1ee24107371935b6be88a10cbf4cd2f8f";
 
         assert_eq!(&expected_immutable_data_backup_name,
                    &immutable_data_backup_name);
@@ -244,10 +239,8 @@ mod test {
         // Sacrificial
         let immutable_data_sacrificial = ImmutableDataSacrificial::new(immutable_data.clone());
         let immutable_data_sacrificial_name = immutable_data_sacrificial.name().0.as_ref().to_hex();
-        let expected_immutable_data_sacrificial_name = "60e361ad90b81c9287d21b9b15620f5ce5a3e63cde\
-                                                        0d5a26370553225b2a65438ecbba3737ac1e7bd283\
-                                                        d3dcee9af20e11dbef8c8e6ca4941775ef340b32d0\
-                                                        70";
+        let expected_immutable_data_sacrificial_name =
+            "60e361ad90b81c9287d21b9b15620f5ce5a3e63cde0d5a26370553225b2a65438ecbba3737ac1e7bd283d3dcee9af20e11dbef8c8e6ca4941775ef340b32d070";
 
         assert_eq!(&expected_immutable_data_sacrificial_name,
                    &immutable_data_sacrificial_name);
