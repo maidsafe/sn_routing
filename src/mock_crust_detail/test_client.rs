@@ -71,6 +71,11 @@ impl TestClient {
         result
     }
 
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) {
+        self.routing_client.resend_unacknowledged()
+    }
+
     /// check client successfully connected to mock network
     pub fn ensure_connected(&mut self, nodes: &mut [TestNode]) {
         let _ = poll::nodes_and_client(nodes, self);

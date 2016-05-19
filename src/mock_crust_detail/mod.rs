@@ -34,19 +34,20 @@ pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
     let deleted_data_ids: HashSet<_> = deleted_data.iter()
         .map(Data::identifier)
         .collect();
-    let found_data = nodes.iter()
+    let mut data_count = HashMap::new();
+    nodes.iter()
         .flat_map(TestNode::get_stored_names)
-        .filter_map(|data_id| {
+        .foreach(|data_id| {
             if deleted_data_ids.contains(&data_id) {
-                Some(data_id.name())
-            } else {
-                None
+                *data_count.entry(data_id).or_insert(0) += 1;
             }
-        })
-        .collect_vec();
-    assert!(found_data.is_empty(),
-            "Found deleted data: {:?}",
-            found_data);
+        });
+    for (data_id, count) in data_count {
+        assert!(count < 5,
+                "Found deleted data: {:?}. count: {}",
+                data_id,
+                count);
+    }
 }
 
 /// Checks that the given `nodes` store the expected number of copies of the given data.
@@ -74,12 +75,5 @@ pub fn check_data(all_data: Vec<Data>, nodes: &[TestNode]) {
             }
             _ => unreachable!(),
         }
-    }
-}
-
-/// Resends all unacknowledged messages on all nodes.
-pub fn resend_unacknowledged(nodes: &[TestNode]) {
-    for node in nodes {
-        node.resend_unacknowledged()
     }
 }

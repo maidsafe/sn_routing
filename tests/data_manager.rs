@@ -48,6 +48,7 @@ fn immutable_data_operations_with_churn() {
 
     let mut all_data = vec![];
     let mut rng = thread_rng();
+    let mut event_count = 0;
 
     for i in 0..10 {
         for _ in 0..(cmp::min(DATA_PER_ITER, DATA_COUNT - all_data.len())) {
@@ -70,7 +71,8 @@ fn immutable_data_operations_with_churn() {
                 test_node::drop_node(&mut nodes, node_index);
             }
         }
-        let _ = poll::nodes_and_client(&mut nodes, &mut client);
+        event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+        trace!("Processed {} events.", event_count);
 
         mock_crust_detail::check_data(all_data.clone(), &nodes);
     }
@@ -161,11 +163,8 @@ fn structured_data_operations_with_churn() {
                 test_node::drop_node(&mut nodes, node_index);
             }
         }
-        let mut count = poll::nodes_and_client(&mut nodes, &mut client);
-        mock_crust_detail::resend_unacknowledged(&nodes);
-        count += poll::nodes_and_client(&mut nodes, &mut client);
-        trace!("Processed {} events.", count);
-        event_count += count;
+        event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+        trace!("Processed {} events.", event_count);
 
         mock_crust_detail::check_data(all_data.clone(), &nodes);
         mock_crust_detail::check_deleted_data(&deleted_data, &nodes);
@@ -191,8 +190,6 @@ fn structured_data_operations_with_churn() {
             unexpected => panic!("Got unexpected response: {:?}", unexpected),
         }
     }
-
-    trace!("Processed {} events.", event_count);
 }
 
 

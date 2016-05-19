@@ -505,7 +505,8 @@ impl DataManager {
                         DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
                         DataIdentifier::Structured(..) => {
                             match self.chunk_store.get(data_id) {
-                                Err(_) => true, // We don't have the data, so we need to retrieve it
+                                // We don't have the data, so we need to retrieve it.
+                                Err(_) => true,
                                 Ok(Data::Structured(sd)) => sd.get_version() < *version,
                                 _ => unreachable!(),
                             }
@@ -644,7 +645,12 @@ impl DataManager {
 
     #[cfg(any(test, feature = "use-mock-crust"))]
     pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
-        self.chunk_store.keys()
+        let (front, back) = self.cache.unneeded_chunks.as_slices();
+        self.chunk_store
+            .keys()
+            .into_iter()
+            .filter(|data_id| !front.contains(data_id) && !back.contains(data_id))
+            .collect()
     }
 
     /// Returns the `IdAndVersion` for the given data identifier, or `None` if not stored.
