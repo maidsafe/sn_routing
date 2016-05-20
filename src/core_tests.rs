@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::{self, Rng};
+use rand::distributions::{IndependentSample, Range};
 use std::cmp;
 use std::collections::HashSet;
 use std::sync::mpsc;
@@ -224,8 +225,9 @@ macro_rules! expect_event {
     }
 }
 
-/// Process all events
-fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+/// Process all events. Returns whether there were any events.
+fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    let mut result = false;
     loop {
         let mut n = false;
         if BALANCED_POLLING {
@@ -236,8 +238,11 @@ fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
         let c = clients.iter_mut().any(TestClient::poll);
         if !n && !c {
             break;
+        } else {
+            result = true;
         }
     }
+    result
 }
 
 fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
@@ -252,7 +257,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::new(network, Role::Node, Some(config.clone()), Some(Endpoint(i))));
-        poll_all(&mut nodes, &mut []);
+        let _ = poll_all(&mut nodes, &mut []);
     }
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
@@ -275,7 +280,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     drop(node);
 
-    poll_all(nodes, &mut []);
+    let _ = poll_all(nodes, &mut []);
 
     for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
         loop {
@@ -395,7 +400,7 @@ fn client_connects_to_nodes() {
 
     nodes.push(client);
 
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     expect_event!(nodes.iter().last().unwrap(), Event::Connected);
 }
@@ -410,13 +415,50 @@ fn node_drops() {
 }
 
 #[test]
+fn churn() {
+    let _ = ::maidsafe_utilities::log::init(false);
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 100);
+    let mut rng = rand::thread_rng();
+    for i in 0..50 {
+        let len = nodes.len();
+        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+            let node0 = *nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
+            let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
+            let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
+            error!("Iteration {}: Removing {:?}, {:?}, {:?}",
+                   i,
+                   node0,
+                   node1,
+                   node2);
+        } else {
+            let proxy = Range::new(0, len).ind_sample(&mut rng);
+            let index = Range::new(0, len + 1).ind_sample(&mut rng);
+            let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+            nodes.insert(index,
+                         TestNode::new(&network, Role::Node, Some(config.clone()), None));
+            error!("Iteration {}: Adding {:?}", i, nodes[index].name());
+        }
+        let mut count = 0;
+        while poll_all(&mut nodes, &mut []) {
+            count += 1;
+            error!("Polling {}", count);
+            for node in &mut nodes {
+                node.core.resend_unacknowledged();
+            }
+        }
+        verify_kademlia_invariant_for_all_nodes(&nodes);
+    }
+}
+
+#[test]
 fn node_joins_in_front() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
                  TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -433,9 +475,9 @@ fn multiple_joining_nodes() {
     nodes.insert(0,
                  TestNode::new(&network, Role::Node, Some(config.clone()), None));
     nodes.push(TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.core.routing_table().is_empty());
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
     assert!(nodes.len() > network_size); // At least one node should have succeeded.
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -458,7 +500,7 @@ fn successful_put_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -470,7 +512,7 @@ fn successful_put_request() {
 
     assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx).is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
     for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name())) {
@@ -502,7 +544,7 @@ fn successful_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -517,7 +559,7 @@ fn successful_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
@@ -546,7 +588,7 @@ fn successful_get_request() {
 
     assert!(request_received_count >= QUORUM_SIZE);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
@@ -578,7 +620,7 @@ fn failed_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -593,7 +635,7 @@ fn failed_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
@@ -628,7 +670,7 @@ fn failed_get_request() {
 
     assert!(request_received_count >= QUORUM_SIZE);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
@@ -659,7 +701,7 @@ fn disconnect_on_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            Some(Endpoint(2 * GROUP_SIZE)))];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -674,7 +716,7 @@ fn disconnect_on_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
@@ -706,7 +748,7 @@ fn disconnect_on_get_request() {
     clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
     nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     for client in clients {
         if let Ok(Event::Response(..)) = client.event_rx.try_recv() {

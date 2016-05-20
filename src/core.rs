@@ -337,9 +337,20 @@ impl Core {
         &self.routing_table
     }
 
-    /// Resends all unacknowledged messages.
+    /// Clears all caches that time out and then resends all unacknowledged messages.
     #[cfg(feature = "use-mock-crust")]
     pub fn resend_unacknowledged(&mut self) {
+        self.send_filter.clear();
+        self.signed_message_filter.clear();
+        self.received_acks.clear();
+        self.bucket_filter.clear();
+        // self.node_id_cache.clear();
+        // self.message_accumulator.clear();
+        self.grp_msg_filter.clear();
+        // self.sent_network_name_to = None;
+        if false {
+            self.peer_mgr.clear_caches();
+        }
         let timer_tokens = self.pending_acks
             .iter()
             .map(|(_, unacked_msg)| unacked_msg.timer_token)
