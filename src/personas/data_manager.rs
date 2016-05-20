@@ -117,25 +117,27 @@ impl Cache {
         self.unneeded_chunks.push_back(data_id);
     }
 
-    fn chain_records_in_cache(&self, records_in_store: Vec<IdAndVersion>) -> HashSet<IdAndVersion> {
-        let mut records = self.data_holders
+    fn chain_records_in_cache<I>(&self, records_in_store: I) -> HashSet<IdAndVersion>
+        where I: IntoIterator<Item = IdAndVersion>
+    {
+        let mut records: HashSet<_> = self.data_holders
             .values()
             .flat_map(|idvs| idvs.iter().cloned())
             .chain(self.ongoing_gets.values().map(|&(_, idv)| idv))
             .chain(records_in_store)
-            .collect_vec();
+            .collect();
         for data_id in &self.unneeded_chunks {
-            records.retain(|&idv| idv != (*data_id, 0));
+            let _ = records.remove(&(*data_id, 0));
         }
-        records.iter().cloned().collect::<HashSet<_>>()
+        records
     }
 
     fn prune_unneeded_chunks<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> u64 {
-        let pruned_unneeded_chunks = self.unneeded_chunks
+        let pruned_unneeded_chunks: HashSet<_> = self.unneeded_chunks
             .iter()
             .filter(|data_id| routing_table.is_close(&data_id.name()))
             .cloned()
-            .collect_vec();
+            .collect();
         if !pruned_unneeded_chunks.is_empty() {
             self.unneeded_chunks.retain(|data_id| !pruned_unneeded_chunks.contains(data_id));
         }
@@ -146,18 +148,41 @@ impl Cache {
         self.unneeded_chunks.pop_front()
     }
 
+    /// Removes entries from `data_holders` that are no longer valid due to churn.
+    fn prune_data_holders<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) {
+        let mut empty_holders = Vec::new();
+        for (holder, data_idvs) in &mut self.data_holders {
+            let lost_idvs = data_idvs.iter()
+                .filter(|&&(ref data_id, _)| {
+                    // The data needs to be removed if either we are not close to it anymore, i. e.
+                    // other_close_nodes returns None, or `holder` is not in it anymore.
+                    routing_table.other_close_nodes(&data_id.name()).map_or(true, |group| {
+                        !group.iter().map(T::name).any(|name| name == holder)
+                    })
+                })
+                .cloned()
+                .collect_vec();
+            for lost_idv in lost_idvs {
+                let _ = data_idvs.remove(&lost_idv);
+            }
+            if data_idvs.is_empty() {
+                empty_holders.push(*holder);
+            }
+        }
+        for holder in empty_holders {
+            let _ = self.data_holders.remove(&holder);
+        }
+    }
+
     /// Remove entries from `ongoing_gets` that are no longer responsible for the data or that
     /// disconnected.
     fn prune_ongoing_gets<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> bool {
         let lost_gets = self.ongoing_gets
             .iter()
             .filter(|&(ref holder, &(_, (ref data_id, _)))| {
-                routing_table.other_close_nodes(&data_id.name())
-                    .map_or(true, |group| {
-                        !group.iter()
-                            .map(T::name)
-                            .any(|name| name == *holder)
-                    })
+                routing_table.other_close_nodes(&data_id.name()).map_or(true, |group| {
+                    !group.iter().map(T::name).any(|name| name == *holder)
+                })
             })
             .map(|(holder, _)| *holder)
             .collect_vec();
@@ -554,14 +579,14 @@ impl DataManager {
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
                              routing_table: &RoutingTable<NodeInfo>) {
+        self.cache.prune_data_holders(routing_table);
         if self.cache.prune_ongoing_gets(routing_table) {
             let _ = self.send_gets_for_needed_data();
         }
         let data_idvs = self.cache.chain_records_in_cache(self.chunk_store
             .keys()
             .into_iter()
-            .filter_map(|data_id| self.to_id_and_version(data_id))
-            .collect_vec());
+            .filter_map(|data_id| self.to_id_and_version(data_id)));
         let mut has_pruned_data = false;
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
@@ -604,6 +629,7 @@ impl DataManager {
             self.immutable_data_count += pruned_unneeded_chunks;
             info!("{:?}", self);
         }
+        self.cache.prune_data_holders(routing_table);
         if self.cache.prune_ongoing_gets(routing_table) {
             let _ = self.send_gets_for_needed_data();
         }
