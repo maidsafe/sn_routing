@@ -327,7 +327,11 @@ fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
         let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
         let actual_bucket = node_names_in_bucket(nodes, node.name(), bucket_index);
         if entries.len() < GROUP_SIZE {
-            assert_eq!(actual_bucket, entries);
+            assert!(actual_bucket == entries,
+                    "Node: {:?}, expected: {:?}. found: {:?}",
+                    node.name(),
+                    actual_bucket,
+                    entries);
         }
         count -= actual_bucket.len();
         bucket_index += 1;
@@ -416,17 +420,17 @@ fn node_drops() {
 
 #[test]
 fn churn() {
-    let _ = ::maidsafe_utilities::log::init(false);
     let network = Network::new();
-    let mut nodes = create_connected_nodes(&network, 100);
+    let mut nodes = create_connected_nodes(&network, 20);
+
     let mut rng = rand::thread_rng();
-    for i in 0..50 {
+    for i in 0..100 {
         let len = nodes.len();
         if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
             let node0 = *nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
             let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
             let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
-            error!("Iteration {}: Removing {:?}, {:?}, {:?}",
+            trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
                    i,
                    node0,
                    node1,
@@ -437,15 +441,16 @@ fn churn() {
             let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
             nodes.insert(index,
                          TestNode::new(&network, Role::Node, Some(config.clone()), None));
-            error!("Iteration {}: Adding {:?}", i, nodes[index].name());
+            trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
         }
-        let mut count = 0;
+
         while poll_all(&mut nodes, &mut []) {
-            count += 1;
-            error!("Polling {}", count);
             for node in &mut nodes {
                 node.core.resend_unacknowledged();
             }
+        }
+        for node in &mut nodes {
+            node.core.clear_state();
         }
         verify_kademlia_invariant_for_all_nodes(&nodes);
     }
