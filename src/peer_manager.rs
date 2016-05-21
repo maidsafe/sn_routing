@@ -95,10 +95,10 @@ pub struct PeerManager {
 impl Default for PeerManager {
     fn default() -> PeerManager {
         PeerManager {
-            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             proxy_map: Default::default(),
             client_map: Default::default(),
             peer_map: Default::default(),
+            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
             their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
@@ -275,5 +275,13 @@ impl PeerManager {
             .filter(|&(_, &(_, s))| s == state)
             .map(|(dst_id, &(name, _))| (*dst_id, name))
             .collect()
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear_caches(&mut self) {
+        self.connecting_peers.clear();
+        self.connection_token_map.clear();
+        self.our_connection_info_map.clear();
+        self.their_connection_info_map.clear();
     }
 }
