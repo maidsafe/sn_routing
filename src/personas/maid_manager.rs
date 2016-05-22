@@ -26,9 +26,9 @@ use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage,
-              DataIdentifier};
+              DataIdentifier, GROUP_SIZE};
 use utils;
-use vault::{NodeInfo, RoutingNode};
+use vault::RoutingNode;
 use xor_name::XorName;
 
 // It has now been decided that the charge will be by unit
@@ -181,9 +181,9 @@ impl MaidManager {
 
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
-                             routing_table: &RoutingTable<NodeInfo>) {
+                             routing_table: &RoutingTable<XorName>) {
         // Remove all accounts which we are no longer responsible for.
-        let not_close = |name: &&XorName| !routing_table.is_close(*name);
+        let not_close = |name: &&XorName| !routing_table.is_close(*name, GROUP_SIZE);
         let accounts_to_delete = self.accounts.keys().filter(not_close).cloned().collect_vec();
         // Remove all requests from the cache that we are no longer responsible for.
         let msg_ids_to_delete = self.request_cache

@@ -35,10 +35,6 @@ pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;
 
 pub use routing::Event;
-
-pub use routing::NodeInfo;
-
-
 pub use routing::Node as RoutingNode;
 
 
@@ -247,7 +243,7 @@ impl Vault {
 
     fn on_node_added(&mut self,
                      node_added: XorName,
-                     routing_table: RoutingTable<NodeInfo>)
+                     routing_table: RoutingTable<XorName>)
                      -> Result<(), InternalError> {
         self.maid_manager.handle_node_added(&node_added, &routing_table);
         self.data_manager.handle_node_added(&node_added, &routing_table);
@@ -256,7 +252,7 @@ impl Vault {
 
     fn on_node_lost(&mut self,
                     node_lost: XorName,
-                    routing_table: RoutingTable<NodeInfo>)
+                    routing_table: RoutingTable<XorName>)
                     -> Result<(), InternalError> {
         self.maid_manager.handle_node_lost(&node_lost);
         self.data_manager.handle_node_lost(&node_lost, &routing_table);

@@ -18,10 +18,9 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
-use kademlia_routing_table::GROUP_SIZE;
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, ImmutableData};
+use routing::{Data, ImmutableData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::MutationError;
 use safe_vault::mock_crust_detail::{self, poll, test_node};

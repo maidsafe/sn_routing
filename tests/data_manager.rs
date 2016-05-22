@@ -20,10 +20,9 @@
 
 use std::cmp;
 
-use kademlia_routing_table::GROUP_SIZE;
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, FullId, ImmutableData, StructuredData};
+use routing::{Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{MutationError, GetError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};

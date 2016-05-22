@@ -26,11 +26,12 @@ use accumulator::Accumulator;
 use chunk_store::ChunkStore;
 use error::InternalError;
 use itertools::Itertools;
-use kademlia_routing_table::{ContactInfo, GROUP_SIZE, RoutingTable};
+use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData};
+use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData,
+              GROUP_SIZE};
 use safe_network_common::client_errors::{MutationError, GetError};
-use vault::{CHUNK_STORE_PREFIX, NodeInfo, RoutingNode};
+use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 use xor_name::{self, XorName};
 
 const MAX_FULL_PERCENT: u64 = 50;
@@ -132,10 +133,10 @@ impl Cache {
         records
     }
 
-    fn prune_unneeded_chunks<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> u64 {
+    fn prune_unneeded_chunks(&mut self, routing_table: &RoutingTable<XorName>) -> u64 {
         let pruned_unneeded_chunks: HashSet<_> = self.unneeded_chunks
             .iter()
-            .filter(|data_id| routing_table.is_close(&data_id.name()))
+            .filter(|data_id| routing_table.is_close(&data_id.name(), GROUP_SIZE))
             .cloned()
             .collect();
         if !pruned_unneeded_chunks.is_empty() {
@@ -149,16 +150,15 @@ impl Cache {
     }
 
     /// Removes entries from `data_holders` that are no longer valid due to churn.
-    fn prune_data_holders<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) {
+    fn prune_data_holders(&mut self, routing_table: &RoutingTable<XorName>) {
         let mut empty_holders = Vec::new();
         for (holder, data_idvs) in &mut self.data_holders {
             let lost_idvs = data_idvs.iter()
                 .filter(|&&(ref data_id, _)| {
                     // The data needs to be removed if either we are not close to it anymore, i. e.
                     // other_close_nodes returns None, or `holder` is not in it anymore.
-                    routing_table.other_close_nodes(&data_id.name()).map_or(true, |group| {
-                        !group.iter().map(T::name).any(|name| name == holder)
-                    })
+                    routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE)
+                        .map_or(true, |group| !group.contains(holder))
                 })
                 .cloned()
                 .collect_vec();
@@ -176,13 +176,12 @@ impl Cache {
 
     /// Remove entries from `ongoing_gets` that are no longer responsible for the data or that
     /// disconnected.
-    fn prune_ongoing_gets<T: ContactInfo>(&mut self, routing_table: &RoutingTable<T>) -> bool {
+    fn prune_ongoing_gets(&mut self, routing_table: &RoutingTable<XorName>) -> bool {
         let lost_gets = self.ongoing_gets
             .iter()
             .filter(|&(ref holder, &(_, (ref data_id, _)))| {
-                routing_table.other_close_nodes(&data_id.name()).map_or(true, |group| {
-                    !group.iter().map(T::name).any(|name| name == *holder)
-                })
+                routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE)
+                    .map_or(true, |group| !group.contains(*holder))
             })
             .map(|(holder, _)| *holder)
             .collect_vec();
@@ -578,7 +577,7 @@ impl DataManager {
 
     pub fn handle_node_added(&mut self,
                              node_name: &XorName,
-                             routing_table: &RoutingTable<NodeInfo>) {
+                             routing_table: &RoutingTable<XorName>) {
         self.cache.prune_data_holders(routing_table);
         if self.cache.prune_ongoing_gets(routing_table) {
             let _ = self.send_gets_for_needed_data();
@@ -591,7 +590,7 @@ impl DataManager {
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
         for (data_id, version) in data_idvs {
-            match routing_table.other_close_nodes(&data_id.name()) {
+            match routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE) {
                 None => {
                     trace!("No longer a DM for {:?}", data_id);
                     if self.chunk_store.has(&data_id) && !self.cache.is_in_unneeded(&data_id) {
@@ -605,7 +604,7 @@ impl DataManager {
                     }
                 }
                 Some(close_group) => {
-                    if close_group.into_iter().any(|node_info| node_info.name() == node_name) {
+                    if close_group.contains(node_name) {
                         data_list.push((data_id, version));
                     }
                 }
@@ -623,7 +622,7 @@ impl DataManager {
     /// Send to all members of group of data.
     pub fn handle_node_lost(&mut self,
                             node_name: &XorName,
-                            routing_table: &RoutingTable<NodeInfo>) {
+                            routing_table: &RoutingTable<XorName>) {
         let pruned_unneeded_chunks = self.cache.prune_unneeded_chunks(routing_table);
         if pruned_unneeded_chunks != 0 {
             self.immutable_data_count += pruned_unneeded_chunks;
@@ -641,7 +640,7 @@ impl DataManager {
             .collect_vec());
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
-            match routing_table.other_close_nodes(&data_idv.0.name()) {
+            match routing_table.other_close_nodes(&data_idv.0.name(), GROUP_SIZE) {
                 None => {
                     error!("Moved out of close group of {:?} in a NodeLost event!",
                            node_name);
@@ -651,10 +650,9 @@ impl DataManager {
                     // If the group has fewer than GROUP_SIZE elements, the lost node was not
                     // replaced at all. Otherwise, if the group's last node is closer to the data
                     // than the lost node, the lost node was not in the group in the first place.
-                    if let Some(node) = close_group.get(GROUP_SIZE - 2) {
-                        let outer_node = *node.name();
-                        if xor_name::closer_to_target(node_name, &outer_node, &data_idv.0.name()) {
-                            data_lists.entry(outer_node).or_insert_with(Vec::new).push(data_idv);
+                    if let Some(outer_node) = close_group.get(GROUP_SIZE - 2) {
+                        if xor_name::closer_to_target(node_name, outer_node, &data_idv.0.name()) {
+                            data_lists.entry(*outer_node).or_insert_with(Vec::new).push(data_idv);
                         }
                     }
                 }
