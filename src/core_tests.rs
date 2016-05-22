@@ -24,13 +24,13 @@ use xor_name::XorName;
 
 use action::Action;
 use authority::Authority;
-use core::{Core, Role, RoutingTable};
+use core::{Core, Role, RoutingTable, GROUP_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
 use itertools::Itertools;
-use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
+use kademlia_routing_table::ContactInfo;
 use messages::{RoutingMessage, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
@@ -520,7 +520,7 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable,
@@ -568,7 +568,7 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request(RequestMessage {
@@ -644,7 +644,7 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request(RequestMessage {
@@ -725,7 +725,7 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request(RequestMessage {

@@ -18,8 +18,8 @@
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
 use xor_name::XorName;
-use routing::{NodeInfo, RequestMessage, ResponseMessage, RequestContent, ResponseContent,
-              MessageId, Authority, Node, Event, Data, DataIdentifier};
+use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
+              Authority, Node, Event, Data, DataIdentifier};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -93,10 +93,9 @@ impl ExampleNode {
                     trace!("{} Received disconnected event", self.get_debug_name());
                 }
                 Event::GetNetworkNameFailed => {
-                    let _ = mem::replace(&mut self.node,
-                                         unwrap_result!(Node::new(self.sender.clone(),
-                                                                  false,
-                                                                  false)));
+                    let _ =
+                        mem::replace(&mut self.node,
+                                     unwrap_result!(Node::new(self.sender.clone(), false, false)));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -187,8 +186,8 @@ impl ExampleNode {
                 if let Some(managed_nodes) = self.dm_accounts.get(&data_id.name()) {
                     {
                         let requests = self.client_request_cache
-                                           .entry(data_id.name())
-                                           .or_insert_with(Vec::new);
+                            .entry(data_id.name())
+                            .or_insert_with(Vec::new);
                         requests.push((src, id));
                         if requests.len() > 1 {
                             trace!("Added Get request to request cache: data {:?}.",
@@ -202,10 +201,10 @@ impl ExampleNode {
                                data_id.name(),
                                it);
                         unwrap_result!(self.node
-                                           .send_get_request(dst.clone(),
-                                                             Authority::ManagedNode(it.clone()),
-                                                             data_id,
-                                                             id));
+                            .send_get_request(dst.clone(),
+                                              Authority::ManagedNode(it.clone()),
+                                              data_id,
+                                              id));
                     }
                 } else {
                     error!("{:?} Data name {:?} not found in NaeManager. Current DM Account: {:?}",
@@ -264,10 +263,10 @@ impl ExampleNode {
 
                 for name in close_grp.iter().cloned() {
                     unwrap_result!(self.node
-                                       .send_put_request(dst.clone(),
-                                                         Authority::ManagedNode(name),
-                                                         data.clone(),
-                                                         id));
+                        .send_put_request(dst.clone(),
+                                          Authority::ManagedNode(name),
+                                          data.clone(),
+                                          id));
                 }
                 // We assume these messages are handled by the managed nodes.
                 let _ = self.dm_accounts.insert(data.name(), close_grp.clone());
@@ -311,7 +310,7 @@ impl ExampleNode {
             let src = dst.clone();
             for (client_auth, message_id) in requests {
                 let _ = self.node
-                            .send_get_success(src.clone(), client_auth, data.clone(), message_id);
+                    .send_get_success(src.clone(), client_auth, data.clone(), message_id);
             }
         }
 
@@ -340,7 +339,7 @@ impl ExampleNode {
                 let src = dst;
                 let dst = Authority::ManagedNode(node);
                 unwrap_result!(self.node
-                                   .send_put_request(src.clone(), dst, data.clone(), id));
+                    .send_put_request(src.clone(), dst, data.clone(), id));
 
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for Put success to confirm the same.
@@ -380,7 +379,7 @@ impl ExampleNode {
 
     // While handling churn messages, we first "action" it ourselves and then
     // send the corresponding refresh messages out to our close group.
-    fn handle_node_added(&mut self, name: XorName, _routing_table: RoutingTable<NodeInfo>) {
+    fn handle_node_added(&mut self, name: XorName, _routing_table: RoutingTable<XorName>) {
         // TODO: Use the given routing table instead of repeatedly querying the routing node.
         let id = MessageId::from_added_node(name);
         for (client_name, stored) in &self.client_accounts {
@@ -393,17 +392,17 @@ impl ExampleNode {
             let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
-                               .send_refresh_request(Authority::ClientManager(*client_name),
-                                                     Authority::ClientManager(*client_name),
-                                                     content,
-                                                     id));
+                .send_refresh_request(Authority::ClientManager(*client_name),
+                                      Authority::ClientManager(*client_name),
+                                      content,
+                                      id));
         }
 
         self.process_lost_close_node(id);
         self.send_data_manager_refresh_messages(id);
     }
 
-    fn handle_node_lost(&mut self, name: XorName, _routing_table: RoutingTable<NodeInfo>) {
+    fn handle_node_lost(&mut self, name: XorName, _routing_table: RoutingTable<XorName>) {
         // TODO: Use the given routing table instead of repeatedly querying the routing node.
         let id = MessageId::from_lost_node(name);
         // TODO: Check whether name was actually close to client_name.
@@ -416,10 +415,10 @@ impl ExampleNode {
             let content = unwrap_result!(serialise(&refresh_content));
 
             unwrap_result!(self.node
-                               .send_refresh_request(Authority::ClientManager(*client_name),
-                                                     Authority::ClientManager(*client_name),
-                                                     content,
-                                                     id));
+                .send_refresh_request(Authority::ClientManager(*client_name),
+                                      Authority::ClientManager(*client_name),
+                                      content,
+                                      id));
         }
 
         self.process_lost_close_node(id);
@@ -429,28 +428,27 @@ impl ExampleNode {
     /// Sends `Get` requests to retrieve all data chunks that have lost a copy.
     fn process_lost_close_node(&mut self, id: MessageId) {
         let dm_accounts = mem::replace(&mut self.dm_accounts, HashMap::new());
-        self.dm_accounts =
-            dm_accounts.into_iter()
-                       .filter_map(|(data_name, mut dms)| {
-                           // TODO: This switches threads on every close_group() call!
-                           let close_grp: HashSet<_> =
-                               match unwrap_result!(self.node.close_group(data_name)) {
-                                   None => {
-                                       // Remove entry, as we're not part of the NaeManager anymore.
-                                       let _ = self.db.remove(&data_name);
-                                       return None;
-                                   }
-                                   Some(close_grp) => close_grp.into_iter().collect(),
-                               };
-                           dms.retain(|elt| close_grp.contains(elt));
-                           if dms.is_empty() {
-                               error!("Chunk lost - No valid nodes left to retrieve chunk {:?}",
-                                      data_name);
-                               return None;
-                           }
-                           Some((data_name, dms))
-                       })
-                       .collect();
+        self.dm_accounts = dm_accounts.into_iter()
+            .filter_map(|(data_name, mut dms)| {
+                // TODO: This switches threads on every close_group() call!
+                let close_grp: HashSet<_> = match unwrap_result!(self.node
+                    .close_group(data_name)) {
+                    None => {
+                        // Remove entry, as we're not part of the NaeManager anymore.
+                        let _ = self.db.remove(&data_name);
+                        return None;
+                    }
+                    Some(close_grp) => close_grp.into_iter().collect(),
+                };
+                dms.retain(|elt| close_grp.contains(elt));
+                if dms.is_empty() {
+                    error!("Chunk lost - No valid nodes left to retrieve chunk {:?}",
+                           data_name);
+                    return None;
+                }
+                Some((data_name, dms))
+            })
+            .collect();
         for (data_name, dms) in &self.dm_accounts {
             if dms.len() < STORE_REDUNDANCY {
                 trace!("Node({:?}) Recovering data {:?}",
@@ -460,10 +458,10 @@ impl ExampleNode {
                 // Find the remaining places where the data is stored and send a `Get` there.
                 for dm in dms {
                     if let Err(err) = self.node
-                                          .send_get_request(src.clone(),
-                                                            Authority::ManagedNode(*dm),
-                                                            DataIdentifier::Plain(*data_name),
-                                                            id) {
+                        .send_get_request(src.clone(),
+                                          Authority::ManagedNode(*dm),
+                                          DataIdentifier::Plain(*data_name),
+                                          id) {
                         error!("Failed to send get request to retrieve chunk - {:?}", err);
                     }
                 }

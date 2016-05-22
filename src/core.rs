@@ -25,13 +25,14 @@ use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, S
                         TheirConnectionInfo};
 
 use itertools::Itertools;
-use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, GROUP_SIZE};
+use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::serialisation;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectState, PeerManager};
 use rand;
+use std::cmp;
 use std::collections::HashMap;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash;
@@ -58,6 +59,13 @@ use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessag
                ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
 use utils;
 
+/// The group size for the routing table. This is the maximum that can be used for consensus.
+pub const GROUP_SIZE: usize = 8;
+/// The quorum for group consensus.
+pub const QUORUM_SIZE: usize = 5;
+/// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
+/// table.
+const EXTRA_BUCKET_ENTRIES: usize = 2;
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNetworkName` request is resent.
@@ -104,6 +112,8 @@ impl NodeInfo {
 }
 
 impl ContactInfo for NodeInfo {
+    type Name = XorName;
+
     fn name(&self) -> &XorName {
         self.public_id.name()
     }
@@ -265,7 +275,7 @@ impl Core {
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
             full_id: full_id,
             state: State::Disconnected,
-            routing_table: RoutingTable::new(our_info),
+            routing_table: RoutingTable::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES),
             get_network_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
@@ -324,7 +334,7 @@ impl Core {
     #[allow(unused)]
     pub fn close_group(&self) -> Vec<XorName> {
         self.routing_table
-            .other_close_nodes(self.name())
+            .other_close_nodes(self.name(), GROUP_SIZE)
             .unwrap_or_else(Vec::new)
             .into_iter()
             .map(|info| *info.name())
@@ -462,7 +472,7 @@ impl Core {
             }
             Action::CloseGroup { name, result_tx } => {
                 let close_group = self.routing_table
-                    .close_nodes(&name)
+                    .close_nodes(&name, GROUP_SIZE)
                     .map(|infos| {
                         infos.iter()
                             .map(NodeInfo::name)
@@ -480,7 +490,7 @@ impl Core {
                 }
             }
             Action::QuorumSize { result_tx } => {
-                if result_tx.send(self.routing_table.dynamic_quorum_size()).is_err() {
+                if result_tx.send(self.dynamic_quorum_size()).is_err() {
                     return false;
                 }
             }
@@ -578,7 +588,9 @@ impl Core {
                 Ok(()) => {
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
-                    if let Some(node) = self.routing_table.find(|node| node.peer_id == peer_id) {
+                    if let Some(node) = self.routing_table
+                        .iter()
+                        .find(|node| node.peer_id == peer_id) {
                         warn!("{:?} Received NewPeer from {:?}, but node {:?} is already in our \
                                routing table.",
                               self,
@@ -593,7 +605,7 @@ impl Core {
                     let _ = self.node_identify(peer_id);
                 }
                 Err(err) => {
-                    if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                    if self.routing_table.iter().all(|node| node.peer_id != peer_id) {
                         warn!("{:?} Failed to connect to peer {:?}: {:?}.",
                               self,
                               peer_id,
@@ -736,7 +748,7 @@ impl Core {
                           -> Result<(), RoutingError> {
         let hop_name;
         if self.state == State::Node {
-            if let Some(info) = self.routing_table.find(|node| node.peer_id == peer_id) {
+            if let Some(info) = self.routing_table.iter().find(|node| node.peer_id == peer_id) {
                 try!(hop_msg.verify(info.public_id.signing_public_key()));
                 // try!(self.check_direction(hop_msg));
                 hop_name = *info.name();
@@ -817,7 +829,7 @@ impl Core {
     /// This is the case if a routing node in the destination's close group sent this message.
     fn _is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
         dst.is_group() &&
-        match self.routing_table.other_close_nodes(dst.name()) {
+        match self.routing_table.other_close_nodes(dst.name(), GROUP_SIZE) {
             None => false,
             Some(close_group) => close_group.into_iter().any(|n| n.name() == hop_name),
         }
@@ -876,7 +888,7 @@ impl Core {
             }
         }
 
-        if self.routing_table.is_close(dst.name()) {
+        if self.routing_table.is_close(dst.name(), GROUP_SIZE) {
             try!(self.signed_msg_security_check(&signed_msg));
         }
 
@@ -1050,7 +1062,8 @@ impl Core {
                   -> Option<RoutingMessage> {
         // For clients we already have set it on reception of BootstrapIdentify message
         if self.state == State::Node {
-            self.message_accumulator.set_quorum_size(self.routing_table.dynamic_quorum_size());
+            let dynamic_quorum_size = self.dynamic_quorum_size();
+            self.message_accumulator.set_quorum_size(dynamic_quorum_size);
         }
 
         if self.message_accumulator
@@ -1059,6 +1072,17 @@ impl Core {
             Some(message)
         } else {
             None
+        }
+    }
+
+    fn dynamic_quorum_size(&self) -> usize {
+        // Routing table entries plus this node itself.
+        let network_size = self.routing_table.len() + 1;
+        if network_size >= GROUP_SIZE {
+            QUORUM_SIZE
+        } else {
+            cmp::max(network_size * QUORUM_SIZE / GROUP_SIZE,
+                     network_size / 2 + 1)
         }
     }
 
@@ -1244,7 +1268,7 @@ impl Core {
     fn bootstrap_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         let direct_message = DirectMessage::BootstrapIdentify {
             public_id: *self.full_id.public_id(),
-            current_quorum_size: self.routing_table.dynamic_quorum_size(),
+            current_quorum_size: self.dynamic_quorum_size(),
         };
         self.send_direct_message(&peer_id, direct_message)
     }
@@ -1361,7 +1385,7 @@ impl Core {
                           peer_id);
                 }
                 // TODO(afck): Try adding them to the routing table?
-                if self.routing_table.find(|node| node.peer_id == peer_id).is_none() {
+                if self.routing_table.iter().all(|node| node.peer_id != peer_id) {
                     warn!("{:?} Client requested ClientToNode, but is not in routing table: {:?}",
                           self,
                           peer_id);
@@ -1584,6 +1608,9 @@ impl Core {
         let _ = self.node_id_cache.remove(&name);
         let info = NodeInfo::new(public_id, peer_id);
 
+        let common_groups = self.routing_table
+            .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
+
         match self.routing_table.add(info) {
             None => {
                 error!("{:?} Peer was not added to the routing table: {:?}",
@@ -1591,7 +1618,7 @@ impl Core {
                        peer_id);
                 return self.disconnect_peer(&peer_id);
             }
-            Some(AddedNodeDetails { must_notify, unneeded, .. }) => {
+            Some(AddedNodeDetails { must_notify, unneeded }) => {
                 info!("{:?} Added {:?} to routing table.", self, name);
                 if self.routing_table.len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
@@ -1608,11 +1635,11 @@ impl Core {
 
                 self.reset_bucket_refresh_timer();
 
-                // TODO: Figure out whether common_groups makes sense: Do we need to send a
-                // NodeAdded event for _every_ new peer?
-                let event = Event::NodeAdded(name, self.routing_table.clone());
-                if let Err(err) = self.event_sender.send(event) {
-                    error!("{:?} Error sending event to routing user - {:?}", self, err);
+                if common_groups {
+                    let event = Event::NodeAdded(name, self.routing_table.to_names());
+                    if let Err(err) = self.event_sender.send(event) {
+                        error!("{:?} Error sending event to routing user - {:?}", self, err);
+                    }
                 }
             }
         }
@@ -1675,8 +1702,8 @@ impl Core {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if self.routing_table.find(|node| node.peer_id == peer_id).is_some() &&
-           self.routing_table.find(|node| node.peer_id == dst_id).is_some() {
+        if self.routing_table.iter().any(|node| node.peer_id == peer_id) &&
+           self.routing_table.iter().any(|node| node.peer_id == dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(peer_id, dst_id) {
                 debug!("{:?} Accepted tunnel request from {:?} for {:?}.",
                        self,
@@ -1744,7 +1771,7 @@ impl Core {
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
     /// not a proxy, client or routing table entry.
     fn disconnect_peer(&mut self, peer_id: &PeerId) -> Result<(), RoutingError> {
-        if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
+        if let Some(&node) = self.routing_table.iter().find(|node| node.peer_id == *peer_id) {
             warn!("{:?} Not disconnecting routing table entry {:?} ({:?}).",
                   self,
                   node.name(),
@@ -1808,7 +1835,7 @@ impl Core {
             return Err(RoutingError::InvalidDestination);
         }
 
-        let close_group = match self.routing_table.close_nodes(&dst_name) {
+        let close_group = match self.routing_table.close_nodes(&dst_name, GROUP_SIZE) {
             Some(close_group) => {
                 close_group.iter()
                     .map(NodeInfo::name)
@@ -1873,7 +1900,7 @@ impl Core {
         }
 
 
-        let close_group = match self.routing_table.close_nodes(expect_id.name()) {
+        let close_group = match self.routing_table.close_nodes(expect_id.name(), GROUP_SIZE) {
             Some(close_group) => close_group,
             None => return Err(RoutingError::InvalidDestination),
         };
@@ -1939,7 +1966,7 @@ impl Core {
             return Ok(());
         }
 
-        let close_group = match self.routing_table.close_nodes(&dst_name) {
+        let close_group = match self.routing_table.close_nodes(&dst_name, GROUP_SIZE) {
             Some(close_group) => close_group,
             None => return Err(RoutingError::InvalidDestination),
         };
@@ -2119,7 +2146,7 @@ impl Core {
                             src_name: XorName,
                             dst_name: XorName)
                             -> Result<(), RoutingError> {
-        if self.routing_table.is_close(&dst_name) {
+        if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
             let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
                 info.public_id
             } else if let Some(&public_id) = self.node_id_cache.get(&dst_name) {
@@ -2165,7 +2192,7 @@ impl Core {
                                                  src_name: XorName,
                                                  dst_name: XorName)
                                                  -> Result<(), RoutingError> {
-        if self.routing_table.is_close(&dst_name) {
+        if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
             let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
                 info.public_id
             } else if let Some(public_id) = self.node_id_cache.get(&dst_name) {
@@ -2480,7 +2507,7 @@ impl Core {
 
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table
-            .target_nodes(destination, hop, route)
+            .target_nodes(destination, hop, route as usize)
             .into_iter()
             .filter(|target| !sent_to.contains(target.name()))
             .collect_vec();
@@ -2611,7 +2638,7 @@ impl Core {
 
         self.full_id.public_id_mut().set_name(new_name);
         let our_info = NodeInfo::new(*self.full_id.public_id(), self.crust_service.id());
-        self.routing_table = RoutingTable::new(our_info);
+        self.routing_table = RoutingTable::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
@@ -2662,6 +2689,7 @@ impl Core {
             .into_iter()
             .filter_map(|dst_id| {
                 self.routing_table
+                    .iter()
                     .find(|node| node.peer_id == dst_id)
                     .map(|&node| (dst_id, node))
             })
@@ -2678,15 +2706,18 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
-        if let Some(&node) = self.routing_table.find(|node| node.peer_id == *peer_id) {
-            if let Some(DroppedNodeDetails { incomplete_bucket, common_groups }) =
-                   self.routing_table.remove(node.public_id.name()) {
+        if let Some(&node) = self.routing_table.iter().find(|node| node.peer_id == *peer_id) {
+            if let Some(DroppedNodeDetails { incomplete_bucket }) = self.routing_table
+                .remove(node.name()) {
                 info!("{:?} Dropped {:?} from the routing table.",
                       self,
                       node.name());
+
+                let common_groups = self.routing_table
+                    .is_in_any_close_group_with(self.name().bucket_index(node.name()), GROUP_SIZE);
                 if common_groups {
                     // If the lost node shared some close group with us, send a NodeLost event.
-                    let event = Event::NodeLost(*node.public_id.name(), self.routing_table.clone());
+                    let event = Event::NodeLost(*node.name(), self.routing_table.to_names());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);
                     }

@@ -74,9 +74,9 @@ impl ExampleClient {
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone(),
-                                             message_id));
+            .send_get_request(Authority::NaeManager(request.name()),
+                              request.clone(),
+                              message_id));
 
         // Wait for Get success event from Routing
         for it in self.receiver.iter() {
@@ -117,9 +117,7 @@ impl ExampleClient {
         let data_id = data.identifier();
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()),
-                                             data,
-                                             message_id));
+            .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
 
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {

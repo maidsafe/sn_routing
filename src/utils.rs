@@ -92,6 +92,7 @@ pub fn sip_hash<T: Hash>(input: &T) -> u64 {
 mod test {
     extern crate rand;
 
+    use core::GROUP_SIZE;
     use xor_name::XorName;
 
     #[test]
@@ -128,7 +129,7 @@ mod test {
 
         // populated closed nodes
         let mut close_nodes: Vec<XorName> = Vec::new();
-        for _ in 0..::kademlia_routing_table::GROUP_SIZE {
+        for _ in 0..GROUP_SIZE {
             close_nodes.push(rand::random());
         }
         let actual_relocated_name =

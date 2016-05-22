@@ -65,9 +65,7 @@ use docopt::Docopt;
 use xor_name::XorName;
 use sodiumoxide::crypto::hash;
 use utils::{ExampleNode, ExampleClient};
-use routing::{Data, DataIdentifier, PlainData};
-
-use kademlia_routing_table::GROUP_SIZE;
+use routing::{Data, DataIdentifier, PlainData, GROUP_SIZE};
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
