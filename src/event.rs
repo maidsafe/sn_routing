@@ -18,7 +18,6 @@
 use kademlia_routing_table::RoutingTable;
 use xor_name::XorName;
 
-use core::NodeInfo;
 use messages::{RequestMessage, ResponseMessage};
 use std::fmt::{self, Debug, Formatter};
 
@@ -36,9 +35,9 @@ pub enum Event {
     /// Response.
     Response(ResponseMessage),
     /// A new node joined the network and may be a member of group authorities we also belong to.
-    NodeAdded(XorName, RoutingTable<NodeInfo>),
+    NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
-    NodeLost(XorName, RoutingTable<NodeInfo>),
+    NodeLost(XorName, RoutingTable<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// We have disconnected from the network.

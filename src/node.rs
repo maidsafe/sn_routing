@@ -120,6 +120,18 @@ impl Node {
         self.core.borrow_mut().poll()
     }
 
+    #[cfg(feature = "use-mock-crust")]
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) {
+        self.core.borrow_mut().resend_unacknowledged()
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    /// Resend all unacknowledged messages.
+    pub fn clear_state(&self) {
+        self.core.borrow_mut().clear_state()
+    }
+
     /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
                             src: Authority,

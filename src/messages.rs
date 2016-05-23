@@ -67,7 +67,7 @@ pub enum Message {
 pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
-        /// The bootstrape node's keys and name.
+        /// The bootstrap node's keys and name.
         public_id: ::id::PublicId,
         /// The dynamically calculated quorum size the client's accumulator should use.
         current_quorum_size: usize,
@@ -106,7 +106,7 @@ pub enum DirectMessage {
     TunnelSuccess(PeerId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
     TunnelClosed(PeerId),
-    /// Sent to a tunnel node to indicate the tunnel is not needed anymore.
+    /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
 }
 
@@ -126,6 +126,9 @@ impl DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     content: SignedMessage,
+    /// Route number; corresponds to the index of the peer in the group of target peers being
+    /// considered for the next hop.
+    route: u8,
     /// Every node this has already been sent to.
     sent_to: Vec<XorName>,
     /// Signature to be validated against `name`'s public key.
@@ -135,12 +138,14 @@ pub struct HopMessage {
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
+               route: u8,
                sent_to: Vec<XorName>,
                sign_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
+            route: route,
             sent_to: sent_to,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
@@ -165,6 +170,10 @@ impl HopMessage {
     /// and signed the message.
     pub fn content(&self) -> &SignedMessage {
         &self.content
+    }
+
+    pub fn route(&self) -> u8 {
+        self.route
     }
 
     pub fn sent_to(&self) -> &Vec<XorName> {
@@ -315,7 +324,7 @@ pub enum RequestContent {
     ConnectionInfo {
         /// Encrypted Crust connection info.
         encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrytped message.
+        /// Nonce used to provide a salt in the encrypted message.
         nonce_bytes: [u8; box_::NONCEBYTES],
         // TODO: The receiver should have that in the node_id_cache.
         /// The sender's public ID.
@@ -323,11 +332,11 @@ pub enum RequestContent {
     },
     /// Ask each member of a group near a node address for the `PublicId`.
     GetPublicId,
-    /// Ask for a `PublicId` but provide our connection_info encrytped.
+    /// Ask for a `PublicId` but provide our connection_info encrypted.
     GetPublicIdWithConnectionInfo {
         /// Encrypted crust connection_info (socket address and protocol).
         encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrytped message.
+        /// Nonce used to provide a salt in the encrypted message.
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Message from upper layers sending network state on any network churn event.
@@ -404,7 +413,7 @@ pub enum ResponseContent {
         /// Message salt
         nonce_bytes: [u8; box_::NONCEBYTES],
     },
-    /// Return the close `PublicId`s back to the requestor.
+    /// Return the close `PublicId`s back to the requester.
     ///
     /// Sent from a `NodeManager` to a node or client.
     GetCloseGroup {
@@ -413,6 +422,8 @@ pub enum ResponseContent {
         /// The message ID.
         message_id: MessageId,
     },
+    /// Acknowledge receipt of any request or response except an `Ack`.
+    Ack(u64),
     // ---------- External ------------
     /// Reply with the requested data (may not be ignored)
     ///
@@ -470,7 +481,8 @@ impl ResponseContent {
             ResponseContent::GetNetworkName { .. } |
             ResponseContent::GetCloseGroup { .. } |
             ResponseContent::GetPublicId { .. } |
-            ResponseContent::GetPublicIdWithConnectionInfo { .. } => 0,
+            ResponseContent::GetPublicIdWithConnectionInfo { .. } |
+            ResponseContent::Ack(..) => 0,
             ResponseContent::GetSuccess(ref data, _) => {
                 match *data {
                     Data::Structured(..) => 4,
@@ -529,8 +541,9 @@ impl Debug for DirectMessage {
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "HopMessage {{ content: {:?}, signature: .. }}",
-               self.content)
+               "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
+               self.content,
+               self.route)
     }
 }
 
@@ -614,20 +627,18 @@ impl Debug for ResponseContent {
                        close_group_ids,
                        message_id)
             }
+            ResponseContent::Ack(ref ack) => write!(formatter, "Ack({})", ack),
             ResponseContent::GetSuccess(ref data, ref message_id) => {
-                write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
+                write!(formatter, "GetSuccess({:?}, {:?})", data, message_id)
             }
             ResponseContent::PutSuccess(ref name, ref message_id) => {
-                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", name, message_id)
+                write!(formatter, "PutSuccess({:?}, {:?})", name, message_id)
             }
             ResponseContent::PostSuccess(ref name, ref message_id) => {
-                write!(formatter, "PostSuccess {{ {:?}, {:?} }}", name, message_id)
+                write!(formatter, "PostSuccess({:?}, {:?})", name, message_id)
             }
             ResponseContent::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter,
-                       "DeleteSuccess {{ {:?}, {:?} }}",
-                       name,
-                       message_id)
+                write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
             }
             ResponseContent::GetFailure { ref id, ref request, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
@@ -706,7 +717,7 @@ mod test {
         let signed_message = unwrap_result!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result =
-            HopMessage::new(signed_message.clone(), vec![], &secret_signing_key);
+            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 

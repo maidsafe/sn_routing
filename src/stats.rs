@@ -59,6 +59,7 @@ pub struct Stats {
     msg_rsp_get_public_id: usize,
     msg_rsp_get_public_id_with_connection_info: usize,
     msg_rsp_get_network_name: usize,
+    msg_rsp_ack: usize,
 
     msg_other: usize,
 
@@ -103,6 +104,7 @@ impl Stats {
                         self.msg_rsp_get_public_id_with_connection_info += 1
                     }
                     ResponseContent::GetNetworkName { .. } => self.msg_rsp_get_network_name += 1,
+                    ResponseContent::Ack(..) => self.msg_rsp_ack += 1,
                 }
             }
         }
@@ -149,7 +151,7 @@ impl Stats {
             info!("Stats - Responses - GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
                     PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
                     DeleteFailure: {}, GetCloseGroup: {}, GetPublicId: {}, \
-                    GetPublicIdWithConnectionInfo: {}, GetNetworkName: {}",
+                    GetPublicIdWithConnectionInfo: {}, GetNetworkName: {}, Ack: {}",
                   self.msg_rsp_get_success,
                   self.msg_rsp_get_failure,
                   self.msg_rsp_put_success,
@@ -161,7 +163,8 @@ impl Stats {
                   self.msg_rsp_get_close_group,
                   self.msg_rsp_get_public_id,
                   self.msg_rsp_get_public_id_with_connection_info,
-                  self.msg_rsp_get_network_name);
+                  self.msg_rsp_get_network_name,
+                  self.msg_rsp_ack);
         }
     }
 }

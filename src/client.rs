@@ -111,6 +111,12 @@ impl Client {
         self.core.borrow_mut().poll()
     }
 
+    #[cfg(feature = "use-mock-crust")]
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) {
+        self.core.borrow_mut().resend_unacknowledged()
+    }
+
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
     pub fn send_get_request(&mut self,
                             dst: Authority,
