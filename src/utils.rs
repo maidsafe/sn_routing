@@ -16,9 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 
-use routing::Authority;
+use routing::{Authority, XorName};
 use sodiumoxide::crypto::hash::sha512;
-use xor_name::XorName;
 
 pub fn client_name(authority: &Authority) -> XorName {
     if let Authority::Client { ref client_key, .. } = *authority {

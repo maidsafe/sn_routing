@@ -20,10 +20,9 @@ use std::sync::mpsc::{self, Receiver};
 use maidsafe_utilities::serialisation;
 use rand::random;
 use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId,
-              RequestContent, ResponseContent, ResponseMessage, StructuredData};
+              RequestContent, ResponseContent, ResponseMessage, StructuredData, XorName};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use safe_network_common::client_errors::{MutationError, GetError};
-use xor_name::XorName;
 
 use super::test_node::TestNode;
 use super::poll;

@@ -28,11 +28,10 @@ use error::InternalError;
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData,
+use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData, XorName,
               GROUP_SIZE};
 use safe_network_common::client_errors::{MutationError, GetError};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
-use xor_name::{self, XorName};
 
 const MAX_FULL_PERCENT: u64 = 50;
 /// The quorum for accumulating refresh messages.
@@ -651,7 +650,7 @@ impl DataManager {
                     // replaced at all. Otherwise, if the group's last node is closer to the data
                     // than the lost node, the lost node was not in the group in the first place.
                     if let Some(outer_node) = close_group.get(GROUP_SIZE - 2) {
-                        if xor_name::closer_to_target(node_name, outer_node, &data_idv.0.name()) {
+                        if data_idv.0.name().closer(node_name, outer_node) {
                             data_lists.entry(*outer_node).or_insert_with(Vec::new).push(data_idv);
                         }
                     }

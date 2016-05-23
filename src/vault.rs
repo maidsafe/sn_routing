@@ -27,9 +27,8 @@ use personas::data_manager::DataManager;
 #[cfg(any(test, feature = "use-mock-crust"))]
 use routing::DataIdentifier;
 use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
-              RoutingMessage};
+              RoutingMessage, XorName};
 use sodiumoxide;
-use xor_name::XorName;
 
 pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
 const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;

@@ -25,11 +25,10 @@ use safe_network_common::client_errors::MutationError;
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage,
+use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage, XorName,
               DataIdentifier, GROUP_SIZE};
 use utils;
 use vault::RoutingNode;
-use xor_name::XorName;
 
 // It has now been decided that the charge will be by unit
 // i.e. each chunk incurs a default charge of one unit, no matter of the data size

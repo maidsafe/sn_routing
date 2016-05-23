@@ -63,7 +63,6 @@ extern crate routing;
 extern crate rustc_serialize;
 extern crate safe_network_common;
 extern crate sodiumoxide;
-extern crate xor_name;
 
 mod config_handler;
 mod error;

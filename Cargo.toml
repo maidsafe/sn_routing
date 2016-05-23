@@ -13,19 +13,18 @@ version = "0.8.1"
 [dependencies]
 accumulator = "~0.3.0"
 chunk_store = "~0.4.0"
-clippy = {version = "~0.0.67", optional = true}
+clippy = {version = "~0.0.68", optional = true}
 config_file_handler = "~0.3.0"
 docopt = "~0.6.80"
 itertools = "~0.4.15"
-kademlia_routing_table = "~0.5.2"
+kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
-maidsafe_utilities = "~0.5.4"
+maidsafe_utilities = "~0.6.0"
 rand = "~0.3.14"
 routing = "~0.19.1"
 rustc-serialize = "~0.3.19"
 safe_network_common = "~0.1.1"
 sodiumoxide = "~0.0.10"
-xor_name = "~0.1.0"
 
 [build-dependencies]
 hyper = {version = "~0.9.4", optional = true}
