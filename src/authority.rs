@@ -100,7 +100,7 @@ impl Debug for Authority {
             Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
-                       XorName::new(hash::sha512::hash(&client_key[..]).0),
+                       XorName(hash::sha512::hash(&client_key[..]).0),
                        proxy_node_name,
                        peer_id)
             }

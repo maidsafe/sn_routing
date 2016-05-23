@@ -296,7 +296,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 // Get names of all entries in the `bucket_index`-th bucket in the routing table.
 fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<XorName> {
     let our_name = table.our_name();
-    let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
+    let far_name = our_name.with_flipped_bit(bucket_index);
 
     table.closest_nodes_to(&far_name, GROUP_SIZE, false)
         .into_iter()

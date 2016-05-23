@@ -15,16 +15,15 @@ accumulator = "~0.3.0"
 clippy = {version = "~0.0.68", optional = true}
 crust = "~0.13.1"
 itertools = "~0.4.15"
-kademlia_routing_table = "~0.5.1"
+kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
 lru_time_cache = "~0.4.0"
-maidsafe_utilities = "~0.5.4"
+maidsafe_utilities = "~0.6.0"
 message_filter = "~0.6.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
 sodiumoxide = "~0.0.10"
 term = "~0.4.4"
-xor_name = "~0.1.0"
 
 [dev-dependencies]
 docopt = "~0.6.80"

@@ -28,7 +28,7 @@ use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 use lru_time_cache::LruCache;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::{self, serialisation};
 use message_filter::MessageFilter;
 use peer_manager::{ConnectState, PeerManager};
 use rand;
@@ -43,7 +43,6 @@ use std::fmt::{Debug, Formatter};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tunnels::Tunnels;
-use xor_name;
 use xor_name::{XorName, XOR_NAME_BITS};
 
 use action::Action;
@@ -371,10 +370,7 @@ impl Core {
         // self.message_accumulator.clear();
         self.grp_msg_filter.clear();
         self.sent_network_name_to = None;
-
-        if false {
-            self.peer_mgr.clear_caches();
-        }
+        self.peer_mgr.clear_caches();
     }
 
     fn update_stats(&mut self) {
@@ -562,7 +558,7 @@ impl Core {
             error!("{:?} Failed to start listening.", self);
             let _ = self.event_sender.send(Event::NetworkStartupFailed);
         }
-        let new_name = XorName::new(hash::sha512::hash(&self.full_id.public_id().name().0).0);
+        let new_name = XorName(hash::sha512::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
         self.state = State::Node;
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -810,8 +806,7 @@ impl Core {
                         hop_msg: &HopMessage)
                         -> Result<(), RoutingError> {
         let dst = hop_msg.content().content().dst();
-        if self._is_swarm(dst, hop_name) ||
-           !xor_name::closer_to_target(hop_name, self.name(), dst.name()) {
+        if self._is_swarm(dst, hop_name) || !dst.name().closer(hop_name, self.name()) {
             Ok(())
         } else {
             debug!("{:?} Direction check failed in hop message from node {:?}: {:?}",
@@ -1035,7 +1030,7 @@ impl Core {
             }
         }
 
-        try!(self.send_ack(&routing_msg, utils::sip_hash(&routing_msg)));
+        try!(self.send_ack(&routing_msg));
         self.dispatch_request_response(routing_msg)
     }
 
@@ -1336,7 +1331,9 @@ impl Core {
     /// Adds the signed message to the statistics and returns `true` if it should be blocked due
     /// to deduplication.
     fn filter_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId) -> bool {
-        if self.send_filter.insert((utils::sip_hash(msg), *peer_id), ()).is_some() {
+        if self.send_filter
+            .insert((maidsafe_utilities::big_endian_sip_hash(msg), *peer_id), ())
+            .is_some() {
             return true;
         }
         self.stats.count_routing_message(msg.content());
@@ -1452,8 +1449,7 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        if *public_id.name() ==
-           XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() == XorName(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper node - dropping",
                   self);
             let _ = self.event_sender.send(Event::Disconnected);
@@ -1486,8 +1482,7 @@ impl Core {
                               peer_id: PeerId,
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
-        if *public_id.name() !=
-           XorName::new(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() != XorName(hash::sha512::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper client - dropping",
                   self);
             return self.disconnect_peer(&peer_id);
@@ -1677,7 +1672,7 @@ impl Core {
             return Ok(());
         }
         trace!("{:?} Send GetCloseGroup to bucket {}.", self, bucket_index);
-        let bucket_address = try!(self.name().with_flipped_bit(bucket_index));
+        let bucket_address = self.name().with_flipped_bit(bucket_index);
         self.request_close_group(bucket_address)
     }
 
@@ -1821,7 +1816,7 @@ impl Core {
                                        message_id: MessageId)
                                        -> Result<(), RoutingError> {
         let hashed_key = hash::sha512::hash(&client_key.0);
-        let close_group_to_client = XorName::new(hashed_key.0);
+        let close_group_to_client = XorName(hashed_key.0);
 
         // Validate Client (relocating node) has contacted the correct Group-X
         if close_group_to_client != dst_name {
@@ -2559,7 +2554,7 @@ impl Core {
         result
     }
 
-    fn send_ack(&mut self, routing_msg: &RoutingMessage, ack: u64) -> Result<(), RoutingError> {
+    fn send_ack(&mut self, routing_msg: &RoutingMessage) -> Result<(), RoutingError> {
         if let RoutingMessage::Response(
                 ResponseMessage { content: ResponseContent::Ack(_), .. }) = *routing_msg {
             return Ok(());
@@ -2567,7 +2562,7 @@ impl Core {
         let response = ResponseMessage {
             src: routing_msg.dst().clone(),
             dst: routing_msg.src().clone(),
-            content: ResponseContent::Ack(ack),
+            content: ResponseContent::Ack(maidsafe_utilities::big_endian_sip_hash(&routing_msg)),
         };
         self.send_response(response)
     }
@@ -2587,7 +2582,7 @@ impl Core {
             return true;
         }
 
-        let ack = utils::sip_hash(signed_msg.content());
+        let ack = maidsafe_utilities::big_endian_sip_hash(signed_msg.content());
         if self.received_acks.contains(&ack) {
             return false;
         }

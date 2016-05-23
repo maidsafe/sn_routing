@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use std::fmt::Write;
-use std::hash::{Hash, Hasher, SipHasher};
 use xor_name::XorName;
 
 /// Format a vector of bytes as a hexadecimal number, ellipsising all but the first and last three.
@@ -62,30 +61,17 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
     if close_nodes.is_empty() {
         return Err(::error::RoutingError::RoutingTableEmpty);
     }
-    close_nodes.sort_by(|a, b| {
-        if ::xor_name::closer_to_target(a, b, original_name) {
-            ::std::cmp::Ordering::Less
-        } else {
-            ::std::cmp::Ordering::Greater
-        }
-    });
+    close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
     close_nodes.truncate(2usize);
     close_nodes.insert(0, *original_name);
 
     let mut combined: Vec<u8> = Vec::new();
     for node_id in close_nodes {
-        for i in node_id.get_id().iter() {
+        for i in node_id.0.iter() {
             combined.push(*i);
         }
     }
     Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
-}
-
-/// Returns the `SipHash` of `input`.
-pub fn sip_hash<T: Hash>(input: &T) -> u64 {
-    let mut hasher = SipHasher::new();
-    input.hash(&mut hasher);
-    hasher.finish()
 }
 
 #[cfg(test)]
@@ -116,7 +102,7 @@ mod test {
 
         let mut combined_one_node: Vec<u8> = Vec::new();
         for node_id in combined_one_node_vec {
-            for i in node_id.get_id().iter() {
+            for i in node_id.0.iter() {
                 combined_one_node.push(*i);
             }
         }
@@ -135,24 +121,18 @@ mod test {
         let actual_relocated_name =
             unwrap_result!(super::calculate_relocated_name(close_nodes.clone(), &original_name));
         assert!(original_name != actual_relocated_name);
-        close_nodes.sort_by(|a, b| {
-            if ::xor_name::closer_to_target(a, b, &original_name) {
-                ::std::cmp::Ordering::Less
-            } else {
-                ::std::cmp::Ordering::Greater
-            }
-        });
+        close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];
         let second_closest = close_nodes[1];
         let mut combined: Vec<u8> = Vec::new();
 
-        for i in original_name.get_id().into_iter() {
+        for i in original_name.0.into_iter() {
             combined.push(*i);
         }
-        for i in first_closest.get_id().into_iter() {
+        for i in first_closest.0.into_iter() {
             combined.push(*i);
         }
-        for i in second_closest.get_id().into_iter() {
+        for i in second_closest.0.into_iter() {
             combined.push(*i);
         }
 
@@ -161,13 +141,13 @@ mod test {
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
-        for i in first_closest.get_id().into_iter() {
+        for i in first_closest.0.into_iter() {
             invalid_combined.push(*i);
         }
-        for i in second_closest.get_id().into_iter() {
+        for i in second_closest.0.into_iter() {
             invalid_combined.push(*i);
         }
-        for i in original_name.get_id().into_iter() {
+        for i in original_name.0.into_iter() {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name =

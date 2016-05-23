@@ -181,7 +181,6 @@ extern crate message_filter;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
-extern crate xor_name;
 
 mod action;
 mod authority;
@@ -203,6 +202,7 @@ mod timer;
 mod tunnels;
 mod types;
 mod utils;
+mod xor_name;
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod core_tests;
@@ -227,3 +227,4 @@ pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
+pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN, XOR_NAME_BITS};
