@@ -52,7 +52,6 @@ extern crate rustc_serialize;
 extern crate sodiumoxide;
 
 extern crate routing;
-extern crate xor_name;
 extern crate lru_time_cache;
 
 mod utils;
@@ -63,11 +62,10 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::io::Write;
 
 use docopt::Docopt;
-use xor_name::XorName;
 use sodiumoxide::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use routing::{Data, DataIdentifier, PlainData};
+use routing::{Data, DataIdentifier, PlainData, XorName};
 use utils::{ExampleNode, ExampleClient};
 
 // ==========================   Program Options   =================================
@@ -240,7 +238,7 @@ impl KeyValueStore {
     }
 
     fn calculate_key_name(key: &str) -> XorName {
-        XorName::new(crypto::hash::sha512::hash(key.as_bytes()).0)
+        XorName(crypto::hash::sha512::hash(key.as_bytes()).0)
     }
 }
 

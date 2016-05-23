@@ -17,9 +17,8 @@
 
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use xor_name::XorName;
 use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              Authority, Node, Event, Data, DataIdentifier};
+              Authority, Node, Event, Data, DataIdentifier, XorName};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;

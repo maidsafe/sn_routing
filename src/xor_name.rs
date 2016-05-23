@@ -26,7 +26,7 @@ use kademlia_routing_table::Xorable;
 /// Create a 64-byte array of `u8` from a 64-byte reference to a `u8` slice.
 pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
     let mut arr = [0u8; 64];
-    arr.clone_from_slice(&slice);
+    arr.clone_from_slice(slice);
     arr
 }
 
@@ -42,14 +42,14 @@ pub enum XorNameFromHexError {
     /// The given invalid hex character occurred at the given position.
     InvalidCharacter(char, usize),
     /// The hex string did not encode `XOR_NAME_LEN` bytes.
-    InvalidLength,
+    WrongLength,
 }
 
 
 /// A [`XOR_NAME_BITS`](constant.XOR_NAME_BITS.html)-bit number, viewed as a point in XOR space.
 ///
 /// This wraps an array of [`XOR_NAME_LEN`](constant.XOR_NAME_LEN.html) bytes, i. e. a number
-/// between 0 and 2<sup>XOR_NAME_BITS</sup> - 1.
+/// between 0 and 2<sup>`XOR_NAME_BITS`</sup> - 1.
 ///
 /// XOR space is the space of these numbers, with the [XOR metric][1] as a notion of distance,
 /// i. e. the points with IDs `x` and `y` are considered to have distance `x xor y`.
@@ -68,6 +68,7 @@ impl XorName {
     ///
     /// If the parameter does not address one of the name's bits, i. e. if it does not satisfy
     /// `index < XOR_NAME_BITS`, the result will be equal to the argument.
+    #[cfg_attr(feature="clippy", allow(assign_op_pattern))]
     pub fn with_flipped_bit(&self, index: usize) -> XorName {
         if index >= XOR_NAME_BITS {
             return *self;
@@ -89,10 +90,10 @@ impl XorName {
             Err(FromHexError::InvalidHexCharacter(c, p)) => {
                 return Err(XorNameFromHexError::InvalidCharacter(c, p))
             }
-            Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::InvalidLength),
+            Err(FromHexError::InvalidHexLength) => return Err(XorNameFromHexError::WrongLength),
         };
         if data.len() != XOR_NAME_LEN {
-            return Err(XorNameFromHexError::InvalidLength);
+            return Err(XorNameFromHexError::WrongLength);
         }
         Ok(XorName(slice_as_u8_64_array(&data[..])))
     }
@@ -291,6 +292,7 @@ mod test {
     }
 
     #[test]
+    #[cfg_attr(feature="clippy", allow(eq_op))]
     fn xor_name_ord() {
         let type1: XorName = XorName([1u8; XOR_NAME_LEN]);
         let type2: XorName = XorName([2u8; XOR_NAME_LEN]);
@@ -312,7 +314,7 @@ mod test {
     #[test]
     fn xor_name_equal_assertion() {
         let type1: XorName = rand::random();
-        let type1_clone = type1.clone();
+        let type1_clone = type1;
         let type2: XorName = rand::random();
         assert_eq!(type1, type1_clone);
         assert!(type1 == type1_clone);
@@ -323,7 +325,7 @@ mod test {
     #[test]
     fn closeness() {
         let obj0: XorName = rand::random();
-        let obj0_clone = obj0.clone();
+        let obj0_clone = obj0;
         let obj1: XorName = rand::random();
         assert!(obj0.closer(&obj0_clone, &obj1));
         assert!(!obj0.closer(&obj1, &obj0_clone));

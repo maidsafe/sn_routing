@@ -17,15 +17,13 @@
 
 extern crate log;
 extern crate routing;
-extern crate xor_name;
 extern crate sodiumoxide;
 extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
-use self::sodiumoxide::crypto;
-use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent,
-                    ResponseMessage, Client, MessageId};
+use sodiumoxide::crypto;
+use routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent, ResponseMessage,
+              Client, MessageId, XorName};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
