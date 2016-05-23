@@ -907,9 +907,7 @@ impl Core {
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
-            self.handle_routing_message(signed_msg.content().clone(),
-                                        *signed_msg.public_id(),
-                                        Some(utils::sip_hash(signed_msg.content())))
+            self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id())
         } else {
             Ok(())
         }
@@ -929,8 +927,7 @@ impl Core {
             }
             _ => return Err(RoutingError::BadAuthority),
         }
-        try!(self.send_ack(signed_msg.content(), utils::sip_hash(signed_msg.content())));
-        self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id(), None)
+        self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id())
     }
 
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
@@ -1002,8 +999,7 @@ impl Core {
     // Needs to be commented
     fn handle_routing_message(&mut self,
                               routing_msg: RoutingMessage,
-                              public_id: PublicId,
-                              ack: Option<u64>)
+                              public_id: PublicId)
                               -> Result<(), RoutingError> {
         if routing_msg.src().is_group() {
             if self.grp_msg_filter.contains(&routing_msg) {
@@ -1022,7 +1018,6 @@ impl Core {
                 if let RoutingMessage::Response(ResponseMessage { ref content, .. }) =
                        routing_msg {
                     match *content {
-                        ResponseContent::GetCloseGroup { .. } |
                         ResponseContent::GetPublicId { .. } |
                         ResponseContent::GetPublicIdWithConnectionInfo { .. } => true,
                         _ => false,
@@ -1040,9 +1035,7 @@ impl Core {
             }
         }
 
-        if let Some(ack) = ack {
-            try!(self.send_ack(&routing_msg, ack));
-        }
+        try!(self.send_ack(&routing_msg, utils::sip_hash(&routing_msg)));
         self.dispatch_request_response(routing_msg)
     }
 
@@ -1199,7 +1192,7 @@ impl Core {
                                                                         dst_name)
             }
             (ResponseContent::GetCloseGroup { close_group_ids, .. },
-             Authority::NaeManager(_),
+             Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (ResponseContent::Ack(ack), _, _) => self.handle_ack_response(ack),
             (ResponseContent::GetSuccess(..), _, _) |
@@ -1984,7 +1977,7 @@ impl Core {
         };
 
         let response_msg = ResponseMessage {
-            src: Authority::NaeManager(dst_name),
+            src: Authority::ManagedNode(*self.name()),
             dst: src,
             content: response_content,
         };
@@ -2505,6 +2498,10 @@ impl Core {
             return Err(RoutingError::InvalidSource);
         }
 
+        if !self.add_to_pending_acks(&signed_msg, route) {
+            return Ok(());
+        }
+
         let destination = signed_msg.content().dst().to_destination();
         let targets = self.routing_table
             .target_nodes(destination, hop, route as usize)
@@ -2516,10 +2513,6 @@ impl Core {
             .cloned()
             .collect_vec();
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
-
-        if !self.add_to_pending_acks(&signed_msg, route) {
-            return Ok(());
-        }
 
         let mut result = Ok(());
         for target in targets {
