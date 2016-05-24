@@ -54,8 +54,8 @@ use id::{FullId, PublicId};
 use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
-use messages::{DirectMessage, HopMessage, Message, RequestContent, RequestMessage,
-               ResponseContent, ResponseMessage, RoutingMessage, SignedMessage};
+use messages::{DirectMessage, HopMessage, Message, MessageContent, Request, RoutingMessage,
+               SignedMessage, Response};
 use utils;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
@@ -67,8 +67,8 @@ pub const QUORUM_SIZE: usize = 5;
 const EXTRA_BUCKET_ENTRIES: usize = 2;
 /// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
-/// Time (in seconds) after which a `GetNetworkName` request is resent.
-const GET_NETWORK_NAME_TIMEOUT_SECS: u64 = 60;
+/// Time (in seconds) after which a `GetNodeName` request is resent.
+const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
@@ -167,10 +167,10 @@ struct UnacknowledgedMessage {
 ///
 /// ### Getting a new network name from the `NaeManager`
 ///
-/// Once in `Client` state, A sends a `GetNetworkName` request to the `NaeManager` group authority X
+/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
 /// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
 /// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
-/// `GetNetworkName` response back to A, which includes the public IDs of the members of Y.
+/// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
 ///
 ///
 /// ### Connecting to the close group
@@ -206,9 +206,9 @@ pub struct Core {
     full_id: FullId,
     state: State,
     routing_table: RoutingTable,
-    get_network_name_timer_token: Option<u64>,
+    get_node_name_timer_token: Option<u64>,
     bucket_refresh_token_and_delay: Option<(u64, u64)>,
-    /// The last joining node we have sent a `GetNetworkName` response to, and when.
+    /// The last joining node we have sent a `GetNodeName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
     tick_timer_token: Option<u64>,
     use_data_cache: bool,
@@ -275,7 +275,7 @@ impl Core {
             full_id: full_id,
             state: State::Disconnected,
             routing_table: RoutingTable::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES),
-            get_network_name_timer_token: None,
+            get_node_name_timer_token: None,
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
             tick_timer_token: None,
@@ -448,13 +448,13 @@ impl Core {
             }
             Action::ClientSendRequest { content, dst, result_tx } => {
                 if result_tx.send(if let Ok(src) = self.get_client_authority() {
-                        let request_msg = RequestMessage {
-                            content: content,
+                        let request_msg = RoutingMessage {
+                            content: MessageContent::Request(content),
                             src: src,
                             dst: dst,
                         };
 
-                        match self.send_request(request_msg) {
+                        match self.send_message(request_msg) {
                             Err(RoutingError::Interface(err)) => Err(err),
                             Err(_err) => Ok(()),
                             Ok(()) => Ok(()),
@@ -684,19 +684,19 @@ impl Core {
             debug!("{:?} Prepared connection info for {:?}.", self, their_name);
         }
 
-        let request_content = RequestContent::ConnectionInfo {
+        let request_content = MessageContent::ConnectionInfo {
             encrypted_connection_info: encrypted_connection_info,
             nonce_bytes: nonce.0,
             public_id: *self.full_id.public_id(),
         };
 
-        let request_msg = RequestMessage {
+        let request_msg = RoutingMessage {
             src: src,
             dst: dst,
             content: request_content,
         };
 
-        if let Err(err) = self.send_request(request_msg) {
+        if let Err(err) = self.send_message(request_msg) {
             error!("{:?} Failed to send connection info for {:?}: {:?}.",
                    self,
                    their_name,
@@ -751,7 +751,7 @@ impl Core {
             } else if let Some(client_info) = self.peer_mgr.get_client(&peer_id) {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
-                    try!(self.check_not_get_network_name(hop_msg.content().content()));
+                    try!(self.check_not_get_node_name(hop_msg.content().routing_message()));
                 }
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
@@ -782,51 +782,14 @@ impl Core {
                                    hop_msg.sent_to())
     }
 
-    fn check_not_get_network_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        match *msg {
-            RoutingMessage::Request(RequestMessage {
-                content: RequestContent::GetNetworkName { .. },
-                ..
-            }) => {
-                debug!("{:?} Illegitimate GetNetworkName request. Refusing to relay.", self);
-                Err(RoutingError::RejectedGetNetworkName)
+    fn check_not_get_node_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        match msg.content {
+            MessageContent::GetNodeName { .. } => {
+                debug!("{:?} Illegitimate GetNodeName request. Refusing to relay.",
+                       self);
+                Err(RoutingError::RejectedGetNodeName)
             }
             _ => Ok(()),
-        }
-    }
-
-    // TODO(afck): Direction checks are currently expected to fail in a lot of cases. To enable
-    // them again, every node would need to keep track of those routing table entries which are not
-    // yet fully connected. Only messages from nodes that have populated their routing tables
-    // enough to satisfy the kademlia_routing_table invariant can be expected to pass direction
-    // checks.
-    /// Returns an error if this is not a swarm message and was not sent in the right direction.
-    fn _check_direction(&self,
-                        hop_name: &XorName,
-                        hop_msg: &HopMessage)
-                        -> Result<(), RoutingError> {
-        let dst = hop_msg.content().content().dst();
-        if self._is_swarm(dst, hop_name) || !dst.name().closer(hop_name, self.name()) {
-            Ok(())
-        } else {
-            debug!("{:?} Direction check failed in hop message from node {:?}: {:?}",
-                   self,
-                   hop_name,
-                   hop_msg.content().content());
-            // TODO: Reconsider direction checks once we know whether they help secure routing.
-            Ok(())
-            // Err(RoutingError::DirectionCheckFailed)
-        }
-    }
-
-    /// Returns `true` if a message is a swarm message.
-    ///
-    /// This is the case if a routing node in the destination's close group sent this message.
-    fn _is_swarm(&self, dst: &Authority, hop_name: &XorName) -> bool {
-        dst.is_group() &&
-        match self.routing_table.other_close_nodes(dst.name(), GROUP_SIZE) {
-            None => false,
-            Some(close_group) => close_group.into_iter().any(|n| n.name() == hop_name),
         }
     }
 
@@ -847,13 +810,10 @@ impl Core {
 
         // Since endpoint request / GetCloseGroup response messages while relocating are sent
         // to a client we still need to accept these msgs sent to us even if we have become a node.
-        if let Authority::Client { ref client_key, .. } = *signed_msg.content().dst() {
+        if let Authority::Client { ref client_key, .. } = signed_msg.routing_message().dst {
             if client_key == self.full_id.public_id().signing_public_key() {
-                if let RoutingMessage::Request(RequestMessage {
-                        content: RequestContent::ConnectionInfo { .. },
-                        ..
-                    }) = *signed_msg.content() {
-                     return self.handle_signed_message_for_client(signed_msg);
+                if let MessageContent::ConnectionInfo { .. } = *signed_msg.message_content() {
+                    return self.handle_signed_message_for_client(signed_msg);
                 }
             }
         }
@@ -874,7 +834,7 @@ impl Core {
                                       sent_to: &[XorName],
                                       relay: bool)
                                       -> Result<(), RoutingError> {
-        let dst = signed_msg.content().dst();
+        let dst = &signed_msg.routing_message().dst;
 
         if let Authority::Client { ref peer_id, .. } = *dst {
             if self.name() == dst.name() {
@@ -889,11 +849,11 @@ impl Core {
 
         // Cache handling
         if self.use_data_cache {
-            if let Some(routing_msg) = self.get_from_cache(signed_msg.content()) {
+            if let Some(routing_msg) = self.get_from_cache(signed_msg.routing_message()) {
                 return self.send_message(routing_msg);
             }
         }
-        self.add_to_cache(signed_msg.content());
+        self.add_to_cache(signed_msg.routing_message());
 
         if relay {
             if let Err(err) = self.send(signed_msg.clone(), route, hop_name, sent_to, false) {
@@ -902,7 +862,8 @@ impl Core {
         }
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
-            self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id())
+            self.handle_routing_message(signed_msg.routing_message().clone(),
+                                        *signed_msg.public_id())
         } else {
             Ok(())
         }
@@ -914,7 +875,7 @@ impl Core {
         if self.signed_message_filter.count(signed_msg) > 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
-        match *signed_msg.content().dst() {
+        match signed_msg.routing_message().dst {
             Authority::Client { ref client_key, .. } => {
                 if self.full_id.public_id().signing_public_key() != client_key {
                     return Err(RoutingError::BadAuthority);
@@ -922,23 +883,24 @@ impl Core {
             }
             _ => return Err(RoutingError::BadAuthority),
         }
-        self.handle_routing_message(signed_msg.content().clone(), *signed_msg.public_id())
+        self.handle_routing_message(signed_msg.routing_message().clone(),
+                                    *signed_msg.public_id())
     }
 
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
-        if signed_msg.content().src().is_group() {
+        if signed_msg.routing_message().src.is_group() {
             // TODO validate unconfirmed node is a valid node in the network
 
             // FIXME This check will need to get finalised in routing table
             // if !self.routing_table
-            //         .try_confirm_safe_group_distance(signed_msg.content().src().name(),
+            //         .try_confirm_safe_group_distance(signed_msg.routing_message().src.name(),
             //                                          signed_msg.public_id().name()) {
             //     return Err(RoutingError::RoutingTableBucketIndexFailed);
             // }
 
             Ok(())
         } else {
-            match (signed_msg.content().src(), signed_msg.content().dst()) {
+            match (&signed_msg.routing_message().src, &signed_msg.routing_message().dst) {
                 (&Authority::ManagedNode(_node_name), &Authority::NodeManager(_manager_name)) => {
                     // TODO confirm sender is in our routing table
                     Ok(())
@@ -960,33 +922,28 @@ impl Core {
 
     /// Returns a cached response, if one is available for the given message, otherwise `None`.
     fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
-        let content = match *routing_msg {
-            RoutingMessage::Request(RequestMessage {
-                    content: RequestContent::Get(DataIdentifier::Immutable(ref name), id),
-                    ..
-                }) => {
+        let content = match routing_msg.content {
+            MessageContent::Request(Request::Get(DataIdentifier::Immutable(ref name), id)) => {
                 match self.data_cache.get(name) {
-                    Some(data) => ResponseContent::GetSuccess(data.clone(), id),
+                    Some(data) => MessageContent::Response(Response::GetSuccess(data.clone(), id)),
                     _ => return None,
                 }
             }
             _ => return None,
         };
 
-        let response_msg = ResponseMessage {
+        let response_msg = RoutingMessage {
             src: Authority::ManagedNode(*self.name()),
-            dst: routing_msg.src().clone(),
+            dst: routing_msg.src.clone(),
             content: content,
         };
 
-        Some(RoutingMessage::Response(response_msg))
+        Some(response_msg)
     }
 
     fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
-        if let RoutingMessage::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(ref data @ Data::Immutable(_), _),
-                    ..
-                }) = *routing_msg {
+        if let MessageContent::Response(Response::GetSuccess(ref data @ Data::Immutable(_), _)) =
+               routing_msg.content {
             let _ = self.data_cache.insert(data.name(), data.clone());
         }
     }
@@ -996,7 +953,7 @@ impl Core {
                               routing_msg: RoutingMessage,
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
-        if routing_msg.src().is_group() {
+        if routing_msg.src.is_group() {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
@@ -1009,17 +966,11 @@ impl Core {
             // established, send a direct message to these contacts. Only when they receive
             // that message, the contacts should add the new node to their routing tables in
             // turn, because only then it can act as a fully functioning routing node.
-            let skip_accumulate =
-                if let RoutingMessage::Response(ResponseMessage { ref content, .. }) =
-                       routing_msg {
-                    match *content {
-                        ResponseContent::GetPublicId { .. } |
-                        ResponseContent::GetPublicIdWithConnectionInfo { .. } => true,
-                        _ => false,
-                    }
-                } else {
-                    false
-                };
+            let skip_accumulate = match routing_msg.content {
+                MessageContent::GetPublicIdResponse { .. } |
+                MessageContent::GetPublicIdWithConnectionInfoResponse { .. } => true,
+                _ => false,
+            };
 
             if skip_accumulate {
                 let _ = self.grp_msg_filter.insert(&routing_msg);
@@ -1031,17 +982,7 @@ impl Core {
         }
 
         try!(self.send_ack(&routing_msg));
-        self.dispatch_request_response(routing_msg)
-    }
-
-
-    fn dispatch_request_response(&mut self,
-                                 routing_msg: RoutingMessage)
-                                 -> Result<(), RoutingError> {
-        match routing_msg {
-            RoutingMessage::Request(msg) => self.handle_request_message(msg),
-            RoutingMessage::Response(msg) => self.handle_response_message(msg),
-        }
+        self.dispatch_routing_message(routing_msg)
     }
 
     fn accumulate(&mut self,
@@ -1074,35 +1015,37 @@ impl Core {
         }
     }
 
-    fn handle_request_message(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
-        let msg_content = request_msg.content.clone();
-        let msg_src = request_msg.src.clone();
-        let msg_dst = request_msg.dst.clone();
-        trace!("{:?} Got request {:?} from {:?} to {:?}.",
+    fn dispatch_routing_message(&mut self,
+                                routing_msg: RoutingMessage)
+                                -> Result<(), RoutingError> {
+        let msg_content = routing_msg.content.clone();
+        let msg_src = routing_msg.src.clone();
+        let msg_dst = routing_msg.dst.clone();
+        trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
                self,
                msg_content,
                msg_src,
                msg_dst);
         match (msg_content, msg_src, msg_dst) {
-            (RequestContent::GetNetworkName { current_id, message_id },
+            (MessageContent::GetNodeName { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
-                self.handle_get_network_name_request(current_id,
-                                                     client_key,
-                                                     proxy_node_name,
-                                                     dst_name,
-                                                     peer_id,
-                                                     message_id)
+                self.handle_get_node_name_request(current_id,
+                                                  client_key,
+                                                  proxy_node_name,
+                                                  dst_name,
+                                                  peer_id,
+                                                  message_id)
             }
-            (RequestContent::ExpectCloseNode { expect_id, client_auth, message_id },
+            (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
              Authority::NaeManager(_),
              Authority::NaeManager(_)) => {
                 self.handle_expect_close_node_request(expect_id, client_auth, message_id)
             }
-            (RequestContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
+            (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::ManagedNode(dst_name)) => {
                 self.handle_connection_info_from_client(encrypted_connection_info,
@@ -1113,25 +1056,25 @@ impl Core {
                                                         peer_id,
                                                         public_id)
             }
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::ManagedNode(src_name),
              Authority::Client { .. }) |
-            (RequestContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(encrypted_connection_info,
                                                       nonce_bytes,
                                                       src_name,
-                                                      request_msg.dst,
+                                                      routing_msg.dst.clone(),
                                                       public_id)
             }
-            (RequestContent::Connect,
+            (MessageContent::Connect,
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(dst_name)) => self.handle_connect_request(src_name, dst_name),
-            (RequestContent::GetPublicId,
+            (MessageContent::GetPublicId,
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => self.handle_get_public_id(src_name, dst_name),
-            (RequestContent::GetPublicIdWithConnectionInfo { encrypted_connection_info,
+            (MessageContent::GetPublicIdWithConnectionInfo { encrypted_connection_info,
                                                              nonce_bytes },
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => {
@@ -1140,45 +1083,17 @@ impl Core {
                                                                src_name,
                                                                dst_name)
             }
-            (RequestContent::Get(..), _, _) |
-            (RequestContent::Put(..), _, _) |
-            (RequestContent::Post(..), _, _) |
-            (RequestContent::Delete(..), _, _) |
-            (RequestContent::Refresh(..), _, _) => {
-                let event = Event::Request(request_msg);
-                let _ = self.event_sender.send(event);
-                Ok(())
-            }
-            _ => {
-                warn!("{:?} Unhandled request - Message {:?}", self, request_msg);
-                Err(RoutingError::BadAuthority)
-            }
-        }
-    }
-
-    fn handle_response_message(&mut self,
-                               response_msg: ResponseMessage)
-                               -> Result<(), RoutingError> {
-        let msg_content = response_msg.content.clone();
-        let msg_src = response_msg.src.clone();
-        let msg_dst = response_msg.dst.clone();
-        trace!("{:?} Got response {:?} from {:?} to {:?}.",
-               self,
-               msg_content,
-               msg_src,
-               msg_dst);
-        match (msg_content, msg_src, msg_dst) {
-            (ResponseContent::GetNetworkName { relocated_id, close_group_ids, .. },
+            (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
              Authority::NodeManager(_),
-             dst) => self.handle_get_network_name_response(relocated_id, close_group_ids, dst),
-            (ResponseContent::GetPublicId { public_id },
+             dst) => self.handle_get_node_name_response(relocated_id, close_group_ids, dst),
+            (MessageContent::GetPublicIdResponse { public_id },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_response(public_id, dst_name)
             }
-            (ResponseContent::GetPublicIdWithConnectionInfo { public_id,
-                                                              encrypted_connection_info,
-                                                              nonce_bytes },
+            (MessageContent::GetPublicIdWithConnectionInfoResponse { public_id,
+                                                                     encrypted_connection_info,
+                                                                     nonce_bytes },
              Authority::NodeManager(_),
              Authority::ManagedNode(dst_name)) => {
                 self.handle_get_public_id_with_connection_info_response(public_id,
@@ -1186,24 +1101,22 @@ impl Core {
                                                                         nonce_bytes,
                                                                         dst_name)
             }
-            (ResponseContent::GetCloseGroup { close_group_ids, .. },
+            (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (ResponseContent::Ack(ack), _, _) => self.handle_ack_response(ack),
-            (ResponseContent::GetSuccess(..), _, _) |
-            (ResponseContent::PutSuccess(..), _, _) |
-            (ResponseContent::PostSuccess(..), _, _) |
-            (ResponseContent::DeleteSuccess(..), _, _) |
-            (ResponseContent::GetFailure { .. }, _, _) |
-            (ResponseContent::PutFailure { .. }, _, _) |
-            (ResponseContent::PostFailure { .. }, _, _) |
-            (ResponseContent::DeleteFailure { .. }, _, _) => {
-                let event = Event::Response(response_msg);
+            (MessageContent::Ack(ack), _, _) => self.handle_ack_response(ack),
+            (MessageContent::Request(request), src, dst) => {
+                let event = Event::Request(request, src, dst);
+                let _ = self.event_sender.send(event);
+                Ok(())
+            }
+            (MessageContent::Response(response), src, dst) => {
+                let event = Event::Response(response, src, dst);
                 let _ = self.event_sender.send(event);
                 Ok(())
             }
             _ => {
-                warn!("{:?} Unhandled response - Message {:?}", self, response_msg);
+                warn!("{:?} Unhandled message {:?}", self, routing_msg);
                 Err(RoutingError::BadAuthority)
             }
         }
@@ -1336,7 +1249,7 @@ impl Core {
             .is_some() {
             return true;
         }
-        self.stats.count_routing_message(msg.content());
+        self.stats.count_routing_message(msg.routing_message());
         false
     }
 
@@ -1677,12 +1590,12 @@ impl Core {
     }
 
     fn request_close_group(&mut self, name: XorName) -> Result<(), RoutingError> {
-        let request_msg = RequestMessage {
+        let request_msg = RoutingMessage {
             src: Authority::ManagedNode(*self.name()),
             dst: Authority::NaeManager(name),
-            content: RequestContent::GetCloseGroup(MessageId::new()),
+            content: MessageContent::GetCloseGroup(MessageId::new()),
         };
-        self.send_request(request_msg)
+        self.send_message(request_msg)
     }
 
     /// Handle a request by `peer_id` to act as a tunnel connecting it with `dst_id`.
@@ -1786,35 +1699,35 @@ impl Core {
 
     // Constructed by A; From A -> X
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let duration = Duration::from_secs(GET_NETWORK_NAME_TIMEOUT_SECS);
-        self.get_network_name_timer_token = Some(self.timer.schedule(duration));
+        let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
+        self.get_node_name_timer_token = Some(self.timer.schedule(duration));
 
-        let request_content = RequestContent::GetNetworkName {
+        let request_content = MessageContent::GetNodeName {
             current_id: *self.full_id.public_id(),
             message_id: MessageId::new(),
         };
 
-        let request_msg = RequestMessage {
+        let request_msg = RoutingMessage {
             src: try!(self.get_client_authority()),
             dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };
 
-        info!("{:?} Sending GetNetworkName request with: {:?}. This can take a while.",
+        info!("{:?} Sending GetNodeName request with: {:?}. This can take a while.",
               self,
               self.full_id.public_id());
-        self.send_request(request_msg)
+        self.send_message(request_msg)
     }
 
     // Received by X; From A -> X
-    fn handle_get_network_name_request(&mut self,
-                                       mut their_public_id: PublicId,
-                                       client_key: sign::PublicKey,
-                                       proxy_name: XorName,
-                                       dst_name: XorName,
-                                       peer_id: PeerId,
-                                       message_id: MessageId)
-                                       -> Result<(), RoutingError> {
+    fn handle_get_node_name_request(&mut self,
+                                    mut their_public_id: PublicId,
+                                    client_key: sign::PublicKey,
+                                    proxy_name: XorName,
+                                    dst_name: XorName,
+                                    peer_id: PeerId,
+                                    message_id: MessageId)
+                                    -> Result<(), RoutingError> {
         let hashed_key = hash::sha512::hash(&client_key.0);
         let close_group_to_client = XorName(hashed_key.0);
 
@@ -1838,7 +1751,7 @@ impl Core {
 
         // From X -> Y; Send to close group of the relocated name
         {
-            let request_content = RequestContent::ExpectCloseNode {
+            let request_content = MessageContent::ExpectCloseNode {
                 expect_id: their_public_id,
                 client_auth: Authority::Client {
                     client_key: client_key,
@@ -1848,13 +1761,13 @@ impl Core {
                 message_id: message_id,
             };
 
-            let request_msg = RequestMessage {
+            let request_msg = RoutingMessage {
                 src: Authority::NaeManager(dst_name),
                 dst: Authority::NaeManager(relocated_name),
                 content: request_content,
             };
 
-            self.send_request(request_msg)
+            self.send_message(request_msg)
         }
     }
 
@@ -1882,7 +1795,7 @@ impl Core {
         let now = Instant::now();
         if let Some((_, timestamp)) = self.sent_network_name_to {
             if (now - timestamp).as_secs() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
-                return Err(RoutingError::RejectedGetNetworkName);
+                return Err(RoutingError::RejectedGetNodeName);
             }
             self.sent_network_name_to = None;
         }
@@ -1898,7 +1811,7 @@ impl Core {
 
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
-        let response_content = ResponseContent::GetNetworkName {
+        let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
             close_group_ids: public_ids,
             message_id: message_id,
@@ -1909,30 +1822,30 @@ impl Core {
                client_auth,
                response_content);
 
-        let response_msg = ResponseMessage {
+        let response_msg = RoutingMessage {
             src: Authority::NodeManager(*expect_id.name()),
             dst: client_auth,
             content: response_content,
         };
 
-        try!(self.send_response(response_msg));
+        try!(self.send_message(response_msg));
 
         Ok(())
     }
 
     // Received by A; From X -> A
-    fn handle_get_network_name_response(&mut self,
-                                        relocated_id: PublicId,
-                                        mut close_group_ids: Vec<PublicId>,
-                                        dst: Authority)
-                                        -> Result<(), RoutingError> {
-        self.get_network_name_timer_token = None;
+    fn handle_get_node_name_response(&mut self,
+                                     relocated_id: PublicId,
+                                     mut close_group_ids: Vec<PublicId>,
+                                     dst: Authority)
+                                     -> Result<(), RoutingError> {
+        self.get_node_name_timer_token = None;
         self.set_self_node_name(*relocated_id.name());
         close_group_ids.truncate(GROUP_SIZE / 2);
         // From A -> Closest in Y
         for close_node_id in close_group_ids {
             if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
-                debug!("{:?} Sending connection info to {:?} on GetNetworkName response.",
+                debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
                        self,
                        close_node_id);
                 try!(self.send_connection_info(close_node_id,
@@ -1966,18 +1879,18 @@ impl Core {
                self,
                public_ids.iter().map(PublicId::name).collect_vec(),
                src);
-        let response_content = ResponseContent::GetCloseGroup {
+        let response_content = MessageContent::GetCloseGroupResponse {
             close_group_ids: public_ids,
             message_id: message_id,
         };
 
-        let response_msg = ResponseMessage {
+        let response_msg = RoutingMessage {
             src: Authority::ManagedNode(*self.name()),
             dst: src,
             content: response_content,
         };
 
-        self.send_response(response_msg)
+        self.send_message(response_msg)
     }
 
     fn handle_get_close_group_response(&mut self,
@@ -2075,18 +1988,18 @@ impl Core {
             //              Authority::ManagedNode(src_name))
             Ok(())
         } else {
-            // let request_content = RequestContent::GetPublicIdWithConnectionInfo {
+            // let request_content = MessageContent::GetPublicIdWithConnectionInfo {
             //     encrypted_connection_info: encrypted_connection_info,
             //     nonce_bytes: nonce_bytes,
             // };
 
-            // let request_msg = RequestMessage {
+            // let request_msg = RoutingMessage {
             //     src: dst,
             //     dst: Authority::NodeManager(src_name),
             //     content: request_content,
             // };
 
-            // self.send_request(request_msg)
+            // self.send_message(request_msg)
             Ok(())
         }
     }
@@ -2094,15 +2007,15 @@ impl Core {
     // ---- Connect Requests and Responses --------------------------------------------------------
 
     fn send_connect_request(&mut self, dst_name: &XorName) -> Result<(), RoutingError> {
-        let request_content = RequestContent::Connect;
+        let request_content = MessageContent::Connect;
 
-        let request_msg = RequestMessage {
+        let request_msg = RoutingMessage {
             src: Authority::ManagedNode(*self.name()),
             dst: Authority::ManagedNode(*dst_name),
             content: request_content,
         };
 
-        self.send_request(request_msg)
+        self.send_message(request_msg)
     }
 
     fn handle_connect_request(&mut self,
@@ -2119,15 +2032,15 @@ impl Core {
             return Ok(());
         }
 
-        let request_content = RequestContent::GetPublicId;
+        let request_content = MessageContent::GetPublicId;
 
-        let request_msg = RequestMessage {
+        let request_msg = RoutingMessage {
             src: Authority::ManagedNode(dst_name),
             dst: Authority::NodeManager(src_name),
             content: request_content,
         };
 
-        self.send_request(request_msg)
+        self.send_message(request_msg)
     }
 
     fn handle_get_public_id(&mut self,
@@ -2146,13 +2059,13 @@ impl Core {
                 return Err(RoutingError::RejectedPublicId);
             };
 
-            let msg = ResponseMessage {
+            let msg = RoutingMessage {
                 src: Authority::NodeManager(dst_name),
                 dst: Authority::ManagedNode(src_name),
-                content: ResponseContent::GetPublicId { public_id: public_id },
+                content: MessageContent::GetPublicIdResponse { public_id: public_id },
             };
 
-            self.send_response(msg)
+            self.send_message(msg)
         } else {
             error!("{:?} Handling GetPublicId, but not close to the target!",
                    self);
@@ -2193,18 +2106,18 @@ impl Core {
                 return Err(RoutingError::RejectedPublicId);
             };
 
-            let response_content = ResponseContent::GetPublicIdWithConnectionInfo {
+            let response_content = MessageContent::GetPublicIdWithConnectionInfoResponse {
                 public_id: public_id,
                 encrypted_connection_info: encrypted_connection_info,
                 nonce_bytes: nonce_bytes,
             };
 
-            let msg = ResponseMessage {
+            let msg = RoutingMessage {
                 src: Authority::NodeManager(dst_name),
                 dst: Authority::ManagedNode(src_name),
                 content: response_content,
             };
-            self.send_response(msg)
+            self.send_message(msg)
         } else {
             error!("{:?} Handling GetPublicIdWithConnectionInfo, but not close to the target!",
                    self);
@@ -2272,9 +2185,9 @@ impl Core {
             }
             return;
         }
-        if self.get_network_name_timer_token == Some(token) {
-            error!("{:?} Failed to get GetNetworkName response.", self);
-            let _ = self.event_sender.send(Event::GetNetworkNameFailed);
+        if self.get_node_name_timer_token == Some(token) {
+            error!("{:?} Failed to get GetNodeName response.", self);
+            let _ = self.event_sender.send(Event::GetNodeNameFailed);
             return;
         }
         if self.tick_timer_token == Some(token) {
@@ -2394,14 +2307,6 @@ impl Core {
 
     // ----- Send Functions -----------------------------------------------------------------------
 
-    fn send_request(&mut self, request_msg: RequestMessage) -> Result<(), RoutingError> {
-        self.send_message(RoutingMessage::Request(request_msg))
-    }
-
-    fn send_response(&mut self, response_msg: ResponseMessage) -> Result<(), RoutingError> {
-        self.send_message(RoutingMessage::Response(response_msg))
-    }
-
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
@@ -2473,7 +2378,8 @@ impl Core {
         let priority = signed_msg.priority();
         // If we're a client going to be a node, send via our bootstrap connection.
         if self.state == State::Client {
-            if let Authority::Client { ref proxy_node_name, .. } = *signed_msg.content().src() {
+            if let Authority::Client { ref proxy_node_name, .. } = signed_msg.routing_message()
+                .src {
                 if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                     let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, vec![]));
                     if self.add_to_pending_acks(&signed_msg, route) {
@@ -2497,7 +2403,7 @@ impl Core {
             return Ok(());
         }
 
-        let destination = signed_msg.content().dst().to_destination();
+        let destination = signed_msg.routing_message().dst.to_destination();
         let targets = self.routing_table
             .target_nodes(destination, hop, route as usize)
             .into_iter()
@@ -2541,7 +2447,8 @@ impl Core {
         }
 
         // If we need to handle this message, handle it.
-        if handle && self.routing_table.is_recipient(signed_msg.content().dst().to_destination()) &&
+        if handle &&
+           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
             let hop_name = *self.name();
             try!(self.handle_signed_message_for_node(&signed_msg,
@@ -2555,16 +2462,15 @@ impl Core {
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage) -> Result<(), RoutingError> {
-        if let RoutingMessage::Response(
-                ResponseMessage { content: ResponseContent::Ack(_), .. }) = *routing_msg {
+        if let MessageContent::Ack(_) = routing_msg.content {
             return Ok(());
         }
-        let response = ResponseMessage {
-            src: routing_msg.dst().clone(),
-            dst: routing_msg.src().clone(),
-            content: ResponseContent::Ack(maidsafe_utilities::big_endian_sip_hash(&routing_msg)),
+        let response = RoutingMessage {
+            src: routing_msg.dst.clone(),
+            dst: routing_msg.src.clone(),
+            content: MessageContent::Ack(maidsafe_utilities::big_endian_sip_hash(&routing_msg)),
         };
-        self.send_response(response)
+        self.send_message(response)
     }
 
     /// Adds the given message to the pending acks, if it has not already been received.
@@ -2573,8 +2479,7 @@ impl Core {
     /// ack for this message has already been received.
     fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let RoutingMessage::Response(
-                ResponseMessage { content: ResponseContent::Ack(_), .. }) = *signed_msg.content() {
+        if let MessageContent::Ack(_) = signed_msg.routing_message().content {
             return true;
         }
 
@@ -2582,7 +2487,7 @@ impl Core {
             return true;
         }
 
-        let ack = maidsafe_utilities::big_endian_sip_hash(signed_msg.content());
+        let ack = maidsafe_utilities::big_endian_sip_hash(signed_msg.routing_message());
         if self.received_acks.contains(&ack) {
             return false;
         }
@@ -2596,9 +2501,9 @@ impl Core {
 
         if let Some(ejected) = self.pending_acks.insert(ack, unacked_msg) {
             // FIXME: This currently occurs for Connect request and
-            // GetNetworkName response. Connect requests arent filtered which
+            // GetNodeName response. Connect requests arent filtered which
             // should get resolved with peer_mgr completion.
-            // GetNetworkName response resends from a node needs to get looked into.
+            // GetNodeName response resends from a node needs to get looked into.
             trace!("{:?} Ejected pending ack: {:?} - {:?}", self, ack, ejected);
         }
         true

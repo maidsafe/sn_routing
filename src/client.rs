@@ -29,7 +29,7 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
-use messages::RequestContent;
+use messages::Request;
 use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
@@ -123,7 +123,7 @@ impl Client {
                             data_id: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_id, message_id), dst)
+        self.send_action(Request::Get(data_id, message_id), dst)
     }
 
     /// Add something to the network
@@ -132,7 +132,7 @@ impl Client {
                             data: Data,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Put(data, message_id), dst)
+        self.send_action(Request::Put(data, message_id), dst)
     }
 
     /// Change something already on the network
@@ -141,7 +141,7 @@ impl Client {
                              data: Data,
                              message_id: MessageId)
                              -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Post(data, message_id), dst)
+        self.send_action(Request::Post(data, message_id), dst)
     }
 
     /// Remove something from the network
@@ -150,10 +150,10 @@ impl Client {
                                data: Data,
                                message_id: MessageId)
                                -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Delete(data, message_id), dst)
+        self.send_action(Request::Delete(data, message_id), dst)
     }
 
-    fn send_action(&self, content: RequestContent, dst: Authority) -> Result<(), InterfaceError> {
+    fn send_action(&self, content: Request, dst: Authority) -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,

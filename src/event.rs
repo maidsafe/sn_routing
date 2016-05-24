@@ -18,7 +18,8 @@
 use kademlia_routing_table::RoutingTable;
 use xor_name::XorName;
 
-use messages::{RequestMessage, ResponseMessage};
+use authority::Authority;
+use messages::{Request, Response};
 use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -31,9 +32,9 @@ use std::fmt::{self, Debug, Formatter};
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
     /// Request.
-    Request(RequestMessage),
+    Request(Request, Authority, Authority),
     /// Response.
-    Response(ResponseMessage),
+    Response(Response, Authority, Authority),
     /// A new node joined the network and may be a member of group authorities we also belong to.
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
@@ -43,7 +44,7 @@ pub enum Event {
     /// We have disconnected from the network.
     Disconnected,
     /// We failed to relocate as a new node in the network.
-    GetNetworkNameFailed,
+    GetNodeNameFailed,
     /// We failed to start listening for incoming connections as the first node.
     NetworkStartupFailed,
     // TODO: Find a better solution for periodic tasks.
@@ -54,8 +55,20 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request(ref request) => write!(formatter, "Event::Request({:?})", request),
-            Event::Response(ref response) => write!(formatter, "Event::Response({:?})", response),
+            Event::Request(ref request, ref src, ref dst) => {
+                write!(formatter,
+                       "Event::Request({:?}, {:?}, {:?})",
+                       request,
+                       src,
+                       dst)
+            }
+            Event::Response(ref response, ref src, ref dst) => {
+                write!(formatter,
+                       "Event::Response({:?}, {:?}, {:?})",
+                       response,
+                       src,
+                       dst)
+            }
             Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
                        "Event::NodeAdded({:?}, routing_table)",
@@ -66,7 +79,7 @@ impl Debug for Event {
             }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::Disconnected => write!(formatter, "Event::Disconnected"),
-            Event::GetNetworkNameFailed => write!(formatter, "Event::GetNetworkNameFailed"),
+            Event::GetNodeNameFailed => write!(formatter, "Event::GetNodeNameFailed"),
             Event::NetworkStartupFailed => write!(formatter, "Event::NetworkStartupFailed"),
             Event::Tick => write!(formatter, "Event::Tick"),
         }

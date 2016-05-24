@@ -17,8 +17,7 @@
 
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use routing::{RequestMessage, ResponseMessage, RequestContent, ResponseContent, MessageId,
-              Authority, Node, Event, Data, DataIdentifier, XorName};
+use routing::{Request, Response, MessageId, Authority, Node, Event, Data, DataIdentifier, XorName};
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -71,8 +70,8 @@ impl ExampleNode {
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
             match event {
-                Event::Request(msg) => self.handle_request(msg),
-                Event::Response(msg) => self.handle_response(msg),
+                Event::Request(request, src, dst) => self.handle_request(request, src, dst),
+                Event::Response(response, src, dst) => self.handle_response(response, src, dst),
                 Event::NodeAdded(name, routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
@@ -91,7 +90,7 @@ impl ExampleNode {
                 Event::Disconnected => {
                     trace!("{} Received disconnected event", self.get_debug_name());
                 }
-                Event::GetNetworkNameFailed => {
+                Event::GetNodeNameFailed => {
                     let _ =
                         mem::replace(&mut self.node,
                                      unwrap_result!(Node::new(self.sender.clone(), false, false)));
@@ -108,54 +107,43 @@ impl ExampleNode {
         self.sender.clone()
     }
 
-    fn handle_request(&mut self, msg: RequestMessage) {
-        match msg.content {
-            RequestContent::Get(data_id, id) => {
-                self.handle_get_request(data_id, id, msg.src, msg.dst);
+    fn handle_request(&mut self, request: Request, src: Authority, dst: Authority) {
+        match request {
+            Request::Get(data_id, id) => {
+                self.handle_get_request(data_id, id, src, dst);
             }
-            RequestContent::Put(data, id) => {
-                self.handle_put_request(data, id, msg.src, msg.dst);
+            Request::Put(data, id) => {
+                self.handle_put_request(data, id, src, dst);
             }
-            RequestContent::Post(..) => {
+            Request::Post(..) => {
                 warn!("{:?} ExampleNode: Post unimplemented.",
                       self.get_debug_name());
             }
-            RequestContent::Delete(..) => {
+            Request::Delete(..) => {
                 warn!("{:?} ExampleNode: Delete unimplemented.",
                       self.get_debug_name());
             }
-            RequestContent::Refresh(content, id) => {
+            Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }
-            _ => (),
         }
     }
 
-    fn handle_response(&mut self, msg: ResponseMessage) {
-        match (msg.content, msg.dst.clone()) {
-            (ResponseContent::GetSuccess(data, id), Authority::NaeManager(_)) => {
-                self.handle_get_success(data, id, msg.src, msg.dst);
+    fn handle_response(&mut self, response: Response, src: Authority, dst: Authority) {
+        match (response, dst.clone()) {
+            (Response::GetSuccess(data, id), Authority::NaeManager(_)) => {
+                self.handle_get_success(data, id, src, dst);
             }
-            (ResponseContent::GetFailure { id, request: RequestMessage {
-                content: RequestContent::Get(data_id, _),
-                ..
-            }, ..},
-             Authority::NaeManager(_)) => {
-                self.process_failed_dm(&data_id.name(), msg.src.name(), id);
+            (Response::GetFailure { id, data_id, .. }, Authority::NaeManager(_)) |
+            (Response::PutFailure { id, data_id, .. }, Authority::NaeManager(_)) => {
+                self.process_failed_dm(&data_id.name(), src.name(), id);
             }
-            (ResponseContent::PutFailure { id, request: RequestMessage {
-                content: RequestContent::Put(data, _),
-                ..
-            }, .. },
-             Authority::NaeManager(_)) => {
-                self.process_failed_dm(&data.name(), msg.src.name(), id);
-            }
-            (ResponseContent::PutSuccess(data_id, id), Authority::ClientManager(name)) => {
+            (Response::PutSuccess(data_id, id), Authority::ClientManager(name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
                     unwrap_result!(self.node.send_put_success(src, dst, data_id, id));
                 }
             }
-            (ResponseContent::PutSuccess(data_name, id), Authority::NaeManager(name)) => {
+            (Response::PutSuccess(data_name, id), Authority::NaeManager(name)) => {
                 trace!("Received PutSuccess for {:?} with ID {:?}", data_name, id);
             }
             _ => unreachable!(),
@@ -210,13 +198,8 @@ impl ExampleNode {
                            self.get_debug_name(),
                            data_id.name(),
                            self.dm_accounts);
-                    let msg = RequestMessage {
-                        src: src.clone(),
-                        dst: dst.clone(),
-                        content: RequestContent::Get(data_id, id),
-                    };
                     let text = "Data not found".to_owned().into_bytes();
-                    unwrap_result!(self.node.send_get_failure(dst, src, msg, text, id));
+                    unwrap_result!(self.node.send_get_failure(dst, src, data_id, text, id));
                 }
             }
             Authority::ManagedNode(_) => {
@@ -229,13 +212,8 @@ impl ExampleNode {
                     trace!("{:?} GetDataRequest failed for {:?}.",
                            self.get_debug_name(),
                            data_id.name());
-                    let msg = RequestMessage {
-                        src: src.clone(),
-                        dst: dst.clone(),
-                        content: RequestContent::Get(data_id, id),
-                    };
                     let text = "Data not found".to_owned().into_bytes();
-                    unwrap_result!(self.node.send_get_failure(dst, src, msg, text, id));
+                    unwrap_result!(self.node.send_get_failure(dst, src, data_id, text, id));
                     return;
                 }
             }

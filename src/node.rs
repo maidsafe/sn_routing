@@ -28,7 +28,7 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage, RoutingMessage};
+use messages::{MessageContent, Request, Response, RoutingMessage};
 use xor_name::XorName;
 use types::MessageId;
 
@@ -139,11 +139,11 @@ impl Node {
                             data_request: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Request(RequestMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Get(data_request, id),
-        });
+            content: MessageContent::Request(Request::Get(data_request, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -154,11 +154,11 @@ impl Node {
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Request(RequestMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Put(data, id),
-        });
+            content: MessageContent::Request(Request::Put(data, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -169,11 +169,11 @@ impl Node {
                              data: Data,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Request(RequestMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Post(data, id),
-        });
+            content: MessageContent::Request(Request::Post(data, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -184,11 +184,11 @@ impl Node {
                                data: Data,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Request(RequestMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Delete(data, id),
-        });
+            content: MessageContent::Request(Request::Delete(data, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -199,11 +199,11 @@ impl Node {
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetSuccess(data, id),
-        });
+            content: MessageContent::Response(Response::GetSuccess(data, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -211,19 +211,19 @@ impl Node {
     pub fn send_get_failure(&self,
                             src: Authority,
                             dst: Authority,
-                            request: RequestMessage,
+                            data_id: DataIdentifier,
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetFailure {
+            content: MessageContent::Response(Response::GetFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg)
     }
 
@@ -234,11 +234,11 @@ impl Node {
                             name: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutSuccess(name, id),
-        });
+            content: MessageContent::Response(Response::PutSuccess(name, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -246,19 +246,19 @@ impl Node {
     pub fn send_put_failure(&self,
                             src: Authority,
                             dst: Authority,
-                            request: RequestMessage,
+                            data_id: DataIdentifier,
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PutFailure {
+            content: MessageContent::Response(Response::PutFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg)
     }
 
@@ -269,11 +269,11 @@ impl Node {
                              name: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostSuccess(name, id),
-        });
+            content: MessageContent::Response(Response::PostSuccess(name, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -281,19 +281,19 @@ impl Node {
     pub fn send_post_failure(&self,
                              src: Authority,
                              dst: Authority,
-                             request: RequestMessage,
+                             data_id: DataIdentifier,
                              external_error_indicator: Vec<u8>,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::PostFailure {
+            content: MessageContent::Response(Response::PostFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg)
     }
 
@@ -304,11 +304,11 @@ impl Node {
                                name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteSuccess(name, id),
-        });
+            content: MessageContent::Response(Response::DeleteSuccess(name, id)),
+        };
         self.send_action(routing_msg)
     }
 
@@ -316,19 +316,19 @@ impl Node {
     pub fn send_delete_failure(&self,
                                src: Authority,
                                dst: Authority,
-                               request: RequestMessage,
+                               data_id: DataIdentifier,
                                external_error_indicator: Vec<u8>,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::DeleteFailure {
+            content: MessageContent::Response(Response::DeleteFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg)
     }
 
@@ -343,11 +343,11 @@ impl Node {
                                 content: Vec<u8>,
                                 id: MessageId)
                                 -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Request(RequestMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: RequestContent::Refresh(content, id),
-        });
+            content: MessageContent::Request(Request::Refresh(content, id)),
+        };
         self.send_action(routing_msg)
     }
 

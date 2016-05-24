@@ -221,8 +221,7 @@ pub use id::{FullId, PublicId};
 pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial,
                          normal_to_backup, backup_to_normal, normal_to_sacrificial,
                          sacrificial_to_normal, backup_to_sacrificial, sacrificial_to_backup};
-pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
-                   RoutingMessage, SignedMessage};
+pub use messages::{Request, Response};
 pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};

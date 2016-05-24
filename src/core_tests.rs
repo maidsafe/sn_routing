@@ -1,4 +1,4 @@
-// Copyright 2016 MaidSafe.net limited.
+// copyright 2016 maidsafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -31,7 +31,7 @@ use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::ContactInfo;
-use messages::{RoutingMessage, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use messages::{RoutingMessage, MessageContent, Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
 
@@ -97,31 +97,31 @@ impl TestNode {
                         id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetSuccess(data, id),
-        });
+            content: MessageContent::Response(Response::GetSuccess(data, id)),
+        };
         self.send_action(routing_msg, result_tx)
     }
 
     fn send_get_failure(&self,
                         src: Authority,
                         dst: Authority,
-                        request: RequestMessage,
+                        data_id: DataIdentifier,
                         external_error_indicator: Vec<u8>,
                         id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetFailure {
+            content: MessageContent::Response(Response::GetFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg, result_tx)
     }
 
@@ -184,7 +184,7 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Put(data, message_id), dst, result_tx)
+        self.send_action(Request::Put(data, message_id), dst, result_tx)
     }
 
     fn send_get_request(&mut self,
@@ -193,13 +193,11 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, message_id),
-                         dst,
-                         result_tx)
+        self.send_action(Request::Get(data_request, message_id), dst, result_tx)
     }
 
     fn send_action(&self,
-                   content: RequestContent,
+                   content: Request,
                    dst: Authority,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
@@ -523,9 +521,7 @@ fn successful_put_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable,
-                                                                       ref id),
-                                                   .. })) => {
+                Ok(Event::Request(Request::Put(ref immutable, ref id), _, _)) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
@@ -571,14 +567,13 @@ fn successful_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(Request::Get(ref request, id), ref src, ref dst)) => {
                     request_received_count += 1;
-                    if data_request == *request && message_id == *id {
+                    if data_request == *request && message_id == id {
                         if let Err(_) = node.send_get_success(dst.clone(),
                                                               src.clone(),
                                                               data.clone(),
-                                                              *id,
+                                                              id,
                                                               result_tx.clone()) {
                             trace!("Failed to send Event::Response( GetSuccess )");
                         }
@@ -600,8 +595,7 @@ fn successful_get_request() {
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(ResponseMessage {
-                        content: ResponseContent::GetSuccess(ref immutable, ref id), .. })) => {
+                Ok(Event::Response(Response::GetSuccess(ref immutable, ref id), _, _)) => {
                     response_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
@@ -647,22 +641,16 @@ fn failed_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(Request::Get(ref data_id, ref id), ref src, ref dst)) => {
                     request_received_count += 1;
-                    if data_request == *request && message_id == *id {
-                        let request = RequestMessage {
-                            src: src.clone(),
-                            dst: dst.clone(),
-                            content: RequestContent::Get(*request, *id),
-                        };
+                    if data_request == *data_id && message_id == *id {
                         if let Err(_) = node.send_get_failure(dst.clone(),
                                                               src.clone(),
-                                                              request,
+                                                              *data_id,
                                                               vec![],
                                                               *id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetFailure )");
+                            trace!("Failed to send GetFailure response.");
                         }
                         break;
                     }
@@ -682,11 +670,11 @@ fn failed_get_request() {
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure { ref id, .. },
-                    .. })) => {
+                Ok(Event::Response(Response::GetFailure { ref id, .. }, _, _)) => {
                     response_received_count += 1;
-                    if message_id == *id { break; }
+                    if message_id == *id {
+                        break;
+                    }
                 }
                 Ok(_) => (),
                 _ => panic!("Event::Response(..) not received"),
@@ -728,8 +716,7 @@ fn disconnect_on_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request(Request::Get(ref request, ref id), ref src, ref dst)) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
                         if let Err(_) = node.send_get_success(dst.clone(),

@@ -22,8 +22,7 @@ extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
 use sodiumoxide::crypto;
-use routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent, ResponseMessage,
-              Client, MessageId, XorName};
+use routing::{FullId, Event, Data, DataIdentifier, Authority, Response, Client, MessageId, XorName};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -79,8 +78,7 @@ impl ExampleClient {
         // Wait for Get success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(data, id), .. }) => {
+                Event::Response(Response::GetSuccess(data, id), _, _) => {
                     if message_id != id {
                         error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
                                 {:?}.",
@@ -90,11 +88,7 @@ impl ExampleClient {
                     }
                     return Some(data);
                 }
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure {
-                        external_error_indicator,
-                        ..
-                    }, .. }) => {
+                Event::Response(Response::GetFailure { external_error_indicator, .. }, _, _) => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
                            unwrap_result!(String::from_utf8(external_error_indicator)));
@@ -120,9 +114,7 @@ impl ExampleClient {
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(ResponseMessage { content: ResponseContent::PutSuccess(rec_data_id,
-                                                                              id),
-                                                  .. }) => {
+                Event::Response(Response::PutSuccess(rec_data_id, id), _, _) => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_id.name(),
@@ -139,10 +131,7 @@ impl ExampleClient {
                         return Err(());
                     }
                 }
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::PutFailure { .. },
-                    ..
-                }) => {
+                Event::Response(Response::PutFailure { .. }, _, _) => {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }

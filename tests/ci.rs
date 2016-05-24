@@ -41,7 +41,6 @@
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
 extern crate itertools;
-extern crate kademlia_routing_table;
 #[cfg(target_os = "macos")]
 extern crate libc;
 #[macro_use]
@@ -49,11 +48,9 @@ extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
 extern crate sodiumoxide;
-extern crate xor_name;
 
 mod utils;
 
-use std::cmp::Ordering::{Greater, Less};
 use std::collections::HashSet;
 #[cfg(target_os = "macos")]
 use std::io;
@@ -62,15 +59,13 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
 use itertools::Itertools;
-use kademlia_routing_table::GROUP_SIZE;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
-use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, RequestContent,
-              RequestMessage, ResponseContent, ResponseMessage};
+use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
+              Response, XorName, GROUP_SIZE};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha512;
 use utils::recv_with_timeout;
-use xor_name::XorName;
 use routing::DataIdentifier;
 
 const QUORUM_SIZE: usize = 5;
@@ -198,8 +193,8 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
 
                 let k = nodes.len();
                 let all_events_received = (0..k)
-                                              .map(|i| connection_counts[i])
-                                              .all(|n| n >= k - 1 || n >= GROUP_SIZE - 1);
+                    .map(|i| connection_counts[i])
+                    .all(|n| n >= k - 1 || n >= GROUP_SIZE - 1);
                 if all_events_received {
                     break;
                 }
@@ -238,7 +233,7 @@ fn create_connected_nodes(count: usize,
 fn gen_plain_data() -> Data {
     let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
-    let name = XorName::new(sha512::hash(key.as_bytes()).0);
+    let name = XorName(sha512::hash(key.as_bytes()).0);
     let data = unwrap_result!(serialisation::serialise(&(key, value)));
 
     Data::Plain(PlainData::new(name, data))
@@ -246,17 +241,11 @@ fn gen_plain_data() -> Data {
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
     node_names.iter()
-              .sorted_by(|a, b| {
-                  if xor_name::closer_to_target(a, b, target) {
-                      Less
-                  } else {
-                      Greater
-                  }
-              })
-              .into_iter()
-              .take(GROUP_SIZE)
-              .cloned()
-              .collect()
+        .sorted_by(|a, b| target.cmp_distance(a, b))
+        .into_iter()
+        .take(GROUP_SIZE)
+        .cloned()
+        .collect()
 }
 
 // TODO: Extract the individual tests into their own functions.
@@ -281,25 +270,24 @@ fn core() {
                         assert!(result.is_ok());
                     }
 
-                    TestEvent(index, Event::Request(message)) => {
+                    TestEvent(index, Event::Request(message, src, dst)) => {
                         // A node received request from the client. Reply with a success.
-                        if let RequestContent::Put(_, ref id) = message.content {
+                        if let Request::Put(_, ref id) = message {
                             let node = &nodes[index].node;
 
-                            unwrap_result!(node.send_put_success(message.dst,
-                                                                 message.src,
-                                                                 DataIdentifier::Plain(data.name()),
-                                                                 id.clone()));
+                            unwrap_result!(node.send_put_success(dst,
+                                                  src,
+                                                  DataIdentifier::Plain(data.name()),
+                                                  id.clone()));
                         }
                     }
 
                     TestEvent(index,
-                              Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(ref identifier, ref id), .. }))
+                              Event::Response(Response::PutSuccess(ref data_id, ref id), _, _))
                         if index == client.index => {
                         // The client received response to its request. We are done.
                         assert_eq!(&message_id, id);
-                        assert_eq!(identifier.name(), data.name());
+                        assert_eq!(data_id.name(), data.name());
                         break;
                     }
 
@@ -323,15 +311,12 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         assert!(client.client
-                                      .send_put_request(Authority::ClientManager(*client.name()),
-                                                        data.clone(),
-                                                        MessageId::new())
-                                      .is_ok());
+                            .send_put_request(Authority::ClientManager(*client.name()),
+                                              data.clone(),
+                                              MessageId::new())
+                            .is_ok());
                     }
-                    TestEvent(index,
-                              Event::Request(RequestMessage{
-                        content: RequestContent::Put(..), ..
-                    })) => {
+                    TestEvent(index, Event::Request(Request::Put(..), _, _)) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -360,37 +345,31 @@ fn core() {
                 match test_event {
                     TestEvent(index, Event::Connected) if index == client.index => {
                         assert!(client.client
-                                      .send_put_request(Authority::ClientManager(*client.name()),
-                                                        data.clone(),
-                                                        MessageId::new())
-                                      .is_ok());
+                            .send_put_request(Authority::ClientManager(*client.name()),
+                                              data.clone(),
+                                              MessageId::new())
+                            .is_ok());
                     }
                     TestEvent(index,
-                              Event::Request(RequestMessage{
-                        src: Authority::Client{ .. },
-                        dst: Authority::ClientManager(name),
-                        content: RequestContent::Put(data, id),
-                    })) => {
+                              Event::Request(Request::Put(data, id),
+                                             Authority::Client { .. },
+                                             Authority::ClientManager(name))) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(data.name());
                         unwrap_result!(nodes[index]
-                                           .node
-                                           .send_put_request(src, dst, data.clone(), id.clone()));
+                            .node
+                            .send_put_request(src, dst, data.clone(), id.clone()));
                     }
-                    TestEvent(index, Event::Request(ref msg)) => {
-                        if let RequestContent::Put(_, ref id) = msg.content {
-                            unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
-                                                                              msg.src.clone(),
-                                                                              msg.clone(),
+                    TestEvent(index, Event::Request(ref msg, ref src, ref dst)) => {
+                        if let Request::Put(ref data, ref id) = *msg {
+                            unwrap_result!(nodes[index].node.send_put_failure(dst.clone(),
+                                                                              src.clone(),
+                                                                              data.identifier(),
                                                                               vec![],
                                                                               id.clone()));
                         }
                     }
-                    TestEvent(index,
-                              Event::Response(ResponseMessage{
-                                  content: ResponseContent::PutFailure{ .. },
-                                  ..
-                              })) => {
+                    TestEvent(index, Event::Response(Response::PutFailure { .. }, _, _)) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -468,38 +447,33 @@ fn core() {
             match test_event {
                 TestEvent(index, Event::Connected) if index == client.index => {
                     assert!(client.client
-                                  .send_put_request(Authority::ClientManager(*client.name()),
-                                                    data.clone(),
-                                                    MessageId::new())
-                                  .is_ok());
+                        .send_put_request(Authority::ClientManager(*client.name()),
+                                          data.clone(),
+                                          MessageId::new())
+                        .is_ok());
                 }
                 TestEvent(index,
-                          Event::Request(RequestMessage{ src: Authority::Client{ .. },
-                                                        dst: Authority::ClientManager(name),
-                                                        content: RequestContent::Put(data, id)
-                          })) => {
+                          Event::Request(Request::Put(data, id),
+                                         Authority::Client { .. },
+                                         Authority::ClientManager(name))) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(data.name());
                     unwrap_result!(nodes[index]
-                                       .node
-                                       .send_put_request(src, dst, data.clone(), id.clone()));
+                        .node
+                        .send_put_request(src, dst, data.clone(), id.clone()));
                 }
-                TestEvent(index, Event::Request(ref msg)) => {
-                    if let RequestContent::Put(_, ref id) = msg.content {
+                TestEvent(index, Event::Request(ref msg, ref src, ref dst)) => {
+                    if let Request::Put(ref data, ref id) = *msg {
                         if index < QUORUM_SIZE - 1 {
-                            unwrap_result!(nodes[index].node.send_put_failure(msg.dst.clone(),
-                                                                              msg.src.clone(),
-                                                                              msg.clone(),
+                            unwrap_result!(nodes[index].node.send_put_failure(dst.clone(),
+                                                                              src.clone(),
+                                                                              data.identifier(),
                                                                               vec![],
                                                                               id.clone()));
                         }
                     }
                 }
-                TestEvent(_index,
-                          Event::Response(ResponseMessage{
-                              content: ResponseContent::PutFailure{ .. },
-                              ..
-                          })) => {
+                TestEvent(_index, Event::Response(Response::PutFailure { .. }, _, _)) => {
                     panic!("Unexpected response.");
                 }
                 _ => (),
@@ -525,20 +499,17 @@ fn core() {
                         assert!(result.is_ok());
                         sent_ids.insert(message_id);
                     }
-                    TestEvent(index, Event::Request(message)) => {
+                    TestEvent(index, Event::Request(message, src, dst)) => {
                         // A node received request from the client. Reply with a success.
-                        if let RequestContent::Put(_, id) = message.content {
+                        let data_id = DataIdentifier::Plain(data.name());
+                        if let Request::Put(_, id) = message {
                             unwrap_result!(nodes[index]
-                                               .node
-                                               .send_put_success(message.dst,
-                                                                 message.src,
-                                                                 DataIdentifier::Plain(data.name()),
-                                                                 id));
+                                .node
+                                .send_put_success(dst, src, data_id, id));
                         }
                     }
                     TestEvent(index,
-                              Event::Response(ResponseMessage{
-                                content: ResponseContent::PutSuccess(ref name, ref id), .. }))
+                              Event::Response(Response::PutSuccess(ref name, ref id), _, _))
                         if index == client.index => {
                         assert!(received_ids.insert(*id));
                         assert_eq!(name, &DataIdentifier::Plain(data.name()));

@@ -81,7 +81,7 @@ pub enum RoutingError {
     /// the sender's buckets
     RejectedGetCloseGroup,
     /// A client with `client_restriction == true` tried to relocate.
-    RejectedGetNetworkName,
+    RejectedGetNodeName,
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// Interface error
