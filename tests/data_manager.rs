@@ -50,14 +50,14 @@ fn immutable_data_operations_with_churn() {
     let mut event_count = 0;
 
     for i in 0..10 {
+        trace!("Iteration {}. Network size: {}", i + 1, nodes.len());
         for _ in 0..(cmp::min(DATA_PER_ITER, DATA_COUNT - all_data.len())) {
             let data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(10)));
             trace!("Putting data {:?}.", data.name());
             client.put(data.clone());
             all_data.push(data);
         }
-        trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
-        if nodes.len() <= GROUP_SIZE + 2 || random() {
+        if nodes.len() <= GROUP_SIZE + 2 || Range::new(0, 4).ind_sample(&mut rng) < 3 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
             test_node::add_node(&network, &mut nodes, index);
@@ -123,8 +123,10 @@ fn structured_data_operations_with_churn() {
         let mut mutated_data = HashSet::new();
         for _ in 0..4 {
             if all_data.is_empty() || random() {
-                let data = Data::Structured(test_utils::random_structured_data(100000,
-                                                                               client.full_id()));
+                let data =
+                    Data::Structured(test_utils::random_structured_data(Range::new(10001, 20000)
+                                                                            .ind_sample(&mut rng),
+                                                                        client.full_id()));
                 trace!("Putting data {:?} with name {:?}.",
                        data.identifier(),
                        data.name());
@@ -167,7 +169,7 @@ fn structured_data_operations_with_churn() {
             }
         }
         all_data.extend(new_data);
-        if nodes.len() <= GROUP_SIZE + 2 || Range::new(0, 3).ind_sample(&mut rng) < 2 {
+        if nodes.len() <= GROUP_SIZE + 2 || Range::new(0, 4).ind_sample(&mut rng) < 3 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             test_node::add_node(&network, &mut nodes, index);
             trace!("Adding node {:?} with bootstrap node {}.",
@@ -310,8 +312,7 @@ fn handle_post_error_flow() {
 
     // Posting to non-existing structured data
     match client.post_response(Data::Structured(sd.clone()), &mut nodes) {
-        // TODO: MutationError::NoSuchData is preferred to be returned in this scenario
-        Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
+        Err(Some(error)) => assert_eq!(error, MutationError::NoSuchData),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
     }
 
@@ -330,9 +331,7 @@ fn handle_post_error_flow() {
                                                Some(full_id.signing_private_key()))
         .expect("Cannot create structured data for test");
     match client.post_response(Data::Structured(incorrect_tag_sd), &mut nodes) {
-        // TODO: MutationError::NoSuchData is preferred to be returned in this scenario
-        //       As `type_tag` is part of the name
-        Err(Some(error)) => assert_eq!(error, MutationError::InvalidSuccessor),
+        Err(Some(error)) => assert_eq!(error, MutationError::NoSuchData),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
     }
 

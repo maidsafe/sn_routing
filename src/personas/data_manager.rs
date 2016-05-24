@@ -406,30 +406,65 @@ impl DataManager {
                        new_data: &StructuredData,
                        message_id: &MessageId)
                        -> Result<(), InternalError> {
-        if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&new_data.identifier()) {
-            if data.replace_with_other(new_data.clone()).is_ok() {
-                if let Ok(()) = self.chunk_store
-                    .put(&data.identifier(), &Data::Structured(data.clone())) {
-                    trace!("DM updated for: {:?}", data.identifier());
-                    let _ = self.routing_node
-                        .send_post_success(request.dst.clone(),
-                                           request.src.clone(),
-                                           data.identifier(),
-                                           *message_id);
-                    let data_list = vec![(new_data.identifier(), new_data.get_version())];
-                    let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
-                    return Ok(());
-                }
+        let mut data = match self.chunk_store.get(&new_data.identifier()) {
+            Ok(Data::Structured(data)) => data,
+            Ok(_) => {
+                unreachable!("Post operation for Invalid Data Type. {:?} - {:?}",
+                             new_data.identifier(),
+                             message_id)
             }
-        }
+            Err(error) => {
+                trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
+                       new_data.identifier(),
+                       message_id,
+                       error);
 
-        trace!("DM sending post_failure {:?}", new_data.identifier());
-        Ok(try!(self.routing_node
-            .send_post_failure(request.dst.clone(),
+                return Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
+                               request.src.clone(),
+                               request.clone(),
+                               try!(serialisation::serialise(&MutationError::NoSuchData)),
+                               *message_id)));
+            }
+        };
+
+        if let Err(error) = data.replace_with_other(new_data.clone()) {
+            trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
+                   data.identifier(),
+                   message_id,
+                   error);
+
+            return Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
                                request.src.clone(),
                                request.clone(),
                                try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                               *message_id)))
+                               *message_id)));
+
+        }
+
+        if let Err(error) = self.chunk_store
+            .put(&data.identifier(), &Data::Structured(data.clone())) {
+            trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
+                   data.identifier(),
+                   message_id,
+                   error);
+
+            return Ok(try!(self.routing_node
+                .send_post_failure(request.dst.clone(),
+                                   request.src.clone(),
+                                   request.clone(),
+                                   try!(serialisation::serialise(&MutationError::Unknown)),
+                                   *message_id)));
+        }
+
+        trace!("DM updated for: {:?}", data.identifier());
+        let _ = self.routing_node
+            .send_post_success(request.dst.clone(),
+                               request.src.clone(),
+                               data.identifier(),
+                               *message_id);
+        let data_list = vec![(new_data.identifier(), new_data.get_version())];
+        let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
+        Ok(())
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
