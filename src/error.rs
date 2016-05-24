@@ -20,7 +20,7 @@ use chunk_store;
 use safe_network_common::messaging;
 use safe_network_common::client_errors::{MutationError, GetError};
 use maidsafe_utilities::serialisation::SerialisationError;
-use routing::{InterfaceError, MessageId, RoutingError, RoutingMessage};
+use routing::{InterfaceError, MessageId, RoutingError, Request, Response};
 use std::io;
 
 #[derive(Debug)]
@@ -35,7 +35,8 @@ pub enum InternalError {
     Routing(InterfaceError),
     RoutingInternal(RoutingError),
     Serialisation(SerialisationError),
-    UnknownMessageType(RoutingMessage),
+    UnknownRequestType(Request),
+    UnknownResponseType(Response),
     InvalidMessage,
 }
 

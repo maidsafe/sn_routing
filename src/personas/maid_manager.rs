@@ -25,8 +25,8 @@ use safe_network_common::client_errors::MutationError;
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, RequestMessage, XorName,
-              DataIdentifier, GROUP_SIZE};
+use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, XorName, DataIdentifier,
+              GROUP_SIZE};
 use utils;
 use vault::RoutingNode;
 
@@ -76,7 +76,7 @@ impl Account {
 pub struct MaidManager {
     routing_node: Rc<RoutingNode>,
     accounts: HashMap<XorName, Account>,
-    request_cache: HashMap<MessageId, RequestMessage>,
+    request_cache: HashMap<MessageId, (Authority, Authority)>,
 }
 
 impl MaidManager {
@@ -89,66 +89,68 @@ impl MaidManager {
     }
 
     pub fn handle_put(&mut self,
-                      request: &RequestMessage,
-                      data: &Data,
-                      msg_id: &MessageId)
+                      src: Authority,
+                      dst: Authority,
+                      data: Data,
+                      msg_id: MessageId)
                       -> Result<(), InternalError> {
-        match *data {
-            Data::Immutable(ref immut_data) => {
-                self.handle_put_immutable_data(request, immut_data, msg_id)
+        match data {
+            Data::Immutable(immut_data) => {
+                self.handle_put_immutable_data(src, dst, immut_data, msg_id)
             }
-            Data::Structured(ref struct_data) => {
-                self.handle_put_structured_data(request, struct_data, msg_id)
+            Data::Structured(struct_data) => {
+                self.handle_put_structured_data(src, dst, struct_data, msg_id)
             }
             _ => {
-                self.reply_with_put_failure(request.clone(),
-                                            *msg_id,
+                self.reply_with_put_failure(src,
+                                            dst,
+                                            data.identifier(),
+                                            msg_id,
                                             &MutationError::InvalidOperation)
             }
         }
     }
 
     pub fn handle_put_success(&mut self,
-                              data_id: &DataIdentifier,
-                              msg_id: &MessageId)
+                              data_id: DataIdentifier,
+                              msg_id: MessageId)
                               -> Result<(), InternalError> {
-        match self.request_cache.remove(msg_id) {
-            Some(client_request) => {
+        match self.request_cache.remove(&msg_id) {
+            Some((src, dst)) => {
                 // Send success response back to client
-                let client_name = utils::client_name(&client_request.src);
+                let client_name = utils::client_name(&src);
                 self.send_refresh(&client_name,
                                   self.accounts.get(&client_name).expect("Account not found."),
                                   MessageId::zero());
-                let src = client_request.dst;
-                let dst = client_request.src;
-                let _ = self.routing_node.send_put_success(src, dst, *data_id, *msg_id);
+                let _ = self.routing_node.send_put_success(dst, src, data_id, msg_id);
                 Ok(())
             }
-            None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
+            None => Err(InternalError::FailedToFindCachedRequest(msg_id)),
         }
     }
 
     pub fn handle_put_failure(&mut self,
-                              msg_id: &MessageId,
+                              msg_id: MessageId,
+                              data_id: DataIdentifier,
                               external_error_indicator: &[u8])
                               -> Result<(), InternalError> {
-        match self.request_cache.remove(msg_id) {
-            Some(client_request) => {
+        match self.request_cache.remove(&msg_id) {
+            Some((src, dst)) => {
                 // Refund account
-                match self.accounts.get_mut(&utils::client_name(&client_request.src)) {
+                match self.accounts.get_mut(&utils::client_name(&src)) {
                     Some(account) => account.remove_entry(),
                     None => return Ok(()),
                 }
-                let client_name = utils::client_name(&client_request.src);
+                let client_name = utils::client_name(&src);
                 self.send_refresh(&client_name,
                                   self.accounts.get(&client_name).expect("Account not found."),
                                   MessageId::zero());
                 // Send failure response back to client
                 let error =
                     try!(serialisation::deserialise::<MutationError>(external_error_indicator));
-                self.reply_with_put_failure(client_request, *msg_id, &error)
+                self.reply_with_put_failure(src, dst, data_id, msg_id, &error)
             }
-            None => Err(InternalError::FailedToFindCachedRequest(*msg_id)),
+            None => Err(InternalError::FailedToFindCachedRequest(msg_id)),
         }
     }
 
@@ -185,7 +187,7 @@ impl MaidManager {
         // Remove all requests from the cache that we are no longer responsible for.
         let msg_ids_to_delete = self.request_cache
             .iter()
-            .filter(|&(_, ref req)| accounts_to_delete.contains(req.src.name()))
+            .filter(|&(_, &(ref src, _))| accounts_to_delete.contains(src.name()))
             .map(|(msg_id, _)| *msg_id)
             .collect_vec();
         for msg_id in msg_ids_to_delete {
@@ -224,27 +226,28 @@ impl MaidManager {
     #[cfg_attr(feature="clippy", allow(cast_possible_truncation, cast_precision_loss,
                                        cast_sign_loss))]
     fn handle_put_immutable_data(&mut self,
-                                 request: &RequestMessage,
-                                 data: &ImmutableData,
-                                 msg_id: &MessageId)
+                                 src: Authority,
+                                 dst: Authority,
+                                 data: ImmutableData,
+                                 msg_id: MessageId)
                                  -> Result<(), InternalError> {
-        self.forward_put_request(utils::client_name(&request.src),
-                                 Data::Immutable(data.clone()),
-                                 *msg_id,
-                                 request)
+        let client_name = utils::client_name(&src);
+        let immutable_data = Data::Immutable(data);
+        self.forward_put_request(src, dst, client_name, immutable_data, msg_id)
     }
 
     fn handle_put_structured_data(&mut self,
-                                  request: &RequestMessage,
-                                  data: &StructuredData,
-                                  msg_id: &MessageId)
+                                  src: Authority,
+                                  dst: Authority,
+                                  data: StructuredData,
+                                  msg_id: MessageId)
                                   -> Result<(), InternalError> {
         // If the type_tag is 0, the account must not exist, else it must exist.
-        let client_name = utils::client_name(&request.src);
+        let client_name = utils::client_name(&src);
         if data.get_type_tag() == 0 {
             if self.accounts.contains_key(&client_name) {
                 let error = MutationError::AccountExists;
-                try!(self.reply_with_put_failure(request.clone(), *msg_id, &error));
+                try!(self.reply_with_put_failure(src, dst, data.identifier(), msg_id, &error));
                 return Err(From::from(error));
             }
 
@@ -252,17 +255,16 @@ impl MaidManager {
             let _ = self.accounts.insert(client_name, Account::default());
             info!("Stats - {} client accounts.", self.accounts.len());
         }
-        self.forward_put_request(client_name,
-                                 Data::Structured(data.clone()),
-                                 *msg_id,
-                                 request)
+        let immutable_data = Data::Structured(data);
+        self.forward_put_request(src, dst, client_name, immutable_data, msg_id)
     }
 
     fn forward_put_request(&mut self,
+                           src: Authority,
+                           dst: Authority,
                            client_name: XorName,
                            data: Data,
-                           msg_id: MessageId,
-                           request: &RequestMessage)
+                           msg_id: MessageId)
                            -> Result<(), InternalError> {
         // Account must already exist to Put Data.
         let result = self.accounts
@@ -277,34 +279,37 @@ impl MaidManager {
             trace!("MM responds put_failure of data {}, due to error {:?}",
                    data.name(),
                    error);
-            try!(self.reply_with_put_failure(request.clone(), msg_id, &error));
+            try!(self.reply_with_put_failure(src, dst, data.identifier(), msg_id, &error));
             return Err(From::from(error));
         }
         {
             // forwarding data_request to NAE Manager
-            let src = request.dst.clone();
+            let src = dst.clone();
             let dst = Authority::NaeManager(data.name());
             trace!("MM forwarding put request to {:?}", dst);
             let _ = self.routing_node.send_put_request(src, dst, data, msg_id);
         }
 
-        if let Some(prior_request) = self.request_cache.insert(msg_id, request.clone()) {
-            error!("Overwrote existing cached request: {:?}", prior_request);
+        if let Some((prior_src, prior_dst)) = self.request_cache.insert(msg_id, (src, dst)) {
+            error!("Overwrote existing cached request with {:?} from {:?} to {:?}",
+                   msg_id,
+                   prior_src,
+                   prior_dst);
         }
 
         Ok(())
     }
 
     fn reply_with_put_failure(&self,
-                              request: RequestMessage,
+                              src: Authority,
+                              dst: Authority,
+                              data_id: DataIdentifier,
                               msg_id: MessageId,
                               error: &MutationError)
                               -> Result<(), InternalError> {
-        let src = request.dst.clone();
-        let dst = request.src.clone();
         let external_error_indicator = try!(serialisation::serialise(error));
         let _ = self.routing_node
-            .send_put_failure(src, dst, request, external_error_indicator, msg_id);
+            .send_put_failure(dst, src, data_id, external_error_indicator, msg_id);
         Ok(())
     }
 

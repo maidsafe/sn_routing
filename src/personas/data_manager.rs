@@ -28,8 +28,7 @@ use error::InternalError;
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{Authority, Data, DataIdentifier, MessageId, RequestMessage, StructuredData, XorName,
-              GROUP_SIZE};
+use routing::{Authority, Data, DataIdentifier, MessageId, StructuredData, XorName, GROUP_SIZE};
 use safe_network_common::client_errors::{MutationError, GetError};
 use vault::{CHUNK_STORE_PREFIX, RoutingNode};
 
@@ -73,23 +72,23 @@ impl Cache {
         let _ = self.ongoing_gets.insert(*idle_holder, (Instant::now(), *data_idv));
     }
 
-    fn handle_get_success(&mut self, src: &XorName, data_id: &DataIdentifier, version: &u64) {
-        if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(src) {
-            if &expected_idv.0 != data_id {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, expected_idv));
+    fn handle_get_success(&mut self, src: XorName, data_id: &DataIdentifier, version: u64) {
+        if let Some((timestamp, expected_idv)) = self.ongoing_gets.remove(&src) {
+            if expected_idv.0 != *data_id {
+                let _ = self.ongoing_gets.insert(src, (timestamp, expected_idv));
             }
         }
         for (_, data_idvs) in &mut self.data_holders {
-            let _ = data_idvs.remove(&(*data_id, *version));
+            let _ = data_idvs.remove(&(*data_id, version));
         }
     }
 
-    fn handle_get_failure(&mut self, src: &XorName, data_id: &DataIdentifier) -> bool {
-        if let Some((timestamp, data_idv)) = self.ongoing_gets.remove(src) {
+    fn handle_get_failure(&mut self, src: XorName, data_id: &DataIdentifier) -> bool {
+        if let Some((timestamp, data_idv)) = self.ongoing_gets.remove(&src) {
             if data_idv.0 == *data_id {
                 return true;
             } else {
-                let _ = self.ongoing_gets.insert(*src, (timestamp, data_idv));
+                let _ = self.ongoing_gets.insert(src, (timestamp, data_idv));
             }
         };
         false
@@ -299,43 +298,35 @@ impl DataManager {
     }
 
     pub fn handle_get(&mut self,
-                      request: &RequestMessage,
-                      data_id: &DataIdentifier,
-                      message_id: &MessageId)
+                      src: Authority,
+                      dst: Authority,
+                      data_id: DataIdentifier,
+                      message_id: MessageId)
                       -> Result<(), InternalError> {
-        if let Authority::Client { .. } = request.src {
+        if let Authority::Client { .. } = src {
             self.client_get_requests += 1;
             info!("{:?}", self);
         }
-        if let Ok(data) = self.chunk_store.get(data_id) {
-            trace!("As {:?} sending data {:?} to {:?}",
-                   request.dst,
-                   data,
-                   request.src);
-            let _ = self.routing_node
-                .send_get_success(request.dst.clone(), request.src.clone(), data, *message_id);
+        if let Ok(data) = self.chunk_store.get(&data_id) {
+            trace!("As {:?} sending data {:?} to {:?}", dst, data, src);
+            let _ = self.routing_node.send_get_success(dst, src, data, message_id);
             return Ok(());
         }
         trace!("DM sending get_failure of {:?}", data_id);
         let error = GetError::NoSuchData;
         let external_error_indicator = try!(serialisation::serialise(&error));
         try!(self.routing_node
-            .send_get_failure(request.dst.clone(),
-                              request.src.clone(),
-                              request.clone(),
-                              external_error_indicator,
-                              message_id.clone()));
+            .send_get_failure(dst, src, data_id, external_error_indicator, message_id));
         Ok(())
     }
 
     pub fn handle_put(&mut self,
-                      request: &RequestMessage,
-                      data: &Data,
-                      message_id: &MessageId)
+                      src: Authority,
+                      dst: Authority,
+                      data: Data,
+                      message_id: MessageId)
                       -> Result<(), InternalError> {
-        let (data_id, version) = id_and_version_of(data);
-        let response_src = request.dst.clone();
-        let response_dst = request.src.clone();
+        let (data_id, version) = id_and_version_of(&data);
 
         if self.chunk_store.has(&data_id) {
             match data_id {
@@ -345,18 +336,13 @@ impl DataManager {
                     trace!("DM sending PutFailure for data {:?}, it already exists.",
                            data_id);
                     let _ = self.routing_node
-                        .send_put_failure(response_src,
-                                          response_dst,
-                                          request.clone(),
-                                          external_error_indicator,
-                                          *message_id);
+                        .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
                     return Err(From::from(error));
                 }
                 DataIdentifier::Immutable(..) => {
                     trace!("DM sending PutSuccess for data {:?}, it already exists.",
                            data_id);
-                    let _ = self.routing_node
-                        .send_put_success(response_src, response_dst, data_id, *message_id);
+                    let _ = self.routing_node.send_put_success(dst, src, data_id, message_id);
                     return Ok(());
                 }
                 _ => unimplemented!(),
@@ -369,31 +355,22 @@ impl DataManager {
             let error = MutationError::NetworkFull;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                .send_put_failure(response_src,
-                                  response_dst,
-                                  request.clone(),
-                                  external_error_indicator,
-                                  *message_id);
+                .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
             return Err(From::from(error));
         }
 
-        if let Err(err) = self.chunk_store.put(&data_id, data) {
+        if let Err(err) = self.chunk_store.put(&data_id, &data) {
             trace!("DM failed to store {:?} in chunkstore: {:?}", data_id, err);
             let error = MutationError::Unknown;
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
-                .send_put_failure(response_src,
-                                  response_dst,
-                                  request.clone(),
-                                  external_error_indicator,
-                                  *message_id);
+                .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
             Err(From::from(error))
         } else {
             self.count_added_data(&data_id);
             trace!("DM sending PutSuccess for data {:?}", data_id);
             info!("{:?}", self);
-            let _ = self.routing_node
-                .send_put_success(response_src, response_dst, data_id, *message_id);
+            let _ = self.routing_node.send_put_success(dst, src, data_id, message_id);
             let data_list = vec![(data_id, version)];
             let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
             Ok(())
@@ -402,107 +379,92 @@ impl DataManager {
 
     // This function is only for SD
     pub fn handle_post(&mut self,
-                       request: &RequestMessage,
-                       new_data: &StructuredData,
-                       message_id: &MessageId)
+                       src: Authority,
+                       dst: Authority,
+                       new_data: StructuredData,
+                       message_id: MessageId)
                        -> Result<(), InternalError> {
-        let mut data = match self.chunk_store.get(&new_data.identifier()) {
+        let data_id = new_data.identifier();
+        let mut data = match self.chunk_store.get(&data_id) {
             Ok(Data::Structured(data)) => data,
             Ok(_) => {
                 unreachable!("Post operation for Invalid Data Type. {:?} - {:?}",
-                             new_data.identifier(),
+                             data_id,
                              message_id)
             }
             Err(error) => {
                 trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
-                       new_data.identifier(),
+                       data_id,
                        message_id,
                        error);
-
-                return Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
-                               request.src.clone(),
-                               request.clone(),
-                               try!(serialisation::serialise(&MutationError::NoSuchData)),
-                               *message_id)));
+                let post_error = try!(serialisation::serialise(&MutationError::NoSuchData));
+                return Ok(try!(self.routing_node
+                    .send_post_failure(dst, src, data_id, post_error, message_id)));
             }
         };
 
-        if let Err(error) = data.replace_with_other(new_data.clone()) {
+        let version = new_data.get_version();
+        if let Err(error) = data.replace_with_other(new_data) {
             trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
-                   data.identifier(),
+                   data_id,
                    message_id,
                    error);
-
-            return Ok(try!(self.routing_node.send_post_failure(request.dst.clone(),
-                               request.src.clone(),
-                               request.clone(),
-                               try!(serialisation::serialise(&MutationError::InvalidSuccessor)),
-                               *message_id)));
-
-        }
-
-        if let Err(error) = self.chunk_store
-            .put(&data.identifier(), &Data::Structured(data.clone())) {
-            trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
-                   data.identifier(),
-                   message_id,
-                   error);
-
+            let post_error = try!(serialisation::serialise(&MutationError::InvalidSuccessor));
             return Ok(try!(self.routing_node
-                .send_post_failure(request.dst.clone(),
-                                   request.src.clone(),
-                                   request.clone(),
-                                   try!(serialisation::serialise(&MutationError::Unknown)),
-                                   *message_id)));
+                .send_post_failure(dst.clone(), src, data_id, post_error, message_id)));
+
         }
 
-        trace!("DM updated for: {:?}", data.identifier());
-        let _ = self.routing_node
-            .send_post_success(request.dst.clone(),
-                               request.src.clone(),
-                               data.identifier(),
-                               *message_id);
-        let data_list = vec![(new_data.identifier(), new_data.get_version())];
-        let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
+        if let Err(error) = self.chunk_store.put(&data_id, &Data::Structured(data)) {
+            trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
+                   data_id,
+                   message_id,
+                   error);
+            let post_error = try!(serialisation::serialise(&MutationError::Unknown));
+            return Ok(try!(self.routing_node
+                .send_post_failure(dst, src, data_id, post_error, message_id)));
+        }
+
+        trace!("DM updated for: {:?}", data_id);
+        let _ = self.routing_node.send_post_success(dst, src, data_id, message_id);
+        let data_list = vec![(data_id, version)];
+        let _ = self.send_refresh(Authority::NaeManager(data_id.name()), data_list);
         Ok(())
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
     pub fn handle_delete(&mut self,
-                         request: &RequestMessage,
-                         new_data: &StructuredData,
-                         message_id: &MessageId)
+                         src: Authority,
+                         dst: Authority,
+                         new_data: StructuredData,
+                         message_id: MessageId)
                          -> Result<(), InternalError> {
-        if let Ok(Data::Structured(data)) = self.chunk_store.get(&new_data.identifier()) {
-            if data.validate_self_against_successor(new_data).is_ok() {
-                let data_id = data.identifier();
+        let data_id = new_data.identifier();
+        if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
+            if data.validate_self_against_successor(&new_data).is_ok() {
                 if let Ok(()) = self.chunk_store.delete(&data_id) {
                     self.count_removed_data(&data_id);
                     trace!("DM deleted {:?}", data.identifier());
                     info!("{:?}", self);
-                    let _ = self.routing_node
-                        .send_delete_success(request.dst.clone(),
-                                             request.src.clone(),
-                                             data.identifier(),
-                                             *message_id);
+                    let _ = self.routing_node.send_delete_success(dst, src, data_id, message_id);
                     // TODO: Send a refresh message.
                     return Ok(());
                 }
             }
         }
         trace!("DM sending delete_failure for {:?}", new_data.identifier());
-        try!(self.routing_node.send_delete_failure(request.dst.clone(),
-                                                   request.src.clone(),
-                                                   request.clone(),
+        try!(self.routing_node.send_delete_failure(dst,
+                                                   src,
+                                                   data_id,
                                                    try!(serialisation::serialise(
                                                            &MutationError::InvalidSuccessor)),
-                                                   *message_id));
+                                                   message_id));
         Ok(())
     }
 
-    pub fn handle_get_success(&mut self, src: &XorName, data: &Data) -> Result<(), InternalError> {
-        let (data_id, version) = id_and_version_of(data);
-        self.cache.handle_get_success(src, &data_id, &version);
+    pub fn handle_get_success(&mut self, src: XorName, data: Data) -> Result<(), InternalError> {
+        let (data_id, version) = id_and_version_of(&data);
+        self.cache.handle_get_success(src, &data_id, version);
         try!(self.send_gets_for_needed_data());
         // If we're no longer in the close group, return.
         if !self.close_to_address(&data_id.name()) {
@@ -539,10 +501,10 @@ impl DataManager {
     }
 
     pub fn handle_get_failure(&mut self,
-                              src: &XorName,
-                              data_id: &DataIdentifier)
+                              src: XorName,
+                              data_id: DataIdentifier)
                               -> Result<(), InternalError> {
-        if !self.cache.handle_get_failure(src, data_id) {
+        if !self.cache.handle_get_failure(src, &data_id) {
             warn!("Got unexpected GetFailure for data {:?}.", data_id);
             return Err(InternalError::InvalidMessage);
         }
@@ -550,13 +512,13 @@ impl DataManager {
     }
 
     pub fn handle_refresh(&mut self,
-                          src: &XorName,
+                          src: XorName,
                           serialised_data_list: &[u8])
                           -> Result<(), InternalError> {
         let data_list = try!(serialisation::deserialise::<Vec<IdAndVersion>>(serialised_data_list));
         for data_idv in data_list {
-            if !self.cache.register_data_with_holder(src, &data_idv) {
-                if let Some(holders) = self.refresh_accumulator.add(data_idv, *src) {
+            if !self.cache.register_data_with_holder(&src, &data_idv) {
+                if let Some(holders) = self.refresh_accumulator.add(data_idv, src) {
                     self.refresh_accumulator.delete(&data_idv);
                     let (ref data_id, ref version) = data_idv;
                     let data_needed = match *data_id {
