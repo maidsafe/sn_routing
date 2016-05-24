@@ -28,6 +28,7 @@ use safe_network_common::client_errors::{MutationError, GetError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
+use std::collections::HashSet;
 
 const TEST_NET_SIZE: usize = 20;
 
@@ -119,6 +120,7 @@ fn structured_data_operations_with_churn() {
     for i in 0..10 {
         trace!("Iteration {}. Network size: {}", i + 1, nodes.len());
         let mut new_data = vec![];
+        let mut mutated_data = HashSet::new();
         for _ in 0..4 {
             if all_data.is_empty() || random() {
                 let data = Data::Structured(test_utils::random_structured_data(100000,
@@ -131,6 +133,12 @@ fn structured_data_operations_with_churn() {
             } else {
                 let j = Range::new(0, all_data.len()).ind_sample(&mut rng);
                 let data = Data::Structured(if let Data::Structured(sd) = all_data[j].clone() {
+                    if !mutated_data.insert(sd.identifier()) {
+                        trace!("Skipping data {:?} with name {:?}.",
+                               sd.identifier(),
+                               sd.name());
+                        continue;
+                    }
                     unwrap_result!(StructuredData::new(sd.get_type_tag(),
                                                        *sd.get_identifier(),
                                                        sd.get_version() + 1,
