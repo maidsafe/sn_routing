@@ -17,7 +17,7 @@
 
 use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
-pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial};
+pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
 use xor_name::XorName;
 
@@ -28,10 +28,6 @@ pub enum Data {
     Structured(StructuredData),
     /// `ImmutableData` data type.
     Immutable(ImmutableData),
-    /// `ImmutableData` data type - backup copy.
-    ImmutableBackup(ImmutableDataBackup),
-    /// `ImmutableData` data type - sacrificial copy.
-    ImmutableSacrificial(ImmutableDataSacrificial),
     /// `PlainData` data type.
     Plain(PlainData),
 }
@@ -42,8 +38,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
-            Data::ImmutableBackup(ref data) => data.name(),
-            Data::ImmutableSacrificial(ref data) => data.name(),
             Data::Plain(ref data) => data.name(),
         }
     }
@@ -53,8 +47,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
-            Data::ImmutableBackup(ref data) => data.identifier(),
-            Data::ImmutableSacrificial(ref data) => data.identifier(),
             Data::Plain(ref data) => data.identifier(),
         }
     }
@@ -64,8 +56,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.payload_size(),
             Data::Immutable(ref data) => data.payload_size(),
-            Data::ImmutableBackup(ref data) => data.payload_size(),
-            Data::ImmutableSacrificial(ref data) => data.payload_size(),
             Data::Plain(ref data) => data.payload_size(),
         }
     }
@@ -78,10 +68,6 @@ pub enum DataIdentifier {
     Structured(XorName, u64),
     /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
-    /// Data request, (Identifier), for a backup copy of `ImmutableData`.
-    ImmutableBackup(XorName),
-    /// Data request, (Identifier), for a sacrificial copy of `ImmutableData`.
-    ImmutableSacrificial(XorName),
     /// Request for PlainData.
     Plain(XorName),
 }
@@ -91,8 +77,6 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
-            Data::ImmutableBackup(ref data) => data.fmt(formatter),
-            Data::ImmutableSacrificial(ref data) => data.fmt(formatter),
             Data::Plain(ref data) => data.fmt(formatter),
         }
     }
@@ -104,8 +88,6 @@ impl DataIdentifier {
         match *self {
             DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
             DataIdentifier::Immutable(name) |
-            DataIdentifier::ImmutableBackup(name) |
-            DataIdentifier::ImmutableSacrificial(name) |
             DataIdentifier::Plain(name) => name,
         }
     }
@@ -151,12 +133,6 @@ mod test {
         assert_eq!(immutable_data.identifier(),
                    DataIdentifier::Immutable(immutable_data.name()));
 
-        let backup_data = ImmutableDataBackup::new(immutable_data.clone());
-        assert_eq!(backup_data.identifier(),
-                   DataIdentifier::ImmutableBackup(backup_data.name()));
-        let sacrificial_data = ImmutableDataSacrificial::new(immutable_data.clone());
-        assert_eq!(sacrificial_data.identifier(),
-                   DataIdentifier::ImmutableSacrificial(sacrificial_data.name()));
         // name() resolves correctly for PlainData
         let name = XorName(sha512::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
