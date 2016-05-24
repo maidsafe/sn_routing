@@ -16,12 +16,13 @@
 // relating to use of the SAFE Network Software.
 
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
-use routing::{DataIdentifier, XorName};
+use routing::XorName;
 use vault::Vault;
 use config_handler::Config;
 
-use super::poll;
+use personas::data_manager::IdAndVersion;
 
+use super::poll;
 
 /// Test node for mock network
 pub struct TestNode {
@@ -63,7 +64,7 @@ impl TestNode {
         self.handle.endpoint()
     }
     /// return names of all data stored on mock network
-    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
+    pub fn get_stored_names(&self) -> Vec<IdAndVersion> {
         self.vault.get_stored_names()
     }
     /// return the number of account packets stored for the given client
@@ -73,6 +74,14 @@ impl TestNode {
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) {
         self.vault.resend_unacknowledged()
+    }
+    /// Clear routing node state..
+    pub fn clear_state(&self) {
+        self.vault.clear_state()
+    }
+    /// name of vault.
+    pub fn name(&self) -> XorName {
+        self.vault.name()
     }
 }
 
@@ -118,6 +127,7 @@ pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
 /// remove this node from the mock network
 pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
+    trace!("Removing node: {:?}", node.name());
     drop(node);
 }
 

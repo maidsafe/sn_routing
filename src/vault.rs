@@ -18,14 +18,15 @@
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver};
 
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(feature = "use-mock-crust")]
 use config_handler::Config;
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
 use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
-#[cfg(any(test, feature = "use-mock-crust"))]
-use routing::DataIdentifier;
+#[cfg(feature = "use-mock-crust")]
+use personas::data_manager::IdAndVersion;
+
 use routing::{Authority, Data, RequestContent, RequestMessage, ResponseContent, ResponseMessage,
               RoutingMessage, XorName};
 use sodiumoxide;
@@ -35,7 +36,6 @@ const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;
 
 pub use routing::Event;
 pub use routing::Node as RoutingNode;
-
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
@@ -62,7 +62,7 @@ impl Vault {
 
     /// Allow replacing the default config values for use with the mock-crust tests.  This should
     /// only be called immediately after constructing a new Vault.
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
         let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
@@ -95,21 +95,33 @@ impl Vault {
     }
 
     /// Get the names of all the data chunks stored in a personas' chunk store.
-    #[cfg(any(test, feature = "use-mock-crust"))]
-    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_stored_names(&self) -> Vec<IdAndVersion> {
         self.data_manager.get_stored_names()
     }
 
     /// Get the number of put requests the network processed for the given client.
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.maid_manager.get_put_count(client_name)
     }
 
     /// Resend all unacknowledged messages.
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn resend_unacknowledged(&self) {
         self.routing_node.resend_unacknowledged()
+    }
+
+    /// Clear routing node state.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear_state(&self) {
+        self.routing_node.clear_state()
+    }
+
+    /// Vault node name
+    #[cfg(feature = "use-mock-crust")]
+    pub fn name(&self) -> XorName {
+        unwrap_result!(self.routing_node.name())
     }
 
     fn process_event(&mut self, event: Event) -> Option<bool> {

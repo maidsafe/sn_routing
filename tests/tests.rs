@@ -31,7 +31,6 @@
          missing_debug_implementations, variant_size_differences)]
 
 #![cfg(feature = "use-mock-crust")]
-#![cfg(test)]
 
 #[macro_use]
 extern crate log;

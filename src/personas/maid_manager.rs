@@ -30,10 +30,8 @@ use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, Request
 use utils;
 use vault::RoutingNode;
 
-// It has now been decided that the charge will be by unit
-// i.e. each chunk incurs a default charge of one unit, no matter of the data size
-// FIXME - restore this constant to 1024 or greater
-const DEFAULT_ACCOUNT_SIZE: u64 = 100;  // 100 units, max 100MB for immutable_data (1MB per chunk)
+// 100 units, max 100MB for immutable_data (1MB per chunk)
+const DEFAULT_ACCOUNT_SIZE: u64 = 100;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
 struct Refresh(XorName, Account);
@@ -310,7 +308,7 @@ impl MaidManager {
         Ok(())
     }
 
-    #[cfg(any(test, feature = "use-mock-crust"))]
+    #[cfg(feature = "use-mock-crust")]
     pub fn get_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.accounts.get(client_name).map(|account| account.data_stored)
     }

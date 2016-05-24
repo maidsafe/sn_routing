@@ -160,7 +160,17 @@ fn maid_manager_account_updates_with_churn() {
                 test_node::drop_node(&mut nodes, node_index);
             }
         }
-        event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+        loop {
+            let count = poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+            event_count += count;
+
+            if count == 0 {
+                for node in &mut nodes {
+                    node.clear_state();
+                }
+                break;
+            }
+        }
         trace!("Processed {} events.", event_count);
         let count = nodes.iter()
             .filter(|node| {

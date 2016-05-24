@@ -666,13 +666,14 @@ impl DataManager {
         let _ = self.send_gets_for_needed_data();
     }
 
-    #[cfg(any(test, feature = "use-mock-crust"))]
-    pub fn get_stored_names(&self) -> Vec<DataIdentifier> {
+    #[cfg(feature = "use-mock-crust")]
+    pub fn get_stored_names(&self) -> Vec<IdAndVersion> {
         let (front, back) = self.cache.unneeded_chunks.as_slices();
         self.chunk_store
             .keys()
             .into_iter()
             .filter(|data_id| !front.contains(data_id) && !back.contains(data_id))
+            .filter_map(|data_id| self.to_id_and_version(data_id))
             .collect()
     }
 

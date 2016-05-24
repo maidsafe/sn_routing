@@ -67,13 +67,13 @@ extern crate sodiumoxide;
 mod config_handler;
 mod error;
 /// For integration tests only
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(feature = "use-mock-crust")]
 pub mod test_utils;
 mod personas;
 mod utils;
 mod vault;
 /// For integration tests only
-#[cfg(any(test, feature = "use-mock-crust"))]
+#[cfg(feature = "use-mock-crust")]
 pub mod mock_crust_detail;
 pub use vault::Vault;
 pub use config_handler::Config;

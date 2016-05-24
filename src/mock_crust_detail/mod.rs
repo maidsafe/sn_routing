@@ -15,8 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#![cfg(any(test, feature = "use-mock-crust"))]
-
 /// Poll events
 pub mod poll;
 /// Test client node
@@ -25,9 +23,11 @@ pub mod test_client;
 pub mod test_node;
 
 use itertools::Itertools;
-use routing::{Data, DataIdentifier};
+use routing::Data;
+use routing::{GROUP_SIZE, XorName};
 use std::collections::{HashMap, HashSet};
 use mock_crust_detail::test_node::TestNode;
+use personas::data_manager::IdAndVersion;
 
 /// Checks that none of the given nodes has any copy of the given data left.
 pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
@@ -37,9 +37,9 @@ pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
     let mut data_count = HashMap::new();
     nodes.iter()
         .flat_map(TestNode::get_stored_names)
-        .foreach(|data_id| {
-            if deleted_data_ids.contains(&data_id) {
-                *data_count.entry(data_id).or_insert(0) += 1;
+        .foreach(|data_idv| {
+            if deleted_data_ids.contains(&data_idv.0) {
+                *data_count.entry(data_idv).or_insert(0) += 1;
             }
         });
     for (data_id, count) in data_count {
@@ -52,28 +52,35 @@ pub fn check_deleted_data(deleted_data: &[Data], nodes: &[TestNode]) {
 
 /// Checks that the given `nodes` store the expected number of copies of the given data.
 pub fn check_data(all_data: Vec<Data>, nodes: &[TestNode]) {
-    let mut data_count: HashMap<DataIdentifier, usize> = HashMap::new();
-    for data_id in nodes.iter().flat_map(TestNode::get_stored_names) {
-        *data_count.entry(data_id).or_insert(0) += 1;
+    let mut data_holders_map: HashMap<IdAndVersion, Vec<XorName>> = HashMap::new();
+    for node in nodes {
+        for data_idv in node.get_stored_names() {
+            data_holders_map.entry(data_idv).or_insert_with(Vec::new).push(node.name());
+        }
     }
 
     for data in all_data {
-        match data {
-            Data::Immutable(data) => {
-                let count = *data_count.get(&data.identifier()).unwrap_or(&0);
-                assert!(5 <= count,
-                        "Only {} copies of immutable data {:?}.",
-                        count,
-                        data.identifier());
-            }
-            Data::Structured(data) => {
-                let count = *data_count.get(&data.identifier()).unwrap_or(&0);
-                assert!(5 <= count,
-                        "Only {} copies of structured data {:?}.",
-                        count,
-                        data.identifier());
-            }
+        let (data_id, data_version) = match data {
+            Data::Immutable(data) => (data.identifier(), 0),
+            Data::Structured(data) => (data.identifier(), data.get_version()),
             _ => unreachable!(),
-        }
+        };
+        let data_holders = data_holders_map.get(&(data_id, data_version))
+            .cloned()
+            .unwrap_or_else(Vec::new)
+            .into_iter()
+            .sorted_by(|left, right| data_id.name().cmp_distance(left, right));
+
+        let mut expected_data_holders = nodes.iter()
+            .map(TestNode::name)
+            .sorted_by(|left, right| data_id.name().cmp_distance(left, right));
+
+        expected_data_holders.truncate(GROUP_SIZE);
+
+        assert!(expected_data_holders == data_holders,
+                "Data: {:?}. expected = {:?}, actual = {:?}",
+                data_id,
+                expected_data_holders,
+                data_holders);
     }
 }
