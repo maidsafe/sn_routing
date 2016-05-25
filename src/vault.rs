@@ -132,8 +132,8 @@ impl Vault {
         let mut ret = None;
 
         if let Err(error) = match event {
-            Event::Request(request, src, dst) => self.on_request(request, src, dst),
-            Event::Response(response, src, dst) => self.on_response(response, src, dst),
+            Event::Request { request, src, dst } => self.on_request(request, src, dst),
+            Event::Response { response, src, dst } => self.on_response(response, src, dst),
             Event::NodeAdded(node_added, routing_table) => {
                 self.on_node_added(node_added, routing_table)
             }

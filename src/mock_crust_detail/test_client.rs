@@ -108,7 +108,10 @@ impl TestClient {
 
         loop {
             match self.routing_rx.try_recv() {
-                Ok(Event::Response(Response::GetSuccess(data, response_message_id), _, _)) => {
+                Ok(Event::Response {
+                    response: Response::GetSuccess(data, response_message_id),
+                    ..
+                }) => {
                     if request_message_id == response_message_id {
                         return data;
                     } else {
@@ -135,15 +138,20 @@ impl TestClient {
                events_count);
         loop {
             match self.routing_rx.try_recv() {
-                Ok(Event::Response(Response::GetSuccess(data, response_message_id), _, _)) => {
+                Ok(Event::Response {
+                    response: Response::GetSuccess(data, response_message_id),
+                    ..
+                }) => {
                     assert_eq!(request_message_id, response_message_id);
                     return Ok(data);
                 }
-                Ok(Event::Response(Response::GetFailure { id, external_error_indicator, .. },
-                                   request_dst,
-                                   _)) => {
+                Ok(Event::Response {
+                    response: Response::GetFailure { id, external_error_indicator, .. },
+                    src,
+                    ..
+                }) => {
                     assert_eq!(request_message_id, id);
-                    assert_eq!(request_dst, dst);
+                    assert_eq!(src, dst);
                     let parsed_error: GetError =
                         unwrap_result!(serialisation::deserialise(&external_error_indicator));
                     return Err(Some(parsed_error));
@@ -168,15 +176,20 @@ impl TestClient {
                events_count);
         loop {
             match self.routing_rx.try_recv() {
-                Ok(Event::Response(Response::PostSuccess(data_id, response_message_id), _, _)) => {
+                Ok(Event::Response {
+                    response: Response::PostSuccess(data_id, response_message_id),
+                    ..
+                }) => {
                     assert_eq!(request_message_id, response_message_id);
                     return Ok(data_id);
                 }
-                Ok(Event::Response(Response::PostFailure { id, external_error_indicator, .. },
-                                   request_dst,
-                                   _)) => {
+                Ok(Event::Response {
+                    response: Response::PostFailure { id, external_error_indicator, .. },
+                    src,
+                    ..
+                }) => {
                     assert_eq!(request_message_id, id);
-                    assert_eq!(request_dst, dst);
+                    assert_eq!(src, dst);
                     let parsed_error: MutationError =
                         unwrap_result!(serialisation::deserialise(&external_error_indicator));
                     return Err(Some(parsed_error));
@@ -201,17 +214,20 @@ impl TestClient {
                events_count);
         loop {
             match self.routing_rx.try_recv() {
-                Ok(Event::Response(Response::DeleteSuccess(data_id, response_id), _, _)) => {
+                Ok(Event::Response {
+                    response: Response::DeleteSuccess(data_id, response_id),
+                    ..
+                }) => {
                     assert_eq!(request_message_id, response_id);
                     return Ok(data_id);
                 }
-                Ok(Event::Response(Response::DeleteFailure { id,
-                                                             external_error_indicator,
-                                                             .. },
-                                   request_dst,
-                                   _)) => {
+                Ok(Event::Response {
+                    response: Response::DeleteFailure { id, external_error_indicator, .. },
+                    src,
+                    ..
+                }) => {
                     assert_eq!(request_message_id, id);
-                    assert_eq!(request_dst, dst);
+                    assert_eq!(src, dst);
                     let parsed_error: MutationError =
                         unwrap_result!(serialisation::deserialise(&external_error_indicator));
                     return Err(Some(parsed_error));
@@ -251,15 +267,15 @@ impl TestClient {
         let _ = poll::nodes_and_client(nodes, self);
 
         match self.routing_rx.try_recv() {
-            Ok(Event::Response(Response::PutSuccess(_, response_message_id), _, _)) => {
+            Ok(Event::Response { response: Response::PutSuccess(_, response_message_id), .. }) => {
                 assert_eq!(request_message_id, response_message_id);
                 Ok(())
             }
-            Ok(Event::Response(Response::PutFailure {
+            Ok(Event::Response { response: Response::PutFailure {
                     id: response_id,
                     data_id,
                     external_error_indicator: response_error
-                }, _, _)) => {
+                }, .. }) => {
                 assert_eq!(request_message_id, response_id);
                 assert!(data.identifier() == data_id);
                 let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
