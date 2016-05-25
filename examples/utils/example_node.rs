@@ -70,8 +70,8 @@ impl ExampleNode {
     pub fn run(&mut self) {
         while let Ok(event) = self.receiver.recv() {
             match event {
-                Event::Request(request, src, dst) => self.handle_request(request, src, dst),
-                Event::Response(response, src, dst) => self.handle_response(response, src, dst),
+                Event::Request { request, src, dst } => self.handle_request(request, src, dst),
+                Event::Response { response, src, dst } => self.handle_response(response, src, dst),
                 Event::NodeAdded(name, routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),

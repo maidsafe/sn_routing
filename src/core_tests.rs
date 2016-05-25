@@ -521,14 +521,14 @@ fn successful_put_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(Request::Put(ref immutable, ref id), _, _)) => {
+                Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -567,7 +567,7 @@ fn successful_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(Request::Get(ref request, id), ref src, ref dst)) => {
+                Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
                         if let Err(_) = node.send_get_success(dst.clone(),
@@ -575,13 +575,13 @@ fn successful_get_request() {
                                                               data.clone(),
                                                               id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetSuccess )");
+                            trace!("Failed to send GetSuccess response");
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -595,14 +595,17 @@ fn successful_get_request() {
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(Response::GetSuccess(ref immutable, ref id), _, _)) => {
+                Ok(Event::Response {
+                    response: Response::GetSuccess(ref immutable, ref id),
+                    ..
+                }) => {
                     response_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response(..) not received"),
+                _ => panic!("Event::Response not received"),
             }
         }
     }
@@ -641,7 +644,9 @@ fn failed_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(Request::Get(ref data_id, ref id), ref src, ref dst)) => {
+                Ok(Event::Request { request: Request::Get(ref data_id, ref id),
+                                    ref src,
+                                    ref dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
                         if let Err(_) = node.send_get_failure(dst.clone(),
@@ -656,7 +661,7 @@ fn failed_get_request() {
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -670,14 +675,14 @@ fn failed_get_request() {
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(Response::GetFailure { ref id, .. }, _, _)) => {
+                Ok(Event::Response { response: Response::GetFailure { ref id, .. }, .. }) => {
                     response_received_count += 1;
                     if message_id == *id {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response(..) not received"),
+                _ => panic!("Event::Response not received"),
             }
         }
     }
@@ -716,7 +721,9 @@ fn disconnect_on_get_request() {
     for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(Request::Get(ref request, ref id), ref src, ref dst)) => {
+                Ok(Event::Request { request: Request::Get(ref request, ref id),
+                                    ref src,
+                                    ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
                         if let Err(_) = node.send_get_success(dst.clone(),
@@ -724,13 +731,13 @@ fn disconnect_on_get_request() {
                                                               data.clone(),
                                                               *id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetSuccess )");
+                            trace!("Failed to send GetSuccess response");
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -743,8 +750,8 @@ fn disconnect_on_get_request() {
     let _ = poll_all(&mut nodes, &mut clients);
 
     for client in clients {
-        if let Ok(Event::Response(..)) = client.event_rx.try_recv() {
-            panic!("Unexpected Event::Response(..) received");
+        if let Ok(Event::Response { .. }) = client.event_rx.try_recv() {
+            panic!("Unexpected Event::Response received");
         }
     }
 }

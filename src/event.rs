@@ -31,10 +31,24 @@ use std::fmt::{self, Debug, Formatter};
 /// reached, i. e. enough members of the group have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
-    /// Request.
-    Request(Request, Authority, Authority),
-    /// Response.
-    Response(Response, Authority, Authority),
+    /// Received a request message.
+    Request {
+        /// The request message.
+        request: Request,
+        /// The source authority that sent the request.
+        src: Authority,
+        /// The destination authority that receives the request.
+        dst: Authority,
+    },
+    /// Received a response message.
+    Response {
+        /// The response message.
+        response: Response,
+        /// The source authority that sent the response.
+        src: Authority,
+        /// The destination authority that receives the response.
+        dst: Authority,
+    },
     /// A new node joined the network and may be a member of group authorities we also belong to.
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
@@ -55,16 +69,16 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request(ref request, ref src, ref dst) => {
+            Event::Request { ref request, ref src, ref dst } => {
                 write!(formatter,
-                       "Event::Request({:?}, {:?}, {:?})",
+                       "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
                        request,
                        src,
                        dst)
             }
-            Event::Response(ref response, ref src, ref dst) => {
+            Event::Response { ref response, ref src, ref dst } => {
                 write!(formatter,
-                       "Event::Response({:?}, {:?}, {:?})",
+                       "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
                        response,
                        src,
                        dst)

@@ -270,9 +270,9 @@ fn core() {
                         assert!(result.is_ok());
                     }
 
-                    TestEvent(index, Event::Request(message, src, dst)) => {
+                    TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
-                        if let Request::Put(_, ref id) = message {
+                        if let Request::Put(_, ref id) = request {
                             let node = &nodes[index].node;
 
                             unwrap_result!(node.send_put_success(dst,
@@ -282,11 +282,10 @@ fn core() {
                         }
                     }
 
-                    TestEvent(index,
-                              Event::Response(Response::PutSuccess(ref data_id, ref id), _, _))
-                        if index == client.index => {
+                    TestEvent(index, Event::Response { response: Response::PutSuccess(data_id, id),
+                                                .. }) if index == client.index => {
                         // The client received response to its request. We are done.
-                        assert_eq!(&message_id, id);
+                        assert_eq!(message_id, id);
                         assert_eq!(data_id.name(), data.name());
                         break;
                     }
@@ -316,7 +315,7 @@ fn core() {
                                               MessageId::new())
                             .is_ok());
                     }
-                    TestEvent(index, Event::Request(Request::Put(..), _, _)) => {
+                    TestEvent(index, Event::Request { request: Request::Put(..), .. }) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -351,25 +350,24 @@ fn core() {
                             .is_ok());
                     }
                     TestEvent(index,
-                              Event::Request(Request::Put(data, id),
-                                             Authority::Client { .. },
-                                             Authority::ClientManager(name))) => {
+                              Event::Request { request: Request::Put(data, id),
+                                               src: Authority::Client { .. },
+                                               dst: Authority::ClientManager(name) }) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(data.name());
                         unwrap_result!(nodes[index]
                             .node
                             .send_put_request(src, dst, data.clone(), id.clone()));
                     }
-                    TestEvent(index, Event::Request(ref msg, ref src, ref dst)) => {
-                        if let Request::Put(ref data, ref id) = *msg {
-                            unwrap_result!(nodes[index].node.send_put_failure(dst.clone(),
-                                                                              src.clone(),
-                                                                              data.identifier(),
-                                                                              vec![],
-                                                                              id.clone()));
+                    TestEvent(index, Event::Request { request, src, dst }) => {
+                        if let Request::Put(data, id) = request {
+                            unwrap_result!(nodes[index]
+                                .node
+                                .send_put_failure(dst, src, data.identifier(), vec![], id));
                         }
                     }
-                    TestEvent(index, Event::Response(Response::PutFailure { .. }, _, _)) => {
+                    TestEvent(index,
+                              Event::Response { response: Response::PutFailure { .. }, .. }) => {
                         close_group.retain(|&name| name != nodes[index].name());
 
                         if close_group.is_empty() {
@@ -453,27 +451,26 @@ fn core() {
                         .is_ok());
                 }
                 TestEvent(index,
-                          Event::Request(Request::Put(data, id),
-                                         Authority::Client { .. },
-                                         Authority::ClientManager(name))) => {
+                          Event::Request { request: Request::Put(data, id),
+                                           src: Authority::Client { .. },
+                                           dst: Authority::ClientManager(name) }) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(data.name());
                     unwrap_result!(nodes[index]
                         .node
                         .send_put_request(src, dst, data.clone(), id.clone()));
                 }
-                TestEvent(index, Event::Request(ref msg, ref src, ref dst)) => {
-                    if let Request::Put(ref data, ref id) = *msg {
+                TestEvent(index, Event::Request { request, src, dst }) => {
+                    if let Request::Put(data, id) = request {
                         if index < QUORUM_SIZE - 1 {
-                            unwrap_result!(nodes[index].node.send_put_failure(dst.clone(),
-                                                                              src.clone(),
-                                                                              data.identifier(),
-                                                                              vec![],
-                                                                              id.clone()));
+                            unwrap_result!(nodes[index]
+                                .node
+                                .send_put_failure(dst, src, data.identifier(), vec![], id));
                         }
                     }
                 }
-                TestEvent(_index, Event::Response(Response::PutFailure { .. }, _, _)) => {
+                TestEvent(_index,
+                          Event::Response { response: Response::PutFailure { .. }, .. }) => {
                     panic!("Unexpected response.");
                 }
                 _ => (),
@@ -499,20 +496,20 @@ fn core() {
                         assert!(result.is_ok());
                         sent_ids.insert(message_id);
                     }
-                    TestEvent(index, Event::Request(message, src, dst)) => {
+                    TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
                         let data_id = DataIdentifier::Plain(data.name());
-                        if let Request::Put(_, id) = message {
+                        if let Request::Put(_, id) = request {
                             unwrap_result!(nodes[index]
                                 .node
                                 .send_put_success(dst, src, data_id, id));
                         }
                     }
                     TestEvent(index,
-                              Event::Response(Response::PutSuccess(ref name, ref id), _, _))
+                              Event::Response { response: Response::PutSuccess(name, id), .. })
                         if index == client.index => {
-                        assert!(received_ids.insert(*id));
-                        assert_eq!(name, &DataIdentifier::Plain(data.name()));
+                        assert!(received_ids.insert(id));
+                        assert_eq!(name, DataIdentifier::Plain(data.name()));
                     }
                     _ => (),
                 }

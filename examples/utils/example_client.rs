@@ -78,7 +78,7 @@ impl ExampleClient {
         // Wait for Get success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(Response::GetSuccess(data, id), _, _) => {
+                Event::Response { response: Response::GetSuccess(data, id), .. } => {
                     if message_id != id {
                         error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
                                 {:?}.",
@@ -88,7 +88,9 @@ impl ExampleClient {
                     }
                     return Some(data);
                 }
-                Event::Response(Response::GetFailure { external_error_indicator, .. }, _, _) => {
+                Event::Response {
+                    response: Response::GetFailure { external_error_indicator, .. },
+                .. } => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
                            unwrap_result!(String::from_utf8(external_error_indicator)));
@@ -104,7 +106,8 @@ impl ExampleClient {
 
     /// Send a `Put` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure` response.
+    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure`
+    /// response.
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
@@ -114,7 +117,7 @@ impl ExampleClient {
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(Response::PutSuccess(rec_data_id, id), _, _) => {
+                Event::Response { response: Response::PutSuccess(rec_data_id, id), .. } => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_id.name(),
@@ -131,7 +134,7 @@ impl ExampleClient {
                         return Err(());
                     }
                 }
-                Event::Response(Response::PutFailure { .. }, _, _) => {
+                Event::Response { response: Response::PutFailure { .. }, .. } => {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }

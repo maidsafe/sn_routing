@@ -1056,12 +1056,20 @@ impl Core {
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (MessageContent::Ack(ack), _, _) => self.handle_ack_response(ack),
             (MessageContent::Request(request), src, dst) => {
-                let event = Event::Request(request, src, dst);
+                let event = Event::Request {
+                    request: request,
+                    src: src,
+                    dst: dst,
+                };
                 let _ = self.event_sender.send(event);
                 Ok(())
             }
             (MessageContent::Response(response), src, dst) => {
-                let event = Event::Response(response, src, dst);
+                let event = Event::Response {
+                    response: response,
+                    src: src,
+                    dst: dst,
+                };
                 let _ = self.event_sender.send(event);
                 Ok(())
             }
