@@ -107,7 +107,7 @@ impl Vault {
 
     /// Resend all unacknowledged messages.
     #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&self) {
+    pub fn resend_unacknowledged(&self) -> bool {
         self.routing_node.resend_unacknowledged()
     }
 

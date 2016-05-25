@@ -71,7 +71,7 @@ impl TestClient {
     }
 
     /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) {
+    pub fn resend_unacknowledged(&self) -> bool {
         self.routing_client.resend_unacknowledged()
     }
 

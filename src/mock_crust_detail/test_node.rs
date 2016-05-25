@@ -72,7 +72,7 @@ impl TestNode {
         self.vault.get_maid_manager_put_count(client_name)
     }
     /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) {
+    pub fn resend_unacknowledged(&self) -> bool {
         self.vault.resend_unacknowledged()
     }
     /// Clear routing node state..
