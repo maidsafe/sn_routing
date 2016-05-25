@@ -442,11 +442,16 @@ fn churn() {
             trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
         }
 
-        while poll_all(&mut nodes, &mut []) {
+        loop {
+            let mut state_changed = poll_all(&mut nodes, &mut []);
             for node in &mut nodes {
-                node.core.resend_unacknowledged();
+                state_changed = state_changed || node.core.resend_unacknowledged();
+            }
+            if !state_changed {
+                break;
             }
         }
+
         for node in &mut nodes {
             node.core.clear_state();
         }

@@ -113,7 +113,7 @@ impl Client {
 
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) {
+    pub fn resend_unacknowledged(&self) -> bool {
         self.core.borrow_mut().resend_unacknowledged()
     }
 
