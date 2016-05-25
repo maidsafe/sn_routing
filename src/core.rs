@@ -954,24 +954,7 @@ impl Core {
             if self.grp_msg_filter.contains(&routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            // TODO(afck): Currently we don't accumulate GetCloseGroup, GetPublicId and
-            // GetPublicIdWithConnectionInfo responses, because while a node is joining,
-            // the responses can disagree. Some of the group members might already have
-            // the new node in their routing table and others might not. To resolve this,
-            // we will need a cleaner algorithm for joining nodes: They should connect to
-            // all their future routing table entries, and once these connections are
-            // established, send a direct message to these contacts. Only when they receive
-            // that message, the contacts should add the new node to their routing tables in
-            // turn, because only then it can act as a fully functioning routing node.
-            let skip_accumulate = match routing_msg.content {
-                MessageContent::GetPublicIdResponse { .. } |
-                MessageContent::GetPublicIdWithConnectionInfoResponse { .. } => true,
-                _ => false,
-            };
-
-            if skip_accumulate {
-                let _ = self.grp_msg_filter.insert(&routing_msg);
-            } else if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
+            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
                 let _ = self.grp_msg_filter.insert(&output_msg);
             } else {
                 return Ok(());
@@ -1065,36 +1048,9 @@ impl Core {
                                                       routing_msg.dst.clone(),
                                                       public_id)
             }
-            (MessageContent::GetPublicId,
-             Authority::ManagedNode(src_name),
-             Authority::NodeManager(dst_name)) => self.handle_get_public_id(src_name, dst_name),
-            (MessageContent::GetPublicIdWithConnectionInfo { encrypted_connection_info,
-                                                             nonce_bytes },
-             Authority::ManagedNode(src_name),
-             Authority::NodeManager(dst_name)) => {
-                self.handle_get_public_id_with_connection_info(encrypted_connection_info,
-                                                               nonce_bytes,
-                                                               src_name,
-                                                               dst_name)
-            }
             (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
              Authority::NodeManager(_),
              dst) => self.handle_get_node_name_response(relocated_id, close_group_ids, dst),
-            (MessageContent::GetPublicIdResponse { public_id },
-             Authority::NodeManager(_),
-             Authority::ManagedNode(dst_name)) => {
-                self.handle_get_public_id_response(public_id, dst_name)
-            }
-            (MessageContent::GetPublicIdWithConnectionInfoResponse { public_id,
-                                                                     encrypted_connection_info,
-                                                                     nonce_bytes },
-             Authority::NodeManager(_),
-             Authority::ManagedNode(dst_name)) => {
-                self.handle_get_public_id_with_connection_info_response(public_id,
-                                                                        encrypted_connection_info,
-                                                                        nonce_bytes,
-                                                                        dst_name)
-            }
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
@@ -1902,95 +1858,6 @@ impl Core {
     }
 
     // ---- Connect Requests and Responses --------------------------------------------------------
-
-    fn handle_get_public_id(&mut self,
-                            src_name: XorName,
-                            dst_name: XorName)
-                            -> Result<(), RoutingError> {
-        if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
-            let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
-                info.public_id
-            } else {
-                debug!("{:?} Cannot answer GetPublicId: {:?} not found in the routing table.",
-                       self,
-                       dst_name);
-                return Err(RoutingError::RejectedPublicId);
-            };
-
-            let msg = RoutingMessage {
-                src: Authority::NodeManager(dst_name),
-                dst: Authority::ManagedNode(src_name),
-                content: MessageContent::GetPublicIdResponse { public_id: public_id },
-            };
-
-            self.send_message(msg)
-        } else {
-            error!("{:?} Handling GetPublicId, but not close to the target!",
-                   self);
-            Err(RoutingError::RejectedPublicId)
-        }
-    }
-
-    fn handle_get_public_id_response(&mut self,
-                                     public_id: PublicId,
-                                     dst_name: XorName)
-                                     -> Result<(), RoutingError> {
-        try!(self.check_address_for_routing_table(public_id.name()));
-        try!(self.send_connection_info(public_id,
-                                       Authority::ManagedNode(dst_name),
-                                       Authority::ManagedNode(*public_id.name())));
-        Ok(())
-    }
-
-    fn handle_get_public_id_with_connection_info(&mut self,
-                                                 encrypted_connection_info: Vec<u8>,
-                                                 nonce_bytes: [u8; box_::NONCEBYTES],
-                                                 src_name: XorName,
-                                                 dst_name: XorName)
-                                                 -> Result<(), RoutingError> {
-        if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
-            let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
-                info.public_id
-            } else {
-                error!("Node({:?}) Cannot answer GetPublicIdWithConnectionInfo: {:?} not found \
-                        in the routing table.",
-                       self.full_id.public_id().name(),
-                       dst_name);
-                return Err(RoutingError::RejectedPublicId);
-            };
-
-            let response_content = MessageContent::GetPublicIdWithConnectionInfoResponse {
-                public_id: public_id,
-                encrypted_connection_info: encrypted_connection_info,
-                nonce_bytes: nonce_bytes,
-            };
-
-            let msg = RoutingMessage {
-                src: Authority::NodeManager(dst_name),
-                dst: Authority::ManagedNode(src_name),
-                content: response_content,
-            };
-            self.send_message(msg)
-        } else {
-            error!("{:?} Handling GetPublicIdWithConnectionInfo, but not close to the target!",
-                   self);
-            Err(RoutingError::RejectedPublicId)
-        }
-    }
-
-    fn handle_get_public_id_with_connection_info_response(&mut self,
-                                                          public_id: PublicId,
-                                                          encrypted_connection_info: Vec<u8>,
-                                                          nonce_bytes: [u8; box_::NONCEBYTES],
-                                                          dst_name: XorName)
-                                                          -> Result<(), RoutingError> {
-        try!(self.check_address_for_routing_table(public_id.name()));
-        self.connect(encrypted_connection_info,
-                     nonce_bytes,
-                     public_id,
-                     Authority::ManagedNode(dst_name),
-                     Authority::ManagedNode(*public_id.name()))
-    }
 
     fn send_connection_info(&mut self,
                             their_public_id: PublicId,

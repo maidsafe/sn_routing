@@ -294,15 +294,6 @@ pub enum MessageContent {
         /// The sender's public ID.
         public_id: PublicId,
     },
-    /// Ask each member of a group near a node address for the `PublicId`.
-    GetPublicId,
-    /// Ask for a `PublicId` but provide our connection_info encrypted.
-    GetPublicIdWithConnectionInfo {
-        /// Encrypted crust connection_info (socket address and protocol).
-        encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrypted message.
-        nonce_bytes: [u8; box_::NONCEBYTES],
-    },
     /// Reply with the new `PublicId` for the joining node.
     ///
     /// Sent from the `NodeManager` to the `Client`.
@@ -313,24 +304,6 @@ pub enum MessageContent {
         close_group_ids: Vec<PublicId>,
         /// The message's unique identifier.
         message_id: MessageId,
-    },
-    /// Reply with the requested `PublicId`.
-    ///
-    /// Sent from the `NodeManager` to the joining node.
-    GetPublicIdResponse {
-        /// The requested `PublicId`
-        public_id: PublicId,
-    },
-    /// Reply with the `PublicId` along with the sender's encrypted connection_info
-    ///
-    /// Sent from a `ManagedNode` to another node or client.
-    GetPublicIdWithConnectionInfoResponse {
-        /// Our `PublicId`
-        public_id: PublicId,
-        /// Their connection_info
-        encrypted_connection_info: Vec<u8>,
-        /// Message salt
-        nonce_bytes: [u8; box_::NONCEBYTES],
     },
     /// Return the close `PublicId`s back to the requester.
     ///
@@ -434,10 +407,6 @@ impl Debug for MessageContent {
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
-            MessageContent::GetPublicId => write!(formatter, "GetPublicId"),
-            MessageContent::GetPublicIdWithConnectionInfo { .. } => {
-                write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
-            }
             MessageContent::GetNodeNameResponse { ref relocated_id,
                                                   ref close_group_ids,
                                                   ref message_id } => {
@@ -446,14 +415,6 @@ impl Debug for MessageContent {
                        close_group_ids,
                        relocated_id,
                        message_id)
-            }
-            MessageContent::GetPublicIdResponse { ref public_id } => {
-                write!(formatter, "GetPublicIdResponse {{ {:?} }}", public_id)
-            }
-            MessageContent::GetPublicIdWithConnectionInfoResponse { ref public_id, .. } => {
-                write!(formatter,
-                       "GetPublicIdWithConnectionInfoResponse {{ {:?}, .. }}",
-                       public_id)
             }
             MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
                 write!(formatter,

@@ -43,9 +43,6 @@ pub struct Stats {
     msg_expect_close_node: usize,
     msg_refresh: usize,
     msg_connection_info: usize,
-    msg_get_public_id: usize,
-    msg_get_public_id_with_connection_info: usize,
-
     msg_get_success: usize,
     msg_get_failure: usize,
     msg_put_success: usize,
@@ -55,8 +52,6 @@ pub struct Stats {
     msg_delete_success: usize,
     msg_delete_failure: usize,
     msg_get_close_group_rsp: usize,
-    msg_get_public_id_rsp: usize,
-    msg_get_public_id_rsp_with_connection_info: usize,
     msg_get_node_name_rsp: usize,
     msg_ack: usize,
 
@@ -73,10 +68,6 @@ impl Stats {
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
-            MessageContent::GetPublicId => self.msg_get_public_id += 1,
-            MessageContent::GetPublicIdWithConnectionInfo { .. } => {
-                self.msg_get_public_id_with_connection_info += 1
-            }
             MessageContent::Request(Request::Refresh(..)) => self.msg_refresh += 1,
             MessageContent::Request(Request::Get(..)) => self.msg_get += 1,
             MessageContent::Request(Request::Put(..)) => self.msg_put += 1,
@@ -93,10 +84,6 @@ impl Stats {
                 self.msg_delete_failure += 1
             }
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
-            MessageContent::GetPublicIdResponse { .. } => self.msg_get_public_id_rsp += 1,
-            MessageContent::GetPublicIdWithConnectionInfoResponse { .. } => {
-                self.msg_get_public_id_rsp_with_connection_info += 1
-            }
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
         }
@@ -127,11 +114,11 @@ impl Stats {
                   self.msg_direct_connection_unneeded);
             info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetNodeName: {}, \
                    ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
-                   ConnectionInfo: {}, GetPublicId: {}, GetPublicIdWithConnectionInfo: {}, \
+                   ConnectionInfo: {}, \
                    GetSuccess: {}, GetFailure: {}, PutSuccess: {}, PutFailure: {}, PostSuccess: \
                    {}, PostFailure: {}, DeleteSuccess: {}, DeleteFailure: {}, \
-                   GetCloseGroupResponse: {}, GetPublicIdResponse: {}, \
-                   GetPublicIdWithConnectionInfoResponse: {}, GetNodeNameResponse: {}, Ack: {}",
+                   GetCloseGroupResponse: {}, \
+                   GetNodeNameResponse: {}, Ack: {}",
                   self.msg_get,
                   self.msg_put,
                   self.msg_post,
@@ -141,8 +128,6 @@ impl Stats {
                   self.msg_get_close_group,
                   self.msg_refresh,
                   self.msg_connection_info,
-                  self.msg_get_public_id,
-                  self.msg_get_public_id_with_connection_info,
                   self.msg_get_success,
                   self.msg_get_failure,
                   self.msg_put_success,
@@ -152,8 +137,6 @@ impl Stats {
                   self.msg_delete_success,
                   self.msg_delete_failure,
                   self.msg_get_close_group_rsp,
-                  self.msg_get_public_id_rsp,
-                  self.msg_get_public_id_rsp_with_connection_info,
                   self.msg_get_node_name_rsp,
                   self.msg_ack);
         }
