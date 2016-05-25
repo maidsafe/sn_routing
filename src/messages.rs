@@ -67,7 +67,7 @@ pub enum Message {
 pub enum DirectMessage {
     /// Sent from the bootstrap node to a client in response to `ClientIdentify`.
     BootstrapIdentify {
-        /// The bootstrape node's keys and name.
+        /// The bootstrap node's keys and name.
         public_id: ::id::PublicId,
         /// The dynamically calculated quorum size the client's accumulator should use.
         current_quorum_size: usize,
@@ -106,7 +106,7 @@ pub enum DirectMessage {
     TunnelSuccess(PeerId),
     /// Sent from a tunnel node to indicate that the given peer has disconnected.
     TunnelClosed(PeerId),
-    /// Sent to a tunnel node to indicate the tunnel is not needed anymore.
+    /// Sent to a tunnel node to indicate the tunnel is not needed any more.
     TunnelDisconnect(PeerId),
 }
 
@@ -126,6 +126,9 @@ impl DirectMessage {
 pub struct HopMessage {
     /// Wrapped signed message.
     content: SignedMessage,
+    /// Route number; corresponds to the index of the peer in the group of target peers being
+    /// considered for the next hop.
+    route: u8,
     /// Every node this has already been sent to.
     sent_to: Vec<XorName>,
     /// Signature to be validated against `name`'s public key.
@@ -135,12 +138,14 @@ pub struct HopMessage {
 impl HopMessage {
     /// Wrap `content` for transmission to the next hop and sign it.
     pub fn new(content: SignedMessage,
+               route: u8,
                sent_to: Vec<XorName>,
                sign_key: &sign::SecretKey)
                -> Result<HopMessage, RoutingError> {
         let bytes_to_sign = try!(serialise(&content));
         Ok(HopMessage {
             content: content,
+            route: route,
             sent_to: sent_to,
             signature: sign::sign_detached(&bytes_to_sign, sign_key),
         })
@@ -165,6 +170,10 @@ impl HopMessage {
     /// and signed the message.
     pub fn content(&self) -> &SignedMessage {
         &self.content
+    }
+
+    pub fn route(&self) -> u8 {
+        self.route
     }
 
     pub fn sent_to(&self) -> &Vec<XorName> {
@@ -209,8 +218,13 @@ impl SignedMessage {
     }
 
     /// The routing message that was signed.
-    pub fn content(&self) -> &RoutingMessage {
+    pub fn routing_message(&self) -> &RoutingMessage {
         &self.content
+    }
+
+    /// The `MessageContent` of the signed routing message.
+    pub fn message_content(&self) -> &MessageContent {
+        &self.content.content
     }
 
     /// The `PublicId` associated with the signed message
@@ -224,72 +238,33 @@ impl SignedMessage {
     }
 }
 
-/// Variant type to hold `either` a request or response.
+/// A routing message with source and destination authorities.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub enum RoutingMessage {
-    /// Outgoing RPC type message.
-    Request(RequestMessage),
-    /// Incoming answer to request RPC.
-    Response(ResponseMessage),
+pub struct RoutingMessage {
+    /// Source authority
+    pub src: Authority,
+    /// Destination authority
+    pub dst: Authority,
+    /// The message content
+    pub content: MessageContent,
 }
 
 impl RoutingMessage {
-    /// Returns the sender, i. e. the source authority of the routing message.
-    pub fn src(&self) -> &Authority {
-        match *self {
-            RoutingMessage::Request(ref msg) => &msg.src,
-            RoutingMessage::Response(ref msg) => &msg.src,
-        }
-    }
-
-    /// Returns the recipient, i. e. the destination authority of routing message.
-    pub fn dst(&self) -> &Authority {
-        match *self {
-            RoutingMessage::Request(ref msg) => &msg.dst,
-            RoutingMessage::Response(ref msg) => &msg.dst,
-        }
-    }
-
-    /// The priority Crust should send this message with.
+    /// Returns the priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
-        match *self {
-            RoutingMessage::Request(ref msg) => msg.content.priority(),
-            RoutingMessage::Response(ref msg) => msg.content.priority(),
-        }
+        self.content.priority()
     }
 }
 
-/// A request message wrapper
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub struct RequestMessage {
-    /// Source authority
-    pub src: Authority,
-    /// Destination authority
-    pub dst: Authority,
-    /// The request content
-    pub content: RequestContent,
-}
-
-/// A response message wrapper
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, Debug, RustcEncodable, RustcDecodable)]
-pub struct ResponseMessage {
-    /// Source authority
-    pub src: Authority,
-    /// Destination authority
-    pub dst: Authority,
-    /// The response content
-    pub content: ResponseContent,
-}
-
-/// The request types
+/// The routing message types
 #[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
-pub enum RequestContent {
+pub enum MessageContent {
     // ---------- Internal ------------
     /// Ask the network to alter your `PublicId` name.
     ///
     /// This is sent by a `Client` to its `NaeManager` with the intent to become a routing node with
     /// a new name chosen by the `NaeManager`.
-    GetNetworkName {
+    GetNodeName {
         /// The client's `PublicId` (public keys and name)
         current_id: PublicId,
         /// The message's unique identifier.
@@ -309,76 +284,20 @@ pub enum RequestContent {
     /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
     /// `NodeManager`'s members.
     GetCloseGroup(MessageId),
-    /// Request a direct connection to the recipient.
-    Connect,
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
     ConnectionInfo {
         /// Encrypted Crust connection info.
         encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrytped message.
+        /// Nonce used to provide a salt in the encrypted message.
         nonce_bytes: [u8; box_::NONCEBYTES],
         // TODO: The receiver should have that in the node_id_cache.
         /// The sender's public ID.
         public_id: PublicId,
     },
-    /// Ask each member of a group near a node address for the `PublicId`.
-    GetPublicId,
-    /// Ask for a `PublicId` but provide our connection_info encrytped.
-    GetPublicIdWithConnectionInfo {
-        /// Encrypted crust connection_info (socket address and protocol).
-        encrypted_connection_info: Vec<u8>,
-        /// Nonce used to provide a salt in the encrytped message.
-        nonce_bytes: [u8; box_::NONCEBYTES],
-    },
-    /// Message from upper layers sending network state on any network churn event.
-    Refresh(Vec<u8>, MessageId),
-    // ---------- External ------------
-    /// Ask for data from network, passed from API with data name as parameter
-    Get(DataIdentifier, MessageId),
-    /// Put data to network. Provide actual data as parameter
-    Put(Data, MessageId),
-    /// Post data to network. Provide actual data as parameter
-    Post(Data, MessageId),
-    /// Delete data from network. Provide actual data as parameter
-    Delete(Data, MessageId),
-}
-
-impl RequestContent {
-    /// The priority Crust should send this message with.
-    pub fn priority(&self) -> u8 {
-        match *self {
-            RequestContent::GetNetworkName { .. } |
-            RequestContent::ExpectCloseNode { .. } |
-            RequestContent::GetCloseGroup(..) |
-            RequestContent::Connect |
-            RequestContent::ConnectionInfo { .. } |
-            RequestContent::GetPublicId |
-            RequestContent::GetPublicIdWithConnectionInfo { .. } => 0,
-            RequestContent::Refresh(..) => 2,
-            RequestContent::Get(..) => 3,
-            RequestContent::Put(ref data, _) |
-            RequestContent::Post(ref data, _) |
-            RequestContent::Delete(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-        }
-    }
-}
-
-/// The response types
-///
-/// All responses map to a specific request, and where the request was from a single node
-/// or client, the response will contain the signed request to prevent forgery.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
-pub enum ResponseContent {
-    // ---------- Internal ------------
     /// Reply with the new `PublicId` for the joining node.
     ///
     /// Sent from the `NodeManager` to the `Client`.
-    GetNetworkName {
+    GetNodeNameResponse {
         /// Supplied `PublicId`, but with the new name
         relocated_id: PublicId,
         /// Our close group `PublicId`s.
@@ -386,104 +305,30 @@ pub enum ResponseContent {
         /// The message's unique identifier.
         message_id: MessageId,
     },
-    /// Reply with the requested `PublicId`.
-    ///
-    /// Sent from the `NodeManager` to the joining node.
-    GetPublicId {
-        /// The requested `PublicId`
-        public_id: PublicId,
-    },
-    /// Reply with the `PublicId` along with the sender's encrypted connection_info
-    ///
-    /// Sent from a `ManagedNode` to another node or client.
-    GetPublicIdWithConnectionInfo {
-        /// Our `PublicId`
-        public_id: PublicId,
-        /// Their connection_info
-        encrypted_connection_info: Vec<u8>,
-        /// Message salt
-        nonce_bytes: [u8; box_::NONCEBYTES],
-    },
-    /// Return the close `PublicId`s back to the requestor.
+    /// Return the close `PublicId`s back to the requester.
     ///
     /// Sent from a `NodeManager` to a node or client.
-    GetCloseGroup {
+    GetCloseGroupResponse {
         /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
         /// The message ID.
         message_id: MessageId,
     },
-    // ---------- External ------------
-    /// Reply with the requested data (may not be ignored)
-    ///
-    /// Sent from a `ManagedNode` to an `NaeManager`, and from there to a `Client`, although this
-    /// may be shortcut if the data is in a node's cache.
-    GetSuccess(Data, MessageId),
-    /// Success token for Put (may be ignored)
-    PutSuccess(DataIdentifier, MessageId),
-    /// Success token for Post  (may be ignored)
-    PostSuccess(DataIdentifier, MessageId),
-    /// Success token for delete  (may be ignored)
-    DeleteSuccess(DataIdentifier, MessageId),
-    /// Error for `Get`, includes signed request to prevent injection attacks
-    GetFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Originator's signed request
-        request: RequestMessage,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Put, includes signed request to prevent injection attacks
-    PutFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Originator's signed request
-        request: RequestMessage,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for Post, includes signed request to prevent injection attacks
-    PostFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Originator's signed request
-        request: RequestMessage,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
-    /// Error for delete, includes signed request to prevent injection attacks
-    DeleteFailure {
-        /// Unique message identifier
-        id: MessageId,
-        /// Originator's signed request
-        request: RequestMessage,
-        /// Error type sent back, may be injected from upper layers
-        external_error_indicator: Vec<u8>,
-    },
+    /// Acknowledge receipt of any request or response except an `Ack`.
+    Ack(u64),
+    /// User-facing request message
+    Request(Request),
+    /// User-facing response message
+    Response(Response),
 }
 
-impl ResponseContent {
+impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            ResponseContent::GetNetworkName { .. } |
-            ResponseContent::GetCloseGroup { .. } |
-            ResponseContent::GetPublicId { .. } |
-            ResponseContent::GetPublicIdWithConnectionInfo { .. } => 0,
-            ResponseContent::GetSuccess(ref data, _) => {
-                match *data {
-                    Data::Structured(..) => 4,
-                    _ => 5,
-                }
-            }
-            ResponseContent::PutSuccess(..) |
-            ResponseContent::PostSuccess(..) |
-            ResponseContent::DeleteSuccess(..) => 3,
-            ResponseContent::GetFailure { ref request, .. } |
-            ResponseContent::PutFailure { ref request, .. } |
-            ResponseContent::PostFailure { ref request, .. } |
-            ResponseContent::DeleteFailure { ref request, .. } => request.content.priority(),
+            MessageContent::Request(ref request) => request.priority(),
+            MessageContent::Response(ref response) => response.priority(),
+            _ => 0,
         }
     }
 }
@@ -529,8 +374,9 @@ impl Debug for DirectMessage {
 impl Debug for HopMessage {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter,
-               "HopMessage {{ content: {:?}, signature: .. }}",
-               self.content)
+               "HopMessage {{ content: {:?}, route: {}, sent_to: .., signature: .. }}",
+               self.content,
+               self.route)
     }
 }
 
@@ -543,128 +389,228 @@ impl Debug for SignedMessage {
     }
 }
 
-impl Debug for RequestContent {
+impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            RequestContent::GetNetworkName { ref current_id, ref message_id } => {
+            MessageContent::GetNodeName { ref current_id, ref message_id } => {
                 write!(formatter,
-                       "GetNetworkName {{ {:?}, {:?} }}",
+                       "GetNodeName {{ {:?}, {:?} }}",
                        current_id,
                        message_id)
             }
-            RequestContent::ExpectCloseNode { ref expect_id, ref client_auth, ref message_id } => {
+            MessageContent::ExpectCloseNode { ref expect_id, ref client_auth, ref message_id } => {
                 write!(formatter,
                        "ExpectCloseNode {{ {:?}, {:?}, {:?} }}",
                        expect_id,
                        client_auth,
                        message_id)
             }
-            RequestContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
-            RequestContent::Connect => write!(formatter, "Connect"),
-            RequestContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
-            RequestContent::GetPublicId => write!(formatter, "GetPublicId"),
-            RequestContent::GetPublicIdWithConnectionInfo { .. } => {
-                write!(formatter, "GetPublicIdWithConnectionInfo {{ .. }}")
+            MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
+            MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
+            MessageContent::GetNodeNameResponse { ref relocated_id,
+                                                  ref close_group_ids,
+                                                  ref message_id } => {
+                write!(formatter,
+                       "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
+                       close_group_ids,
+                       relocated_id,
+                       message_id)
             }
-            RequestContent::Refresh(ref data, ref message_id) => {
+            MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {
+                write!(formatter,
+                       "GetCloseGroupResponse {{ {:?}, {:?} }}",
+                       close_group_ids,
+                       message_id)
+            }
+            MessageContent::Ack(ref ack) => write!(formatter, "Ack({})", ack),
+            MessageContent::Request(ref request) => write!(formatter, "Request({:?})", request),
+            MessageContent::Response(ref response) => write!(formatter, "Response({:?})", response),
+        }
+    }
+}
+
+/// Request message types
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+pub enum Request {
+    /// Message from upper layers sending network state on any network churn event.
+    Refresh(Vec<u8>, MessageId),
+    /// Ask for data from network, passed from API with data name as parameter
+    Get(DataIdentifier, MessageId),
+    /// Put data to network. Provide actual data as parameter
+    Put(Data, MessageId),
+    /// Post data to network. Provide actual data as parameter
+    Post(Data, MessageId),
+    /// Delete data from network. Provide actual data as parameter
+    Delete(Data, MessageId),
+}
+
+/// Response message types
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Hash, RustcEncodable, RustcDecodable)]
+pub enum Response {
+    /// Reply with the requested data (may not be ignored)
+    ///
+    /// Sent from a `ManagedNode` to an `NaeManager`, and from there to a `Client`, although this
+    /// may be shortcut if the data is in a node's cache.
+    GetSuccess(Data, MessageId),
+    /// Success token for Put (may be ignored)
+    PutSuccess(DataIdentifier, MessageId),
+    /// Success token for Post  (may be ignored)
+    PostSuccess(DataIdentifier, MessageId),
+    /// Success token for delete  (may be ignored)
+    DeleteSuccess(DataIdentifier, MessageId),
+    /// Error for `Get`, includes signed request to prevent injection attacks
+    GetFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// ID of the affected data chunk
+        data_id: DataIdentifier,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for Put, includes signed request to prevent injection attacks
+    PutFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// ID of the affected data chunk
+        data_id: DataIdentifier,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for Post, includes signed request to prevent injection attacks
+    PostFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// ID of the affected data chunk
+        data_id: DataIdentifier,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
+    /// Error for delete, includes signed request to prevent injection attacks
+    DeleteFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// ID of the affected data chunk
+        data_id: DataIdentifier,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
+}
+
+impl Request {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        match *self {
+            Request::Refresh(..) => 2,
+            Request::Get(..) => 3,
+            Request::Put(ref data, _) |
+            Request::Post(ref data, _) |
+            Request::Delete(ref data, _) => {
+                match *data {
+                    Data::Structured(..) => 4,
+                    _ => 5,
+                }
+            }
+        }
+    }
+}
+
+impl Response {
+    /// The priority Crust should send this message with.
+    pub fn priority(&self) -> u8 {
+        match *self {
+            Response::GetSuccess(ref data, _) => {
+                match *data {
+                    Data::Structured(..) => 4,
+                    _ => 5,
+                }
+            }
+            Response::PutSuccess(..) |
+            Response::PostSuccess(..) |
+            Response::DeleteSuccess(..) |
+            Response::GetFailure { .. } |
+            Response::PutFailure { .. } |
+            Response::PostFailure { .. } |
+            Response::DeleteFailure { .. } => 3,
+        }
+    }
+}
+
+impl Debug for Request {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        match *self {
+            Request::Refresh(ref data, ref message_id) => {
                 write!(formatter,
                        "Refresh({}, {:?})",
                        utils::format_binary_array(data),
                        message_id)
             }
-            RequestContent::Get(ref data_request, ref message_id) => {
+            Request::Get(ref data_request, ref message_id) => {
                 write!(formatter, "Get({:?}, {:?})", data_request, message_id)
             }
-            RequestContent::Put(ref data, ref message_id) => {
+            Request::Put(ref data, ref message_id) => {
                 write!(formatter, "Put({:?}, {:?})", data, message_id)
             }
-            RequestContent::Post(ref data, ref message_id) => {
+            Request::Post(ref data, ref message_id) => {
                 write!(formatter, "Post({:?}, {:?})", data, message_id)
             }
-            RequestContent::Delete(ref data, ref message_id) => {
+            Request::Delete(ref data, ref message_id) => {
                 write!(formatter, "Delete({:?}, {:?})", data, message_id)
             }
         }
     }
 }
 
-impl Debug for ResponseContent {
+impl Debug for Response {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            ResponseContent::GetNetworkName { ref relocated_id,
-                                              ref close_group_ids,
-                                              ref message_id } => {
-                write!(formatter,
-                       "GetNetworkName {{ {:?}, {:?}, {:?} }}",
-                       close_group_ids,
-                       relocated_id,
-                       message_id)
+            Response::GetSuccess(ref data, ref message_id) => {
+                write!(formatter, "GetSuccess({:?}, {:?})", data, message_id)
             }
-            ResponseContent::GetPublicId { ref public_id } => {
-                write!(formatter, "GetPublicId {{ {:?} }}", public_id)
+            Response::PutSuccess(ref name, ref message_id) => {
+                write!(formatter, "PutSuccess({:?}, {:?})", name, message_id)
             }
-            ResponseContent::GetPublicIdWithConnectionInfo { ref public_id, .. } => {
-                write!(formatter,
-                       "GetPublicIdWithConnectionInfo {{ {:?}, .. }}",
-                       public_id)
+            Response::PostSuccess(ref name, ref message_id) => {
+                write!(formatter, "PostSuccess({:?}, {:?})", name, message_id)
             }
-            ResponseContent::GetCloseGroup { ref close_group_ids, message_id } => {
-                write!(formatter,
-                       "GetCloseGroup {{ {:?}, {:?} }}",
-                       close_group_ids,
-                       message_id)
+            Response::DeleteSuccess(ref name, ref message_id) => {
+                write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
             }
-            ResponseContent::GetSuccess(ref data, ref message_id) => {
-                write!(formatter, "GetSuccess {{ {:?}, {:?} }}", data, message_id)
+            Response::GetFailure { ref id, ref data_id, .. } => {
+                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
-            ResponseContent::PutSuccess(ref name, ref message_id) => {
-                write!(formatter, "PutSuccess {{ {:?}, {:?} }}", name, message_id)
+            Response::PutFailure { ref id, ref data_id, .. } => {
+                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
-            ResponseContent::PostSuccess(ref name, ref message_id) => {
-                write!(formatter, "PostSuccess {{ {:?}, {:?} }}", name, message_id)
+            Response::PostFailure { ref id, ref data_id, .. } => {
+                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
-            ResponseContent::DeleteSuccess(ref name, ref message_id) => {
-                write!(formatter,
-                       "DeleteSuccess {{ {:?}, {:?} }}",
-                       name,
-                       message_id)
-            }
-            ResponseContent::GetFailure { ref id, ref request, .. } => {
-                write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, request)
-            }
-            ResponseContent::PutFailure { ref id, ref request, .. } => {
-                write!(formatter, "PutFailure {{ {:?}, {:?}, .. }}", id, request)
-            }
-            ResponseContent::PostFailure { ref id, ref request, .. } => {
-                write!(formatter, "PostFailure {{ {:?}, {:?}, .. }}", id, request)
-            }
-            ResponseContent::DeleteFailure { ref id, ref request, .. } => {
-                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, request)
+            Response::DeleteFailure { ref id, ref data_id, .. } => {
+                write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
         }
     }
 }
 
-
 #[cfg(test)]
 mod test {
     extern crate rand;
 
-    use super::{HopMessage, SignedMessage, RoutingMessage, RequestMessage, RequestContent};
-    use id::FullId;
+    use super::{HopMessage, SignedMessage, RoutingMessage, MessageContent};
     use authority::Authority;
-    use xor_name::XorName;
-    use sodiumoxide::crypto::sign;
+    use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
+    use sodiumoxide::crypto::sign;
+    use types::MessageId;
+    use xor_name::XorName;
 
     #[test]
     fn signed_message_check_integrity() {
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage::Request(RequestMessage {
+        let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: RequestContent::Connect,
-        });
+            content: MessageContent::GetCloseGroup(MessageId::zero()),
+        };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
 
@@ -672,7 +618,7 @@ mod test {
 
         let mut signed_message = unwrap_result!(signed_message_result);
 
-        assert_eq!(routing_message, *signed_message.content());
+        assert_eq!(routing_message, *signed_message.routing_message());
         assert_eq!(full_id.public_id(), signed_message.public_id());
 
         let check_integrity_result = signed_message.check_integrity();
@@ -693,11 +639,11 @@ mod test {
     #[test]
     fn hop_message_verify() {
         let name: XorName = rand::random();
-        let routing_message = RoutingMessage::Request(RequestMessage {
+        let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: RequestContent::Connect,
-        });
+            content: MessageContent::GetCloseGroup(MessageId::zero()),
+        };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
 
@@ -706,7 +652,7 @@ mod test {
         let signed_message = unwrap_result!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result =
-            HopMessage::new(signed_message.clone(), vec![], &secret_signing_key);
+            HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 

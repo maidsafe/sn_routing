@@ -48,7 +48,6 @@ extern crate rustc_serialize;
 extern crate docopt;
 extern crate sodiumoxide;
 extern crate routing;
-extern crate xor_name;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate term;
@@ -62,12 +61,9 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
-use xor_name::XorName;
 use sodiumoxide::crypto::hash;
 use utils::{ExampleNode, ExampleClient};
-use routing::{Data, DataIdentifier, PlainData};
-
-use kademlia_routing_table::GROUP_SIZE;
+use routing::{Data, DataIdentifier, PlainData, XorName, GROUP_SIZE};
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
@@ -236,7 +232,7 @@ fn store_and_verify(requests: usize, batches: usize) {
     for i in 0..requests {
         let key: String = (0..10).map(|_| random::<u8>() as char).collect();
         let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let name = XorName::new(hash::sha512::hash(key.as_bytes()).0);
+        let name = XorName(hash::sha512::hash(key.as_bytes()).0);
         let data = unwrap_result!(serialise(&(key, value)));
         let data = Data::Plain(PlainData::new(name, data));
 

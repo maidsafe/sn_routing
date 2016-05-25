@@ -21,6 +21,7 @@ use crust::PeerId;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 
+use core::GROUP_SIZE;
 use kademlia_routing_table::Destination;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{self, Debug, Formatter};
@@ -78,9 +79,9 @@ impl Authority {
     }
 
     /// Returns the `Destination` for the `RoutingTable`.
-    pub fn to_destination(&self) -> Destination {
+    pub fn to_destination(&self) -> Destination<XorName> {
         if self.is_group() {
-            Destination::Group(*self.name())
+            Destination::Group(*self.name(), GROUP_SIZE)
         } else {
             Destination::Node(*self.name())
         }
@@ -99,7 +100,7 @@ impl Debug for Authority {
             Authority::Client { ref client_key, ref proxy_node_name, ref peer_id } => {
                 write!(formatter,
                        "Client {{ client_name: {}, proxy_node_name: {}, peer_id: {:?} }}",
-                       XorName::new(hash::sha512::hash(&client_key[..]).0),
+                       XorName(hash::sha512::hash(&client_key[..]).0),
                        proxy_node_name,
                        peer_id)
             }

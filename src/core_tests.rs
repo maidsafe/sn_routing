@@ -1,4 +1,4 @@
-// Copyright 2016 MaidSafe.net limited.
+// copyright 2016 maidsafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use rand::{self, Rng};
+use rand::distributions::{IndependentSample, Range};
 use std::cmp;
 use std::collections::HashSet;
 use std::sync::mpsc;
@@ -23,14 +24,14 @@ use xor_name::XorName;
 
 use action::Action;
 use authority::Authority;
-use core::{Core, Role, RoutingTable};
+use core::{Core, Role, RoutingTable, GROUP_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
 use itertools::Itertools;
-use kademlia_routing_table::{ContactInfo, GROUP_SIZE};
-use messages::{RoutingMessage, RequestContent, RequestMessage, ResponseContent, ResponseMessage};
+use kademlia_routing_table::ContactInfo;
+use messages::{RoutingMessage, MessageContent, Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
 
@@ -96,31 +97,31 @@ impl TestNode {
                         id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetSuccess(data, id),
-        });
+            content: MessageContent::Response(Response::GetSuccess(data, id)),
+        };
         self.send_action(routing_msg, result_tx)
     }
 
     fn send_get_failure(&self,
                         src: Authority,
                         dst: Authority,
-                        request: RequestMessage,
+                        data_id: DataIdentifier,
                         external_error_indicator: Vec<u8>,
                         id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage::Response(ResponseMessage {
+        let routing_msg = RoutingMessage {
             src: src,
             dst: dst,
-            content: ResponseContent::GetFailure {
+            content: MessageContent::Response(Response::GetFailure {
                 id: id,
-                request: request,
+                data_id: data_id,
                 external_error_indicator: external_error_indicator,
-            },
-        });
+            }),
+        };
         self.send_action(routing_msg, result_tx)
     }
 
@@ -183,7 +184,7 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Put(data, message_id), dst, result_tx)
+        self.send_action(Request::Put(data, message_id), dst, result_tx)
     }
 
     fn send_get_request(&mut self,
@@ -192,13 +193,11 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(RequestContent::Get(data_request, message_id),
-                         dst,
-                         result_tx)
+        self.send_action(Request::Get(data_request, message_id), dst, result_tx)
     }
 
     fn send_action(&self,
-                   content: RequestContent,
+                   content: Request,
                    dst: Authority,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
@@ -224,8 +223,9 @@ macro_rules! expect_event {
     }
 }
 
-/// Process all events
-fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
+/// Process all events. Returns whether there were any events.
+fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
+    let mut result = false;
     loop {
         let mut n = false;
         if BALANCED_POLLING {
@@ -236,8 +236,11 @@ fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) {
         let c = clients.iter_mut().any(TestClient::poll);
         if !n && !c {
             break;
+        } else {
+            result = true;
         }
     }
+    result
 }
 
 fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
@@ -252,7 +255,7 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::new(network, Role::Node, Some(config.clone()), Some(Endpoint(i))));
-        poll_all(&mut nodes, &mut []);
+        let _ = poll_all(&mut nodes, &mut []);
     }
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
@@ -275,7 +278,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 
     drop(node);
 
-    poll_all(nodes, &mut []);
+    let _ = poll_all(nodes, &mut []);
 
     for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
         loop {
@@ -291,7 +294,7 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 // Get names of all entries in the `bucket_index`-th bucket in the routing table.
 fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<XorName> {
     let our_name = table.our_name();
-    let far_name = our_name.with_flipped_bit(bucket_index).unwrap();
+    let far_name = our_name.with_flipped_bit(bucket_index);
 
     table.closest_nodes_to(&far_name, GROUP_SIZE, false)
         .into_iter()
@@ -322,7 +325,11 @@ fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
         let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
         let actual_bucket = node_names_in_bucket(nodes, node.name(), bucket_index);
         if entries.len() < GROUP_SIZE {
-            assert_eq!(actual_bucket, entries);
+            assert!(actual_bucket == entries,
+                    "Node: {:?}, expected: {:?}. found: {:?}",
+                    node.name(),
+                    actual_bucket,
+                    entries);
         }
         count -= actual_bucket.len();
         bucket_index += 1;
@@ -395,7 +402,7 @@ fn client_connects_to_nodes() {
 
     nodes.push(client);
 
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     expect_event!(nodes.iter().last().unwrap(), Event::Connected);
 }
@@ -410,13 +417,56 @@ fn node_drops() {
 }
 
 #[test]
+fn churn() {
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 20);
+
+    let mut rng = rand::thread_rng();
+    for i in 0..100 {
+        let len = nodes.len();
+        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+            let node0 = *nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
+            let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
+            let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
+            trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
+                   i,
+                   node0,
+                   node1,
+                   node2);
+        } else {
+            let proxy = Range::new(0, len).ind_sample(&mut rng);
+            let index = Range::new(0, len + 1).ind_sample(&mut rng);
+            let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+            nodes.insert(index,
+                         TestNode::new(&network, Role::Node, Some(config.clone()), None));
+            trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
+        }
+
+        loop {
+            let mut state_changed = poll_all(&mut nodes, &mut []);
+            for node in &mut nodes {
+                state_changed = state_changed || node.core.resend_unacknowledged();
+            }
+            if !state_changed {
+                break;
+            }
+        }
+
+        for node in &mut nodes {
+            node.core.clear_state();
+        }
+        verify_kademlia_invariant_for_all_nodes(&nodes);
+    }
+}
+
+#[test]
 fn node_joins_in_front() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
                  TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -433,9 +483,9 @@ fn multiple_joining_nodes() {
     nodes.insert(0,
                  TestNode::new(&network, Role::Node, Some(config.clone()), None));
     nodes.push(TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.core.routing_table().is_empty());
-    poll_all(&mut nodes, &mut []);
+    let _ = poll_all(&mut nodes, &mut []);
     assert!(nodes.len() > network_size); // At least one node should have succeeded.
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -458,7 +508,7 @@ fn successful_put_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -470,22 +520,20 @@ fn successful_put_request() {
 
     assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx).is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage { content: RequestContent::Put(ref immutable,
-                                                                       ref id),
-                                                   .. })) => {
+                Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
                     request_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -502,7 +550,7 @@ fn successful_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -517,51 +565,52 @@ fn successful_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
                     request_received_count += 1;
-                    if data_request == *request && message_id == *id {
+                    if data_request == *request && message_id == id {
                         if let Err(_) = node.send_get_success(dst.clone(),
                                                               src.clone(),
                                                               data.clone(),
-                                                              *id,
+                                                              id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetSuccess )");
+                            trace!("Failed to send GetSuccess response");
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
 
     assert!(request_received_count >= QUORUM_SIZE);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(ResponseMessage {
-                        content: ResponseContent::GetSuccess(ref immutable, ref id), .. })) => {
+                Ok(Event::Response {
+                    response: Response::GetSuccess(ref immutable, ref id),
+                    ..
+                }) => {
                     response_received_count += 1;
                     if data == *immutable && message_id == *id {
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response(..) not received"),
+                _ => panic!("Event::Response not received"),
             }
         }
     }
@@ -578,7 +627,7 @@ fn failed_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            None)];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -593,56 +642,52 @@ fn failed_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request { request: Request::Get(ref data_id, ref id),
+                                    ref src,
+                                    ref dst }) => {
                     request_received_count += 1;
-                    if data_request == *request && message_id == *id {
-                        let request = RequestMessage {
-                            src: src.clone(),
-                            dst: dst.clone(),
-                            content: RequestContent::Get(*request, *id),
-                        };
+                    if data_request == *data_id && message_id == *id {
                         if let Err(_) = node.send_get_failure(dst.clone(),
                                                               src.clone(),
-                                                              request,
+                                                              *data_id,
                                                               vec![],
                                                               *id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetFailure )");
+                            trace!("Failed to send GetFailure response.");
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
 
     assert!(request_received_count >= QUORUM_SIZE);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut response_received_count = 0;
 
     for client in clients {
         loop {
             match client.event_rx.try_recv() {
-                Ok(Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure { ref id, .. },
-                    .. })) => {
+                Ok(Event::Response { response: Response::GetFailure { ref id, .. }, .. }) => {
                     response_received_count += 1;
-                    if message_id == *id { break; }
+                    if message_id == *id {
+                        break;
+                    }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Response(..) not received"),
+                _ => panic!("Event::Response not received"),
             }
         }
     }
@@ -659,7 +704,7 @@ fn disconnect_on_get_request() {
                                                                             .handle
                                                                             .endpoint()])),
                                            Some(Endpoint(2 * GROUP_SIZE)))];
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
@@ -674,15 +719,16 @@ fn disconnect_on_get_request() {
         .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
         .is_ok());
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name())) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
-                Ok(Event::Request(RequestMessage {
-                        ref src, ref dst, content: RequestContent::Get(ref request, ref id)})) => {
+                Ok(Event::Request { request: Request::Get(ref request, ref id),
+                                    ref src,
+                                    ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
                         if let Err(_) = node.send_get_success(dst.clone(),
@@ -690,13 +736,13 @@ fn disconnect_on_get_request() {
                                                               data.clone(),
                                                               *id,
                                                               result_tx.clone()) {
-                            trace!("Failed to send Event::Response( GetSuccess )");
+                            trace!("Failed to send GetSuccess response");
                         }
                         break;
                     }
                 }
                 Ok(_) => (),
-                _ => panic!("Event::Request(..) not received"),
+                _ => panic!("Event::Request not received"),
             }
         }
     }
@@ -706,11 +752,11 @@ fn disconnect_on_get_request() {
     clients[0].handle.0.borrow_mut().disconnect(&nodes[0].handle.0.borrow().peer_id);
     nodes[0].handle.0.borrow_mut().disconnect(&clients[0].handle.0.borrow().peer_id);
 
-    poll_all(&mut nodes, &mut clients);
+    let _ = poll_all(&mut nodes, &mut clients);
 
     for client in clients {
-        if let Ok(Event::Response(..)) = client.event_rx.try_recv() {
-            panic!("Unexpected Event::Response(..) received");
+        if let Ok(Event::Response { .. }) = client.event_rx.try_recv() {
+            panic!("Unexpected Event::Response received");
         }
     }
 }

@@ -12,23 +12,22 @@ version = "0.19.1"
 
 [dependencies]
 accumulator = "~0.3.0"
-clippy = {version = "~0.0.66", optional = true}
-crust = "~0.13.1"
-itertools = "~0.4.13"
-kademlia_routing_table = "~0.5.1"
+clippy = {version = "~0.0.69", optional = true}
+crust = "~0.14.0"
+itertools = "~0.4.15"
+kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
 lru_time_cache = "~0.4.0"
-maidsafe_utilities = "~0.5.4"
-message_filter = "~0.5.0"
+maidsafe_utilities = "~0.6.0"
+message_filter = "~0.6.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
 sodiumoxide = "~0.0.10"
 term = "~0.4.4"
-xor_name = "~0.1.0"
 
 [dev-dependencies]
 docopt = "~0.6.80"
-libc = "~0.2.10"
+libc = "~0.2.11"
 
 [build-dependencies]
 hyper = {version = "~0.9.4", optional = true}

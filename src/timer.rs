@@ -98,7 +98,7 @@ impl Timer {
         }
     }
 
-    fn stop(&mut self) {
+    pub fn stop(&mut self) {
         let &(ref mutex, ref cond_var) = &*self.detail_and_cond_var;
         let mut detail = mutex.lock().expect("Failed to lock.");
         detail.cancelled = true;

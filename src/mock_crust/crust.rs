@@ -113,7 +113,7 @@ impl Service {
         }
     }
 
-    /// Out `PeerId`.
+    /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id
     }

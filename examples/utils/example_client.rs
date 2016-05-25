@@ -17,15 +17,12 @@
 
 extern crate log;
 extern crate routing;
-extern crate xor_name;
 extern crate sodiumoxide;
 extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
-use self::sodiumoxide::crypto;
-use self::xor_name::XorName;
-use self::routing::{FullId, Event, Data, DataIdentifier, Authority, ResponseContent,
-                    ResponseMessage, Client, MessageId};
+use sodiumoxide::crypto;
+use routing::{FullId, Event, Data, DataIdentifier, Authority, Response, Client, MessageId, XorName};
 
 /// A simple example client implementation for a network based on the Routing library.
 #[allow(unused)]
@@ -74,15 +71,14 @@ impl ExampleClient {
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-                           .send_get_request(Authority::NaeManager(request.name()),
-                                             request.clone(),
-                                             message_id));
+            .send_get_request(Authority::NaeManager(request.name()),
+                              request.clone(),
+                              message_id));
 
         // Wait for Get success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetSuccess(data, id), .. }) => {
+                Event::Response { response: Response::GetSuccess(data, id), .. } => {
                     if message_id != id {
                         error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
                                 {:?}.",
@@ -92,11 +88,9 @@ impl ExampleClient {
                     }
                     return Some(data);
                 }
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::GetFailure {
-                        external_error_indicator,
-                        ..
-                    }, .. }) => {
+                Event::Response {
+                    response: Response::GetFailure { external_error_indicator, .. },
+                .. } => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
                            unwrap_result!(String::from_utf8(external_error_indicator)));
@@ -112,21 +106,18 @@ impl ExampleClient {
 
     /// Send a `Put` request to the network.
     ///
-    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure` response.
+    /// This is a blocking call and will wait indefinitely for a `PutSuccess` or `PutFailure`
+    /// response.
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-                           .send_put_request(Authority::ClientManager(*self.name()),
-                                             data,
-                                             message_id));
+            .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
 
         // Wait for Put success event from Routing
         for it in self.receiver.iter() {
             match it {
-                Event::Response(ResponseMessage { content: ResponseContent::PutSuccess(rec_data_id,
-                                                                              id),
-                                                  .. }) => {
+                Event::Response { response: Response::PutSuccess(rec_data_id, id), .. } => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_id.name(),
@@ -143,10 +134,7 @@ impl ExampleClient {
                         return Err(());
                     }
                 }
-                Event::Response(ResponseMessage {
-                    content: ResponseContent::PutFailure { .. },
-                    ..
-                }) => {
+                Event::Response { response: Response::PutFailure { .. }, .. } => {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }

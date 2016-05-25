@@ -18,8 +18,8 @@
 use kademlia_routing_table::RoutingTable;
 use xor_name::XorName;
 
-use core::NodeInfo;
-use messages::{RequestMessage, ResponseMessage};
+use authority::Authority;
+use messages::{Request, Response};
 use std::fmt::{self, Debug, Formatter};
 
 /// An Event raised by a `Node` or `Client` via its event sender.
@@ -31,20 +31,34 @@ use std::fmt::{self, Debug, Formatter};
 /// reached, i. e. enough members of the group have sent the same message.
 #[derive(Clone, Eq, PartialEq)]
 pub enum Event {
-    /// Request.
-    Request(RequestMessage),
-    /// Response.
-    Response(ResponseMessage),
+    /// Received a request message.
+    Request {
+        /// The request message.
+        request: Request,
+        /// The source authority that sent the request.
+        src: Authority,
+        /// The destination authority that receives the request.
+        dst: Authority,
+    },
+    /// Received a response message.
+    Response {
+        /// The response message.
+        response: Response,
+        /// The source authority that sent the response.
+        src: Authority,
+        /// The destination authority that receives the response.
+        dst: Authority,
+    },
     /// A new node joined the network and may be a member of group authorities we also belong to.
-    NodeAdded(XorName, RoutingTable<NodeInfo>),
+    NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
-    NodeLost(XorName, RoutingTable<NodeInfo>),
+    NodeLost(XorName, RoutingTable<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// We have disconnected from the network.
     Disconnected,
     /// We failed to relocate as a new node in the network.
-    GetNetworkNameFailed,
+    GetNodeNameFailed,
     /// We failed to start listening for incoming connections as the first node.
     NetworkStartupFailed,
     // TODO: Find a better solution for periodic tasks.
@@ -55,8 +69,20 @@ pub enum Event {
 impl Debug for Event {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            Event::Request(ref request) => write!(formatter, "Event::Request({:?})", request),
-            Event::Response(ref response) => write!(formatter, "Event::Response({:?})", response),
+            Event::Request { ref request, ref src, ref dst } => {
+                write!(formatter,
+                       "Event::Request {{ request: {:?}, src: {:?}, dst: {:?} }}",
+                       request,
+                       src,
+                       dst)
+            }
+            Event::Response { ref response, ref src, ref dst } => {
+                write!(formatter,
+                       "Event::Response {{ response: {:?}, src: {:?}, dst: {:?} }}",
+                       response,
+                       src,
+                       dst)
+            }
             Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
                        "Event::NodeAdded({:?}, routing_table)",
@@ -67,7 +93,7 @@ impl Debug for Event {
             }
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::Disconnected => write!(formatter, "Event::Disconnected"),
-            Event::GetNetworkNameFailed => write!(formatter, "Event::GetNetworkNameFailed"),
+            Event::GetNodeNameFailed => write!(formatter, "Event::GetNodeNameFailed"),
             Event::NetworkStartupFailed => write!(formatter, "Event::NetworkStartupFailed"),
             Event::Tick => write!(formatter, "Event::Tick"),
         }

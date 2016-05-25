@@ -181,7 +181,6 @@ extern crate message_filter;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
-extern crate xor_name;
 
 mod action;
 mod authority;
@@ -203,6 +202,7 @@ mod timer;
 mod tunnels;
 mod types;
 mod utils;
+mod xor_name;
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod core_tests;
@@ -212,18 +212,16 @@ mod core_tests;
 pub mod mock_crust;
 
 pub use authority::Authority;
-pub use core::NodeInfo;
 pub use client::Client;
+pub use core::GROUP_SIZE;
 pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::{ImmutableData, ImmutableDataBackup, ImmutableDataSacrificial,
-                         normal_to_backup, backup_to_normal, normal_to_sacrificial,
-                         sacrificial_to_normal, backup_to_sacrificial, sacrificial_to_backup};
-pub use messages::{RequestContent, RequestMessage, ResponseContent, ResponseMessage,
-                   RoutingMessage, SignedMessage};
+pub use immutable_data::ImmutableData;
+pub use messages::{Request, Response};
 pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
+pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN, XOR_NAME_BITS};

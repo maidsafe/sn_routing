@@ -81,7 +81,7 @@ pub enum RoutingError {
     /// the sender's buckets
     RejectedGetCloseGroup,
     /// A client with `client_restriction == true` tried to relocate.
-    RejectedGetNetworkName,
+    RejectedGetNodeName,
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// Interface error
@@ -90,8 +90,6 @@ pub enum RoutingError {
     Io(::std::io::Error),
     /// Channel sending error
     SendEventError(SendError<Event>),
-    /// The bit index for a `XorName` was out of bounds.
-    BitIndexOutOfBoundsError,
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
@@ -143,11 +141,5 @@ impl From<SendError<Event>> for RoutingError {
 impl From<::maidsafe_utilities::serialisation::SerialisationError> for RoutingError {
     fn from(error: ::maidsafe_utilities::serialisation::SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
-    }
-}
-
-impl From<::xor_name::BitIndexOutOfBoundsError> for RoutingError {
-    fn from(_: ::xor_name::BitIndexOutOfBoundsError) -> RoutingError {
-        RoutingError::BitIndexOutOfBoundsError
     }
 }
