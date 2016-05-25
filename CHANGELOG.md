@@ -1,5 +1,13 @@
 # Routing - Change Log
 
+## [0.20.0]
+- Send acknowledgement messages (acks) and resend via a different route only if
+  no ack is received. Previously, several routes were used simultaneously,
+  wasting a lot of bandwidth.
+- Merge xor_name into routing.
+- Simplify the message type hierarchy and the API.
+- Fix sending redundant connection info.
+
 ## [0.19.1]
 - network size < GROUP_SIZE will only accept new nodes via first node
 

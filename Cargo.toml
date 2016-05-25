@@ -8,7 +8,7 @@ license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.19.1"
+version = "0.20.0"
 
 [dependencies]
 accumulator = "~0.3.0"
@@ -30,7 +30,7 @@ docopt = "~0.6.80"
 libc = "~0.2.11"
 
 [build-dependencies]
-hyper = {version = "~0.9.4", optional = true}
+hyper = {version = "~0.9.6", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]

@@ -27,21 +27,17 @@ use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, S
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 use lru_time_cache::LruCache;
-use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectState, PeerManager};
 use rand;
-use std::cmp;
+use sodiumoxide::crypto::{box_, hash, sign};
+use std::{cmp, io, iter, fmt};
 use std::collections::HashMap;
-use sodiumoxide::crypto::{box_, sign};
-use sodiumoxide::crypto::hash;
-use std::io;
-use std::iter;
-use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
+use std::sync::mpsc;
 use tunnels::Tunnels;
 use xor_name::{XorName, XOR_NAME_BITS};
 
