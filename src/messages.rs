@@ -284,8 +284,6 @@ pub enum MessageContent {
     /// This is sent from a joining node to its `NodeManager` to request the `PublicId`s of the
     /// `NodeManager`'s members.
     GetCloseGroup(MessageId),
-    /// Request a direct connection to the recipient.
-    Connect,
     /// Send our connection_info encrypted to a node we wish to connect to and have the keys for.
     ConnectionInfo {
         /// Encrypted Crust connection info.
@@ -435,7 +433,6 @@ impl Debug for MessageContent {
                        message_id)
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
-            MessageContent::Connect => write!(formatter, "Connect"),
             MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
             MessageContent::GetPublicId => write!(formatter, "GetPublicId"),
             MessageContent::GetPublicIdWithConnectionInfo { .. } => {
@@ -638,11 +635,12 @@ mod test {
     extern crate rand;
 
     use super::{HopMessage, SignedMessage, RoutingMessage, MessageContent};
-    use id::FullId;
     use authority::Authority;
-    use xor_name::XorName;
-    use sodiumoxide::crypto::sign;
+    use id::FullId;
     use maidsafe_utilities::serialisation::serialise;
+    use sodiumoxide::crypto::sign;
+    use types::MessageId;
+    use xor_name::XorName;
 
     #[test]
     fn signed_message_check_integrity() {
@@ -650,7 +648,7 @@ mod test {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::Connect,
+            content: MessageContent::GetCloseGroup(MessageId::zero()),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);
@@ -683,7 +681,7 @@ mod test {
         let routing_message = RoutingMessage {
             src: Authority::ClientManager(name),
             dst: Authority::ClientManager(name),
-            content: MessageContent::Connect,
+            content: MessageContent::GetCloseGroup(MessageId::zero()),
         };
         let full_id = FullId::new();
         let signed_message_result = SignedMessage::new(routing_message.clone(), &full_id);

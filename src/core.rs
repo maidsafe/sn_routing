@@ -199,7 +199,6 @@ pub struct Core {
     pending_acks: HashMap<u64, UnacknowledgedMessage>,
     received_acks: MessageFilter<u64>,
     bucket_filter: MessageFilter<usize>,
-    node_id_cache: LruCache<XorName, PublicId>,
     message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: MessageFilter<RoutingMessage>,
@@ -269,7 +268,6 @@ impl Core {
             received_acks: MessageFilter::with_expiry_duration(Duration::from_secs(4 * 60)),
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
-            node_id_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             message_accumulator: Accumulator::with_duration(1, Duration::from_secs(60 * 20)),
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
             full_id: full_id,
@@ -366,7 +364,6 @@ impl Core {
         self.signed_message_filter.clear();
         self.received_acks.clear();
         self.bucket_filter.clear();
-        self.node_id_cache.clear();
         // self.message_accumulator.clear();
         self.grp_msg_filter.clear();
         self.sent_network_name_to = None;
@@ -1068,9 +1065,6 @@ impl Core {
                                                       routing_msg.dst.clone(),
                                                       public_id)
             }
-            (MessageContent::Connect,
-             Authority::ManagedNode(src_name),
-             Authority::ManagedNode(dst_name)) => self.handle_connect_request(src_name, dst_name),
             (MessageContent::GetPublicId,
              Authority::ManagedNode(src_name),
              Authority::NodeManager(dst_name)) => self.handle_get_public_id(src_name, dst_name),
@@ -1324,7 +1318,10 @@ impl Core {
             DirectMessage::NewNode(public_id) => {
                 trace!("{:?} Received NewNode({:?}).", self, public_id);
                 if self.routing_table.need_to_add(public_id.name()) {
-                    return self.send_connect_request(public_id.name());
+                    let our_name = *self.name();
+                    return self.send_connection_info(public_id,
+                                                     Authority::ManagedNode(our_name),
+                                                     Authority::ManagedNode(*public_id.name()));
                 }
                 Ok(())
             }
@@ -1431,43 +1428,6 @@ impl Core {
         self.bootstrap_identify(peer_id)
     }
 
-    /// Returns whether the given node is in the cache with the given public ID.
-    fn node_in_cache(&mut self, public_id: &PublicId, peer_id: &PeerId) -> bool {
-        let our_name = format!("Node({:?})", self.full_id.public_id().name());
-        if let Some(their_public_id) = self.node_id_cache.get(public_id.name()) {
-            if their_public_id == public_id {
-                return true;
-            }
-            warn!("{:?} Given Public ID and Public ID in cache don't match - Given {:?} :: In \
-                   cache {:?} Dropping peer {:?}",
-                  our_name,
-                  public_id,
-                  their_public_id,
-                  peer_id);
-            return false;
-        }
-        if self.peer_mgr.get_client(peer_id).is_some() {
-            // TODO(afck): At this point we probably haven't verified that the client's new name is
-            // correct.
-            debug!("{:?} Public ID not in cache, but peer {:?} is a client.",
-                   our_name,
-                   peer_id);
-            return true;
-        }
-        if self.peer_mgr.get_proxy(peer_id) == Some(public_id) {
-            // TODO(afck): Maybe we should verify the proxy's public ID.
-            debug!("{:?} Public ID not in cache, but peer {:?} is a proxy.",
-                   our_name,
-                   peer_id);
-            return true;
-        }
-        debug!("{:?} PublicId {:?} not found in node_id_cache - Dropping peer {:?}",
-               our_name,
-               public_id,
-               peer_id);
-        false
-    }
-
     fn handle_node_identify(&mut self,
                             public_id: PublicId,
                             peer_id: PeerId)
@@ -1480,12 +1440,6 @@ impl Core {
         debug!("{:?} Handling NodeIdentify from {:?}.",
                self,
                public_id.name());
-        if !self.node_in_cache(&public_id, &peer_id) {
-            trace!("{:?} Accepting connection anyway, since node_id_cache is disabled.",
-                   self);
-            // TODO: Re-enable this once Routing stability issues have been resolved.
-            // return self.disconnect_peer(&peer_id);
-        }
 
         if let Some((name, _)) = self.sent_network_name_to {
             if name == *public_id.name() {
@@ -1506,7 +1460,6 @@ impl Core {
             return Ok(());
         }
 
-        let _ = self.node_id_cache.remove(&name);
         let info = NodeInfo::new(public_id, peer_id);
 
         let common_groups = self.routing_table
@@ -1777,17 +1730,6 @@ impl Core {
                                         client_auth: Authority,
                                         message_id: MessageId)
                                         -> Result<(), RoutingError> {
-        // Add expect_id to node_id_cache regardless of whether we can
-        // accommodate entry in sent_network_name_to. This prevents us from rejecting
-        // connect request from nodes that have been accepted by majority in group
-        if let Some(prev_id) = self.node_id_cache.insert(*expect_id.name(), expect_id) {
-            warn!("{:?} Previous ID {:?} with same name found during \
-                   handle_expect_close_node_request. Ignoring that",
-                  self,
-                  prev_id);
-            return Err(RoutingError::RejectedPublicId);
-        }
-
         if expect_id == *self.full_id.public_id() {
             return Ok(());
         }
@@ -1844,14 +1786,12 @@ impl Core {
         close_group_ids.truncate(GROUP_SIZE / 2);
         // From A -> Closest in Y
         for close_node_id in close_group_ids {
-            if self.node_id_cache.insert(*close_node_id.name(), close_node_id).is_none() {
-                debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
-                       self,
-                       close_node_id);
-                try!(self.send_connection_info(close_node_id,
-                                               dst.clone(),
-                                               Authority::ManagedNode(*close_node_id.name())));
-            }
+            debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
+                   self,
+                   close_node_id);
+            try!(self.send_connection_info(close_node_id,
+                                           dst.clone(),
+                                           Authority::ManagedNode(*close_node_id.name())));
         }
         Ok(())
     }
@@ -1899,7 +1839,6 @@ impl Core {
                                        -> Result<(), RoutingError> {
         for close_node_id in close_group_ids {
             if self.routing_table.need_to_add(close_node_id.name()) {
-                let _ = self.node_id_cache.insert(*close_node_id.name(), close_node_id);
                 debug!("{:?} Sending connection info to {:?} on GetCloseGroup response.",
                        self,
                        close_node_id);
@@ -1936,35 +1875,15 @@ impl Core {
                                           their_public_id: PublicId)
                                           -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(their_public_id.name()));
-        try!(self.connect(encrypted_connection_info,
-                          nonce_bytes,
-                          their_public_id,
-                          Authority::ManagedNode(dst_name),
-                          Authority::Client {
-                              client_key: client_key,
-                              proxy_node_name: proxy_name,
-                              peer_id: peer_id,
-                          }));
-        if let Some((_name, _their_public_id)) = self.node_id_cache
-            .peek_iter()
-            .find(|elt| *elt.1.signing_public_key() == client_key) {
-            // try!(self.check_address_for_routing_table(&name));
-            // self.connect(encrypted_connection_info,
-            //              nonce_bytes,
-            //              *their_public_id,
-            //              Authority::ManagedNode(dst_name),
-            //              Authority::Client {
-            //                  client_key: client_key,
-            //                  proxy_node_name: proxy_name,
-            //                  peer_id: peer_id,
-            //              })
-            Ok(())
-        } else {
-            warn!("{:?} Client with key {:?} not found in node_id_cache.",
-                  self,
-                  client_key);
-            Err(RoutingError::RejectedPublicId)
-        }
+        self.connect(encrypted_connection_info,
+                     nonce_bytes,
+                     their_public_id,
+                     Authority::ManagedNode(dst_name),
+                     Authority::Client {
+                         client_key: client_key,
+                         proxy_node_name: proxy_name,
+                         peer_id: peer_id,
+                     })
     }
 
     fn handle_connection_info_from_node(&mut self,
@@ -1975,73 +1894,14 @@ impl Core {
                                         their_public_id: PublicId)
                                         -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(&src_name));
-        try!(self.connect(encrypted_connection_info,
-                          nonce_bytes,
-                          their_public_id,
-                          dst,
-                          Authority::ManagedNode(src_name)));
-        if let Some(_their_public_id) = self.node_id_cache.get(&src_name).cloned() {
-            // self.connect(encrypted_connection_info,
-            //              nonce_bytes,
-            //              their_public_id,
-            //              dst,
-            //              Authority::ManagedNode(src_name))
-            Ok(())
-        } else {
-            // let request_content = MessageContent::GetPublicIdWithConnectionInfo {
-            //     encrypted_connection_info: encrypted_connection_info,
-            //     nonce_bytes: nonce_bytes,
-            // };
-
-            // let request_msg = RoutingMessage {
-            //     src: dst,
-            //     dst: Authority::NodeManager(src_name),
-            //     content: request_content,
-            // };
-
-            // self.send_message(request_msg)
-            Ok(())
-        }
+        self.connect(encrypted_connection_info,
+                     nonce_bytes,
+                     their_public_id,
+                     dst,
+                     Authority::ManagedNode(src_name))
     }
 
     // ---- Connect Requests and Responses --------------------------------------------------------
-
-    fn send_connect_request(&mut self, dst_name: &XorName) -> Result<(), RoutingError> {
-        let request_content = MessageContent::Connect;
-
-        let request_msg = RoutingMessage {
-            src: Authority::ManagedNode(*self.name()),
-            dst: Authority::ManagedNode(*dst_name),
-            content: request_content,
-        };
-
-        self.send_message(request_msg)
-    }
-
-    fn handle_connect_request(&mut self,
-                              src_name: XorName,
-                              dst_name: XorName)
-                              -> Result<(), RoutingError> {
-        try!(self.check_address_for_routing_table(&src_name));
-
-        let our_name = *self.name();
-        if let Some(public_id) = self.node_id_cache.get(&src_name).cloned() {
-            try!(self.send_connection_info(public_id,
-                                           Authority::ManagedNode(our_name),
-                                           Authority::ManagedNode(src_name)));
-            return Ok(());
-        }
-
-        let request_content = MessageContent::GetPublicId;
-
-        let request_msg = RoutingMessage {
-            src: Authority::ManagedNode(dst_name),
-            dst: Authority::NodeManager(src_name),
-            content: request_content,
-        };
-
-        self.send_message(request_msg)
-    }
 
     fn handle_get_public_id(&mut self,
                             src_name: XorName,
@@ -2050,8 +1910,6 @@ impl Core {
         if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
             let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
                 info.public_id
-            } else if let Some(&public_id) = self.node_id_cache.get(&dst_name) {
-                public_id
             } else {
                 debug!("{:?} Cannot answer GetPublicId: {:?} not found in the routing table.",
                        self,
@@ -2078,12 +1936,9 @@ impl Core {
                                      dst_name: XorName)
                                      -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(public_id.name()));
-
         try!(self.send_connection_info(public_id,
                                        Authority::ManagedNode(dst_name),
                                        Authority::ManagedNode(*public_id.name())));
-        let _ = self.node_id_cache.insert(*public_id.name(), public_id);
-
         Ok(())
     }
 
@@ -2096,8 +1951,6 @@ impl Core {
         if self.routing_table.is_close(&dst_name, GROUP_SIZE) {
             let public_id = if let Some(info) = self.routing_table.get(&dst_name) {
                 info.public_id
-            } else if let Some(public_id) = self.node_id_cache.get(&dst_name) {
-                *public_id
             } else {
                 error!("Node({:?}) Cannot answer GetPublicIdWithConnectionInfo: {:?} not found \
                         in the routing table.",
@@ -2132,9 +1985,6 @@ impl Core {
                                                           dst_name: XorName)
                                                           -> Result<(), RoutingError> {
         try!(self.check_address_for_routing_table(public_id.name()));
-
-        let _ = self.node_id_cache.insert(*public_id.name(), public_id);
-
         self.connect(encrypted_connection_info,
                      nonce_bytes,
                      public_id,
@@ -2593,7 +2443,6 @@ impl Core {
                   self,
                   dst_id,
                   node.name());
-            let _ = self.node_id_cache.insert(*node.name(), node.public_id);
             self.find_tunnel_for_peer(dst_id, *node.name());
         }
     }

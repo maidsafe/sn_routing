@@ -42,7 +42,6 @@ pub struct Stats {
     msg_get_node_name: usize,
     msg_expect_close_node: usize,
     msg_refresh: usize,
-    msg_connect: usize,
     msg_connection_info: usize,
     msg_get_public_id: usize,
     msg_get_public_id_with_connection_info: usize,
@@ -73,7 +72,6 @@ impl Stats {
             MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
-            MessageContent::Connect => self.msg_connect += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
             MessageContent::GetPublicId => self.msg_get_public_id += 1,
             MessageContent::GetPublicIdWithConnectionInfo { .. } => {
@@ -128,7 +126,7 @@ impl Stats {
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
             info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetNodeName: {}, \
-                   ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, Connect: {}, \
+                   ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
                    ConnectionInfo: {}, GetPublicId: {}, GetPublicIdWithConnectionInfo: {}, \
                    GetSuccess: {}, GetFailure: {}, PutSuccess: {}, PutFailure: {}, PostSuccess: \
                    {}, PostFailure: {}, DeleteSuccess: {}, DeleteFailure: {}, \
@@ -142,7 +140,6 @@ impl Stats {
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
                   self.msg_refresh,
-                  self.msg_connect,
                   self.msg_connection_info,
                   self.msg_get_public_id,
                   self.msg_get_public_id_with_connection_info,
