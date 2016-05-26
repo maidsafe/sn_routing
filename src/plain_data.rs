@@ -94,8 +94,8 @@ mod test {
 
     #[test]
     fn basic_check() {
-        let name1 = XorName(crypto::hash::sha512::hash(&generate_random()).0);
-        let name2 = XorName(crypto::hash::sha512::hash(&generate_random()).0);
+        let name1 = XorName(crypto::hash::sha256::hash(&generate_random()).0);
+        let name2 = XorName(crypto::hash::sha256::hash(&generate_random()).0);
         let value1 = generate_random();
         let value2 = generate_random();
         let plain_data1 = PlainData::new(name1, value1.clone());

@@ -552,7 +552,7 @@ impl Core {
             error!("{:?} Failed to start listening.", self);
             let _ = self.event_sender.send(Event::NetworkStartupFailed);
         }
-        let new_name = XorName(hash::sha512::hash(&self.full_id.public_id().name().0).0);
+        let new_name = XorName(hash::sha256::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
         self.state = State::Node;
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -1327,7 +1327,7 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        if *public_id.name() == XorName(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() == XorName(hash::sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper node - dropping",
                   self);
             let _ = self.event_sender.send(Event::Disconnected);
@@ -1360,7 +1360,7 @@ impl Core {
                               peer_id: PeerId,
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
-        if *public_id.name() != XorName(hash::sha512::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() != XorName(hash::sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper client - dropping",
                   self);
             return self.disconnect_peer(&peer_id);
@@ -1649,7 +1649,7 @@ impl Core {
                                     peer_id: PeerId,
                                     message_id: MessageId)
                                     -> Result<(), RoutingError> {
-        let hashed_key = hash::sha512::hash(&client_key.0);
+        let hashed_key = hash::sha256::hash(&client_key.0);
         let close_group_to_client = XorName(hashed_key.0);
 
         // Validate Client (relocating node) has contacted the correct Group-X
@@ -2265,7 +2265,7 @@ impl Core {
     // If called more than once with a unique name, this function will assert
     fn set_self_node_name(&mut self, new_name: XorName) {
         // Validating this function doesn't run more that once
-        assert!(XorName(hash::sha512::hash(&self.full_id.public_id().signing_public_key().0).0) !=
+        assert!(XorName(hash::sha256::hash(&self.full_id.public_id().signing_public_key().0).0) !=
                 new_name);
 
         self.full_id.public_id_mut().set_name(new_name);

@@ -19,19 +19,19 @@ use rand;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
 use std::cmp::Ordering;
-use std::{fmt, hash, ops};
+use std::{fmt, ops};
 use kademlia_routing_table::Xorable;
 
 
-/// Create a 64-byte array of `u8` from a 64-byte reference to a `u8` slice.
-pub fn slice_as_u8_64_array(slice: &[u8]) -> [u8; 64] {
-    let mut arr = [0u8; 64];
+/// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
+pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
+    let mut arr = [0u8; 32];
     arr.clone_from_slice(slice);
     arr
 }
 
 /// Constant byte length of `XorName`.
-pub const XOR_NAME_LEN: usize = 64;
+pub const XOR_NAME_LEN: usize = 32;
 
 /// Constant bit length of `XorName`.
 pub const XOR_NAME_BITS: usize = XOR_NAME_LEN * 8;
@@ -55,7 +55,7 @@ pub enum XorNameFromHexError {
 /// i. e. the points with IDs `x` and `y` are considered to have distance `x xor y`.
 ///
 /// [1]: https://en.wikipedia.org/wiki/Kademlia#System_details
-#[derive(Eq, Copy)]
+#[derive(Eq, Copy, Clone, Hash, Ord, PartialEq, PartialOrd)]
 pub struct XorName(pub [u8; XOR_NAME_LEN]);
 
 impl XorName {
@@ -95,7 +95,7 @@ impl XorName {
         if data.len() != XOR_NAME_LEN {
             return Err(XorNameFromHexError::WrongLength);
         }
-        Ok(XorName(slice_as_u8_64_array(&data[..])))
+        Ok(XorName(slice_as_u8_32_array(&data[..])))
     }
 
     /// Returns the number of leading bits in which `self` and `name` agree.
@@ -170,12 +170,6 @@ impl fmt::Display for XorName {
     }
 }
 
-impl PartialEq for XorName {
-    fn eq(&self, other: &XorName) -> bool {
-        &self.0[..] == &other.0[..]
-    }
-}
-
 impl rand::Rand for XorName {
     fn rand<R: rand::Rng>(rng: &mut R) -> XorName {
         let mut ret = [0u8; XOR_NAME_LEN];
@@ -183,35 +177,6 @@ impl rand::Rand for XorName {
             *r = <u8 as rand::Rand>::rand(rng);
         }
         XorName(ret)
-    }
-}
-
-/// The `XorName`s can be ordered from zero as an integer. This is equivalent to ordering them by
-/// their distance from the name `0`.
-impl Ord for XorName {
-    #[inline]
-    fn cmp(&self, other: &XorName) -> Ordering {
-        Ord::cmp(&self.0[..], &other.0[..])
-    }
-}
-
-impl PartialOrd for XorName {
-    #[inline]
-    fn partial_cmp(&self, other: &XorName) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&self.0[..], &other.0[..])
-    }
-}
-
-impl hash::Hash for XorName {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        state.write(&self.0[..])
-    }
-}
-
-impl Clone for XorName {
-    #[inline]
-    fn clone(&self) -> Self {
-        *self
     }
 }
 
@@ -229,6 +194,7 @@ impl ops::Index<ops::RangeTo<usize>> for XorName {
         b.index(index)
     }
 }
+
 impl ops::Index<ops::RangeFrom<usize>> for XorName {
     type Output = [u8];
     fn index(&self, index: ops::RangeFrom<usize>) -> &[u8] {
@@ -236,6 +202,7 @@ impl ops::Index<ops::RangeFrom<usize>> for XorName {
         b.index(index)
     }
 }
+
 impl ops::Index<ops::RangeFull> for XorName {
     type Output = [u8];
     fn index(&self, index: ops::RangeFull) -> &[u8] {
@@ -243,7 +210,6 @@ impl ops::Index<ops::RangeFull> for XorName {
         b.index(index)
     }
 }
-
 
 impl Encodable for XorName {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
@@ -363,7 +329,7 @@ mod test {
             assert_eq!(i, name.bucket_index(&name.with_flipped_bit(i)));
         }
         for i in 0..10 {
-            assert_eq!(49 * i, name.bucket_index(&name.with_flipped_bit(49 * i)));
+            assert_eq!(19 * i, name.bucket_index(&name.with_flipped_bit(19 * i)));
         }
         assert_eq!(name, name.with_flipped_bit(XOR_NAME_BITS));
         assert_eq!(name, name.with_flipped_bit(XOR_NAME_BITS + 1000));

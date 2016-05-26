@@ -103,29 +103,29 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     let mut log_path = current_exe_path.clone();
 
     let nodes = try!((0..count)
-                         .map(|i| {
-                             log_path.set_file_name(&format!("Node_{:02}.log", i + 1));
-                             let mut args = vec![format!("--output={}", log_path.display())];
-                             if i == 0 {
-                                 args.push("-d".to_owned());
-                                 args.push("-f".to_owned());
-                             }
+        .map(|i| {
+            log_path.set_file_name(&format!("Node_{:02}.log", i + 1));
+            let mut args = vec![format!("--output={}", log_path.display())];
+            if i == 0 {
+                args.push("-d".to_owned());
+                args.push("-f".to_owned());
+            }
 
-                             let node = NodeProcess(try!(Command::new(current_exe_path.clone())
-                                                             .args(&args)
-                                                             .stdout(Stdio::piped())
-                                                             .stderr(Stdio::inherit())
-                                                             .spawn()),
-                                                    i + 1);
+            let node = NodeProcess(try!(Command::new(current_exe_path.clone())
+                                       .args(&args)
+                                       .stdout(Stdio::piped())
+                                       .stderr(Stdio::inherit())
+                                       .spawn()),
+                                   i + 1);
 
-                             println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
-                             if i == 0 {
-                                 thread::sleep(Duration::from_secs(5));
-                             }
-                             thread::sleep(Duration::from_secs(1));
-                             Ok(node)
-                         })
-                         .collect::<io::Result<Vec<NodeProcess>>>());
+            println!("Started Node #{} with Process ID {}", i + 1, node.0.id());
+            if i == 0 {
+                thread::sleep(Duration::from_secs(5));
+            }
+            thread::sleep(Duration::from_secs(1));
+            Ok(node)
+        })
+        .collect::<io::Result<Vec<NodeProcess>>>());
 
     Ok(nodes)
 }
@@ -202,10 +202,10 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         let arg = format!("--output={}", log_path.display());
 
         nodes.push(NodeProcess(try!(Command::new(current_exe_path.clone())
-                                        .arg(arg)
-                                        .stdout(Stdio::null())
-                                        .stderr(Stdio::null())
-                                        .spawn()),
+                                   .arg(arg)
+                                   .stdout(Stdio::null())
+                                   .stderr(Stdio::null())
+                                   .spawn()),
                                *node_count));
         println!("Started Node #{} with Process ID #{}",
                  node_count,
@@ -232,7 +232,7 @@ fn store_and_verify(requests: usize, batches: usize) {
     for i in 0..requests {
         let key: String = (0..10).map(|_| random::<u8>() as char).collect();
         let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let name = XorName(hash::sha512::hash(key.as_bytes()).0);
+        let name = XorName(hash::sha256::hash(key.as_bytes()).0);
         let data = unwrap_result!(serialise(&(key, value)));
         let data = Data::Plain(PlainData::new(name, data));
 
@@ -309,8 +309,8 @@ struct Args {
 #[cfg_attr(feature="clippy", allow(mutex_atomic))] // AtomicBool cannot be used with Condvar.
 fn main() {
     let args: Args = Docopt::new(USAGE)
-                         .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|error| error.exit());
+        .and_then(|docopt| docopt.decode())
+        .unwrap_or_else(|error| error.exit());
 
     let run_network_test = !(args.flag_output.is_some() ||
                              args.flag_delete_bootstrap_cache.is_some());

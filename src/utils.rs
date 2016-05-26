@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use sodiumoxide::crypto::hash::sha256;
 use std::fmt::Write;
 use xor_name::XorName;
 
@@ -67,11 +68,11 @@ pub fn calculate_relocated_name(mut close_nodes: Vec<XorName>,
 
     let mut combined: Vec<u8> = Vec::new();
     for node_id in close_nodes {
-        for i in node_id.0.iter() {
+        for i in &node_id.0 {
             combined.push(*i);
         }
     }
-    Ok(XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined).0))
+    Ok(XorName(sha256::hash(&combined).0))
 }
 
 #[cfg(test)]
@@ -79,6 +80,7 @@ mod test {
     extern crate rand;
 
     use core::GROUP_SIZE;
+    use sodiumoxide::crypto::hash::sha256;
     use xor_name::XorName;
 
     #[test]
@@ -102,13 +104,12 @@ mod test {
 
         let mut combined_one_node: Vec<u8> = Vec::new();
         for node_id in combined_one_node_vec {
-            for i in node_id.0.iter() {
+            for i in &node_id.0 {
                 combined_one_node.push(*i);
             }
         }
 
-        let expected_relocated_name_one_node =
-            XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined_one_node).0);
+        let expected_relocated_name_one_node = XorName(sha256::hash(&combined_one_node).0);
 
         assert_eq!(actual_relocated_name_one_entry,
                    expected_relocated_name_one_node);
@@ -136,8 +137,7 @@ mod test {
             combined.push(*i);
         }
 
-        let expected_relocated_name = XorName(::sodiumoxide::crypto::hash::sha512::hash(&combined)
-            .0);
+        let expected_relocated_name = XorName(sha256::hash(&combined).0);
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
@@ -150,8 +150,7 @@ mod test {
         for i in original_name.0.into_iter() {
             invalid_combined.push(*i);
         }
-        let invalid_relocated_name =
-            XorName(::sodiumoxide::crypto::hash::sha512::hash(&invalid_combined).0);
+        let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);
         assert!(invalid_relocated_name != actual_relocated_name);
     }
 }

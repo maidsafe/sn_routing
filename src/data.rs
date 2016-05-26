@@ -99,7 +99,7 @@ mod test {
 
     use super::*;
     use sodiumoxide::crypto::sign;
-    use sodiumoxide::crypto::hash::sha512;
+    use sodiumoxide::crypto::hash::sha256;
     use xor_name::XorName;
 
     #[test]
@@ -134,7 +134,7 @@ mod test {
                    DataIdentifier::Immutable(immutable_data.name()));
 
         // name() resolves correctly for PlainData
-        let name = XorName(sha512::hash(&[]).0);
+        let name = XorName(sha256::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
         assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
         assert_eq!(plain_data.identifier(),
@@ -167,7 +167,7 @@ mod test {
                    Data::Immutable(immutable_data).payload_size());
 
         // payload_size() resolves correctly for PlainData
-        let name = XorName(sha512::hash(&[]).0);
+        let name = XorName(sha256::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
         assert_eq!(plain_data.payload_size(),
                    Data::Plain(plain_data).payload_size());
@@ -175,7 +175,7 @@ mod test {
 
     #[test]
     fn data_request_name() {
-        let name = XorName(sha512::hash(&[]).0);
+        let name = XorName(sha256::hash(&[]).0);
 
         // name() resolves correctly for StructuedData
         let tag = 0;
