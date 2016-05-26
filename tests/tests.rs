@@ -31,9 +31,7 @@
          missing_debug_implementations, variant_size_differences)]
 
 #![cfg(feature = "use-mock-crust")]
-#![cfg(test)]
 
-extern crate kademlia_routing_table;
 #[macro_use]
 extern crate log;
 #[macro_use]

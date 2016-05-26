@@ -36,6 +36,15 @@ pub fn nodes(nodes: &mut [TestNode]) {
     }
 }
 
+/// Resends all unacknowledged messages on all nodes.
+pub fn resend_unacknowledged(nodes: &[TestNode], client: &TestClient) -> bool {
+    let mut result = false;
+    for node in nodes {
+        result = result || node.resend_unacknowledged()
+    }
+    result || client.resend_unacknowledged()
+}
+
 /// Empty event queue of nodes and clients provided
 pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
     let mut count: usize = 0;
@@ -53,4 +62,16 @@ pub fn nodes_and_client(nodes: &mut [TestNode], client: &mut TestClient) -> usiz
         }
     }
     count
+}
+
+/// Empty event queue of nodes and clients and resend unacknowledged messages.
+pub fn poll_and_resend_unacknowledged(nodes: &mut [TestNode], client: &mut TestClient) -> usize {
+    let mut count = 0;
+    loop {
+        let new_count = nodes_and_client(nodes, client);
+        count += new_count;
+        if !resend_unacknowledged(nodes, client) && new_count == 0 {
+            return count;
+        }
+    }
 }

@@ -17,8 +17,7 @@
 
 #![cfg(feature = "use-mock-crust")]
 
-use xor_name::XorName;
-use routing::{FullId, StructuredData};
+use routing::{FullId, StructuredData, XorName};
 use rand::{self, random, Rng};
 
 /// utility to create random vec u8 of a given size

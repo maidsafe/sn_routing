@@ -18,10 +18,9 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
-use kademlia_routing_table::GROUP_SIZE;
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, ImmutableData};
+use routing::{Data, ImmutableData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::MutationError;
 use safe_vault::mock_crust_detail::{self, poll, test_node};
@@ -37,12 +36,14 @@ fn handle_put_without_account() {
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
+    let mut event_count = 0;
 
     client.ensure_connected(&mut nodes);
 
     let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
     client.put(Data::Immutable(immutable_data));
-    let _ = poll::nodes_and_client(&mut nodes, &mut client);
+    event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+    trace!("Processed {} events.", event_count);
     let count = nodes.iter()
         .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
         .count();
@@ -65,7 +66,8 @@ fn handle_put_with_account() {
 
     let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
     client.put(Data::Immutable(immutable_data.clone()));
-    let _ = poll::nodes_and_client(&mut nodes, &mut client);
+    let event_count = poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+    trace!("Processed {} events.", event_count);
     let count = nodes.iter()
         .filter(|node| node.get_maid_manager_put_count(client.name()).is_some())
         .count();
@@ -137,6 +139,7 @@ fn maid_manager_account_updates_with_churn() {
 
     let mut put_count = 1; // Login packet.
     let full_id = client.full_id().clone();
+    let mut event_count = 0;
 
     for i in 0..10 {
         for data in (0..4)
@@ -157,7 +160,12 @@ fn maid_manager_account_updates_with_churn() {
                 test_node::drop_node(&mut nodes, node_index);
             }
         }
-        let _ = poll::nodes_and_client(&mut nodes, &mut client);
+        event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+
+        for node in &mut nodes {
+            node.clear_state();
+        }
+        trace!("Processed {} events.", event_count);
         let count = nodes.iter()
             .filter(|node| {
                 match node.get_maid_manager_put_count(client.name()) {

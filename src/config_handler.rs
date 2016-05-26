@@ -17,8 +17,8 @@
 
 use config_file_handler::{self, FileHandler};
 use error::InternalError;
+use routing::XorName;
 use std::ffi::OsString;
-use xor_name::XorName;
 
 /// Lets a vault configure a wallet address and storage limit.
 #[derive(Clone, Debug, RustcDecodable, RustcEncodable)]
