@@ -18,7 +18,7 @@ In vault network, "posting" means data manipulation, i.e. allows data to be upda
 Some assumptions are made here :
     1, The data type is versionable(i.e. manipulatable), currently there is only StructuredData has been defined
     2, The original copy of such data must be put to the network from client first, via MaidManager then to StructuredDataMangager
-    3, It is up to the client or client's app to define and parse the data payload of StructuredData, for detailed description, please refer to the documentation of [Unified Structured Data](https://github.com/maidsafe/rfcs/blob/master/active/0000-Unified-structured-data.md)
+    3, It is up to the client or client's app to define and parse the data payload of StructuredData, for detailed description, please refer to the documentation of [Unified Structured Data](https://github.com/maidsafe/rfcs/blob/master/text/0000-unified-structured-data/0000-unified-structured-data.md)
 
 Client can send post request to network which will be handled by the StructuredDataMangager around the computed name of that structured data.
 If the majority of the previous owners of the data proved to be agree with the update, i.e. their valid signatures are prensented in the new version of the copy, StructuredDataMangager will update it, i.e. replace the old copy with the new incoming one.
