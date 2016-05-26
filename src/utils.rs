@@ -17,11 +17,11 @@
 
 
 use routing::{Authority, XorName};
-use sodiumoxide::crypto::hash::sha512;
+use sodiumoxide::crypto::hash::sha256;
 
 pub fn client_name(authority: &Authority) -> XorName {
     if let Authority::Client { ref client_key, .. } = *authority {
-        XorName(sha512::hash(&client_key.0[..]).0)
+        XorName(sha256::hash(&client_key.0[..]).0)
     } else {
         unreachable!("Logic error")
     }

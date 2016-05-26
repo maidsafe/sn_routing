@@ -361,7 +361,7 @@ impl DataManager {
 
         if let Err(err) = self.chunk_store.put(&data_id, &data) {
             trace!("DM failed to store {:?} in chunkstore: {:?}", data_id, err);
-            let error = MutationError::Unknown;
+            let error = MutationError::NetworkOther(format!("Failed to store chunk: {:?}", err));
             let external_error_indicator = try!(serialisation::serialise(&error));
             let _ = self.routing_node
                 .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
@@ -420,7 +420,9 @@ impl DataManager {
                    data_id,
                    message_id,
                    error);
-            let post_error = try!(serialisation::serialise(&MutationError::Unknown));
+            let mutation_error =
+                MutationError::NetworkOther(format!("Failed to store chunk: {:?}", error));
+            let post_error = try!(serialisation::serialise(&mutation_error));
             return Ok(try!(self.routing_node
                 .send_post_failure(dst, src, data_id, post_error, message_id)));
         }
