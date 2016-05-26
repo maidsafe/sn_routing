@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.21.0]
+- Reduce the `XorName` size from 512 to 256 bits.
+
 ## [0.20.0]
 - Send acknowledgement messages (acks) and resend via a different route only if
   no ack is received. Previously, several routes were used simultaneously,
