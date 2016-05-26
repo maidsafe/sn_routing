@@ -116,8 +116,8 @@ enum UserCommand {
 
 fn parse_user_command(cmd: String) -> Option<UserCommand> {
     let cmds = cmd.trim_right_matches(|c| c == '\r' || c == '\n')
-                  .split(' ')
-                  .collect::<Vec<_>>();
+        .split(' ')
+        .collect::<Vec<_>>();
 
     if cmds.is_empty() {
         return None;
@@ -238,7 +238,7 @@ impl KeyValueStore {
     }
 
     fn calculate_key_name(key: &str) -> XorName {
-        XorName(crypto::hash::sha512::hash(key.as_bytes()).0)
+        XorName(crypto::hash::sha256::hash(key.as_bytes()).0)
     }
 }
 
@@ -253,8 +253,8 @@ fn main() {
     unwrap_result!(maidsafe_utilities::log::init(false));
 
     let args: Args = Docopt::new(USAGE)
-                         .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|error| error.exit());
+        .and_then(|docopt| docopt.decode())
+        .unwrap_or_else(|error| error.exit());
 
     if args.flag_first {
         ExampleNode::new(true).run();

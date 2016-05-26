@@ -38,7 +38,7 @@ impl MessageId {
     /// Generate a `MessageId` with value 0. This should only be used for messages where there is
     /// no danger of duplication.
     pub fn zero() -> MessageId {
-        MessageId(XorName([0; 64]))
+        MessageId(XorName([0; 32]))
     }
 
     /// Generate a new `MessageId` with contents extracted from lost node.

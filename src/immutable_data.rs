@@ -17,7 +17,7 @@
 
 use std::fmt::{self, Debug, Formatter};
 
-use sodiumoxide::crypto::hash::sha512;
+use sodiumoxide::crypto::hash::sha256;
 use data::DataIdentifier;
 use xor_name::XorName;
 
@@ -42,7 +42,7 @@ impl ImmutableData {
 
     /// Returns name ensuring invariant.
     pub fn name(&self) -> XorName {
-        XorName(sha512::hash(&self.value).0)
+        XorName(sha256::hash(&self.value).0)
     }
 
     /// Returns size of contained value.
@@ -76,9 +76,8 @@ mod test {
         // Normal
         let immutable_data = ImmutableData::new(value);
         let immutable_data_name = immutable_data.name().0.as_ref().to_hex();
-        let expected_immutable_data_name = "9f1c9e526f47e36d782de464ea9df0a31a5c19c321f2a5d9c8faac\
-                                            dda4d59abc713445c8c853e1842d7c2c2311650df1ee2410737193\
-                                            5b6be88a10cbf4cd2f8f";
+        let expected_immutable_data_name =
+            "ec0775555a7a6afba5f6e0a1deaa06f8928da80cf6ca94742ecc2a00c31033d3";
 
         assert_eq!(&expected_immutable_data_name, &immutable_data_name);
     }

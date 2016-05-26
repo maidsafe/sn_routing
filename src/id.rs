@@ -121,7 +121,7 @@ impl PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(::sodiumoxide::crypto::hash::sha512::hash(&public_sign_key[..]).0),
+            name: XorName(::sodiumoxide::crypto::hash::sha256::hash(&public_sign_key[..]).0),
         }
     }
 }

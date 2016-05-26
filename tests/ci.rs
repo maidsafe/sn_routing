@@ -64,7 +64,7 @@ use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
               Response, XorName, GROUP_SIZE};
 use sodiumoxide::crypto;
-use sodiumoxide::crypto::hash::sha512;
+use sodiumoxide::crypto::hash::sha256;
 use utils::recv_with_timeout;
 use routing::DataIdentifier;
 
@@ -233,7 +233,7 @@ fn create_connected_nodes(count: usize,
 fn gen_plain_data() -> Data {
     let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
-    let name = XorName(sha512::hash(key.as_bytes()).0);
+    let name = XorName(sha256::hash(key.as_bytes()).0);
     let data = unwrap_result!(serialisation::serialise(&(key, value)));
 
     Data::Plain(PlainData::new(name, data))

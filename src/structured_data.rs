@@ -80,7 +80,7 @@ impl StructuredData {
             .chain(type_tag_as_string.as_bytes().iter().cloned())
             .map(|a| a);
 
-        XorName(::sodiumoxide::crypto::hash::sha512::hash(&chain.collect::<Vec<_>>()[..]).0)
+        XorName(::sodiumoxide::crypto::hash::sha256::hash(&chain.collect::<Vec<_>>()[..]).0)
     }
 
     /// Replaces this data item with the given updated version if the update is valid, otherwise

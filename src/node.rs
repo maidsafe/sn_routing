@@ -429,7 +429,7 @@ impl Drop for Node {
 //     }
 
 //     fn calculate_key_name(key: &::std::string::String) -> XorName {
-//         XorName::new(::sodiumoxide::crypto::hash::sha512::hash(key.as_bytes()).0)
+//         XorName::new(::sodiumoxide::crypto::hash::sha256::hash(key.as_bytes()).0)
 //     }
 
 //     #[test]
