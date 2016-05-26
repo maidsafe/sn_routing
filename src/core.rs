@@ -2104,78 +2104,39 @@ impl Core {
             sent_to: &[XorName],
             handle: bool)
             -> Result<(), RoutingError> {
-        let priority = signed_msg.priority();
-        // If we're a client going to be a node, send via our bootstrap connection.
-        if self.state == State::Client {
-            if let Authority::Client { ref proxy_node_name, .. } = signed_msg.routing_message()
-                .src {
-                if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
-                    let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, vec![]));
-                    if self.add_to_pending_acks(&signed_msg, route) {
-                        return self.send_or_drop(&peer_id, raw_bytes, priority);
-                    } else {
-                        return Ok(());
-                    }
-                }
-
-                error!("{:?} - Unable to find connection to proxy node in proxy map",
-                       self);
-                return Err(RoutingError::ProxyConnectionNotFound);
-            }
-
-            error!("{:?} - Source should be client if our state is a Client",
-                   self);
-            return Err(RoutingError::InvalidSource);
-        }
+        let (new_sent_to, target_peer_ids) =
+            try!(self.get_targets(signed_msg.routing_message(), route, hop, sent_to));
 
         if !self.add_to_pending_acks(&signed_msg, route) {
             return Ok(());
         }
-
-        let destination = signed_msg.routing_message().dst.to_destination();
-        let targets = self.routing_table
-            .target_nodes(destination, hop, route as usize)
-            .into_iter()
-            .filter(|target| !sent_to.contains(target.name()))
-            .collect_vec();
-        let new_sent_to = sent_to.iter()
-            .chain(targets.iter().map(NodeInfo::name))
-            .cloned()
-            .collect_vec();
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
         let mut result = Ok(());
-        for target in targets {
-            if let Some(&tunnel_id) = self.tunnels.tunnel_for(&target.peer_id) {
-                let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
-                                                          route,
-                                                          new_sent_to.clone(),
-                                                          self.crust_service.id(),
-                                                          target.peer_id));
-                if !self.filter_signed_msg(&signed_msg, &target.peer_id, route) {
-                    if let Err(err) = self.send_or_drop(&tunnel_id, bytes, priority) {
-                        info!("{:?} Error sending message to {:?}: {:?}.",
-                              self,
-                              target.peer_id,
-                              err);
-                        result = Err(err);
-                    }
+        for target_peer_id in target_peer_ids {
+            let (peer_id, bytes) = match self.tunnels.tunnel_for(&target_peer_id) {
+                None => (target_peer_id, raw_bytes.clone()),
+                Some(&tunnel_id) => {
+                    let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
+                                                              route,
+                                                              new_sent_to.clone(),
+                                                              self.crust_service.id(),
+                                                              target_peer_id));
+                    (tunnel_id, bytes)
                 }
-            } else {
-                if !self.filter_signed_msg(&signed_msg, &target.peer_id, route) {
-                    if let Err(err) =
-                           self.send_or_drop(&target.peer_id, raw_bytes.clone(), priority) {
-                        info!("{:?} Error sending message to {:?}: {:?}.",
-                              self,
-                              target.peer_id,
-                              err);
-                        result = Err(err);
-                    }
+            };
+            if !self.filter_signed_msg(&signed_msg, &target_peer_id, route) {
+                if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
+                    info!("{:?} Error sending message to {:?}: {:?}.",
+                          self,
+                          target_peer_id,
+                          err);
+                    result = Err(err);
                 }
             }
         }
 
         // If we need to handle this message, handle it.
-        if handle &&
+        if self.state == State::Node && handle &&
            self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
            self.signed_message_filter.insert(&signed_msg) == 0 {
             let hop_name = *self.name();
@@ -2187,6 +2148,53 @@ impl Core {
         }
 
         result
+    }
+
+    /// Returns a `sent_to` entry for the next hop message, and a list of target peer IDs.
+    fn get_targets(&self,
+                   routing_msg: &RoutingMessage,
+                   route: u8,
+                   hop: &XorName,
+                   sent_to: &[XorName])
+                   -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
+        match self.state {
+            State::Disconnected |
+            State::Bootstrapping(_, _) => {
+                error!("{:?} - Tried to send message in state {:?}",
+                       self,
+                       self.state);
+                Err(RoutingError::NotBootstrapped)
+            }
+            State::Client => {
+                // If we're a client going to be a node, send via our bootstrap connection.
+                if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
+                    if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
+                        Ok((vec![], vec![peer_id]))
+                    } else {
+                        error!("{:?} - Unable to find connection to proxy node in proxy map",
+                               self);
+                        Err(RoutingError::ProxyConnectionNotFound)
+                    }
+                } else {
+                    error!("{:?} - Source should be client if our state is a Client",
+                           self);
+                    Err(RoutingError::InvalidSource)
+                }
+            }
+            State::Node => {
+                let destination = routing_msg.dst.to_destination();
+                let targets = self.routing_table
+                    .target_nodes(destination, hop, route as usize)
+                    .into_iter()
+                    .filter(|target| !sent_to.contains(target.name()))
+                    .collect_vec();
+                let new_sent_to = sent_to.iter()
+                    .chain(targets.iter().map(NodeInfo::name))
+                    .cloned()
+                    .collect_vec();
+                Ok((new_sent_to, targets.into_iter().map(|target| target.peer_id).collect()))
+            }
+        }
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) -> Result<(), RoutingError> {
