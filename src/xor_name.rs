@@ -68,13 +68,12 @@ impl XorName {
     ///
     /// If the parameter does not address one of the name's bits, i. e. if it does not satisfy
     /// `index < XOR_NAME_BITS`, the result will be equal to the argument.
-    #[cfg_attr(feature="clippy", allow(assign_op_pattern))]
     pub fn with_flipped_bit(&self, index: usize) -> XorName {
         if index >= XOR_NAME_BITS {
             return *self;
         }
         let &XorName(mut bytes) = self;
-        bytes[index / 8] = bytes[index / 8] ^ (1 << (7 - index % 8));
+        bytes[index / 8] ^= 1 << (7 - index % 8);
         XorName(bytes)
     }
 
