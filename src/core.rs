@@ -777,14 +777,12 @@ impl Core {
     }
 
     fn check_not_get_node_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        match msg.content {
-            MessageContent::GetNodeName { .. } => {
-                debug!("{:?} Illegitimate GetNodeName request. Refusing to relay.",
-                       self);
-                Err(RoutingError::RejectedGetNodeName)
-            }
-            _ => Ok(()),
+        if let MessageContent::GetNodeName { .. } = msg.content {
+            debug!("{:?} Illegitimate GetNodeName request. Refusing to relay.",
+                   self);
+            return Err(RoutingError::RejectedGetNodeName);
         }
+        Ok(())
     }
 
     fn handle_signed_message(&mut self,
@@ -794,12 +792,13 @@ impl Core {
                              sent_to: &[XorName])
                              -> Result<(), RoutingError> {
         try!(signed_msg.check_integrity());
+        let routing_msg = signed_msg.routing_message();
 
         // FIXME: This is currently only in place so acks can get delivered if the
         // original ack was lost in transit
-        if self.grp_msg_filter.contains(signed_msg.routing_message()) ||
-           !signed_msg.routing_message().src.is_group() {
-            try!(self.send_ack(signed_msg.routing_message(), route));
+        if (self.grp_msg_filter.contains(routing_msg) || !routing_msg.src.is_group()) &&
+           self.is_recipient(&routing_msg.dst) {
+            self.send_ack(routing_msg, route);
         }
 
         // Prevents
@@ -811,9 +810,9 @@ impl Core {
 
         // Since endpoint request / GetCloseGroup response messages while relocating are sent
         // to a client we still need to accept these msgs sent to us even if we have become a node.
-        if let Authority::Client { ref client_key, .. } = signed_msg.routing_message().dst {
+        if let Authority::Client { ref client_key, .. } = routing_msg.dst {
             if client_key == self.full_id.public_id().signing_public_key() {
-                if let MessageContent::ConnectionInfo { .. } = *signed_msg.message_content() {
+                if let MessageContent::ConnectionInfo { .. } = routing_msg.content {
                     return self.handle_signed_message_for_client(signed_msg);
                 }
             }
@@ -832,7 +831,8 @@ impl Core {
     fn handle_signed_message_for_node(&mut self,
                                       signed_msg: &SignedMessage)
                                       -> Result<(), RoutingError> {
-        let dst = &signed_msg.routing_message().dst;
+        let routing_msg = signed_msg.routing_message();
+        let dst = &routing_msg.dst;
 
         if let Authority::Client { ref peer_id, .. } = *dst {
             if self.name() == dst.name() {
@@ -847,16 +847,15 @@ impl Core {
 
         // Cache handling
         if self.use_data_cache {
-            if let Some(routing_msg) = self.get_from_cache(signed_msg.routing_message()) {
-                return self.send_message(routing_msg);
+            if let Some(response_msg) = self.get_from_cache(routing_msg) {
+                return self.send_message(response_msg);
             }
         }
-        self.add_to_cache(signed_msg.routing_message());
+        self.add_to_cache(routing_msg);
 
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
-            self.handle_routing_message(signed_msg.routing_message().clone(),
-                                        *signed_msg.public_id())
+            self.handle_routing_message(routing_msg, *signed_msg.public_id())
         } else {
             Ok(())
         }
@@ -868,16 +867,13 @@ impl Core {
         if self.signed_message_filter.count(signed_msg) > 1 {
             return Err(RoutingError::FilterCheckFailed);
         }
-        match signed_msg.routing_message().dst {
-            Authority::Client { ref client_key, .. } => {
-                if self.full_id.public_id().signing_public_key() != client_key {
-                    return Err(RoutingError::BadAuthority);
-                }
+        let routing_msg = signed_msg.routing_message();
+        if let Authority::Client { ref client_key, .. } = routing_msg.dst {
+            if self.full_id.public_id().signing_public_key() == client_key {
+                return self.handle_routing_message(routing_msg, *signed_msg.public_id());
             }
-            _ => return Err(RoutingError::BadAuthority),
         }
-        self.handle_routing_message(signed_msg.routing_message().clone(),
-                                    *signed_msg.public_id())
+        Err(RoutingError::BadAuthority)
     }
 
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
@@ -941,18 +937,17 @@ impl Core {
         }
     }
 
-    // Needs to be commented
     fn handle_routing_message(&mut self,
-                              routing_msg: RoutingMessage,
+                              routing_msg: &RoutingMessage,
                               public_id: PublicId)
                               -> Result<(), RoutingError> {
         if routing_msg.src.is_group() {
-            if self.grp_msg_filter.contains(&routing_msg) {
+            if self.grp_msg_filter.contains(routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            if let Some(output_msg) = self.accumulate(routing_msg.clone(), &public_id) {
-                let _ = self.grp_msg_filter.insert(&output_msg);
-                try!(self.send_ack(&routing_msg, 0));
+            if self.accumulate(routing_msg, &public_id) {
+                let _ = self.grp_msg_filter.insert(routing_msg);
+                self.send_ack(routing_msg, 0);
             } else {
                 return Ok(());
             }
@@ -960,23 +955,14 @@ impl Core {
         self.dispatch_routing_message(routing_msg)
     }
 
-    fn accumulate(&mut self,
-                  message: RoutingMessage,
-                  public_id: &PublicId)
-                  -> Option<RoutingMessage> {
+    fn accumulate(&mut self, message: &RoutingMessage, public_id: &PublicId) -> bool {
         // For clients we already have set it on reception of BootstrapIdentify message
         if self.state == State::Node {
             let dynamic_quorum_size = self.dynamic_quorum_size();
             self.message_accumulator.set_quorum_size(dynamic_quorum_size);
         }
-
-        if self.message_accumulator
-            .add(message.clone(), *public_id.signing_public_key())
-            .is_some() {
-            Some(message)
-        } else {
-            None
-        }
+        let key = *public_id.signing_public_key();
+        self.message_accumulator.add(message.clone(), key).is_some()
     }
 
     fn dynamic_quorum_size(&self) -> usize {
@@ -991,7 +977,7 @@ impl Core {
     }
 
     fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage)
+                                routing_msg: &RoutingMessage)
                                 -> Result<(), RoutingError> {
         let msg_content = routing_msg.content.clone();
         let msg_src = routing_msg.src.clone();
@@ -2047,6 +2033,9 @@ impl Core {
             let raw_bytes = try!(serialisation::serialise(&message));
             self.send_or_drop(peer_id, raw_bytes, priority)
         } else {
+            // Acknowledge the message so that the sender doesn't retry.
+            let hop = *self.name();
+            self.send_ack_from(signed_msg.routing_message(), 0, Authority::ManagedNode(hop));
             debug!("{:?} Client connection not found for message {:?}.",
                    self,
                    signed_msg);
@@ -2099,7 +2088,6 @@ impl Core {
             return Ok(());
         }
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
-        let mut result = Ok(());
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = match self.tunnels.tunnel_for(&target_peer_id) {
                 None => (target_peer_id, raw_bytes.clone()),
@@ -2118,22 +2106,36 @@ impl Core {
                           self,
                           target_peer_id,
                           err);
-                    result = Err(err);
                 }
             }
         }
-        result
+        Ok(())
     }
 
     /// If we are a node and the recipient, handle the given message.
     fn handle_sent_message(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         // If we need to handle this message, handle it.
-        if self.state == State::Node &&
-           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
+        if self.is_recipient(&signed_msg.routing_message().dst) &&
            self.signed_message_filter.insert(signed_msg) == 0 {
             self.handle_signed_message_for_node(signed_msg)
         } else {
             Ok(())
+        }
+    }
+
+    /// Returns whether we are the recipient of a message for the given authority.
+    fn is_recipient(&self, dst: &Authority) -> bool {
+        match self.state {
+            State::Node => self.routing_table.is_recipient(dst.to_destination()),
+            State::Client => {
+                if let Authority::Client { ref client_key, .. } = *dst {
+                    client_key == self.full_id.public_id().signing_public_key()
+                } else {
+                    false
+                }
+            }
+            State::Disconnected |
+            State::Bootstrapping(..) => false,
         }
     }
 
@@ -2184,20 +2186,34 @@ impl Core {
         }
     }
 
-    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) -> Result<(), RoutingError> {
+    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
+        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
+    }
+
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
         if let MessageContent::Ack(_) = routing_msg.content {
-            return Ok(());
+            return;
         }
         let response = RoutingMessage {
-            src: routing_msg.dst.clone(),
+            src: src,
             dst: routing_msg.src.clone(),
             content: MessageContent::Ack(maidsafe_utilities::big_endian_sip_hash(&routing_msg)),
         };
 
-        let signed_msg = try!(SignedMessage::new(response, &self.full_id));
+        let signed_msg = match SignedMessage::new(response, &self.full_id) {
+            Ok(signed_msg) => signed_msg,
+            Err(error) => {
+                error!("{:?} Failed to create ack message: {:?}", self, error);
+                return;
+            }
+        };
         let hop = *self.name();
-        try!(self.send(&signed_msg, route, &hop, &[hop]));
-        self.handle_sent_message(&signed_msg)
+        if let Err(error) = self.send(&signed_msg, route, &hop, &[hop]) {
+            error!("{:?} Failed to ack: {:?}", self, error);
+        }
+        if let Err(error) = self.handle_sent_message(&signed_msg) {
+            error!("{:?} Failed to handle ack: {:?}", self, error);
+        }
     }
 
     /// Adds the given message to the pending acks, if it has not already been received.
