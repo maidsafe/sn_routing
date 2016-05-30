@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{OurConnectionInfo, PeerId, TheirConnectionInfo};
+use crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{OurConnectionInfo, PeerId, TheirConnectionInfo};
+use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 use authority::Authority;
 use sodiumoxide::crypto::sign;
 use id::PublicId;
@@ -88,8 +88,8 @@ pub struct PeerManager {
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     pub connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
-    pub our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
-    pub their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
+    pub our_connection_info_map: LruCache<PublicId, PrivConnectionInfo>,
+    pub their_connection_info_map: LruCache<PublicId, PubConnectionInfo>,
 }
 
 impl Default for PeerManager {
@@ -232,10 +232,9 @@ impl PeerManager {
     /// Marks the given peer as "connected".
     pub fn connected_to(&mut self, peer_id: PeerId) {
         if self.connecting_peers.remove(&peer_id).is_none() {
-            warn!("Received NewPeer from {:?}, but was not expecting connection.",
-                  peer_id);
-            // TODO: Crust should not connect before both sides have called connect.
-            // return;
+            trace!("Received NewPeer from {:?}, but was not expecting connection.",
+                   peer_id);
+            // TODO: Having sent connection info should suffice. Otherwise reject the connection.
         }
         self.insert_peer(peer_id);
     }

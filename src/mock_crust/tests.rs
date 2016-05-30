@@ -47,16 +47,20 @@ fn start_two_services_bootstrap_communicate_exit() {
     let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, 0));
 
     unwrap_result!(service_0.start_listening_tcp());
-    unwrap_result!(service_0.start_listening_utp());
 
     // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
     // to bootstrap
     {
         let event_recvd = unwrap_result!(event_rx_0.try_recv());
         match event_recvd {
-            Event::BootstrapFinished => (),
+            Event::BootstrapFailed => (),
             _ => panic!("Received unexpected event: {:?}", event_recvd),
         }
+    }
+
+    match unwrap_result!(event_rx_0.try_recv()) {
+        Event::ListenerStarted(_) => (),
+        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
     }
 
     service_0.start_service_discovery();
@@ -64,7 +68,6 @@ fn start_two_services_bootstrap_communicate_exit() {
     let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, 0));
 
     unwrap_result!(service_1.start_listening_tcp());
-    unwrap_result!(service_1.start_listening_utp());
 
     // let service_1 finish bootstrap - it should bootstrap off service_0
     let id_0 = {
@@ -75,13 +78,9 @@ fn start_two_services_bootstrap_communicate_exit() {
         }
     };
 
-    // now service_1 should get BootstrapFinished
-    {
-        let event_recvd = unwrap_result!(event_rx_1.try_recv());
-        match event_recvd {
-            Event::BootstrapFinished => (),
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
+    match unwrap_result!(event_rx_1.try_recv()) {
+        Event::ListenerStarted(_) => (),
+        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
     }
 
     // service_0 should have received service_1's bootstrap connection by now
@@ -95,7 +94,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // send data from 0 to 1
     {
         let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(&id_1, data_sent.clone(), 0));
+        unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
         // 1 should rx data
         let (data_recvd, peer_id) = {
@@ -113,7 +112,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     // send data from 1 to 0
     {
         let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(&id_0, data_sent.clone(), 0));
+        unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
         // 0 should rx data
         let (data_recvd, peer_id) = {
@@ -128,7 +127,7 @@ fn start_two_services_bootstrap_communicate_exit() {
         assert_eq!(peer_id, id_1);
     }
 
-    assert!(service_0.disconnect(&id_1));
+    assert!(service_0.disconnect(id_1));
 
     match unwrap_result!(event_rx_1.try_recv()) {
         Event::LostPeer(id) => assert_eq!(id, id_0),
@@ -153,7 +152,7 @@ fn start_two_services_rendezvous_connect() {
     {
         let event_recvd = unwrap_result!(event_rx_0.try_recv());
         match event_recvd {
-            Event::BootstrapFinished => (),
+            Event::BootstrapFailed => (),
             _ => panic!("Received unexpected event: {:?}", event_recvd),
         }
     }
@@ -164,7 +163,7 @@ fn start_two_services_rendezvous_connect() {
     {
         let event_recvd = unwrap_result!(event_rx_1.try_recv());
         match event_recvd {
-            Event::BootstrapFinished => (),
+            Event::BootstrapFailed => (),
             _ => panic!("Received unexpected event: {:?}", event_recvd),
         }
     }
@@ -193,11 +192,11 @@ fn start_two_services_rendezvous_connect() {
         }
     };
 
-    let their_ci_0 = our_ci_0.to_their_connection_info();
-    let their_ci_1 = our_ci_1.to_their_connection_info();
+    let their_ci_0 = our_ci_0.to_pub_connection_info();
+    let their_ci_1 = our_ci_1.to_pub_connection_info();
 
-    service_0.connect(our_ci_0, their_ci_1);
-    service_1.connect(our_ci_1, their_ci_0);
+    let _ = service_0.connect(our_ci_0, their_ci_1);
+    let _ = service_1.connect(our_ci_1, their_ci_0);
 
     let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
         Event::NewPeer(Ok(()), their_id) => their_id,
@@ -212,7 +211,7 @@ fn start_two_services_rendezvous_connect() {
     // send data from 0 to 1
     {
         let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(&id_1, data_sent.clone(), 0));
+        unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
         // 1 should rx data
         let (data_recvd, peer_id) = {
@@ -230,7 +229,7 @@ fn start_two_services_rendezvous_connect() {
     // send data from 1 to 0
     {
         let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(&id_0, data_sent.clone(), 0));
+        unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
         // 0 should rx data
         let (data_recvd, peer_id) = {
@@ -265,7 +264,12 @@ fn drop() {
 
     // Let service_0 finish bootstrap - it should not find any peer.
     match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapFinished => (),
+        Event::BootstrapFailed => (),
+        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
+    }
+
+    match unwrap_result!(event_rx_0.try_recv()) {
+        Event::ListenerStarted(_) => (),
         event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
     }
 
@@ -278,10 +282,9 @@ fn drop() {
         event => panic!("Received unexpected event: {:?}", event),
     };
 
-    // Now service_1 should get BootstrapFinished.
     match unwrap_result!(event_rx_1.try_recv()) {
-        Event::BootstrapFinished => (),
-        event => panic!("Received unexpected event: {:?}", event),
+        Event::ListenerStarted(_) => (),
+        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
     }
 
     // service_0 should have received service_1's bootstrap connection by now.

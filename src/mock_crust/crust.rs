@@ -26,6 +26,8 @@ use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
 /// Default beacon (service discovery) port.
 pub const DEFAULT_BEACON_PORT: u16 = 5484;
+/// TCP listener port
+pub const LISTENER_PORT: u16 = 5485;
 
 /// Mock version of `crust::Service`
 pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
@@ -33,7 +35,7 @@ pub struct Service(Rc<RefCell<ServiceImpl>>, Network);
 impl Service {
     /// Create new mock `Service` using the make_current/get_current mechanism to
     /// get the associated `ServiceHandle`.
-    pub fn new(event_sender: CrustEventSender) -> Result<Self, Error> {
+    pub fn new(event_sender: CrustEventSender) -> Result<Self, CrustError> {
         Self::with_handle(&support::get_current(), event_sender, DEFAULT_BEACON_PORT)
     }
 
@@ -42,7 +44,7 @@ impl Service {
     pub fn with_handle(handle: &ServiceHandle,
                        event_sender: CrustEventSender,
                        beacon_port: u16)
-                       -> Result<Self, Error> {
+                       -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender, beacon_port));
@@ -56,11 +58,24 @@ impl Service {
         self.lock_and_poll(|imp| imp.restart(event_sender, DEFAULT_BEACON_PORT))
     }
 
+    /// Enable listening and responding to peers searching for us. This will allow others finding us
+    /// by interrogating the network.
+    pub fn set_service_discovery_listen(&self, _listen: bool) {
+        trace!("[MOCK] set_service_discovery_listen not implemented in mock");
+    }
+
+    /// Start the bootstrapping procedure.
+    pub fn start_bootstrap(&self) -> Result<(), CrustError> {
+        trace!("[MOCK] start_bootstrap not implemented in mock");
+        Ok(())
+    }
+
     /// Stops the ongoing bootstrap.
     /// Note: This currently doesn't do anything, because mock bootstrap is
     /// not interruptible. This might change in the future, if needed.
-    pub fn stop_bootstrap(&self) {
+    pub fn stop_bootstrap(&self) -> Result<(), CrustError> {
         // Nothing to do here, as mock bootstrapping is not interruptible.
+        Ok(())
     }
 
     /// Start service discovery (beacon).
@@ -72,16 +87,8 @@ impl Service {
     /// Start TCP acceptor.
     /// Note: mock doesn't currently differentiate between TCP and UDP. As long
     /// as at least one is enabled, the service will accept any incoming connection.
-    pub fn start_listening_tcp(&mut self) -> io::Result<()> {
-        self.lock().listening_tcp = true;
-        Ok(())
-    }
-
-    /// Start uTP acceptor.
-    /// Note: mock doesn't currently differentiate between TCP and UDP. As long as at least one is
-    /// enabled, the service will accept any incoming connection.
-    pub fn start_listening_utp(&mut self) -> io::Result<()> {
-        self.lock().listening_udp = true;
+    pub fn start_listening_tcp(&mut self) -> Result<(), CrustError> {
+        self.lock().start_listening_tcp(LISTENER_PORT);
         Ok(())
     }
 
@@ -93,19 +100,23 @@ impl Service {
 
     /// Connect to a peer using our and their connection infos. The connection infos must be first
     /// prepared using `prepare_connection_info` on both our and their end.
-    pub fn connect(&self, our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        self.lock_and_poll(|imp| imp.connect(our_info, their_info))
+    pub fn connect(&self,
+                   our_info: PrivConnectionInfo,
+                   their_info: PubConnectionInfo)
+                   -> Result<(), CrustError> {
+        self.lock_and_poll(|imp| imp.connect(our_info, their_info));
+        Ok(())
     }
 
     /// Disconnect from the given peer.
-    pub fn disconnect(&self, peer_id: &PeerId) -> bool {
-        self.lock_and_poll(|imp| imp.disconnect(peer_id))
+    pub fn disconnect(&self, peer_id: PeerId) -> bool {
+        self.lock_and_poll(|imp| imp.disconnect(&peer_id))
     }
 
     /// Send message to the given peer.
     // TODO: Implement tests that drop low-priority messages.
-    pub fn send(&self, id: &PeerId, data: Vec<u8>, _priority: u8) -> io::Result<()> {
-        if self.lock_and_poll(|imp| imp.send_message(id, data)) {
+    pub fn send(&self, id: PeerId, data: Vec<u8>, _priority: u8) -> io::Result<()> {
+        if self.lock_and_poll(|imp| imp.send_message(&id, data)) {
             Ok(())
         } else {
             let msg = format!("No connection to peer {:?}", id);
@@ -161,42 +172,49 @@ impl Rand for PeerId {
 /// Mock version of `crust::Event`.
 #[derive(Debug)]
 pub enum Event {
-    /// Invoked when a new message is received.  Passes the message.
-    NewMessage(PeerId, Vec<u8>),
-    /// Invoked when we get a bootstrap connection to a new peer.
-    BootstrapConnect(PeerId),
     /// Invoked when a bootstrap peer connects to us
     BootstrapAccept(PeerId),
-    /// Invoked when a connection to a new peer is established.
-    NewPeer(io::Result<()>, PeerId),
-    /// Invoked when a peer is lost.
-    LostPeer(PeerId),
-    /// Invoked once the list of bootstrap contacts is exhausted.
-    BootstrapFinished,
+    /// Invoked when we get a bootstrap connection to a new peer.
+    BootstrapConnect(PeerId),
+    /// Invoked when we failed to connect to all bootstrap contacts.
+    BootstrapFailed,
+    /// Invoked when we are ready to listen for incomming connection. Contains
+    /// the listening port.
+    ListenerStarted(u16),
+    /// Invoked when listener failed to start.
+    ListenerFailed,
     /// Invoked as a result to the call of `Service::prepare_contact_info`.
     ConnectionInfoPrepared(ConnectionInfoResult),
+    /// Invoked when a connection to a new peer is established.
+    NewPeer(io::Result<()>, PeerId),
+    /// Invoked when a peer is lost or having read/write error.
+    LostPeer(PeerId),
+    /// Invoked when a new message is received.  Passes the message.
+    NewMessage(PeerId, Vec<u8>),
+    /// Invoked when trying to sending a too large data.
+    WriteMsgSizeProhibitive(PeerId, Vec<u8>),
 }
 
 /// Mock version of `CrustEventSender`.
 pub type CrustEventSender = event_sender::MaidSafeObserver<Event>;
 
-/// Mock version of `OurConnectionInfo`, generated by a call to
+/// Mock version of `PrivConnectionInfo`, generated by a call to
 /// `Service::prepare_contact_info`.
 #[derive(Debug)]
-pub struct OurConnectionInfo(pub PeerId, pub Endpoint);
+pub struct PrivConnectionInfo(pub PeerId, pub Endpoint);
 
-impl OurConnectionInfo {
+impl PrivConnectionInfo {
     /// Convert our connection info to theirs so that we can give it to them.
-    pub fn to_their_connection_info(&self) -> TheirConnectionInfo {
-        TheirConnectionInfo(self.0, self.1)
+    pub fn to_pub_connection_info(&self) -> PubConnectionInfo {
+        PubConnectionInfo(self.0, self.1)
     }
 }
 
-/// Mock version of `TheirConnectionInfo`, used to connect to another peer.
+/// Mock version of `PubConnectionInfo`, used to connect to another peer.
 #[derive(Debug, RustcEncodable, RustcDecodable)]
-pub struct TheirConnectionInfo(pub PeerId, pub Endpoint);
+pub struct PubConnectionInfo(pub PeerId, pub Endpoint);
 
-impl TheirConnectionInfo {
+impl PubConnectionInfo {
     /// The peer's Crust ID.
     pub fn id(&self) -> PeerId {
         self.0
@@ -209,9 +227,9 @@ pub struct ConnectionInfoResult {
     /// The token that was passed to `prepare_connection_info`.
     pub result_token: u32,
     /// The new contact info, if successful.
-    pub result: io::Result<OurConnectionInfo>,
+    pub result: io::Result<PrivConnectionInfo>,
 }
 
-/// Mock version of `crust::Error`.
+/// Mock version of `crust::CrustError`.
 #[derive(Debug)]
-pub struct Error;
+pub struct CrustError;

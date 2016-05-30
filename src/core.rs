@@ -18,11 +18,11 @@
 use accumulator::Accumulator;
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service, TheirConnectionInfo};
+use crust::{self, ConnectionInfoResult, PrivConnectionInfo, PeerId, Service, PubConnectionInfo};
 
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, ConnectionInfoResult, OurConnectionInfo, PeerId, Service,
-                        TheirConnectionInfo};
+use mock_crust::crust::{self, ConnectionInfoResult, PrivConnectionInfo, PeerId, Service,
+                        PubConnectionInfo};
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
@@ -242,6 +242,7 @@ impl Core {
             Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
         };
 
+
         let full_id = match keys {
             Some(full_id) => full_id,
             None => FullId::new(),
@@ -283,6 +284,9 @@ impl Core {
 
         if role == Role::FirstNode {
             core.start_new_network();
+        } else {
+            core.crust_service.start_service_discovery();
+            let _ = core.crust_service.start_bootstrap();
         }
 
         (action_sender, core)
@@ -494,7 +498,7 @@ impl Core {
 
     fn handle_crust_event(&mut self, crust_event: crust::Event) {
         match crust_event {
-            crust::Event::BootstrapFinished => self.handle_bootstrap_finished(),
+            crust::Event::BootstrapFailed => self.handle_bootstrap_failed(),
             crust::Event::BootstrapConnect(peer_id) => self.handle_bootstrap_connect(peer_id),
             crust::Event::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
             crust::Event::NewPeer(result, peer_id) => self.handle_new_peer(result, peer_id),
@@ -509,6 +513,20 @@ impl Core {
             crust::Event::ConnectionInfoPrepared(ConnectionInfoResult { result_token, result }) => {
                 self.handle_connection_info_prepared(result_token, result);
             }
+            crust::Event::ListenerStarted(port) => {
+                trace!("{:?} Listener started on port {}.", self, port);
+                if self.role == Role::FirstNode {
+                    self.crust_service.start_service_discovery();
+                    self.crust_service.set_service_discovery_listen(true);
+                }
+            }
+            crust::Event::ListenerFailed => error!("{:?} Failed to start listening.", self),
+            crust::Event::WriteMsgSizeProhibitive(peer_id, msg) => {
+                error!("{:?} Failed to send {}-byte message to {:?}. Message too large.",
+                       self,
+                       msg.len(),
+                       peer_id);
+            }
         }
     }
 
@@ -519,7 +537,7 @@ impl Core {
             return;
         }
         self.peer_mgr.insert_peer(peer_id);
-        self.crust_service.stop_bootstrap();
+        let _ = self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
                 if self.role == Role::Node {
@@ -541,7 +559,6 @@ impl Core {
     }
 
     fn start_new_network(&mut self) {
-        self.crust_service.stop_bootstrap();
         if !self.start_listening() {
             error!("{:?} Failed to start listening.", self);
             let _ = self.event_sender.send(Event::NetworkStartupFailed);
@@ -615,7 +632,7 @@ impl Core {
 
     fn handle_connection_info_prepared(&mut self,
                                        result_token: u32,
-                                       result: io::Result<OurConnectionInfo>) {
+                                       result: io::Result<PrivConnectionInfo>) {
         let our_connection_info = match result {
             Err(err) => {
                 error!("{:?} Failed to prepare connection info: {:?}", self, err);
@@ -624,7 +641,7 @@ impl Core {
             Ok(connection_info) => connection_info,
         };
         let encoded_connection_info =
-            match serialisation::serialise(&our_connection_info.to_their_connection_info()) {
+            match serialisation::serialise(&our_connection_info.to_pub_connection_info()) {
                 Err(err) => {
                     error!("{:?} Failed to serialise connection info: {:?}", self, err);
                     return;
@@ -663,7 +680,7 @@ impl Core {
                    self,
                    peer_id,
                    their_name);
-            self.crust_service.connect(our_connection_info, their_connection_info);
+            let _ = self.crust_service.connect(our_connection_info, their_connection_info);
         } else {
             let _ =
                 self.peer_mgr.our_connection_info_map.insert(their_public_id, our_connection_info);
@@ -984,7 +1001,7 @@ impl Core {
         }
     }
 
-    fn handle_bootstrap_finished(&mut self) {
+    fn handle_bootstrap_failed(&mut self) {
         debug!("{:?} Finished bootstrapping.", self);
         if self.state == State::Disconnected {
             let _ = self.event_sender.send(Event::Disconnected);
@@ -993,7 +1010,6 @@ impl Core {
 
     fn start_listening(&mut self) -> bool {
         if !self.is_listening {
-            self.crust_service.start_service_discovery();
             if let Err(error) = self.crust_service.start_listening_tcp() {
                 error!("{:?} Failed to start listening: {:?}", self, error);
             } else {
@@ -1093,11 +1109,11 @@ impl Core {
                     bytes: Vec<u8>,
                     priority: u8)
                     -> Result<(), RoutingError> {
-        if let Err(err) = self.crust_service.send(peer_id, bytes.clone(), priority) {
+        if let Err(err) = self.crust_service.send(*peer_id, bytes.clone(), priority) {
             info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
                   self,
                   peer_id);
-            self.crust_service.disconnect(peer_id);
+            self.crust_service.disconnect(*peer_id);
             self.handle_lost_peer(*peer_id);
             return Err(err.into());
         }
@@ -1209,7 +1225,7 @@ impl Core {
                 debug!("{:?} Received ConnectionUnneeded from {:?}.", self, peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
                     info!("{:?} Dropped {:?} from the routing table.", self, name);
-                    self.crust_service.disconnect(&peer_id);
+                    self.crust_service.disconnect(peer_id);
                     self.handle_lost_peer(peer_id);
                 }
                 Ok(())
@@ -1496,7 +1512,7 @@ impl Core {
             debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
                    self,
                    peer_id);
-            let _ = self.crust_service.disconnect(peer_id);
+            let _ = self.crust_service.disconnect(*peer_id);
             let _ = self.peer_mgr.remove_peer(peer_id);
         }
     }
@@ -1854,7 +1870,7 @@ impl Core {
 
         let serialised_connection_info =
             try!(decipher_result.map_err(|()| RoutingError::AsymmetricDecryptionFailure));
-        let their_connection_info: TheirConnectionInfo =
+        let their_connection_info: PubConnectionInfo =
             try!(serialisation::deserialise(&serialised_connection_info));
 
         if let Some(our_connection_info) = self.peer_mgr
@@ -1874,7 +1890,7 @@ impl Core {
                    self,
                    peer_id,
                    their_public_id.name());
-            self.crust_service.connect(our_connection_info, their_connection_info);
+            let _ = self.crust_service.connect(our_connection_info, their_connection_info);
             Ok(())
         } else {
             let _ = self.peer_mgr

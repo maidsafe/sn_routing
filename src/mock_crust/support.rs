@@ -27,8 +27,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::rc::{Rc, Weak};
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, OurConnectionInfo, PeerId,
-                   TheirConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
+                   PubConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -192,10 +192,10 @@ impl ServiceImpl {
             pending_bootstraps += 1;
         }
 
-        // If we have no contacts in the config, we can fire BootstrapFinished
+        // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap_result!(event_sender.send(Event::BootstrapFinished));
+            unwrap_result!(event_sender.send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -229,16 +229,21 @@ impl ServiceImpl {
 
         let result = ConnectionInfoResult {
             result_token: result_token,
-            result: Ok(OurConnectionInfo(self.peer_id, self.endpoint)),
+            result: Ok(PrivConnectionInfo(self.peer_id, self.endpoint)),
         };
 
         self.send_event(Event::ConnectionInfoPrepared(result));
     }
 
-    pub fn connect(&self, _our_info: OurConnectionInfo, their_info: TheirConnectionInfo) {
-        let TheirConnectionInfo(their_id, peer_endpoint) = their_info;
+    pub fn connect(&self, _our_info: PrivConnectionInfo, their_info: PubConnectionInfo) {
+        let PubConnectionInfo(their_id, peer_endpoint) = their_info;
         let packet = Packet::ConnectRequest(self.peer_id, their_id);
         self.send_packet(peer_endpoint, packet);
+    }
+
+    pub fn start_listening_tcp(&mut self, port: u16) {
+        self.listening_tcp = true;
+        self.send_event(Event::ListenerStarted(port));
     }
 
     fn send_packet(&self, receiver: Endpoint, packet: Packet) {
@@ -360,8 +365,8 @@ impl ServiceImpl {
 
         self.pending_bootstraps -= 1;
 
-        if self.pending_bootstraps == 0 {
-            self.send_event(Event::BootstrapFinished);
+        if self.pending_bootstraps == 0 && self.connections.is_empty() {
+            self.send_event(Event::BootstrapFailed);
         }
     }
 

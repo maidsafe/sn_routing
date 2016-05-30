@@ -122,7 +122,7 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
             if i == 0 {
                 thread::sleep(Duration::from_secs(5));
             }
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(5));
             Ok(node)
         })
         .collect::<io::Result<Vec<NodeProcess>>>());
