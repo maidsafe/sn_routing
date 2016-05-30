@@ -222,11 +222,6 @@ impl SignedMessage {
         &self.content
     }
 
-    /// The `MessageContent` of the signed routing message.
-    pub fn message_content(&self) -> &MessageContent {
-        &self.content.content
-    }
-
     /// The `PublicId` associated with the signed message
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
