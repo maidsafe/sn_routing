@@ -821,7 +821,8 @@ impl Core {
 
         match self.state {
             State::Node => {
-                self.handle_signed_message_for_node(signed_msg, route, hop_name, sent_to, true)
+                try!(self.handle_signed_message_for_node(signed_msg));
+                self.send(signed_msg, route, hop_name, sent_to)
             }
             State::Client => self.handle_signed_message_for_client(signed_msg),
             _ => Err(RoutingError::InvalidStateForOperation),
@@ -829,11 +830,7 @@ impl Core {
     }
 
     fn handle_signed_message_for_node(&mut self,
-                                      signed_msg: &SignedMessage,
-                                      route: u8,
-                                      hop_name: &XorName,
-                                      sent_to: &[XorName],
-                                      relay: bool)
+                                      signed_msg: &SignedMessage)
                                       -> Result<(), RoutingError> {
         let dst = &signed_msg.routing_message().dst;
 
@@ -856,11 +853,6 @@ impl Core {
         }
         self.add_to_cache(signed_msg.routing_message());
 
-        if relay {
-            if let Err(err) = self.send(signed_msg.clone(), route, hop_name, sent_to, false) {
-                trace!("{:?} Failed relaying message: {:?}", self, err);
-            }
-        }
         if self.signed_message_filter.count(signed_msg) == 0 &&
            self.routing_table.is_recipient(dst.to_destination()) {
             self.handle_routing_message(signed_msg.routing_message().clone(),
@@ -1956,11 +1948,7 @@ impl Core {
                       unacked_msg);
             } else {
                 let hop = *self.name();
-                let _ = self.send(unacked_msg.signed_msg,
-                                  unacked_msg.route,
-                                  &hop,
-                                  &[hop],
-                                  false);
+                let _ = self.send(&unacked_msg.signed_msg, unacked_msg.route, &hop, &[hop]);
             }
         }
     }
@@ -2040,7 +2028,8 @@ impl Core {
         // TODO crust should return the routing msg when it detects an interface error
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
         let hop = *self.name();
-        self.send(signed_msg, 0, &hop, &[hop], true)
+        try!(self.send(&signed_msg, 0, &hop, &[hop]));
+        self.handle_sent_message(&signed_msg)
     }
 
     fn relay_to_client(&mut self,
@@ -2098,16 +2087,15 @@ impl Core {
     }
 
     fn send(&mut self,
-            signed_msg: SignedMessage,
+            signed_msg: &SignedMessage,
             route: u8,
             hop: &XorName,
-            sent_to: &[XorName],
-            handle: bool)
+            sent_to: &[XorName])
             -> Result<(), RoutingError> {
         let (new_sent_to, target_peer_ids) =
             try!(self.get_targets(signed_msg.routing_message(), route, hop, sent_to));
 
-        if !self.add_to_pending_acks(&signed_msg, route) {
+        if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
@@ -2124,7 +2112,7 @@ impl Core {
                     (tunnel_id, bytes)
                 }
             };
-            if !self.filter_signed_msg(&signed_msg, &target_peer_id, route) {
+            if !self.filter_signed_msg(signed_msg, &target_peer_id, route) {
                 if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
                     info!("{:?} Error sending message to {:?}: {:?}.",
                           self,
@@ -2134,20 +2122,19 @@ impl Core {
                 }
             }
         }
-
-        // If we need to handle this message, handle it.
-        if self.state == State::Node && handle &&
-           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
-           self.signed_message_filter.insert(&signed_msg) == 0 {
-            let hop_name = *self.name();
-            try!(self.handle_signed_message_for_node(&signed_msg,
-                                                     route,
-                                                     &hop_name,
-                                                     &new_sent_to,
-                                                     false));
-        }
-
         result
+    }
+
+    /// If we are a node and the recipient, handle the given message.
+    fn handle_sent_message(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
+        // If we need to handle this message, handle it.
+        if self.state == State::Node &&
+           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
+           self.signed_message_filter.insert(signed_msg) == 0 {
+            self.handle_signed_message_for_node(signed_msg)
+        } else {
+            Ok(())
+        }
     }
 
     /// Returns a `sent_to` entry for the next hop message, and a list of target peer IDs.
@@ -2209,7 +2196,8 @@ impl Core {
 
         let signed_msg = try!(SignedMessage::new(response, &self.full_id));
         let hop = *self.name();
-        self.send(signed_msg, route, &hop, &[hop], true)
+        try!(self.send(&signed_msg, route, &hop, &[hop]));
+        self.handle_sent_message(&signed_msg)
     }
 
     /// Adds the given message to the pending acks, if it has not already been received.
