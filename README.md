@@ -1,9 +1,7 @@
 # Routing
 [![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg)](http://maidsafe.net/applications) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/routing/blob/master/COPYING)
 
-**Primary Maintainer:**     Andrew Cann (andrew.cann@maidsafe.net)
-
-**Secondary Maintainer:**   Brian Smith (brian.smith@maidsafe.net)
+**Maintainer:** Andreas Fackler (andreas.fackler@maidsafe.net)
 
 Routing - a specialised storage DHT
 
