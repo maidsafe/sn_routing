@@ -820,7 +820,7 @@ impl Core {
         match self.state {
             State::Node => {
                 if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
-                    error!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
+                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
                 self.handle_signed_message_for_node(signed_msg)
             }
@@ -869,10 +869,8 @@ impl Core {
             return Err(RoutingError::FilterCheckFailed);
         }
         let routing_msg = signed_msg.routing_message();
-        if let Authority::Client { ref client_key, .. } = routing_msg.dst {
-            if self.full_id.public_id().signing_public_key() == client_key {
-                return self.handle_routing_message(routing_msg, *signed_msg.public_id());
-            }
+        if self.is_recipient(&routing_msg.dst) {
+            return self.handle_routing_message(routing_msg, *signed_msg.public_id());
         }
         Err(RoutingError::BadAuthority)
     }
@@ -1966,7 +1964,14 @@ impl Core {
         let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
         let hop = *self.name();
         try!(self.send(&signed_msg, 0, &hop, &[hop]));
-        self.handle_sent_message(&signed_msg)
+        // If we need to handle this message, handle it.
+        if self.state == State::Node &&
+           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
+           self.signed_message_filter.insert(&signed_msg) == 1 {
+            self.handle_signed_message_for_node(&signed_msg)
+        } else {
+            Ok(())
+        }
     }
 
     fn relay_to_client(&mut self,
@@ -2063,18 +2068,6 @@ impl Core {
         Ok(())
     }
 
-    /// If we are a node and the recipient, handle the given message.
-    fn handle_sent_message(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
-        // If we need to handle this message, handle it.
-        if self.state == State::Node &&
-           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
-           self.signed_message_filter.insert(signed_msg) == 1 {
-            self.handle_signed_message_for_node(signed_msg)
-        } else {
-            Ok(())
-        }
-    }
-
     /// Returns whether we are the recipient of a message for the given authority.
     fn is_recipient(&self, dst: &Authority) -> bool {
         if let Authority::Client { ref client_key, .. } = *dst {
@@ -2140,10 +2133,11 @@ impl Core {
         if let MessageContent::Ack(_) = routing_msg.content {
             return;
         }
+        let hash = maidsafe_utilities::big_endian_sip_hash(&routing_msg);
         let response = RoutingMessage {
             src: src,
             dst: routing_msg.src.clone(),
-            content: MessageContent::Ack(maidsafe_utilities::big_endian_sip_hash(&routing_msg)),
+            content: MessageContent::Ack(hash),
         };
 
         let signed_msg = match SignedMessage::new(response, &self.full_id) {
@@ -2157,8 +2151,10 @@ impl Core {
         if let Err(error) = self.send(&signed_msg, route, &hop, &[hop]) {
             error!("{:?} Failed to ack: {:?}", self, error);
         }
-        if let Err(error) = self.handle_sent_message(&signed_msg) {
-            error!("{:?} Failed to handle ack: {:?}", self, error);
+        if self.is_recipient(&routing_msg.src) {
+            if let Err(error) = self.handle_ack_response(hash) {
+                error!("{:?} Failed to handle ack: {:?}", self, error);
+            }
         }
     }
 
