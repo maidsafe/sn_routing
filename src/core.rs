@@ -450,8 +450,7 @@ impl Core {
 
                         match self.send_message(request_msg) {
                             Err(RoutingError::Interface(err)) => Err(err),
-                            Err(_err) => Ok(()),
-                            Ok(()) => Ok(()),
+                            Err(_) | Ok(()) => Ok(()),
                         }
                     } else {
                         Err(InterfaceError::NotConnected)
@@ -740,7 +739,7 @@ impl Core {
             } else if let Some(client_info) = self.peer_mgr.get_client(&peer_id) {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
-                    try!(self.check_not_get_node_name(hop_msg.content().routing_message()));
+                    try!(self.check_valid_client_message(hop_msg.content().routing_message()));
                 }
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
@@ -771,13 +770,19 @@ impl Core {
                                    hop_msg.sent_to())
     }
 
-    fn check_not_get_node_name(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
-        if let MessageContent::GetNodeName { .. } = msg.content {
-            debug!("{:?} Illegitimate GetNodeName request. Refusing to relay.",
-                   self);
-            return Err(RoutingError::RejectedGetNodeName);
+    /// Returns `Ok` if a client is allowed to send the given message.
+    fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
+        match msg.content {
+            MessageContent::Ack(_) |
+            MessageContent::Request(_) |
+            MessageContent::Response(_) => Ok(()),
+            _ => {
+                debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
+                       self,
+                       msg);
+                Err(RoutingError::RejectedClientMessage)
+            }
         }
-        Ok(())
     }
 
     fn handle_signed_message(&mut self,
@@ -815,10 +820,10 @@ impl Core {
 
         match self.state {
             State::Node => {
-                if let Err(error) = self.handle_signed_message_for_node(signed_msg) {
-                    error!("{:?} Failed to handle {:?}: {:?}", self, signed_msg, error);
+                if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
+                    error!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
                 }
-                self.send(signed_msg, route, hop_name, sent_to)
+                self.handle_signed_message_for_node(signed_msg)
             }
             State::Client => self.handle_signed_message_for_client(signed_msg),
             _ => Err(RoutingError::InvalidStateForOperation),
@@ -1645,7 +1650,7 @@ impl Core {
         let now = Instant::now();
         if let Some((_, timestamp)) = self.sent_network_name_to {
             if (now - timestamp).as_secs() <= SENT_NETWORK_NAME_TIMEOUT_SECS {
-                return Err(RoutingError::RejectedGetNodeName);
+                return Ok(()); // Not sending node name, as we are already waiting for a node.
             }
             self.sent_network_name_to = None;
         }
@@ -2062,7 +2067,8 @@ impl Core {
     /// If we are a node and the recipient, handle the given message.
     fn handle_sent_message(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         // If we need to handle this message, handle it.
-        if self.is_recipient(&signed_msg.routing_message().dst) &&
+        if self.state == State::Node &&
+           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
            self.signed_message_filter.insert(signed_msg) == 1 {
             self.handle_signed_message_for_node(signed_msg)
         } else {
@@ -2072,17 +2078,11 @@ impl Core {
 
     /// Returns whether we are the recipient of a message for the given authority.
     fn is_recipient(&self, dst: &Authority) -> bool {
-        match self.state {
-            State::Node => self.routing_table.is_recipient(dst.to_destination()),
-            State::Client => {
-                if let Authority::Client { ref client_key, .. } = *dst {
-                    client_key == self.full_id.public_id().signing_public_key()
-                } else {
-                    false
-                }
-            }
-            State::Disconnected |
-            State::Bootstrapping(..) => false,
+        if let Authority::Client { ref client_key, .. } = *dst {
+            (self.state == State::Node || self.state == State::Client) &&
+            client_key == self.full_id.public_id().signing_public_key()
+        } else {
+            self.state == State::Node && self.routing_table.is_recipient(dst.to_destination())
         }
     }
 
