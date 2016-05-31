@@ -850,7 +850,7 @@ impl Core {
         }
         self.add_to_cache(routing_msg);
 
-        if self.signed_message_filter.count(signed_msg) == 0 &&
+        if self.signed_message_filter.count(signed_msg) <= 1 &&
            self.routing_table.is_recipient(dst.to_destination()) {
             self.handle_routing_message(routing_msg, *signed_msg.public_id())
         } else {
@@ -2063,7 +2063,7 @@ impl Core {
     fn handle_sent_message(&mut self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
         // If we need to handle this message, handle it.
         if self.is_recipient(&signed_msg.routing_message().dst) &&
-           self.signed_message_filter.insert(signed_msg) == 0 {
+           self.signed_message_filter.insert(signed_msg) == 1 {
             self.handle_signed_message_for_node(signed_msg)
         } else {
             Ok(())
