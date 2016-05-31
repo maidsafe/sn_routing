@@ -807,72 +807,23 @@ impl Core {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        // Since endpoint request / GetCloseGroup response messages while relocating are sent
-        // to a client we still need to accept these msgs sent to us even if we have become a node.
-        if let Authority::Client { ref client_key, .. } = routing_msg.dst {
-            if client_key == self.full_id.public_id().signing_public_key() {
-                if let MessageContent::ConnectionInfo { .. } = routing_msg.content {
-                    return self.handle_signed_message_for_client(signed_msg);
-                }
+        if self.state == State::Node {
+            if self.routing_table.is_close(routing_msg.dst.name(), GROUP_SIZE) {
+                try!(self.signed_msg_security_check(&signed_msg));
             }
-        }
-
-        match self.state {
-            State::Node => {
-                if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
-                    debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
-                }
-                self.handle_signed_message_for_node(signed_msg)
+            if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
+                debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
             }
-            State::Client => self.handle_signed_message_for_client(signed_msg),
-            _ => Err(RoutingError::InvalidStateForOperation),
+        } else if self.state != State::Client {
+            return Err(RoutingError::InvalidStateForOperation);
         }
-    }
-
-    fn handle_signed_message_for_node(&mut self,
-                                      signed_msg: &SignedMessage)
-                                      -> Result<(), RoutingError> {
-        let routing_msg = signed_msg.routing_message();
-        let dst = &routing_msg.dst;
-
-        if let Authority::Client { ref peer_id, .. } = *dst {
-            if self.name() == dst.name() {
-                // This is a message for a client we are the proxy of. Relay it.
-                return self.relay_to_client(signed_msg.clone(), peer_id);
-            }
-        }
-
-        if self.routing_table.is_close(dst.name(), GROUP_SIZE) {
-            try!(self.signed_msg_security_check(&signed_msg));
-        }
-
-        // Cache handling
-        if self.use_data_cache {
-            if let Some(response_msg) = self.get_from_cache(routing_msg) {
-                return self.send_message(response_msg);
-            }
-        }
-        self.add_to_cache(routing_msg);
 
         if self.signed_message_filter.count(signed_msg) == 1 &&
-           self.routing_table.is_recipient(dst.to_destination()) {
+           self.is_recipient(&routing_msg.dst) {
             self.handle_routing_message(routing_msg, *signed_msg.public_id())
         } else {
             Ok(())
         }
-    }
-
-    fn handle_signed_message_for_client(&mut self,
-                                        signed_msg: &SignedMessage)
-                                        -> Result<(), RoutingError> {
-        if self.signed_message_filter.count(signed_msg) > 1 {
-            return Err(RoutingError::FilterCheckFailed);
-        }
-        let routing_msg = signed_msg.routing_message();
-        if self.is_recipient(&routing_msg.dst) {
-            return self.handle_routing_message(routing_msg, *signed_msg.public_id());
-        }
-        Err(RoutingError::BadAuthority)
     }
 
     fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
@@ -1748,16 +1699,10 @@ impl Core {
                 debug!("{:?} Sending connection info to {:?} on GetCloseGroup response.",
                        self,
                        close_node_id);
-                try!(self.send_connection_info(close_node_id,
-                                               dst.clone(),
-                                               Authority::ManagedNode(*close_node_id.name())));
-            } else {
-                trace!("{:?} Routing table does not need {:?}.",
-                       self,
-                       close_node_id);
+                let ci_dst = Authority::ManagedNode(*close_node_id.name());
+                try!(self.send_connection_info(close_node_id, dst.clone(), ci_dst));
             }
         }
-
         Ok(())
     }
 
@@ -1960,15 +1905,13 @@ impl Core {
     // ----- Send Functions -----------------------------------------------------------------------
 
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
-        // TODO crust should return the routing msg when it detects an interface error
-        let signed_msg = try!(SignedMessage::new(routing_msg.clone(), &self.full_id));
+        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
         try!(self.send(&signed_msg, 0, &hop, &[hop]));
         // If we need to handle this message, handle it.
-        if self.state == State::Node &&
-           self.routing_table.is_recipient(signed_msg.routing_message().dst.to_destination()) &&
+        if self.is_recipient(&signed_msg.routing_message().dst) &&
            self.signed_message_filter.insert(&signed_msg) == 1 {
-            self.handle_signed_message_for_node(&signed_msg)
+            self.handle_routing_message(signed_msg.routing_message(), *signed_msg.public_id())
         } else {
             Ok(())
         }
@@ -2037,8 +1980,26 @@ impl Core {
             hop: &XorName,
             sent_to: &[XorName])
             -> Result<(), RoutingError> {
+        let routing_msg = signed_msg.routing_message();
+        // Cache handling
+        if self.state == State::Node && self.use_data_cache {
+            if let Some(response_msg) = self.get_from_cache(routing_msg) {
+                return self.send_message(response_msg);
+            }
+            self.add_to_cache(routing_msg);
+        }
+
+        if let Authority::Client { ref peer_id, .. } = routing_msg.dst {
+            if self.name() == routing_msg.dst.name() {
+                // This is a message for a client we are the proxy of. Relay it.
+                return self.relay_to_client(signed_msg.clone(), peer_id);
+            } else if self.is_recipient(&routing_msg.dst) {
+                return Ok(()); // Message is for us as a client.
+            }
+        }
+
         let (new_sent_to, target_peer_ids) =
-            try!(self.get_targets(signed_msg.routing_message(), route, hop, sent_to));
+            try!(self.get_targets(routing_msg, route, hop, sent_to));
 
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());

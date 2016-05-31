@@ -417,7 +417,7 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::Ack(ref ack) => write!(formatter, "Ack({})", ack),
+            MessageContent::Ack(ref ack) => write!(formatter, "Ack({:x})", ack),
             MessageContent::Request(ref request) => write!(formatter, "Request({:?})", request),
             MessageContent::Response(ref response) => write!(formatter, "Response({:?})", response),
         }
