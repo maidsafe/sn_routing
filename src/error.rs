@@ -80,8 +80,8 @@ pub enum RoutingError {
     /// Rejected providing the close group, because the destination address does not match any of
     /// the sender's buckets
     RejectedGetCloseGroup,
-    /// A client with `client_restriction == true` tried to relocate.
-    RejectedGetNodeName,
+    /// A client with `client_restriction == true` tried to send a message restricted to nodes.
+    RejectedClientMessage,
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// Interface error
