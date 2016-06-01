@@ -228,8 +228,8 @@ mod test {
     #[test]
     fn insert_resets_timeout() {
         // Check re-adding a message to a filter alters its expiry time.
-        let time_to_live = Duration::from_millis(100);
-        let sleep_duration = Duration::from_millis(60); // a bit more than half of `time_to_live`
+        let time_to_live = Duration::from_millis(200);
+        let sleep_duration = Duration::from_millis(150); // more than half of `time_to_live`
         let mut msg_filter = MessageFilter::<usize>::with_expiry_duration(time_to_live);
 
         // Add "0".
