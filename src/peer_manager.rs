@@ -124,10 +124,10 @@ impl PeerManager {
             let _ = self.proxy_map.insert(peer_id, public_id);
             true
         } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-            warn!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous name: \
-                   {:?}",
-                  previous_name);
-            warn!("Dropping this peer {:?}", peer_id);
+            debug!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
+                    name: {:?}",
+                   previous_name);
+            debug!("Dropping this peer {:?}", peer_id);
             let _ = self.proxy_map.remove(&peer_id);
             false
         } else {

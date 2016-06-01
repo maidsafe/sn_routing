@@ -222,11 +222,6 @@ impl SignedMessage {
         &self.content
     }
 
-    /// The `MessageContent` of the signed routing message.
-    pub fn message_content(&self) -> &MessageContent {
-        &self.content.content
-    }
-
     /// The `PublicId` associated with the signed message
     pub fn public_id(&self) -> &PublicId {
         &self.public_id
@@ -422,7 +417,7 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::Ack(ref ack) => write!(formatter, "Ack({})", ack),
+            MessageContent::Ack(ref ack) => write!(formatter, "Ack({:x})", ack),
             MessageContent::Request(ref request) => write!(formatter, "Request({:?})", request),
             MessageContent::Response(ref response) => write!(formatter, "Response({:?})", response),
         }
