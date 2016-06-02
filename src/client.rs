@@ -153,6 +153,14 @@ impl Client {
         self.send_action(Request::Delete(data, message_id), dst)
     }
 
+    /// Request account information for the Client calling this function
+    pub fn send_get_account_info_request(&mut self,
+                                         dst: Authority,
+                                         message_id: MessageId)
+                                         -> Result<(), InterfaceError> {
+        self.send_action(Request::GetAccountInfo(message_id), dst)
+    }
+
     fn send_action(&self, content: Request, dst: Authority) -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
