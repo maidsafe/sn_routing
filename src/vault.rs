@@ -193,6 +193,12 @@ impl Vault {
              Request::Delete(Data::Structured(data), msg_id)) => {
                 self.data_manager.handle_delete(src, dst, data, msg_id)
             }
+            // ================== GetAccountInfo ==================
+            (src @ Authority::Client { .. },
+             dst @ Authority::ClientManager(_),
+             Request::GetAccountInfo(msg_id)) => {
+                self.maid_manager.handle_get_account_info(src, dst, msg_id)
+            }
             // ================== Refresh ==================
             (Authority::ClientManager(_),
              Authority::ClientManager(_),

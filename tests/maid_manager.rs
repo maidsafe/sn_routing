@@ -22,7 +22,7 @@ use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, ImmutableData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
-use safe_network_common::client_errors::MutationError;
+use safe_network_common::client_errors::{GetError, MutationError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
@@ -62,7 +62,16 @@ fn handle_put_with_account() {
     let mut client = TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
+
+    let result = client.get_account_info_response(&mut nodes);
+    assert_eq!(result, Err(Some(GetError::NoSuchAccount)));
+
     client.create_account(&mut nodes);
+    let default_account_size = 100;
+    let mut expected_data_stored = 1;
+    let mut expected_space_available = default_account_size - expected_data_stored;
+    assert_eq!(unwrap_result!(client.get_account_info_response(&mut nodes)),
+               (expected_data_stored, expected_space_available));
 
     let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
     client.put(Data::Immutable(immutable_data.clone()));
@@ -78,6 +87,10 @@ fn handle_put_with_account() {
     let mut stored_immutable = Vec::new();
     stored_immutable.push(Data::Immutable(immutable_data));
     mock_crust_detail::check_data(stored_immutable, &nodes);
+    expected_data_stored += 1;
+    expected_space_available = default_account_size - expected_data_stored;
+    assert_eq!(unwrap_result!(client.get_account_info_response(&mut nodes)),
+               (expected_data_stored, expected_space_available));
 }
 
 #[test]
