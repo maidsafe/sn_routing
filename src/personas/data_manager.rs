@@ -102,7 +102,7 @@ impl Cache {
         false
     }
 
-    fn add_records(&mut self, data_idv: IdAndVersion, holders: Vec<XorName>) {
+    fn add_records(&mut self, data_idv: IdAndVersion, holders: HashSet<XorName>) {
         for holder in holders {
             let _ = self.data_holders.entry(holder).or_insert_with(HashSet::new).insert(data_idv);
         }
@@ -519,30 +519,31 @@ impl DataManager {
                           -> Result<(), InternalError> {
         let data_list = try!(serialisation::deserialise::<Vec<IdAndVersion>>(serialised_data_list));
         for data_idv in data_list {
-            if !self.cache.register_data_with_holder(&src, &data_idv) {
-                if let Some(holders) = self.refresh_accumulator.add(data_idv, src) {
-                    self.refresh_accumulator.delete(&data_idv);
-                    let (ref data_id, ref version) = data_idv;
-                    let data_needed = match *data_id {
-                        DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
-                        DataIdentifier::Structured(..) => {
-                            match self.chunk_store.get(data_id) {
-                                // We don't have the data, so we need to retrieve it.
-                                Err(_) => true,
-                                Ok(Data::Structured(sd)) => sd.get_version() < *version,
-                                _ => unreachable!(),
-                            }
+            if self.cache.register_data_with_holder(&src, &data_idv) {
+                continue;
+            }
+            if let Some(holders) = self.refresh_accumulator.add(data_idv, src).cloned() {
+                self.refresh_accumulator.delete(&data_idv);
+                let (ref data_id, ref version) = data_idv;
+                let data_needed = match *data_id {
+                    DataIdentifier::Immutable(..) => !self.chunk_store.has(data_id),
+                    DataIdentifier::Structured(..) => {
+                        match self.chunk_store.get(data_id) {
+                            // We don't have the data, so we need to retrieve it.
+                            Err(_) => true,
+                            Ok(Data::Structured(sd)) => sd.get_version() < *version,
+                            _ => unreachable!(),
                         }
-                        _ => {
-                            error!("Received unexpected refresh for {:?}.", data_id);
-                            continue;
-                        }
-                    };
-                    if !data_needed {
+                    }
+                    _ => {
+                        error!("Received unexpected refresh for {:?}.", data_id);
                         continue;
                     }
-                    self.cache.add_records(data_idv, holders);
+                };
+                if !data_needed {
+                    continue;
                 }
+                self.cache.add_records(data_idv, holders);
             }
         }
         self.send_gets_for_needed_data()

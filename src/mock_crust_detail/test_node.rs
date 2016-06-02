@@ -104,20 +104,6 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
     nodes
 }
 
-/// Add several nodes at once
-pub fn _add_nodes(network: &Network, mut nodes: &mut Vec<TestNode>, size: usize) {
-    let mut config = None;
-
-    if !nodes.is_empty() {
-        config = Some(mock_crust::Config::with_contacts(&[nodes[0].endpoint()]));
-    }
-
-    for _ in 0..size {
-        nodes.push(TestNode::new(network, config.clone(), None, false));
-        poll::nodes(&mut nodes);
-    }
-}
-
 /// Add node to the mock network
 pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
     let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
