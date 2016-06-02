@@ -31,7 +31,6 @@ use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::Request;
 use types::MessageId;
-use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -44,7 +43,6 @@ pub struct Client {
     interface_result_tx: Sender<Result<(), InterfaceError>>,
     interface_result_rx: Receiver<Result<(), InterfaceError>>,
     action_sender: ::types::RoutingActionSender,
-    name: XorName,
 
     #[cfg(feature = "use-mock-crust")]
     core: RefCell<Core>,
@@ -73,7 +71,6 @@ impl Client {
 
         // start the handler for routing with a restriction to become a full node
         let (action_sender, mut core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
-        let name = *core.name();
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -84,7 +81,6 @@ impl Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            name: name,
             _raii_joiner: raii_joiner,
         })
     }
@@ -99,14 +95,12 @@ impl Client {
 
         // start the handler for routing with a restriction to become a full node
         let (action_sender, core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
-        let name = *core.name();
         let (tx, rx) = channel();
 
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            name: name,
             core: RefCell::new(core),
         })
     }
@@ -163,7 +157,7 @@ impl Client {
     pub fn send_get_account_info_request(&mut self,
                                          message_id: MessageId)
                                          -> Result<(), InterfaceError> {
-        let dst = Authority::ClientManager(self.name);
+        let dst = Authority::ClientManager(*self.core.borrow().name());
         self.send_action(Request::GetAccountInfo(message_id), dst)
     }
 
