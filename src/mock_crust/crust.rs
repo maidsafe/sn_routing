@@ -124,6 +124,11 @@ impl Service {
         }
     }
 
+    /// Returns true if we are currently connected to the given `peer_id`
+    pub fn is_connected(&self, peer_id: &PeerId) -> bool {
+        self.lock_and_poll(|imp| imp.is_peer_connected(peer_id))
+    }
+
     /// Our `PeerId`.
     pub fn id(&self) -> PeerId {
         self.lock().peer_id

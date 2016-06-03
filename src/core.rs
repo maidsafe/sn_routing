@@ -282,10 +282,10 @@ impl Core {
             peer_mgr: Default::default(),
         };
 
+        core.crust_service.start_service_discovery();
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
-            core.crust_service.start_service_discovery();
             let _ = core.crust_service.start_bootstrap();
         }
 
@@ -515,10 +515,7 @@ impl Core {
             }
             crust::Event::ListenerStarted(port) => {
                 trace!("{:?} Listener started on port {}.", self, port);
-                if self.role == Role::FirstNode {
-                    self.crust_service.start_service_discovery();
-                    self.crust_service.set_service_discovery_listen(true);
-                }
+                self.crust_service.set_service_discovery_listen(true);
             }
             crust::Event::ListenerFailed => error!("{:?} Failed to start listening.", self),
             crust::Event::WriteMsgSizeProhibitive(peer_id, msg) => {
@@ -589,7 +586,13 @@ impl Core {
                 Ok(()) => {
                     // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
                     // NodeIdentify.
-                    if let Some(node) = self.routing_table
+
+                    // Remove tunnel connection if we have one for this peer already
+                    if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
+                        debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
+                        let message = DirectMessage::TunnelDisconnect(peer_id.clone());
+                        let _ = self.send_direct_message(&tunnel_id, message);
+                    } else if let Some(node) = self.routing_table
                         .iter()
                         .find(|node| node.peer_id == peer_id) {
                         warn!("{:?} Received NewPeer from {:?}, but node {:?} is already in our \
@@ -924,11 +927,16 @@ impl Core {
         let msg_content = routing_msg.content.clone();
         let msg_src = routing_msg.src.clone();
         let msg_dst = routing_msg.dst.clone();
-        trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
-               self,
-               msg_content,
-               msg_src,
-               msg_dst);
+        match msg_content {
+            MessageContent::Ack(_) => (),
+            _ => {
+                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
+                       self,
+                       msg_content,
+                       msg_src,
+                       msg_dst)
+            }
+        }
         match (msg_content, msg_src, msg_dst) {
             (MessageContent::GetNodeName { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
@@ -1468,7 +1476,9 @@ impl Core {
                    self,
                    dst_id,
                    peer_id);
-            self.dropped_routing_node_connection(&dst_id);
+            if !self.crust_service.is_connected(&dst_id) {
+                self.dropped_routing_node_connection(&dst_id);
+            }
         }
         Ok(())
     }

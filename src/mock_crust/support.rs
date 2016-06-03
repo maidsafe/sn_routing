@@ -223,6 +223,10 @@ impl ServiceImpl {
         }
     }
 
+    pub fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
+        self.find_endpoint_by_peer_id(peer_id).is_some()
+    }
+
     pub fn prepare_connection_info(&self, result_token: u32) {
         // TODO: should we also simulate failure here?
         // TODO: should we simulate asynchrony here?
