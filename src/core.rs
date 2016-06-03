@@ -1492,7 +1492,7 @@ impl Core {
                self,
                dst_id,
                peer_id);
-        if self.tunnels.remove(dst_id, peer_id) {
+        if self.tunnels.drop_client_pair(dst_id, peer_id) {
             self.send_direct_message(&dst_id, DirectMessage::TunnelClosed(peer_id))
         } else {
             Ok(())
