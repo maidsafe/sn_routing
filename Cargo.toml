@@ -2,9 +2,9 @@
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 build = "build.rs"
 description = "This is Pre alpha, and not useful, no code worth looking at."
-documentation = "http://maidsafe.net/safe_vault/latest"
+documentation = "http://docs.maidsafe.net/safe_vault/latest"
 homepage = "http://maidsafe.net"
-license = "GPL-3.0"
+license = "GPL-3.0/MaidSafe.net Commercial License 1.0"
 name = "safe_vault"
 readme = "README.md"
 repository = "https://github.com/maidsafe/safe_vault"
