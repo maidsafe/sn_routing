@@ -2,9 +2,9 @@
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 build = "build.rs"
 description = "A secured storage DHT"
-documentation = "http://maidsafe.net/routing/latest"
+documentation = "http://docs.maidsafe.net/routing/latest"
 homepage = "http://maidsafe.net"
-license = "GPL-3.0"
+license = "GPL-3.0/MaidSafe.net Commercial License 1.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
