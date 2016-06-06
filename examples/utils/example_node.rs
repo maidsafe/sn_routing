@@ -123,6 +123,10 @@ impl ExampleNode {
                 warn!("{:?} ExampleNode: Delete unimplemented.",
                       self.get_debug_name());
             }
+            Request::GetAccountInfo(..) => {
+                warn!("{:?} ExampleNode: GetAccountInfo unimplemented.",
+                      self.get_debug_name());
+            }
             Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }

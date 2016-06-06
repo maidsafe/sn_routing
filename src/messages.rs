@@ -437,6 +437,8 @@ pub enum Request {
     Post(Data, MessageId),
     /// Delete data from network. Provide actual data as parameter
     Delete(Data, MessageId),
+    /// Get account information for Client with given ID
+    GetAccountInfo(MessageId),
 }
 
 /// Response message types
@@ -449,10 +451,19 @@ pub enum Response {
     GetSuccess(Data, MessageId),
     /// Success token for Put (may be ignored)
     PutSuccess(DataIdentifier, MessageId),
-    /// Success token for Post  (may be ignored)
+    /// Success token for Post (may be ignored)
     PostSuccess(DataIdentifier, MessageId),
-    /// Success token for delete  (may be ignored)
+    /// Success token for delete (may be ignored)
     DeleteSuccess(DataIdentifier, MessageId),
+    /// Response containing account information for requested Client account
+    GetAccountInfoSuccess {
+        /// Unique message identifier
+        id: MessageId,
+        /// Amount of data stored on the network by this Client
+        data_stored: u64,
+        /// Amount of network space available to this Client
+        space_available: u64,
+    },
     /// Error for `Get`, includes signed request to prevent injection attacks
     GetFailure {
         /// Unique message identifier
@@ -489,6 +500,13 @@ pub enum Response {
         /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
+    /// Error for `GetAccountInfo`
+    GetAccountInfoFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
 }
 
 impl Request {
@@ -496,7 +514,8 @@ impl Request {
     pub fn priority(&self) -> u8 {
         match *self {
             Request::Refresh(..) => 2,
-            Request::Get(..) => 3,
+            Request::Get(..) |
+            Request::GetAccountInfo(..) => 3,
             Request::Put(ref data, _) |
             Request::Post(ref data, _) |
             Request::Delete(ref data, _) => {
@@ -522,10 +541,12 @@ impl Response {
             Response::PutSuccess(..) |
             Response::PostSuccess(..) |
             Response::DeleteSuccess(..) |
+            Response::GetAccountInfoSuccess { .. } |
             Response::GetFailure { .. } |
             Response::PutFailure { .. } |
             Response::PostFailure { .. } |
-            Response::DeleteFailure { .. } => 3,
+            Response::DeleteFailure { .. } |
+            Response::GetAccountInfoFailure { .. } => 3,
         }
     }
 }
@@ -551,6 +572,9 @@ impl Debug for Request {
             Request::Delete(ref data, ref message_id) => {
                 write!(formatter, "Delete({:?}, {:?})", data, message_id)
             }
+            Request::GetAccountInfo(ref message_id) => {
+                write!(formatter, "GetAccountInfo({:?})", message_id)
+            }
         }
     }
 }
@@ -570,6 +594,9 @@ impl Debug for Response {
             Response::DeleteSuccess(ref name, ref message_id) => {
                 write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
             }
+            Response::GetAccountInfoSuccess { ref id, .. } => {
+                write!(formatter, "GetAccountInfoSuccess {{ {:?}, .. }}", id)
+            }
             Response::GetFailure { ref id, ref data_id, .. } => {
                 write!(formatter, "GetFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
@@ -581,6 +608,9 @@ impl Debug for Response {
             }
             Response::DeleteFailure { ref id, ref data_id, .. } => {
                 write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            }
+            Response::GetAccountInfoFailure { ref id, .. } => {
+                write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)
             }
         }
     }
