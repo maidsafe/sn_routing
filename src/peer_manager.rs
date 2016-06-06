@@ -82,9 +82,6 @@ pub struct PeerManager {
     proxy_map: HashMap<PeerId, PublicId>,
     /// Any clients we have proxying through us, and whether they have `client_restriction`.
     client_map: HashMap<PeerId, ClientInfo>,
-    /// All directly connected peers (proxies, clients and routing nodes), and the timestamps of
-    /// their most recent message.
-    peer_map: HashMap<PeerId, Instant>,
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     pub connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
@@ -97,7 +94,6 @@ impl Default for PeerManager {
         PeerManager {
             proxy_map: Default::default(),
             client_map: Default::default(),
-            peer_map: Default::default(),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
@@ -198,25 +194,6 @@ impl PeerManager {
         None
     }
 
-    /// Inserts the given peer or resets their timestamp to now.
-    pub fn insert_peer(&mut self, peer_id: PeerId) {
-        let _ = self.peer_map.insert(peer_id, Instant::now());
-    }
-
-    /// Updates the given peer's timestamp, or returns `false` if the peer doesn't exist.
-    pub fn update_peer(&mut self, peer_id: &PeerId) -> bool {
-        match self.peer_map.get_mut(peer_id) {
-            None => return false,
-            Some(timestamp) => *timestamp = Instant::now(),
-        }
-        true
-    }
-
-    /// Removes the given peer from the map, or returns `false` if it doesn't exist.
-    pub fn remove_peer(&mut self, peer_id: &PeerId) -> bool {
-        self.peer_map.remove(peer_id).is_some()
-    }
-
     /// Returns the number of clients for which we act as a proxy and which intend to become a
     /// node.
     pub fn joining_nodes_num(&self) -> usize {
@@ -236,7 +213,6 @@ impl PeerManager {
                    peer_id);
             // TODO: Having sent connection info should suffice. Otherwise reject the connection.
         }
-        self.insert_peer(peer_id);
     }
 
     /// Returns the name and state of the given peer, if present.
