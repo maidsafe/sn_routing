@@ -590,7 +590,7 @@ impl Core {
                     // Remove tunnel connection if we have one for this peer already
                     if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
                         debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
-                        let message = DirectMessage::TunnelDisconnect(peer_id.clone());
+                        let message = DirectMessage::TunnelDisconnect(peer_id);
                         let _ = self.send_direct_message(&tunnel_id, message);
                     } else if let Some(node) = self.routing_table
                         .iter()
@@ -2014,16 +2014,22 @@ impl Core {
         }
         let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
         for target_peer_id in target_peer_ids {
-            let (peer_id, bytes) = match self.tunnels.tunnel_for(&target_peer_id) {
-                None => (target_peer_id, raw_bytes.clone()),
-                Some(&tunnel_id) => {
-                    let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
-                                                              route,
-                                                              new_sent_to.clone(),
-                                                              self.crust_service.id(),
-                                                              target_peer_id));
-                    (tunnel_id, bytes)
-                }
+            let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
+                (target_peer_id, raw_bytes.clone())
+            } else if let Some(&tunnel_id) = self.tunnels
+                .tunnel_for(&target_peer_id) {
+                let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
+                                                          route,
+                                                          new_sent_to.clone(),
+                                                          self.crust_service.id(),
+                                                          target_peer_id));
+                (tunnel_id, bytes)
+            } else {
+                error!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+                       self,
+                       target_peer_id);
+                self.disconnect_peer(&target_peer_id);
+                continue;
             };
             if !self.filter_signed_msg(signed_msg, &target_peer_id, route) {
                 if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
