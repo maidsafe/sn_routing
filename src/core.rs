@@ -533,7 +533,6 @@ impl Core {
             self.disconnect_peer(&peer_id);
             return;
         }
-        self.peer_mgr.insert_peer(peer_id);
         let _ = self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
@@ -569,7 +568,6 @@ impl Core {
     }
 
     fn handle_bootstrap_accept(&mut self, peer_id: PeerId) {
-        self.peer_mgr.insert_peer(peer_id);
         trace!("{:?} Received BootstrapAccept from {:?}.", self, peer_id);
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
@@ -711,9 +709,6 @@ impl Core {
     }
 
     fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Result<(), RoutingError> {
-        if !self.peer_mgr.update_peer(&peer_id) {
-            return Err(RoutingError::UnknownConnection(peer_id));
-        }
         match serialisation::deserialise(&bytes) {
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
@@ -1029,7 +1024,6 @@ impl Core {
     }
 
     fn handle_lost_peer(&mut self, peer_id: PeerId) {
-        let _ = self.peer_mgr.remove_peer(&peer_id);
         if peer_id == self.crust_service.id() {
             error!("{:?} LostPeer fired with our crust peer id", self);
             return;
@@ -1523,7 +1517,6 @@ impl Core {
                    self,
                    peer_id);
             let _ = self.crust_service.disconnect(*peer_id);
-            let _ = self.peer_mgr.remove_peer(peer_id);
         }
     }
 
