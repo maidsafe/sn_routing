@@ -332,6 +332,44 @@ impl Node {
         self.send_action(routing_msg)
     }
 
+    /// Respond to a `GetAccountInfo` request indicating success.
+    pub fn send_get_account_info_success(&self,
+                                         src: Authority,
+                                         dst: Authority,
+                                         data_stored: u64,
+                                         space_available: u64,
+                                         id: MessageId)
+                                         -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: MessageContent::Response(Response::GetAccountInfoSuccess {
+                id: id,
+                data_stored: data_stored,
+                space_available: space_available,
+            }),
+        };
+        self.send_action(routing_msg)
+    }
+
+    /// Respond to a `GetAccountInfo` request indicating failure.
+    pub fn send_get_account_info_failure(&self,
+                                         src: Authority,
+                                         dst: Authority,
+                                         external_error_indicator: Vec<u8>,
+                                         id: MessageId)
+                                         -> Result<(), InterfaceError> {
+        let routing_msg = RoutingMessage {
+            src: src,
+            dst: dst,
+            content: MessageContent::Response(Response::GetAccountInfoFailure {
+                id: id,
+                external_error_indicator: external_error_indicator,
+            }),
+        };
+        self.send_action(routing_msg)
+    }
+
     /// Send a `Refresh` request from `src` to `src` to trigger churn.
     ///
     /// This is intended to be sent from a group authority (`src`) to itself whenever a node joins

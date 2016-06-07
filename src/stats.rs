@@ -38,6 +38,7 @@ pub struct Stats {
     msg_put: usize,
     msg_post: usize,
     msg_delete: usize,
+    msg_get_account_info: usize,
     msg_get_close_group: usize,
     msg_get_node_name: usize,
     msg_expect_close_node: usize,
@@ -51,6 +52,8 @@ pub struct Stats {
     msg_post_failure: usize,
     msg_delete_success: usize,
     msg_delete_failure: usize,
+    msg_get_account_info_success: usize,
+    msg_get_account_info_failure: usize,
     msg_get_close_group_rsp: usize,
     msg_get_node_name_rsp: usize,
     msg_ack: usize,
@@ -73,6 +76,7 @@ impl Stats {
             MessageContent::Request(Request::Put(..)) => self.msg_put += 1,
             MessageContent::Request(Request::Post(..)) => self.msg_post += 1,
             MessageContent::Request(Request::Delete(..)) => self.msg_delete += 1,
+            MessageContent::Request(Request::GetAccountInfo(..)) => self.msg_get_account_info += 1,
             MessageContent::Response(Response::GetSuccess(..)) => self.msg_get_success += 1,
             MessageContent::Response(Response::GetFailure { .. }) => self.msg_get_failure += 1,
             MessageContent::Response(Response::PutSuccess(..)) => self.msg_put_success += 1,
@@ -82,6 +86,12 @@ impl Stats {
             MessageContent::Response(Response::DeleteSuccess(..)) => self.msg_delete_success += 1,
             MessageContent::Response(Response::DeleteFailure { .. }) => {
                 self.msg_delete_failure += 1
+            }
+            MessageContent::Response(Response::GetAccountInfoSuccess { .. }) => {
+                self.msg_get_account_info_success += 1
+            }
+            MessageContent::Response(Response::GetAccountInfoFailure { .. }) => {
+                self.msg_get_account_info_failure += 1
             }
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
@@ -112,17 +122,17 @@ impl Stats {
                   self.msg_direct_node_identify,
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
-            info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetNodeName: {}, \
-                   ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
-                   ConnectionInfo: {}, \
-                   GetSuccess: {}, GetFailure: {}, PutSuccess: {}, PutFailure: {}, PostSuccess: \
-                   {}, PostFailure: {}, DeleteSuccess: {}, DeleteFailure: {}, \
-                   GetCloseGroupResponse: {}, \
-                   GetNodeNameResponse: {}, Ack: {}",
+            info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetAccountInfo: {}, \
+                   GetNodeName: {}, ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
+                   ConnectionInfo: {}, GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
+                   PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
+                   DeleteFailure: {}, GetAccountInfoSuccess: {}, GetAccountInfoFailure: {}, \
+                   GetCloseGroupResponse: {}, GetNodeNameResponse: {}, Ack: {}",
                   self.msg_get,
                   self.msg_put,
                   self.msg_post,
                   self.msg_delete,
+                  self.msg_get_account_info,
                   self.msg_get_node_name,
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
@@ -136,6 +146,8 @@ impl Stats {
                   self.msg_post_failure,
                   self.msg_delete_success,
                   self.msg_delete_failure,
+                  self.msg_get_account_info_success,
+                  self.msg_get_account_info_failure,
                   self.msg_get_close_group_rsp,
                   self.msg_get_node_name_rsp,
                   self.msg_ack);
