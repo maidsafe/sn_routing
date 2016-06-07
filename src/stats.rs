@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{DirectMessage, MessageContent, RoutingMessage, Request, Response};
+use messages::{DirectMessage, MessageContent, RoutingMessage};
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 500;
@@ -34,29 +34,14 @@ pub struct Stats {
     msg_direct_new_node: usize,
     msg_direct_connection_unneeded: usize,
 
-    msg_get: usize,
-    msg_put: usize,
-    msg_post: usize,
-    msg_delete: usize,
-    msg_get_account_info: usize,
     msg_get_close_group: usize,
     msg_get_node_name: usize,
     msg_expect_close_node: usize,
-    msg_refresh: usize,
     msg_connection_info: usize,
-    msg_get_success: usize,
-    msg_get_failure: usize,
-    msg_put_success: usize,
-    msg_put_failure: usize,
-    msg_post_success: usize,
-    msg_post_failure: usize,
-    msg_delete_success: usize,
-    msg_delete_failure: usize,
-    msg_get_account_info_success: usize,
-    msg_get_account_info_failure: usize,
     msg_get_close_group_rsp: usize,
     msg_get_node_name_rsp: usize,
     msg_ack: usize,
+    msg_user: usize,
 
     msg_other: usize,
 
@@ -71,31 +56,10 @@ impl Stats {
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
-            MessageContent::Request(Request::Refresh(..)) => self.msg_refresh += 1,
-            MessageContent::Request(Request::Get(..)) => self.msg_get += 1,
-            MessageContent::Request(Request::Put(..)) => self.msg_put += 1,
-            MessageContent::Request(Request::Post(..)) => self.msg_post += 1,
-            MessageContent::Request(Request::Delete(..)) => self.msg_delete += 1,
-            MessageContent::Request(Request::GetAccountInfo(..)) => self.msg_get_account_info += 1,
-            MessageContent::Response(Response::GetSuccess(..)) => self.msg_get_success += 1,
-            MessageContent::Response(Response::GetFailure { .. }) => self.msg_get_failure += 1,
-            MessageContent::Response(Response::PutSuccess(..)) => self.msg_put_success += 1,
-            MessageContent::Response(Response::PutFailure { .. }) => self.msg_put_failure += 1,
-            MessageContent::Response(Response::PostSuccess(..)) => self.msg_post_success += 1,
-            MessageContent::Response(Response::PostFailure { .. }) => self.msg_post_failure += 1,
-            MessageContent::Response(Response::DeleteSuccess(..)) => self.msg_delete_success += 1,
-            MessageContent::Response(Response::DeleteFailure { .. }) => {
-                self.msg_delete_failure += 1
-            }
-            MessageContent::Response(Response::GetAccountInfoSuccess { .. }) => {
-                self.msg_get_account_info_success += 1
-            }
-            MessageContent::Response(Response::GetAccountInfoFailure { .. }) => {
-                self.msg_get_account_info_failure += 1
-            }
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
+            MessageContent::UserMessagePart { .. } => self.msg_user += 1,
         }
         self.increment_msg_total();
     }
@@ -122,35 +86,17 @@ impl Stats {
                   self.msg_direct_node_identify,
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
-            info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetAccountInfo: {}, \
-                   GetNodeName: {}, ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
-                   ConnectionInfo: {}, GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
-                   PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
-                   DeleteFailure: {}, GetAccountInfoSuccess: {}, GetAccountInfoFailure: {}, \
-                   GetCloseGroupResponse: {}, GetNodeNameResponse: {}, Ack: {}",
-                  self.msg_get,
-                  self.msg_put,
-                  self.msg_post,
-                  self.msg_delete,
-                  self.msg_get_account_info,
+            info!("Stats - Hops - GetNodeName: {}, ExpectCloseNode: {}, GetCloseGroup: {}, \
+                   ConnectionInfo: {}, GetCloseGroupResponse: {}, GetNodeNameResponse: {}, \
+                   Ack: {}, UserMessagePart: {}",
                   self.msg_get_node_name,
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
-                  self.msg_refresh,
                   self.msg_connection_info,
-                  self.msg_get_success,
-                  self.msg_get_failure,
-                  self.msg_put_success,
-                  self.msg_put_failure,
-                  self.msg_post_success,
-                  self.msg_post_failure,
-                  self.msg_delete_success,
-                  self.msg_delete_failure,
-                  self.msg_get_account_info_success,
-                  self.msg_get_account_info_failure,
                   self.msg_get_close_group_rsp,
                   self.msg_get_node_name_rsp,
-                  self.msg_ack);
+                  self.msg_ack,
+                  self.msg_user);
         }
     }
 }

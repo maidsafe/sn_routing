@@ -19,7 +19,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use authority::Authority;
 use error::InterfaceError;
-use messages::{Request, RoutingMessage};
+use messages::{Request, UserMessage};
 use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.
@@ -31,7 +31,9 @@ use xor_name::XorName;
 #[derive(Clone)]
 pub enum Action {
     NodeSendMessage {
-        content: RoutingMessage,
+        src: Authority,
+        dst: Authority,
+        content: UserMessage,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
