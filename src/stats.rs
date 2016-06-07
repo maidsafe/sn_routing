@@ -64,6 +64,36 @@ pub struct Stats {
 }
 
 impl Stats {
+    /// Increments the counter for the given request.
+    pub fn count_request(&mut self, request: &Request) {
+        match *request {
+            Request::Refresh(..) => self.msg_refresh += 1,
+            Request::Get(..) => self.msg_get += 1,
+            Request::Put(..) => self.msg_put += 1,
+            Request::Post(..) => self.msg_post += 1,
+            Request::Delete(..) => self.msg_delete += 1,
+            Request::GetAccountInfo(..) => self.msg_get_account_info += 1,
+        }
+        self.increment_msg_total();
+    }
+
+    /// Increments the counter for the given response.
+    pub fn count_response(&mut self, response: &Response) {
+        match *response {
+            Response::GetSuccess(..) => self.msg_get_success += 1,
+            Response::GetFailure { .. } => self.msg_get_failure += 1,
+            Response::PutSuccess(..) => self.msg_put_success += 1,
+            Response::PutFailure { .. } => self.msg_put_failure += 1,
+            Response::PostSuccess(..) => self.msg_post_success += 1,
+            Response::PostFailure { .. } => self.msg_post_failure += 1,
+            Response::DeleteSuccess(..) => self.msg_delete_success += 1,
+            Response::DeleteFailure { .. } => self.msg_delete_failure += 1,
+            Response::GetAccountInfoSuccess { .. } => self.msg_get_account_info_success += 1,
+            Response::GetAccountInfoFailure { .. } => self.msg_get_account_info_failure += 1,
+        }
+        self.increment_msg_total();
+    }
+
     /// Increments the counter for the given routing message type.
     pub fn count_routing_message(&mut self, msg: &RoutingMessage) {
         match msg.content {
@@ -71,31 +101,10 @@ impl Stats {
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
-            MessageContent::Request(Request::Refresh(..)) => self.msg_refresh += 1,
-            MessageContent::Request(Request::Get(..)) => self.msg_get += 1,
-            MessageContent::Request(Request::Put(..)) => self.msg_put += 1,
-            MessageContent::Request(Request::Post(..)) => self.msg_post += 1,
-            MessageContent::Request(Request::Delete(..)) => self.msg_delete += 1,
-            MessageContent::Request(Request::GetAccountInfo(..)) => self.msg_get_account_info += 1,
-            MessageContent::Response(Response::GetSuccess(..)) => self.msg_get_success += 1,
-            MessageContent::Response(Response::GetFailure { .. }) => self.msg_get_failure += 1,
-            MessageContent::Response(Response::PutSuccess(..)) => self.msg_put_success += 1,
-            MessageContent::Response(Response::PutFailure { .. }) => self.msg_put_failure += 1,
-            MessageContent::Response(Response::PostSuccess(..)) => self.msg_post_success += 1,
-            MessageContent::Response(Response::PostFailure { .. }) => self.msg_post_failure += 1,
-            MessageContent::Response(Response::DeleteSuccess(..)) => self.msg_delete_success += 1,
-            MessageContent::Response(Response::DeleteFailure { .. }) => {
-                self.msg_delete_failure += 1
-            }
-            MessageContent::Response(Response::GetAccountInfoSuccess { .. }) => {
-                self.msg_get_account_info_success += 1
-            }
-            MessageContent::Response(Response::GetAccountInfoFailure { .. }) => {
-                self.msg_get_account_info_failure += 1
-            }
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
+            MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
     }
