@@ -4,9 +4,6 @@ environment:
     Features: "use-mock-crust"
   matrix:
     - RUST_VERSION: stable
-branches:
-  only:
-    - master
 
 clone_depth: 50
 

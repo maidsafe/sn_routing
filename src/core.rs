@@ -34,7 +34,7 @@ use peer_manager::{ConnectState, PeerManager};
 use rand;
 use sodiumoxide::crypto::{box_, hash, sign};
 use std::{cmp, io, iter, fmt};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::time::{Duration, Instant};
 use std::sync::mpsc;
@@ -43,15 +43,14 @@ use xor_name::{XorName, XOR_NAME_BITS};
 
 use action::Action;
 use authority::Authority;
-use data::{Data, DataIdentifier};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
 use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
-use messages::{DirectMessage, HopMessage, Message, MessageContent, Request, RoutingMessage,
-               SignedMessage, Response};
+use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+               UserMessage};
 use utils;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
@@ -206,11 +205,10 @@ pub struct Core {
     /// The last joining node we have sent a `GetNodeName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
     tick_timer_token: Option<u64>,
-    use_data_cache: bool,
-    data_cache: LruCache<XorName, Data>,
     tunnels: Tunnels,
     stats: Stats,
     send_filter: LruCache<(u64, PeerId, u8), ()>,
+    user_msg_cache: LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>,
     peer_mgr: PeerManager,
 }
 
@@ -220,8 +218,7 @@ impl Core {
     /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
                role: Role,
-               keys: Option<FullId>,
-               use_data_cache: bool)
+               keys: Option<FullId>)
                -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -274,11 +271,10 @@ impl Core {
             bucket_refresh_token_and_delay: None,
             sent_network_name_to: None,
             tick_timer_token: None,
-            use_data_cache: use_data_cache,
-            data_cache: LruCache::with_capacity(100),
             tunnels: Default::default(),
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            user_msg_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 20)),
             peer_mgr: Default::default(),
         };
 
@@ -434,8 +430,8 @@ impl Core {
 
     fn handle_action(&mut self, action: Action) -> bool {
         match action {
-            Action::NodeSendMessage { content, result_tx } => {
-                if result_tx.send(match self.send_message(content) {
+            Action::NodeSendMessage { src, dst, content, result_tx } => {
+                if result_tx.send(match self.send_user_message(src, dst, content) {
                         Err(RoutingError::Interface(err)) => Err(err),
                         Err(_err) => Ok(()),
                         Ok(()) => Ok(()),
@@ -446,13 +442,9 @@ impl Core {
             }
             Action::ClientSendRequest { content, dst, result_tx } => {
                 if result_tx.send(if let Ok(src) = self.get_client_authority() {
-                        let request_msg = RoutingMessage {
-                            content: MessageContent::Request(content),
-                            src: src,
-                            dst: dst,
-                        };
+                        let user_msg = UserMessage::Request(content);
 
-                        match self.send_message(request_msg) {
+                        match self.send_user_message(src, dst, user_msg) {
                             Err(RoutingError::Interface(err)) => Err(err),
                             Err(_) | Ok(()) => Ok(()),
                         }
@@ -787,7 +779,7 @@ impl Core {
     fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         match msg.content {
             MessageContent::Ack(_) |
-            MessageContent::Request(_) => Ok(()),
+            MessageContent::UserMessagePart { .. } => Ok(()),
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
@@ -847,34 +839,6 @@ impl Core {
             };
         }
         Ok(())
-    }
-
-    /// Returns a cached response, if one is available for the given message, otherwise `None`.
-    fn get_from_cache(&mut self, routing_msg: &RoutingMessage) -> Option<RoutingMessage> {
-        let content = match routing_msg.content {
-            MessageContent::Request(Request::Get(DataIdentifier::Immutable(ref name), id)) => {
-                match self.data_cache.get(name) {
-                    Some(data) => MessageContent::Response(Response::GetSuccess(data.clone(), id)),
-                    _ => return None,
-                }
-            }
-            _ => return None,
-        };
-
-        let response_msg = RoutingMessage {
-            src: Authority::ManagedNode(*self.name()),
-            dst: routing_msg.src.clone(),
-            content: content,
-        };
-
-        Some(response_msg)
-    }
-
-    fn add_to_cache(&mut self, routing_msg: &RoutingMessage) {
-        if let MessageContent::Response(Response::GetSuccess(ref data @ Data::Immutable(_), _)) =
-               routing_msg.content {
-            let _ = self.data_cache.insert(data.name(), data.clone());
-        }
     }
 
     fn handle_routing_message(&mut self,
@@ -979,20 +943,25 @@ impl Core {
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
             (MessageContent::Ack(ack), _, _) => self.handle_ack_response(ack),
-            (MessageContent::Request(request), src, dst) => {
-                let event = Event::Request {
-                    request: request,
-                    src: src,
-                    dst: dst,
-                };
-                let _ = self.event_sender.send(event);
-                Ok(())
-            }
-            (MessageContent::Response(response), src, dst) => {
-                let event = Event::Response {
-                    response: response,
-                    src: src,
-                    dst: dst,
+            (MessageContent::UserMessagePart { hash, part_count, part_index, payload },
+             src,
+             dst) => {
+                let event = match self.add_user_msg_part(hash, part_count, part_index, payload) {
+                    Some(UserMessage::Request(request)) => {
+                        Event::Request {
+                            request: request,
+                            src: src,
+                            dst: dst,
+                        }
+                    }
+                    Some(UserMessage::Response(response)) => {
+                        Event::Response {
+                            response: response,
+                            src: src,
+                            dst: dst,
+                        }
+                    }
+                    None => return Ok(()),
                 };
                 let _ = self.event_sender.send(event);
                 Ok(())
@@ -1905,6 +1874,42 @@ impl Core {
 
     // ----- Send Functions -----------------------------------------------------------------------
 
+    /// Sends the given message, possibly splitting it up into smaller parts.
+    fn send_user_message(&mut self,
+                         src: Authority,
+                         dst: Authority,
+                         user_msg: UserMessage)
+                         -> Result<(), RoutingError> {
+        for part in try!(user_msg.to_parts()) {
+            try!(self.send_message(RoutingMessage {
+                src: src.clone(),
+                dst: dst.clone(),
+                content: part,
+            }));
+        }
+        Ok(())
+    }
+
+    /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
+    /// given part was the last missing piece of it.
+    fn add_user_msg_part(&mut self,
+                         hash: u64,
+                         part_count: u32,
+                         part_index: u32,
+                         payload: Vec<u8>)
+                         -> Option<UserMessage> {
+        {
+            let entry = self.user_msg_cache.entry((hash, part_count)).or_insert_with(BTreeMap::new);
+            let _ = entry.insert(part_index, payload);
+            if entry.len() != part_count as usize {
+                return None;
+            }
+        }
+        self.user_msg_cache
+            .remove(&(hash, part_count))
+            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
+    }
+
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
         let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
@@ -1982,13 +1987,6 @@ impl Core {
             sent_to: &[XorName])
             -> Result<(), RoutingError> {
         let routing_msg = signed_msg.routing_message();
-        // Cache handling
-        if self.state == State::Node && self.use_data_cache {
-            if let Some(response_msg) = self.get_from_cache(routing_msg) {
-                return self.send_message(response_msg);
-            }
-            self.add_to_cache(routing_msg);
-        }
 
         if let Authority::Client { ref peer_id, .. } = routing_msg.dst {
             if self.name() == routing_msg.dst.name() {

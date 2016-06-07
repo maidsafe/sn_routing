@@ -86,7 +86,7 @@ impl TestNode {
         let first_node = index == 0;
 
         TestNode {
-            node: unwrap_result!(Node::new(sender, false, first_node)),
+            node: unwrap_result!(Node::new(sender, first_node)),
             _thread_joiner: joiner,
         }
     }
@@ -115,7 +115,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id), false)),
+            client: unwrap_result!(Client::new(sender, Some(full_id))),
             _thread_joiner: joiner,
         }
     }
