@@ -21,7 +21,7 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 use error::InternalError;
-use safe_network_common::client_errors::MutationError;
+use safe_network_common::client_errors::{GetError, MutationError};
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
@@ -154,6 +154,26 @@ impl MaidManager {
         }
     }
 
+    pub fn handle_get_account_info(&mut self,
+                                   src: Authority,
+                                   dst: Authority,
+                                   msg_id: MessageId)
+                                   -> Result<(), InternalError> {
+        let client_name = utils::client_name(&src);
+        if let Some(account) = self.accounts.get(&client_name) {
+            let _ = self.routing_node.send_get_account_info_success(dst,
+                                                                    src,
+                                                                    account.data_stored,
+                                                                    account.space_available,
+                                                                    msg_id);
+        } else {
+            let external_error_indicator = try!(serialisation::serialise(&GetError::NoSuchAccount));
+            let _ = self.routing_node
+                .send_get_account_info_failure(dst, src, external_error_indicator, msg_id);
+        }
+        Ok(())
+    }
+
     pub fn handle_refresh(&mut self, serialised_msg: &[u8]) -> Result<(), InternalError> {
         let Refresh(maid_name, account) =
             try!(serialisation::deserialise::<Refresh>(serialised_msg));
@@ -255,8 +275,8 @@ impl MaidManager {
             let _ = self.accounts.insert(client_name, Account::default());
             info!("Stats - {} client accounts.", self.accounts.len());
         }
-        let immutable_data = Data::Structured(data);
-        self.forward_put_request(src, dst, client_name, immutable_data, msg_id)
+        let structured_data = Data::Structured(data);
+        self.forward_put_request(src, dst, client_name, structured_data, msg_id)
     }
 
     fn forward_put_request(&mut self,
