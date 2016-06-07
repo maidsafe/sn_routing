@@ -1,17 +1,13 @@
 # safe_vault
 
-[![](https://img.shields.io/badge/Project%20SAFE-Approved-green.svg)](http://maidsafe.net/applications) [![](https://img.shields.io/badge/License-GPL3-green.svg)](https://github.com/maidsafe/safe_vault/blob/master/COPYING)
-
-**Primary Maintainer:**     Qi Ma (qi.ma@maidsafe.net)
-
-**Secondary Maintainer:**   Fraser Hutchison (fraser.hutchison@maidsafe.net)
+**Maintainer:** Andreas Fackler (andreas.fackler@maidsafe.net)
 
 |Crate|Linux/OS X|ARM (Linux)|Windows|Coverage|Issues|
 |:---:|:--------:|:---------:|:-----:|:------:|:----:|
 |[![](http://meritbadge.herokuapp.com/safe_vault)](https://crates.io/crates/safe_vault)|[![Build Status](https://travis-ci.org/maidsafe/safe_vault.svg?branch=master)](https://travis-ci.org/maidsafe/safe_vault)|[![Build Status](http://ci.maidsafe.net:8080/buildStatus/icon?job=safe_vault_arm_status_badge)](http://ci.maidsafe.net:8080/job/safe_vault_arm_status_badge/)|[![Build status](https://ci.appveyor.com/api/projects/status/ohu678c6ufw8b2bn/branch/master?svg=true)](https://ci.appveyor.com/project/MaidSafe-QA/safe-vault/branch/master)|[![Coverage Status](https://coveralls.io/repos/maidsafe/safe_vault/badge.svg)](https://coveralls.io/r/maidsafe/safe_vault)|[![Stories in Ready](https://badge.waffle.io/maidsafe/safe_vault.png?label=ready&title=Ready)](https://waffle.io/maidsafe/safe_vault)|
 
 
-| [API Documentation - master branch](http://maidsafe.net/safe_vault/master) | [SAFE Network System Documentation](http://systemdocs.maidsafe.net) | [MaidSafe website](http://maidsafe.net) | [SAFE Network Forum](https://forum.safenetwork.io) |
+| [API Documentation - master branch](http://docs.maidsafe.net/safe_vault/master) | [MaidSafe website](http://maidsafe.net) | [SAFE Network Forum](https://forum.safenetwork.io) |
 |:------:|:-------:|:-------:|:-------:|
 
 ## Overview
@@ -57,7 +53,7 @@ An autonomous network capable of data storage/publishing/sharing as well as comp
 ### Overview
 The MaidSafe Network consists of software processes (nodes), referred to as vaults. These vaults perform many functions on the network and these functional components are referred to as personas. The underlying network, when linked with [routing](https://github.com/maidsafe/routing), is an XOR network and as such a node may express closeness or responsibility to any other node or element on the network, if the node is in relative close proximity to the target. In this summary the phrase **NAE** (Network Addressable Element) is used to refer to anything with a network address including data.
 
-The vaults rely on [routing](https://github.com/maidsafe/routing) to calculate responsibilities for NAE via the relevant [API calls](http://maidsafe.net/routing/master/routing/index.html/).
+The vaults rely on [routing](https://github.com/maidsafe/routing) to calculate responsibilities for NAE via the relevant [API calls](http://docs.maidsafe.net/routing/master/routing/index.html/).
 
 These calls allow us to calculate the network from the perspective of any NAE we may be responsible for. It cannot be stressed enough that the ONLY way to determine responsibility for an NAE is to see the network from the perspective on the NAE. If we sort the vector of nodes we know about and their close nodes (referred to as the group matrix) and we do not appear in the first K (replication count) nodes then we are not responsible for the NAE. This is a fundamental issue and the importance of this cannot be emphasised enough.
 
@@ -172,3 +168,19 @@ where the last flow deviates from the existing implementation, but would notify 
     Manager{Address};
            {Address} omitted where evident,
            e.g. MaidManagers{MaidNode}
+
+## License
+
+Licensed under either of
+
+* the MaidSafe.net Commercial License, version 1.0 or later ([LICENSE](LICENSE))
+* the General Public License (GPL), version 3 ([COPYING](COPYING) or http://www.gnu.org/licenses/gpl-3.0.en.html)
+
+at your option.
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the
+work by you, as defined in the MaidSafe Contributor Agreement, version 1.1 ([CONTRIBUTOR]
+(CONTRIBUTOR)), shall be dual licensed as above, and you agree to be bound by the terms of the
+MaidSafe Contributor Agreement, version 1.1.
