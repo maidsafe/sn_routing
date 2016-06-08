@@ -194,7 +194,7 @@ pub struct Core {
     pending_acks: HashMap<u64, UnacknowledgedMessage>,
     received_acks: MessageFilter<u64>,
     bucket_filter: MessageFilter<usize>,
-    message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
+    message_accumulator: Accumulator<RoutingMessage, (sign::PublicKey, RoutingMessage)>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
@@ -849,24 +849,47 @@ impl Core {
             if self.grp_msg_filter.contains(routing_msg) {
                 return Err(RoutingError::FilterCheckFailed);
             }
-            if self.accumulate(routing_msg, &public_id) {
-                let _ = self.grp_msg_filter.insert(routing_msg);
-                self.send_ack(routing_msg, 0);
+            if let Some(group_msg) = self.accumulate(routing_msg, &public_id) {
+                let _ = self.grp_msg_filter.insert(&group_msg);
+                let _ = self.grp_msg_filter.insert(&try!(routing_msg.to_hash()));
+                self.send_ack(&group_msg, 0);
+                self.dispatch_routing_message(&group_msg)
             } else {
-                return Ok(());
+                Ok(())
             }
+        } else {
+            self.dispatch_routing_message(routing_msg)
         }
-        self.dispatch_routing_message(routing_msg)
     }
 
-    fn accumulate(&mut self, message: &RoutingMessage, public_id: &PublicId) -> bool {
+    fn accumulate(&mut self,
+                  message: &RoutingMessage,
+                  public_id: &PublicId)
+                  -> Option<RoutingMessage> {
         // For clients we already have set it on reception of BootstrapIdentify message
         if self.state == State::Node {
             let dynamic_quorum_size = self.dynamic_quorum_size();
             self.message_accumulator.set_quorum_size(dynamic_quorum_size);
         }
         let key = *public_id.signing_public_key();
-        self.message_accumulator.add(message.clone(), key).is_some()
+        let hash_msg = if let Ok(hash_msg) = message.to_hash() {
+            hash_msg
+        } else {
+            error!("{:?} Failed to hash message {:?}", self, message);
+            return None;
+        };
+        if let Some(values) = self.message_accumulator.add(hash_msg, (key, message.clone())) {
+            for &(_, ref msg) in values {
+                if let MessageContent::Hash(_) = msg.content {
+                    continue;
+                }
+                // TODO - we should check the integrity of all accumulated entries now that we
+                // have the contents available.  Any which fail should not be counted in the
+                // accumulated total.
+                return Some(msg.clone());
+            }
+        }
+        None
     }
 
     fn dynamic_quorum_size(&self) -> usize {
@@ -2009,20 +2032,29 @@ impl Core {
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
-        let raw_bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, new_sent_to.clone()));
+        // When sending group messages, only one of us needs to send the whole message and everyone
+        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
+        // TODO: This applies only to messages where we are the original sender. The sending and
+        // relaying code should be better separated.
+        let send_msg = if self.should_only_send_hash(hop, route, &routing_msg.src) {
+            try!(SignedMessage::new(try!(routing_msg.to_hash()), &self.full_id))
+        } else {
+            signed_msg.clone()
+        };
+        let raw_bytes = try!(self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone()));
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
                 (target_peer_id, raw_bytes.clone())
             } else if let Some(&tunnel_id) = self.tunnels
                 .tunnel_for(&target_peer_id) {
-                let bytes = try!(self.to_tunnel_hop_bytes(signed_msg.clone(),
+                let bytes = try!(self.to_tunnel_hop_bytes(send_msg.clone(),
                                                           route,
                                                           new_sent_to.clone(),
                                                           self.crust_service.id(),
                                                           target_peer_id));
                 (tunnel_id, bytes)
             } else {
-                error!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
+                trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
                        self,
                        target_peer_id);
                 self.disconnect_peer(&target_peer_id);
@@ -2038,6 +2070,16 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    /// Returns `true` if we should only send a hash instead of the whole message.
+    fn should_only_send_hash(&self, hop: &XorName, route: u8, src: &Authority) -> bool {
+        if hop != self.name() || !src.is_group() {
+            return false;
+        }
+        let group = self.routing_table.closest_nodes_to(src.name(), GROUP_SIZE, true);
+        // TODO: Better distribute the work among the group.
+        hop == group[route as usize % (group.len())].name()
     }
 
     /// Returns whether we are the recipient of a message for the given authority.

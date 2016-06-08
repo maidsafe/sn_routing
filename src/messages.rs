@@ -22,6 +22,7 @@ use mock_crust::crust::PeerId;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::hash::sha256;
 use std::fmt::{self, Debug, Formatter};
 
 use authority::Authority;
@@ -253,6 +254,15 @@ impl RoutingMessage {
     pub fn priority(&self) -> u8 {
         self.content.priority()
     }
+
+    /// Replaces this message's contents with its hash.
+    pub fn to_hash(&self) -> Result<RoutingMessage, RoutingError> {
+        Ok(RoutingMessage {
+            src: self.src.clone(),
+            dst: self.dst.clone(),
+            content: try!(self.content.to_hash()),
+        })
+    }
 }
 
 /// The routing message types
@@ -315,6 +325,9 @@ pub enum MessageContent {
     },
     /// Acknowledge receipt of any request or response except an `Ack`.
     Ack(u64),
+    /// The hash of a `RoutingMessage`. This is sent by the source group authority members as a
+    /// confirmation, so that only one of them needs to send the full message.
+    Hash(sha256::Digest),
     /// Part of a user-facing message
     UserMessagePart {
         /// The hash of this user message.
@@ -335,6 +348,19 @@ impl MessageContent {
             MessageContent::UserMessagePart { .. } => 3,
             _ => 0,
         }
+    }
+
+    /// Convert this into a `Hash`, or return a clone if it is small.
+    pub fn to_hash(&self) -> Result<MessageContent, RoutingError> {
+        Ok(match *self {
+            MessageContent::GetNodeNameResponse { .. } |
+            MessageContent::GetCloseGroupResponse { .. } |
+            MessageContent::UserMessagePart { .. } => {
+                let serialised_msg = try!(serialise(self));
+                MessageContent::Hash(sha256::hash(&serialised_msg))
+            }
+            _ => self.clone(),
+        })
     }
 }
 
@@ -428,6 +454,9 @@ impl Debug for MessageContent {
                        message_id)
             }
             MessageContent::Ack(ref ack) => write!(formatter, "Ack({:x})", ack),
+            MessageContent::Hash(ref hash) => {
+                write!(formatter, "Hash({})", utils::format_binary_array(&hash.0))
+            }
             MessageContent::UserMessagePart { hash, part_count, part_index, .. } => {
                 write!(formatter,
                        "UserMessagePart {{ {:x} {}/{} }}",
