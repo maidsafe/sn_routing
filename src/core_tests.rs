@@ -31,7 +31,8 @@ use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::ContactInfo;
-use messages::{RoutingMessage, MessageContent, Request, Response};
+use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
+               RELOCATE_PRIORITY};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
 
@@ -58,7 +59,7 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
 
         let (action_tx, core) = mock_crust::make_current(&handle,
-                                                         || Core::new(event_tx, role, None, false));
+                                                         || Core::new(event_tx, role, None));
 
         TestNode {
             handle: handle,
@@ -90,51 +91,59 @@ impl TestNode {
         self.core.routing_table()
     }
 
-    fn send_get_success(&self,
-                        src: Authority,
-                        dst: Authority,
-                        data: Data,
-                        id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetSuccess(data, id)),
+    /// Respond to a `Get` request indicating success and sending the requested data.
+    pub fn send_get_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data: Data,
+                            id: MessageId,
+                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
+                            -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg, result_tx)
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
-    fn send_get_failure(&self,
-                        src: Authority,
-                        dst: Authority,
-                        data_id: DataIdentifier,
-                        external_error_indicator: Vec<u8>,
-                        id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
+    /// Respond to a `Get` request indicating failure.
+    pub fn send_get_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data_id: DataIdentifier,
+                            external_error_indicator: Vec<u8>,
+                            id: MessageId,
+                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
+                            -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg, result_tx)
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
     fn send_action(&self,
-                   routing_msg: RoutingMessage,
+                   src: Authority,
+                   dst: Authority,
+                   user_msg: UserMessage,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
-        let action = Action::NodeSendMessage {
-            content: routing_msg,
+        try!(self.action_tx.send(Action::NodeSendMessage {
+            src: src,
+            dst: dst,
+            content: user_msg,
             result_tx: result_tx,
-        };
-
-        try!(self.action_tx.send(action));
+            priority: priority,
+        }));
         Ok(())
     }
 }
@@ -152,9 +161,8 @@ impl TestClient {
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
 
-        let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, Role::Client, Some(full_id), false)
-        });
+        let (action_tx, core) =
+            mock_crust::make_current(&handle, || Core::new(event_tx, Role::Client, Some(full_id)));
 
         TestClient {
             handle: handle,
@@ -184,7 +192,10 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id), dst, result_tx)
+        self.send_action(Request::Put(data, message_id),
+                         dst,
+                         DEFAULT_PRIORITY,
+                         result_tx)
     }
 
     fn send_get_request(&mut self,
@@ -193,17 +204,22 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_request, message_id), dst, result_tx)
+        self.send_action(Request::Get(data_request, message_id),
+                         dst,
+                         CLIENT_GET_PRIORITY,
+                         result_tx)
     }
 
     fn send_action(&self,
                    content: Request,
                    dst: Authority,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,
+            priority: priority,
             result_tx: result_tx,
         };
 
@@ -513,7 +529,7 @@ fn successful_put_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let dst = Authority::ClientManager(*clients[0].name());
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rand::thread_rng().gen_iter().take(50 * 1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
@@ -554,7 +570,7 @@ fn successful_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rand::thread_rng().gen_iter().take(30 * 1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());

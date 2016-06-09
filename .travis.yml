@@ -14,9 +14,6 @@ matrix:
   allow_failures:
     - rust: nightly
 sudo: false
-branches:
-  only:
-    - master
 cache:
   cargo: true
   directories:

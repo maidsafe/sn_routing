@@ -52,7 +52,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone(), false, first));
+        let node = unwrap_result!(Node::new(sender.clone(), first));
 
         ExampleNode {
             node: node,
@@ -91,9 +91,8 @@ impl ExampleNode {
                     trace!("{} Received disconnected event", self.get_debug_name());
                 }
                 Event::GetNodeNameFailed => {
-                    let _ =
-                        mem::replace(&mut self.node,
-                                     unwrap_result!(Node::new(self.sender.clone(), false, false)));
+                    let _ = mem::replace(&mut self.node,
+                                         unwrap_result!(Node::new(self.sender.clone(), false)));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);

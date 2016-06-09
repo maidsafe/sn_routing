@@ -29,7 +29,7 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
-use messages::Request;
+use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
 use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
@@ -63,14 +63,11 @@ impl Client {
     /// cryptographically secure and uses group consensus. The restriction for the client name
     /// exists to ensure that the client cannot choose its `ClientAuthority`.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
-               use_data_cache: bool)
-               -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
+        let (action_sender, mut core) = Core::new(event_sender, Role::Client, keys);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -87,14 +84,11 @@ impl Client {
 
     /// Create a new `Client` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>,
-               keys: Option<FullId>,
-               use_data_cache: bool)
-               -> Result<Client, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, Role::Client, keys, use_data_cache);
+        let (action_sender, core) = Core::new(event_sender, Role::Client, keys);
         let (tx, rx) = channel();
 
         Ok(Client {
@@ -123,7 +117,7 @@ impl Client {
                             data_id: DataIdentifier,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_id, message_id), dst)
+        self.send_action(Request::Get(data_id, message_id), dst, CLIENT_GET_PRIORITY)
     }
 
     /// Add something to the network
@@ -132,7 +126,7 @@ impl Client {
                             data: Data,
                             message_id: MessageId)
                             -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id), dst)
+        self.send_action(Request::Put(data, message_id), dst, DEFAULT_PRIORITY)
     }
 
     /// Change something already on the network
@@ -141,7 +135,7 @@ impl Client {
                              data: Data,
                              message_id: MessageId)
                              -> Result<(), InterfaceError> {
-        self.send_action(Request::Post(data, message_id), dst)
+        self.send_action(Request::Post(data, message_id), dst, DEFAULT_PRIORITY)
     }
 
     /// Remove something from the network
@@ -150,7 +144,7 @@ impl Client {
                                data: Data,
                                message_id: MessageId)
                                -> Result<(), InterfaceError> {
-        self.send_action(Request::Delete(data, message_id), dst)
+        self.send_action(Request::Delete(data, message_id), dst, DEFAULT_PRIORITY)
     }
 
     /// Request account information for the Client calling this function
@@ -158,13 +152,20 @@ impl Client {
                                          dst: Authority,
                                          message_id: MessageId)
                                          -> Result<(), InterfaceError> {
-        self.send_action(Request::GetAccountInfo(message_id), dst)
+        self.send_action(Request::GetAccountInfo(message_id),
+                         dst,
+                         CLIENT_GET_PRIORITY)
     }
 
-    fn send_action(&self, content: Request, dst: Authority) -> Result<(), InterfaceError> {
+    fn send_action(&self,
+                   content: Request,
+                   dst: Authority,
+                   priority: u8)
+                   -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         };
 

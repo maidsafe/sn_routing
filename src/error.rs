@@ -114,6 +114,8 @@ pub enum RoutingError {
     InvalidSource,
     /// Attempted to use a node as a tunnel that is not directly connected
     CannotTunnelThroughTunnel,
+    /// Decoded a user message with an unexpected hash.
+    HashMismatch,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {

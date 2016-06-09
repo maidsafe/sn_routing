@@ -19,8 +19,10 @@
 use crust::PeerId;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities;
+use maidsafe_utilities::serialisation::{serialise, deserialise};
 use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::hash::sha256;
 use std::fmt::{self, Debug, Formatter};
 
 use authority::Authority;
@@ -30,6 +32,18 @@ use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
 use xor_name::XorName;
+
+/// The maximal length of a user message part, in bytes.
+const MAX_PART_LEN: usize = 20 * 1024;
+
+/// Get and refresh messages from nodes have a high priority: They relocate data under churn and are
+/// critical to prevent data loss.
+pub const RELOCATE_PRIORITY: u8 = 1;
+/// Other requests have a lower priority: If they fail due to high traffic, the sender retries.
+pub const DEFAULT_PRIORITY: u8 = 2;
+/// `Get` requests from clients have the lowest priority: If bandwidth is insufficient, the network
+/// needs to prioritise maintaining its structure, data and consensus.
+pub const CLIENT_GET_PRIORITY: u8 = 3;
 
 /// Wrapper of all messages.
 ///
@@ -249,6 +263,15 @@ impl RoutingMessage {
     pub fn priority(&self) -> u8 {
         self.content.priority()
     }
+
+    /// Replaces this message's contents with its hash.
+    pub fn to_grp_msg_hash(&self) -> Result<RoutingMessage, RoutingError> {
+        Ok(RoutingMessage {
+            src: self.src.clone(),
+            dst: self.dst.clone(),
+            content: try!(self.content.to_grp_msg_hash()),
+        })
+    }
 }
 
 /// The routing message types
@@ -309,22 +332,50 @@ pub enum MessageContent {
         /// The message ID.
         message_id: MessageId,
     },
-    /// Acknowledge receipt of any request or response except an `Ack`.
-    Ack(u64),
-    /// User-facing request message
-    Request(Request),
-    /// User-facing response message
-    Response(Response),
+    /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
+    /// received message and the priority.
+    Ack(u64, u8),
+    /// The hash of a `RoutingMessage`. This is sent by the source group authority members as a
+    /// confirmation, so that only one of them needs to send the full message. The second field is
+    /// the message priority.
+    GroupMessageHash(sha256::Digest, u8),
+    /// Part of a user-facing message
+    UserMessagePart {
+        /// The hash of this user message.
+        hash: u64,
+        /// The number of parts.
+        part_count: u32,
+        /// The index of this part.
+        part_index: u32,
+        /// The message priority.
+        priority: u8,
+        /// The `part_index`-th part of the serialised user message.
+        payload: Vec<u8>,
+    },
 }
 
 impl MessageContent {
     /// The priority Crust should send this message with.
     pub fn priority(&self) -> u8 {
         match *self {
-            MessageContent::Request(ref request) => request.priority(),
-            MessageContent::Response(ref response) => response.priority(),
+            MessageContent::Ack(_, priority) |
+            MessageContent::GroupMessageHash(_, priority) |
+            MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
+    }
+
+    /// Convert this into a `GroupMessageHash`, or return a clone if it is small.
+    pub fn to_grp_msg_hash(&self) -> Result<MessageContent, RoutingError> {
+        Ok(match *self {
+            MessageContent::GetNodeNameResponse { .. } |
+            MessageContent::GetCloseGroupResponse { .. } |
+            MessageContent::UserMessagePart { .. } => {
+                let serialised_msg = try!(serialise(self));
+                MessageContent::GroupMessageHash(sha256::hash(&serialised_msg), self.priority())
+            }
+            _ => self.clone(),
+        })
     }
 }
 
@@ -417,9 +468,72 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::Ack(ref ack) => write!(formatter, "Ack({:x})", ack),
-            MessageContent::Request(ref request) => write!(formatter, "Request({:?})", request),
-            MessageContent::Response(ref response) => write!(formatter, "Response({:?})", response),
+            MessageContent::Ack(ref ack, priority) => {
+                write!(formatter, "Ack({:x}, {})", ack, priority)
+            }
+            MessageContent::GroupMessageHash(ref hash, priority) => {
+                write!(formatter,
+                       "GroupMessageHash({}, {})",
+                       utils::format_binary_array(&hash.0),
+                       priority)
+            }
+            MessageContent::UserMessagePart { hash, part_count, part_index, priority, .. } => {
+                write!(formatter,
+                       "UserMessagePart {{ {}/{}, priority: {}  {:x}}}",
+                       part_index + 1,
+                       part_count,
+                       priority,
+                       hash)
+            }
+        }
+    }
+}
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Clone, Debug, Hash, RustcEncodable, RustcDecodable)]
+/// A user-visible message: a `Request` or `Response`.
+pub enum UserMessage {
+    /// A user-visible request message.
+    Request(Request),
+    /// A user-visible response message.
+    Response(Response),
+}
+
+impl UserMessage {
+    /// Splits up the message into smaller `MessageContent` parts, which can individually be sent
+    /// and routed, and then be put back together by the receiver.
+    pub fn to_parts(&self, priority: u8) -> Result<Vec<MessageContent>, RoutingError> {
+        // TODO: This internally serialises the message - remove that duplicated work!
+        let hash = maidsafe_utilities::big_endian_sip_hash(self);
+        let payload = try!(serialise(self));
+        let len = payload.len();
+        let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
+        Ok((0..part_count)
+            .map(|i| {
+                MessageContent::UserMessagePart {
+                    hash: hash,
+                    part_count: part_count as u32,
+                    part_index: i as u32,
+                    payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
+                    priority: priority,
+                }
+            })
+            .collect())
+    }
+
+    /// Puts the given parts of a serialised message together and verifies that it matches the
+    /// given hash code. If it does, returns the `UserMessage`.
+    pub fn from_parts<'a, I: Iterator<Item = &'a Vec<u8>>>(hash: u64,
+                                                           parts: I)
+                                                           -> Result<UserMessage, RoutingError> {
+        let mut payload = Vec::new();
+        for part in parts {
+            payload.extend_from_slice(part);
+        }
+        let user_msg = try!(deserialise(&payload[..]));
+        if hash != maidsafe_utilities::big_endian_sip_hash(&user_msg) {
+            Err(RoutingError::HashMismatch)
+        } else {
+            Ok(user_msg)
         }
     }
 }
@@ -620,9 +734,12 @@ impl Debug for Response {
 mod test {
     extern crate rand;
 
-    use super::{HopMessage, SignedMessage, RoutingMessage, MessageContent};
+    use super::*;
     use authority::Authority;
+    use data::Data;
     use id::FullId;
+    use immutable_data::ImmutableData;
+    use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use sodiumoxide::crypto::sign;
     use types::MessageId;
@@ -693,5 +810,35 @@ mod test {
         let verify_result = hop_message.verify(&public_signing_key);
 
         assert!(verify_result.is_err());
+    }
+
+    #[test]
+    fn user_message_parts() {
+        let data_bytes: Vec<u8> = (0..(super::MAX_PART_LEN * 2)).map(|i| i as u8).collect();
+        let data = Data::Immutable(ImmutableData::new(data_bytes));
+        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
+        let parts = unwrap_result!(user_msg.to_parts(42));
+        assert_eq!(parts.len(), 3);
+        let payloads: Vec<Vec<u8>> = parts.into_iter()
+            .enumerate()
+            .map(|(i, msg)| match msg {
+                MessageContent::UserMessagePart { hash,
+                                                  part_count,
+                                                  part_index,
+                                                  payload,
+                                                  priority } => {
+                    assert_eq!(msg_hash, hash);
+                    assert_eq!(3, part_count);
+                    assert_eq!(i, part_index as usize);
+                    assert_eq!(42, priority);
+                    payload
+                }
+                msg => panic!("Unexpected message {:?}", msg),
+            })
+            .collect();
+        let deserialised_user_msg = unwrap_result!(UserMessage::from_parts(msg_hash,
+                                                                           payloads.iter()));
+        assert_eq!(user_msg, deserialised_user_msg);
     }
 }
