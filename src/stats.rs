@@ -105,7 +105,7 @@ impl Stats {
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
             MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
-            MessageContent::Hash(..) => self.msg_hash += 1,
+            MessageContent::GroupMessageHash(..) => self.msg_hash += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
         }
         self.increment_msg_total();
@@ -138,7 +138,8 @@ impl Stats {
                    ConnectionInfo: {}, GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
                    PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
                    DeleteFailure: {}, GetAccountInfoSuccess: {}, GetAccountInfoFailure: {}, \
-                   GetCloseGroupResponse: {}, GetNodeNameResponse: {}, Ack: {}, Hash: {}",
+                   GetCloseGroupResponse: {}, GetNodeNameResponse: {}, Ack: {}, \
+                   GroupMessageHash: {}",
                   self.msg_get,
                   self.msg_put,
                   self.msg_post,

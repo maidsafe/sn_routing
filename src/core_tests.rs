@@ -31,7 +31,8 @@ use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::ContactInfo;
-use messages::{Request, Response, UserMessage};
+use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
+               RELOCATE_PRIORITY};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
 
@@ -99,7 +100,12 @@ impl TestNode {
                             result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
-        self.send_action(src, dst, user_msg, result_tx)
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
+        };
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
     /// Respond to a `Get` request indicating failure.
@@ -116,13 +122,19 @@ impl TestNode {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg, result_tx)
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
+        };
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
     fn send_action(&self,
                    src: Authority,
                    dst: Authority,
                    user_msg: UserMessage,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
         try!(self.action_tx.send(Action::NodeSendMessage {
@@ -130,6 +142,7 @@ impl TestNode {
             dst: dst,
             content: user_msg,
             result_tx: result_tx,
+            priority: priority,
         }));
         Ok(())
     }
@@ -179,7 +192,10 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id), dst, result_tx)
+        self.send_action(Request::Put(data, message_id),
+                         dst,
+                         DEFAULT_PRIORITY,
+                         result_tx)
     }
 
     fn send_get_request(&mut self,
@@ -188,17 +204,22 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_request, message_id), dst, result_tx)
+        self.send_action(Request::Get(data_request, message_id),
+                         dst,
+                         CLIENT_GET_PRIORITY,
+                         result_tx)
     }
 
     fn send_action(&self,
                    content: Request,
                    dst: Authority,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,
+            priority: priority,
             result_tx: result_tx,
         };
 

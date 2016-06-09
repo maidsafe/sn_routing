@@ -50,7 +50,7 @@ use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage};
+               UserMessage, DEFAULT_PRIORITY};
 use utils;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
@@ -208,6 +208,8 @@ pub struct Core {
     tunnels: Tunnels,
     stats: Stats,
     send_filter: LruCache<(u64, PeerId, u8), ()>,
+    /// This maps `(hash, part_count)` of an incoming `UserMessage` to the map containing all
+    /// `UserMessagePart`s that have already arrived, by `part_index`.
     user_msg_cache: LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>,
     peer_mgr: PeerManager,
 }
@@ -430,8 +432,8 @@ impl Core {
 
     fn handle_action(&mut self, action: Action) -> bool {
         match action {
-            Action::NodeSendMessage { src, dst, content, result_tx } => {
-                if result_tx.send(match self.send_user_message(src, dst, content) {
+            Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
+                if result_tx.send(match self.send_user_message(src, dst, content, priority) {
                         Err(RoutingError::Interface(err)) => Err(err),
                         Err(_err) => Ok(()),
                         Ok(()) => Ok(()),
@@ -440,11 +442,11 @@ impl Core {
                     return false;
                 }
             }
-            Action::ClientSendRequest { content, dst, result_tx } => {
+            Action::ClientSendRequest { content, dst, priority, result_tx } => {
                 if result_tx.send(if let Ok(src) = self.get_client_authority() {
                         let user_msg = UserMessage::Request(content);
 
-                        match self.send_user_message(src, dst, user_msg) {
+                        match self.send_user_message(src, dst, user_msg, priority) {
                             Err(RoutingError::Interface(err)) => Err(err),
                             Err(_) | Ok(()) => Ok(()),
                         }
@@ -778,8 +780,10 @@ impl Core {
     /// Returns `Ok` if a client is allowed to send the given message.
     fn check_valid_client_message(&self, msg: &RoutingMessage) -> Result<(), RoutingError> {
         match msg.content {
-            MessageContent::Ack(_) |
-            MessageContent::UserMessagePart { .. } => Ok(()),
+            MessageContent::Ack(..) => Ok(()),
+            MessageContent::UserMessagePart { priority, .. } if priority >= DEFAULT_PRIORITY => {
+                Ok(())
+            }
             _ => {
                 debug!("{:?} Illegitimate client message {:?}. Refusing to relay.",
                        self,
@@ -851,7 +855,7 @@ impl Core {
             }
             if let Some(group_msg) = self.accumulate(routing_msg, &public_id) {
                 let _ = self.grp_msg_filter.insert(&group_msg);
-                let _ = self.grp_msg_filter.insert(&try!(routing_msg.to_hash()));
+                let _ = self.grp_msg_filter.insert(&try!(routing_msg.to_grp_msg_hash()));
                 self.send_ack(&group_msg, 0);
                 self.dispatch_routing_message(&group_msg)
             } else {
@@ -872,7 +876,7 @@ impl Core {
             self.message_accumulator.set_quorum_size(dynamic_quorum_size);
         }
         let key = *public_id.signing_public_key();
-        let hash_msg = if let Ok(hash_msg) = message.to_hash() {
+        let hash_msg = if let Ok(hash_msg) = message.to_grp_msg_hash() {
             hash_msg
         } else {
             error!("{:?} Failed to hash message {:?}", self, message);
@@ -880,7 +884,7 @@ impl Core {
         };
         if let Some(values) = self.message_accumulator.add(hash_msg, (key, message.clone())) {
             for &(_, ref msg) in values {
-                if let MessageContent::Hash(_) = msg.content {
+                if let MessageContent::GroupMessageHash(..) = msg.content {
                     continue;
                 }
                 // TODO - we should check the integrity of all accumulated entries now that we
@@ -910,7 +914,7 @@ impl Core {
         let msg_src = routing_msg.src.clone();
         let msg_dst = routing_msg.dst.clone();
         match msg_content {
-            MessageContent::Ack(_) => (),
+            MessageContent::Ack(..) => (),
             _ => {
                 trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
                        self,
@@ -965,8 +969,8 @@ impl Core {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::Ack(ack), _, _) => self.handle_ack_response(ack),
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload },
+            (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
+            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
              dst) => {
                 let event = match self.add_user_msg_part(hash, part_count, part_index, payload) {
@@ -1903,13 +1907,14 @@ impl Core {
     fn send_user_message(&mut self,
                          src: Authority,
                          dst: Authority,
-                         user_msg: UserMessage)
+                         user_msg: UserMessage,
+                         priority: u8)
                          -> Result<(), RoutingError> {
         match user_msg {
             UserMessage::Request(ref request) => self.stats.count_request(request),
             UserMessage::Response(ref response) => self.stats.count_response(response),
         }
-        for part in try!(user_msg.to_parts()) {
+        for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_message(RoutingMessage {
                 src: src.clone(),
                 dst: dst.clone(),
@@ -2037,7 +2042,7 @@ impl Core {
         // TODO: This applies only to messages where we are the original sender. The sending and
         // relaying code should be better separated.
         let send_msg = if self.should_only_send_hash(hop, route, &routing_msg.src) {
-            try!(SignedMessage::new(try!(routing_msg.to_hash()), &self.full_id))
+            try!(SignedMessage::new(try!(routing_msg.to_grp_msg_hash()), &self.full_id))
         } else {
             signed_msg.clone()
         };
@@ -2079,7 +2084,7 @@ impl Core {
         }
         let group = self.routing_table.closest_nodes_to(src.name(), GROUP_SIZE, true);
         // TODO: Better distribute the work among the group.
-        hop == group[route as usize % (group.len())].name()
+        hop != group[route as usize % (group.len())].name()
     }
 
     /// Returns whether we are the recipient of a message for the given authority.
@@ -2144,14 +2149,14 @@ impl Core {
     }
 
     fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
-        if let MessageContent::Ack(_) = routing_msg.content {
+        if let MessageContent::Ack(..) = routing_msg.content {
             return;
         }
         let hash = maidsafe_utilities::big_endian_sip_hash(&routing_msg);
         let response = RoutingMessage {
             src: src,
             dst: routing_msg.src.clone(),
-            content: MessageContent::Ack(hash),
+            content: MessageContent::Ack(hash, routing_msg.priority()),
         };
 
         let signed_msg = match SignedMessage::new(response, &self.full_id) {
@@ -2178,7 +2183,7 @@ impl Core {
     /// ack for this message has already been received.
     fn add_to_pending_acks(&mut self, signed_msg: &SignedMessage, route: u8) -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let MessageContent::Ack(_) = signed_msg.routing_message().content {
+        if let MessageContent::Ack(..) = signed_msg.routing_message().content {
             return true;
         }
 

@@ -34,11 +34,13 @@ pub enum Action {
         src: Authority,
         dst: Authority,
         content: UserMessage,
+        priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     ClientSendRequest {
         content: Request,
         dst: Authority,
+        priority: u8,
         result_tx: Sender<Result<(), InterfaceError>>,
     },
     CloseGroup {

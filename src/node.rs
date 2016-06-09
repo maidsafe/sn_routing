@@ -28,7 +28,8 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use messages::{UserMessage, Request, Response};
+use messages::{UserMessage, Request, Response, RELOCATE_PRIORITY, DEFAULT_PRIORITY,
+               CLIENT_GET_PRIORITY};
 use xor_name::XorName;
 use types::MessageId;
 
@@ -134,7 +135,7 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Request(Request::Get(data_request, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
     /// Send a `Put` request to `dst` to store data on the network.
@@ -145,7 +146,7 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Request(Request::Put(data, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Send a `Post` request to `dst` to modify data on the network.
@@ -156,7 +157,7 @@ impl Node {
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Request(Request::Post(data, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Send a `Delete` request to `dst` to remove data from the network.
@@ -167,7 +168,7 @@ impl Node {
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Request(Request::Delete(data, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Get` request indicating success and sending the requested data.
@@ -178,7 +179,12 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
-        self.send_action(src, dst, user_msg)
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
+        };
+        self.send_action(src, dst, user_msg, priority)
     }
 
     /// Respond to a `Get` request indicating failure.
@@ -194,7 +200,12 @@ impl Node {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg)
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
+        };
+        self.send_action(src, dst, user_msg, priority)
     }
 
     /// Respond to a `Put` request indicating success.
@@ -205,7 +216,7 @@ impl Node {
                             id: MessageId)
                             -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::PutSuccess(name, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Put` request indicating failure.
@@ -221,7 +232,7 @@ impl Node {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Post` request indicating success.
@@ -232,7 +243,7 @@ impl Node {
                              id: MessageId)
                              -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::PostSuccess(name, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Post` request indicating failure.
@@ -248,7 +259,7 @@ impl Node {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Delete` request indicating success.
@@ -259,7 +270,7 @@ impl Node {
                                id: MessageId)
                                -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Response(Response::DeleteSuccess(name, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Delete` request indicating failure.
@@ -275,7 +286,7 @@ impl Node {
             data_id: data_id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `GetAccountInfo` request indicating success.
@@ -291,7 +302,7 @@ impl Node {
             data_stored: data_stored,
             space_available: space_available,
         });
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
 
     /// Respond to a `GetAccountInfo` request indicating failure.
@@ -305,7 +316,7 @@ impl Node {
             id: id,
             external_error_indicator: external_error_indicator,
         });
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
 
     /// Send a `Refresh` request from `src` to `src` to trigger churn.
@@ -320,7 +331,7 @@ impl Node {
                                 id: MessageId)
                                 -> Result<(), InterfaceError> {
         let user_msg = UserMessage::Request(Request::Refresh(content, id));
-        self.send_action(src, dst, user_msg)
+        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
     /// Returns the names of the nodes in the routing table which are closest to the given one.
@@ -353,12 +364,14 @@ impl Node {
     fn send_action(&self,
                    src: Authority,
                    dst: Authority,
-                   user_msg: UserMessage)
+                   user_msg: UserMessage,
+                   priority: u8)
                    -> Result<(), InterfaceError> {
         try!(self.action_sender.send(Action::NodeSendMessage {
             src: src,
             dst: dst,
             content: user_msg,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         }));
 
