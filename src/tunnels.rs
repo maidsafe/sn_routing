@@ -193,7 +193,7 @@ mod tests {
     use mock_crust::crust::PeerId;
 
     fn id(i: usize) -> PeerId {
-        PeerId(i, 0)
+        PeerId(i)
     }
 
     #[test]

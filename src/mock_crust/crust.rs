@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::event_sender;
-use rand::{Rand, Rng};
 use std::cell::{RefCell, RefMut};
 use std::fmt;
 use std::io;
@@ -154,23 +153,12 @@ impl Drop for Service {
 }
 
 /// Mock version of `crust::PeerId`.
-///
-/// First element is the endpoint number of the peer (for easier log
-/// diagnostics), second one is some random number so the `PeerId` is different
-/// after restart.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
-pub struct PeerId(pub usize, pub u64);
+pub struct PeerId(pub usize);
 
 impl fmt::Debug for PeerId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Ignore the random number, as it would only clutter the debug output.
         write!(f, "PeerId({})", self.0)
-    }
-}
-
-impl Rand for PeerId {
-    fn rand<R: Rng>(rng: &mut R) -> PeerId {
-        PeerId(Rand::rand(rng), Rand::rand(rng))
     }
 }
 
