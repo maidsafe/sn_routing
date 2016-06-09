@@ -266,10 +266,19 @@ impl RoutingMessage {
 
     /// Replaces this message's contents with its hash.
     pub fn to_grp_msg_hash(&self) -> Result<RoutingMessage, RoutingError> {
+        let content = match self.content {
+            MessageContent::GetNodeNameResponse { .. } |
+            MessageContent::GetCloseGroupResponse { .. } |
+            MessageContent::UserMessagePart { .. } => {
+                let serialised_msg = try!(serialise(self));
+                MessageContent::GroupMessageHash(sha256::hash(&serialised_msg), self.priority())
+            }
+            _ => self.content.clone(),
+        };
         Ok(RoutingMessage {
             src: self.src.clone(),
             dst: self.dst.clone(),
-            content: try!(self.content.to_grp_msg_hash()),
+            content: content,
         })
     }
 }
@@ -363,19 +372,6 @@ impl MessageContent {
             MessageContent::UserMessagePart { priority, .. } => priority,
             _ => 0,
         }
-    }
-
-    /// Convert this into a `GroupMessageHash`, or return a clone if it is small.
-    pub fn to_grp_msg_hash(&self) -> Result<MessageContent, RoutingError> {
-        Ok(match *self {
-            MessageContent::GetNodeNameResponse { .. } |
-            MessageContent::GetCloseGroupResponse { .. } |
-            MessageContent::UserMessagePart { .. } => {
-                let serialised_msg = try!(serialise(self));
-                MessageContent::GroupMessageHash(sha256::hash(&serialised_msg), self.priority())
-            }
-            _ => self.clone(),
-        })
     }
 }
 
