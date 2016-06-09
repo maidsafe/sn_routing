@@ -49,7 +49,7 @@ impl Vault {
     pub fn new(first_vault: bool) -> Result<Self, InternalError> {
         sodiumoxide::init();
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true, first_vault)));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, first_vault)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),

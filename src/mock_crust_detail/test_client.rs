@@ -47,7 +47,7 @@ impl TestClient {
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone()), false))
+            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone())))
         });
 
         TestClient {
