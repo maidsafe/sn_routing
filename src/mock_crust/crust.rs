@@ -24,8 +24,6 @@ use std::rc::Rc;
 
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
 
-/// Default beacon (service discovery) port.
-pub const DEFAULT_BEACON_PORT: u16 = 5484;
 /// TCP listener port
 pub const LISTENER_PORT: u16 = 5485;
 
@@ -36,18 +34,17 @@ impl Service {
     /// Create new mock `Service` using the make_current/get_current mechanism to
     /// get the associated `ServiceHandle`.
     pub fn new(event_sender: CrustEventSender) -> Result<Self, CrustError> {
-        Self::with_handle(&support::get_current(), event_sender, DEFAULT_BEACON_PORT)
+        Self::with_handle(&support::get_current(), event_sender)
     }
 
     /// Create new mock `Service` by explicitly passing the mock device to associate
     /// with.
-    pub fn with_handle(handle: &ServiceHandle,
-                       event_sender: CrustEventSender,
-                       beacon_port: u16)
-                       -> Result<Self, CrustError> {
+    pub fn with_handle(handle: &ServiceHandle, event_sender: CrustEventSender)
+        -> Result<Self, CrustError>
+    {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
-        service.lock_and_poll(|imp| imp.start(event_sender, beacon_port));
+        service.lock_and_poll(|imp| imp.start(event_sender));
 
         Ok(service)
     }
@@ -55,18 +52,12 @@ impl Service {
     /// This method is used instead of dropping the service and creating a new
     /// one, which is the current practice with the real crust.
     pub fn restart(&self, event_sender: CrustEventSender) {
-        self.lock_and_poll(|imp| imp.restart(event_sender, DEFAULT_BEACON_PORT))
-    }
-
-    /// Enable listening and responding to peers searching for us. This will allow others finding us
-    /// by interrogating the network.
-    pub fn set_service_discovery_listen(&self, _listen: bool) {
-        trace!("[MOCK] set_service_discovery_listen not implemented in mock");
+        self.lock_and_poll(|imp| imp.restart(event_sender))
     }
 
     /// Start the bootstrapping procedure.
     pub fn start_bootstrap(&self) -> Result<(), CrustError> {
-        trace!("[MOCK] start_bootstrap not implemented in mock");
+        self.lock_and_poll(|imp| imp.start_bootstrap());
         Ok(())
     }
 
@@ -82,6 +73,12 @@ impl Service {
     /// Note: beacon is not yet implemented in mock.
     pub fn start_service_discovery(&mut self) {
         trace!("[MOCK] start_service_discovery not implemented in mock");
+    }
+
+    /// Enable listening and responding to peers searching for us. This will allow others finding us
+    /// by interrogating the network.
+    pub fn set_service_discovery_listen(&self, _listen: bool) {
+        trace!("[MOCK] set_service_discovery_listen not implemented in mock");
     }
 
     /// Start TCP acceptor.
