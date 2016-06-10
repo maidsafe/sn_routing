@@ -94,7 +94,6 @@ impl Network {
     pub fn block_connection(&self, sender: Endpoint, receiver: Endpoint) {
         let mut imp = self.0.borrow_mut();
         imp.blocked_connections.insert((sender, receiver));
-        imp.blocked_connections.insert((receiver, sender));
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
