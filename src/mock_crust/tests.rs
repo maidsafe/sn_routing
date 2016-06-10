@@ -18,6 +18,7 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use maidsafe_utilities::event_sender::{MaidSafeObserver, MaidSafeEventCategory};
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 
 use super::crust::{CrustEventSender, Event, Service};
@@ -25,10 +26,29 @@ use super::support::{Config, Network};
 
 fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Receiver<Event>) {
     let (category_tx, category_rx) = mpsc::channel();
-    let event_category = MaidSafeEventCategory::Crust;
     let (event_tx, event_rx) = mpsc::channel();
 
-    (MaidSafeObserver::new(event_tx, event_category, category_tx), category_rx, event_rx)
+    (MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx),
+     category_rx,
+     event_rx)
+}
+
+// Receive an event from the given receiver and asserts that it matches the
+// given pattern.
+macro_rules! expect_event {
+    ($rx:expr, $pattern:pat) => {
+        match unwrap_result!($rx.try_recv()) {
+            $pattern => (),
+            e => panic!("unexpected event {:?}", e),
+        }
+    };
+
+    ($rx:expr, $pattern:pat => $arm:expr) => {
+        match unwrap_result!($rx.try_recv()) {
+            $pattern => $arm,
+            e => panic!("unexpected event {:?}", e),
+        }
+    }
 }
 
 #[test]
@@ -44,100 +64,50 @@ fn start_two_services_bootstrap_communicate_exit() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, 0));
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
 
     unwrap_result!(service_0.start_listening_tcp());
-
-    // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
-    // to bootstrap
-    {
-        let event_recvd = unwrap_result!(event_rx_0.try_recv());
-        match event_recvd {
-            Event::BootstrapFailed => (),
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    }
-
-    match unwrap_result!(event_rx_0.try_recv()) {
-        Event::ListenerStarted(_) => (),
-        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
-    }
+    expect_event!(event_rx_0, Event::ListenerStarted(..));
 
     service_0.start_service_discovery();
 
-    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, 0));
+    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
 
-    unwrap_result!(service_1.start_listening_tcp());
-
-    // let service_1 finish bootstrap - it should bootstrap off service_0
-    let id_0 = {
-        let event_recvd = unwrap_result!(event_rx_1.try_recv());
-        match event_recvd {
-            Event::BootstrapConnect(their_id) => their_id,
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    };
-
-    match unwrap_result!(event_rx_1.try_recv()) {
-        Event::ListenerStarted(_) => (),
-        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
-    }
-
-    // service_0 should have received service_1's bootstrap connection by now
-    let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapAccept(their_id) => their_id,
-        _ => panic!("0 Should have got a new connection from 1."),
-    };
+    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
+    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
+    let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
 
     assert!(id_0 != id_1);
 
     // send data from 0 to 1
-    {
-        let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
+    let data_sent = vec![0, 1, 255, 254, 222, 1];
+    unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
-        // 1 should rx data
-        let (data_recvd, peer_id) = {
-            let event_recvd = unwrap_result!(event_rx_1.try_recv());
-            match event_recvd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_recvd),
-            }
-        };
+    // 1 should rx data
+    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+                      Event::NewMessage(their_id, msg) => (msg, their_id));
 
-        assert_eq!(data_recvd, data_sent);
-        assert_eq!(peer_id, id_0);
-    }
+    assert_eq!(data_recvd, data_sent);
+    assert_eq!(peer_id, id_0);
 
     // send data from 1 to 0
-    {
-        let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
+    let data_sent = vec![10, 11, 155, 214, 202];
+    unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
-        // 0 should rx data
-        let (data_recvd, peer_id) = {
-            let event_recvd = unwrap_result!(event_rx_0.try_recv());
-            match event_recvd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_recvd),
-            }
-        };
+    // 0 should rx data
+    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+                      Event::NewMessage(their_id, msg) => (msg, their_id));
 
-        assert_eq!(data_recvd, data_sent);
-        assert_eq!(peer_id, id_1);
-    }
+    assert_eq!(data_recvd, data_sent);
+    assert_eq!(peer_id, id_1);
 
     assert!(service_0.disconnect(id_1));
-
-    match unwrap_result!(event_rx_1.try_recv()) {
-        Event::LostPeer(id) => assert_eq!(id, id_0),
-        e => panic!("Received unexpected event: {:?}", e),
-    }
+    expect_event!(event_rx_1, Event::LostPeer(id) => assert_eq!(id, id_0));
 }
 
 #[test]
 fn start_two_services_rendezvous_connect() {
-    const PREPARE_CI_TOKEN: u32 = 1234;
+    const PREPARE_CI_TOKEN: u32 = 1;
 
     let network = Network::new();
     let handle0 = network.new_service_handle(None, None);
@@ -146,103 +116,83 @@ fn start_two_services_rendezvous_connect() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, 1234));
-    // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
-    // to bootstrap
-    {
-        let event_recvd = unwrap_result!(event_rx_0.try_recv());
-        match event_recvd {
-            Event::BootstrapFailed => (),
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    }
-
-    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, 1234));
-    // let service_0 finish bootstrap - since it is the zero state, it should not find any peer
-    // to bootstrap
-    {
-        let event_recvd = unwrap_result!(event_rx_1.try_recv());
-        match event_recvd {
-            Event::BootstrapFailed => (),
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    }
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
+    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_0 = {
-        let event_recvd = unwrap_result!(event_rx_0.try_recv());
-        match event_recvd {
-            Event::ConnectionInfoPrepared(cir) => {
-                assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-                unwrap_result!(cir.result)
-            }
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    };
+    let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {
+        assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
+        unwrap_result!(cir.result)
+    });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
-    let our_ci_1 = {
-        let event_recvd = unwrap_result!(event_rx_1.try_recv());
-        match event_recvd {
-            Event::ConnectionInfoPrepared(cir) => {
-                assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-                unwrap_result!(cir.result)
-            }
-            _ => panic!("Received unexpected event: {:?}", event_recvd),
-        }
-    };
+    let our_ci_1 = expect_event!(event_rx_1, Event::ConnectionInfoPrepared(cir) => {
+        assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
+        unwrap_result!(cir.result)
+    });
 
     let their_ci_0 = our_ci_0.to_pub_connection_info();
     let their_ci_1 = our_ci_1.to_pub_connection_info();
 
-    let _ = service_0.connect(our_ci_0, their_ci_1);
-    let _ = service_1.connect(our_ci_1, their_ci_0);
+    unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
+    unwrap_result!(service_1.connect(our_ci_1, their_ci_0));
 
-    let id_1 = match unwrap_result!(event_rx_0.try_recv()) {
-        Event::NewPeer(Ok(()), their_id) => their_id,
-        m => panic!("0 Should have connected to 1. Got message {:?}", m),
-    };
-
-    let id_0 = match unwrap_result!(event_rx_1.try_recv()) {
-        Event::NewPeer(Ok(()), their_id) => their_id,
-        m => panic!("1 Should have connected to 0. Got message {:?}", m),
-    };
+    let id_1 = expect_event!(event_rx_0, Event::NewPeer(Ok(()), id) => id);
+    let id_0 = expect_event!(event_rx_1, Event::NewPeer(Ok(()), id) => id);
 
     // send data from 0 to 1
-    {
-        let data_sent = vec![0, 1, 255, 254, 222, 1];
-        unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
+    let data_sent = vec![0, 1, 255, 254, 222, 1];
+    unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
-        // 1 should rx data
-        let (data_recvd, peer_id) = {
-            let event_recvd = unwrap_result!(event_rx_1.try_recv());
-            match event_recvd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_recvd),
-            }
-        };
+    // 1 should rx data
+    let (data_recvd, peer_id) = expect_event!(event_rx_1,
+                      Event::NewMessage(their_id, msg) => (msg, their_id));
 
-        assert_eq!(data_recvd, data_sent);
-        assert_eq!(peer_id, id_0);
-    }
+    assert_eq!(data_recvd, data_sent);
+    assert_eq!(peer_id, id_0);
 
     // send data from 1 to 0
-    {
-        let data_sent = vec![10, 11, 155, 214, 202];
-        unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
+    let data_sent = vec![10, 11, 155, 214, 202];
+    unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
-        // 0 should rx data
-        let (data_recvd, peer_id) = {
-            let event_recvd = unwrap_result!(event_rx_0.try_recv());
-            match event_recvd {
-                Event::NewMessage(their_id, msg) => (msg, their_id),
-                _ => panic!("Received unexpected event: {:?}", event_recvd),
-            }
-        };
+    // 0 should rx data
+    let (data_recvd, peer_id) = expect_event!(event_rx_0,
+                      Event::NewMessage(their_id, msg) => (msg, their_id));
 
-        assert_eq!(data_recvd, data_sent);
-        assert_eq!(peer_id, id_1);
-    }
+    assert_eq!(data_recvd, data_sent);
+    assert_eq!(peer_id, id_1);
+}
+
+#[test]
+fn unidirectional_rendezvous_connect() {
+    const PREPARE_CI_TOKEN: u32 = 1;
+
+    let network = Network::new();
+    let handle0 = network.new_service_handle(None, None);
+    let handle1 = network.new_service_handle(None, None);
+
+    let (event_tx_0, _category_rx_0, event_rx_0) = get_event_sender();
+    let (event_tx_1, _category_rx_1, event_rx_1) = get_event_sender();
+
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_tx_0));
+    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_tx_1));
+
+    service_0.prepare_connection_info(PREPARE_CI_TOKEN);
+    let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {
+        unwrap_result!(cir.result)
+    });
+
+    service_1.prepare_connection_info(PREPARE_CI_TOKEN);
+    let our_ci_1 = expect_event!(event_rx_1, Event::ConnectionInfoPrepared(cir) => {
+        unwrap_result!(cir.result)
+    });
+
+    let their_ci_1 = our_ci_1.to_pub_connection_info();
+
+    unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
+
+    expect_event!(event_rx_0, Event::NewPeer(Ok(()), _));
+    expect_event!(event_rx_1, Event::NewPeer(Ok(()), _));
 }
 
 #[test]
@@ -255,48 +205,21 @@ fn drop() {
     let config = Config::with_contacts(&[handle0.endpoint()]);
     let handle1 = network.new_service_handle(Some(config), None);
 
-    let port = 45669;
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0, port));
+    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
+
     unwrap_result!(service_0.start_listening_tcp());
+    expect_event!(event_rx_0, Event::ListenerStarted(_));
 
-    // Let service_0 finish bootstrap - it should not find any peer.
-    match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapFailed => (),
-        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
-    }
+    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
+    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
 
-    match unwrap_result!(event_rx_0.try_recv()) {
-        Event::ListenerStarted(_) => (),
-        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
-    }
-
-    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1, port));
-    unwrap_result!(service_1.start_listening_tcp());
-
-    // Let service_1 finish bootstrap - it should bootstrap off service_0.
-    let id_0 = match unwrap_result!(event_rx_1.try_recv()) {
-        Event::BootstrapConnect(their_id) => their_id,
-        event => panic!("Received unexpected event: {:?}", event),
-    };
-
-    match unwrap_result!(event_rx_1.try_recv()) {
-        Event::ListenerStarted(_) => (),
-        event_recvd => panic!("Received unexpected event: {:?}", event_recvd),
-    }
-
-    // service_0 should have received service_1's bootstrap connection by now.
-    match unwrap_result!(event_rx_0.try_recv()) {
-        Event::BootstrapAccept(..) => (),
-        _ => panic!("0 Should have got a new connection from 1."),
-    };
+    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
+    expect_event!(event_rx_0, Event::BootstrapAccept(..));
 
     // Dropping service_0 should make service_1 receive a LostPeer event.
     mem::drop(service_0);
-    match unwrap_result!(event_rx_1.try_recv()) {
-        Event::LostPeer(id) => assert_eq!(id, id_0),
-        event => panic!("Received unexpected event: {:?}", event),
-    }
+    expect_event!(event_rx_1, Event::LostPeer(id) => assert_eq!(id, id_0));
 }

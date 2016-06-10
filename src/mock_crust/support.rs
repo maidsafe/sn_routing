@@ -24,7 +24,9 @@ use rand;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
@@ -96,7 +98,7 @@ impl Network {
     }
 
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
-        self.0.borrow_mut().blocked_connections.contains(&(sender, receiver))
+        self.0.borrow().blocked_connections.contains(&(sender, receiver))
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
@@ -114,6 +116,7 @@ impl Network {
                 return;
             }
         }
+
         if let Some(service) = self.find_service(receiver) {
             service.borrow_mut().receive_packet(sender, packet);
         } else {
@@ -157,10 +160,8 @@ pub struct ServiceImpl {
     pub peer_id: PeerId,
     config: Config,
     pub listening_tcp: bool,
-    pub listening_udp: bool,
     event_sender: Option<CrustEventSender>,
     pending_bootstraps: u64,
-    pending_connects: HashSet<PeerId>,
     connections: Vec<(PeerId, Endpoint)>,
 }
 
@@ -172,15 +173,28 @@ impl ServiceImpl {
             peer_id: gen_peer_id(endpoint),
             config: config,
             listening_tcp: false,
-            listening_udp: false,
             event_sender: None,
             pending_bootstraps: 0,
-            pending_connects: HashSet::new(),
             connections: Vec::new(),
         }
     }
 
-    pub fn start(&mut self, event_sender: CrustEventSender, _beacon_port: u16) {
+    pub fn start(&mut self, event_sender: CrustEventSender) {
+        self.event_sender = Some(event_sender);
+    }
+
+    pub fn restart(&mut self, event_sender: CrustEventSender) {
+        trace!("{:?} restart", self.endpoint);
+
+        self.disconnect_all();
+
+        self.peer_id = gen_peer_id(self.endpoint);
+        self.listening_tcp = false;
+
+        self.start(event_sender)
+    }
+
+    pub fn start_bootstrap(&mut self) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
@@ -195,23 +209,13 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap_result!(event_sender.send(Event::BootstrapFailed));
+            unwrap_result!(self.event_sender
+                .as_ref()
+                .unwrap()
+                .send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
-        self.event_sender = Some(event_sender);
-    }
-
-    pub fn restart(&mut self, event_sender: CrustEventSender, beacon_port: u16) {
-        trace!("{:?} restart", self.endpoint);
-
-        self.disconnect_all();
-
-        self.peer_id = gen_peer_id(self.endpoint);
-        self.listening_tcp = false;
-        self.listening_udp = false;
-
-        self.start(event_sender, beacon_port)
     }
 
     pub fn send_message(&self, peer_id: &PeerId, data: Vec<u8>) -> bool {
@@ -255,21 +259,13 @@ impl ServiceImpl {
     }
 
     fn receive_packet(&mut self, sender: Endpoint, packet: Packet) {
-        // TODO: filter packets
-
         match packet {
             Packet::BootstrapRequest(peer_id) => self.handle_bootstrap_request(sender, peer_id),
             Packet::BootstrapSuccess(peer_id) => self.handle_bootstrap_success(sender, peer_id),
             Packet::BootstrapFailure => self.handle_bootstrap_failure(sender),
-            Packet::ConnectRequest(their_id, our_id) => {
-                self.handle_connect_request(sender, their_id, our_id)
-            }
-            Packet::ConnectSuccess(our_id, their_id) => {
-                self.handle_connect_success(sender, our_id, their_id)
-            }
-            Packet::ConnectFailure(our_id, their_id) => {
-                self.handle_connect_failure(sender, our_id, their_id)
-            }
+            Packet::ConnectRequest(their_id, _) => self.handle_connect_request(sender, their_id),
+            Packet::ConnectSuccess(their_id, _) => self.handle_connect_success(sender, their_id),
+            Packet::ConnectFailure(their_id, _) => self.handle_connect_failure(sender, their_id),
             Packet::Message(data) => self.handle_message(sender, data),
             Packet::Disconnect => self.handle_disconnect(sender),
         }
@@ -291,7 +287,9 @@ impl ServiceImpl {
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapConnect(peer_id));
+        let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
+                                          peer_id.0 as u16);
+        self.send_event(Event::BootstrapConnect(peer_id, socket_addr));
         self.decrement_pending_bootstraps();
     }
 
@@ -299,42 +297,21 @@ impl ServiceImpl {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self,
-                              peer_endpoint: Endpoint,
-                              their_id: PeerId,
-                              our_id: PeerId) {
-        if self.is_connected(&peer_endpoint, &their_id) &&
-           !self.pending_connects.contains(&their_id) {
-            warn!("Connection already exists");
-        }
-        if our_id != self.peer_id {
-            warn!("Got connect request for {:?} as {:?}.",
-                  our_id,
-                  self.peer_id);
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
+        if self.is_connected(&peer_endpoint, &their_id) {
+            return;
         }
 
         self.add_rendezvous_connection(their_id, peer_endpoint);
-        self.send_packet(peer_endpoint, Packet::ConnectSuccess(their_id, our_id));
+        self.send_packet(peer_endpoint,
+                         Packet::ConnectSuccess(self.peer_id, their_id));
     }
 
-    fn handle_connect_success(&mut self,
-                              peer_endpoint: Endpoint,
-                              our_id: PeerId,
-                              their_id: PeerId) {
-        if our_id != self.peer_id {
-            warn!("Got connect success for {:?} as {:?}.",
-                  our_id,
-                  self.peer_id);
-        }
+    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
         self.add_rendezvous_connection(their_id, peer_endpoint);
     }
 
-    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, our_id: PeerId, their_id: PeerId) {
-        if our_id != self.peer_id {
-            warn!("Got connect failure for {:?} as {:?}.",
-                  our_id,
-                  self.peer_id);
-        }
+    fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: PeerId) {
         let err = io::Error::new(io::ErrorKind::NotFound, "Peer not found");
         self.send_event(Event::NewPeer(Err(err), their_id));
     }
@@ -359,7 +336,7 @@ impl ServiceImpl {
     }
 
     fn is_listening(&self) -> bool {
-        self.listening_tcp || self.listening_udp
+        self.listening_tcp
     }
 
     fn decrement_pending_bootstraps(&mut self) {
@@ -386,11 +363,7 @@ impl ServiceImpl {
 
     fn add_rendezvous_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
         self.add_connection(peer_id, peer_endpoint);
-
-        if !self.pending_connects.insert(peer_id) {
-            self.pending_connects.remove(&peer_id);
-            self.send_event(Event::NewPeer(Ok(()), peer_id));
-        }
+        self.send_event(Event::NewPeer(Ok(()), peer_id));
     }
 
     // Remove connected peer with the given peer id and return its endpoint,
@@ -513,8 +486,8 @@ impl Packet {
     fn to_failure(&self) -> Option<Packet> {
         match *self {
             Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
-            Packet::ConnectRequest(peer_id, their_id) => {
-                Some(Packet::ConnectFailure(peer_id, their_id))
+            Packet::ConnectRequest(our_id, their_id) => {
+                Some(Packet::ConnectFailure(their_id, our_id))
             }
             _ => None,
         }

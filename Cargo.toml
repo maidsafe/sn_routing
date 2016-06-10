@@ -12,7 +12,7 @@ version = "0.21.0"
 
 [dependencies]
 accumulator = "~0.4.0"
-clippy = {version = "~0.0.73", optional = true}
+clippy = {version = "~0.0.75", optional = true}
 crust = { git = "https://github.com/maidsafe/crust.git", branch = "async" }
 itertools = "~0.4.15"
 kademlia_routing_table = "~0.6.0"
@@ -29,7 +29,7 @@ docopt = "~0.6.80"
 libc = "~0.2.11"
 
 [build-dependencies]
-hyper = {version = "~0.9.6", optional = true}
+hyper = {version = "~0.9.7", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]
