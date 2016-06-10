@@ -241,7 +241,6 @@ impl Core {
             Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
         };
 
-
         let full_id = match keys {
             Some(full_id) => full_id,
             None => FullId::new(),
@@ -1109,6 +1108,7 @@ impl Core {
                     bytes: Vec<u8>,
                     priority: u8)
                     -> Result<(), RoutingError> {
+        self.stats.count_bytes(bytes.len());
         if let Err(err) = self.crust_service.send(*peer_id, bytes.clone(), priority) {
             info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
                   self,

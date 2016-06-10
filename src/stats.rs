@@ -62,6 +62,7 @@ pub struct Stats {
     msg_other: usize,
 
     msg_total: usize,
+    msg_total_bytes: u64,
 }
 
 impl Stats {
@@ -122,12 +123,17 @@ impl Stats {
         self.increment_msg_total();
     }
 
+    pub fn count_bytes(&mut self, len: usize) {
+        self.msg_total_bytes += len as u64;
+    }
+
     /// Increment the total message count, and if divisible by 100, log a message with the counts.
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % MSG_LOG_COUNT == 0 {
-            info!("Stats - Sent {} messages in total, {} uncategorised",
+            info!("Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised",
                   self.msg_total,
+                  self.msg_total_bytes,
                   self.msg_other);
             info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, ConnectionUnneeded: {}",
                   self.msg_direct_node_identify,
