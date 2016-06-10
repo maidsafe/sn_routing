@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::{self, Rng};
+use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
 use std::cmp;
 use std::collections::HashSet;
 use std::sync::mpsc;
-use xor_name::XorName;
+use std::thread;
 
 use action::Action;
 use authority::Authority;
@@ -35,12 +35,31 @@ use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIO
                RELOCATE_PRIORITY};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
+use xor_name::XorName;
 
 // kademlia_routing_table::QUORUM_SIZE is private and subject to change!
 const QUORUM_SIZE: usize = 5;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
+
+struct Seed(pub [u32; 4]);
+
+impl Seed {
+    pub fn new() -> Seed {
+        Seed([rand::random(), rand::random(), rand::random(), rand::random()])
+    }
+}
+
+impl Drop for Seed {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            let msg = format!("rng seed = {:?}", self.0);
+            let border = (0..msg.len()).map(|_| "=").collect::<String>();
+            println!("\n{}\n{}\n{}\n", border, msg, border);
+        }
+    }
+}
 
 struct TestNode {
     handle: ServiceHandle,
@@ -435,9 +454,11 @@ fn node_drops() {
 #[test]
 fn churn() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);;
+
     let mut nodes = create_connected_nodes(&network, 20);
 
-    let mut rng = rand::thread_rng();
     for i in 0..100 {
         let len = nodes.len();
         if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
@@ -518,6 +539,8 @@ fn check_close_groups_for_group_size_nodes() {
 #[test]
 fn successful_put_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -529,7 +552,7 @@ fn successful_put_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let dst = Authority::ClientManager(*clients[0].name());
-    let bytes = rand::thread_rng().gen_iter().take(50 * 1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
@@ -560,6 +583,8 @@ fn successful_put_request() {
 #[test]
 fn successful_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -570,7 +595,7 @@ fn successful_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(30 * 1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -637,6 +662,8 @@ fn successful_get_request() {
 #[test]
 fn failed_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -647,7 +674,7 @@ fn failed_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -714,6 +741,8 @@ fn failed_get_request() {
 #[test]
 fn disconnect_on_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -724,7 +753,7 @@ fn disconnect_on_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
