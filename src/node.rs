@@ -319,11 +319,7 @@ impl Node {
         self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
     }
 
-    /// Send a `Refresh` request from `src` to `src` to trigger churn.
-    ///
-    /// This is intended to be sent from a group authority (`src`) to itself whenever a node joins
-    /// or leaves the group. If the quorum is reached, i. e. enough members agree that a change has
-    /// happened, the churn mechanism is triggered to adapt to the change.
+    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&self,
                                 src: Authority,
                                 dst: Authority,

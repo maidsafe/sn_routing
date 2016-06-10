@@ -1957,13 +1957,21 @@ impl Core {
     }
 
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        self.send_message_via_route(routing_msg, 0)
+    }
+
+    fn send_message_via_route(&mut self,
+                              routing_msg: RoutingMessage,
+                              route: u8)
+                              -> Result<(), RoutingError> {
         let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
-        try!(self.send(&signed_msg, 0, &hop, &[hop]));
+        try!(self.send(&signed_msg, route, &hop, &[hop]));
+        let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
         // If we need to handle this message, handle it.
-        if self.is_recipient(&signed_msg.routing_message().dst) &&
-           self.signed_message_filter.insert(&signed_msg) == 1 {
-            self.handle_routing_message(signed_msg.routing_message(), *signed_msg.public_id())
+        if self.is_recipient(&sent_msg.routing_message().dst) &&
+           self.signed_message_filter.insert(&sent_msg) == 1 {
+            self.handle_routing_message(sent_msg.routing_message(), *sent_msg.public_id())
         } else {
             Ok(())
         }
@@ -2049,15 +2057,8 @@ impl Core {
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
-        // When sending group messages, only one of us needs to send the whole message and everyone
-        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
-        // TODO: This applies only to messages where we are the original sender. The sending and
-        // relaying code should be better separated.
-        let send_msg = if self.should_only_send_hash(hop, route, &routing_msg.src) {
-            try!(SignedMessage::new(try!(routing_msg.to_grp_msg_hash()), &self.full_id))
-        } else {
-            signed_msg.clone()
-        };
+
+        let send_msg = try!(self.message_to_send(signed_msg, route, hop));
         let raw_bytes = try!(self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone()));
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
@@ -2089,14 +2090,30 @@ impl Core {
         Ok(())
     }
 
-    /// Returns `true` if we should only send a hash instead of the whole message.
-    fn should_only_send_hash(&self, hop: &XorName, route: u8, src: &Authority) -> bool {
-        if hop != self.name() || !src.is_group() {
-            return false;
+    /// Returns hash of the `SignedMessage` if its not our turn to send the full message.
+    fn message_to_send(&self,
+                       signed_msg: &SignedMessage,
+                       route: u8,
+                       hop: &XorName)
+                       -> Result<SignedMessage, RoutingError> {
+        // When sending group messages, only one of us needs to send the whole message and everyone
+        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
+        // TODO: This applies only to messages where we are the original sender. The sending and
+        // relaying code should be better separated.
+        let src = &signed_msg.routing_message().src;
+        if signed_msg.public_id() != self.full_id.public_id() || hop != self.name() ||
+           !src.is_group() {
+            return Ok(signed_msg.clone());
         }
+
         let group = self.routing_table.closest_nodes_to(src.name(), GROUP_SIZE, true);
         // TODO: Better distribute the work among the group.
-        hop != group[route as usize % (group.len())].name()
+        if hop == group[route as usize % (group.len())].name() {
+            return Ok(signed_msg.clone());
+        }
+
+        SignedMessage::new(try!(signed_msg.routing_message().to_grp_msg_hash()),
+                           &self.full_id)
     }
 
     /// Returns whether we are the recipient of a message for the given authority.
@@ -2178,21 +2195,8 @@ impl Core {
             content: MessageContent::Ack(hash, routing_msg.priority()),
         };
 
-        let signed_msg = match SignedMessage::new(response, &self.full_id) {
-            Ok(signed_msg) => signed_msg,
-            Err(error) => {
-                error!("{:?} Failed to create ack message: {:?}", self, error);
-                return;
-            }
-        };
-        let hop = *self.name();
-        if let Err(error) = self.send(&signed_msg, route, &hop, &[hop]) {
-            error!("{:?} Failed to ack: {:?}", self, error);
-        }
-        if self.is_recipient(&routing_msg.src) {
-            if let Err(error) = self.handle_ack_response(hash) {
-                error!("{:?} Failed to handle ack: {:?}", self, error);
-            }
+        if let Err(error) = self.send_message_via_route(response, route) {
+            error!("{:?} Failed to send ack: {:?}", self, error);
         }
     }
 
