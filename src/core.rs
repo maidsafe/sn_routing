@@ -32,7 +32,8 @@ use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectState, PeerManager};
 use rand;
-use sodiumoxide::crypto::{box_, hash, sign};
+use sodiumoxide::crypto::{box_, sign};
+use sodiumoxide::crypto::hash::sha256;
 use std::{cmp, io, iter, fmt};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
@@ -194,7 +195,8 @@ pub struct Core {
     pending_acks: HashMap<u64, UnacknowledgedMessage>,
     received_acks: MessageFilter<u64>,
     bucket_filter: MessageFilter<usize>,
-    message_accumulator: Accumulator<RoutingMessage, (sign::PublicKey, RoutingMessage)>,
+    message_accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
+    grp_msg_cache: LruCache<sha256::Digest, RoutingMessage>,
     // Group messages which have been accumulated and then actioned
     grp_msg_filter: MessageFilter<RoutingMessage>,
     full_id: FullId,
@@ -265,6 +267,7 @@ impl Core {
             // TODO Needs further discussion on interval
             bucket_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60)),
             message_accumulator: Accumulator::with_duration(1, Duration::from_secs(60 * 20)),
+            grp_msg_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 20)),
             grp_msg_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
             full_id: full_id,
             state: State::Disconnected,
@@ -553,7 +556,7 @@ impl Core {
             error!("{:?} Failed to start listening.", self);
             let _ = self.event_sender.send(Event::NetworkStartupFailed);
         }
-        let new_name = XorName(hash::sha256::hash(&self.full_id.public_id().name().0).0);
+        let new_name = XorName(sha256::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
         self.state = State::Node;
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -882,18 +885,18 @@ impl Core {
             error!("{:?} Failed to hash message {:?}", self, message);
             return None;
         };
-        if let Some(values) = self.message_accumulator.add(hash_msg, (key, message.clone())) {
-            for &(_, ref msg) in values {
-                if let MessageContent::GroupMessageHash(..) = msg.content {
-                    continue;
-                }
-                // TODO - we should check the integrity of all accumulated entries now that we
-                // have the contents available.  Any which fail should not be counted in the
-                // accumulated total.
-                return Some(msg.clone());
+        if let MessageContent::GroupMessageHash(hash, _) = hash_msg.content {
+            if hash_msg != *message {
+                let _ = self.grp_msg_cache.insert(hash, message.clone());
             }
+            if self.message_accumulator.add(hash_msg, key).is_some() {
+                self.grp_msg_cache.remove(&hash)
+            } else {
+                None
+            }
+        } else {
+            self.message_accumulator.add(hash_msg, key).map(|_| message.clone())
         }
-        None
     }
 
     fn dynamic_quorum_size(&self) -> usize {
@@ -1244,7 +1247,7 @@ impl Core {
                                  peer_id: PeerId,
                                  current_quorum_size: usize)
                                  -> Result<(), RoutingError> {
-        if *public_id.name() == XorName(hash::sha256::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper node - dropping",
                   self);
             let _ = self.event_sender.send(Event::Disconnected);
@@ -1277,7 +1280,7 @@ impl Core {
                               peer_id: PeerId,
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
-        if *public_id.name() != XorName(hash::sha256::hash(&public_id.signing_public_key().0).0) {
+        if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper client - dropping",
                   self);
             self.disconnect_peer(&peer_id);
@@ -1549,7 +1552,7 @@ impl Core {
                                     peer_id: PeerId,
                                     message_id: MessageId)
                                     -> Result<(), RoutingError> {
-        let hashed_key = hash::sha256::hash(&client_key.0);
+        let hashed_key = sha256::hash(&client_key.0);
         let close_group_to_client = XorName(hashed_key.0);
 
         // Validate Client (relocating node) has contacted the correct Group-X
@@ -2152,7 +2155,14 @@ impl Core {
         if let MessageContent::Ack(..) = routing_msg.content {
             return;
         }
-        let hash = maidsafe_utilities::big_endian_sip_hash(&routing_msg);
+        let hash_msg = match routing_msg.to_grp_msg_hash() {
+            Ok(hash_msg) => hash_msg,
+            Err(error) => {
+                error!("{:?} Failed to create hash message: {:?}", self, error);
+                return;
+            }
+        };
+        let hash = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
         let response = RoutingMessage {
             src: src,
             dst: routing_msg.src.clone(),
@@ -2191,7 +2201,14 @@ impl Core {
             return true;
         }
 
-        let ack = maidsafe_utilities::big_endian_sip_hash(signed_msg.routing_message());
+        let hash_msg = match signed_msg.routing_message().to_grp_msg_hash() {
+            Ok(hash_msg) => hash_msg,
+            Err(error) => {
+                error!("{:?} Failed to create hash message: {:?}", self, error);
+                return true;
+            }
+        };
+        let ack = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
         if self.received_acks.contains(&ack) {
             return false;
         }
@@ -2230,7 +2247,7 @@ impl Core {
     // If called more than once with a unique name, this function will assert
     fn set_self_node_name(&mut self, new_name: XorName) {
         // Validating this function doesn't run more that once
-        assert!(XorName(hash::sha256::hash(&self.full_id.public_id().signing_public_key().0).0) !=
+        assert!(XorName(sha256::hash(&self.full_id.public_id().signing_public_key().0).0) !=
                 new_name);
 
         self.full_id.public_id_mut().set_name(new_name);
