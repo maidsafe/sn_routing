@@ -35,10 +35,11 @@ use rand;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
 use std::{cmp, io, iter, fmt};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
-use std::time::{Duration, Instant};
+use std::net::SocketAddr;
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use tunnels::Tunnels;
 use xor_name::{XorName, XOR_NAME_BITS};
 
@@ -76,12 +77,12 @@ const REFRESH_BUCKET_GROUPS_SECS: u64 = 120;
 const ACK_TIMEOUT_SECS: u64 = 20;
 
 /// The state of the connection to the network.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 enum State {
     /// Not connected to any node.
     Disconnected,
     /// Transition state while validating a peer as a proxy node.
-    Bootstrapping(PeerId, u64),
+    Bootstrapping(PeerId, u64, SocketAddr),
     /// We are bootstrapped and connected to a valid proxy node.
     Client,
     /// We have been Relocated and now a node.
@@ -214,6 +215,8 @@ pub struct Core {
     /// `UserMessagePart`s that have already arrived, by `part_index`.
     user_msg_cache: LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>,
     peer_mgr: PeerManager,
+    // List of addresses of peers who have previously sent `BootstrapDeny` messages.
+    bootstrap_blacklist: HashSet<SocketAddr>,
 }
 
 #[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
@@ -281,13 +284,14 @@ impl Core {
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             user_msg_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 20)),
             peer_mgr: Default::default(),
+            bootstrap_blacklist: HashSet::new(),
         };
 
         core.crust_service.start_service_discovery();
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
-            let _ = core.crust_service.start_bootstrap();
+            let _ = core.crust_service.start_bootstrap(core.bootstrap_blacklist.clone());
         }
 
         (action_sender, core)
@@ -359,7 +363,7 @@ impl Core {
         !timer_tokens.is_empty()
     }
 
-    /// Clears all state containers.
+    /// Clears all state containers except `bootstrap_blacklist`.
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         self.send_filter.clear();
@@ -496,7 +500,9 @@ impl Core {
     fn handle_crust_event(&mut self, crust_event: crust::Event) {
         match crust_event {
             crust::Event::BootstrapFailed => self.handle_bootstrap_failed(),
-            crust::Event::BootstrapConnect(peer_id) => self.handle_bootstrap_connect(peer_id),
+            crust::Event::BootstrapConnect(peer_id, socket_addr) => {
+                self.handle_bootstrap_connect(peer_id, socket_addr)
+            }
             crust::Event::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
             crust::Event::NewPeer(result, peer_id) => self.handle_new_peer(result, peer_id),
             crust::Event::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
@@ -524,7 +530,7 @@ impl Core {
         }
     }
 
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId) {
+    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) {
         if self.role == Role::FirstNode {
             debug!("{:?} Received BootstrapConnect as the first node.", self);
             self.disconnect_peer(&peer_id);
@@ -538,9 +544,9 @@ impl Core {
                 }
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.client_identify(peer_id);
+                let _ = self.client_identify(peer_id, socket_addr);
             }
-            State::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
+            State::Bootstrapping(bootstrap_id, _, _) if bootstrap_id == peer_id => {
                 warn!("{:?} Got more than one BootstrapConnect for peer {:?}.",
                       self,
                       peer_id);
@@ -1047,11 +1053,14 @@ impl Core {
         self.send_direct_message(&peer_id, direct_message)
     }
 
-    fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
+    fn client_identify(&mut self,
+                       peer_id: PeerId,
+                       socket_addr: SocketAddr)
+                       -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.state = State::Bootstrapping(peer_id, token);
+        self.state = State::Bootstrapping(peer_id, token, socket_addr);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -1158,7 +1167,7 @@ impl Core {
                 info!("{:?} Connection failed: Proxy node needs a larger routing table to accept \
                        clients.",
                       self);
-                let _ = self.event_sender.send(Event::Disconnected);
+                self.rebootstrap();
                 Ok(())
             }
             DirectMessage::ClientToNode => {
@@ -1250,7 +1259,7 @@ impl Core {
         if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper node - dropping",
                   self);
-            let _ = self.event_sender.send(Event::Disconnected);
+            self.rebootstrap();
             return Ok(());
         }
 
@@ -1779,12 +1788,12 @@ impl Core {
 
     fn handle_timeout(&mut self, token: u64) {
         // We haven't received response from a node we are trying to bootstrap against.
-        if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
+        if let State::Bootstrapping(peer_id, bootstrap_token, _) = self.state {
             if bootstrap_token == token {
                 debug!("{:?} Timeout when trying to bootstrap against {:?}.",
                        self,
                        peer_id);
-                let _ = self.event_sender.send(Event::Disconnected);
+                self.rebootstrap();
             }
             return;
         }
@@ -2109,7 +2118,7 @@ impl Core {
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         match self.state {
             State::Disconnected |
-            State::Bootstrapping(_, _) => {
+            State::Bootstrapping(..) => {
                 error!("{:?} - Tried to send message in state {:?}",
                        self,
                        self.state);
@@ -2358,6 +2367,19 @@ impl Core {
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
         }
+    }
+
+    fn rebootstrap(&mut self) {
+        match self.state {
+            State::Bootstrapping(_, _, socket_addr) => {
+                let _ = self.bootstrap_blacklist.insert(socket_addr);
+            }
+            _ => {
+                warn!("Should only be called while in Bootstrapping state");
+            }
+        }
+        self.state = State::Disconnected;
+        let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone());
     }
 }
 

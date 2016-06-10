@@ -115,7 +115,7 @@ impl PeerManager {
 
     /// Inserts the given peer as a proxy node if applicable, otherwise returns `false`.
     pub fn insert_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
-        // TODO: If we're accepting only one proxy node, this should be an `Option`, not a `Vec`.
+        // TODO: If we're accepting only one proxy node, this should be an `Option` not a `HashMap`.
         if self.proxy_map.is_empty() {
             let _ = self.proxy_map.insert(peer_id, public_id);
             true

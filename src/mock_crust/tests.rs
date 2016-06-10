@@ -18,6 +18,7 @@
 // These tests are almost straight up copied from crust::service::tests
 
 use maidsafe_utilities::event_sender::{MaidSafeObserver, MaidSafeEventCategory};
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 
 use super::crust::{CrustEventSender, Event, Service};
@@ -27,7 +28,9 @@ fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Rec
     let (category_tx, category_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
 
-    (MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx), category_rx, event_rx)
+    (MaidSafeObserver::new(event_tx, MaidSafeEventCategory::Crust, category_tx),
+     category_rx,
+     event_rx)
 }
 
 // Receive an event from the given receiver and asserts that it matches the
@@ -70,8 +73,8 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
 
-    unwrap_result!(service_1.start_bootstrap());
-    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id) => id);
+    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
+    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
 
     assert!(id_0 != id_1);
@@ -81,8 +84,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) =
-        expect_event!(event_rx_1,
+    let (data_recvd, peer_id) = expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -93,8 +95,7 @@ fn start_two_services_bootstrap_communicate_exit() {
     unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) =
-        expect_event!(event_rx_0,
+    let (data_recvd, peer_id) = expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -144,8 +145,7 @@ fn start_two_services_rendezvous_connect() {
     unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
-    let (data_recvd, peer_id) =
-        expect_event!(event_rx_1,
+    let (data_recvd, peer_id) = expect_event!(event_rx_1,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -156,8 +156,7 @@ fn start_two_services_rendezvous_connect() {
     unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
-    let (data_recvd, peer_id) =
-        expect_event!(event_rx_0,
+    let (data_recvd, peer_id) = expect_event!(event_rx_0,
                       Event::NewMessage(their_id, msg) => (msg, their_id));
 
     assert_eq!(data_recvd, data_sent);
@@ -215,9 +214,9 @@ fn drop() {
     expect_event!(event_rx_0, Event::ListenerStarted(_));
 
     let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
-    unwrap_result!(service_1.start_bootstrap());
+    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
 
-    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id) => id);
+    let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     expect_event!(event_rx_0, Event::BootstrapAccept(..));
 
     // Dropping service_0 should make service_1 receive a LostPeer event.

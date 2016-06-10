@@ -26,6 +26,7 @@ use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::io;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
@@ -209,9 +210,9 @@ impl ServiceImpl {
         // immediately.
         if pending_bootstraps == 0 {
             unwrap_result!(self.event_sender
-                               .as_ref()
-                               .unwrap()
-                               .send(Event::BootstrapFailed));
+                .as_ref()
+                .unwrap()
+                .send(Event::BootstrapFailed));
         }
 
         self.pending_bootstraps = pending_bootstraps;
@@ -286,7 +287,9 @@ impl ServiceImpl {
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::BootstrapConnect(peer_id));
+        let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
+                                          peer_id.0 as u16);
+        self.send_event(Event::BootstrapConnect(peer_id, socket_addr));
         self.decrement_pending_bootstraps();
     }
 
@@ -294,18 +297,17 @@ impl ServiceImpl {
         self.decrement_pending_bootstraps();
     }
 
-    fn handle_connect_request(&mut self,
-                              peer_endpoint: Endpoint,
-                              their_id: PeerId) {
-        if self.is_connected(&peer_endpoint, &their_id) { return; }
+    fn handle_connect_request(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
+        if self.is_connected(&peer_endpoint, &their_id) {
+            return;
+        }
 
         self.add_rendezvous_connection(their_id, peer_endpoint);
-        self.send_packet(peer_endpoint, Packet::ConnectSuccess(self.peer_id, their_id));
+        self.send_packet(peer_endpoint,
+                         Packet::ConnectSuccess(self.peer_id, their_id));
     }
 
-    fn handle_connect_success(&mut self,
-                              peer_endpoint: Endpoint,
-                              their_id: PeerId) {
+    fn handle_connect_success(&mut self, peer_endpoint: Endpoint, their_id: PeerId) {
         self.add_rendezvous_connection(their_id, peer_endpoint);
     }
 
@@ -484,7 +486,9 @@ impl Packet {
     fn to_failure(&self) -> Option<Packet> {
         match *self {
             Packet::BootstrapRequest(..) => Some(Packet::BootstrapFailure),
-            Packet::ConnectRequest(our_id, their_id) => Some(Packet::ConnectFailure(their_id, our_id)),
+            Packet::ConnectRequest(our_id, their_id) => {
+                Some(Packet::ConnectFailure(their_id, our_id))
+            }
             _ => None,
         }
     }

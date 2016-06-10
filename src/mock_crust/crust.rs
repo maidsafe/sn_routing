@@ -18,8 +18,10 @@
 use maidsafe_utilities::event_sender;
 use rand::{Rand, Rng};
 use std::cell::{RefCell, RefMut};
+use std::collections::HashSet;
 use std::fmt;
 use std::io;
+use std::net::SocketAddr;
 use std::rc::Rc;
 
 use super::support::{self, Endpoint, Network, ServiceHandle, ServiceImpl};
@@ -56,7 +58,7 @@ impl Service {
     }
 
     /// Start the bootstrapping procedure.
-    pub fn start_bootstrap(&self) -> Result<(), CrustError> {
+    pub fn start_bootstrap(&self, _blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
         self.lock_and_poll(|imp| imp.start_bootstrap());
         Ok(())
     }
@@ -177,7 +179,7 @@ pub enum Event {
     /// Invoked when a bootstrap peer connects to us
     BootstrapAccept(PeerId),
     /// Invoked when we get a bootstrap connection to a new peer.
-    BootstrapConnect(PeerId),
+    BootstrapConnect(PeerId, SocketAddr),
     /// Invoked when we failed to connect to all bootstrap contacts.
     BootstrapFailed,
     /// Invoked when we are ready to listen for incomming connection. Contains
