@@ -39,8 +39,8 @@ fn immutable_data_operations_with_churn() {
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
-    const DATA_COUNT: usize = 5;
-    const DATA_PER_ITER: usize = 2;
+    const DATA_COUNT: usize = 50;
+    const DATA_PER_ITER: usize = 5;
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);

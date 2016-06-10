@@ -18,9 +18,10 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
+use itertools::Itertools;
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, ImmutableData, GROUP_SIZE};
+use routing::{Data, ImmutableData, GROUP_SIZE, XorName};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{GetError, MutationError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
@@ -179,17 +180,14 @@ fn maid_manager_account_updates_with_churn() {
             node.clear_state();
         }
         trace!("Processed {} events.", event_count);
-        let count = nodes.iter()
-            .filter(|node| {
-                match node.get_maid_manager_put_count(client.name()) {
-                    None => false,
-                    Some(count) => count == put_count,
-                }
-            })
-            .count();
-        assert!(GROUP_SIZE - 3 <= count,
-                "put_count {} only found with {} nodes",
-                put_count,
-                count);
+        let mut sorted_maid_managers = nodes.iter()
+            .sorted_by(|left, right| client.name().cmp_distance(&left.name(), &right.name()));
+        sorted_maid_managers.truncate(GROUP_SIZE);
+        let node_count_stats: Vec<(XorName, Option<u64>)> = sorted_maid_managers.into_iter()
+            .map(|x| (x.name(), x.get_maid_manager_put_count(client.name())))
+            .collect();
+        for &(_, count) in &node_count_stats {
+            assert!(count == Some(put_count), "{:?}", node_count_stats);
+        }
     }
 }
