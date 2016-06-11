@@ -87,10 +87,10 @@ impl ExampleNode {
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
                 }
-                Event::Disconnected => {
-                    trace!("{} Received disconnected event", self.get_debug_name());
+                Event::Terminate => {
+                    trace!("{} Received Terminate event", self.get_debug_name());
                 }
-                Event::GetNodeNameFailed => {
+                Event::RestartRequired => {
                     let _ = mem::replace(&mut self.node,
                                          unwrap_result!(Node::new(self.sender.clone(), false)));
                 }
