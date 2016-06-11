@@ -79,7 +79,7 @@ pub enum ConnectState {
 /// we have verified, whom we are directly connected to or via a tunnel.
 pub struct PeerManager {
     /// Our bootstrap connections.
-    proxy_map: HashMap<PeerId, PublicId>,
+    proxy: Option<(PeerId, PublicId)>,
     /// Any clients we have proxying through us, and whether they have `client_restriction`.
     client_map: HashMap<PeerId, ClientInfo>,
     /// Maps the ID of a peer we are currently trying to connect to to their name.
@@ -92,7 +92,7 @@ pub struct PeerManager {
 impl Default for PeerManager {
     fn default() -> PeerManager {
         PeerManager {
-            proxy_map: Default::default(),
+            proxy: None,
             client_map: Default::default(),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
@@ -103,47 +103,41 @@ impl Default for PeerManager {
 }
 
 impl PeerManager {
-    /// Returns the given proxy node's public ID, if present.
-    pub fn get_proxy(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.proxy_map.get(peer_id)
+    pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
+        &self.proxy
     }
 
-    /// Returns the public ID of the default proxy node, if present.
-    pub fn default_proxy(&self) -> Option<&PublicId> {
-        self.proxy_map.iter().next().map(|(_, public_id)| public_id)
-    }
-
-    /// Inserts the given peer as a proxy node if applicable, otherwise returns `false`.
-    pub fn insert_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
-        // TODO: If we're accepting only one proxy node, this should be an `Option` not a `HashMap`.
-        if self.proxy_map.is_empty() {
-            let _ = self.proxy_map.insert(peer_id, public_id);
-            true
-        } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-            debug!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
-                    name: {:?}",
-                   previous_name);
-            debug!("Dropping this peer {:?}", peer_id);
-            let _ = self.proxy_map.remove(&peer_id);
-            false
-        } else {
-            debug!("Disconnecting {:?}; not accepting further bootstrap connections.",
-                   peer_id);
-            false
+    /// Returns the proxy node's public ID, if it has the given peer ID.
+    pub fn get_proxy_public_id(&self, peer_id: &PeerId) -> Option<&PublicId> {
+        match self.proxy {
+            Some((ref proxy_id, ref pub_id)) if proxy_id == peer_id => Some(pub_id),
+            _ => None,
         }
     }
 
-    /// Removes the given peer ID from the proxy nodes and returns their public ID, if present.
-    pub fn remove_proxy(&mut self, peer_id: &PeerId) -> Option<PublicId> {
-        self.proxy_map.remove(peer_id)
+    /// Returns the proxy node's peer ID, if it has the given name.
+    pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
+        match self.proxy {
+            Some((ref peer_id, ref pub_id)) if pub_id.name() == name => Some(peer_id),
+            _ => None,
+        }
     }
 
-    /// Returns the peer ID of the proxy node with the given name, if present.
-    pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
-        self.proxy_map
-            .iter()
-            .find(|&(_, ref pub_id)| pub_id.name() == name)
-            .map(|(id, _)| id)
+    /// Inserts the given peer as a proxy node if applicable, returns `false` if it is not accepted
+    /// and should be disconnected.
+    pub fn set_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
+        if let Some((ref proxy_id, _)) = self.proxy {
+            debug!("Not accepting further bootstrap connections.");
+            *proxy_id == peer_id
+        } else {
+            self.proxy = Some((peer_id, public_id));
+            true
+        }
+    }
+
+    /// Removes the from and returns it, if present.
+    pub fn remove_proxy(&mut self) -> Option<(PeerId, PublicId)> {
+        self.proxy.take()
     }
 
     /// Inserts the given client into the map.
@@ -186,12 +180,10 @@ impl PeerManager {
             .find(|elt| &elt.1.public_key == public_id.signing_public_key()) {
             return Some(peer_id);
         }
-        if let Some((&peer_id, _)) = self.proxy_map
-            .iter()
-            .find(|elt| elt.1 == public_id) {
-            return Some(peer_id);
+        match self.proxy {
+            Some((ref peer_id, ref proxy_pub_id)) if proxy_pub_id == public_id => Some(*peer_id),
+            _ => None,
         }
-        None
     }
 
     /// Returns the number of clients for which we act as a proxy and which intend to become a

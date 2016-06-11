@@ -212,7 +212,7 @@ pub mod mock_crust;
 
 pub use authority::Authority;
 pub use client::Client;
-pub use core::GROUP_SIZE;
+pub use core::{GROUP_SIZE, QUORUM_SIZE};
 pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;

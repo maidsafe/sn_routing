@@ -96,7 +96,7 @@ impl ExampleClient {
                            unwrap_result!(String::from_utf8(external_error_indicator)));
                     return None;
                 }
-                Event::Disconnected => self.disconnected(),
+                Event::Terminate | Event::RestartRequired => self.disconnected(),
                 _ => (),
             }
         }
@@ -138,7 +138,7 @@ impl ExampleClient {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }
-                Event::Disconnected => self.disconnected(),
+                Event::Terminate | Event::RestartRequired => self.disconnected(),
                 _ => (),
             }
         }

@@ -82,7 +82,7 @@ enum State {
     /// Not connected to any node.
     Disconnected,
     /// Transition state while validating a peer as a proxy node.
-    Bootstrapping(PeerId, u64, SocketAddr),
+    Bootstrapping(PeerId, u64),
     /// We are bootstrapped and connected to a valid proxy node.
     Client,
     /// We have been Relocated and now a node.
@@ -245,7 +245,6 @@ impl Core {
             Ok(service) => service,
             Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
         };
-
 
         let full_id = match keys {
             Some(full_id) => full_id,
@@ -536,7 +535,6 @@ impl Core {
             self.disconnect_peer(&peer_id);
             return;
         }
-        let _ = self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
                 if self.role == Role::Node {
@@ -544,9 +542,10 @@ impl Core {
                 }
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.client_identify(peer_id, socket_addr);
+                let _ = self.client_identify(peer_id);
+                let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
-            State::Bootstrapping(bootstrap_id, _, _) if bootstrap_id == peer_id => {
+            State::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
                 warn!("{:?} Got more than one BootstrapConnect for peer {:?}.",
                       self,
                       peer_id);
@@ -560,7 +559,7 @@ impl Core {
     fn start_new_network(&mut self) {
         if !self.start_listening() {
             error!("{:?} Failed to start listening.", self);
-            let _ = self.event_sender.send(Event::NetworkStartupFailed);
+            let _ = self.event_sender.send(Event::Terminate);
         }
         let new_name = XorName(sha256::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
@@ -758,7 +757,7 @@ impl Core {
                     try!(self.check_valid_client_message(hop_msg.content().routing_message()));
                 }
                 hop_name = *self.name();
-            } else if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
+            } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
                 hop_name = *pub_id.name();
             } else {
@@ -770,7 +769,7 @@ impl Core {
                 return Err(RoutingError::UnknownConnection(peer_id));
             }
         } else if self.state == State::Client {
-            if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
+            if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
                 hop_name = *pub_id.name();
             } else {
@@ -1012,9 +1011,9 @@ impl Core {
     }
 
     fn handle_bootstrap_failed(&mut self) {
-        debug!("{:?} Finished bootstrapping.", self);
+        debug!("{:?} Failed to bootstrap.", self);
         if self.state == State::Disconnected {
-            let _ = self.event_sender.send(Event::Disconnected);
+            let _ = self.event_sender.send(Event::Terminate);
         }
     }
 
@@ -1053,14 +1052,11 @@ impl Core {
         self.send_direct_message(&peer_id, direct_message)
     }
 
-    fn client_identify(&mut self,
-                       peer_id: PeerId,
-                       socket_addr: SocketAddr)
-                       -> Result<(), RoutingError> {
+    fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.state = State::Bootstrapping(peer_id, token, socket_addr);
+        self.state = State::Bootstrapping(peer_id, token);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -1121,6 +1117,7 @@ impl Core {
                     bytes: Vec<u8>,
                     priority: u8)
                     -> Result<(), RoutingError> {
+        self.stats.count_bytes(bytes.len());
         if let Err(err) = self.crust_service.send(*peer_id, bytes.clone(), priority) {
             info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
                   self,
@@ -1263,7 +1260,7 @@ impl Core {
             return Ok(());
         }
 
-        if !self.peer_mgr.insert_proxy(peer_id, public_id) {
+        if !self.peer_mgr.set_proxy(peer_id, public_id) {
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
@@ -1511,7 +1508,7 @@ impl Core {
                    self,
                    node.name(),
                    peer_id);
-        } else if let Some(&public_id) = self.peer_mgr.get_proxy(peer_id) {
+        } else if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
             debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
                    self,
                    public_id.name(),
@@ -1788,18 +1785,18 @@ impl Core {
 
     fn handle_timeout(&mut self, token: u64) {
         // We haven't received response from a node we are trying to bootstrap against.
-        if let State::Bootstrapping(peer_id, bootstrap_token, _) = self.state {
+        if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
             if bootstrap_token == token {
                 debug!("{:?} Timeout when trying to bootstrap against {:?}.",
                        self,
                        peer_id);
                 self.rebootstrap();
+                return;
             }
-            return;
         }
         if self.get_node_name_timer_token == Some(token) {
             info!("{:?} Failed to get GetNodeName response.", self);
-            let _ = self.event_sender.send(Event::GetNodeNameFailed);
+            let _ = self.event_sender.send(Event::RestartRequired);
             return;
         }
         if self.tick_timer_token == Some(token) {
@@ -1957,13 +1954,21 @@ impl Core {
     }
 
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        self.send_message_via_route(routing_msg, 0)
+    }
+
+    fn send_message_via_route(&mut self,
+                              routing_msg: RoutingMessage,
+                              route: u8)
+                              -> Result<(), RoutingError> {
         let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id));
         let hop = *self.name();
-        try!(self.send(&signed_msg, 0, &hop, &[hop]));
+        try!(self.send(&signed_msg, route, &hop, &[hop]));
+        let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
         // If we need to handle this message, handle it.
-        if self.is_recipient(&signed_msg.routing_message().dst) &&
-           self.signed_message_filter.insert(&signed_msg) == 1 {
-            self.handle_routing_message(signed_msg.routing_message(), *signed_msg.public_id())
+        if self.is_recipient(&sent_msg.routing_message().dst) &&
+           self.signed_message_filter.insert(&sent_msg) == 1 {
+            self.handle_routing_message(sent_msg.routing_message(), *sent_msg.public_id())
         } else {
             Ok(())
         }
@@ -2049,15 +2054,8 @@ impl Core {
         if !self.add_to_pending_acks(signed_msg, route) {
             return Ok(());
         }
-        // When sending group messages, only one of us needs to send the whole message and everyone
-        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
-        // TODO: This applies only to messages where we are the original sender. The sending and
-        // relaying code should be better separated.
-        let send_msg = if self.should_only_send_hash(hop, route, &routing_msg.src) {
-            try!(SignedMessage::new(try!(routing_msg.to_grp_msg_hash()), &self.full_id))
-        } else {
-            signed_msg.clone()
-        };
+
+        let send_msg = try!(self.message_to_send(signed_msg, route, hop));
         let raw_bytes = try!(self.to_hop_bytes(send_msg.clone(), route, new_sent_to.clone()));
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
@@ -2089,14 +2087,30 @@ impl Core {
         Ok(())
     }
 
-    /// Returns `true` if we should only send a hash instead of the whole message.
-    fn should_only_send_hash(&self, hop: &XorName, route: u8, src: &Authority) -> bool {
-        if hop != self.name() || !src.is_group() {
-            return false;
+    /// Returns hash of the `SignedMessage` if its not our turn to send the full message.
+    fn message_to_send(&self,
+                       signed_msg: &SignedMessage,
+                       route: u8,
+                       hop: &XorName)
+                       -> Result<SignedMessage, RoutingError> {
+        // When sending group messages, only one of us needs to send the whole message and everyone
+        // else can send only a hash. If it's not our turn, replace `signed_msg` with the hash.
+        // TODO: This applies only to messages where we are the original sender. The sending and
+        // relaying code should be better separated.
+        let src = &signed_msg.routing_message().src;
+        if signed_msg.public_id() != self.full_id.public_id() || hop != self.name() ||
+           !src.is_group() {
+            return Ok(signed_msg.clone());
         }
+
         let group = self.routing_table.closest_nodes_to(src.name(), GROUP_SIZE, true);
         // TODO: Better distribute the work among the group.
-        hop != group[route as usize % (group.len())].name()
+        if hop == group[route as usize % (group.len())].name() {
+            return Ok(signed_msg.clone());
+        }
+
+        SignedMessage::new(try!(signed_msg.routing_message().to_grp_msg_hash()),
+                           &self.full_id)
     }
 
     /// Returns whether we are the recipient of a message for the given authority.
@@ -2178,21 +2192,8 @@ impl Core {
             content: MessageContent::Ack(hash, routing_msg.priority()),
         };
 
-        let signed_msg = match SignedMessage::new(response, &self.full_id) {
-            Ok(signed_msg) => signed_msg,
-            Err(error) => {
-                error!("{:?} Failed to create ack message: {:?}", self, error);
-                return;
-            }
-        };
-        let hop = *self.name();
-        if let Err(error) = self.send(&signed_msg, route, &hop, &[hop]) {
-            error!("{:?} Failed to ack: {:?}", self, error);
-        }
-        if self.is_recipient(&routing_msg.src) {
-            if let Err(error) = self.handle_ack_response(hash) {
-                error!("{:?} Failed to handle ack: {:?}", self, error);
-            }
+        if let Err(error) = self.send_message_via_route(response, route) {
+            error!("{:?} Failed to send ack: {:?}", self, error);
         }
     }
 
@@ -2240,8 +2241,8 @@ impl Core {
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
-        match self.peer_mgr.default_proxy() {
-            Some(bootstrap_pub_id) => {
+        match *self.peer_mgr.proxy() {
+            Some((_, ref bootstrap_pub_id)) => {
                 Ok(Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
                     proxy_node_name: *bootstrap_pub_id.name(),
@@ -2278,17 +2279,14 @@ impl Core {
     }
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
-        if let Some(public_id) = self.peer_mgr.remove_proxy(peer_id) {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   public_id.name(),
-                   peer_id);
-            if self.peer_mgr.default_proxy().is_none() {
-                debug!("{:?} Lost connection to last proxy node {:?}",
+        if self.peer_mgr.get_proxy_public_id(peer_id).is_some() {
+            if let Some((_, public_id)) = self.peer_mgr.remove_proxy() {
+                debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
                        self,
+                       public_id.name(),
                        peer_id);
                 if self.role == Role::Client {
-                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.event_sender.send(Event::Terminate);
                 }
             }
         }
@@ -2352,7 +2350,11 @@ impl Core {
                     debug!("{:?} Lost connection, less than {} remaining.",
                            self,
                            GROUP_SIZE - 1);
-                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.event_sender.send(if self.role == Role::FirstNode {
+                        Event::Terminate
+                    } else {
+                        Event::RestartRequired
+                    });
                 }
                 self.reset_bucket_refresh_timer();
             }
@@ -2371,8 +2373,10 @@ impl Core {
 
     fn rebootstrap(&mut self) {
         match self.state {
-            State::Bootstrapping(_, _, socket_addr) => {
-                let _ = self.bootstrap_blacklist.insert(socket_addr);
+            State::Bootstrapping(..) => {
+                if let Some((peer_id, _)) = self.peer_mgr.remove_proxy() {
+                    self.crust_service.disconnect(peer_id);
+                }
             }
             _ => {
                 warn!("Should only be called while in Bootstrapping state");

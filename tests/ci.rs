@@ -62,13 +62,11 @@ use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
-              Response, XorName, GROUP_SIZE};
+              Response, XorName, GROUP_SIZE, QUORUM_SIZE};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha256;
 use utils::recv_with_timeout;
 use routing::DataIdentifier;
-
-const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);

@@ -15,16 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// It seems that code used only in tests is considered unused by rust.
-// TODO: Remove `unsafe_code` here again, once these changes are in stable:
-//       https://github.com/rust-lang/rust/issues/30756
-#![allow(unused, unsafe_code)]
-
-use rand;
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
@@ -170,7 +163,7 @@ impl ServiceImpl {
         ServiceImpl {
             network: network,
             endpoint: endpoint,
-            peer_id: gen_peer_id(endpoint),
+            peer_id: PeerId(endpoint.0),
             config: config,
             listening_tcp: false,
             event_sender: None,
@@ -188,7 +181,7 @@ impl ServiceImpl {
 
         self.disconnect_all();
 
-        self.peer_id = gen_peer_id(self.endpoint);
+        self.peer_id = PeerId(self.endpoint.0);
         self.listening_tcp = false;
 
         self.start(event_sender)
@@ -431,10 +424,6 @@ impl Drop for ServiceImpl {
     fn drop(&mut self) {
         self.disconnect_all();
     }
-}
-
-fn gen_peer_id(endpoint: Endpoint) -> PeerId {
-    PeerId(endpoint.0, rand::random())
 }
 
 /// Simulated crust config file.
