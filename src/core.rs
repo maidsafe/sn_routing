@@ -559,7 +559,7 @@ impl Core {
     fn start_new_network(&mut self) {
         if !self.start_listening() {
             error!("{:?} Failed to start listening.", self);
-            let _ = self.event_sender.send(Event::NetworkStartupFailed);
+            let _ = self.event_sender.send(Event::Terminate);
         }
         let new_name = XorName(sha256::hash(&self.full_id.public_id().name().0).0);
         self.set_self_node_name(new_name);
@@ -1011,9 +1011,9 @@ impl Core {
     }
 
     fn handle_bootstrap_failed(&mut self) {
-        debug!("{:?} Finished bootstrapping.", self);
+        debug!("{:?} Failed to bootstrap.", self);
         if self.state == State::Disconnected {
-            let _ = self.event_sender.send(Event::Disconnected);
+            let _ = self.event_sender.send(Event::Terminate);
         }
     }
 
@@ -1799,7 +1799,7 @@ impl Core {
         }
         if self.get_node_name_timer_token == Some(token) {
             info!("{:?} Failed to get GetNodeName response.", self);
-            let _ = self.event_sender.send(Event::GetNodeNameFailed);
+            let _ = self.event_sender.send(Event::RestartRequired);
             return;
         }
         if self.tick_timer_token == Some(token) {
@@ -2292,7 +2292,7 @@ impl Core {
                        self,
                        peer_id);
                 if self.role == Role::Client {
-                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.event_sender.send(Event::Terminate);
                 }
             }
         }
@@ -2356,7 +2356,7 @@ impl Core {
                     debug!("{:?} Lost connection, less than {} remaining.",
                            self,
                            GROUP_SIZE - 1);
-                    let _ = self.event_sender.send(Event::Disconnected);
+                    let _ = self.event_sender.send(Event::RestartRequired);
                 }
                 self.reset_bucket_refresh_timer();
             }

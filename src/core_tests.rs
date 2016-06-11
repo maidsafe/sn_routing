@@ -24,7 +24,7 @@ use std::thread;
 
 use action::Action;
 use authority::Authority;
-use core::{Core, Role, RoutingTable, GROUP_SIZE};
+use core::{Core, Role, RoutingTable, GROUP_SIZE, QUORUM_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
@@ -36,9 +36,6 @@ use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIO
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
-
-// kademlia_routing_table::QUORUM_SIZE is private and subject to change!
-const QUORUM_SIZE: usize = 5;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
