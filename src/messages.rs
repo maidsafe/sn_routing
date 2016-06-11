@@ -775,6 +775,36 @@ mod test {
     }
 
     #[test]
+    fn grp_msg_hash() {
+        let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
+        let data = Data::Immutable(ImmutableData::new(data_bytes));
+        let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
+        let parts = unwrap_result!(user_msg.to_parts(1));
+        assert_eq!(1, parts.len());
+        let part = parts[0].clone();
+        let name: XorName = rand::random();
+        let routing_message = RoutingMessage {
+            src: Authority::ClientManager(name),
+            dst: Authority::ClientManager(name),
+            content: part,
+        };
+        let hash_msg = unwrap_result!(routing_message.to_grp_msg_hash());
+        match hash_msg.content {
+            MessageContent::GroupMessageHash(..) => (),
+            _ => panic!("Wrong content for hashed message: {:?}", hash_msg),
+        }
+        assert_eq!(hash_msg, unwrap_result!(hash_msg.to_grp_msg_hash()));
+
+        let non_hash_routing_msg = RoutingMessage {
+            src: Authority::ClientManager(name),
+            dst: Authority::ClientManager(name),
+            content: MessageContent::GetCloseGroup(MessageId::zero()),
+        };
+        assert_eq!(non_hash_routing_msg,
+                   unwrap_result!(non_hash_routing_msg.to_grp_msg_hash()));
+    }
+
+    #[test]
     fn hop_message_verify() {
         let name: XorName = rand::random();
         let routing_message = RoutingMessage {
