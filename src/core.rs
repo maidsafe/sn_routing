@@ -82,7 +82,7 @@ enum State {
     /// Not connected to any node.
     Disconnected,
     /// Transition state while validating a peer as a proxy node.
-    Bootstrapping(PeerId, u64, SocketAddr),
+    Bootstrapping(PeerId, u64),
     /// We are bootstrapped and connected to a valid proxy node.
     Client,
     /// We have been Relocated and now a node.
@@ -535,7 +535,6 @@ impl Core {
             self.disconnect_peer(&peer_id);
             return;
         }
-        let _ = self.crust_service.stop_bootstrap();
         match self.state {
             State::Disconnected => {
                 if self.role == Role::Node {
@@ -543,9 +542,10 @@ impl Core {
                 }
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
-                let _ = self.client_identify(peer_id, socket_addr);
+                let _ = self.client_identify(peer_id);
+                let _ = self.bootstrap_blacklist.insert(socket_addr);
             }
-            State::Bootstrapping(bootstrap_id, _, _) if bootstrap_id == peer_id => {
+            State::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
                 warn!("{:?} Got more than one BootstrapConnect for peer {:?}.",
                       self,
                       peer_id);
@@ -757,7 +757,7 @@ impl Core {
                     try!(self.check_valid_client_message(hop_msg.content().routing_message()));
                 }
                 hop_name = *self.name();
-            } else if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
+            } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
                 hop_name = *pub_id.name();
             } else {
@@ -769,7 +769,7 @@ impl Core {
                 return Err(RoutingError::UnknownConnection(peer_id));
             }
         } else if self.state == State::Client {
-            if let Some(pub_id) = self.peer_mgr.get_proxy(&peer_id) {
+            if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
                 hop_name = *pub_id.name();
             } else {
@@ -1052,14 +1052,11 @@ impl Core {
         self.send_direct_message(&peer_id, direct_message)
     }
 
-    fn client_identify(&mut self,
-                       peer_id: PeerId,
-                       socket_addr: SocketAddr)
-                       -> Result<(), RoutingError> {
+    fn client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
         debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
 
         let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.state = State::Bootstrapping(peer_id, token, socket_addr);
+        self.state = State::Bootstrapping(peer_id, token);
 
         let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
         let signature = sign::sign_detached(&serialised_public_id,
@@ -1237,7 +1234,7 @@ impl Core {
                 debug!("{:?} Received ConnectionUnneeded from {:?}.", self, peer_id);
                 if self.routing_table.remove_if_unneeded(name) {
                     info!("{:?} Dropped {:?} from the routing table.", self, name);
-                    self.crust_service.disconnect(peer_id);
+                    self.disconnect_peer(&peer_id);
                     self.handle_lost_peer(peer_id);
                 }
                 Ok(())
@@ -1263,7 +1260,7 @@ impl Core {
             return Ok(());
         }
 
-        if !self.peer_mgr.insert_proxy(peer_id, public_id) {
+        if !self.peer_mgr.set_proxy(peer_id, public_id) {
             self.disconnect_peer(&peer_id);
             return Ok(());
         }
@@ -1511,7 +1508,7 @@ impl Core {
                    self,
                    node.name(),
                    peer_id);
-        } else if let Some(&public_id) = self.peer_mgr.get_proxy(peer_id) {
+        } else if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
             debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
                    self,
                    public_id.name(),
@@ -1788,14 +1785,14 @@ impl Core {
 
     fn handle_timeout(&mut self, token: u64) {
         // We haven't received response from a node we are trying to bootstrap against.
-        if let State::Bootstrapping(peer_id, bootstrap_token, _) = self.state {
+        if let State::Bootstrapping(peer_id, bootstrap_token) = self.state {
             if bootstrap_token == token {
                 debug!("{:?} Timeout when trying to bootstrap against {:?}.",
                        self,
                        peer_id);
                 self.rebootstrap();
+                return;
             }
-            return;
         }
         if self.get_node_name_timer_token == Some(token) {
             info!("{:?} Failed to get GetNodeName response.", self);
@@ -2244,8 +2241,8 @@ impl Core {
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
-        match self.peer_mgr.default_proxy() {
-            Some(bootstrap_pub_id) => {
+        match *self.peer_mgr.proxy() {
+            Some((_, ref bootstrap_pub_id)) => {
                 Ok(Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
                     proxy_node_name: *bootstrap_pub_id.name(),
@@ -2282,14 +2279,11 @@ impl Core {
     }
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
-        if let Some(public_id) = self.peer_mgr.remove_proxy(peer_id) {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   public_id.name(),
-                   peer_id);
-            if self.peer_mgr.default_proxy().is_none() {
-                debug!("{:?} Lost connection to last proxy node {:?}",
+        if self.peer_mgr.get_proxy_public_id(peer_id).is_some() {
+            if let Some((_, public_id)) = self.peer_mgr.remove_proxy() {
+                debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
                        self,
+                       public_id.name(),
                        peer_id);
                 if self.role == Role::Client {
                     let _ = self.event_sender.send(Event::Terminate);
@@ -2356,7 +2350,11 @@ impl Core {
                     debug!("{:?} Lost connection, less than {} remaining.",
                            self,
                            GROUP_SIZE - 1);
-                    let _ = self.event_sender.send(Event::RestartRequired);
+                    let _ = self.event_sender.send(if self.role == Role::FirstNode {
+                        Event::Terminate
+                    } else {
+                        Event::RestartRequired
+                    });
                 }
                 self.reset_bucket_refresh_timer();
             }
@@ -2375,8 +2373,10 @@ impl Core {
 
     fn rebootstrap(&mut self) {
         match self.state {
-            State::Bootstrapping(_, _, socket_addr) => {
-                let _ = self.bootstrap_blacklist.insert(socket_addr);
+            State::Bootstrapping(..) => {
+                if let Some((peer_id, _)) = self.peer_mgr.remove_proxy() {
+                    self.disconnect_peer(&peer_id);
+                }
             }
             _ => {
                 warn!("Should only be called while in Bootstrapping state");
