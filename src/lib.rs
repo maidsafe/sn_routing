@@ -203,12 +203,15 @@ mod types;
 mod utils;
 mod xor_name;
 
-#[cfg(all(test, feature = "use-mock-crust"))]
+#[cfg(feature = "use-mock-crust")]
+#[allow(unused)]
 mod core_tests;
 
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
+#[cfg(feature = "use-mock-crust")]
+pub use core_tests::verify_kademlia_invariant;
 
 pub use authority::Authority;
 pub use client::Client;
