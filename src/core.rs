@@ -34,7 +34,7 @@ use peer_manager::{ConnectState, PeerManager};
 use rand;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
-use std::{cmp, io, iter, fmt};
+use std::{cmp, iter, fmt};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
@@ -574,7 +574,7 @@ impl Core {
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
-    fn handle_new_peer(&mut self, result: io::Result<()>, peer_id: PeerId) {
+    fn handle_new_peer(&mut self, result: Result<(), crust::CrustError>, peer_id: PeerId) {
         if peer_id == self.crust_service.id() {
             debug!("{:?} Received NewPeer event with our Crust peer ID.", self);
             return;
@@ -635,7 +635,7 @@ impl Core {
 
     fn handle_connection_info_prepared(&mut self,
                                        result_token: u32,
-                                       result: io::Result<PrivConnectionInfo>) {
+                                       result: Result<PrivConnectionInfo, crust::CrustError>) {
         let our_connection_info = match result {
             Err(err) => {
                 error!("{:?} Failed to prepare connection info: {:?}", self, err);

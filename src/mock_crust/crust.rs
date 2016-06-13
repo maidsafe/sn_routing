@@ -178,7 +178,7 @@ pub enum Event {
     /// Invoked as a result to the call of `Service::prepare_contact_info`.
     ConnectionInfoPrepared(ConnectionInfoResult),
     /// Invoked when a connection to a new peer is established.
-    NewPeer(io::Result<()>, PeerId),
+    NewPeer(Result<(), CrustError>, PeerId),
     /// Invoked when a peer is lost or having read/write error.
     LostPeer(PeerId),
     /// Invoked when a new message is received.  Passes the message.
@@ -219,7 +219,7 @@ pub struct ConnectionInfoResult {
     /// The token that was passed to `prepare_connection_info`.
     pub result_token: u32,
     /// The new contact info, if successful.
-    pub result: io::Result<PrivConnectionInfo>,
+    pub result: Result<PrivConnectionInfo, CrustError>,
 }
 
 /// Mock version of `crust::CrustError`.

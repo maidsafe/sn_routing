@@ -18,12 +18,11 @@
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
-                   PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustError, CrustEventSender, Event, PrivConnectionInfo,
+                   PeerId, PubConnectionInfo};
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -305,8 +304,7 @@ impl ServiceImpl {
     }
 
     fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: PeerId) {
-        let err = io::Error::new(io::ErrorKind::NotFound, "Peer not found");
-        self.send_event(Event::NewPeer(Err(err), their_id));
+        self.send_event(Event::NewPeer(Err(CrustError), their_id));
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
