@@ -527,7 +527,6 @@ fn node_joins_in_front() {
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
-#[ignore]
 #[test]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
