@@ -337,29 +337,36 @@ fn entry_names_in_bucket(table: &RoutingTable, bucket_index: usize) -> HashSet<X
 
 // Get names of all nodes that belong to the `index`-th bucket in the `name`s
 // routing table.
-fn node_names_in_bucket(nodes: &[TestNode],
-                        name: &XorName,
+fn node_names_in_bucket(routing_tables: &Vec<RoutingTable>,
+                        target: &XorName,
                         bucket_index: usize)
                         -> HashSet<XorName> {
-    nodes.iter()
-        .filter(|node| name.bucket_index(node.name()) == bucket_index)
-        .map(|node| *node.name())
-        .collect()
+    routing_tables.iter()
+                  .filter(|routing_table| target.bucket_index(routing_table.our_name())
+                                          == bucket_index)
+                  .map(|routing_table| routing_table.our_name().clone())
+                  .collect()
 }
 
 // Verify that the kademlia invariant is upheld for the node at `index`.
 fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
-    let node = &nodes[index];
-    let mut count = nodes.len() - 1;
+    let routing_tables = nodes.iter().map(|node| node.routing_table().clone()).collect();
+    verify_kademlia_invariant(&routing_tables, index);
+}
+
+/// Verify that the kademlia invariant is upheld for the routing_table at `index`.
+pub fn verify_kademlia_invariant(routing_tables: &Vec<RoutingTable>, index: usize) {
+    let target = routing_tables[index].our_name();
+    let mut count = routing_tables.len() - 1;
     let mut bucket_index = 0;
 
     while count > 0 {
-        let entries = entry_names_in_bucket(node.routing_table(), bucket_index);
-        let actual_bucket = node_names_in_bucket(nodes, node.name(), bucket_index);
+        let entries = entry_names_in_bucket(&routing_tables[index], bucket_index);
+        let actual_bucket = node_names_in_bucket(routing_tables, target, bucket_index);
         if entries.len() < GROUP_SIZE {
             assert!(actual_bucket == entries,
                     "Node: {:?}, expected: {:?}. found: {:?}",
-                    node.name(),
+                    target,
                     actual_bucket,
                     entries);
         }

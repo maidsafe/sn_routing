@@ -25,6 +25,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use action::Action;
 use authority::Authority;
 use core::{Core, Role};
+#[cfg(feature = "use-mock-crust")]
+use core::RoutingTable;
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -119,6 +121,12 @@ impl Node {
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
         self.core.borrow_mut().resend_unacknowledged()
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    /// Routing table of this node.
+    pub fn routing_table(&self) -> RoutingTable {
+        self.core.borrow().routing_table().clone()
     }
 
     #[cfg(feature = "use-mock-crust")]
