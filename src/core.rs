@@ -518,6 +518,12 @@ impl Core {
             crust::Event::ListenerStarted(port) => {
                 trace!("{:?} Listener started on port {}.", self, port);
                 self.crust_service.set_service_discovery_listen(true);
+                if self.role == Role::Node {
+                    if let Err(error) = self.relocate() {
+                        error!("{:?} Failed to start relocation: {:?}", self, error);
+                        let _ = self.event_sender.send(Event::RestartRequired);
+                    }
+                }
             }
             crust::Event::ListenerFailed => error!("{:?} Failed to start listening.", self),
             crust::Event::WriteMsgSizeProhibitive(peer_id, msg) => {
@@ -537,9 +543,6 @@ impl Core {
         }
         match self.state {
             State::Disconnected => {
-                if self.role == Role::Node {
-                    let _ = self.start_listening();
-                }
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
                 let _ = self.client_identify(peer_id);
@@ -1275,7 +1278,9 @@ impl Core {
             Role::Client => {
                 let _ = self.event_sender.send(Event::Connected);
             }
-            Role::Node => try!(self.relocate()),
+            Role::Node => {
+                let _ = self.start_listening();
+            }
             Role::FirstNode => debug!("{:?} Received BootstrapIdentify as the first node.", self),
         };
         Ok(())
