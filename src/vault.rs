@@ -141,13 +141,12 @@ impl Vault {
                 self.on_node_lost(node_lost, routing_table)
             }
             Event::Connected => self.on_connected(),
-            Event::GetNodeNameFailed => {
-                warn!("Received {:?}. Restarting Vault", event);
+            Event::RestartRequired => {
+                warn!("Restarting Vault");
                 ret = Some(false);
                 Ok(())
             }
-            Event::Disconnected |
-            Event::NetworkStartupFailed => {
+            Event::Terminate => {
                 ret = Some(true);
                 Ok(())
             }
