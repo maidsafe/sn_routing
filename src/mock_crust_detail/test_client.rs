@@ -47,7 +47,7 @@ impl TestClient {
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone()), false))
+            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone())))
         });
 
         TestClient {
@@ -300,7 +300,7 @@ impl TestClient {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
-        let _ = poll::nodes_and_client(nodes, self);
+        let _ = poll::poll_and_resend_unacknowledged(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response { response: Response::PutSuccess(_, response_message_id), .. }) => {

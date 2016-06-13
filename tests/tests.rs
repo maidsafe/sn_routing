@@ -32,6 +32,7 @@
 
 #![cfg(feature = "use-mock-crust")]
 
+extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]
