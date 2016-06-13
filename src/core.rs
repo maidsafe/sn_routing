@@ -18,11 +18,12 @@
 use accumulator::Accumulator;
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{self, ConnectionInfoResult, PrivConnectionInfo, PeerId, Service, PubConnectionInfo};
+use crust::{self, ConnectionInfoResult, CrustError, PrivConnectionInfo, PeerId, Service,
+            PubConnectionInfo};
 
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, ConnectionInfoResult, PrivConnectionInfo, PeerId, Service,
-                        PubConnectionInfo};
+use mock_crust::crust::{self, ConnectionInfoResult, CrustError, PrivConnectionInfo, PeerId,
+                        Service, PubConnectionInfo};
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
@@ -518,8 +519,17 @@ impl Core {
             crust::Event::ListenerStarted(port) => {
                 trace!("{:?} Listener started on port {}.", self, port);
                 self.crust_service.set_service_discovery_listen(true);
+                if self.role == Role::Node {
+                    if let Err(error) = self.relocate() {
+                        error!("{:?} Failed to start relocation: {:?}", self, error);
+                        let _ = self.event_sender.send(Event::RestartRequired);
+                    }
+                }
             }
-            crust::Event::ListenerFailed => error!("{:?} Failed to start listening.", self),
+            crust::Event::ListenerFailed => {
+                error!("{:?} Failed to start listening.", self);
+                let _ = self.event_sender.send(Event::Terminate);
+            }
             crust::Event::WriteMsgSizeProhibitive(peer_id, msg) => {
                 error!("{:?} Failed to send {}-byte message to {:?}. Message too large.",
                        self,
@@ -537,9 +547,6 @@ impl Core {
         }
         match self.state {
             State::Disconnected => {
-                if self.role == Role::Node {
-                    let _ = self.start_listening();
-                }
                 debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
                 // Established connection. Pending Validity checks
                 let _ = self.client_identify(peer_id);
@@ -574,7 +581,7 @@ impl Core {
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
-    fn handle_new_peer(&mut self, result: Result<(), crust::CrustError>, peer_id: PeerId) {
+    fn handle_new_peer(&mut self, result: Result<(), CrustError>, peer_id: PeerId) {
         if peer_id == self.crust_service.id() {
             debug!("{:?} Received NewPeer event with our Crust peer ID.", self);
             return;
@@ -635,7 +642,7 @@ impl Core {
 
     fn handle_connection_info_prepared(&mut self,
                                        result_token: u32,
-                                       result: Result<PrivConnectionInfo, crust::CrustError>) {
+                                       result: Result<PrivConnectionInfo, CrustError>) {
         let our_connection_info = match result {
             Err(err) => {
                 error!("{:?} Failed to prepare connection info: {:?}", self, err);
@@ -1275,7 +1282,9 @@ impl Core {
             Role::Client => {
                 let _ = self.event_sender.send(Event::Connected);
             }
-            Role::Node => try!(self.relocate()),
+            Role::Node => {
+                let _ = self.start_listening();
+            }
             Role::FirstNode => debug!("{:?} Received BootstrapIdentify as the first node.", self),
         };
         Ok(())
@@ -1831,9 +1840,9 @@ impl Core {
             unacked_msg.route += 1;
             // If we've tried all `GROUP_SIZE` routes, give up.  Otherwise resend on next route.
             if unacked_msg.route as usize == GROUP_SIZE {
-                info!("{:?} - Message unable to be acknowledged - giving up. {:?}",
-                      self,
-                      unacked_msg);
+                debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
+                       self,
+                       unacked_msg);
             } else {
                 let hop = *self.name();
                 let _ = self.send(&unacked_msg.signed_msg, unacked_msg.route, &hop, &[hop]);
