@@ -8,11 +8,11 @@ license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
-version = "0.21.0"
+version = "0.22.0"
 
 [dependencies]
 accumulator = "~0.4.0"
-clippy = {version = "~0.0.75", optional = true}
+clippy = {version = "~0.0.76", optional = true}
 crust = "~0.15.0"
 itertools = "~0.4.15"
 kademlia_routing_table = "~0.6.0"
@@ -26,7 +26,7 @@ term = "~0.4.4"
 
 [dev-dependencies]
 docopt = "~0.6.80"
-libc = "~0.2.11"
+libc = "~0.2.12"
 
 [build-dependencies]
 hyper = {version = "~0.9.7", optional = true}
