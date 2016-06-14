@@ -831,3 +831,87 @@ fn disconnect_on_get_request() {
         }
     }
 }
+
+#[test]
+fn request_during_churn() {
+    let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);;
+
+    let mut nodes = create_connected_nodes(&network, 20);
+    let mut clients = vec![TestClient::new(&network,
+                                           Some(Config::with_contacts(&[nodes[0]
+                                                                            .handle
+                                                                            .endpoint()])),
+                                           None)];
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_event!(clients[0], Event::Connected);
+
+    for i in 0..10 {
+        let _ = poll_all(&mut nodes, &mut clients);
+        let len = nodes.len();
+        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
+            let node0 = *nodes.remove(Range::new(1, len).ind_sample(&mut rng)).name();
+            let node1 = *nodes.remove(Range::new(1, len - 1).ind_sample(&mut rng)).name();
+            let node2 = *nodes.remove(Range::new(1, len - 2).ind_sample(&mut rng)).name();
+            trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
+                   i,
+                   node0,
+                   node1,
+                   node2);
+        } else {
+            let proxy = Range::new(1, len).ind_sample(&mut rng);
+            let index = Range::new(1, len + 1).ind_sample(&mut rng);
+            let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+            nodes.insert(index,
+                         TestNode::new(&network, Role::Node, Some(config.clone()), None));
+            trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
+        }
+
+        loop {
+            let mut state_changed = poll_all(&mut nodes, &mut []);
+            for node in &mut nodes {
+                state_changed = state_changed || node.core.resend_unacknowledged();
+            }
+            if !state_changed {
+                break;
+            }
+        }
+
+        for node in &mut nodes {
+            node.core.clear_state();
+        }
+        verify_kademlia_invariant_for_all_nodes(&nodes);
+
+        let (result_tx, _result_rx) = mpsc::channel();
+        let bytes = rng.gen_iter().take(1024).collect();
+        let immutable_data = ImmutableData::new(bytes);
+        let data = Data::Immutable(immutable_data.clone());
+        let dst = Authority::NaeManager(data.name());
+        let data_request = DataIdentifier::Immutable(data.name());
+        let message_id = MessageId::new();
+
+        assert!(clients[0]
+            .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
+            .is_ok());
+        let _ = poll_all(&mut nodes, &mut clients);
+
+        let mut request_received_count = 0;
+        for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
+            loop {
+                match node.event_rx.try_recv() {
+                    Ok(Event::Request { request: Request::Get(ref request, id), .. }) => {
+                        if data_request == *request && message_id == id {
+                            request_received_count += 1;
+                            break;
+                        }
+                    }
+                    Ok(_) => (),
+                    _ => panic!("Event::Request not received"),
+                }
+            }
+        }
+
+        assert!(request_received_count >= QUORUM_SIZE);
+    }
+}
