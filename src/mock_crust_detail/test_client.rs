@@ -47,7 +47,7 @@ impl TestClient {
 
         let handle = network.new_service_handle(config, None);
         let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone()), false))
+            unwrap_result!(routing::Client::new(routing_tx, Some(full_id.clone())))
         });
 
         TestClient {
@@ -238,6 +238,42 @@ impl TestClient {
         }
     }
 
+    /// Sends a GetAccountInfo request, polls the mock network and expects a GetAccountInfo response
+    pub fn get_account_info_response(&mut self,
+                                     nodes: &mut [TestNode])
+                                     -> Result<(u64, u64), Option<GetError>> {
+        let request_message_id = MessageId::new();
+        self.flush();
+        let dst = Authority::ClientManager(*self.public_id.name());
+        unwrap_result!(self.routing_client
+            .send_get_account_info_request(dst, request_message_id));
+        let events_count = poll::nodes_and_client(nodes, self);
+        trace!("totally {} events got processed during the get_account_info_response",
+               events_count);
+        loop {
+            match self.routing_rx.try_recv() {
+                Ok(Event::Response { response: Response::GetAccountInfoSuccess { id,
+                                                                       data_stored,
+                                                                       space_available },
+                                     .. }) => {
+                    assert_eq!(request_message_id, id);
+                    return Ok((data_stored, space_available));
+                }
+                Ok(Event::Response {
+                    response: Response::GetAccountInfoFailure { id, external_error_indicator },
+                    ..
+                }) => {
+                    assert_eq!(request_message_id, id);
+                    let parsed_error: GetError =
+                        unwrap_result!(serialisation::deserialise(&external_error_indicator));
+                    return Err(Some(parsed_error));
+                }
+                Ok(response) => panic!("Unexpected GetAccountInfo response : {:?}", response),
+                Err(err) => panic!("Unexpected error : {:?}", err),
+            }
+        }
+    }
+
     /// Post request
     pub fn post(&mut self, data: Data) {
         let dst = Authority::NaeManager(data.name());
@@ -264,7 +300,7 @@ impl TestClient {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data.clone(), request_message_id));
-        let _ = poll::nodes_and_client(nodes, self);
+        let _ = poll::poll_and_resend_unacknowledged(nodes, self);
 
         match self.routing_rx.try_recv() {
             Ok(Event::Response { response: Response::PutSuccess(_, response_message_id), .. }) => {

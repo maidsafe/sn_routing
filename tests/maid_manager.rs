@@ -18,11 +18,12 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
+use itertools::Itertools;
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, ImmutableData, GROUP_SIZE};
+use routing::{Data, ImmutableData, GROUP_SIZE, XorName};
 use routing::mock_crust::{self, Network};
-use safe_network_common::client_errors::MutationError;
+use safe_network_common::client_errors::{GetError, MutationError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
@@ -62,7 +63,16 @@ fn handle_put_with_account() {
     let mut client = TestClient::new(&network, Some(config));
 
     client.ensure_connected(&mut nodes);
+
+    let result = client.get_account_info_response(&mut nodes);
+    assert_eq!(result, Err(Some(GetError::NoSuchAccount)));
+
     client.create_account(&mut nodes);
+    let default_account_size = 100;
+    let mut expected_data_stored = 1;
+    let mut expected_space_available = default_account_size - expected_data_stored;
+    assert_eq!(unwrap_result!(client.get_account_info_response(&mut nodes)),
+               (expected_data_stored, expected_space_available));
 
     let immutable_data = ImmutableData::new(test_utils::generate_random_vec_u8(1024));
     client.put(Data::Immutable(immutable_data.clone()));
@@ -78,6 +88,10 @@ fn handle_put_with_account() {
     let mut stored_immutable = Vec::new();
     stored_immutable.push(Data::Immutable(immutable_data));
     mock_crust_detail::check_data(stored_immutable, &nodes);
+    expected_data_stored += 1;
+    expected_space_available = default_account_size - expected_data_stored;
+    assert_eq!(unwrap_result!(client.get_account_info_response(&mut nodes)),
+               (expected_data_stored, expected_space_available));
 }
 
 #[test]
@@ -166,17 +180,14 @@ fn maid_manager_account_updates_with_churn() {
             node.clear_state();
         }
         trace!("Processed {} events.", event_count);
-        let count = nodes.iter()
-            .filter(|node| {
-                match node.get_maid_manager_put_count(client.name()) {
-                    None => false,
-                    Some(count) => count == put_count,
-                }
-            })
-            .count();
-        assert!(GROUP_SIZE - 3 <= count,
-                "put_count {} only found with {} nodes",
-                put_count,
-                count);
+        let mut sorted_maid_managers = nodes.iter()
+            .sorted_by(|left, right| client.name().cmp_distance(&left.name(), &right.name()));
+        sorted_maid_managers.truncate(GROUP_SIZE);
+        let node_count_stats: Vec<(XorName, Option<u64>)> = sorted_maid_managers.into_iter()
+            .map(|x| (x.name(), x.get_maid_manager_put_count(client.name())))
+            .collect();
+        for &(_, count) in &node_count_stats {
+            assert!(count == Some(put_count), "{:?}", node_count_stats);
+        }
     }
 }

@@ -49,7 +49,7 @@ impl Vault {
     pub fn new(first_vault: bool) -> Result<Self, InternalError> {
         sodiumoxide::init();
         let (routing_sender, routing_receiver) = mpsc::channel();
-        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, true, first_vault)));
+        let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, first_vault)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
@@ -141,13 +141,12 @@ impl Vault {
                 self.on_node_lost(node_lost, routing_table)
             }
             Event::Connected => self.on_connected(),
-            Event::GetNodeNameFailed => {
-                warn!("Received {:?}. Restarting Vault", event);
+            Event::RestartRequired => {
+                warn!("Restarting Vault");
                 ret = Some(false);
                 Ok(())
             }
-            Event::Disconnected |
-            Event::NetworkStartupFailed => {
+            Event::Terminate => {
                 ret = Some(true);
                 Ok(())
             }
@@ -193,6 +192,12 @@ impl Vault {
              dst @ Authority::NaeManager(_),
              Request::Delete(Data::Structured(data), msg_id)) => {
                 self.data_manager.handle_delete(src, dst, data, msg_id)
+            }
+            // ================== GetAccountInfo ==================
+            (src @ Authority::Client { .. },
+             dst @ Authority::ClientManager(_),
+             Request::GetAccountInfo(msg_id)) => {
+                self.maid_manager.handle_get_account_info(src, dst, msg_id)
             }
             // ================== Refresh ==================
             (Authority::ClientManager(_),

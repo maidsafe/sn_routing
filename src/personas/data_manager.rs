@@ -38,7 +38,7 @@ const ACCUMULATOR_QUORUM: usize = GROUP_SIZE / 2 + 1;
 /// The timeout for accumulating refresh messages.
 const ACCUMULATOR_TIMEOUT_SECS: u64 = 180;
 /// The timeout for retrieving data chunks from individual peers.
-const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 20;
+const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 60;
 
 /// Specification of a particular version of a data chunk. For immutable data, the `u64` is always
 /// 0; for structured data, it specifies the version.
