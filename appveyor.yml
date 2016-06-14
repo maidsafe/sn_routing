@@ -25,7 +25,9 @@ install:
         . ".\Install MinGW.ps1"
         . ".\Install libsodium.ps1"
 
-        if ($env:APPVEYOR_REPO_COMMIT_MESSAGE -match "[vV]ersion change to v?(.*)") {
+        $commit_message = "$env:APPVEYOR_REPO_COMMIT_MESSAGE $env:APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED"
+
+        if ($commit_message -match "[vV]ersion change to v?(.*)") {
           $env:PROJECT_VERSION = $matches[1]
           $env:DEPLOY = "true"
         }
