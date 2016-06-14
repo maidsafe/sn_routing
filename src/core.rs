@@ -1843,6 +1843,7 @@ impl Core {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);
+                self.stats.count_unacked();
             } else {
                 let hop = *self.name();
                 let _ = self.send(&unacked_msg.signed_msg, unacked_msg.route, &hop, &[hop]);
@@ -2046,6 +2047,9 @@ impl Core {
             hop: &XorName,
             sent_to: &[XorName])
             -> Result<(), RoutingError> {
+        if signed_msg.public_id() == self.full_id.public_id() && hop == self.name() {
+            self.stats.count_route(route);
+        }
         let routing_msg = signed_msg.routing_message();
 
         if let Authority::Client { ref peer_id, .. } = routing_msg.dst {

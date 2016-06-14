@@ -4,7 +4,7 @@ build = "build.rs"
 description = "A secured storage DHT"
 documentation = "http://docs.maidsafe.net/routing/latest"
 homepage = "http://maidsafe.net"
-license = "GPL-3.0/MaidSafe.net Commercial License 1.0"
+license = "GPL-3.0"
 name = "routing"
 readme = "README.md"
 repository = "https://github.com/maidsafe/routing"
@@ -13,7 +13,7 @@ version = "0.21.0"
 [dependencies]
 accumulator = "~0.4.0"
 clippy = {version = "~0.0.75", optional = true}
-crust = { git = "https://github.com/maidsafe/crust.git", branch = "async" }
+crust = "~0.15.0"
 itertools = "~0.4.15"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
