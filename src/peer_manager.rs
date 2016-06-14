@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{OurConnectionInfo, PeerId, TheirConnectionInfo};
+use crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{OurConnectionInfo, PeerId, TheirConnectionInfo};
+use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 use authority::Authority;
 use sodiumoxide::crypto::sign;
 use id::PublicId;
@@ -79,25 +79,21 @@ pub enum ConnectState {
 /// we have verified, whom we are directly connected to or via a tunnel.
 pub struct PeerManager {
     /// Our bootstrap connections.
-    proxy_map: HashMap<PeerId, PublicId>,
+    proxy: Option<(PeerId, PublicId)>,
     /// Any clients we have proxying through us, and whether they have `client_restriction`.
     client_map: HashMap<PeerId, ClientInfo>,
-    /// All directly connected peers (proxies, clients and routing nodes), and the timestamps of
-    /// their most recent message.
-    peer_map: HashMap<PeerId, Instant>,
     /// Maps the ID of a peer we are currently trying to connect to to their name.
     connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
     pub connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
-    pub our_connection_info_map: LruCache<PublicId, OurConnectionInfo>,
-    pub their_connection_info_map: LruCache<PublicId, TheirConnectionInfo>,
+    pub our_connection_info_map: LruCache<PublicId, PrivConnectionInfo>,
+    pub their_connection_info_map: LruCache<PublicId, PubConnectionInfo>,
 }
 
 impl Default for PeerManager {
     fn default() -> PeerManager {
         PeerManager {
-            proxy_map: Default::default(),
+            proxy: None,
             client_map: Default::default(),
-            peer_map: Default::default(),
             connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
             connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
             our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
@@ -107,47 +103,41 @@ impl Default for PeerManager {
 }
 
 impl PeerManager {
-    /// Returns the given proxy node's public ID, if present.
-    pub fn get_proxy(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.proxy_map.get(peer_id)
+    pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
+        &self.proxy
     }
 
-    /// Returns the public ID of the default proxy node, if present.
-    pub fn default_proxy(&self) -> Option<&PublicId> {
-        self.proxy_map.iter().next().map(|(_, public_id)| public_id)
-    }
-
-    /// Inserts the given peer as a proxy node if applicable, otherwise returns `false`.
-    pub fn insert_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
-        // TODO: If we're accepting only one proxy node, this should be an `Option`, not a `Vec`.
-        if self.proxy_map.is_empty() {
-            let _ = self.proxy_map.insert(peer_id, public_id);
-            true
-        } else if let Some(previous_name) = self.proxy_map.insert(peer_id, public_id) {
-            debug!("Adding bootstrap node to proxy map caused a prior ID to eject. Previous \
-                    name: {:?}",
-                   previous_name);
-            debug!("Dropping this peer {:?}", peer_id);
-            let _ = self.proxy_map.remove(&peer_id);
-            false
-        } else {
-            debug!("Disconnecting {:?}; not accepting further bootstrap connections.",
-                   peer_id);
-            false
+    /// Returns the proxy node's public ID, if it has the given peer ID.
+    pub fn get_proxy_public_id(&self, peer_id: &PeerId) -> Option<&PublicId> {
+        match self.proxy {
+            Some((ref proxy_id, ref pub_id)) if proxy_id == peer_id => Some(pub_id),
+            _ => None,
         }
     }
 
-    /// Removes the given peer ID from the proxy nodes and returns their public ID, if present.
-    pub fn remove_proxy(&mut self, peer_id: &PeerId) -> Option<PublicId> {
-        self.proxy_map.remove(peer_id)
+    /// Returns the proxy node's peer ID, if it has the given name.
+    pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
+        match self.proxy {
+            Some((ref peer_id, ref pub_id)) if pub_id.name() == name => Some(peer_id),
+            _ => None,
+        }
     }
 
-    /// Returns the peer ID of the proxy node with the given name, if present.
-    pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
-        self.proxy_map
-            .iter()
-            .find(|&(_, ref pub_id)| pub_id.name() == name)
-            .map(|(id, _)| id)
+    /// Inserts the given peer as a proxy node if applicable, returns `false` if it is not accepted
+    /// and should be disconnected.
+    pub fn set_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
+        if let Some((ref proxy_id, _)) = self.proxy {
+            debug!("Not accepting further bootstrap connections.");
+            *proxy_id == peer_id
+        } else {
+            self.proxy = Some((peer_id, public_id));
+            true
+        }
+    }
+
+    /// Removes the from and returns it, if present.
+    pub fn remove_proxy(&mut self) -> Option<(PeerId, PublicId)> {
+        self.proxy.take()
     }
 
     /// Inserts the given client into the map.
@@ -190,31 +180,10 @@ impl PeerManager {
             .find(|elt| &elt.1.public_key == public_id.signing_public_key()) {
             return Some(peer_id);
         }
-        if let Some((&peer_id, _)) = self.proxy_map
-            .iter()
-            .find(|elt| elt.1 == public_id) {
-            return Some(peer_id);
+        match self.proxy {
+            Some((ref peer_id, ref proxy_pub_id)) if proxy_pub_id == public_id => Some(*peer_id),
+            _ => None,
         }
-        None
-    }
-
-    /// Inserts the given peer or resets their timestamp to now.
-    pub fn insert_peer(&mut self, peer_id: PeerId) {
-        let _ = self.peer_map.insert(peer_id, Instant::now());
-    }
-
-    /// Updates the given peer's timestamp, or returns `false` if the peer doesn't exist.
-    pub fn update_peer(&mut self, peer_id: &PeerId) -> bool {
-        match self.peer_map.get_mut(peer_id) {
-            None => return false,
-            Some(timestamp) => *timestamp = Instant::now(),
-        }
-        true
-    }
-
-    /// Removes the given peer from the map, or returns `false` if it doesn't exist.
-    pub fn remove_peer(&mut self, peer_id: &PeerId) -> bool {
-        self.peer_map.remove(peer_id).is_some()
     }
 
     /// Returns the number of clients for which we act as a proxy and which intend to become a
@@ -232,12 +201,10 @@ impl PeerManager {
     /// Marks the given peer as "connected".
     pub fn connected_to(&mut self, peer_id: PeerId) {
         if self.connecting_peers.remove(&peer_id).is_none() {
-            warn!("Received NewPeer from {:?}, but was not expecting connection.",
-                  peer_id);
-            // TODO: Crust should not connect before both sides have called connect.
-            // return;
+            trace!("Received NewPeer from {:?}, but was not expecting connection.",
+                   peer_id);
+            // TODO: Having sent connection info should suffice. Otherwise reject the connection.
         }
-        self.insert_peer(peer_id);
     }
 
     /// Returns the name and state of the given peer, if present.

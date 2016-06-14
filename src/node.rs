@@ -28,7 +28,8 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-use messages::{MessageContent, Request, Response, RoutingMessage};
+use messages::{UserMessage, Request, Response, RELOCATE_PRIORITY, DEFAULT_PRIORITY,
+               CLIENT_GET_PRIORITY};
 use xor_name::XorName;
 use types::MessageId;
 
@@ -62,10 +63,7 @@ impl Node {
     ///
     /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>,
-               use_data_cache: bool,
-               first_node: bool)
-               -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let role = if first_node {
@@ -74,7 +72,7 @@ impl Node {
             Role::Node
         };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, role, None, use_data_cache);
+        let (action_sender, mut core) = Core::new(event_sender, role, None);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -91,10 +89,7 @@ impl Node {
 
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>,
-               use_data_cache: bool,
-               first_node: bool)
-               -> Result<Node, RoutingError> {
+    pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let role = if first_node {
@@ -103,7 +98,7 @@ impl Node {
             Role::Node
         };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, role, None, use_data_cache);
+        let (action_sender, core) = Core::new(event_sender, role, None);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -139,12 +134,8 @@ impl Node {
                             data_request: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Request(Request::Get(data_request, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Request(Request::Get(data_request, id));
+        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
     /// Send a `Put` request to `dst` to store data on the network.
@@ -154,12 +145,8 @@ impl Node {
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Request(Request::Put(data, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Request(Request::Put(data, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Send a `Post` request to `dst` to modify data on the network.
@@ -169,12 +156,8 @@ impl Node {
                              data: Data,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Request(Request::Post(data, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Request(Request::Post(data, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Send a `Delete` request to `dst` to remove data from the network.
@@ -184,12 +167,8 @@ impl Node {
                                data: Data,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Request(Request::Delete(data, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Request(Request::Delete(data, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Get` request indicating success and sending the requested data.
@@ -199,12 +178,13 @@ impl Node {
                             data: Data,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetSuccess(data, id)),
+        let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg)
+        self.send_action(src, dst, user_msg, priority)
     }
 
     /// Respond to a `Get` request indicating failure.
@@ -215,16 +195,17 @@ impl Node {
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
+        let user_msg = UserMessage::Response(Response::GetFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg)
+        self.send_action(src, dst, user_msg, priority)
     }
 
     /// Respond to a `Put` request indicating success.
@@ -234,12 +215,8 @@ impl Node {
                             name: DataIdentifier,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::PutSuccess(name, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::PutSuccess(name, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Put` request indicating failure.
@@ -250,16 +227,12 @@ impl Node {
                             external_error_indicator: Vec<u8>,
                             id: MessageId)
                             -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::PutFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::PutFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Post` request indicating success.
@@ -269,12 +242,8 @@ impl Node {
                              name: DataIdentifier,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::PostSuccess(name, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::PostSuccess(name, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Post` request indicating failure.
@@ -285,16 +254,12 @@ impl Node {
                              external_error_indicator: Vec<u8>,
                              id: MessageId)
                              -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::PostFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::PostFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Delete` request indicating success.
@@ -304,12 +269,8 @@ impl Node {
                                name: DataIdentifier,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::DeleteSuccess(name, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::DeleteSuccess(name, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
     /// Respond to a `Delete` request indicating failure.
@@ -320,35 +281,53 @@ impl Node {
                                external_error_indicator: Vec<u8>,
                                id: MessageId)
                                -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::DeleteFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Response(Response::DeleteFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
-    /// Send a `Refresh` request from `src` to `src` to trigger churn.
-    ///
-    /// This is intended to be sent from a group authority (`src`) to itself whenever a node joins
-    /// or leaves the group. If the quorum is reached, i. e. enough members agree that a change has
-    /// happened, the churn mechanism is triggered to adapt to the change.
+    /// Respond to a `GetAccountInfo` request indicating success.
+    pub fn send_get_account_info_success(&self,
+                                         src: Authority,
+                                         dst: Authority,
+                                         data_stored: u64,
+                                         space_available: u64,
+                                         id: MessageId)
+                                         -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetAccountInfoSuccess {
+            id: id,
+            data_stored: data_stored,
+            space_available: space_available,
+        });
+        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
+    }
+
+    /// Respond to a `GetAccountInfo` request indicating failure.
+    pub fn send_get_account_info_failure(&self,
+                                         src: Authority,
+                                         dst: Authority,
+                                         external_error_indicator: Vec<u8>,
+                                         id: MessageId)
+                                         -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetAccountInfoFailure {
+            id: id,
+            external_error_indicator: external_error_indicator,
+        });
+        self.send_action(src, dst, user_msg, CLIENT_GET_PRIORITY)
+    }
+
+    /// Send a `Refresh` request from `src` to `dst` to trigger churn.
     pub fn send_refresh_request(&self,
                                 src: Authority,
                                 dst: Authority,
                                 content: Vec<u8>,
                                 id: MessageId)
                                 -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Request(Request::Refresh(content, id)),
-        };
-        self.send_action(routing_msg)
+        let user_msg = UserMessage::Request(Request::Refresh(content, id));
+        self.send_action(src, dst, user_msg, RELOCATE_PRIORITY)
     }
 
     /// Returns the names of the nodes in the routing table which are closest to the given one.
@@ -378,9 +357,17 @@ impl Node {
         self.receive_action_result(&result_rx)
     }
 
-    fn send_action(&self, routing_msg: RoutingMessage) -> Result<(), InterfaceError> {
+    fn send_action(&self,
+                   src: Authority,
+                   dst: Authority,
+                   user_msg: UserMessage,
+                   priority: u8)
+                   -> Result<(), InterfaceError> {
         try!(self.action_sender.send(Action::NodeSendMessage {
-            content: routing_msg,
+            src: src,
+            dst: dst,
+            content: user_msg,
+            priority: priority,
             result_tx: self.interface_result_tx.clone(),
         }));
 

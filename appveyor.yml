@@ -7,7 +7,6 @@ environment:
 branches:
   only:
     - master
-
 clone_depth: 50
 
 install:

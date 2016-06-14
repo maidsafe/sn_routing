@@ -47,7 +47,7 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap_result!(Client::new(sender, Some(full_id), false));
+        let routing_client = unwrap_result!(Client::new(sender, Some(full_id)));
 
         // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
         // requests to the network.
@@ -96,7 +96,7 @@ impl ExampleClient {
                            unwrap_result!(String::from_utf8(external_error_indicator)));
                     return None;
                 }
-                Event::Disconnected => self.disconnected(),
+                Event::Terminate | Event::RestartRequired => self.disconnected(),
                 _ => (),
             }
         }
@@ -138,7 +138,7 @@ impl ExampleClient {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }
-                Event::Disconnected => self.disconnected(),
+                Event::Terminate | Event::RestartRequired => self.disconnected(),
                 _ => (),
             }
         }

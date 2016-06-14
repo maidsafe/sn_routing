@@ -52,7 +52,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone(), false, first));
+        let node = unwrap_result!(Node::new(sender.clone(), first));
 
         ExampleNode {
             node: node,
@@ -87,13 +87,12 @@ impl ExampleNode {
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
                 }
-                Event::Disconnected => {
-                    trace!("{} Received disconnected event", self.get_debug_name());
+                Event::Terminate => {
+                    trace!("{} Received Terminate event", self.get_debug_name());
                 }
-                Event::GetNodeNameFailed => {
-                    let _ =
-                        mem::replace(&mut self.node,
-                                     unwrap_result!(Node::new(self.sender.clone(), false, false)));
+                Event::RestartRequired => {
+                    let _ = mem::replace(&mut self.node,
+                                         unwrap_result!(Node::new(self.sender.clone(), false)));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -121,6 +120,10 @@ impl ExampleNode {
             }
             Request::Delete(..) => {
                 warn!("{:?} ExampleNode: Delete unimplemented.",
+                      self.get_debug_name());
+            }
+            Request::GetAccountInfo(..) => {
+                warn!("{:?} ExampleNode: GetAccountInfo unimplemented.",
                       self.get_debug_name());
             }
             Request::Refresh(content, id) => {

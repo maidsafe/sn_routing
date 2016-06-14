@@ -15,31 +15,48 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use rand::{self, Rng};
+use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
 use std::cmp;
 use std::collections::HashSet;
 use std::sync::mpsc;
-use xor_name::XorName;
+use std::thread;
 
 use action::Action;
 use authority::Authority;
-use core::{Core, Role, RoutingTable, GROUP_SIZE};
+use core::{Core, Role, RoutingTable, GROUP_SIZE, QUORUM_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use error::InterfaceError;
 use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::ContactInfo;
-use messages::{RoutingMessage, MessageContent, Request, Response};
+use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
+               RELOCATE_PRIORITY};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use types::{MessageId, RoutingActionSender};
-
-// kademlia_routing_table::QUORUM_SIZE is private and subject to change!
-const QUORUM_SIZE: usize = 5;
+use xor_name::XorName;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
+
+struct Seed(pub [u32; 4]);
+
+impl Seed {
+    pub fn new() -> Seed {
+        Seed([rand::random(), rand::random(), rand::random(), rand::random()])
+    }
+}
+
+impl Drop for Seed {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            let msg = format!("rng seed = {:?}", self.0);
+            let border = (0..msg.len()).map(|_| "=").collect::<String>();
+            println!("\n{}\n{}\n{}\n", border, msg, border);
+        }
+    }
+}
 
 struct TestNode {
     handle: ServiceHandle,
@@ -58,7 +75,7 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
 
         let (action_tx, core) = mock_crust::make_current(&handle,
-                                                         || Core::new(event_tx, role, None, false));
+                                                         || Core::new(event_tx, role, None));
 
         TestNode {
             handle: handle,
@@ -90,51 +107,59 @@ impl TestNode {
         self.core.routing_table()
     }
 
-    fn send_get_success(&self,
-                        src: Authority,
-                        dst: Authority,
-                        data: Data,
-                        id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetSuccess(data, id)),
+    /// Respond to a `Get` request indicating success and sending the requested data.
+    pub fn send_get_success(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data: Data,
+                            id: MessageId,
+                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
+                            -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg, result_tx)
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
-    fn send_get_failure(&self,
-                        src: Authority,
-                        dst: Authority,
-                        data_id: DataIdentifier,
-                        external_error_indicator: Vec<u8>,
-                        id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        let routing_msg = RoutingMessage {
-            src: src,
-            dst: dst,
-            content: MessageContent::Response(Response::GetFailure {
-                id: id,
-                data_id: data_id,
-                external_error_indicator: external_error_indicator,
-            }),
+    /// Respond to a `Get` request indicating failure.
+    pub fn send_get_failure(&self,
+                            src: Authority,
+                            dst: Authority,
+                            data_id: DataIdentifier,
+                            external_error_indicator: Vec<u8>,
+                            id: MessageId,
+                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
+                            -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::GetFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        let priority = if let Authority::Client { .. } = dst {
+            CLIENT_GET_PRIORITY
+        } else {
+            RELOCATE_PRIORITY
         };
-        self.send_action(routing_msg, result_tx)
+        self.send_action(src, dst, user_msg, priority, result_tx)
     }
 
     fn send_action(&self,
-                   routing_msg: RoutingMessage,
+                   src: Authority,
+                   dst: Authority,
+                   user_msg: UserMessage,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
-        let action = Action::NodeSendMessage {
-            content: routing_msg,
+        try!(self.action_tx.send(Action::NodeSendMessage {
+            src: src,
+            dst: dst,
+            content: user_msg,
             result_tx: result_tx,
-        };
-
-        try!(self.action_tx.send(action));
+            priority: priority,
+        }));
         Ok(())
     }
 }
@@ -152,9 +177,8 @@ impl TestClient {
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
 
-        let (action_tx, core) = mock_crust::make_current(&handle, || {
-            Core::new(event_tx, Role::Client, Some(full_id), false)
-        });
+        let (action_tx, core) =
+            mock_crust::make_current(&handle, || Core::new(event_tx, Role::Client, Some(full_id)));
 
         TestClient {
             handle: handle,
@@ -184,7 +208,10 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id), dst, result_tx)
+        self.send_action(Request::Put(data, message_id),
+                         dst,
+                         DEFAULT_PRIORITY,
+                         result_tx)
     }
 
     fn send_get_request(&mut self,
@@ -193,17 +220,22 @@ impl TestClient {
                         message_id: MessageId,
                         result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                         -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_request, message_id), dst, result_tx)
+        self.send_action(Request::Get(data_request, message_id),
+                         dst,
+                         CLIENT_GET_PRIORITY,
+                         result_tx)
     }
 
     fn send_action(&self,
                    content: Request,
                    dst: Authority,
+                   priority: u8,
                    result_tx: mpsc::Sender<Result<(), InterfaceError>>)
                    -> Result<(), InterfaceError> {
         let action = Action::ClientSendRequest {
             content: content,
             dst: dst,
+            priority: priority,
             result_tx: result_tx,
         };
 
@@ -367,9 +399,16 @@ fn more_than_group_size_nodes() {
 #[test]
 fn failing_connections_group_of_three() {
     let network = Network::new();
+
     network.block_connection(Endpoint(1), Endpoint(2));
+    network.block_connection(Endpoint(2), Endpoint(1));
+
     network.block_connection(Endpoint(1), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(1));
+
     network.block_connection(Endpoint(2), Endpoint(3));
+    network.block_connection(Endpoint(3), Endpoint(2));
+
     let mut nodes = create_connected_nodes(&network, 5);
     verify_kademlia_invariant_for_all_nodes(&nodes);
     drop_node(&mut nodes, 0); // Drop the tunnel node. Node 4 should replace it.
@@ -383,9 +422,24 @@ fn failing_connections_ring() {
     let network = Network::new();
     let len = GROUP_SIZE * 2;
     for i in 0..(len - 1) {
-        network.block_connection(Endpoint(1 + i), Endpoint(1 + (i % len)));
+        let ep0 = Endpoint(1 + i);
+        let ep1 = Endpoint(1 + (i % len));
+
+        network.block_connection(ep0, ep1);
+        network.block_connection(ep1, ep0);
     }
     let nodes = create_connected_nodes(&network, len);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
+fn failing_connections_unidirectional() {
+    let network = Network::new();
+    network.block_connection(Endpoint(1), Endpoint(2));
+    network.block_connection(Endpoint(1), Endpoint(3));
+    network.block_connection(Endpoint(2), Endpoint(3));
+
+    let nodes = create_connected_nodes(&network, 4);
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
@@ -419,9 +473,11 @@ fn node_drops() {
 #[test]
 fn churn() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);;
+
     let mut nodes = create_connected_nodes(&network, 20);
 
-    let mut rng = rand::thread_rng();
     for i in 0..100 {
         let len = nodes.len();
         if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
@@ -471,7 +527,6 @@ fn node_joins_in_front() {
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
-#[ignore]
 #[test]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
@@ -502,6 +557,8 @@ fn check_close_groups_for_group_size_nodes() {
 #[test]
 fn successful_put_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -513,7 +570,7 @@ fn successful_put_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let dst = Authority::ClientManager(*clients[0].name());
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
@@ -544,6 +601,8 @@ fn successful_put_request() {
 #[test]
 fn successful_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -554,7 +613,7 @@ fn successful_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -621,6 +680,8 @@ fn successful_get_request() {
 #[test]
 fn failed_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -631,7 +692,7 @@ fn failed_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -698,6 +759,8 @@ fn failed_get_request() {
 #[test]
 fn disconnect_on_get_request() {
     let network = Network::new();
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -708,7 +771,7 @@ fn disconnect_on_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rand::thread_rng().gen_iter().take(1024).collect();
+    let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());

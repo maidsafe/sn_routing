@@ -55,12 +55,10 @@ pub enum Event {
     NodeLost(XorName, RoutingTable<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
-    /// We have disconnected from the network.
-    Disconnected,
-    /// We failed to relocate as a new node in the network.
-    GetNodeNameFailed,
-    /// We failed to start listening for incoming connections as the first node.
-    NetworkStartupFailed,
+    /// Disconnected or failed to connect - restart required.
+    RestartRequired,
+    /// Startup failed - terminate.
+    Terminate,
     // TODO: Find a better solution for periodic tasks.
     /// This event is sent periodically every time Routing sends the `Heartbeat` messages.
     Tick,
@@ -92,9 +90,8 @@ impl Debug for Event {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }
             Event::Connected => write!(formatter, "Event::Connected"),
-            Event::Disconnected => write!(formatter, "Event::Disconnected"),
-            Event::GetNodeNameFailed => write!(formatter, "Event::GetNodeNameFailed"),
-            Event::NetworkStartupFailed => write!(formatter, "Event::NetworkStartupFailed"),
+            Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
+            Event::Terminate => write!(formatter, "Event::Terminate"),
             Event::Tick => write!(formatter, "Event::Tick"),
         }
     }

@@ -17,9 +17,9 @@
 
 use action::Action;
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::PeerId;
+use crust::{self, PeerId};
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::PeerId;
+use mock_crust::crust::{self, PeerId};
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
@@ -88,6 +88,8 @@ pub enum RoutingError {
     Interface(InterfaceError),
     /// i/o error
     Io(::std::io::Error),
+    /// Crust error
+    Crust(crust::CrustError),
     /// Channel sending error
     SendEventError(SendError<Event>),
     /// Current state is invalid for the operation
@@ -112,6 +114,8 @@ pub enum RoutingError {
     InvalidSource,
     /// Attempted to use a node as a tunnel that is not directly connected
     CannotTunnelThroughTunnel,
+    /// Decoded a user message with an unexpected hash.
+    HashMismatch,
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {
@@ -129,6 +133,12 @@ impl From<::std::io::Error> for RoutingError {
 impl From<InterfaceError> for RoutingError {
     fn from(error: InterfaceError) -> RoutingError {
         RoutingError::Interface(error)
+    }
+}
+
+impl From<crust::CrustError> for RoutingError {
+    fn from(error: crust::CrustError) -> RoutingError {
+        RoutingError::Crust(error)
     }
 }
 

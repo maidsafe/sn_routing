@@ -105,6 +105,17 @@ impl Tunnels {
             .collect()
     }
 
+    /// Removes the pair matching `src_id` and `dst_id` from our tunnel clients
+    pub fn drop_client_pair(&mut self, src_id: PeerId, dst_id: PeerId) -> bool {
+        let (id0, id1) = if src_id < dst_id {
+            (src_id, dst_id)
+        } else {
+            (dst_id, src_id)
+        };
+
+        self.clients.remove(&(id0, id1))
+    }
+
     /// Adds the given `tunnel_id` as a tunnel to `dst_id` if one is needed, otherwise returns
     /// `false`.
     pub fn add(&mut self, dst_id: PeerId, tunnel_id: PeerId) -> bool {
@@ -182,7 +193,7 @@ mod tests {
     use mock_crust::crust::PeerId;
 
     fn id(i: usize) -> PeerId {
-        PeerId(i, 0)
+        PeerId(i)
     }
 
     #[test]

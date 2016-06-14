@@ -62,13 +62,11 @@ use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
-              Response, XorName, GROUP_SIZE};
+              Response, XorName, GROUP_SIZE, QUORUM_SIZE};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha256;
 use utils::recv_with_timeout;
 use routing::DataIdentifier;
-
-const QUORUM_SIZE: usize = 5;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
@@ -86,7 +84,7 @@ impl TestNode {
         let first_node = index == 0;
 
         TestNode {
-            node: unwrap_result!(Node::new(sender, false, first_node)),
+            node: unwrap_result!(Node::new(sender, first_node)),
             _thread_joiner: joiner,
         }
     }
@@ -115,7 +113,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id), false)),
+            client: unwrap_result!(Client::new(sender, Some(full_id))),
             _thread_joiner: joiner,
         }
     }
