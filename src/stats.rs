@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use core::GROUP_SIZE;
 use messages::{DirectMessage, MessageContent, RoutingMessage, Request, Response};
 
 /// The number of messages after which the message statistics should be printed.
@@ -29,6 +30,11 @@ pub struct Stats {
     pub cumulative_client_num: usize,
     pub tunnel_client_pairs: usize,
     pub tunnel_connections: usize,
+
+    /// Messages sent by us on different routes.
+    routes: [usize; GROUP_SIZE],
+    /// Messages we sent unsuccessfully: unacknowledged on all routes.
+    unacked_msgs: usize,
 
     msg_direct_node_identify: usize,
     msg_direct_new_node: usize,
@@ -66,6 +72,17 @@ pub struct Stats {
 }
 
 impl Stats {
+    pub fn count_unacked(&mut self) {
+        self.unacked_msgs += 1;
+    }
+
+    pub fn count_route(&mut self, route: u8) {
+        match self.routes.get_mut(route as usize) {
+            Some(count) => *count += 1,
+            None => error!("Unexpected route number {}", route),
+        }
+    }
+
     /// Increments the counter for the given request.
     pub fn count_request(&mut self, request: &Request) {
         match *request {
@@ -131,45 +148,45 @@ impl Stats {
     fn increment_msg_total(&mut self) {
         self.msg_total += 1;
         if self.msg_total % MSG_LOG_COUNT == 0 {
-            info!("Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised",
+            info!("Stats - Sent {} messages in total, comprising {} bytes, {} uncategorised, \
+                  routes/failed: {:?}/{}",
                   self.msg_total,
                   self.msg_total_bytes,
-                  self.msg_other);
+                  self.msg_other,
+                  self.routes,
+                  self.unacked_msgs);
             info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, ConnectionUnneeded: {}",
                   self.msg_direct_node_identify,
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
-            info!("Stats - Hops - Get: {}, Put: {}, Post: {}, Delete: {}, GetAccountInfo: {}, \
-                   GetNodeName: {}, ExpectCloseNode: {}, GetCloseGroup: {}, Refresh: {}, \
-                   ConnectionInfo: {}, GetSuccess: {}, GetFailure: {}, PutSuccess: {}, \
-                   PutFailure: {}, PostSuccess: {}, PostFailure: {}, DeleteSuccess: {}, \
-                   DeleteFailure: {}, GetAccountInfoSuccess: {}, GetAccountInfoFailure: {}, \
-                   GetCloseGroupResponse: {}, GetNodeNameResponse: {}, Ack: {}, \
-                   GroupMessageHash: {}",
-                  self.msg_get,
-                  self.msg_put,
-                  self.msg_post,
-                  self.msg_delete,
-                  self.msg_get_account_info,
+            info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
+                   GetCloseGroup: {}/{}, ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
                   self.msg_get_node_name,
+                  self.msg_get_node_name_rsp,
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
-                  self.msg_refresh,
-                  self.msg_connection_info,
-                  self.msg_get_success,
-                  self.msg_get_failure,
-                  self.msg_put_success,
-                  self.msg_put_failure,
-                  self.msg_post_success,
-                  self.msg_post_failure,
-                  self.msg_delete_success,
-                  self.msg_delete_failure,
-                  self.msg_get_account_info_success,
-                  self.msg_get_account_info_failure,
                   self.msg_get_close_group_rsp,
-                  self.msg_get_node_name_rsp,
+                  self.msg_connection_info,
                   self.msg_ack,
                   self.msg_hash);
+            info!("Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
+                   Post: {}/{}/{}, Delete: {}/{}/{}, GetAccountInfo: {}/{}/{}, Refresh: {}",
+                  self.msg_get,
+                  self.msg_get_success,
+                  self.msg_get_failure,
+                  self.msg_put,
+                  self.msg_put_success,
+                  self.msg_put_failure,
+                  self.msg_post,
+                  self.msg_post_success,
+                  self.msg_post_failure,
+                  self.msg_delete,
+                  self.msg_delete_success,
+                  self.msg_delete_failure,
+                  self.msg_get_account_info,
+                  self.msg_get_account_info_success,
+                  self.msg_get_account_info_failure,
+                  self.msg_refresh);
         }
     }
 }
