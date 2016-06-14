@@ -1,5 +1,10 @@
 # Safe Vault - Change Log
 
+## [0.9.0]
+- Migrate to the mio-based Crust and the new Routing Request/Response API.
+- Handle `GetAccountInfo` requests to provide information about a client's used
+  and remaining chunk count.
+
 ## [0.8.1]
 - Allow passing `--first` via command line to start the first Vault of a new network.
 - Updated dependencies.

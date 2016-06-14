@@ -8,7 +8,7 @@ license = "GPL-3.0"
 name = "safe_vault"
 readme = "README.md"
 repository = "https://github.com/maidsafe/safe_vault"
-version = "0.8.1"
+version = "0.9.0"
 
 [dependencies]
 accumulator = "~0.4.0"

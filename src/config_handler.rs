@@ -85,7 +85,7 @@ mod test {
         use super::Config;
         use rustc_serialize::json;
 
-        let path = Path::new("installer/common/safe_vault.vault.config").to_path_buf();
+        let path = Path::new("installer/common/sample.vault.config").to_path_buf();
 
         let mut file = match File::open(path) {
             Ok(file) => file,
