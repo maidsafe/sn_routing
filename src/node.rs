@@ -28,6 +28,8 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
+#[cfg(feature = "use-mock-crust")]
+use kademlia_routing_table::RoutingTable;
 use messages::{UserMessage, Request, Response, RELOCATE_PRIORITY, DEFAULT_PRIORITY,
                CLIENT_GET_PRIORITY};
 use xor_name::XorName;
@@ -119,6 +121,12 @@ impl Node {
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
         self.core.borrow_mut().resend_unacknowledged()
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    /// Routing table of this node.
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        self.core.borrow().routing_table().to_names()
     }
 
     #[cfg(feature = "use-mock-crust")]
