@@ -1,5 +1,15 @@
 # Routing - Change Log
 
+## [0.22.0]
+- Migrate to the mio-based Crust.
+- Replace redundant group messages by hashes to save bandwidth.
+- Split up large messages into 20 kB chunks.
+- Improve message statistics; add total message size and count failures.
+- Restart with blacklist if the proxy node denied the connection.
+- Merge message_filter into routing.
+- Some refactoring to clean up the logic in `Core`.
+- Several bug fixes.
+
 ## [0.21.0]
 - Reduce the `XorName` size from 512 to 256 bits.
 
