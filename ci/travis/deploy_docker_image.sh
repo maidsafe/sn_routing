@@ -8,7 +8,7 @@ BUILD_DIR=installer/docker
 CRUST_CONFIG=$BUILD_DIR/$PROJECT_NAME.crust.config
 
 cp target/$TARGET/release/$PROJECT_NAME $BUILD_DIR
-cp -r installer/bundle/* $BUILD_DIR
+cp -r $HOME/config/safe_vault/* $BUILD_DIR
 
 # Define listening ports:
 cat $CRUST_CONFIG \

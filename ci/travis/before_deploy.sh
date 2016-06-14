@@ -24,15 +24,24 @@ fi
 # Create the release archive
 NAME="$PROJECT_NAME-v$PROJECT_VERSION-$PLATFORM"
 
-TMP_DIR=$(mktempd)
+WORK_DIR=$(mktempd)
 OUT_DIR=$(pwd)
 
-mkdir $TMP_DIR/$NAME
-cp target/$TARGET/release/$PROJECT_NAME $TMP_DIR/$NAME
-cp -r installer/bundle/* $TMP_DIR/$NAME
+# Clone the repo with the config files
+CONFIG_DIR=$HOME/config
+CONFIG_REPO_SLUG="maidsafe/release_config"
 
-pushd $TMP_DIR
+if [ ! -d "$CONFIG_DIR" ]; then
+  mkdir -p $CONFIG_DIR
+  git clone https://${GH_TOKEN}@github.com/${CONFIG_REPO_SLUG} $CONFIG_DIR
+fi
+
+mkdir $WORK_DIR/$NAME
+cp target/$TARGET/release/$PROJECT_NAME $WORK_DIR/$NAME
+cp -r ${CONFIG_DIR}/safe_vault/* $WORK_DIR/$NAME
+
+pushd $WORK_DIR
 tar czf $OUT_DIR/$NAME.tar.gz *
 popd
 
-rm -r $TMP_DIR
+rm -r $WORK_DIR
