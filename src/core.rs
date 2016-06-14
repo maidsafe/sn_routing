@@ -90,6 +90,7 @@ enum State {
     Node,
 }
 
+/// RoutingTable type for routing
 pub type RoutingTable = ::kademlia_routing_table::RoutingTable<NodeInfo>;
 
 /// Info about nodes in the routing table.
