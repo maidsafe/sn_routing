@@ -405,7 +405,14 @@ else
   BuiltVault="$RootDir/target/release/$VaultName"
 fi
 
-if [ ! -f BuiltVault ]; then
+# If we are not running on travis CI, delete the binary to force a fresh build.
+# If we are running on travis, the binary should be freshly built already, and
+# there is no need to rebuild it.
+if [ -z "$TRAVIS" ]; then
+  rm -f "$BuiltVault"
+fi
+
+if [ ! -f "$BuiltVault" ]; then
   cd "$RootDir"
   cargo update
 
