@@ -36,8 +36,7 @@
 //! will be a member of, and without a majority in the group it cannot forge a message from that
 //! group.
 //!
-//! The library also provides different types for the messages' data. The data types are encoded
-//! with Concise Binary Object Representation (CBOR).
+//! The library also provides different types for the messages' data.
 //!
 //!
 //! # Usage
@@ -92,47 +91,6 @@
 //! group authority only has an effect if sufficiently many other nodes in that authority send the
 //! same message.
 //!
-//!
-//! ## Example: Put message flow for immutable data
-//!
-//! An example implementation of a vault for storing and retrieving `ImmutableData` is included
-//! with the code of this library. The flow of a `Put` request there moves through the following
-//! authorities:
-//!
-//! * A `Client` that wants to store a piece of data on the network.
-//! * The `ClientManager` group authority that is responsible for that particular client. The nodes
-//! in this group have access to metadata about this client and can e. g. verify that it has
-//! required permissions or quota to store the data. The `ClientManager`'s address is the `XorName`
-//! of the client itself, so it consists of the nodes closest to that name.
-//! * The `NaeManager` group authority which is responsible for that particular piece of data and
-//! knows where in the network it should be stored. Its address is the `XorName` of the data.
-//! * The `ManagedNode`s are the individual nodes that actually store the data. This could be just
-//! one, but let's assume that data is stored redundantly in more than one place.
-//!
-//! The message flow from the client to the managed nodes looks like this:
-//!
-//! * The client sends a `Put` request to the `ClientManager`, i. e. the sender is the individual
-//! `Client` and the receiver is a group of nodes with addresses close to the client's name.
-//! * Each node in the `ClientManager` group performs validation and updates metadata (which may
-//! involve further messages not considered in this example). If valid, it sends a `PutSuccess`
-//! response back to the client, and a `Put` request to the `NaeManager` with the data's `XorName`.
-//! In both cases, the sender is the `ClientManager`, not the individual node.
-//! * Each node in the `NaeManager` chooses a number of individual nodes that are responsible for
-//! storing this specific piece of data. This needs to happen in a deterministic way so that the
-//! members of the `NaeManager` agree on the responsible nodes. Then they finally send a `Put`
-//! request to each of these. Here the sender is the `NaeManager`, but the recipient is the
-//! individual `ManagedNode`.
-//! * Each `ManagedNode` locally stores the data.
-//!
-//! These steps need to be implemented by the user of the library. Each node needs to handle all
-//! these cases, as it can be simultaneously a `ManagedNode` and a member of several different
-//! `ClientManager`s and `NaeManager`s. A client, however, does not act as a node or vice versa.
-//!
-//! Transparently to the user, the `routing` library deals with message quora, so the user will only
-//! receive a message from a `Client` or `Node` if it was either sent
-//!
-//! * by a client or individual node, or
-//! * by a sufficient number of members of a group authority.
 //!
 //! # Sequence diagrams
 //!
