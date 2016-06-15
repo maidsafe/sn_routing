@@ -28,7 +28,7 @@ case "$TARGET" in
   arm*-gnueabihf)
     GCC_PREFIX=arm-linux-gnueabihf-
     ;;
-  x86_64-unknown-linux-musl)
+  *-unknown-linux-musl)
     ./ci/travis/install_musl.sh
     GCC_PREFIX=musl-
     ;;
