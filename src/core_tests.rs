@@ -1,4 +1,4 @@
-// copyright 2016 maidsafe.net limited.
+// Copyright 2016 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -34,29 +34,12 @@ use kademlia_routing_table::{RoutingTable, ContactInfo};
 use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
                RELOCATE_PRIORITY};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use libsodium_seeded_prng;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
-
-struct Seed(pub [u32; 4]);
-
-impl Seed {
-    pub fn new() -> Seed {
-        Seed([rand::random(), rand::random(), rand::random(), rand::random()])
-    }
-}
-
-impl Drop for Seed {
-    fn drop(&mut self) {
-        if thread::panicking() {
-            let msg = format!("rng seed = {:?}", self.0);
-            let border = (0..msg.len()).map(|_| "=").collect::<String>();
-            println!("\n{}\n{}\n{}\n", border, msg, border);
-        }
-    }
-}
 
 struct TestNode {
     handle: ServiceHandle,
@@ -342,10 +325,9 @@ fn node_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
                         bucket_index: usize)
                         -> HashSet<XorName> {
     routing_tables.iter()
-                  .filter(|routing_table| target.bucket_index(routing_table.our_name())
-                                          == bucket_index)
-                  .map(|routing_table| routing_table.our_name().clone())
-                  .collect()
+        .filter(|routing_table| target.bucket_index(routing_table.our_name()) == bucket_index)
+        .map(|routing_table| routing_table.our_name().clone())
+        .collect()
 }
 
 // Verify that the kademlia invariant is upheld for the node at `index`.
@@ -383,7 +365,7 @@ fn verify_kademlia_invariant_for_all_nodes(nodes: &[TestNode]) {
 }
 
 fn test_nodes(size: usize) {
-    let network = Network::new();
+    let network = Network::new(None);
     let nodes = create_connected_nodes(&network, size);
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -405,7 +387,7 @@ fn more_than_group_size_nodes() {
 
 #[test]
 fn failing_connections_group_of_three() {
-    let network = Network::new();
+    let network = Network::new(None);
 
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(2), Endpoint(1));
@@ -426,7 +408,7 @@ fn failing_connections_group_of_three() {
 
 #[test]
 fn failing_connections_ring() {
-    let network = Network::new();
+    let network = Network::new(None);
     let len = GROUP_SIZE * 2;
     for i in 0..(len - 1) {
         let ep0 = Endpoint(1 + i);
@@ -441,7 +423,7 @@ fn failing_connections_ring() {
 
 #[test]
 fn failing_connections_unidirectional() {
-    let network = Network::new();
+    let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(1), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
@@ -452,7 +434,7 @@ fn failing_connections_unidirectional() {
 
 #[test]
 fn client_connects_to_nodes() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
 
     // Create one client that tries to connect to the network.
@@ -470,7 +452,7 @@ fn client_connects_to_nodes() {
 
 #[test]
 fn node_drops() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
     drop_node(&mut nodes, 0);
 
@@ -479,26 +461,26 @@ fn node_drops() {
 
 #[test]
 fn churn() {
-    let network = Network::new();
-    let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);;
+    let network = Network::new(None);
+    let rng_ptr = libsodium_seeded_prng::get_rng();
+    let rng = &mut *rng_ptr.borrow_mut();
 
     let mut nodes = create_connected_nodes(&network, 20);
 
     for i in 0..100 {
         let len = nodes.len();
-        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
-            let node0 = *nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
-            let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
-            let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
+        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(rng) == 0 {
+            let node0 = *nodes.remove(Range::new(0, len).ind_sample(rng)).name();
+            let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(rng)).name();
+            let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(rng)).name();
             trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
                    i,
                    node0,
                    node1,
                    node2);
         } else {
-            let proxy = Range::new(0, len).ind_sample(&mut rng);
-            let index = Range::new(0, len + 1).ind_sample(&mut rng);
+            let proxy = Range::new(0, len).ind_sample(rng);
+            let index = Range::new(0, len + 1).ind_sample(rng);
             let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
             nodes.insert(index,
                          TestNode::new(&network, Role::Node, Some(config.clone()), None));
@@ -524,7 +506,7 @@ fn churn() {
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -538,7 +520,7 @@ fn node_joins_in_front() {
 #[test]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -556,7 +538,7 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn check_close_groups_for_group_size_nodes() {
-    let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
+    let nodes = create_connected_nodes(&Network::new(None), GROUP_SIZE);
     let close_groups_complete = nodes.iter()
         .all(|n| nodes.iter().all(|m| m.name() == n.name() || m.close_group().contains(n.name())));
     assert!(close_groups_complete);
@@ -564,9 +546,7 @@ fn check_close_groups_for_group_size_nodes() {
 
 #[test]
 fn successful_put_request() {
-    let network = Network::new();
-    let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -578,7 +558,7 @@ fn successful_put_request() {
 
     let (result_tx, _result_rx) = mpsc::channel();
     let dst = Authority::ClientManager(*clients[0].name());
-    let bytes = rng.gen_iter().take(1024).collect();
+    let bytes = libsodium_seeded_prng::random_bytes(1024);
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
@@ -608,9 +588,7 @@ fn successful_put_request() {
 
 #[test]
 fn successful_get_request() {
-    let network = Network::new();
-    let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -621,7 +599,7 @@ fn successful_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rng.gen_iter().take(1024).collect();
+    let bytes = libsodium_seeded_prng::random_bytes(1024);
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -687,9 +665,7 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let network = Network::new();
-    let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -700,7 +676,7 @@ fn failed_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rng.gen_iter().take(1024).collect();
+    let bytes = libsodium_seeded_prng::random_bytes(1024);
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
@@ -766,9 +742,7 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let network = Network::new();
-    let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = vec![TestClient::new(&network,
                                            Some(Config::with_contacts(&[nodes[0]
@@ -779,7 +753,7 @@ fn disconnect_on_get_request() {
     expect_event!(clients[0], Event::Connected);
 
     let (result_tx, _result_rx) = mpsc::channel();
-    let bytes = rng.gen_iter().take(1024).collect();
+    let bytes = libsodium_seeded_prng::random_bytes(1024);
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());

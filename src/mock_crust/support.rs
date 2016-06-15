@@ -21,6 +21,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
+use libsodium_seeded_prng::{self, Seed};
 use super::crust::{ConnectionInfoResult, CrustError, CrustEventSender, Event, PrivConnectionInfo,
                    PeerId, PubConnectionInfo};
 
@@ -33,16 +34,18 @@ pub struct NetworkImpl {
     next_endpoint: usize,
     queue: VecDeque<(Endpoint, Endpoint, Packet)>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
+    _rng_seed: Seed,
 }
 
 impl Network {
     /// Create new mock Network.
-    pub fn new() -> Self {
+    pub fn new(optional_seed: Option<[u32; 4]>) -> Self {
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             next_endpoint: 0,
             queue: VecDeque::new(),
             blocked_connections: HashSet::new(),
+            _rng_seed: unwrap_result!(libsodium_seeded_prng::init(optional_seed)),
         })))
     }
 
@@ -125,7 +128,7 @@ impl Network {
 
 impl Default for Network {
     fn default() -> Network {
-        Network::new()
+        Network::new(None)
     }
 }
 

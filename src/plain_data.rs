@@ -72,32 +72,17 @@ impl Debug for PlainData {
 
 #[cfg(test)]
 mod test {
-
-    extern crate rand;
-
-    use xor_name::XorName;
     use super::PlainData;
-    use self::rand::Rng;
-    use sodiumoxide::crypto;
+    use libsodium_seeded_prng;
+    use rand;
     use rustc_serialize::hex::ToHex;
-
-    fn generate_random() -> Vec<u8> {
-        let size = 1025;
-        let mut data = Vec::with_capacity(size);
-        let mut rng = rand::thread_rng();
-        for _ in 0..size {
-            data.push(rng.gen::<u8>());
-        }
-        data
-    }
-
 
     #[test]
     fn basic_check() {
-        let name1 = XorName(crypto::hash::sha256::hash(&generate_random()).0);
-        let name2 = XorName(crypto::hash::sha256::hash(&generate_random()).0);
-        let value1 = generate_random();
-        let value2 = generate_random();
+        let name1 = rand::random();
+        let name2 = rand::random();
+        let value1 = libsodium_seeded_prng::random_bytes(1025);
+        let value2 = libsodium_seeded_prng::random_bytes(1025);
         let plain_data1 = PlainData::new(name1, value1.clone());
         let plain_data2 = PlainData::new(name2, value2.clone());
         assert!(plain_data1.name() != plain_data2.name());

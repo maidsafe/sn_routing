@@ -178,6 +178,8 @@ extern crate lru_time_cache;
 extern crate kademlia_routing_table;
 extern crate rand;
 extern crate rustc_serialize;
+#[cfg(any(feature = "use-mock-crust", test))]
+extern crate libsodium_seeded_prng;
 extern crate sodiumoxide;
 
 mod action;
