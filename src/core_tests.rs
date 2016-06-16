@@ -39,6 +39,30 @@ use xor_name::XorName;
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
 
+/// Expect that the node raised an event matching the given pattern, panics if not.
+macro_rules! expect_event {
+    ($node:expr, $pattern:pat) => {
+        loop {
+            match $node.event_rx.try_recv() {
+                Ok($pattern) => break,
+                Ok(Event::Tick) => (),
+                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+            }
+        }
+    }
+}
+
+/// Expects that the node raised no event, panics otherwise.
+macro_rules! expect_no_event {
+    ($node:expr) => {
+        match $node.event_rx.try_recv() {
+            Ok(Event::Tick) => (),
+            Err(mpsc::TryRecvError::Empty) => (),
+            other => panic!("Expected no event, got {:?}", other),
+        }
+    }
+}
+
 struct Seed(pub [u32; 4]);
 
 impl Seed {
@@ -143,26 +167,6 @@ impl TestClient {
     }
 }
 
-/// Expects that the node raised an event matching the given pattern, panics if not.
-macro_rules! expect_event {
-    ($node:expr, $pattern:pat) => {
-        match $node.event_rx.try_recv() {
-            Ok($pattern) => (),
-            other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
-        }
-    }
-}
-
-/// Expects that the node raised no event, panics otherwise.
-macro_rules! expect_no_event {
-    ($node:expr) => {
-        match $node.event_rx.try_recv() {
-            Err(mpsc::TryRecvError::Empty) => (),
-            other => panic!("Expected no event, got {:?}", other),
-        }
-    }
-}
-
 /// Process all events. Returns whether there were any events.
 fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     let mut result = false;
@@ -202,18 +206,40 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
     for node in &nodes {
         expect_event!(node, Event::Connected);
+
         for _ in 0..n {
             expect_event!(node, Event::NodeAdded(..))
         }
+
         while let Ok(event) = node.event_rx.try_recv() {
-            if let Event::NodeAdded(..) = event {
-                continue;
+            match event {
+                Event::NodeAdded(..) => (),
+                Event::Tick => (),
+                event => panic!("Got unexpected event: {:?}", event),
             }
-            panic!("Got unexpected event: {:?}", event);
         }
     }
 
     nodes
+}
+
+fn create_connected_clients(network: &Network, nodes: &mut [TestNode], size: usize)
+    -> Vec<TestClient>
+{
+    let contact = nodes[0].handle.endpoint();
+    let mut clients = Vec::with_capacity(size);
+
+    for _ in 0..size {
+        let client = TestClient::new(&network,
+                                     Some(Config::with_contacts(&[contact])),
+                                     None);
+        clients.push(client);
+
+        let _ = poll_all(nodes, &mut clients);
+        expect_event!(clients[clients.len() - 1], Event::Connected);
+    }
+
+    clients
 }
 
 // Drop node at index and verify its close group receives NodeLost.
@@ -234,6 +260,28 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
                 _ => panic!("Event::NodeLost({:?}) not received", name),
             }
         }
+    }
+}
+
+// Randomly add or remove some nodes, causing churn.
+// Note: caller has to call `poll_all` afterwards, so the nodes get notified
+// about the churn.
+fn random_churn<R: Rng>(rng: &mut R,
+                        network: &Network,
+                        nodes: &mut Vec<TestNode>)
+{
+    let len = nodes.len();
+
+    if len > GROUP_SIZE + 2 && rng.gen_weighted_bool(3) {
+        let _ = nodes.remove(rng.gen_range(0, len));
+        let _ = nodes.remove(rng.gen_range(0, len - 1));
+        let _ = nodes.remove(rng.gen_range(0, len - 2));
+    } else {
+        let proxy = rng.gen_range(0, len);
+        let index = rng.gen_range(0, len + 1);
+        let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
+
+        nodes.insert(index, TestNode::new(&network, false, Some(config), None));
     }
 }
 
@@ -259,6 +307,10 @@ fn node_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
         .filter(|routing_table| target.bucket_index(routing_table.our_name()) == bucket_index)
         .map(|routing_table| *routing_table.our_name())
         .collect()
+}
+
+fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
+    nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
 // Verify that the kademlia invariant is upheld for the node at `index`.
@@ -292,6 +344,65 @@ pub fn verify_kademlia_invariant(routing_tables: &[RoutingTable<XorName>], index
 fn verify_kademlia_invariant_for_all_nodes(nodes: &[TestNode]) {
     for node_index in 0..nodes.len() {
         verify_kademlia_invariant_for_node(nodes, node_index);
+    }
+}
+
+// Generate a vector of random bytes of the given length.
+fn gen_bytes<R: Rng>(rng: &mut R, size: usize) -> Vec<u8> {
+    rng.gen_iter().take(size).collect()
+}
+
+// Generate random immutable data with the given payload length.
+fn gen_immutable_data<R: Rng>(rng: &mut R, size: usize) -> Data {
+    Data::Immutable(ImmutableData::new(gen_bytes(rng, 1024)))
+}
+
+// Assert that the given node received a Get request with the given details.
+fn expect_get_request(node: &TestNode,
+                      expected_src: Authority,
+                      expected_dst: Authority,
+                      expected_data_id: DataIdentifier,
+                      expected_message_id: MessageId)
+{
+    loop {
+        match node.event_rx.try_recv() {
+            Ok(Event::Request { request: Request::Get(data_id, message_id),
+                                src,
+                                dst }) => {
+                assert_eq!(src, expected_src);
+                assert_eq!(dst, expected_dst);
+                assert_eq!(data_id, expected_data_id);
+                assert_eq!(message_id, expected_message_id);
+
+                break;
+            }
+            Ok(_) => (),
+            _ => panic!("Event::Request not received"),
+        }
+    }
+}
+
+fn expect_get_success(node: &TestNode,
+                      expected_src: Authority,
+                      expected_dst: Authority,
+                      expected_data: Data,
+                      expected_message_id: MessageId)
+{
+    loop {
+        match node.event_rx.try_recv() {
+            Ok(Event::Response { response: Response::GetSuccess(data, message_id),
+                                 src,
+                                 dst }) => {
+                assert_eq!(src, expected_src);
+                assert_eq!(dst, expected_dst);
+                assert_eq!(data, expected_data);
+                assert_eq!(message_id, expected_message_id);
+
+                break;
+            }
+            Ok(_) => (),
+            _ => panic!("Event::Response not received"),
+        }
     }
 }
 
@@ -382,16 +493,7 @@ fn failing_connections_unidirectional() {
 fn client_connects_to_nodes() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
-
-    // Create one client that tries to connect to the network.
-    let client = TestClient::new(&network,
-                                 Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
-                                 None);
-    let mut clients = vec![client];
-
-    let _ = poll_all(&mut nodes, &mut clients);
-
-    expect_event!(clients[0], Event::Connected);
+    let _ = create_connected_clients(&network, &mut nodes, 1);
 }
 
 #[test]
@@ -402,9 +504,9 @@ fn messages_accumulate_with_quorum() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 15);
 
-    let data = Data::Immutable(ImmutableData::new(rng.gen_iter().take(8).collect()));
+    let data = gen_immutable_data(&mut rng, 8);
     let src = Authority::NaeManager(data.name()); // The data's NaeManager.
-    nodes.sort_by(|node0, node1| src.name().cmp_distance(&node0.name(), &node1.name()));
+    sort_nodes_by_distance_to(&mut nodes, src.name());
 
     let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
         assert!(node.inner
@@ -502,37 +604,20 @@ fn node_drops() {
 
 #[test]
 fn churn() {
-    let network = Network::new();
     let seed = Seed::new();
-    let mut rng = XorShiftRng::from_seed(seed.0);
+    let mut rng = XorShiftRng::from_seed(seed.0);;
 
+    let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 20);
 
     for i in 0..100 {
-        let len = nodes.len();
-        if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
-            let node0 = nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
-            let node1 = nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
-            let node2 = nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
-            trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
-                   i,
-                   node0,
-                   node1,
-                   node2);
-        } else {
-            let proxy = Range::new(0, len).ind_sample(&mut rng);
-            let index = Range::new(0, len + 1).ind_sample(&mut rng);
-            let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
-            nodes.insert(index,
-                         TestNode::new(&network, false, Some(config.clone()), None));
-            trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
-        }
-
+        random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
         for node in &mut nodes {
             node.inner.clear_state();
         }
+
         verify_kademlia_invariant_for_all_nodes(&nodes);
     }
 }
@@ -549,7 +634,6 @@ fn node_joins_in_front() {
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
 
-#[ignore]
 #[test]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
@@ -579,22 +663,15 @@ fn check_close_groups_for_group_size_nodes() {
 
 #[test]
 fn successful_put_request() {
-    let network = Network::new();
     let seed = Seed::new();
     let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
-    let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0]
-                                                                            .handle
-                                                                            .endpoint()])),
-                                           None)];
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_event!(clients[0], Event::Connected);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let dst = Authority::ClientManager(clients[0].name());
-    let bytes = rng.gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(bytes);
-    let data = Data::Immutable(immutable_data);
+    let data = gen_immutable_data(&mut rng, 1024);
     let message_id = MessageId::new();
 
     assert!(clients[0].inner.send_put_request(dst,
@@ -625,23 +702,16 @@ fn successful_put_request() {
 
 #[test]
 fn successful_get_request() {
-    let network = Network::new();
     let seed = Seed::new();
     let mut rng = XorShiftRng::from_seed(seed.0);
-    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
-    let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0]
-                                                                            .handle
-                                                                            .endpoint()])),
-                                           None)];
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_event!(clients[0], Event::Connected);
 
-    let bytes = rng.gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(bytes);
-    let data = Data::Immutable(immutable_data.clone());
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let data = gen_immutable_data(&mut rng, 1024);
     let dst = Authority::NaeManager(data.name());
-    let data_request = DataIdentifier::Immutable(data.name());
+    let data_request = data.identifier();
     let message_id = MessageId::new();
 
     assert!(clients[0].inner
@@ -700,27 +770,20 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let network = Network::new();
     let seed = Seed::new();
     let mut rng = XorShiftRng::from_seed(seed.0);
-    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
-    let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0]
-                                                                            .handle
-                                                                            .endpoint()])),
-                                           None)];
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_event!(clients[0], Event::Connected);
 
-    let bytes = rng.gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(bytes);
-    let data = Data::Immutable(immutable_data.clone());
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let data = gen_immutable_data(&mut rng, 1024);
     let dst = Authority::NaeManager(data.name());
-    let data_request = DataIdentifier::Immutable(data.name());
+    let data_request = data.identifier();
     let message_id = MessageId::new();
 
     assert!(clients[0].inner
-                      .send_get_request(dst, data_request.clone(), message_id)
+                      .send_get_request(dst, data_request, message_id)
                       .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
@@ -774,20 +837,14 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let network = Network::new();
     let seed = Seed::new();
     let mut rng = XorShiftRng::from_seed(seed.0);
-    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
-    let mut clients = vec![TestClient::new(&network,
-                                           Some(Config::with_contacts(&[nodes[0]
-                                                                            .handle
-                                                                            .endpoint()])),
-                                           Some(Endpoint(2 * GROUP_SIZE)))];
-    let _ = poll_all(&mut nodes, &mut clients);
-    expect_event!(clients[0], Event::Connected);
 
-    let bytes = rng.gen_iter().take(1024).collect();
-    let immutable_data = ImmutableData::new(bytes);
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let immutable_data = ImmutableData::new(gen_bytes(&mut rng, 1024));
     let data = Data::Immutable(immutable_data.clone());
     let dst = Authority::NaeManager(data.name());
     let data_request = DataIdentifier::Immutable(data.name());
@@ -833,5 +890,207 @@ fn disconnect_on_get_request() {
         if let Ok(Event::Response { .. }) = client.event_rx.try_recv() {
             panic!("Unexpected Event::Response received");
         }
+    }
+}
+
+#[test]
+fn request_during_churn_node_to_self() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let index = rng.gen_range(0, nodes.len());
+    let name = nodes[index].name();
+
+    let src = Authority::ManagedNode(name);
+    let dst = Authority::ManagedNode(name);
+    let data = gen_immutable_data(&mut rng, 8);
+    let data_id = data.identifier();
+    let message_id = MessageId::new();
+
+    unwrap_result!(nodes[index].inner
+                               .send_get_request(src.clone(),
+                                                 dst.clone(),
+                                                 data_id,
+                                                 message_id));
+
+    poll_all(&mut nodes, &mut []);
+    expect_get_request(&nodes[index], src, dst, data_id, message_id);
+}
+
+#[test]
+fn request_during_churn_node_to_node() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let indices = rand::sample(&mut rng, 0..nodes.len(), 2);
+    let (index0, index1) = (indices[0], indices[1]);
+    let name0 = nodes[index0].name();
+    let name1 = nodes[index1].name();
+
+    let src = Authority::ManagedNode(name0);
+    let dst = Authority::ManagedNode(name1);
+    let data = gen_immutable_data(&mut rng, 8);
+    let data_id = data.identifier();
+    let message_id = MessageId::new();
+
+    unwrap_result!(nodes[index0].inner
+                                .send_get_request(src.clone(),
+                                                  dst.clone(),
+                                                  data_id,
+                                                  message_id));
+
+    poll_all(&mut nodes, &mut []);
+    expect_get_request(&nodes[index1], src, dst, data_id, message_id);
+}
+
+#[test]
+fn request_during_churn_node_to_group() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let index = rng.gen_range(0, nodes.len());
+
+    let data = gen_immutable_data(&mut rng, 8);
+    let src = Authority::ManagedNode(nodes[index].name());
+    let dst = Authority::NaeManager(data.name());
+    let data_id = data.identifier();
+    let message_id = MessageId::new();
+
+    unwrap_result!(nodes[index].inner
+                               .send_get_request(src.clone(),
+                                                 dst.clone(),
+                                                 data_id,
+                                                 message_id));
+
+    poll_all(&mut nodes, &mut []);
+
+    // This puts the members of the dst group to the beginning of the vec.
+    sort_nodes_by_distance_to(&mut nodes, dst.name());
+
+    for node in &nodes[0..GROUP_SIZE] {
+        expect_get_request(node, src.clone(), dst.clone(), data_id, message_id);
+    }
+}
+
+#[test]
+fn request_during_churn_group_to_self() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let index = rng.gen_range(0, nodes.len());
+    let name = nodes[index].name();
+
+    let src = Authority::NodeManager(name);
+    let dst = Authority::NodeManager(name);
+    let data = gen_immutable_data(&mut rng, 8);
+    let data_id = data.identifier();
+    let message_id = MessageId::new();
+
+    sort_nodes_by_distance_to(&mut nodes, &name);
+
+    for node in &nodes[0..GROUP_SIZE] {
+        unwrap_result!(node.inner
+                           .send_get_request(src.clone(),
+                                             dst.clone(),
+                                             data_id,
+                                             message_id));
+    }
+
+    poll_all(&mut nodes, &mut []);
+
+    for node in &nodes[0..GROUP_SIZE] {
+        expect_get_request(node, src.clone(), dst.clone(), data_id, message_id);
+    }
+}
+
+#[test]
+fn request_during_churn_group_to_node() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let data = gen_immutable_data(&mut rng, 8);
+    let src = Authority::NaeManager(data.name());
+
+    sort_nodes_by_distance_to(&mut nodes, src.name());
+
+    let index = rng.gen_range(0, nodes.len());
+    let dst = Authority::ManagedNode(nodes[index].name());
+    let message_id = MessageId::new();
+
+    for node in &nodes[0..GROUP_SIZE] {
+        unwrap_result!(node.inner
+                           .send_get_success(src.clone(),
+                                             dst.clone(),
+                                             data.clone(),
+                                             message_id));
+    }
+
+    poll_all(&mut nodes, &mut []);
+    expect_get_success(&nodes[index], src, dst, data, message_id);
+}
+
+#[test]
+fn request_during_churn_group_to_group() {
+    let seed = Seed::new();
+    let mut rng = XorShiftRng::from_seed(seed.0);
+
+    let network = Network::new();
+    let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
+
+    random_churn(&mut rng, &network, &mut nodes);
+
+    let indices = rand::sample(&mut rng, 0..nodes.len(), 2);
+    let (index0, index1) = (indices[0], indices[1]);
+
+    let name0 = nodes[index0].name();
+    let name1 = nodes[index1].name();
+
+    let src = Authority::NodeManager(name0);
+    let dst = Authority::NodeManager(name1);
+    let data = gen_immutable_data(&mut rng, 8);
+    let data_id = data.identifier();
+    let message_id = MessageId::new();
+
+    sort_nodes_by_distance_to(&mut nodes, &name0);
+
+    for node in &nodes[0..GROUP_SIZE] {
+        unwrap_result!(node.inner
+                           .send_get_request(src.clone(),
+                                             dst.clone(),
+                                             data_id,
+                                             message_id));
+    }
+
+    poll_all(&mut nodes, &mut []);
+
+    sort_nodes_by_distance_to(&mut nodes, &name1);
+
+    for node in &nodes[0..GROUP_SIZE] {
+        expect_get_request(node, src.clone(), dst.clone(), data_id, message_id);
     }
 }
