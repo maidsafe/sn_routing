@@ -2,14 +2,25 @@
 #
 # Create a package for Vault Release binaries
 
-# Stop the script if any command fails
-set -o errtrace
-trap 'exit' ERR
+set -e
 
 # Get current version and executable's name from Cargo.toml
 RootDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-Version=$(cargo pkgid | sed -e "s/.*[:#]\(.*\)/\1/")
-VaultName=$(cargo pkgid | sed -e "s/.*\(\<.*\>\)[:#].*/\1/")
+
+ConfigSourceDir="$HOME/config/safe_vault"
+
+if [ -n "$PROJECT_NAME" ]; then
+  VaultName="$PROJECT_NAME"
+else
+  VaultName=$(cargo pkgid | sed -e "s/.*\(\<.*\>\)[:#].*/\1/")
+fi
+
+if [ -n "$PROJECT_VERSION" ]; then
+  Version="$PROJECT_VERSION"
+else
+  Version=$(cargo pkgid | sed -e "s/.*[:#]\(.*\)/\1/")
+fi
+
 if [[ "$1" == "linux" ]]
 then
   VaultPath=/usr/bin/
@@ -17,7 +28,9 @@ elif [[ "$1" == "osx" ]]
 then
   VaultPath=/usr/local/bin/
 fi
-ConfigFilePath=/var/cache/$VaultName/
+
+ConfigFileParentDir=/var/cache
+ConfigFileDir="$ConfigFileParentDir/$VaultName/"
 Platform=$1
 Description="SAFE Network vault"
 
@@ -38,7 +51,7 @@ function remove_safe_user {
 }
 
 function set_owner {
-  printf 'chown -R safe:safe %s\n' "$ConfigFilePath" >> after_install.sh
+  printf 'chown -R safe:safe %s\n' "$ConfigFileDir" >> after_install.sh
   printf 'chown safe:safe %s\n' "$VaultPath$VaultName" >> after_install.sh
   printf 'chmod 775 %s\n' "$VaultPath$VaultName" >> after_install.sh
 }
@@ -312,7 +325,7 @@ function prepare_for_osx {
   printf 'rm /Library/LaunchDaemons/%s\n\n' "$PlistFile" >> $UninstallScript
   printf 'dscl . -delete /Users/safe\n' >> $UninstallScript
   printf 'dseditgroup -o delete safe\n\n' >> $UninstallScript
-  printf 'rm -rf %s\n' "$ConfigFilePath" >> $UninstallScript
+  printf 'rm -rf %s\n' "$ConfigFileDir" >> $UninstallScript
   printf 'rm %s\n' "$VaultPath$VaultName" >> $UninstallScript
   printf 'rm %s\n\n' "$VaultPath$UninstallScript" >> $UninstallScript
   printf 'if [[ "$1" == "-y" ]]; then\n' >> $UninstallScript
@@ -344,15 +357,34 @@ function prepare_for_osx {
 }
 
 function create_package {
+  if [ -n "$TARGET" ]; then
+    local vault_binary="$RootDir/target/$TARGET/release/$VaultName"
+  else
+    local vault_binary="$RootDir/target/release/$VaultName"
+  fi
+
+  case $TARGET in
+  *x86_64*)
+    local arch=x86_64
+    ;;
+  *i386*|*i686*)
+    local arch=i386
+    ;;
+  *)
+    local arch=native
+    ;;
+  esac
+
   fpm \
     -t $1 \
     -s dir \
     --force \
     --name $PackageName \
     --version $Version \
+    --architecture $arch \
     --license GPLv3 \
     --vendor MaidSafe \
-    --directories $ConfigFilePath \
+    --directories $ConfigFileDir \
     --maintainer "MaidSafe QA <qa@maidsafe.net>" \
     --description "$Description" \
     --url "http://maidsafe.net" \
@@ -360,18 +392,37 @@ function create_package {
     $AfterInstallCommand \
     $BeforeRemoveCommand \
     $OsxCommands \
-    "$RootDir/target/release/$VaultName"=$VaultPath \
-    "$RootDir/installer/common/$VaultName.crust.config"=$ConfigFilePath \
-    "$RootDir/installer/common/$VaultName.vault.config"=$ConfigFilePath \
+    "$vault_binary"=$VaultPath \
+    "$ConfigSourceDir"="$ConfigFileParentDir" \
     $ExtraFile1 \
     $ExtraFile2
 }
 
-BuiltVault="$RootDir/target/release/$VaultName"
-rm $BuiltVault || true
-cd "$RootDir"
-cargo update
-cargo build --release
+
+if [ -n "$TARGET" ]; then
+  BuiltVault="$RootDir/target/$TARGET/release/$VaultName"
+else
+  BuiltVault="$RootDir/target/release/$VaultName"
+fi
+
+# If we are not running on travis CI, delete the binary to force a fresh build.
+# If we are running on travis, the binary should be freshly built already, and
+# there is no need to rebuild it.
+if [ -z "$TRAVIS" ]; then
+  rm -f "$BuiltVault"
+fi
+
+if [ ! -f "$BuiltVault" ]; then
+  cd "$RootDir"
+  cargo update
+
+  if [ -n "$TARGET" ]; then
+    cargo build --target $TARGET --release
+  else
+    cargo build --release
+  fi
+fi
+
 strip "$BuiltVault"
 rm -rf "$RootDir/packages/$Platform" || true
 
@@ -394,15 +445,19 @@ elif [[ "$1" == "osx" ]]
 then
   prepare_for_osx
 
-  # Sign the binary
-  codesign -s "Developer ID Application: MaidSafe.net Ltd (MEGSB2GXGZ)" "$BuiltVault"
-  codesign -vvv -d "$BuiltVault"
+  if [ -z "$SKIP_SIGN_PACKAGE" ]; then
+    # Sign the binary
+    codesign -s "Developer ID Application: MaidSafe.net Ltd (MEGSB2GXGZ)" "$BuiltVault"
+    codesign -vvv -d "$BuiltVault"
+  fi
 
   create_package osxpkg
 
-  # Sign the installer
-  OsxPackage="$RootDir/packages/$Platform/$PackageName-$Version.pkg"
-  productsign --sign "Developer ID Installer: MaidSafe.net Ltd (MEGSB2GXGZ)" "$OsxPackage" "$OsxPackage.signed"
-  mv "$OsxPackage.signed" "$OsxPackage"
-  spctl -a -v --type install "$OsxPackage"
+  if [ -z "$SKIP_SIGN_PACKAGE" ]; then
+    # Sign the installer
+    OsxPackage="$RootDir/packages/$Platform/$PackageName-$Version.pkg"
+    productsign --sign "Developer ID Installer: MaidSafe.net Ltd (MEGSB2GXGZ)" "$OsxPackage" "$OsxPackage.signed"
+    mv "$OsxPackage.signed" "$OsxPackage"
+    spctl -a -v --type install "$OsxPackage"
+  fi
 fi

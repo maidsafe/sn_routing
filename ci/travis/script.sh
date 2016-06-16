@@ -5,7 +5,7 @@ set -ex
 CHANNEL=${CHANNEL:-stable}
 
 # Skip if $ONLY_DEPLOY is defined and this is not a deploy (that is, this build
-# was not triggered by pushing a tag).
+# was not triggered by pushing a version change commit).
 [ -n "$ONLY_DEPLOY" -a -z "$TRAVIS_TAG" ] && exit 0
 
 # Skip if this is a deploy, but rust channel is not stable.

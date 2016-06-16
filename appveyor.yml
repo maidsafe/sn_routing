@@ -13,6 +13,10 @@ branches:
 clone_depth: 50
 skip_tags: true
 
+cache:
+  - '%USERPROFILE%\.cargo'
+  - '%APPVEYOR_BUILD_FOLDER%\target'
+
 install:
   - ps: |
         $url = "https://github.com/maidsafe/QA/raw/master/Powershell%20Scripts/AppVeyor"
@@ -51,8 +55,8 @@ before_deploy:
 deploy:
   provider: GitHub
   auth_token: $(GH_TOKEN)
-  # All the zipped artifacts will be deployed
-  artifact: /.*\.zip/
+  # Deploy the archive (zip) and the installer (exe)
+  artifact: /.*\.zip|.*\.exe/
   draft: true
   tag: $(PROJECT_VERSION)
   on:

@@ -32,11 +32,12 @@ matrix:
       sudo: required
       services:
         - docker
-      # TODO: uncomment once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
-      # addons:
-      #   apt:
-      #     packages:
-      #       - musl-tools
+      addons:
+        apt:
+          packages:
+            - rpm
+            # TODO: uncomment once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
+            # - musl-tools
 
     - os: linux
       env: >
@@ -49,6 +50,7 @@ matrix:
         apt:
           packages:
             - gcc-multilib
+            - rpm
 
     - os: linux
       env: >
@@ -76,6 +78,7 @@ matrix:
         TARGET=x86_64-apple-darwin
         PLATFORM=osx-x64
         FEATURES=use-mock-crust
+        SKIP_SIGN_PACKAGE=1
 
     - os: osx
       env: >
@@ -100,6 +103,7 @@ cache:
     - $HOME/musl
     - $HOME/.cargo
     - $TRAVIS_BUILD_DIR/target
+    - $HOME/.gem
 
 before_install:
   - export PROJECT_VERSION=$(git log -1 | grep -i "version change to" | sed "s/.*[vV]ersion change to v\{0,1\}//")
@@ -120,6 +124,7 @@ before_deploy:
   - ./ci/travis/before_deploy.sh
 
 deploy:
+  # Deploy tarballs to Github releases
   - provider: releases
     api_key: ${GH_TOKEN}
     file: ${PROJECT_NAME}-v${PROJECT_VERSION}-${PLATFORM}.tar.gz
@@ -131,6 +136,31 @@ deploy:
         (-n "$PROJECT_VERSION") &&
         (-n "$PLATFORM") &&
         ("${CHANNEL:-stable}"=stable)
+
+  # Deploy osx pkg to Github releases
+  - provider: releases
+    api_key: ${GH_TOKEN}
+    file: ./packages/osx/${PROJECT_NAME}-${PROJECT_VERSION}.pkg
+    skip_cleanup: true
+    draft: true
+    tag_name: ${PROJECT_VERSION}
+    on:
+      condition: >
+        ("$PLATFORM" = "osx-x64") &&
+        (-n "$PROJECT_VERSION") &&
+        ("${CHANNEL:-stable}"=stable)
+
+  # Deploy linux deb and rpm packages to MaidSafe repositories
+  - provider: script
+    script: ./ci/travis/deploy_linux_packages.sh
+    skip_cleanup: true
+    on:
+      condition: >
+        (("$PLATFORM" = "linux-x64") || ("$PLATFORM" = "linux-x86")) &&
+        (-n "$PROJECT_VERSION") &&
+        ("${CHANNEL:-stable}"=stable)
+
+  # Deploy docker image to Docker Hub.
   - provider: script
     script: ./ci/travis/deploy_docker_image.sh
     skip_cleanup: true
@@ -141,5 +171,4 @@ deploy:
         (-n "$DOCKER_USERNAME") &&
         (-n "$DOCKER_PASSWORD") &&
         (-n "$PROJECT_VERSION") &&
-        (-n "$PLATFORM") &&
         ("${CHANNEL:-stable}"=stable)

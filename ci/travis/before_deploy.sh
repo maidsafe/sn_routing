@@ -45,3 +45,18 @@ tar czf $OUT_DIR/$NAME.tar.gz *
 popd
 
 rm -r $WORK_DIR
+
+# Create packages
+case $PLATFORM in
+linux-x64|linux-x86)
+  PACKAGE_SCRIPT=linux/create_packages.sh
+  ;;
+osx-x64)
+  PACKAGE_SCRIPT=osx/create_package.sh
+  ;;
+esac
+
+if [ -n "$PACKAGE_SCRIPT" ]; then
+  gem install -N fpm
+  ./"installer/$PACKAGE_SCRIPT"
+fi
