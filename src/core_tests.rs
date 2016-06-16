@@ -22,19 +22,18 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread;
 
-use action::Action;
 use authority::Authority;
-use core::{self, Core, Role, GROUP_SIZE, QUORUM_SIZE};
+use client::Client;
+use core::{GROUP_SIZE, QUORUM_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
-use error::InterfaceError;
 use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::{RoutingTable, ContactInfo};
-use messages::{Request, Response, UserMessage, CLIENT_GET_PRIORITY, DEFAULT_PRIORITY,
-               RELOCATE_PRIORITY};
+use messages::{Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use types::{MessageId, RoutingActionSender};
+use node::Node;
+use types::MessageId;
 use xor_name::XorName;
 
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
@@ -60,187 +59,89 @@ impl Drop for Seed {
 
 struct TestNode {
     handle: ServiceHandle,
-    core: Core,
+    node: Node,
     event_rx: mpsc::Receiver<Event>,
-    action_tx: RoutingActionSender,
 }
 
 impl TestNode {
     fn new(network: &Network,
-           role: Role,
+           first_node: bool,
            config: Option<Config>,
            endpoint: Option<Endpoint>)
-           -> Self {
-        let handle = network.new_service_handle(config, endpoint);
+           -> Self
+    {
         let (event_tx, event_rx) = mpsc::channel();
-
-        let (action_tx, core) = mock_crust::make_current(&handle,
-                                                         || Core::new(event_tx, role, None));
+        let handle = network.new_service_handle(config, endpoint);
+        let node = mock_crust::make_current(&handle, || {
+            unwrap_result!(Node::new(event_tx, first_node))
+        });
 
         TestNode {
             handle: handle,
-            core: core,
+            node: node,
             event_rx: event_rx,
-            action_tx: action_tx,
         }
     }
 
+    // Poll this node until there are no unprocessed events left.
     fn poll(&mut self) -> bool {
         let mut result = false;
 
-        while self.core.poll() {
+        while self.node.poll() {
             result = true;
         }
 
         result
     }
 
-    fn name(&self) -> &XorName {
-        self.core.name()
+    fn name(&self) -> XorName {
+        unwrap_result!(self.node.name())
     }
 
     fn close_group(&self) -> Vec<XorName> {
-        self.core.close_group()
+        unwrap_result!(self.node.close_group(self.name())).unwrap_or(Vec::new())
     }
 
-    fn routing_table(&self) -> &core::RoutingTable {
-        self.core.routing_table()
-    }
-
-    /// Respond to a `Get` request indicating success and sending the requested data.
-    pub fn send_get_success(&self,
-                            src: Authority,
-                            dst: Authority,
-                            data: Data,
-                            id: MessageId,
-                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetSuccess(data, id));
-        let priority = if let Authority::Client { .. } = dst {
-            CLIENT_GET_PRIORITY
-        } else {
-            RELOCATE_PRIORITY
-        };
-        self.send_action(src, dst, user_msg, priority, result_tx)
-    }
-
-    /// Respond to a `Get` request indicating failure.
-    pub fn send_get_failure(&self,
-                            src: Authority,
-                            dst: Authority,
-                            data_id: DataIdentifier,
-                            external_error_indicator: Vec<u8>,
-                            id: MessageId,
-                            result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                            -> Result<(), InterfaceError> {
-        let user_msg = UserMessage::Response(Response::GetFailure {
-            id: id,
-            data_id: data_id,
-            external_error_indicator: external_error_indicator,
-        });
-        let priority = if let Authority::Client { .. } = dst {
-            CLIENT_GET_PRIORITY
-        } else {
-            RELOCATE_PRIORITY
-        };
-        self.send_action(src, dst, user_msg, priority, result_tx)
-    }
-
-    fn send_action(&self,
-                   src: Authority,
-                   dst: Authority,
-                   user_msg: UserMessage,
-                   priority: u8,
-                   result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                   -> Result<(), InterfaceError> {
-        try!(self.action_tx.send(Action::NodeSendMessage {
-            src: src,
-            dst: dst,
-            content: user_msg,
-            result_tx: result_tx,
-            priority: priority,
-        }));
-        Ok(())
+    fn routing_table(&self) -> RoutingTable<XorName> {
+        self.node.routing_table()
     }
 }
 
 struct TestClient {
     handle: ServiceHandle,
-    core: Core,
+    client: Client,
     event_rx: mpsc::Receiver<Event>,
-    action_tx: RoutingActionSender,
 }
 
 impl TestClient {
     fn new(network: &Network, config: Option<Config>, endpoint: Option<Endpoint>) -> Self {
-        let handle = network.new_service_handle(config, endpoint);
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
-
-        let (action_tx, core) =
-            mock_crust::make_current(&handle, || Core::new(event_tx, Role::Client, Some(full_id)));
+        let handle = network.new_service_handle(config, endpoint);
+        let client = mock_crust::make_current(&handle, || {
+            unwrap_result!(Client::new(event_tx, Some(full_id)))
+        });
 
         TestClient {
             handle: handle,
-            core: core,
+            client: client,
             event_rx: event_rx,
-            action_tx: action_tx,
         }
     }
 
+    // Poll this node until there are no unprocessed events left.
     fn poll(&mut self) -> bool {
         let mut result = false;
 
-        while self.core.poll() {
+        while self.client.poll() {
             result = true;
         }
 
         result
     }
 
-    fn name(&self) -> &XorName {
-        self.core.name()
-    }
-
-    fn send_put_request(&self,
-                        dst: Authority,
-                        data: Data,
-                        message_id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        self.send_action(Request::Put(data, message_id),
-                         dst,
-                         DEFAULT_PRIORITY,
-                         result_tx)
-    }
-
-    fn send_get_request(&mut self,
-                        dst: Authority,
-                        data_request: DataIdentifier,
-                        message_id: MessageId,
-                        result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                        -> Result<(), InterfaceError> {
-        self.send_action(Request::Get(data_request, message_id),
-                         dst,
-                         CLIENT_GET_PRIORITY,
-                         result_tx)
-    }
-
-    fn send_action(&self,
-                   content: Request,
-                   dst: Authority,
-                   priority: u8,
-                   result_tx: mpsc::Sender<Result<(), InterfaceError>>)
-                   -> Result<(), InterfaceError> {
-        let action = Action::ClientSendRequest {
-            content: content,
-            dst: dst,
-            priority: priority,
-            result_tx: result_tx,
-        };
-
-        try!(self.action_tx.send(action));
-        Ok(())
+    fn name(&self) -> XorName {
+        unwrap_result!(self.client.name())
     }
 }
 
@@ -261,7 +162,7 @@ fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
     loop {
         let mut n = false;
         if BALANCED_POLLING {
-            nodes.iter_mut().foreach(|node| n = n || node.core.poll());
+            nodes.iter_mut().foreach(|node| n = n || node.node.poll());
         } else {
             n = nodes.iter_mut().any(TestNode::poll);
         }
@@ -279,14 +180,14 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, Role::FirstNode, None, Some(Endpoint(0))));
+    nodes.push(TestNode::new(network, true, None, Some(Endpoint(0))));
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
-        nodes.push(TestNode::new(network, Role::Node, Some(config.clone()), Some(Endpoint(i))));
+        nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
         let _ = poll_all(&mut nodes, &mut []);
     }
 
@@ -305,14 +206,14 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 // Drop node at index and verify its close group receives NodeLost.
 fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
-    let name = *node.name();
+    let name = node.name();
     let close_names = node.close_group();
 
     drop(node);
 
     let _ = poll_all(nodes, &mut []);
 
-    for node in nodes.iter().filter(|n| close_names.contains(n.name())) {
+    for node in nodes.iter().filter(|n| close_names.contains(&n.name())) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::NodeLost(lost_name, _)) if lost_name == name => break,
@@ -350,7 +251,7 @@ fn node_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
 
 // Verify that the kademlia invariant is upheld for the node at `index`.
 fn verify_kademlia_invariant_for_node(nodes: &[TestNode], index: usize) {
-    let routing_tables = nodes.iter().map(|node| node.routing_table().to_names()).collect();
+    let routing_tables = nodes.iter().map(|node| node.routing_table()).collect();
     verify_kademlia_invariant(&routing_tables, index);
 }
 
@@ -456,16 +357,14 @@ fn client_connects_to_nodes() {
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
 
     // Create one client that tries to connect to the network.
-    let client = TestNode::new(&network,
-                               Role::Client,
-                               Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
-                               None);
+    let client = TestClient::new(&network,
+                                 Some(Config::with_contacts(&[nodes[0].handle.endpoint()])),
+                                 None);
+    let mut clients = vec![client];
 
-    nodes.push(client);
+    let _ = poll_all(&mut nodes, &mut clients);
 
-    let _ = poll_all(&mut nodes, &mut []);
-
-    expect_event!(nodes.iter().last().unwrap(), Event::Connected);
+    expect_event!(clients[0], Event::Connected);
 }
 
 #[test]
@@ -488,9 +387,9 @@ fn churn() {
     for i in 0..100 {
         let len = nodes.len();
         if len > GROUP_SIZE + 2 && Range::new(0, 3).ind_sample(&mut rng) == 0 {
-            let node0 = *nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
-            let node1 = *nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
-            let node2 = *nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
+            let node0 = nodes.remove(Range::new(0, len).ind_sample(&mut rng)).name();
+            let node1 = nodes.remove(Range::new(0, len - 1).ind_sample(&mut rng)).name();
+            let node2 = nodes.remove(Range::new(0, len - 2).ind_sample(&mut rng)).name();
             trace!("Iteration {}: Removing {:?}, {:?}, {:?}",
                    i,
                    node0,
@@ -501,14 +400,14 @@ fn churn() {
             let index = Range::new(0, len + 1).ind_sample(&mut rng);
             let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
             nodes.insert(index,
-                         TestNode::new(&network, Role::Node, Some(config.clone()), None));
+                         TestNode::new(&network, false, Some(config.clone()), None));
             trace!("Iteration {}: Adding {:?}", i, nodes[index].name());
         }
 
         loop {
             let mut state_changed = poll_all(&mut nodes, &mut []);
             for node in &mut nodes {
-                state_changed = state_changed || node.core.resend_unacknowledged();
+                state_changed = state_changed || node.node.resend_unacknowledged();
             }
             if !state_changed {
                 break;
@@ -516,7 +415,7 @@ fn churn() {
         }
 
         for node in &mut nodes {
-            node.core.clear_state();
+            node.node.clear_state();
         }
         verify_kademlia_invariant_for_all_nodes(&nodes);
     }
@@ -528,7 +427,7 @@ fn node_joins_in_front() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
-                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
+                 TestNode::new(&network, false, Some(config.clone()), None));
     let _ = poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -541,13 +440,11 @@ fn multiple_joining_nodes() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    nodes.insert(0,
-                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    nodes.insert(0,
-                 TestNode::new(&network, Role::Node, Some(config.clone()), None));
-    nodes.push(TestNode::new(&network, Role::Node, Some(config.clone()), None));
+    nodes.insert(0, TestNode::new(&network, false, Some(config.clone()), None));
+    nodes.insert(0, TestNode::new(&network, false, Some(config.clone()), None));
+    nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
     let _ = poll_all(&mut nodes, &mut []);
-    nodes.retain(|node| !node.core.routing_table().is_empty());
+    nodes.retain(|node| !node.routing_table().is_empty());
     let _ = poll_all(&mut nodes, &mut []);
     assert!(nodes.len() > network_size); // At least one node should have succeeded.
 
@@ -558,7 +455,7 @@ fn multiple_joining_nodes() {
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
     let close_groups_complete = nodes.iter()
-        .all(|n| nodes.iter().all(|m| m.name() == n.name() || m.close_group().contains(n.name())));
+        .all(|n| nodes.iter().all(|m| m.close_group().contains(&n.name())));
     assert!(close_groups_complete);
 }
 
@@ -576,19 +473,20 @@ fn successful_put_request() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
-    let (result_tx, _result_rx) = mpsc::channel();
-    let dst = Authority::ClientManager(*clients[0].name());
+    let dst = Authority::ClientManager(clients[0].name());
     let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data);
     let message_id = MessageId::new();
 
-    assert!(clients[0].send_put_request(dst, data.clone(), message_id, result_tx).is_ok());
+    assert!(clients[0].client.send_put_request(dst,
+                                               data.clone(),
+                                               message_id).is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
     let mut request_received_count = 0;
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(clients[0].name(), GROUP_SIZE)) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(&clients[0].name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Put(ref immutable, ref id), .. }) => {
@@ -620,7 +518,6 @@ fn successful_get_request() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
-    let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
@@ -628,9 +525,9 @@ fn successful_get_request() {
     let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-        .is_ok());
+    assert!(clients[0].client
+                      .send_get_request(dst, data_request.clone(), message_id)
+                      .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -642,11 +539,10 @@ fn successful_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(_) = node.send_get_success(dst.clone(),
-                                                              src.clone(),
-                                                              data.clone(),
-                                                              id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.node.send_get_success(dst.clone(),
+                                                                   src.clone(),
+                                                                   data.clone(),
+                                                                   id) {
                             trace!("Failed to send GetSuccess response");
                         }
                         break;
@@ -699,7 +595,6 @@ fn failed_get_request() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
-    let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
@@ -707,9 +602,9 @@ fn failed_get_request() {
     let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-        .is_ok());
+    assert!(clients[0].client
+                      .send_get_request(dst, data_request.clone(), message_id)
+                      .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -723,12 +618,11 @@ fn failed_get_request() {
                                     ref dst }) => {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
-                        if let Err(_) = node.send_get_failure(dst.clone(),
-                                                              src.clone(),
-                                                              *data_id,
-                                                              vec![],
-                                                              *id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.node.send_get_failure(dst.clone(),
+                                                                   src.clone(),
+                                                                   *data_id,
+                                                                   vec![],
+                                                                   *id) {
                             trace!("Failed to send GetFailure response.");
                         }
                         break;
@@ -778,7 +672,6 @@ fn disconnect_on_get_request() {
     let _ = poll_all(&mut nodes, &mut clients);
     expect_event!(clients[0], Event::Connected);
 
-    let (result_tx, _result_rx) = mpsc::channel();
     let bytes = rng.gen_iter().take(1024).collect();
     let immutable_data = ImmutableData::new(bytes);
     let data = Data::Immutable(immutable_data.clone());
@@ -786,9 +679,9 @@ fn disconnect_on_get_request() {
     let data_request = DataIdentifier::Immutable(data.name());
     let message_id = MessageId::new();
 
-    assert!(clients[0]
-        .send_get_request(dst, data_request.clone(), message_id, result_tx.clone())
-        .is_ok());
+    assert!(clients[0].client
+                      .send_get_request(dst, data_request.clone(), message_id)
+                      .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
 
@@ -802,11 +695,10 @@ fn disconnect_on_get_request() {
                                     ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.send_get_success(dst.clone(),
-                                                              src.clone(),
-                                                              data.clone(),
-                                                              *id,
-                                                              result_tx.clone()) {
+                        if let Err(_) = node.node.send_get_success(dst.clone(),
+                                                                   src.clone(),
+                                                                   data.clone(),
+                                                                   *id) {
                             trace!("Failed to send GetSuccess response");
                         }
                         break;
