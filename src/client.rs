@@ -32,6 +32,7 @@ use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
 use types::MessageId;
+use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;
 
@@ -156,6 +157,14 @@ impl Client {
                          CLIENT_GET_PRIORITY)
     }
 
+    /// Returns the name of this node.
+    pub fn name(&self) -> Result<XorName, InterfaceError> {
+        let (result_tx, result_rx) = channel();
+        try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
+
+        self.receive_action_result(&result_rx)
+    }
+
     fn send_action(&self,
                    content: Request,
                    dst: Authority,
@@ -169,18 +178,18 @@ impl Client {
         };
 
         try!(self.action_sender.send(action));
-        self.receive_action_result()
+        try!(self.receive_action_result(&self.interface_result_rx))
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
-    fn receive_action_result(&self) -> Result<(), InterfaceError> {
-        try!(self.interface_result_rx.recv())
+    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
+        Ok(try!(rx.recv()))
     }
 
     #[cfg(feature = "use-mock-crust")]
-    fn receive_action_result(&self) -> Result<(), InterfaceError> {
+    fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
-        try!(self.interface_result_rx.recv())
+        Ok(try!(rx.recv()))
     }
 }
 

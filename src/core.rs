@@ -90,7 +90,7 @@ enum State {
     Node,
 }
 
-/// RoutingTable type for routing
+/// `RoutingTable` managing `NodeInfo`s.
 pub type RoutingTable = ::kademlia_routing_table::RoutingTable<NodeInfo>;
 
 /// Info about nodes in the routing table.
@@ -331,17 +331,6 @@ impl Core {
     /// Returns the `XorName` of this node.
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
-    }
-
-    /// Returns the names of all nodes in the close group of this node.
-    #[allow(unused)]
-    pub fn close_group(&self) -> Vec<XorName> {
-        self.routing_table
-            .other_close_nodes(self.name(), GROUP_SIZE)
-            .unwrap_or_else(Vec::new)
-            .into_iter()
-            .map(|info| *info.name())
-            .collect()
     }
 
     /// Routing table of this node.
