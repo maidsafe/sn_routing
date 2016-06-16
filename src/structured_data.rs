@@ -488,7 +488,8 @@ mod test {
                                                          vec![new_owner.0],
                                                          Some(&new_owner.1)) {
                             Ok(another_new_structured_data) => {
-                                match orig_structured_data.replace_with_other(another_new_structured_data) {
+                                match orig_structured_data.replace_with_other(
+                                        another_new_structured_data) {
                                     Ok(()) => (),
                                     Err(e) => panic!("Error {:?}", e),
                                 }

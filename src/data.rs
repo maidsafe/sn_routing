@@ -98,17 +98,22 @@ mod test {
     extern crate rand;
 
     use super::*;
+    use libsodium_seeded_prng;
+    use rand::Rand;
     use sodiumoxide::crypto::sign;
     use sodiumoxide::crypto::hash::sha256;
     use xor_name::XorName;
 
     #[test]
     fn data_name() {
+        let _seed = unwrap_result!(libsodium_seeded_prng::init(None));
+        let rng_ptr = libsodium_seeded_prng::get_rng();
+
         // name() resolves correctly for StructuredData
         let keys = sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match StructuredData::new(0,
-                                  rand::random(),
+                                  XorName::rand(&mut *rng_ptr.borrow_mut()),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
@@ -143,11 +148,14 @@ mod test {
 
     #[test]
     fn data_payload_size() {
+        let _seed = unwrap_result!(libsodium_seeded_prng::init(None));
+        let rng_ptr = libsodium_seeded_prng::get_rng();
+
         // payload_size() resolves correctly for StructuredData
         let keys = ::sodiumoxide::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match StructuredData::new(0,
-                                  rand::random(),
+                                  XorName::rand(&mut *rng_ptr.borrow_mut()),
                                   0,
                                   vec![],
                                   owner_keys.clone(),
