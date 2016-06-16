@@ -333,17 +333,6 @@ impl Core {
         self.full_id.public_id().name()
     }
 
-    /// Returns the names of all nodes in the close group of this node.
-    #[allow(unused)]
-    pub fn close_group(&self) -> Vec<XorName> {
-        self.routing_table
-            .other_close_nodes(self.name(), GROUP_SIZE)
-            .unwrap_or_else(Vec::new)
-            .into_iter()
-            .map(|info| *info.name())
-            .collect()
-    }
-
     /// Routing table of this node.
     #[allow(unused)]
     pub fn routing_table(&self) -> &RoutingTable {
