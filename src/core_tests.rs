@@ -17,14 +17,16 @@
 
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
+use std::cell::RefCell;
 use std::cmp;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops;
 use std::sync::mpsc;
 use std::thread;
 
 use authority::Authority;
 use client::Client;
+use cache::{Cache, NullCache};
 use core::{GROUP_SIZE, QUORUM_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use event::Event;
@@ -40,8 +42,10 @@ use xor_name::XorName;
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
 
-/// Expect that the node raised an event matching the given pattern, panics if not.
-macro_rules! expect_event {
+/// Expect that the next event raised by the node matches the given pattern.
+/// Panics if no event, or an event that does not match the pattern is raised.
+/// (ignores ticks).
+macro_rules! expect_next_event {
     ($node:expr, $pattern:pat) => {
         loop {
             match $node.event_rx.try_recv() {
@@ -53,7 +57,25 @@ macro_rules! expect_event {
     }
 }
 
-/// Expects that the node raised no event, panics otherwise.
+/// Expects that any event raised by the node matches the given pattern
+/// (with optional pattern guard). Ignores events that do not match the pattern.
+/// Panics if the event channel is exhausted before matching event is found.
+macro_rules! expect_any_event {
+    ($node:expr, $pattern:pat) => {
+        expect_any_event!($node, $pattern if true => ())
+    };
+    ($node:expr, $pattern:pat if $guard:expr) => {
+        loop {
+            match $node.event_rx.try_recv() {
+                Ok($pattern) if $guard => break,
+                Ok(_) => (),
+                other => panic!("Expected Ok({}), got {:?}", stringify!($pattern), other),
+            }
+        }
+    }
+}
+
+/// Expects that the node raised no event, panics otherwise (ignores ticks).
 macro_rules! expect_no_event {
     ($node:expr) => {
         match $node.event_rx.try_recv() {
@@ -144,15 +166,28 @@ struct TestNode {
 }
 
 impl TestNode {
+    fn builder(network: &Network) -> TestNodeBuilder {
+        TestNodeBuilder {
+            network: network,
+            first_node: false,
+            config: None,
+            endpoint: None,
+            cache: Box::new(NullCache),
+        }
+    }
+
     fn new(network: &Network,
            first_node: bool,
            config: Option<Config>,
-           endpoint: Option<Endpoint>)
-           -> Self {
+           endpoint: Option<Endpoint>,
+           cache: Box<Cache>)
+           -> Self
+    {
         let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
-        let node = mock_crust::make_current(&handle,
-                                            || unwrap_result!(Node::new(event_tx, first_node)));
+        let node = mock_crust::make_current(&handle, || {
+            unwrap_result!(Node::with_cache(event_tx, first_node, cache))
+        });
 
         TestNode {
             handle: handle,
@@ -182,6 +217,49 @@ impl TestNode {
 
     fn routing_table(&self) -> RoutingTable<XorName> {
         self.inner.routing_table()
+    }
+}
+
+struct TestNodeBuilder<'a> {
+    network: &'a Network,
+    first_node: bool,
+    config: Option<Config>,
+    endpoint: Option<Endpoint>,
+    cache: Box<Cache>,
+}
+
+impl<'a> TestNodeBuilder<'a> {
+    fn first(mut self) -> Self {
+        self.first_node = true;
+        self
+    }
+
+    fn config(mut self, config: Config) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    fn endpoint(mut self, endpoint: Endpoint) -> Self {
+        self.endpoint = Some(endpoint);
+        self
+    }
+
+    fn cache(mut self, use_cache: bool) -> Self {
+        self.cache = if use_cache {
+            Box::new(TestCache::new())
+        } else {
+            Box::new(NullCache)
+        };
+
+        self
+    }
+
+    fn create(self) -> TestNode {
+        TestNode::new(self.network,
+                      self.first_node,
+                      self.config,
+                      self.endpoint,
+                      self.cache)
     }
 }
 
@@ -244,27 +322,42 @@ fn poll_all(nodes: &mut [TestNode], clients: &mut [TestClient]) -> bool {
 }
 
 fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
+    create_connected_nodes_with_cache(network, size, false)
+}
+
+fn create_connected_nodes_with_cache(network: &Network,
+                                     size: usize,
+                                     use_cache: bool)
+                                     -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, true, None, Some(Endpoint(0))));
+    nodes.push(TestNode::builder(network)
+                        .first()
+                        .endpoint(Endpoint(0))
+                        .cache(use_cache)
+                        .create());
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
-        nodes.push(TestNode::new(network, false, Some(config.clone()), Some(Endpoint(i))));
+        nodes.push(TestNode::builder(network)
+                            .config(config.clone())
+                            .endpoint(Endpoint(i))
+                            .cache(use_cache)
+                            .create());
         let _ = poll_all(&mut nodes, &mut []);
     }
 
     let n = cmp::min(nodes.len(), GROUP_SIZE) - 1;
 
     for node in &nodes {
-        expect_event!(node, Event::Connected);
+        expect_next_event!(node, Event::Connected);
 
         for _ in 0..n {
-            expect_event!(node, Event::NodeAdded(..))
+            expect_next_event!(node, Event::NodeAdded(..))
         }
 
         while let Ok(event) = node.event_rx.try_recv() {
@@ -291,7 +384,7 @@ fn create_connected_clients(network: &Network, nodes: &mut [TestNode], size: usi
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
-        expect_event!(clients[clients.len() - 1], Event::Connected);
+        expect_next_event!(clients[clients.len() - 1], Event::Connected);
     }
 
     clients
@@ -341,7 +434,7 @@ fn random_churn<R: Rng>(rng: &mut R,
         let index = rng.gen_range(0, len + 1);
         let config = Config::with_contacts(&[nodes[proxy].handle.endpoint()]);
 
-        nodes.insert(index, TestNode::new(network, false, Some(config), None));
+        nodes.insert(index, TestNode::builder(network).config(config).create());
         Some(index)
     }
 }
@@ -427,18 +520,15 @@ fn did_receive_get_request(node: &TestNode,
 {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Request { request: Request::Get(data_id, message_id),
-                                src,
-                                dst }) => {
-                if src == expected_src &&
-                   dst == expected_dst &&
-                   data_id == expected_data_id &&
-                   message_id == expected_message_id {
-                    return true;
-                }
-            }
+            Ok(Event::Request {
+                request: Request::Get(data_id, message_id),
+                ref src,
+                ref dst }) if *src == expected_src &&
+                              *dst == expected_dst &&
+                              data_id == expected_data_id &&
+                              message_id == expected_message_id => return true,
             Ok(_) => (),
-            _ => return false,
+            Err(_) => return false,
         }
     }
 }
@@ -451,18 +541,15 @@ fn did_receive_get_success(node: &TestNode,
 {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Response { response: Response::GetSuccess(data, message_id),
-                                 src,
-                                 dst }) => {
-                if src == expected_src &&
-                   dst == expected_dst &&
-                   data == expected_data &&
-                   message_id == expected_message_id {
-                    return true;
-                }
-            }
+            Ok(Event::Response {
+                response: Response::GetSuccess(ref data, message_id),
+                ref src,
+                ref dst }) if *src == expected_src &&
+                              *dst == expected_dst &&
+                              *data == expected_data &&
+                              message_id == expected_message_id => return true,
             Ok(_) => (),
-            _ => return false,
+            Err(_) => return false,
         }
     }
 }
@@ -484,6 +571,32 @@ fn poll_and_resend(nodes: &mut [TestNode], clients: &mut [TestClient]) {
         }
         if !state_changed {
             return;
+        }
+    }
+}
+
+struct TestCache(RefCell<HashMap<DataIdentifier, Data>>);
+
+impl TestCache {
+    fn new() -> Self {
+        TestCache(RefCell::new(HashMap::new()))
+    }
+}
+
+impl Cache for TestCache {
+    fn get(&self, request: &Request) -> Option<Response> {
+        if let Request::Get(identifier, message_id) = *request {
+            self.0.borrow()
+                  .get(&identifier)
+                  .map(|data| Response::GetSuccess(data.clone(), message_id))
+        } else {
+            None
+        }
+    }
+
+    fn put(&self, response: Response) {
+        if let Response::GetSuccess(data, _) = response {
+            let _ = self.0.borrow_mut().insert(data.identifier(), data);
         }
     }
 }
@@ -585,7 +698,7 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[QUORUM_SIZE - 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
     send(&mut nodes[QUORUM_SIZE], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -601,7 +714,7 @@ fn messages_accumulate_with_quorum() {
     expect_no_event!(nodes[0]);
     send(&mut nodes[0], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    expect_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
+    expect_next_event!(nodes[0], Event::Response { response: Response::GetSuccess(..), .. });
     send(&mut nodes[QUORUM_SIZE + 1], &dst, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     expect_no_event!(nodes[0]);
@@ -621,7 +734,7 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[QUORUM_SIZE - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut nodes[..GROUP_SIZE] {
-        expect_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
@@ -643,7 +756,7 @@ fn messages_accumulate_with_quorum() {
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
     for node in &mut nodes[..GROUP_SIZE] {
-        expect_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
+        expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE + 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
@@ -684,8 +797,8 @@ fn node_joins_in_front() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
+    nodes.insert(0, TestNode::builder(&network).config(config).create());
+
     let _ = poll_all(&mut nodes, &mut []);
 
     verify_kademlia_invariant_for_all_nodes(&nodes);
@@ -698,11 +811,11 @@ fn multiple_joining_nodes() {
     let network = Network::new();
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
-    nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
-    nodes.insert(0,
-                 TestNode::new(&network, false, Some(config.clone()), None));
-    nodes.push(TestNode::new(&network, false, Some(config.clone()), None));
+
+    nodes.insert(0, TestNode::builder(&network).config(config.clone()).create());
+    nodes.insert(0, TestNode::builder(&network).config(config.clone()).create());
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+
     let _ = poll_all(&mut nodes, &mut []);
     nodes.retain(|node| !node.routing_table().is_empty());
     let _ = poll_all(&mut nodes, &mut []);
@@ -769,7 +882,7 @@ fn successful_get_request() {
     let message_id = MessageId::new();
 
     assert!(clients[0].inner
-                      .send_get_request(dst, data_request.clone(), message_id)
+                      .send_get_request(dst, data_request, message_id)
                       .is_ok());
 
     let _ = poll_all(&mut nodes, &mut clients);
@@ -1167,4 +1280,74 @@ fn request_during_churn_group_to_group() {
 
         assert!(num_received >= QUORUM_SIZE);
     }
+}
+
+#[test]
+fn response_caching() {
+    let mut rng = SeededRng::new();
+    let network = Network::new();
+    let mut nodes = create_connected_nodes_with_cache(&network, GROUP_SIZE + 1, true);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let data = gen_immutable_data(&mut rng, 8);
+    let data_name = data.name();
+    let data_id = data.identifier();
+    sort_nodes_by_distance_to(&mut nodes, &data_name);
+
+    let message_id = MessageId::new();
+    let dst = Authority::NaeManager(data_name);
+
+    // Cache miss.
+    unwrap_result!(clients[0].inner
+                             .send_get_request(dst.clone(), data_id, message_id));
+
+    poll_all(&mut nodes, &mut clients);
+
+    for node in nodes.iter().take(GROUP_SIZE) {
+        loop {
+            match node.event_rx.try_recv() {
+                Ok(Event::Request { request: Request::Get(req_data_id, req_message_id),
+                                    src: req_src,
+                                    dst: req_dst }) => {
+                    if req_data_id == data_id && req_message_id == message_id {
+                        unwrap_result!(node.inner
+                                           .send_get_success(req_dst,
+                                                             req_src,
+                                                             data.clone(),
+                                                             req_message_id));
+                        break;
+                    }
+                }
+                Ok(_) => (),
+                Err(_) => break,
+            }
+        }
+    }
+
+    poll_all(&mut nodes, &mut clients);
+
+    expect_any_event!(
+        clients[0],
+        Event::Response {
+            response: Response::GetSuccess(ref res_data, _), ..
+        } if *res_data == data
+    );
+
+    let message_id = MessageId::new();
+
+    // Cache hit.
+    unwrap_result!(clients[0].inner
+                             .send_get_request(dst, data_id, message_id));
+
+    poll_all(&mut nodes, &mut clients);
+
+    expect_any_event!(
+        clients[0],
+        Event::Response {
+            response: Response::GetSuccess(ref res_data, _), ..
+        } if *res_data == data
+    );
+
+    // Make sure we received the response only once.
+    expect_no_event!(clients[0]);
 }
