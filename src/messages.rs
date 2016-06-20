@@ -19,11 +19,14 @@
 use crust::PeerId;
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
+use lru_time_cache::LruCache;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
+use std::time::Duration;
 
 use authority::Authority;
 use data::{Data, DataIdentifier};
@@ -358,6 +361,8 @@ pub enum MessageContent {
         part_index: u32,
         /// The message priority.
         priority: u8,
+        /// Is the message cacheable?
+        cacheable: bool,
         /// The `part_index`-th part of the serialised user message.
         payload: Vec<u8>,
     },
@@ -503,12 +508,14 @@ impl UserMessage {
         let payload = try!(serialise(self));
         let len = payload.len();
         let part_count = (len + MAX_PART_LEN - 1) / MAX_PART_LEN;
+
         Ok((0..part_count)
             .map(|i| {
                 MessageContent::UserMessagePart {
                     hash: hash,
                     part_count: part_count as u32,
                     part_index: i as u32,
+                    cacheable: self.is_cacheable(),
                     payload: payload[(i * len / part_count)..((i + 1) * len / part_count)].to_vec(),
                     priority: priority,
                 }
@@ -530,6 +537,13 @@ impl UserMessage {
             Err(RoutingError::HashMismatch)
         } else {
             Ok(user_msg)
+        }
+    }
+
+    fn is_cacheable(&self) -> bool {
+        match *self {
+            UserMessage::Request(ref request) => request.is_cacheable(),
+            UserMessage::Response(ref response) => response.is_cacheable(),
         }
     }
 }
@@ -636,6 +650,15 @@ impl Request {
             }
         }
     }
+
+    /// Is the response corresponding to this request cacheable?
+    pub fn is_cacheable(&self) -> bool {
+        if let Request::Get(DataIdentifier::Immutable(..), _) = *self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Response {
@@ -657,6 +680,15 @@ impl Response {
             Response::PostFailure { .. } |
             Response::DeleteFailure { .. } |
             Response::GetAccountInfoFailure { .. } => 3,
+        }
+    }
+
+    /// Is this response cacheable?
+    pub fn is_cacheable(&self) -> bool {
+        if let Response::GetSuccess(Data::Immutable(..), _) = *self {
+            true
+        } else {
+            false
         }
     }
 }
@@ -723,6 +755,36 @@ impl Debug for Response {
                 write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)
             }
         }
+    }
+}
+
+/// This assembles `UserMessage`s from `UserMessagePart`s.
+/// It maps `(hash, part_count)` of an incoming `UserMessage` to the map containing
+/// all `UserMessagePart`s that have already arrived, by `part_index`.
+pub struct UserMessageCache(LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>);
+
+impl UserMessageCache {
+    pub fn with_expiry_duration(duration: Duration) -> Self {
+        UserMessageCache(LruCache::with_expiry_duration(duration))
+    }
+
+    /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
+    /// given part was the last missing piece of it.
+    pub fn add(&mut self,
+               hash: u64,
+               part_count: u32,
+               part_index: u32,
+               payload: Vec<u8>) -> Option<UserMessage> {
+        {
+            let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
+            let _ = entry.insert(part_index, payload);
+            if entry.len() != part_count as usize {
+                return None;
+            }
+        }
+
+        self.0.remove(&(hash, part_count))
+              .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
     }
 }
 
@@ -853,11 +915,13 @@ mod test {
                                                   part_count,
                                                   part_index,
                                                   payload,
-                                                  priority } => {
+                                                  priority,
+                                                  cacheable } => {
                     assert_eq!(msg_hash, hash);
                     assert_eq!(3, part_count);
                     assert_eq!(i, part_index as usize);
                     assert_eq!(42, priority);
+                    assert!(!cacheable);
                     payload
                 }
                 msg => panic!("Unexpected message {:?}", msg),
