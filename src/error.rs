@@ -23,73 +23,39 @@ use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{InterfaceError, MessageId, RoutingError, Request, Response};
 use std::io;
 
-#[derive(Debug)]
-pub enum InternalError {
-    ChunkStore(chunk_store::Error),
-    ClientGet(GetError),
-    ClientMutation(MutationError),
-    FailedToFindCachedRequest(MessageId),
-    FileHandler(config_file_handler::Error),
-    Io(io::Error),
-    MpidMessaging(messaging::Error),
-    Routing(InterfaceError),
-    RoutingInternal(RoutingError),
-    Serialisation(SerialisationError),
-    UnknownRequestType(Request),
-    UnknownResponseType(Response),
-    InvalidMessage,
-}
-
-impl From<MutationError> for InternalError {
-    fn from(error: MutationError) -> InternalError {
-        InternalError::ClientMutation(error)
-    }
-}
-
-impl From<GetError> for InternalError {
-    fn from(error: GetError) -> InternalError {
-        InternalError::ClientGet(error)
-    }
-}
-
-impl From<config_file_handler::Error> for InternalError {
-    fn from(error: config_file_handler::Error) -> InternalError {
-        InternalError::FileHandler(error)
-    }
-}
-
-impl From<chunk_store::Error> for InternalError {
-    fn from(error: chunk_store::Error) -> InternalError {
-        InternalError::ChunkStore(error)
-    }
-}
-
-impl From<messaging::Error> for InternalError {
-    fn from(error: messaging::Error) -> InternalError {
-        InternalError::MpidMessaging(error)
-    }
-}
-
-impl From<SerialisationError> for InternalError {
-    fn from(error: SerialisationError) -> InternalError {
-        InternalError::Serialisation(error)
-    }
-}
-
-impl From<InterfaceError> for InternalError {
-    fn from(error: InterfaceError) -> InternalError {
-        InternalError::Routing(error)
-    }
-}
-
-impl From<RoutingError> for InternalError {
-    fn from(error: RoutingError) -> InternalError {
-        InternalError::RoutingInternal(error)
-    }
-}
-
-impl From<io::Error> for InternalError {
-    fn from(error: io::Error) -> InternalError {
-        InternalError::Io(error)
+quick_error! {
+    #[derive(Debug)]
+    pub enum InternalError {
+        ChunkStore(error: chunk_store::Error) {
+            from()
+        }
+        ClientGet(error: GetError) {
+            from()
+        }
+        ClientMutation(error: MutationError) {
+            from()
+        }
+        FailedToFindCachedRequest(message_id: MessageId)
+        FileHandler(error: config_file_handler::Error) {
+            from()
+        }
+        Io(error: io::Error) {
+            from()
+        }
+        MpidMessaging(error: messaging::Error) {
+            from()
+        }
+        Routing(error: InterfaceError) {
+            from()
+        }
+        RoutingInternal(error: RoutingError) {
+            from()
+        }
+        Serialisation(error: SerialisationError) {
+            from()
+        }
+        UnknownRequestType(request: Request)
+        UnknownResponseType(response: Response)
+        InvalidMessage
     }
 }

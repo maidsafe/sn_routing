@@ -55,15 +55,20 @@ extern crate itertools;
 extern crate kademlia_routing_table;
 #[macro_use]
 extern crate maidsafe_utilities;
-extern crate chunk_store;
 extern crate config_file_handler;
-#[cfg(feature = "use-mock-crust")]
+// Needed because the crate is only used for macros
+#[allow(unused_extern_crates)]
+#[macro_use]
+extern crate quick_error;
+#[cfg(any(test, feature = "use-mock-crust"))]
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
 extern crate safe_network_common;
 extern crate sodiumoxide;
+extern crate tempdir;
 
+mod chunk_store;
 mod config_handler;
 mod error;
 /// For integration tests only
