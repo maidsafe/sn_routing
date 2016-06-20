@@ -142,6 +142,7 @@ mod action;
 mod authority;
 mod client;
 
+mod cache;
 mod core;
 mod data;
 mod error;
@@ -172,6 +173,7 @@ pub mod mock_crust;
 pub use core_tests::verify_kademlia_invariant;
 
 pub use authority::Authority;
+pub use cache::Cache;
 pub use client::Client;
 pub use core::{GROUP_SIZE, QUORUM_SIZE};
 pub use data::{Data, DataIdentifier};
