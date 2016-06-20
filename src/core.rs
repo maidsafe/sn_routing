@@ -36,7 +36,7 @@ use rand;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
 use std::{cmp, iter, fmt};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 use std::sync::mpsc;
@@ -46,6 +46,7 @@ use xor_name::{XorName, XOR_NAME_BITS};
 
 use action::Action;
 use authority::Authority;
+use cache::{Cache, NullCache};
 use error::{RoutingError, InterfaceError};
 use event::Event;
 use id::{FullId, PublicId};
@@ -53,7 +54,7 @@ use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage, DEFAULT_PRIORITY};
+               UserMessage, UserMessageCache, DEFAULT_PRIORITY};
 use utils;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
@@ -213,9 +214,9 @@ pub struct Core {
     tunnels: Tunnels,
     stats: Stats,
     send_filter: LruCache<(u64, PeerId, u8), ()>,
-    /// This maps `(hash, part_count)` of an incoming `UserMessage` to the map containing all
-    /// `UserMessagePart`s that have already arrived, by `part_index`.
-    user_msg_cache: LruCache<(u64, u32), BTreeMap<u32, Vec<u8>>>,
+    user_msg_cache: UserMessageCache,
+    cacheable_user_msg_cache: UserMessageCache,
+    response_cache: Box<Cache>,
     peer_mgr: PeerManager,
     // List of addresses of peers who have previously sent `BootstrapDeny` messages.
     bootstrap_blacklist: HashSet<SocketAddr>,
@@ -255,6 +256,8 @@ impl Core {
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
 
+        let user_msg_cache_duration = Duration::from_secs(60 * 20);
+
         let mut core = Core {
             crust_service: crust_service,
             role: role,
@@ -283,9 +286,11 @@ impl Core {
             tunnels: Default::default(),
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
-            user_msg_cache: LruCache::with_expiry_duration(Duration::from_secs(60 * 20)),
+            user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             peer_mgr: Default::default(),
             bootstrap_blacklist: HashSet::new(),
+            response_cache: Box::new(NullCache),
         };
 
         core.crust_service.start_service_discovery();
@@ -832,6 +837,10 @@ impl Core {
             return Err(RoutingError::InvalidStateForOperation);
         }
 
+        if try!(self.respond_from_cache(&routing_msg)) {
+            return Ok(())
+        }
+
         if self.signed_message_filter.count(signed_msg) == 1 &&
            self.is_recipient(&routing_msg.dst) {
             self.handle_routing_message(routing_msg, *signed_msg.public_id())
@@ -848,6 +857,42 @@ impl Core {
             };
         }
         Ok(())
+    }
+
+    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage) -> Result<bool, RoutingError> {
+        if let MessageContent::UserMessagePart { hash,
+                                                 part_count,
+                                                 part_index,
+                                                 cacheable,
+                                                 ref payload, .. } = routing_msg.content {
+            if !cacheable { return Ok(false); }
+
+            match self.cacheable_user_msg_cache.add(hash,
+                                                    part_count,
+                                                    part_index,
+                                                    payload.clone()) {
+                Some(UserMessage::Request(request)) => {
+                    if let Some(response) = self.response_cache.get(&request) {
+                        // TODO: priority
+                        let priority = 0;
+
+                        try!(self.send_user_message(routing_msg.dst.clone(),
+                                                    routing_msg.src.clone(),
+                                                    UserMessage::Response(response),
+                                                    priority));
+                        return Ok(true);
+                    }
+                }
+
+                Some(UserMessage::Response(response)) => {
+                    self.response_cache.put(response);
+                }
+
+                None => (),
+            }
+        }
+
+        Ok(false)
     }
 
     fn handle_routing_message(&mut self,
@@ -978,9 +1023,12 @@ impl Core {
             (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
              dst) => {
-                let event = match self.add_user_msg_part(hash, part_count, part_index, payload) {
+                let event = match self.user_msg_cache.add(hash, part_count, part_index, payload) {
                     Some(UserMessage::Request(request)) => {
                         self.stats.count_request(&request);
+
+                        // TOTO: get response from the response cache.
+
                         Event::Request {
                             request: request,
                             src: src,
@@ -989,6 +1037,7 @@ impl Core {
                     }
                     Some(UserMessage::Response(response)) => {
                         self.stats.count_response(&response);
+                        self.response_cache.put(response.clone());
                         Event::Response {
                             response: response,
                             src: src,
@@ -1931,26 +1980,6 @@ impl Core {
             }));
         }
         Ok(())
-    }
-
-    /// Adds the given one to the cache of received message parts, returning a `UserMessage` if the
-    /// given part was the last missing piece of it.
-    fn add_user_msg_part(&mut self,
-                         hash: u64,
-                         part_count: u32,
-                         part_index: u32,
-                         payload: Vec<u8>)
-                         -> Option<UserMessage> {
-        {
-            let entry = self.user_msg_cache.entry((hash, part_count)).or_insert_with(BTreeMap::new);
-            let _ = entry.insert(part_index, payload);
-            if entry.len() != part_count as usize {
-                return None;
-            }
-        }
-        self.user_msg_cache
-            .remove(&(hash, part_count))
-            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
     }
 
     fn send_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
