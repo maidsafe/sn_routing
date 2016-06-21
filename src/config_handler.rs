@@ -27,6 +27,8 @@ pub struct Config {
     pub wallet_address: Option<XorName>,
     /// Upper limit for allowed network storage on this vault.
     pub max_capacity: Option<u64>, // measured by Bytes
+    /// root directory for chunk_store directories
+    pub chunk_store_root: Option<String>,
 }
 
 impl Default for Config {
@@ -34,12 +36,12 @@ impl Default for Config {
         Config {
             wallet_address: None,
             max_capacity: None,
+            chunk_store_root: None,
         }
     }
 }
 
 /// Reads the default vault config file.
-#[allow(dead_code)]
 pub fn read_config_file() -> Result<Config, InternalError> {
     // if the config file is not present, a default one will be generated
     let file_handler = try!(FileHandler::new(&try!(get_file_name())));

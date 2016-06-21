@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::{cmp, env, fs};
+use std::{cmp, fs};
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -92,14 +92,6 @@ impl<Key, Value> ChunkStore<Key, Value>
                 }
             })
             .map_err(From::from)
-    }
-
-    /// Creates new ChunkStore with `max_space` allowed storage space.
-    ///
-    /// The data is stored in a temporary directory that contains `prefix` in its name and is placed
-    /// in the system temp directory.
-    pub fn new(prefix: &str, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
-        Self::new_in(&env::temp_dir(), prefix, max_space)
     }
 
     /// Stores a new data chunk under `key`.

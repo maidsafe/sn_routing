@@ -15,11 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::env;
 use std::rc::Rc;
+use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 
-#[cfg(feature = "use-mock-crust")]
-use config_handler::Config;
+use config_handler::{self, Config};
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
 use personas::maid_manager::MaidManager;
@@ -48,12 +49,30 @@ impl Vault {
     /// Creates a network Vault instance.
     pub fn new(first_vault: bool) -> Result<Self, InternalError> {
         sodiumoxide::init();
+
+        let config = config_handler::read_config_file().unwrap_or(Config::default());
+        let chunk_store_root = if config.chunk_store_root.is_none() {
+            env::temp_dir()
+        } else {
+            let path_str = config.chunk_store_root.unwrap();
+            let root_path = Path::new(&path_str);
+            if root_path.is_dir() {
+                root_path.to_path_buf()
+            } else {
+                warn!("configured chunk_store_root {:?} is not a directory", root_path);
+                env::temp_dir()
+            }
+        };
+
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, first_vault)));
 
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
-            data_manager: try!(DataManager::new(routing_node.clone(), DEFAULT_MAX_CAPACITY)),
+            data_manager: try!(DataManager::new(routing_node.clone(),
+                                                &chunk_store_root,
+                                                config.max_capacity
+                                                      .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
@@ -64,7 +83,9 @@ impl Vault {
     #[cfg(feature = "use-mock-crust")]
     pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
         let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-        self.data_manager = try!(DataManager::new(self.routing_node.clone(), max_capacity));
+        self.data_manager = try!(DataManager::new(self.routing_node.clone(),
+                                                  &env::temp_dir(),
+                                                  max_capacity));
         Ok(())
     }
 

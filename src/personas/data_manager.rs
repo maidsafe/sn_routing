@@ -19,6 +19,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::From;
 use std::fmt::{self, Debug, Formatter};
 use std::ops::Add;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -283,9 +284,12 @@ impl Debug for DataManager {
 }
 
 impl DataManager {
-    pub fn new(routing_node: Rc<RoutingNode>, capacity: u64) -> Result<DataManager, InternalError> {
+    pub fn new(routing_node: Rc<RoutingNode>,
+               chunk_store_root: &PathBuf,
+               capacity: u64)
+               -> Result<DataManager, InternalError> {
         Ok(DataManager {
-            chunk_store: try!(ChunkStore::new(CHUNK_STORE_PREFIX, capacity)),
+            chunk_store: try!(ChunkStore::new_in(chunk_store_root, CHUNK_STORE_PREFIX, capacity)),
             refresh_accumulator:
                 Accumulator::with_duration(ACCUMULATOR_QUORUM,
                                            Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),
