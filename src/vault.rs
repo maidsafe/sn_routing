@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::env;
+use std::{env, fs};
 use std::rc::Rc;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 
 use config_handler::{self, Config};
@@ -43,6 +43,7 @@ pub struct Vault {
     data_manager: DataManager,
     routing_node: Rc<RoutingNode>,
     routing_receiver: Receiver<Event>,
+    chunk_store_root: PathBuf,
 }
 
 impl Vault {
@@ -75,6 +76,7 @@ impl Vault {
                                                       .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
+            chunk_store_root: chunk_store_root,
         })
     }
 
@@ -293,6 +295,8 @@ impl Vault {
     fn on_connected(&self) -> Result<(), InternalError> {
         // TODO: what is expected to be done here?
         debug!("Vault connected");
+        let _ = fs::remove_dir_all(&self.chunk_store_root);
+        let _ = fs::create_dir_all(&self.chunk_store_root);
         Ok(())
     }
 }
