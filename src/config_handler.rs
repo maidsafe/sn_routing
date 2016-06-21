@@ -21,7 +21,7 @@ use routing::XorName;
 use std::ffi::OsString;
 
 /// Lets a vault configure a wallet address and storage limit.
-#[derive(Clone, Debug, RustcDecodable, RustcEncodable)]
+#[derive(Clone, Debug, Default, RustcDecodable, RustcEncodable)]
 pub struct Config {
     /// Used to store the address where SafeCoin will be sent.
     pub wallet_address: Option<XorName>,
@@ -29,16 +29,6 @@ pub struct Config {
     pub max_capacity: Option<u64>, // measured by Bytes
     /// root directory for chunk_store directories
     pub chunk_store_root: Option<String>,
-}
-
-impl Default for Config {
-    fn default() -> Config {
-        Config {
-            wallet_address: None,
-            max_capacity: None,
-            chunk_store_root: None,
-        }
-    }
 }
 
 /// Reads the default vault config file.

@@ -20,7 +20,9 @@ use std::rc::Rc;
 use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 
-use config_handler::{self, Config};
+#[cfg(feature = "use-mock-crust")]
+use config_handler::Config;
+use config_handler;
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
 use personas::maid_manager::MaidManager;
@@ -50,7 +52,7 @@ impl Vault {
     pub fn new(first_vault: bool) -> Result<Self, InternalError> {
         sodiumoxide::init();
 
-        let config = config_handler::read_config_file().unwrap_or(Config::default());
+        let config = config_handler::read_config_file().ok().unwrap_or_default();
         let chunk_store_root = if config.chunk_store_root.is_none() {
             env::temp_dir()
         } else {
@@ -59,7 +61,8 @@ impl Vault {
             if root_path.is_dir() {
                 root_path.to_path_buf()
             } else {
-                warn!("configured chunk_store_root {:?} is not a directory", root_path);
+                warn!("configured chunk_store_root {:?} is not a directory",
+                      root_path);
                 env::temp_dir()
             }
         };
@@ -72,7 +75,7 @@ impl Vault {
             data_manager: try!(DataManager::new(routing_node.clone(),
                                                 &chunk_store_root,
                                                 config.max_capacity
-                                                      .unwrap_or(DEFAULT_MAX_CAPACITY))),
+                                                    .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
@@ -83,9 +86,8 @@ impl Vault {
     #[cfg(feature = "use-mock-crust")]
     pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
         let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-        self.data_manager = try!(DataManager::new(self.routing_node.clone(),
-                                                  &env::temp_dir(),
-                                                  max_capacity));
+        self.data_manager =
+            try!(DataManager::new(self.routing_node.clone(), &env::temp_dir(), max_capacity));
         Ok(())
     }
 
