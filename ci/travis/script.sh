@@ -12,18 +12,23 @@ CHANNEL=${CHANNEL:-stable}
 [ -n "$TRAVIS_TAG" -a "$CHANNEL" != stable ] && exit 0
 
 export RUST_BACKTRACE=1
-ARGS=()
+ARG_FEATURES=()
+ARG_TARGET=()
 
 if [ -n "$FEATURES" ]; then
-  ARGS+=( --features "$FEATURES" )
+  ARG_FEATURES+=( --features "$FEATURES" )
+fi
+
+if [ -n "$TARGET" ]; then
+  ARG_TARGET+=( --target "$TARGET" )
 fi
 
 # Build and run tests with all features specified in $FEATURES
-cargo build --target "$TARGET" --release "${ARGS[@]}"
-cargo test --target "$TARGET" --release "${ARGS[@]}"
+cargo build --release "${ARG_FEATURES[@]}" "${ARG_TARGET[@]}"
+cargo test --release "${ARG_FEATURES[@]}" "${ARG_TARGET[@]}"
 
 # Also build (but don't run) without any features.
 if [ -n "$FEATURES" ]; then
-  cargo build --target "$TARGET" --release
-  cargo test --target "$TARGET" --release --no-run
+  cargo build --release "${ARG_TARGET[@]}"
+  cargo test --release --no-run "${ARG_TARGET[@]}"
 fi
