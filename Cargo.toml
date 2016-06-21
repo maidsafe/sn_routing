@@ -25,10 +25,12 @@ routing = "~0.22.0"
 rustc-serialize = "~0.3.19"
 safe_network_common = "~0.3.0"
 sodiumoxide = "~0.0.10"
-tempdir = "~0.3.4"
 
 [build-dependencies]
 hyper = {version = "~0.9.6", optional = true}
+
+[dev-dependencies]
+tempdir = "~0.3.4"
 
 [features]
 generate-diagrams = ["hyper"]

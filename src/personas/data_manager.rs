@@ -31,7 +31,7 @@ use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, MessageId, StructuredData, XorName, GROUP_SIZE};
 use safe_network_common::client_errors::{MutationError, GetError};
-use vault::{CHUNK_STORE_PREFIX, RoutingNode};
+use vault::RoutingNode;
 
 const MAX_FULL_PERCENT: u64 = 50;
 /// The quorum for accumulating refresh messages.
@@ -284,12 +284,34 @@ impl Debug for DataManager {
 }
 
 impl DataManager {
+    #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(routing_node: Rc<RoutingNode>,
-               chunk_store_root: &PathBuf,
+               chunk_store_root: PathBuf,
                capacity: u64)
                -> Result<DataManager, InternalError> {
         Ok(DataManager {
-            chunk_store: try!(ChunkStore::new_in(chunk_store_root, CHUNK_STORE_PREFIX, capacity)),
+            chunk_store: try!(ChunkStore::new(chunk_store_root, capacity)),
+            refresh_accumulator:
+                Accumulator::with_duration(ACCUMULATOR_QUORUM,
+                                           Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),
+            cache: Default::default(),
+            routing_node: routing_node,
+            immutable_data_count: 0,
+            structured_data_count: 0,
+            client_get_requests: 0,
+        })
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn new(routing_node: Rc<RoutingNode>,
+               mut chunk_store_root: PathBuf,
+               capacity: u64)
+               -> Result<DataManager, InternalError> {
+        use rand::{self, Rng};
+        use rustc_serialize::hex::ToHex;
+        chunk_store_root.push(rand::thread_rng().gen_iter().take(8).collect::<Vec<u8>>().to_hex());
+        Ok(DataManager {
+            chunk_store: try!(ChunkStore::new(chunk_store_root, capacity)),
             refresh_accumulator:
                 Accumulator::with_duration(ACCUMULATOR_QUORUM,
                                            Duration::from_secs(ACCUMULATOR_TIMEOUT_SECS)),

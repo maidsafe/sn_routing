@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::{env, fs};
+use std::env;
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
@@ -31,7 +31,7 @@ use personas::data_manager::IdAndVersion;
 use routing::{Authority, Data, Request, Response, XorName};
 use sodiumoxide;
 
-pub const CHUNK_STORE_PREFIX: &'static str = "safe-vault";
+pub const CHUNK_STORE_DIR: &'static str = "safe_vault_chunk_store";
 const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;
 
 pub use routing::Event;
@@ -52,7 +52,7 @@ impl Vault {
         sodiumoxide::init();
 
         let config = config_handler::read_config_file().unwrap_or(Config::default());
-        let chunk_store_root = if config.chunk_store_root.is_none() {
+        let mut chunk_store_root = if config.chunk_store_root.is_none() {
             env::temp_dir()
         } else {
             let path_str = config.chunk_store_root.unwrap();
@@ -64,6 +64,7 @@ impl Vault {
                 env::temp_dir()
             }
         };
+        chunk_store_root.push(CHUNK_STORE_DIR);
 
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = Rc::new(try!(RoutingNode::new(routing_sender, first_vault)));
@@ -71,7 +72,7 @@ impl Vault {
         Ok(Vault {
             maid_manager: MaidManager::new(routing_node.clone()),
             data_manager: try!(DataManager::new(routing_node.clone(),
-                                                &chunk_store_root,
+                                                chunk_store_root.clone(),
                                                 config.max_capacity
                                                       .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
@@ -86,7 +87,7 @@ impl Vault {
     pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
         let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
         self.data_manager = try!(DataManager::new(self.routing_node.clone(),
-                                                  &env::temp_dir(),
+                                                  env::temp_dir(),
                                                   max_capacity));
         Ok(())
     }
@@ -292,11 +293,20 @@ impl Vault {
         Ok(())
     }
 
+    #[cfg(not(feature = "use-mock-crust"))]
     fn on_connected(&self) -> Result<(), InternalError> {
+        use std::fs;
         // TODO: what is expected to be done here?
         debug!("Vault connected");
         let _ = fs::remove_dir_all(&self.chunk_store_root);
         let _ = fs::create_dir_all(&self.chunk_store_root);
+        Ok(())
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    fn on_connected(&self) -> Result<(), InternalError> {
+        // TODO: what is expected to be done here?
+        debug!("Vault connected, current chunk_store_root is {:?}", self.chunk_store_root);
         Ok(())
     }
 }

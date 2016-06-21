@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::hex::{FromHex, ToHex};
-use tempdir::TempDir;
 
 quick_error! {
     /// `ChunkStore` error.
@@ -63,7 +62,7 @@ quick_error! {
 ///
 /// The data chunks are deleted when the `ChunkStore` goes out of scope.
 pub struct ChunkStore<Key, Value> {
-    tempdir: TempDir,
+    rootdir: PathBuf,
     max_space: u64,
     used_space: u64,
     phantom: PhantomData<(Key, Value)>,
@@ -75,22 +74,16 @@ impl<Key, Value> ChunkStore<Key, Value>
 {
     /// Creates new ChunkStore with `max_space` allowed storage space.
     ///
-    /// The data is stored in a temporary directory that contains `prefix` in its name and is placed
-    /// in the `root` directory.  If `root` doesn't exist, it will be created.
-    pub fn new_in<P: AsRef<Path>>(root: P,
-                                  prefix: &str,
-                                  max_space: u64)
-                                  -> Result<ChunkStore<Key, Value>, Error> {
-        fs::create_dir_all(root.as_ref())
-            .and_then(|()| TempDir::new_in(root.as_ref(), prefix))
-            .map(|tempdir| {
+    /// The data is stored in a root directory. If `root` doesn't exist, it will be created.
+    pub fn new(root: PathBuf, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
+        fs::create_dir_all(&root)
+            .map(|()|
                 ChunkStore {
-                    tempdir: tempdir,
+                    rootdir: root,
                     max_space: max_space,
                     used_space: 0,
                     phantom: PhantomData,
-                }
-            })
+                })
             .map_err(From::from)
     }
 
@@ -162,7 +155,7 @@ impl<Key, Value> ChunkStore<Key, Value>
 
     /// Lists all keys of currently-data stored.
     pub fn keys(&self) -> Vec<Key> {
-        fs::read_dir(&self.tempdir.path())
+        fs::read_dir(&self.rootdir)
             .and_then(|dir_entries| {
                 let dir_entry_to_routing_name = |dir_entry: io::Result<fs::DirEntry>| {
                     dir_entry.ok()
@@ -197,6 +190,12 @@ impl<Key, Value> ChunkStore<Key, Value>
     fn file_path(&self, key: &Key) -> Result<PathBuf, Error> {
         let filename = try!(serialisation::serialise(key)).to_hex();
         let path_name = Path::new(&filename);
-        Ok(self.tempdir.path().join(path_name))
+        Ok(self.rootdir.join(path_name))
+    }
+}
+
+impl<Key, Value> Drop for ChunkStore<Key, Value> {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.rootdir);
     }
 }
