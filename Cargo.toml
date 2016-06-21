@@ -12,28 +12,31 @@ version = "0.22.0"
 
 [dependencies]
 accumulator = "~0.4.0"
-clippy = {version = "~0.0.76", optional = true}
-crust = "~0.15.0"
-itertools = "~0.4.15"
+clippy = {version = "~0.0.77", optional = true}
+crust = {git = "https://github.com/maidsafe/crust.git"}
+itertools = "~0.4.16"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
 lru_time_cache = "~0.4.0"
-maidsafe_utilities = "~0.6.0"
+maidsafe_utilities = "~0.7.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
 sodiumoxide = "~0.0.10"
+sodiumoxide_extras = {version = "~0.1.0", optional = true}
 term = "~0.4.4"
+unwrap = "~1.1.0"
 
 [dev-dependencies]
-docopt = "~0.6.80"
+docopt = "~0.6.81"
 libc = "~0.2.12"
+sodiumoxide_extras = "~0.1.0"
 
 [build-dependencies]
-hyper = {version = "~0.9.7", optional = true}
+hyper = {version = "~0.9.9", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]
-use-mock-crust = []
+use-mock-crust = ["sodiumoxide_extras"]
 
 [[example]]
 bench = false

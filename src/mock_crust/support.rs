@@ -23,6 +23,9 @@ use std::rc::{Rc, Weak};
 
 use super::crust::{ConnectionInfoResult, CrustError, CrustEventSender, Event, PrivConnectionInfo,
                    PeerId, PubConnectionInfo};
+use maidsafe_utilities::SeededRng;
+use rand::XorShiftRng;
+use sodiumoxide_extras;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -33,16 +36,24 @@ pub struct NetworkImpl {
     next_endpoint: usize,
     queue: VecDeque<(Endpoint, Endpoint, Packet)>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
+    rng: SeededRng,
 }
 
 impl Network {
     /// Create new mock Network.
-    pub fn new() -> Self {
+    pub fn new(optional_seed: Option<[u32; 4]>) -> Self {
+        let mut rng = if let Some(seed) = optional_seed {
+            SeededRng::from_seed(seed)
+        } else {
+            SeededRng::new()
+        };
+        unwrap!(sodiumoxide_extras::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             next_endpoint: 0,
             queue: VecDeque::new(),
             blocked_connections: HashSet::new(),
+            rng: rng,
         })))
     }
 
@@ -88,6 +99,12 @@ impl Network {
         imp.blocked_connections.insert((sender, receiver));
     }
 
+    /// Construct a new [`XorShiftRng`](https://doc.rust-lang.org/rand/rand/struct.XorShiftRng.html)
+    /// using a seed generated from random data provided by `self`.
+    pub fn new_rng(&self) -> XorShiftRng {
+        self.0.borrow_mut().rng.new_rng()
+    }
+
     fn connection_blocked(&self, sender: Endpoint, receiver: Endpoint) -> bool {
         self.0.borrow().blocked_connections.contains(&(sender, receiver))
     }
@@ -125,7 +142,7 @@ impl Network {
 
 impl Default for Network {
     fn default() -> Network {
-        Network::new()
+        Network::new(None)
     }
 }
 

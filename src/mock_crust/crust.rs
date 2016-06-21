@@ -40,9 +40,9 @@ impl Service {
 
     /// Create new mock `Service` by explicitly passing the mock device to associate
     /// with.
-    pub fn with_handle(handle: &ServiceHandle, event_sender: CrustEventSender)
-        -> Result<Self, CrustError>
-    {
+    pub fn with_handle(handle: &ServiceHandle,
+                       event_sender: CrustEventSender)
+                       -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender));

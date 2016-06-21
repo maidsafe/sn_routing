@@ -31,7 +31,6 @@ use event::Event;
 use id::FullId;
 use itertools::Itertools;
 use kademlia_routing_table::{RoutingTable, ContactInfo};
-use maidsafe_utilities::SeededRng;
 use messages::{Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use node::Node;
@@ -420,7 +419,7 @@ fn did_receive_get_success(node: &TestNode,
 }
 
 fn test_nodes(size: usize) {
-    let network = Network::new();
+    let network = Network::new(None);
     let nodes = create_connected_nodes(&network, size);
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -457,7 +456,7 @@ fn more_than_group_size_nodes() {
 
 #[test]
 fn failing_connections_group_of_three() {
-    let network = Network::new();
+    let network = Network::new(None);
 
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(2), Endpoint(1));
@@ -478,7 +477,7 @@ fn failing_connections_group_of_three() {
 
 #[test]
 fn failing_connections_ring() {
-    let network = Network::new();
+    let network = Network::new(None);
     let len = GROUP_SIZE * 2;
     for i in 0..(len - 1) {
         let ep0 = Endpoint(1 + i);
@@ -493,7 +492,7 @@ fn failing_connections_ring() {
 
 #[test]
 fn failing_connections_unidirectional() {
-    let network = Network::new();
+    let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(1), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
@@ -504,15 +503,15 @@ fn failing_connections_unidirectional() {
 
 #[test]
 fn client_connects_to_nodes() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let _ = create_connected_clients(&network, &mut nodes, 1);
 }
 
 #[test]
 fn messages_accumulate_with_quorum() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 15);
 
     let data = gen_immutable_data(&mut rng, 8);
@@ -606,7 +605,7 @@ fn messages_accumulate_with_quorum() {
 
 #[test]
 fn node_drops() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
     drop_node(&mut nodes, 0);
 
@@ -615,8 +614,8 @@ fn node_drops() {
 
 #[test]
 fn churn() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 
     for i in 0..100 {
@@ -633,7 +632,7 @@ fn churn() {
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -647,7 +646,7 @@ fn node_joins_in_front() {
 #[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -665,7 +664,7 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn check_close_groups_for_group_size_nodes() {
-    let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
+    let nodes = create_connected_nodes(&Network::new(None), GROUP_SIZE);
     let close_groups_complete = nodes.iter()
         .all(|n| nodes.iter().all(|m| m.close_group().contains(&n.name())));
     assert!(close_groups_complete);
@@ -673,8 +672,8 @@ fn check_close_groups_for_group_size_nodes() {
 
 #[test]
 fn successful_put_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -710,8 +709,8 @@ fn successful_put_request() {
 
 #[test]
 fn successful_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -776,8 +775,8 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -841,8 +840,8 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -899,8 +898,8 @@ const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
 fn request_during_churn_node_to_self() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -928,8 +927,8 @@ fn request_during_churn_node_to_self() {
 
 #[test]
 fn request_during_churn_node_to_node() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -958,8 +957,8 @@ fn request_during_churn_node_to_node() {
 
 #[test]
 fn request_during_churn_node_to_group() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -997,8 +996,8 @@ fn request_during_churn_node_to_group() {
 
 #[test]
 fn request_during_churn_group_to_self() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -1038,8 +1037,8 @@ fn request_during_churn_group_to_self() {
 
 #[test]
 fn request_during_churn_group_to_node() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -1076,8 +1075,8 @@ fn request_during_churn_group_to_node() {
 
 #[test]
 fn request_during_churn_group_to_group() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {

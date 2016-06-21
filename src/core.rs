@@ -1821,8 +1821,8 @@ impl Core {
             None
         };
         if let Some(timed_out) = timed_out_ack {
-            // Safe to use `expect` here as we just got a valid key in the `find` call above.
-            let mut unacked_msg = self.pending_acks.remove(&timed_out).expect("Bug in HashMap.");
+            // Safe to use `unwrap!()` here as we just got a valid key in the `find` call above.
+            let mut unacked_msg = unwrap!(self.pending_acks.remove(&timed_out));
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
                    timed_out,
