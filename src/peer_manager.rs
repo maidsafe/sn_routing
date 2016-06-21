@@ -22,14 +22,22 @@ use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 use authority::Authority;
 use sodiumoxide::crypto::sign;
 use id::PublicId;
-use lru_time_cache::LruCache;
+use itertools::Itertools;
+use rand;
 use std::collections::HashMap;
+use std::{error, fmt};
 use std::time::{Duration, Instant};
 use xor_name::XorName;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
+/// Time (in seconds) after which the connection to a peer is considered failed.
+#[cfg(not(feature = "use-mock-crust"))]
+const CONNECTION_TIMEOUT_SECS: u64 = 90;
+/// With mock Crust, all pending connections are removed explicitly.
+#[cfg(feature = "use-mock-crust")]
+const CONNECTION_TIMEOUT_SECS: u64 = 0;
 
 /// Info about client a proxy kept in a proxy node.
 pub struct ClientInfo {
@@ -53,13 +61,79 @@ impl ClientInfo {
     }
 }
 
-/// The state of a peer we are trying to connect to.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub enum ConnectState {
-    /// We called `crust::Service::connect` and are waiting for a `NewPeer` event.
-    Crust,
-    /// Crust connection has failed; try to find a tunnel node.
+#[derive(Debug)]
+/// Errors that occur in peer status management.
+pub enum Error {
+    /// The specified peer was not found.
+    PeerNotFound,
+    /// The peer is in a state that doesn't allow the requested operation.
+    UnexpectedState,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::PeerNotFound => write!(formatter, "Peer not found"),
+            Error::UnexpectedState => write!(formatter, "Peer state does not allow operation"),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Error::PeerNotFound => "Peer not found",
+            Error::UnexpectedState => "Peer state does not allow operation",
+        }
+    }
+}
+
+/// Our relationship status with a known peer.
+#[derive(Debug)]
+pub enum PeerState {
+    /// Waiting for Crust to prepare our `PrivConnectionInfo`. Contains source and destination for
+    /// sending it to the peer, and their connection info, if we already received it.
+    ConnectionInfoPreparing(Authority, Authority, Option<PubConnectionInfo>),
+    /// The prepared connection info that has been sent to the peer.
+    ConnectionInfoReady(PrivConnectionInfo),
+    /// We called `connect` and are waiting for a `NewPeer` event.
+    CrustConnecting,
+    /// We failed to connect and are trying to find a tunnel node.
+    SearchingForTunnel,
+    /// We are connected to that peer.
+    Connected,
+    /// We have a tunnel to that peer.
     Tunnel,
+}
+
+/// The result of adding a peer's `PubConnectionInfo`.
+#[derive(Debug)]
+pub enum ConnectionInfoReceivedResult {
+    /// Our own connection info has already been prepared: The peer was switched to
+    /// `CrustConnecting` status; Crust's `connect` method should be called with these infos now.
+    Ready(PrivConnectionInfo, PubConnectionInfo),
+    /// We don't have a connection info for that peer yet. The peer was switched to
+    /// `ConnectionInfoPreparing` status; Crust's `prepare_connection_info` should be called with
+    /// this token now.
+    Prepare(u32),
+    /// We are currently preparing our own connection info and need to wait for it. The peer
+    /// remains in `ConnectionInfoPreparing` status.
+    Waiting,
+}
+
+/// The result of adding our prepared `PrivConnectionInfo`. It needs to be sent to a peer as a
+/// `PubConnectionInfo`.
+#[derive(Debug)]
+pub struct ConnectionInfoPreparedResult {
+    /// The peer's public ID.
+    pub pub_id: PublicId,
+    /// The source authority for sending the connection info.
+    pub src: Authority,
+    /// The destination authority for sending the connection info.
+    pub dst: Authority,
+    /// If the peer's connection info was already present, the peer has been moved to
+    /// `CrustConnecting` status. Crust's `connect` method should be called with these infos now.
+    pub infos: Option<(PrivConnectionInfo, PubConnectionInfo)>,
 }
 
 // TODO: Move `node_id_cache`, the `connection_info_map`s and possibly `tunnels` and `routing_table`
@@ -77,29 +151,15 @@ pub enum ConnectState {
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
 /// we have verified, whom we are directly connected to or via a tunnel.
+#[derive(Default)]
 pub struct PeerManager {
-    /// Our bootstrap connections.
+    pub_id_map: HashMap<PeerId, PublicId>,
+    node_map: HashMap<PublicId, (Instant, PeerState)>,
+    /// Our bootstrap connection.
     proxy: Option<(PeerId, PublicId)>,
     /// Any clients we have proxying through us, and whether they have `client_restriction`.
     client_map: HashMap<PeerId, ClientInfo>,
-    /// Maps the ID of a peer we are currently trying to connect to to their name.
-    connecting_peers: LruCache<PeerId, (XorName, ConnectState)>,
-    pub connection_token_map: LruCache<u32, (PublicId, Authority, Authority)>,
-    pub our_connection_info_map: LruCache<PublicId, PrivConnectionInfo>,
-    pub their_connection_info_map: LruCache<PublicId, PubConnectionInfo>,
-}
-
-impl Default for PeerManager {
-    fn default() -> PeerManager {
-        PeerManager {
-            proxy: None,
-            client_map: Default::default(),
-            connecting_peers: LruCache::with_expiry_duration(Duration::from_secs(90)),
-            connection_token_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
-            our_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
-            their_connection_info_map: LruCache::with_expiry_duration(Duration::from_secs(90)),
-        }
-    }
+    connection_token_map: HashMap<u32, PublicId>,
 }
 
 impl PeerManager {
@@ -166,7 +226,7 @@ impl PeerManager {
             .iter()
             .filter(|&(_, info)| info.is_stale())
             .map(|(&peer_id, _)| peer_id)
-            .collect::<Vec<_>>();
+            .collect_vec();
         for peer_id in &stale_keys {
             let _ = self.client_map.remove(peer_id);
         }
@@ -199,56 +259,297 @@ impl PeerManager {
     }
 
     /// Marks the given peer as "connected".
-    pub fn connected_to(&mut self, peer_id: PeerId) {
-        if self.connecting_peers.remove(&peer_id).is_none() {
-            trace!("Received NewPeer from {:?}, but was not expecting connection.",
-                   peer_id);
-            // TODO: Having sent connection info should suffice. Otherwise reject the connection.
+    pub fn connected_to(&mut self, peer_id: PeerId) -> bool {
+        self.set_peer_state(peer_id, PeerState::Connected)
+    }
+
+    /// Marks the given peer as "connected".
+    pub fn tunnelling_to(&mut self, peer_id: PeerId) -> bool {
+        self.set_peer_state(peer_id, PeerState::Tunnel)
+    }
+
+    /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
+    pub fn get_connecting_peer(&mut self, peer_id: &PeerId) -> Option<&PublicId> {
+        self.pub_id_map.get(peer_id).and_then(|pub_id| {
+            match self.get_state(pub_id) {
+                // Some(&PeerState::ConnectionInfoPreparing(..)) |
+                // Some(&PeerState::ConnectionInfoReady(_)) |
+                // Some(&PeerState::SearchingForTunnel) |
+                Some(&PeerState::CrustConnecting) => Some(pub_id),
+                _ => None,
+            }
+        })
+    }
+
+    /// Sets the given peer to state `SearchingForTunnel` or returns `false` if it doesn't exist.
+    pub fn set_searching_for_tunnel(&mut self, peer_id: PeerId, pub_id: &PublicId) -> bool {
+        match self.get_state(pub_id) {
+            Some(&PeerState::Connected) |
+            Some(&PeerState::Tunnel) => {
+                return false;
+            }
+            _ => (),
+        }
+        let _ = self.pub_id_map.insert(peer_id, *pub_id);
+        self.insert_state(*pub_id, PeerState::SearchingForTunnel);
+        true
+    }
+
+    /// Inserts the given connection info in the map to wait for the peer's info, or returns both
+    /// if that's already present and sets the status to `CrustConnecting`. It also returns the
+    /// source and destination authorities for sending the serialised connection info to the peer.
+    pub fn connection_info_prepared(&mut self,
+                                    token: u32,
+                                    our_info: PrivConnectionInfo)
+                                    -> Result<ConnectionInfoPreparedResult, Error> {
+        let pub_id = try!(self.connection_token_map.remove(&token).ok_or(Error::PeerNotFound));
+        let (src, dst, opt_their_info) = match self.node_map.remove(&pub_id) {
+            Some((_, PeerState::ConnectionInfoPreparing(src, dst, info))) => (src, dst, info),
+            Some((timestamp, state)) => {
+                let _ = self.node_map.insert(pub_id, (timestamp, state));
+                return Err(Error::UnexpectedState);
+            }
+            None => return Err(Error::PeerNotFound),
+        };
+        Ok(ConnectionInfoPreparedResult {
+            pub_id: pub_id,
+            src: src,
+            dst: dst,
+            infos: match opt_their_info {
+                Some(their_info) => {
+                    self.insert_state(pub_id, PeerState::CrustConnecting);
+                    Some((our_info, their_info))
+                }
+                None => {
+                    self.insert_state(pub_id, PeerState::ConnectionInfoReady(our_info));
+                    None
+                }
+            },
+        })
+    }
+
+    /// Inserts the given connection info in the map to wait for the preparation of our own info, or
+    /// returns both if that's already present and sets the status to `CrustConnecting`.
+    pub fn connection_info_received(&mut self,
+                                    src: Authority,
+                                    dst: Authority,
+                                    pub_id: PublicId,
+                                    their_info: PubConnectionInfo)
+                                    -> Result<ConnectionInfoReceivedResult, Error> {
+        let peer_id = their_info.id();
+        match self.node_map.remove(&pub_id) {
+            Some((_, PeerState::ConnectionInfoReady(our_info))) => {
+                self.insert_state(pub_id, PeerState::CrustConnecting);
+                let _ = self.pub_id_map.insert(peer_id, pub_id);
+                Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info))
+            }
+            Some((_, PeerState::ConnectionInfoPreparing(src, dst, None))) => {
+                let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
+                self.insert_state(pub_id, state);
+                Ok(ConnectionInfoReceivedResult::Waiting)
+            }
+            Some((timestamp, state)) => {
+                let _ = self.node_map.insert(pub_id, (timestamp, state));
+                Err(Error::UnexpectedState)
+            }
+            None => {
+                let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
+                self.insert_state(pub_id, state);
+                let _ = self.pub_id_map.insert(peer_id, pub_id);
+                let token = rand::random();
+                let _ = self.connection_token_map.insert(token, pub_id);
+                Ok(ConnectionInfoReceivedResult::Prepare(token))
+            }
         }
     }
 
-    /// Returns the name and state of the given peer, if present.
-    pub fn get_connecting_peer(&mut self, peer_id: &PeerId) -> Option<&(XorName, ConnectState)> {
-        self.connecting_peers.peek(peer_id)
+    /// Returns a new token for Crust's `prepare_connection_info` and puts the given peer into
+    /// `ConnectionInfoPreparing` status.
+    pub fn get_connection_info_token(&mut self,
+                                     src: Authority,
+                                     dst: Authority,
+                                     pub_id: PublicId)
+                                     -> u32 {
+        let token = rand::random();
+        let _ = self.connection_token_map.insert(token, pub_id);
+        self.insert_state(pub_id, PeerState::ConnectionInfoPreparing(src, dst, None));
+        token
     }
 
-    /// Returns the state of the given peer, if present.
-    pub fn connecting_peer_state(&self, name: &XorName) -> Option<ConnectState> {
-        self.connecting_peers
-            .peek_iter()
-            .find(|&(_, &(ref n, _))| n == name)
-            .map(|(_, &(_, state))| state)
-    }
-
-    /// Adds the given peer and sets the given connection status.
-    pub fn insert_connecting_peer(&mut self,
-                                  peer_id: PeerId,
-                                  name: XorName,
-                                  state: ConnectState)
-                                  -> Option<(XorName, ConnectState)> {
-        self.connecting_peers.insert(peer_id, (name, state))
-    }
-
-    /// Removes the given connecting peer.
-    pub fn remove_connecting_peer(&mut self, peer_id: &PeerId) -> Option<(XorName, ConnectState)> {
-        self.connecting_peers.remove(peer_id)
-    }
-
-    /// Returns all peers with the given state.
-    pub fn peers_with_state(&mut self, state: ConnectState) -> Vec<(PeerId, XorName)> {
-        // TODO: Add a peek_all method to LruCache that doesn't update the timestamps.
-        self.connecting_peers
-            .peek_iter()
-            .filter(|&(_, &(_, s))| s == state)
-            .map(|(dst_id, &(name, _))| (*dst_id, name))
+    /// Returns all peers we are looking for a tunnel to.
+    pub fn peers_needing_tunnel(&self) -> Vec<PeerId> {
+        self.pub_id_map
+            .iter()
+            .filter_map(|(peer_id, pub_id)| match self.get_state(pub_id) {
+                Some(&PeerState::SearchingForTunnel) => Some(*peer_id),
+                _ => None,
+            })
             .collect()
     }
 
+    /// Returns `true` if we are in the process of connecting to the given peer.
+    pub fn is_connecting(&self, pub_id: &PublicId) -> bool {
+        match self.get_state(pub_id) {
+            Some(&PeerState::ConnectionInfoPreparing(..)) |
+            Some(&PeerState::ConnectionInfoReady(..)) |
+            Some(&PeerState::CrustConnecting) => true,
+            _ => false,
+        }
+    }
+
+    /// Removes the given entry.
+    pub fn remove_peer(&mut self, peer_id: &PeerId) {
+        if let Some(pub_id) = self.pub_id_map.remove(peer_id) {
+            let _ = self.node_map.remove(&pub_id);
+        };
+    }
+
     #[cfg(feature = "use-mock-crust")]
+    /// Removes all entries that are not in `Connected` or `Tunnel` state.
     pub fn clear_caches(&mut self) {
-        self.connecting_peers.clear();
-        self.connection_token_map.clear();
-        self.our_connection_info_map.clear();
-        self.their_connection_info_map.clear();
+        self.remove_expired();
+    }
+
+    fn set_peer_state(&mut self, peer_id: PeerId, state: PeerState) -> bool {
+        if let Some(&pub_id) = self.pub_id_map.get(&peer_id) {
+            self.insert_state(pub_id, state);
+            true
+        } else {
+            trace!("{:?} not found. Cannot set state {:?}.", peer_id, state);
+            false
+        }
+    }
+
+    #[allow(absurd_extreme_comparisons)] // CONNECTION_TIMEOUT_SECS == 0 if use-mock-crust.
+    fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
+        // With use-mock-crust, this is false.
+        if CONNECTION_TIMEOUT_SECS > 0 {
+            self.remove_expired();
+        }
+        let _ = self.node_map.insert(pub_id, (Instant::now(), state));
+    }
+
+    fn get_state(&self, pub_id: &PublicId) -> Option<&PeerState> {
+        self.node_map.get(pub_id).map(|&(_, ref state)| state)
+    }
+
+    #[allow(absurd_extreme_comparisons)] // CONNECTION_TIMEOUT_SECS == 0 if use-mock-crust.
+    fn remove_expired(&mut self) {
+        let remove_ids = self.node_map
+            .iter()
+            .filter(|&(_, &(ref timestamp, ref state))| match *state {
+                PeerState::ConnectionInfoPreparing(..) |
+                PeerState::ConnectionInfoReady(_) |
+                PeerState::CrustConnecting |
+                PeerState::SearchingForTunnel => {
+                    timestamp.elapsed().as_secs() >= CONNECTION_TIMEOUT_SECS
+                }
+                PeerState::Connected | PeerState::Tunnel => false,
+            })
+            .map(|(pub_id, _)| *pub_id)
+            .collect_vec();
+        for pub_id in remove_ids {
+            let _ = self.node_map.remove(&pub_id);
+        }
+        let remove_tokens = self.connection_token_map
+            .iter()
+            .filter(|&(_, pub_id)| !self.node_map.contains_key(pub_id))
+            .map(|(token, _)| *token)
+            .collect_vec();
+        for token in remove_tokens {
+            let _ = self.connection_token_map.remove(&token);
+        }
+        let remove_peer_ids = self.pub_id_map
+            .iter()
+            .filter(|&(_, pub_id)| !self.node_map.contains_key(pub_id))
+            .map(|(peer_id, _)| *peer_id)
+            .collect_vec();
+        for peer_id in remove_peer_ids {
+            let _ = self.pub_id_map.remove(&peer_id);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "use-mock-crust"))]
+mod tests {
+    use super::*;
+    use authority::Authority;
+    use id::FullId;
+    use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+    use mock_crust::Endpoint;
+    use xor_name::{XorName, XOR_NAME_LEN};
+
+    fn node_auth(byte: u8) -> Authority {
+        Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))
+    }
+
+    #[test]
+    pub fn connection_info_prepare_receive() {
+        let mut peer_mgr: PeerManager = Default::default();
+        let orig_pub_id = *FullId::new().public_id();
+        let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
+        let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
+        // We decide to connect to the peer with `pub_id`:
+        let token = peer_mgr.get_connection_info_token(node_auth(0), node_auth(1), orig_pub_id);
+        // Crust has finished preparing the connection info.
+        match peer_mgr.connection_info_prepared(token, our_connection_info.clone()) {
+            Ok(ConnectionInfoPreparedResult { pub_id, src, dst, infos: None }) => {
+                assert_eq!(orig_pub_id, pub_id);
+                assert_eq!(node_auth(0), src);
+                assert_eq!(node_auth(1), dst);
+            }
+            result => panic!("Unexpected result: {:?}", result),
+        }
+        // Finally, we received the peer's connection info.
+        match peer_mgr.connection_info_received(node_auth(0),
+                                                node_auth(1),
+                                                orig_pub_id,
+                                                their_connection_info.clone()) {
+            Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info)) => {
+                assert_eq!(our_connection_info, our_info);
+                assert_eq!(their_connection_info, their_info);
+            }
+            result => panic!("Unexpected result: {:?}", result),
+        }
+        // Since both connection infos are present, the state should now be `CrustConnecting`.
+        match peer_mgr.get_state(&orig_pub_id) {
+            Some(&PeerState::CrustConnecting) => (),
+            state => panic!("Unexpected state: {:?}", state),
+        }
+    }
+
+    #[test]
+    pub fn connection_info_receive_prepare() {
+        let mut peer_mgr: PeerManager = Default::default();
+        let orig_pub_id = *FullId::new().public_id();
+        let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
+        let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
+        // We received a connection info from the peer and get a token to prepare ours.
+        let token = match peer_mgr.connection_info_received(node_auth(0),
+                                                            node_auth(1),
+                                                            orig_pub_id,
+                                                            their_connection_info.clone()) {
+            Ok(ConnectionInfoReceivedResult::Prepare(token)) => token,
+            result => panic!("Unexpected result: {:?}", result),
+        };
+        // Crust has finished preparing the connection info.
+        match peer_mgr.connection_info_prepared(token, our_connection_info.clone()) {
+            Ok(ConnectionInfoPreparedResult { pub_id,
+                                              src,
+                                              dst,
+                                              infos: Some((our_info, their_info)) }) => {
+                assert_eq!(orig_pub_id, pub_id);
+                assert_eq!(node_auth(0), src);
+                assert_eq!(node_auth(1), dst);
+                assert_eq!(our_connection_info, our_info);
+                assert_eq!(their_connection_info, their_info);
+            }
+            result => panic!("Unexpected result: {:?}", result),
+        }
+        // Since both connection infos are present, the state should now be `CrustConnecting`.
+        match peer_mgr.get_state(&orig_pub_id) {
+            Some(&PeerState::CrustConnecting) => (),
+            state => panic!("Unexpected state: {:?}", state),
+        }
     }
 }
