@@ -137,8 +137,8 @@ fn start_two_services_rendezvous_connect() {
     unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
     unwrap_result!(service_1.connect(our_ci_1, their_ci_0));
 
-    let id_1 = expect_event!(event_rx_0, Event::NewPeer(Ok(()), id) => id);
-    let id_0 = expect_event!(event_rx_1, Event::NewPeer(Ok(()), id) => id);
+    let id_1 = expect_event!(event_rx_0, Event::ConnectSuccess(id) => id);
+    let id_0 = expect_event!(event_rx_1, Event::ConnectSuccess(id) => id);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
@@ -191,8 +191,8 @@ fn unidirectional_rendezvous_connect() {
 
     unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
 
-    expect_event!(event_rx_0, Event::NewPeer(Ok(()), _));
-    expect_event!(event_rx_1, Event::NewPeer(Ok(()), _));
+    expect_event!(event_rx_0, Event::ConnectSuccess(_));
+    expect_event!(event_rx_1, Event::ConnectSuccess(_));
 }
 
 #[test]

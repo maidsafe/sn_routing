@@ -21,8 +21,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
-use super::crust::{ConnectionInfoResult, CrustError, CrustEventSender, Event, PrivConnectionInfo,
-                   PeerId, PubConnectionInfo};
+use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
+                   PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
 use rand::XorShiftRng;
 use sodiumoxide_extras;
@@ -320,7 +320,7 @@ impl ServiceImpl {
     }
 
     fn handle_connect_failure(&self, _peer_endpoint: Endpoint, their_id: PeerId) {
-        self.send_event(Event::NewPeer(Err(CrustError), their_id));
+        self.send_event(Event::ConnectFailure(their_id));
     }
 
     fn handle_message(&self, peer_endpoint: Endpoint, data: Vec<u8>) {
@@ -370,7 +370,7 @@ impl ServiceImpl {
 
     fn add_rendezvous_connection(&mut self, peer_id: PeerId, peer_endpoint: Endpoint) {
         self.add_connection(peer_id, peer_endpoint);
-        self.send_event(Event::NewPeer(Ok(()), peer_id));
+        self.send_event(Event::ConnectSuccess(peer_id));
     }
 
     // Remove connected peer with the given peer id and return its endpoint,
