@@ -128,6 +128,8 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+#[macro_use]
+extern crate unwrap;
 extern crate accumulator;
 #[cfg(not(feature = "use-mock-crust"))]
 extern crate crust;
@@ -137,6 +139,8 @@ extern crate kademlia_routing_table;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate sodiumoxide;
+#[cfg(feature = "use-mock-crust")]
+extern crate sodiumoxide_extras;
 
 mod action;
 mod authority;

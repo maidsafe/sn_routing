@@ -494,7 +494,8 @@ impl Core {
                 self.handle_bootstrap_connect(peer_id, socket_addr)
             }
             crust::Event::BootstrapAccept(peer_id) => self.handle_bootstrap_accept(peer_id),
-            crust::Event::NewPeer(result, peer_id) => self.handle_new_peer(result, peer_id),
+            crust::Event::ConnectSuccess(peer_id) => self.handle_connect_success(peer_id),
+            crust::Event::ConnectFailure(peer_id) => self.handle_connect_failure(peer_id),
             crust::Event::LostPeer(peer_id) => self.handle_lost_peer(peer_id),
             crust::Event::NewMessage(peer_id, bytes) => {
                 match self.handle_new_message(peer_id, bytes) {
@@ -571,52 +572,54 @@ impl Core {
         // TODO: Keep track of that peer to make sure we receive a message from them.
     }
 
-    fn handle_new_peer(&mut self, result: Result<(), CrustError>, peer_id: PeerId) {
+    fn handle_connect_success(&mut self, peer_id: PeerId) {
         if peer_id == self.crust_service.id() {
-            debug!("{:?} Received NewPeer event with our Crust peer ID.", self);
+            debug!("{:?} Received ConnectSuccess event with our Crust peer ID.",
+                   self);
             return;
         }
         if self.role == Role::Client {
-            warn!("{:?} Received NewPeer event as a client.", self);
+            warn!("{:?} Received ConnectSuccess event as a client.", self);
         } else {
-            match result {
-                Ok(()) => {
-                    // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
-                    // NodeIdentify.
+            // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
+            // NodeIdentify.
 
-                    // Remove tunnel connection if we have one for this peer already
-                    if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
-                        debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
-                        let message = DirectMessage::TunnelDisconnect(peer_id);
-                        let _ = self.send_direct_message(&tunnel_id, message);
-                    } else if let Some(node) = self.routing_table
-                        .iter()
-                        .find(|node| node.peer_id == peer_id) {
-                        warn!("{:?} Received NewPeer from {:?}, but node {:?} is already in our \
-                               routing table.",
-                              self,
-                              peer_id,
-                              node.name());
-                        return;
-                    }
-                    self.peer_mgr.connected_to(peer_id);
-                    debug!("{:?} Received NewPeer with Ok from {:?}. Sending NodeIdentify.",
-                           self,
-                           peer_id);
-                    let _ = self.node_identify(peer_id);
-                }
-                Err(err) => {
-                    if self.routing_table.iter().all(|node| node.peer_id != peer_id) {
-                        info!("{:?} Failed to connect to peer {:?}: {:?}.",
-                              self,
-                              peer_id,
-                              err);
-                        if let Some(&(name, ConnectState::Crust)) = self.peer_mgr
-                            .get_connecting_peer(&peer_id) {
-                            self.find_tunnel_for_peer(peer_id, name);
-                        }
-                    }
-                }
+            // Remove tunnel connection if we have one for this peer already
+            if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
+                debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
+                let message = DirectMessage::TunnelDisconnect(peer_id);
+                let _ = self.send_direct_message(&tunnel_id, message);
+            } else if let Some(node) = self.routing_table
+                .iter()
+                .find(|node| node.peer_id == peer_id) {
+                warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in our \
+                      routing table.",
+                      self,
+                      peer_id,
+                      node.name());
+                return;
+            }
+            self.peer_mgr.connected_to(peer_id);
+            debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
+                   self,
+                   peer_id);
+            let _ = self.node_identify(peer_id);
+        }
+    }
+
+    fn handle_connect_failure(&mut self, peer_id: PeerId) {
+        if peer_id == self.crust_service.id() {
+            debug!("{:?} Received ConnectFailure event with our Crust peer ID.",
+                   self);
+            return;
+        }
+        if self.role == Role::Client {
+            warn!("{:?} Received ConnectFailure event as a client.", self);
+        } else if self.routing_table.iter().all(|node| node.peer_id != peer_id) {
+            info!("{:?} Failed to connect to peer {:?}.", self, peer_id);
+            if let Some(&(name, ConnectState::Crust)) = self.peer_mgr
+                .get_connecting_peer(&peer_id) {
+                self.find_tunnel_for_peer(peer_id, name);
             }
         }
     }
@@ -1821,8 +1824,8 @@ impl Core {
             None
         };
         if let Some(timed_out) = timed_out_ack {
-            // Safe to use `expect` here as we just got a valid key in the `find` call above.
-            let mut unacked_msg = self.pending_acks.remove(&timed_out).expect("Bug in HashMap.");
+            // Safe to use `unwrap!()` here as we just got a valid key in the `find` call above.
+            let mut unacked_msg = unwrap!(self.pending_acks.remove(&timed_out));
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
                    self,
                    timed_out,

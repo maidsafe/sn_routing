@@ -402,13 +402,13 @@ mod test {
                                          None) {
             Ok(mut structured_data) => {
                 // After one signature, one more is required to reach majority.
-                assert_eq!(structured_data.add_signature(&keys1.1).unwrap(), 1);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys1.1)), 1);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_err());
                 // Two out of three is enough.
-                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 0);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 0);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Three out of three is also fine.
-                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -433,13 +433,13 @@ mod test {
                                          Some(&keys1.1)) {
             Ok(mut structured_data) => {
                 // Two signatures are not enough because they don't have a strict majority.
-                assert_eq!(structured_data.add_signature(&keys2.1).unwrap(), 1);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 1);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Three out of four is enough.
-                assert_eq!(structured_data.add_signature(&keys3.1).unwrap(), 0);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Four out of four is also fine.
-                assert_eq!(structured_data.add_signature(&keys4.1).unwrap(), 0);
+                assert_eq!(unwrap!(structured_data.add_signature(&keys4.1)), 0);
                 assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -488,7 +488,8 @@ mod test {
                                                          vec![new_owner.0],
                                                          Some(&new_owner.1)) {
                             Ok(another_new_structured_data) => {
-                                match orig_structured_data.replace_with_other(another_new_structured_data) {
+                                match orig_structured_data.replace_with_other(
+                                        another_new_structured_data) {
                                     Ok(()) => (),
                                     Err(e) => panic!("Error {:?}", e),
                                 }

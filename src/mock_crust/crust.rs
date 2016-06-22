@@ -40,9 +40,9 @@ impl Service {
 
     /// Create new mock `Service` by explicitly passing the mock device to associate
     /// with.
-    pub fn with_handle(handle: &ServiceHandle, event_sender: CrustEventSender)
-        -> Result<Self, CrustError>
-    {
+    pub fn with_handle(handle: &ServiceHandle,
+                       event_sender: CrustEventSender)
+                       -> Result<Self, CrustError> {
         let network = handle.0.borrow().network.clone();
         let service = Service(handle.0.clone(), network);
         service.lock_and_poll(|imp| imp.start(event_sender));
@@ -177,8 +177,10 @@ pub enum Event {
     ListenerFailed,
     /// Invoked as a result to the call of `Service::prepare_contact_info`.
     ConnectionInfoPrepared(ConnectionInfoResult),
-    /// Invoked when a connection to a new peer is established.
-    NewPeer(Result<(), CrustError>, PeerId),
+    /// Invoked when connection to a new peer has been established.
+    ConnectSuccess(PeerId),
+    /// Invoked when connection to a new peer has failed.
+    ConnectFailure(PeerId),
     /// Invoked when a peer is lost or having read/write error.
     LostPeer(PeerId),
     /// Invoked when a new message is received.  Passes the message.
