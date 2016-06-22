@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::{cmp, fs};
-use std::io::{self, Read, Write};
+use std::io::{self, ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -76,15 +76,23 @@ impl<Key, Value> ChunkStore<Key, Value>
     ///
     /// The data is stored in a root directory. If `root` doesn't exist, it will be created.
     pub fn new(root: PathBuf, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
-        fs::create_dir_all(&root)
-            .map(|()|
-                ChunkStore {
-                    rootdir: root,
-                    max_space: max_space,
-                    used_space: 0,
-                    phantom: PhantomData,
-                })
-            .map_err(From::from)
+        match fs::create_dir_all(&root) {
+            Ok(_) => {}
+            // when multiple chunk_stores being created concurrently under the same root directory
+            // there is chance more than one instance tests the root dir as non-exists and trying
+            // to create it, which will cause one of them raise AlreadyExists error during
+            // fs::create_dir_all. A re-attempt needs to be carried out in that case.
+            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
+                let _ = fs::create_dir_all(&root);
+            }
+            Err(e) => return Err(From::from(e)),
+        }
+        Ok(ChunkStore {
+            rootdir: root,
+            max_space: max_space,
+            used_space: 0,
+            phantom: PhantomData,
+        })
     }
 
     /// Stores a new data chunk under `key`.
