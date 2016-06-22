@@ -177,7 +177,7 @@ mod test {
     fn data_request_name() {
         let name = XorName(sha256::hash(&[]).0);
 
-        // name() resolves correctly for StructuedData
+        // name() resolves correctly for StructuredData
         let tag = 0;
         assert_eq!(StructuredData::compute_name(tag, &name),
                    DataIdentifier::Structured(name, tag).name());

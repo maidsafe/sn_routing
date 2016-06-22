@@ -521,6 +521,7 @@ fn core() {
 }
 
 #[test]
+#[ignore]
 fn main() {
     init();
     core();

@@ -64,76 +64,35 @@ macro_rules! expect_no_event {
     }
 }
 
-// Simple random number generator that allows seeding and prints the seed when
-// the thread it is created in panics.
-struct SeededRng {
-    seed: [u32; 4],
-    inner: XorShiftRng,
-}
-
-impl SeededRng {
-    fn new() -> Self {
-        Self::from_seed([rand::random(),
-                         rand::random(),
-                         rand::random(),
-                         rand::random()])
-    }
-
-    fn from_seed(seed: [u32; 4]) -> Self {
-        SeededRng {
-            seed: seed,
-            inner: XorShiftRng::from_seed(seed),
-        }
-    }
-
-    // Generate a random value in the range, excluding the `exclude` value, if not
-    // `None`.
-    fn gen_range_except(&mut self,
-                        low: usize,
-                        high: usize,
-                        exclude: Option<usize>) -> usize {
-        match exclude {
-            None => self.gen_range(low, high),
-            Some(exclude) => {
-                let mut r = self.gen_range(low, high - 1);
-                if r >= exclude {
-                    r += 1
-                }
-                r
+// Generate a random value in the range, excluding the `exclude` value, if not
+// `None`.
+fn gen_range_except<T: Rng>(rng: &mut T, low: usize, high: usize, exclude: Option<usize>) -> usize {
+    match exclude {
+        None => rng.gen_range(low, high),
+        Some(exclude) => {
+            let mut r = rng.gen_range(low, high - 1);
+            if r >= exclude {
+                r += 1
             }
-        }
-    }
-
-    // Generate two distinct random values in the range, excluding the `exclude` value.
-    fn gen_two_range_except(&mut self,
-                            low: usize,
-                            high: usize,
-                            exclude: Option<usize>) -> (usize, usize) {
-        let r0 = self.gen_range_except(low, high, exclude);
-
-        loop {
-            let r1 = self.gen_range_except(low, high, exclude);
-
-            if r0 != r1 {
-                return (r0, r1);
-            }
+            r
         }
     }
 }
 
-impl Drop for SeededRng {
-    fn drop(&mut self) {
-        if thread::panicking() {
-            let msg = format!("rng seed = {:?}", self.seed);
-            let border = (0..msg.len()).map(|_| "=").collect::<String>();
-            println!("\n{}\n{}\n{}\n", border, msg, border);
-        }
-    }
-}
+// Generate two distinct random values in the range, excluding the `exclude` value.
+fn gen_two_range_except<T: Rng>(rng: &mut T,
+                                low: usize,
+                                high: usize,
+                                exclude: Option<usize>)
+                                -> (usize, usize) {
+    let r0 = gen_range_except(rng, low, high, exclude);
 
-impl Rng for SeededRng {
-    fn next_u32(&mut self) -> u32 {
-        self.inner.next_u32()
+    loop {
+        let r1 = gen_range_except(rng, low, high, exclude);
+
+        if r0 != r1 {
+            return (r0, r1);
+        }
     }
 }
 
@@ -269,7 +228,8 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
 
         while let Ok(event) = node.event_rx.try_recv() {
             match event {
-                Event::NodeAdded(..) | Event::Tick => (),
+                Event::NodeAdded(..) |
+                Event::Tick => (),
                 event => panic!("Got unexpected event: {:?}", event),
             }
         }
@@ -278,16 +238,15 @@ fn create_connected_nodes(network: &Network, size: usize) -> Vec<TestNode> {
     nodes
 }
 
-fn create_connected_clients(network: &Network, nodes: &mut [TestNode], size: usize)
-    -> Vec<TestClient>
-{
+fn create_connected_clients(network: &Network,
+                            nodes: &mut [TestNode],
+                            size: usize)
+                            -> Vec<TestClient> {
     let contact = nodes[0].handle.endpoint();
     let mut clients = Vec::with_capacity(size);
 
     for _ in 0..size {
-        let client = TestClient::new(network,
-                                     Some(Config::with_contacts(&[contact])),
-                                     None);
+        let client = TestClient::new(network, Some(Config::with_contacts(&[contact])), None);
         clients.push(client);
 
         let _ = poll_all(nodes, &mut clients);
@@ -326,8 +285,8 @@ fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 // call it itself.
 fn random_churn<R: Rng>(rng: &mut R,
                         network: &Network,
-                        nodes: &mut Vec<TestNode>) -> Option<usize>
-{
+                        nodes: &mut Vec<TestNode>)
+                        -> Option<usize> {
     let len = nodes.len();
 
     if len > GROUP_SIZE + 2 && rng.gen_weighted_bool(3) {
@@ -423,16 +382,12 @@ fn did_receive_get_request(node: &TestNode,
                            expected_src: Authority,
                            expected_dst: Authority,
                            expected_data_id: DataIdentifier,
-                           expected_message_id: MessageId) -> bool
-{
+                           expected_message_id: MessageId)
+                           -> bool {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Request { request: Request::Get(data_id, message_id),
-                                src,
-                                dst }) => {
-                if src == expected_src &&
-                   dst == expected_dst &&
-                   data_id == expected_data_id &&
+            Ok(Event::Request { request: Request::Get(data_id, message_id), src, dst }) => {
+                if src == expected_src && dst == expected_dst && data_id == expected_data_id &&
                    message_id == expected_message_id {
                     return true;
                 }
@@ -447,16 +402,12 @@ fn did_receive_get_success(node: &TestNode,
                            expected_src: Authority,
                            expected_dst: Authority,
                            expected_data: Data,
-                           expected_message_id: MessageId) -> bool
-{
+                           expected_message_id: MessageId)
+                           -> bool {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Response { response: Response::GetSuccess(data, message_id),
-                                 src,
-                                 dst }) => {
-                if src == expected_src &&
-                   dst == expected_dst &&
-                   data == expected_data &&
+            Ok(Event::Response { response: Response::GetSuccess(data, message_id), src, dst }) => {
+                if src == expected_src && dst == expected_dst && data == expected_data &&
                    message_id == expected_message_id {
                     return true;
                 }
@@ -468,7 +419,7 @@ fn did_receive_get_success(node: &TestNode,
 }
 
 fn test_nodes(size: usize) {
-    let network = Network::new();
+    let network = Network::new(None);
     let nodes = create_connected_nodes(&network, size);
     verify_kademlia_invariant_for_all_nodes(&nodes);
 }
@@ -505,7 +456,7 @@ fn more_than_group_size_nodes() {
 
 #[test]
 fn failing_connections_group_of_three() {
-    let network = Network::new();
+    let network = Network::new(None);
 
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(2), Endpoint(1));
@@ -526,7 +477,7 @@ fn failing_connections_group_of_three() {
 
 #[test]
 fn failing_connections_ring() {
-    let network = Network::new();
+    let network = Network::new(None);
     let len = GROUP_SIZE * 2;
     for i in 0..(len - 1) {
         let ep0 = Endpoint(1 + i);
@@ -541,7 +492,7 @@ fn failing_connections_ring() {
 
 #[test]
 fn failing_connections_unidirectional() {
-    let network = Network::new();
+    let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
     network.block_connection(Endpoint(1), Endpoint(3));
     network.block_connection(Endpoint(2), Endpoint(3));
@@ -552,15 +503,15 @@ fn failing_connections_unidirectional() {
 
 #[test]
 fn client_connects_to_nodes() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let _ = create_connected_clients(&network, &mut nodes, 1);
 }
 
 #[test]
 fn messages_accumulate_with_quorum() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 15);
 
     let data = gen_immutable_data(&mut rng, 8);
@@ -654,7 +605,7 @@ fn messages_accumulate_with_quorum() {
 
 #[test]
 fn node_drops() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 2);
     drop_node(&mut nodes, 0);
 
@@ -663,8 +614,8 @@ fn node_drops() {
 
 #[test]
 fn churn() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 
     for i in 0..100 {
@@ -681,7 +632,7 @@ fn churn() {
 
 #[test]
 fn node_joins_in_front() {
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -695,7 +646,7 @@ fn node_joins_in_front() {
 #[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * GROUP_SIZE;
-    let network = Network::new();
+    let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
     nodes.insert(0,
@@ -713,7 +664,7 @@ fn multiple_joining_nodes() {
 
 #[test]
 fn check_close_groups_for_group_size_nodes() {
-    let nodes = create_connected_nodes(&Network::new(), GROUP_SIZE);
+    let nodes = create_connected_nodes(&Network::new(None), GROUP_SIZE);
     let close_groups_complete = nodes.iter()
         .all(|n| nodes.iter().all(|m| m.close_group().contains(&n.name())));
     assert!(close_groups_complete);
@@ -721,8 +672,8 @@ fn check_close_groups_for_group_size_nodes() {
 
 #[test]
 fn successful_put_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -758,8 +709,8 @@ fn successful_put_request() {
 
 #[test]
 fn successful_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -824,8 +775,8 @@ fn successful_get_request() {
 
 #[test]
 fn failed_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, GROUP_SIZE + 1);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -889,8 +840,8 @@ fn failed_get_request() {
 
 #[test]
 fn disconnect_on_get_request() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
@@ -947,14 +898,14 @@ const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
 fn request_during_churn_node_to_self() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let index = rng.gen_range_except(0, nodes.len(), added_index);
+        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let name = nodes[index].name();
 
         let src = Authority::ManagedNode(name);
@@ -976,14 +927,14 @@ fn request_during_churn_node_to_self() {
 
 #[test]
 fn request_during_churn_node_to_node() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let (index0, index1) = rng.gen_two_range_except(0, nodes.len(), added_index);
+        let (index0, index1) = gen_two_range_except(&mut rng, 0, nodes.len(), added_index);
         let name0 = nodes[index0].name();
         let name1 = nodes[index1].name();
 
@@ -1006,14 +957,14 @@ fn request_during_churn_node_to_node() {
 
 #[test]
 fn request_during_churn_node_to_group() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let index = rng.gen_range_except(0, nodes.len(), added_index);
+        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
 
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::ManagedNode(nodes[index].name());
@@ -1032,13 +983,12 @@ fn request_during_churn_node_to_group() {
         // This puts the members of the dst group to the beginning of the vec.
         sort_nodes_by_distance_to(&mut nodes, dst.name());
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }
@@ -1046,14 +996,14 @@ fn request_during_churn_node_to_group() {
 
 #[test]
 fn request_during_churn_group_to_self() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let index = rng.gen_range_except(0, nodes.len(), added_index);
+        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let name = nodes[index].name();
 
         let src = Authority::NodeManager(name);
@@ -1074,13 +1024,12 @@ fn request_during_churn_group_to_self() {
 
         poll_and_resend(&mut nodes, &mut []);
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }
@@ -1088,8 +1037,8 @@ fn request_during_churn_group_to_self() {
 
 #[test]
 fn request_during_churn_group_to_node() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
@@ -1107,7 +1056,7 @@ fn request_during_churn_group_to_node() {
             added_index = nodes.iter().position(|node| node.name() == added_name);
         }
 
-        let index = rng.gen_range_except(0, nodes.len(), added_index);
+        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let dst = Authority::ManagedNode(nodes[index].name());
         let message_id = MessageId::new();
 
@@ -1126,14 +1075,14 @@ fn request_during_churn_group_to_node() {
 
 #[test]
 fn request_during_churn_group_to_group() {
-    let mut rng = SeededRng::new();
-    let network = Network::new();
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
 
-        let (index0, index1) = rng.gen_two_range_except(0, nodes.len(), added_index);
+        let (index0, index1) = gen_two_range_except(&mut rng, 0, nodes.len(), added_index);
         let name0 = nodes[index0].name();
         let name1 = nodes[index1].name();
 
@@ -1157,13 +1106,12 @@ fn request_during_churn_group_to_group() {
 
         sort_nodes_by_distance_to(&mut nodes, &name1);
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }

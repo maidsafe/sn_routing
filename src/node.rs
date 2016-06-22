@@ -17,6 +17,7 @@
 
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
+#[cfg(not(feature = "use-mock-crust"))]
 use sodiumoxide;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
@@ -92,8 +93,6 @@ impl Node {
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
     pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
         let role = if first_node {
             Role::FirstNode
         } else {
