@@ -25,6 +25,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use action::Action;
 use authority::Authority;
+use cache::{Cache, NullCache};
 use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
@@ -67,6 +68,14 @@ impl Node {
     /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
+        Self::with_cache(event_sender, first_node, Box::new(NullCache))
+    }
+
+    /// Create a new `Node` given a cache instance.
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn with_cache(event_sender: Sender<Event>, first_node: bool, cache: Box<Cache>)
+                      -> Result<Node, RoutingError>
+    {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let role = if first_node {
@@ -75,7 +84,7 @@ impl Node {
             Role::Node
         };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, role, None);
+        let (action_sender, mut core) = Core::new(event_sender, role, None, cache);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -90,16 +99,25 @@ impl Node {
         })
     }
 
+
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
     pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
+        Self::with_cache(event_sender, first_node, Box::new(NullCache))
+    }
+
+    /// Create a new `Node` for unit testing.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn with_cache(event_sender: Sender<Event>, first_node: bool, cache: Box<Cache>)
+                      -> Result<Node, RoutingError>
+    {
         let role = if first_node {
             Role::FirstNode
         } else {
             Role::Node
         };
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, role, None);
+        let (action_sender, core) = Core::new(event_sender, role, None, cache);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -120,6 +138,12 @@ impl Node {
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
         self.core.borrow_mut().resend_unacknowledged()
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    /// Are there any unacknowledged messages?
+    pub fn has_unacknowledged(&self) -> bool {
+        self.core.borrow().has_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
