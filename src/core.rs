@@ -18,12 +18,12 @@
 use accumulator::Accumulator;
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{self, ConnectionInfoResult, CrustError, PrivConnectionInfo, PeerId, Service,
-            PubConnectionInfo};
+use crust::{self, ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
+            Service};
 
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, ConnectionInfoResult, CrustError, PrivConnectionInfo, PeerId,
-                        Service, PubConnectionInfo};
+use mock_crust::crust::{self, ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo,
+                        PubConnectionInfo, Service};
 
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
@@ -35,26 +35,26 @@ use peer_manager::{ConnectState, PeerManager};
 use rand;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
-use std::{cmp, iter, fmt};
+use std::{cmp, fmt, iter};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tunnels::Tunnels;
-use xor_name::{XorName, XOR_NAME_BITS};
+use xor_name::{XOR_NAME_BITS, XorName};
 
 use action::Action;
 use authority::Authority;
 use cache::Cache;
-use error::{RoutingError, InterfaceError};
+use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use stats::Stats;
 use timer::Timer;
 use types::{MessageId, RoutingActionSender};
-use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage, UserMessageCache, DEFAULT_PRIORITY};
+use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
+               RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use utils;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
@@ -230,8 +230,7 @@ impl Core {
                role: Role,
                keys: Option<FullId>,
                cache: Box<Cache>)
-               -> (RoutingActionSender, Self)
-    {
+               -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
@@ -267,7 +266,7 @@ impl Core {
             category_rx: category_rx,
             crust_rx: crust_rx,
             action_rx: action_rx,
-            event_sender: event_sender,
+            event_sender: event_sender.clone(),
             timer: Timer::new(action_sender2),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
@@ -289,7 +288,8 @@ impl Core {
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
-            cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            cacheable_user_msg_cache:
+                UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             peer_mgr: Default::default(),
             bootstrap_blacklist: HashSet::new(),
             response_cache: cache,
@@ -299,6 +299,13 @@ impl Core {
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
+            if role == Role::Node && core.crust_service.has_peers_on_lan() {
+                error!("{:?} More than 1 routing node found on LAN. Currently this is not \
+                        supported",
+                       core);
+                let _ = event_sender.send(Event::Terminate);
+                return (action_sender, core);
+            }
             let _ = core.crust_service.start_bootstrap(core.bootstrap_blacklist.clone());
         }
 
@@ -843,7 +850,7 @@ impl Core {
             }
 
             if try!(self.respond_from_cache(&routing_msg, route)) {
-                return Ok(())
+                return Ok(());
             }
 
             if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
@@ -872,18 +879,21 @@ impl Core {
         Ok(())
     }
 
-    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage, route: u8) -> Result<bool, RoutingError> {
+    fn respond_from_cache(&mut self,
+                          routing_msg: &RoutingMessage,
+                          route: u8)
+                          -> Result<bool, RoutingError> {
         if let MessageContent::UserMessagePart { hash,
                                                  part_count,
                                                  part_index,
                                                  cacheable,
-                                                 ref payload, .. } = routing_msg.content {
-            if !cacheable { return Ok(false); }
+                                                 ref payload,
+                                                 .. } = routing_msg.content {
+            if !cacheable {
+                return Ok(false);
+            }
 
-            match self.cacheable_user_msg_cache.add(hash,
-                                                    part_count,
-                                                    part_index,
-                                                    payload.clone()) {
+            match self.cacheable_user_msg_cache.add(hash, part_count, part_index, payload.clone()) {
                 Some(UserMessage::Request(request)) => {
                     if let Some(response) = self.response_cache.get(&request) {
                         debug!("{:?} Found cached response to {:?}", self, request);
