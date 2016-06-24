@@ -24,6 +24,7 @@ use rand::distributions::{IndependentSample, Range};
 use routing::{Data, ImmutableData, GROUP_SIZE, XorName};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{GetError, MutationError};
+use safe_vault::Config;
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
@@ -139,7 +140,7 @@ fn storing_till_client_account_full() {
 }
 
 #[test]
-fn maid_manager_account_updates_with_churn() {
+fn maid_manager_account_adding_with_churn() {
     let network = Network::new();
     let node_count = 15;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
@@ -188,6 +189,64 @@ fn maid_manager_account_updates_with_churn() {
             .collect();
         for &(_, count) in &node_count_stats {
             assert!(count == Some(put_count), "{:?}", node_count_stats);
+        }
+    }
+}
+
+#[test]
+fn maid_manager_account_decrease_with_churn() {
+    let config = Config {
+        wallet_address: None,
+        max_capacity: Some(3000),
+        chunk_store_root: None,
+    };
+    let network = Network::new();
+    let node_count = 15;
+    let mut nodes = test_node::create_nodes(&network, node_count, Some(config.clone()));
+    let client_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut client = TestClient::new(&network, Some(client_config));
+
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+
+    let mut rng = thread_rng();
+
+    let full_id = client.full_id().clone();
+    let mut event_count = 0;
+
+    for i in 0..10 {
+        for data in (0..4)
+            .map(|_| Data::Structured(test_utils::random_structured_data(100000, &full_id))) {
+            client.put(data.clone());
+        }
+        trace!("Churning on {} nodes, iteration {}", nodes.len(), i);
+        if nodes.len() <= GROUP_SIZE + 2 || random() {
+            let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+            trace!("Adding node with bootstrap node {}.", index);
+            test_node::add_node_with_config(&network, &mut nodes, config.clone(), index);
+        } else {
+            let number = Range::new(1, 4).ind_sample(&mut rng);
+            trace!("Removing {} node(s).", number);
+            for _ in 0..number {
+                let node_index = Range::new(1, nodes.len()).ind_sample(&mut rng);
+                test_node::drop_node(&mut nodes, node_index);
+            }
+        }
+        event_count += poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
+
+        for node in &mut nodes {
+            node.clear_state();
+        }
+        trace!("Processed {} events.", event_count);
+        let mut sorted_maid_managers = nodes.iter()
+            .sorted_by(|left, right| client.name().cmp_distance(&left.name(), &right.name()));
+        sorted_maid_managers.truncate(GROUP_SIZE);
+        let node_count_stats: Vec<(XorName, Option<u64>)> = sorted_maid_managers.into_iter()
+            .map(|x| (x.name(), x.get_maid_manager_put_count(client.name())))
+            .collect();
+        let expect_count = node_count_stats[0].1;
+        for &(_, count) in &node_count_stats {
+            assert_eq!(count, expect_count);
         }
     }
 }
