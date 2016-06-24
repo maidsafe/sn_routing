@@ -1,5 +1,11 @@
 # Routing - Change Log
 
+## [0.23.0]
+- Add seeded rng support to mock crust tests.
+- Add support for response caching.
+- Add various mock crust tests.
+- Prevent multiple routing nodes from starting on same LAN.
+
 ## [0.22.0]
 - Migrate to the mio-based Crust.
 - Replace redundant group messages by hashes to save bandwidth.
