@@ -82,6 +82,12 @@ impl Service {
         trace!("[MOCK] set_service_discovery_listen not implemented in mock");
     }
 
+    /// Check if we have peers on LAN
+    pub fn has_peers_on_lan(&self) -> bool {
+        // This will allow mock crust test to have multiple nodes on the same machine
+        false
+    }
+
     /// Start TCP acceptor.
     /// Note: mock doesn't currently differentiate between TCP and UDP. As long
     /// as at least one is enabled, the service will accept any incoming connection.
