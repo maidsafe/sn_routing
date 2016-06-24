@@ -13,7 +13,7 @@ version = "0.22.0"
 [dependencies]
 accumulator = "~0.4.0"
 clippy = {version = "~0.0.77", optional = true}
-crust = {git = "https://github.com/maidsafe/crust.git"}
+crust = "~0.15.1"
 itertools = "~0.4.16"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"

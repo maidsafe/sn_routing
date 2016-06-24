@@ -230,8 +230,7 @@ impl Core {
                role: Role,
                keys: Option<FullId>,
                cache: Box<Cache>)
-               -> (RoutingActionSender, Self)
-    {
+               -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
         let (category_tx, category_rx) = mpsc::channel();
@@ -267,7 +266,7 @@ impl Core {
             category_rx: category_rx,
             crust_rx: crust_rx,
             action_rx: action_rx,
-            event_sender: event_sender,
+            event_sender: event_sender.clone(),
             timer: Timer::new(action_sender2),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
@@ -289,7 +288,8 @@ impl Core {
             stats: Default::default(),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
-            cacheable_user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+            cacheable_user_msg_cache:
+                UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             peer_mgr: Default::default(),
             bootstrap_blacklist: HashSet::new(),
             response_cache: cache,
@@ -299,6 +299,14 @@ impl Core {
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
+            if role == Role::Node {
+                if core.crust_service.has_peers_on_lan() {
+                    error!("{:?} More than 1 vault found in LAN. Currently this is not supported",
+                           core);
+                    let _ = event_sender.send(Event::Terminate);
+                    return (action_sender, core);
+                }
+            }
             let _ = core.crust_service.start_bootstrap(core.bootstrap_blacklist.clone());
         }
 
@@ -843,7 +851,7 @@ impl Core {
             }
 
             if try!(self.respond_from_cache(&routing_msg, route)) {
-                return Ok(())
+                return Ok(());
             }
 
             if let Err(error) = self.send(signed_msg, route, hop_name, sent_to) {
@@ -872,18 +880,21 @@ impl Core {
         Ok(())
     }
 
-    fn respond_from_cache(&mut self, routing_msg: &RoutingMessage, route: u8) -> Result<bool, RoutingError> {
+    fn respond_from_cache(&mut self,
+                          routing_msg: &RoutingMessage,
+                          route: u8)
+                          -> Result<bool, RoutingError> {
         if let MessageContent::UserMessagePart { hash,
                                                  part_count,
                                                  part_index,
                                                  cacheable,
-                                                 ref payload, .. } = routing_msg.content {
-            if !cacheable { return Ok(false); }
+                                                 ref payload,
+                                                 .. } = routing_msg.content {
+            if !cacheable {
+                return Ok(false);
+            }
 
-            match self.cacheable_user_msg_cache.add(hash,
-                                                    part_count,
-                                                    part_index,
-                                                    payload.clone()) {
+            match self.cacheable_user_msg_cache.add(hash, part_count, part_index, payload.clone()) {
                 Some(UserMessage::Request(request)) => {
                     if let Some(response) = self.response_cache.get(&request) {
                         debug!("{:?} Found cached response to {:?}", self, request);
