@@ -19,7 +19,7 @@ use messages::{Request, Response};
 
 /// A cache that stores `Response`s keyed by `Requests`. Should be implemented
 /// by layers above routing.
-pub trait Cache : Send {
+pub trait Cache: Send {
     /// Retrieve cached response for the given request.
     fn get(&self, request: &Request) -> Option<Response>;
 
@@ -32,6 +32,8 @@ pub trait Cache : Send {
 pub struct NullCache;
 
 impl Cache for NullCache {
-    fn get(&self, _: &Request) -> Option<Response> { None }
+    fn get(&self, _: &Request) -> Option<Response> {
+        None
+    }
     fn put(&self, _: Response) {}
 }

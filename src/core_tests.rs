@@ -140,8 +140,7 @@ impl TestNode {
            config: Option<Config>,
            endpoint: Option<Endpoint>,
            cache: Box<Cache>)
-           -> Self
-    {
+           -> Self {
         let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
@@ -292,10 +291,10 @@ fn create_connected_nodes_with_cache(network: &Network,
 
     // Create the seed node.
     nodes.push(TestNode::builder(network)
-                        .first()
-                        .endpoint(Endpoint(0))
-                        .cache(use_cache)
-                        .create());
+        .first()
+        .endpoint(Endpoint(0))
+        .cache(use_cache)
+        .create());
     nodes[0].poll();
 
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
@@ -303,10 +302,10 @@ fn create_connected_nodes_with_cache(network: &Network,
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for i in 1..size {
         nodes.push(TestNode::builder(network)
-                            .config(config.clone())
-                            .endpoint(Endpoint(i))
-                            .cache(use_cache)
-                            .create());
+            .config(config.clone())
+            .endpoint(Endpoint(i))
+            .cache(use_cache)
+            .create());
         let _ = poll_all(&mut nodes, &mut []);
     }
 
@@ -422,7 +421,11 @@ fn node_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
         .collect()
 }
 
+/// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
+/// function on them which causes polling, so it calls `poll_all` to make sure that all other
+/// events have been processed before sorting.
 fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
+    let _ = poll_all(nodes, &mut []); // Poll
     nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
 }
 
@@ -479,13 +482,9 @@ fn did_receive_get_request(node: &TestNode,
                            -> bool {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Request {
-                request: Request::Get(data_id, message_id),
-                ref src,
-                ref dst }) if *src == expected_src &&
-                              *dst == expected_dst &&
-                              data_id == expected_data_id &&
-                              message_id == expected_message_id => return true,
+            Ok(Event::Request { request: Request::Get(data_id, message_id), ref src, ref dst })
+                if *src == expected_src && *dst == expected_dst && data_id == expected_data_id &&
+                   message_id == expected_message_id => return true,
             Ok(_) => (),
             Err(_) => return false,
         }
@@ -500,13 +499,10 @@ fn did_receive_get_success(node: &TestNode,
                            -> bool {
     loop {
         match node.event_rx.try_recv() {
-            Ok(Event::Response {
-                response: Response::GetSuccess(ref data, message_id),
-                ref src,
-                ref dst }) if *src == expected_src &&
-                              *dst == expected_dst &&
-                              *data == expected_data &&
-                              message_id == expected_message_id => return true,
+            Ok(Event::Response { response: Response::GetSuccess(ref data, message_id),
+                                 ref src,
+                                 ref dst }) if *src == expected_src && *dst == expected_dst && *data == expected_data &&
+                          message_id == expected_message_id => return true,
             Ok(_) => (),
             Err(_) => return false,
         }
@@ -545,9 +541,10 @@ impl TestCache {
 impl Cache for TestCache {
     fn get(&self, request: &Request) -> Option<Response> {
         if let Request::Get(identifier, message_id) = *request {
-            self.0.borrow()
-                  .get(&identifier)
-                  .map(|data| Response::GetSuccess(data.clone(), message_id))
+            self.0
+                .borrow()
+                .get(&identifier)
+                .map(|data| Response::GetSuccess(data.clone(), message_id))
         } else {
             None
         }
@@ -770,8 +767,10 @@ fn multiple_joining_nodes() {
     let mut nodes = create_connected_nodes(&network, network_size);
     let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
 
-    nodes.insert(0, TestNode::builder(&network).config(config.clone()).create());
-    nodes.insert(0, TestNode::builder(&network).config(config.clone()).create());
+    nodes.insert(0,
+                 TestNode::builder(&network).config(config.clone()).create());
+    nodes.insert(0,
+                 TestNode::builder(&network).config(config.clone()).create());
     nodes.push(TestNode::builder(&network).config(config.clone()).create());
 
     let _ = poll_all(&mut nodes, &mut []);
@@ -1102,13 +1101,12 @@ fn request_during_churn_node_to_group() {
         // This puts the members of the dst group to the beginning of the vec.
         sort_nodes_by_distance_to(&mut nodes, dst.name());
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }
@@ -1121,13 +1119,9 @@ fn request_during_churn_group_to_self() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-
-        let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
-        let name = nodes[index].name();
-
-        let src = Authority::NodeManager(name);
-        let dst = Authority::NodeManager(name);
+        let name = rng.gen();
+        let src = Authority::NaeManager(name);
+        let dst = Authority::NaeManager(name);
         let data = gen_immutable_data(&mut rng, 8);
         let data_id = data.identifier();
         let message_id = MessageId::new();
@@ -1142,15 +1136,16 @@ fn request_during_churn_group_to_self() {
                                                  message_id));
         }
 
+        let _ = random_churn(&mut rng, &network, &mut nodes);
+
         poll_and_resend(&mut nodes, &mut []);
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }
@@ -1163,19 +1158,11 @@ fn request_during_churn_group_to_node() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let mut added_index = random_churn(&mut rng, &network, &mut nodes);
-        let added_name = added_index.map(|i| nodes[i].name());
-
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::NaeManager(data.name());
-
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        // Find the index of the added node again, because it got invalidated by
-        // the above sort.
-        if let Some(added_name) = added_name {
-            added_index = nodes.iter().position(|node| node.name() == added_name);
-        }
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
 
         let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -1201,19 +1188,15 @@ fn request_during_churn_group_to_group() {
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
-
-        let (index0, index1) = gen_two_range_except(&mut rng, 0, nodes.len(), added_index);
-        let name0 = nodes[index0].name();
-        let name1 = nodes[index1].name();
-
+        let name0 = rng.gen();
+        let name1 = rng.gen();
         let src = Authority::NodeManager(name0);
         let dst = Authority::NodeManager(name1);
         let data = gen_immutable_data(&mut rng, 8);
         let data_id = data.identifier();
         let message_id = MessageId::new();
-
         sort_nodes_by_distance_to(&mut nodes, &name0);
+        let _ = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..GROUP_SIZE] {
             unwrap_result!(node.inner
@@ -1227,13 +1210,12 @@ fn request_during_churn_group_to_group() {
 
         sort_nodes_by_distance_to(&mut nodes, &name1);
 
-        let num_received = nodes.iter().take(GROUP_SIZE).filter(|node| {
-            did_receive_get_request(node,
-                                    src.clone(),
-                                    dst.clone(),
-                                    data_id,
-                                    message_id)
-        }).count();
+        let num_received = nodes.iter()
+            .take(GROUP_SIZE)
+            .filter(|node| {
+                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+            })
+            .count();
 
         assert!(num_received >= QUORUM_SIZE);
     }
@@ -1244,8 +1226,7 @@ fn request_during_churn_group_to_group() {
 // the nodes by distance to the data.
 fn gen_immutable_data_not_closest_to_first_node<T: Rng>(rng: &mut T,
                                                         nodes: &mut [TestNode])
-    -> Data
-{
+                                                        -> Data {
     let first_name = nodes[0].name();
 
     loop {
