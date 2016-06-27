@@ -16,6 +16,7 @@ clippy = {version = "~0.0.76", optional = true}
 config_file_handler = "~0.3.1"
 docopt = "~0.6.80"
 itertools = "~0.4.16"
+lru_time_cache = "~0.4.0"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
 maidsafe_utilities = "~0.8.0"

@@ -96,7 +96,7 @@ pub fn main() {
     info!("\n\n{}\n{}", message, underline);
 
     loop {
-        let mut vault = unwrap_result!(Vault::new(args.flag_first));
+        let mut vault = unwrap_result!(Vault::new(args.flag_first, true));
         if let Ok(true) = vault.run() {
             break;
         }

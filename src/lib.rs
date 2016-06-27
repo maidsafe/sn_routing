@@ -51,6 +51,7 @@
 extern crate accumulator;
 #[macro_use]
 extern crate log;
+extern crate lru_time_cache;
 extern crate itertools;
 extern crate kademlia_routing_table;
 #[macro_use]
@@ -69,6 +70,7 @@ extern crate sodiumoxide;
 #[cfg(test)]
 extern crate tempdir;
 
+mod cache;
 mod chunk_store;
 mod config_handler;
 mod error;

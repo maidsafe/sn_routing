@@ -38,7 +38,7 @@ mod test {
         };
         // Use 8 nodes to avoid the case where four target nodes are full: In that case neither the
         // PutSuccess nor the PutFailure accumulates and client.put_and_verify() would hang.
-        let mut nodes = test_node::create_nodes(&network, 8, Some(config));
+        let mut nodes = test_node::create_nodes(&network, 8, Some(config), true);
         let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
         let mut client = TestClient::new(&network, Some(crust_config));
         let full_id = client.full_id().clone();
@@ -69,7 +69,7 @@ mod test {
         for _ in 0..10 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
-            test_node::add_node(&network, &mut nodes, index);
+            test_node::add_node(&network, &mut nodes, index, true);
             let _ = poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
             let content = test_utils::generate_random_vec_u8(100);
             let data = Data::Immutable(ImmutableData::new(content));
