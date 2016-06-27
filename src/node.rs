@@ -73,9 +73,10 @@ impl Node {
 
     /// Create a new `Node` given a cache instance.
     #[cfg(not(feature = "use-mock-crust"))]
-    pub fn with_cache(event_sender: Sender<Event>, first_node: bool, cache: Box<Cache>)
-                      -> Result<Node, RoutingError>
-    {
+    pub fn with_cache(event_sender: Sender<Event>,
+                      first_node: bool,
+                      cache: Box<Cache>)
+                      -> Result<Node, RoutingError> {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         let role = if first_node {
@@ -108,9 +109,10 @@ impl Node {
 
     /// Create a new `Node` for unit testing.
     #[cfg(feature = "use-mock-crust")]
-    pub fn with_cache(event_sender: Sender<Event>, first_node: bool, cache: Box<Cache>)
-                      -> Result<Node, RoutingError>
-    {
+    pub fn with_cache(event_sender: Sender<Event>,
+                      first_node: bool,
+                      cache: Box<Cache>)
+                      -> Result<Node, RoutingError> {
         let role = if first_node {
             Role::FirstNode
         } else {

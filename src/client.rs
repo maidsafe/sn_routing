@@ -70,10 +70,8 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender,
-                                                  Role::Client,
-                                                  keys,
-                                                  Box::new(NullCache));
+        let (action_sender, mut core) =
+            Core::new(event_sender, Role::Client, keys, Box::new(NullCache));
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -92,10 +90,8 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender,
-                                              Role::Client,
-                                              keys,
-                                              Box::new(NullCache));
+        let (action_sender, core) =
+            Core::new(event_sender, Role::Client, keys, Box::new(NullCache));
         let (tx, rx) = channel();
 
         Ok(Client {

@@ -774,7 +774,8 @@ impl UserMessageCache {
                hash: u64,
                part_count: u32,
                part_index: u32,
-               payload: Vec<u8>) -> Option<UserMessage> {
+               payload: Vec<u8>)
+               -> Option<UserMessage> {
         {
             let entry = self.0.entry((hash, part_count)).or_insert_with(BTreeMap::new);
             let _ = entry.insert(part_index, payload);
@@ -783,8 +784,9 @@ impl UserMessageCache {
             }
         }
 
-        self.0.remove(&(hash, part_count))
-              .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
+        self.0
+            .remove(&(hash, part_count))
+            .and_then(|part_map| UserMessage::from_parts(hash, part_map.values()).ok())
     }
 }
 

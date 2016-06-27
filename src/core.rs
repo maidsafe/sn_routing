@@ -902,7 +902,7 @@ impl Core {
                         let src = Authority::ManagedNode(*self.name());
                         let dst = routing_msg.src.clone();
 
-                        self.send_ack_from(&routing_msg, route, src.clone());
+                        self.send_ack_from(routing_msg, route, src.clone());
 
                         try!(self.send_user_message(src,
                                                     dst,
