@@ -32,7 +32,7 @@ const TEST_NET_SIZE: usize = 20;
 
 #[test]
 fn handle_put_without_account() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = TEST_NET_SIZE;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
@@ -56,7 +56,7 @@ fn handle_put_without_account() {
 
 #[test]
 fn handle_put_with_account() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = TEST_NET_SIZE;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
@@ -97,7 +97,7 @@ fn handle_put_with_account() {
 #[test]
 #[should_panic] // TODO Look at using std::panic::catch_unwind (1.9)
 fn invalid_put_for_previously_created_account() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = TEST_NET_SIZE;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
@@ -113,7 +113,7 @@ fn storing_till_client_account_full() {
     // This needs to be kept in sync with maid_manager.rs
     // Ideally, a setter is preferred, so that this test can be completed quicker.
     const DEFAULT_ACCOUNT_SIZE: u64 = 100;
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
@@ -140,7 +140,7 @@ fn storing_till_client_account_full() {
 
 #[test]
 fn maid_manager_account_updates_with_churn() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
     let mut nodes = test_node::create_nodes(&network, node_count, None);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
@@ -189,5 +189,6 @@ fn maid_manager_account_updates_with_churn() {
         for &(_, count) in &node_count_stats {
             assert!(count == Some(put_count), "{:?}", node_count_stats);
         }
+        mock_crust_detail::verify_kademlia_invariant_for_all_nodes(&nodes);
     }
 }

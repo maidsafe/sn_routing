@@ -149,6 +149,12 @@ impl Vault {
         unwrap_result!(self.routing_node.name())
     }
 
+    /// Vault routing_table
+    #[cfg(feature = "use-mock-crust")]
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        self.routing_node.routing_table()
+    }
+
     fn process_event(&mut self, event: Event) -> Option<bool> {
         let name = self.routing_node
             .name()

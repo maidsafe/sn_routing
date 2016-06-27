@@ -30,7 +30,7 @@ mod test {
 
     #[test]
     fn fill_network() {
-        let network = Network::new();
+        let network = Network::new(None);
         let config = Config {
             wallet_address: None,
             max_capacity: Some(2000),

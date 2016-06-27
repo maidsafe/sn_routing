@@ -15,10 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use config_handler::Config;
+use kademlia_routing_table::RoutingTable;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::XorName;
 use vault::Vault;
-use config_handler::Config;
 
 use personas::data_manager::IdAndVersion;
 
@@ -82,6 +83,10 @@ impl TestNode {
     /// name of vault.
     pub fn name(&self) -> XorName {
         self.vault.name()
+    }
+    /// returns the vault's routing_table.
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        self.vault.routing_table()
     }
 }
 

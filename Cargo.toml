@@ -13,17 +13,17 @@ version = "0.9.0"
 [dependencies]
 accumulator = "~0.4.0"
 clippy = {version = "~0.0.76", optional = true}
-config_file_handler = "~0.3.0"
+config_file_handler = "~0.3.1"
 docopt = "~0.6.80"
-itertools = "~0.4.15"
+itertools = "~0.4.16"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
-maidsafe_utilities = "~0.6.0"
-quick-error = "~1.0.0"
+maidsafe_utilities = "~0.8.0"
+quick-error = "~1.1.0"
 rand = "~0.3.14"
-routing = "~0.22.0"
+routing = "~0.23.0"
 rustc-serialize = "~0.3.19"
-safe_network_common = "~0.3.0"
+safe_network_common = "~0.4.0"
 sodiumoxide = "~0.0.10"
 
 [build-dependencies]
