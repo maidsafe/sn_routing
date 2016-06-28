@@ -19,7 +19,7 @@ use core::GROUP_SIZE;
 use messages::{DirectMessage, MessageContent, RoutingMessage, Request, Response};
 
 /// The number of messages after which the message statistics should be printed.
-const MSG_LOG_COUNT: usize = 500;
+const MSG_LOG_COUNT: usize = 1000;
 
 /// A collection of counters to gather Routing statistics.
 #[derive(Default)]
