@@ -140,21 +140,10 @@ fn storing_till_client_account_full() {
 }
 
 #[test]
-fn maid_manager_account_updates_with_churn_with_cache() {
-    maid_manager_account_adding_with_churn(true);
-    maid_manager_account_decrease_with_churn(true);
-}
-
-#[test]
-fn maid_manager_account_updates_with_churn_without_cache() {
-    maid_manager_account_adding_with_churn(false);
-    maid_manager_account_decrease_with_churn(false);
-}
-
-fn maid_manager_account_adding_with_churn(use_cache: bool) {
+fn maid_manager_account_adding_with_churn() {
     let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, None, use_cache);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, false);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
@@ -177,7 +166,7 @@ fn maid_manager_account_adding_with_churn(use_cache: bool) {
         if nodes.len() <= GROUP_SIZE + 2 || random() {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
-            test_node::add_node(&network, &mut nodes, index, use_cache);
+            test_node::add_node(&network, &mut nodes, index, false);
         } else {
             let number = Range::new(1, 4).ind_sample(&mut rng);
             trace!("Removing {} node(s).", number);
@@ -205,7 +194,9 @@ fn maid_manager_account_adding_with_churn(use_cache: bool) {
     }
 }
 
-fn maid_manager_account_decrease_with_churn(use_cache: bool) {
+#[ignore]
+#[test]
+fn maid_manager_account_decrease_with_churn() {
     let config = Config {
         wallet_address: None,
         max_capacity: Some(3000),
@@ -213,7 +204,7 @@ fn maid_manager_account_decrease_with_churn(use_cache: bool) {
     };
     let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, Some(config.clone()), use_cache);
+    let mut nodes = test_node::create_nodes(&network, node_count, Some(config.clone()), false);
     let client_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(client_config));
 
@@ -230,7 +221,7 @@ fn maid_manager_account_decrease_with_churn(use_cache: bool) {
         if nodes.len() <= GROUP_SIZE + 2 || random() {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
-            test_node::add_node_with_config(&network, &mut nodes, config.clone(), index, use_cache);
+            test_node::add_node_with_config(&network, &mut nodes, config.clone(), index, false);
         } else {
             let number = Range::new(1, 4).ind_sample(&mut rng);
             trace!("Removing {} node(s).", number);
