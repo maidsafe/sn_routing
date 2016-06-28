@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.23.1]
+- Fix tests involving sorting nodes by names.
+- Fix random seeds when multiple tests are run at once.
+
 ## [0.23.0]
 - Add seeded rng support to mock crust tests.
 - Add support for response caching.
