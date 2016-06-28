@@ -15,10 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use config_handler::Config;
+use kademlia_routing_table::RoutingTable;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::XorName;
 use vault::Vault;
-use config_handler::Config;
 
 use personas::data_manager::IdAndVersion;
 
@@ -35,14 +36,39 @@ impl TestNode {
     pub fn new(network: &Network,
                crust_config: Option<mock_crust::Config>,
                config: Option<Config>,
-               first_node: bool)
+               first_node: bool,
+               use_cache: bool)
                -> Self {
+        use std::env;
+        use rand::{self, Rng};
+        use rustc_serialize::hex::ToHex;
+
         let handle = network.new_service_handle(crust_config, None);
         let mut vault = mock_crust::make_current(&handle,
-                                                 || unwrap_result!(Vault::new(first_node)));
-        if let Some(replacement_config) = config {
-            unwrap_result!(vault.apply_config(replacement_config));
-        }
+                                                 || unwrap_result!(Vault::new(first_node, use_cache)));
+
+        let temp_root = env::temp_dir();
+        let chunk_store_root = temp_root.join(rand::thread_rng().gen_iter()
+                                                                .take(8)
+                                                                .collect::<Vec<u8>>()
+                                                                .to_hex());
+        let vault_config = match config {
+            Some(config) => {
+                Config {
+                    wallet_address: config.wallet_address,
+                    max_capacity: config.max_capacity,
+                    chunk_store_root: Some(format!("{}", chunk_store_root.display())),
+                }
+            }
+            None => {
+                Config {
+                    wallet_address: None,
+                    max_capacity: None,
+                    chunk_store_root: Some(format!("{}", chunk_store_root.display())),
+                }
+            }
+        };
+        unwrap_result!(vault.apply_config(vault_config));
 
         TestNode {
             handle: handle,
@@ -83,21 +109,25 @@ impl TestNode {
     pub fn name(&self) -> XorName {
         self.vault.name()
     }
+    /// returns the vault's routing_table.
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        self.vault.routing_table()
+    }
 }
 
 /// Create nodes for mock network
-pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> Vec<TestNode> {
+pub fn create_nodes(network: &Network, size: usize, config: Option<Config>, use_cache: bool) -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
-    nodes.push(TestNode::new(network, None, config.clone(), true));
+    nodes.push(TestNode::new(network, None, config.clone(), true, use_cache));
     while nodes[0].poll() > 0 {}
 
     let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
-        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone(), false));
+        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone(), false, use_cache));
         poll::nodes(&mut nodes);
     }
 
@@ -105,18 +135,19 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>) -> V
 }
 
 /// Add node to the mock network
-pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize) {
+pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize, use_cache: bool) {
     let config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
-    nodes.push(TestNode::new(network, Some(config.clone()), None, false));
+    nodes.push(TestNode::new(network, Some(config.clone()), None, false, use_cache));
 }
 
 /// Add node to the mock network with specified config
 pub fn add_node_with_config(network: &Network,
                             nodes: &mut Vec<TestNode>,
                             config: Config,
-                            index: usize) {
+                            index: usize,
+                            use_cache: bool) {
     let crust_config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
-    nodes.push(TestNode::new(network, Some(crust_config), Some(config), false));
+    nodes.push(TestNode::new(network, Some(crust_config), Some(config), false, use_cache));
 }
 
 /// remove this node from the mock network

@@ -33,10 +33,19 @@ use std::collections::HashSet;
 const TEST_NET_SIZE: usize = 20;
 
 #[test]
-fn immutable_data_operations_with_churn() {
-    let network = Network::new();
+fn immutable_data_operations_with_churn_with_cache() {
+    immutable_data_operations_with_churn(true);
+}
+
+#[test]
+fn immutable_data_operations_with_churn_without_cache() {
+    immutable_data_operations_with_churn(false);
+}
+
+fn immutable_data_operations_with_churn(use_cache: bool) {
+    let network = Network::new(None);
     let node_count = TEST_NET_SIZE;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, use_cache);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
     const DATA_COUNT: usize = 50;
@@ -60,7 +69,7 @@ fn immutable_data_operations_with_churn() {
         if nodes.len() <= GROUP_SIZE + 2 || Range::new(0, 4).ind_sample(&mut rng) < 3 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
-            test_node::add_node(&network, &mut nodes, index);
+            test_node::add_node(&network, &mut nodes, index, use_cache);
         } else {
             let number = Range::new(3, 4).ind_sample(&mut rng);
             trace!("Removing {} node(s).", number);
@@ -78,6 +87,7 @@ fn immutable_data_operations_with_churn() {
         trace!("Processed {} events.", event_count);
 
         mock_crust_detail::check_data(all_data.clone(), &nodes);
+        mock_crust_detail::verify_kademlia_invariant_for_all_nodes(&nodes);
     }
 
     for data in &all_data {
@@ -96,10 +106,19 @@ fn immutable_data_operations_with_churn() {
 }
 
 #[test]
-fn structured_data_operations_with_churn() {
-    let network = Network::new();
+fn structured_data_operations_with_churn_with_cache() {
+    structured_data_operations_with_churn(true);
+}
+
+#[test]
+fn structured_data_operations_with_churn_without_cache() {
+    structured_data_operations_with_churn(false);
+}
+
+fn structured_data_operations_with_churn(use_cache: bool) {
+    let network = Network::new(None);
     let node_count = TEST_NET_SIZE;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, use_cache);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
@@ -165,7 +184,7 @@ fn structured_data_operations_with_churn() {
         all_data.extend(new_data);
         if nodes.len() <= GROUP_SIZE + 2 || Range::new(0, 4).ind_sample(&mut rng) < 3 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
-            test_node::add_node(&network, &mut nodes, index);
+            test_node::add_node(&network, &mut nodes, index, use_cache);
             trace!("Adding node {:?} with bootstrap node {}.",
                    nodes[index].name(),
                    index);
@@ -189,6 +208,7 @@ fn structured_data_operations_with_churn() {
 
         mock_crust_detail::check_data(all_data.clone(), &nodes);
         mock_crust_detail::check_deleted_data(&deleted_data, &nodes);
+        mock_crust_detail::verify_kademlia_invariant_for_all_nodes(&nodes);
     }
 
     for data in &all_data {
@@ -216,9 +236,9 @@ fn structured_data_operations_with_churn() {
 
 #[test]
 fn handle_put_get_normal_flow() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
@@ -244,9 +264,9 @@ fn handle_put_get_normal_flow() {
 
 #[test]
 fn handle_put_get_error_flow() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
@@ -287,9 +307,9 @@ fn handle_put_get_error_flow() {
 
 #[test]
 fn handle_post_error_flow() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
@@ -373,9 +393,9 @@ fn handle_post_error_flow() {
 
 #[test]
 fn handle_delete_error_flow() {
-    let network = Network::new();
+    let network = Network::new(None);
     let node_count = 15;
-    let mut nodes = test_node::create_nodes(&network, node_count, None);
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
 
