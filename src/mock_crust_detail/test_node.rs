@@ -140,6 +140,16 @@ pub fn add_node(network: &Network, nodes: &mut Vec<TestNode>, index: usize, use_
     nodes.push(TestNode::new(network, Some(config.clone()), None, false, use_cache));
 }
 
+/// Add node to the mock network with specified config
+pub fn add_node_with_config(network: &Network,
+                            nodes: &mut Vec<TestNode>,
+                            config: Config,
+                            index: usize,
+                            use_cache: bool) {
+    let crust_config = mock_crust::Config::with_contacts(&[nodes[index].endpoint()]);
+    nodes.push(TestNode::new(network, Some(crust_config), Some(config), false, use_cache));
+}
+
 /// remove this node from the mock network
 pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
     let node = nodes.remove(index);
