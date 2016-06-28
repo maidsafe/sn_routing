@@ -22,7 +22,7 @@ use std::cmp;
 
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
+use routing::{Authority, Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{MutationError, GetError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
@@ -477,5 +477,39 @@ fn handle_delete_error_flow() {
     match client.delete_response(Data::Structured(new_sd), &mut nodes) {
         Ok(data_id) => assert_eq!(data_id, sd.identifier()),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
+    }
+}
+
+#[test]
+fn caching() {
+    let network = Network::new(None);
+    let node_count = GROUP_SIZE + 2;
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
+
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+
+    let mut client = TestClient::new(&network, Some(config));
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+
+    let sent_data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(8)));
+    let _ = client.put_and_verify(sent_data.clone(), &mut nodes);
+
+    // The first response is not yet cached, so it comes from a NAE manager authority.
+    let (received_data, src) = client.get_with_src(sent_data.identifier(), &mut nodes);
+    assert_eq!(received_data, sent_data);
+
+    match src {
+        Authority::NaeManager(_) => (),
+        authority => panic!("Response is cached (unexpected src authority {:?})", authority),
+    }
+
+    // The second response is cached, so it comes from a managed node authority.
+    let (received_data, src) = client.get_with_src(sent_data.identifier(), &mut nodes);
+    assert_eq!(received_data, sent_data);
+
+    match src {
+        Authority::ManagedNode(_) => (),
+        authority => panic!("Response is not cached (unexpected src authority {:?})", authority),
     }
 }

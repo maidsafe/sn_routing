@@ -97,8 +97,14 @@ impl TestClient {
         while let Ok(_) = self.routing_rx.try_recv() {}
     }
 
-    /// Try and get data from nodes provided
+    /// Try and get data from nodes provided.
     pub fn get(&mut self, request: DataIdentifier, nodes: &mut [TestNode]) -> Data {
+        self.get_with_src(request, nodes).0
+    }
+
+    /// Try to get data from the given nodes. Returns the retrieved data and
+    /// the source authority the data was sent by.
+    pub fn get_with_src(&mut self, request: DataIdentifier, nodes: &mut [TestNode]) -> (Data, Authority) {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
         self.flush();
@@ -110,10 +116,11 @@ impl TestClient {
             match self.routing_rx.try_recv() {
                 Ok(Event::Response {
                     response: Response::GetSuccess(data, response_message_id),
+                    src,
                     ..
                 }) => {
                     if request_message_id == response_message_id {
-                        return data;
+                        return (data, src);
                     } else {
                         warn!("{:?}  --   {:?}", request_message_id, response_message_id);
                     }
