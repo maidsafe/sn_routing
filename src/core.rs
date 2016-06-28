@@ -2432,7 +2432,8 @@ impl Core {
 
     fn rebootstrap(&mut self) {
         match self.state {
-            State::Bootstrapping(..) => {
+            State::Bootstrapping(bootstrap_id, _) => {
+                self.crust_service.disconnect(bootstrap_id);
                 if let Some((peer_id, _)) = self.peer_mgr.remove_proxy() {
                     self.crust_service.disconnect(peer_id);
                 }
