@@ -1094,7 +1094,7 @@ impl Core {
             if let Err(error) = self.crust_service.start_listening_tcp() {
                 error!("{:?} Failed to start listening: {:?}", self, error);
             } else {
-                info!("{:?} Running listener.", self);
+                info!("{:?} Attempting to start listener.", self);
                 self.is_listening = true;
             }
         }
@@ -2432,8 +2432,15 @@ impl Core {
 
     fn rebootstrap(&mut self) {
         match self.state {
-            State::Bootstrapping(..) => {
+            State::Bootstrapping(bootstrap_id, _) => {
+                debug!("{:?} Dropping bootstrap node {:?} and retrying.",
+                       self,
+                       bootstrap_id);
+                self.crust_service.disconnect(bootstrap_id);
                 if let Some((peer_id, _)) = self.peer_mgr.remove_proxy() {
+                    debug!("{:?} Dropping proxy node {:?} and retrying.",
+                           self,
+                           bootstrap_id);
                     self.crust_service.disconnect(peer_id);
                 }
             }
