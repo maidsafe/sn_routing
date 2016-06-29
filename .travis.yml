@@ -36,6 +36,7 @@ matrix:
         apt:
           packages:
             - rpm
+            - sshpass
             # TODO: uncomment once https://github.com/travis-ci/apt-package-whitelist/issues/369 is resolved
             # - musl-tools
 
@@ -51,6 +52,7 @@ matrix:
           packages:
             - gcc-multilib
             - rpm
+            - sshpass
 
     - os: linux
       env: >
