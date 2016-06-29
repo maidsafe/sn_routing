@@ -40,6 +40,8 @@ const ACCUMULATOR_QUORUM: usize = GROUP_SIZE / 2 + 1;
 const ACCUMULATOR_TIMEOUT_SECS: u64 = 180;
 /// The timeout for retrieving data chunks from individual peers.
 const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 60;
+/// The interval for print status log.
+const STATUS_LOG_INTERVAL: u64 = 120;
 
 /// Specification of a particular version of a data chunk. For immutable data, the `u64` is always
 /// 0; for structured data, it specifies the version.
@@ -54,6 +56,7 @@ struct Cache {
     ongoing_gets: HashMap<XorName, (Instant, IdAndVersion)>,
     ongoing_gets_count: usize,
     data_holder_items_count: usize,
+    logging_time: Instant,
 }
 
 impl Default for Cache {
@@ -64,6 +67,7 @@ impl Default for Cache {
             ongoing_gets: HashMap::new(),
             ongoing_gets_count: 0,
             data_holder_items_count: 0,
+            logging_time: Instant::now(),
         }
     }
 }
@@ -237,6 +241,10 @@ impl Cache {
     }
 
     fn print_stats(&mut self) {
+        if self.logging_time.elapsed().as_secs() < STATUS_LOG_INTERVAL {
+            return;
+        }
+        self.logging_time = Instant::now();
         let new_og_count = self.ongoing_gets.len();
         let new_dhi_count = self.data_holders.values().map(HashSet::len).fold(0, Add::add);
         if new_og_count != self.ongoing_gets_count ||
@@ -260,6 +268,7 @@ pub struct DataManager {
     immutable_data_count: u64,
     structured_data_count: u64,
     client_get_requests: u64,
+    logging_time: Instant,
 }
 
 fn id_and_version_of(data: &Data) -> IdAndVersion {
@@ -298,6 +307,7 @@ impl DataManager {
             immutable_data_count: 0,
             structured_data_count: 0,
             client_get_requests: 0,
+            logging_time: Instant::now(),
         })
     }
 
@@ -309,7 +319,10 @@ impl DataManager {
                       -> Result<(), InternalError> {
         if let Authority::Client { .. } = src {
             self.client_get_requests += 1;
-            info!("{:?}", self);
+            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                self.logging_time = Instant::now();
+                info!("{:?}", self);
+            }
         }
         if let Ok(data) = self.chunk_store.get(&data_id) {
             trace!("As {:?} sending data {:?} to {:?}", dst, data, src);
@@ -373,7 +386,10 @@ impl DataManager {
         } else {
             self.count_added_data(&data_id);
             trace!("DM sending PutSuccess for data {:?}", data_id);
-            info!("{:?}", self);
+            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                self.logging_time = Instant::now();
+                info!("{:?}", self);
+            }
             let _ = self.routing_node.send_put_success(dst, src, data_id, message_id);
             let data_list = vec![(data_id, version)];
             let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
@@ -451,7 +467,10 @@ impl DataManager {
                 if let Ok(()) = self.chunk_store.delete(&data_id) {
                     self.count_removed_data(&data_id);
                     trace!("DM deleted {:?}", data.identifier());
-                    info!("{:?}", self);
+                    if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                        self.logging_time = Instant::now();
+                        info!("{:?}", self);
+                    }
                     let _ = self.routing_node.send_delete_success(dst, src, data_id, message_id);
                     // TODO: Send a refresh message.
                     return Ok(());
