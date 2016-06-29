@@ -17,20 +17,18 @@
 
 #![cfg(feature = "use-mock-crust")]
 
-use routing::{FullId, StructuredData, XorName};
-use rand::{self, random, Rng};
-
-/// utility to create random vec u8 of a given size
-pub fn generate_random_vec_u8(size: usize) -> Vec<u8> {
-    rand::thread_rng().gen_iter().take(size).collect()
-}
+use routing::{FullId, StructuredData};
+use rand::Rng;
 
 /// creates random structured data - tests only
-pub fn random_structured_data(type_tag: u64, full_id: &FullId) -> StructuredData {
+pub fn random_structured_data<R: Rng>(type_tag: u64,
+                                      full_id: &FullId,
+                                      rng: &mut R)
+                                      -> StructuredData {
     StructuredData::new(type_tag,
-                        random::<XorName>(),
+                        rng.gen(),
                         0,
-                        generate_random_vec_u8(10),
+                        rng.gen_iter().take(10).collect(),
                         vec![full_id.public_id().signing_public_key().clone()],
                         vec![],
                         Some(full_id.signing_private_key()))

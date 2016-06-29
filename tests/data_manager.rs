@@ -20,7 +20,7 @@
 
 use std::cmp::{self, Ordering};
 
-use rand::{random, thread_rng};
+use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
 use routing::{Authority, Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
@@ -56,13 +56,13 @@ fn immutable_data_operations_with_churn(use_cache: bool) {
     client.create_account(&mut nodes);
 
     let mut all_data = vec![];
-    let mut rng = thread_rng();
+    let mut rng = network.new_rng();
     let mut event_count = 0;
 
     for i in 0..10 {
         trace!("Iteration {}. Network size: {}", i + 1, nodes.len());
         for _ in 0..(cmp::min(DATA_PER_ITER, DATA_COUNT - all_data.len())) {
-            let data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(10)));
+            let data = Data::Immutable(ImmutableData::new(rng.gen_iter().take(10).collect()));
             trace!("Putting data {:?}.", data.name());
             client.put(data.clone());
             all_data.push(data);
@@ -128,7 +128,7 @@ fn structured_data_operations_with_churn(use_cache: bool) {
 
     let mut all_data: Vec<Data> = vec![];
     let mut deleted_data = vec![];
-    let mut rng = thread_rng();
+    let mut rng = network.new_rng();
     let mut event_count = 0;
 
     for i in 0..10 {
@@ -136,11 +136,12 @@ fn structured_data_operations_with_churn(use_cache: bool) {
         let mut new_data = vec![];
         let mut mutated_data = HashSet::new();
         for _ in 0..4 {
-            if all_data.is_empty() || random() {
+            if all_data.is_empty() || rng.gen() {
                 let data =
                     Data::Structured(test_utils::random_structured_data(Range::new(10001, 20000)
                                                                             .ind_sample(&mut rng),
-                                                                        client.full_id()));
+                                                                        client.full_id(),
+                                                                        &mut rng));
                 trace!("Putting data {:?} with name {:?}.",
                        data.identifier(),
                        data.name());
@@ -158,7 +159,7 @@ fn structured_data_operations_with_churn(use_cache: bool) {
                     unwrap_result!(StructuredData::new(sd.get_type_tag(),
                                                        *sd.get_identifier(),
                                                        sd.get_version() + 1,
-                                                       test_utils::generate_random_vec_u8(10),
+                                                       rng.gen_iter().take(10).collect(),
                                                        sd.get_owner_keys().clone(),
                                                        vec![],
                                                        Some(client.full_id()
@@ -247,12 +248,13 @@ fn handle_put_get_normal_flow() {
     client.create_account(&mut nodes);
     let full_id = client.full_id().clone();
     let mut all_data: Vec<Data> = vec![];
+    let mut rng = network.new_rng();
 
     for i in 0..GROUP_SIZE {
         let data = if i % 2 == 0 {
-            Data::Structured(test_utils::random_structured_data(100000, &full_id))
+            Data::Structured(test_utils::random_structured_data(100000, &full_id, &mut rng))
         } else {
-            Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(10)))
+            Data::Immutable(ImmutableData::new(rng.gen_iter().take(10).collect()))
         };
         let _ = client.put_and_verify(data.clone(), &mut nodes);
         all_data.push(data);
@@ -270,12 +272,13 @@ fn handle_put_get_error_flow() {
     let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
+    let mut rng = network.new_rng();
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
     // Putting to existing immutable data
-    let im = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(10)));
+    let im = Data::Immutable(ImmutableData::new(rng.gen_iter().take(10).collect()));
     let _ = client.put_and_verify(im.clone(), &mut nodes);
     match client.put_and_verify(im.clone(), &mut nodes) {
         Ok(_) => {}
@@ -284,7 +287,7 @@ fn handle_put_get_error_flow() {
 
     // Putting to existing structured data
     let full_id = client.full_id().clone();
-    let sd = Data::Structured(test_utils::random_structured_data(100000, &full_id));
+    let sd = Data::Structured(test_utils::random_structured_data(100000, &full_id, &mut rng));
     let _ = client.put_and_verify(sd.clone(), &mut nodes);
     match client.put_and_verify(sd.clone(), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, MutationError::DataExists),
@@ -292,14 +295,14 @@ fn handle_put_get_error_flow() {
     }
 
     // Get non-existing immutable data
-    let non_existing_im = ImmutableData::new(test_utils::generate_random_vec_u8(10));
+    let non_existing_im = ImmutableData::new(rng.gen_iter().take(10).collect());
     match client.get_response(non_existing_im.identifier(), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, GetError::NoSuchData),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
     }
 
     // Get non-existing structured data
-    let non_existing_sd = test_utils::random_structured_data(100000, &full_id);
+    let non_existing_sd = test_utils::random_structured_data(100000, &full_id, &mut rng);
     match client.get_response(non_existing_sd.identifier(), &mut nodes) {
         Err(Some(error)) => assert_eq!(error, GetError::NoSuchData),
         unexpected => panic!("Got unexpected response: {:?}", unexpected),
@@ -313,11 +316,12 @@ fn handle_post_error_flow() {
     let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
+    let mut rng = network.new_rng();
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
     let full_id = client.full_id().clone();
-    let sd = test_utils::random_structured_data(100000, &full_id);
+    let sd = test_utils::random_structured_data(100000, &full_id, &mut rng);
 
     // Posting to non-existing structured data
     match client.post_response(Data::Structured(sd.clone()), &mut nodes) {
@@ -399,11 +403,12 @@ fn handle_delete_error_flow() {
     let mut nodes = test_node::create_nodes(&network, node_count, None, true);
     let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
     let mut client = TestClient::new(&network, Some(config));
+    let mut rng = network.new_rng();
 
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
     let full_id = client.full_id().clone();
-    let sd = test_utils::random_structured_data(100000, &full_id);
+    let sd = test_utils::random_structured_data(100000, &full_id, &mut rng);
 
     // Deleting a non-existing structured data
     match client.delete_response(Data::Structured(sd.clone()), &mut nodes) {
@@ -492,8 +497,9 @@ fn caching() {
     let mut client = TestClient::new(&network, Some(config));
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
+    let mut rng = network.new_rng();
 
-    let sent_data = gen_random_immutable_data_not_closest_to_first_node(&nodes);
+    let sent_data = gen_random_immutable_data_not_closest_to_first_node(&nodes, &mut rng);
     let _ = client.put_and_verify(sent_data.clone(), &mut nodes);
 
     // The first response is not yet cached, so it comes from a NAE manager authority.
@@ -502,7 +508,10 @@ fn caching() {
 
     match src {
         Authority::NaeManager(_) => (),
-        authority => panic!("Response is cached (unexpected src authority {:?})", authority),
+        authority => {
+            panic!("Response is cached (unexpected src authority {:?})",
+                   authority)
+        }
     }
 
     // The second response is cached, so it comes from a managed node authority.
@@ -511,20 +520,25 @@ fn caching() {
 
     match src {
         Authority::ManagedNode(_) => (),
-        authority => panic!("Response is not cached (unexpected src authority {:?})", authority),
+        authority => {
+            panic!("Response is not cached (unexpected src authority {:?})",
+                   authority)
+        }
     }
 }
 
-fn gen_random_immutable_data_not_closest_to_first_node(nodes: &[TestNode]) -> Data {
+fn gen_random_immutable_data_not_closest_to_first_node<R: Rng>(nodes: &[TestNode],
+                                                               rng: &mut R)
+                                                               -> Data {
     loop {
-        let data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(8)));
+        let data = Data::Immutable(ImmutableData::new(rng.gen_iter().take(8).collect()));
         let data_name = data.name();
 
         let mut closest_index = 0;
 
         for index in 1..nodes.len() {
-            if data_name.cmp_distance(&nodes[index].name(),
-                                      &nodes[closest_index].name()) == Ordering::Less {
+            if data_name.cmp_distance(&nodes[index].name(), &nodes[closest_index].name()) ==
+               Ordering::Less {
                 closest_index = index;
             }
         }

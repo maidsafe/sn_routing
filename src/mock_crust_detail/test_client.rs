@@ -18,7 +18,7 @@
 use std::sync::mpsc::{self, Receiver};
 
 use maidsafe_utilities::serialisation;
-use rand::random;
+use rand::{Rng, XorShiftRng};
 use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId, Response,
               StructuredData, XorName};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
@@ -35,6 +35,7 @@ pub struct TestClient {
     full_id: FullId,
     public_id: PublicId,
     name: XorName,
+    rng: XorShiftRng,
 }
 
 impl TestClient {
@@ -57,6 +58,7 @@ impl TestClient {
             full_id: full_id,
             public_id: public_id,
             name: *public_id.name(),
+            rng: network.new_rng(),
         }
     }
     /// empty this client event loop
@@ -88,7 +90,7 @@ impl TestClient {
     /// create an account and store it
     pub fn create_account(&mut self, nodes: &mut [TestNode]) {
         let account =
-            unwrap_result!(StructuredData::new(0, random(), 0, vec![], vec![], vec![], None));
+            unwrap_result!(StructuredData::new(0, self.rng.gen(), 0, vec![], vec![], vec![], None));
 
         unwrap_result!(self.put_and_verify(Data::Structured(account), nodes));
     }
@@ -104,7 +106,10 @@ impl TestClient {
 
     /// Try to get data from the given nodes. Returns the retrieved data and
     /// the source authority the data was sent by.
-    pub fn get_with_src(&mut self, request: DataIdentifier, nodes: &mut [TestNode]) -> (Data, Authority) {
+    pub fn get_with_src(&mut self,
+                        request: DataIdentifier,
+                        nodes: &mut [TestNode])
+                        -> (Data, Authority) {
         let dst = Authority::NaeManager(request.name());
         let request_message_id = MessageId::new();
         self.flush();
