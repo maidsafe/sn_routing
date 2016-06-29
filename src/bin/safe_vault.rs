@@ -96,7 +96,13 @@ pub fn main() {
     info!("\n\n{}\n{}", message, underline);
 
     loop {
-        let mut vault = unwrap_result!(Vault::new(args.flag_first, true));
+        let mut vault = match Vault::new(args.flag_first, true) {
+            Ok(vault) => vault,
+            Err(e) => {
+                println!("Cannot start vault due to error : {:?}", e);
+                return;
+            }
+        };
         if let Ok(true) = vault.run() {
             break;
         }

@@ -49,8 +49,22 @@ pub struct Vault {
 impl Vault {
     /// Creates a network Vault instance.
     pub fn new(first_vault: bool, use_cache: bool) -> Result<Self, InternalError> {
-        let config = try!(config_handler::read_config_file());
-        Self::vault_with_config(first_vault, use_cache, config)
+        let config = match config_handler::read_config_file() {
+            Ok(cfg) => cfg,
+            Err(InternalError::FileHandler(e)) => {
+                error!("Config file could not be parsed : {:?}", e);
+                return Err(From::from(e));
+            }
+            Err(e) => return Err(From::from(e)),
+        };
+        match Self::vault_with_config(first_vault, use_cache, config.clone()) {
+            Ok(vault) => Ok(vault),
+            Err(InternalError::ChunkStore(e)) => {
+                error!("Incorrect path {:?} for chunk_store_root : {:?}", config.chunk_store_root, e);
+                Err(From::from(e))
+            }
+            Err(e) => Err(From::from(e)),
+        }
     }
 
     /// Allow construct vault with config for mock-crust tests.
