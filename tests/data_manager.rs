@@ -18,7 +18,7 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
-use std::cmp;
+use std::cmp::{self, Ordering};
 
 use rand::{random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
@@ -26,6 +26,7 @@ use routing::{Authority, Data, FullId, ImmutableData, StructuredData, GROUP_SIZE
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{MutationError, GetError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
+use safe_vault::mock_crust_detail::test_node::TestNode;
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
 use std::collections::HashSet;
@@ -492,7 +493,7 @@ fn caching() {
     client.ensure_connected(&mut nodes);
     client.create_account(&mut nodes);
 
-    let sent_data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(8)));
+    let sent_data = gen_random_immutable_data_not_closest_to_first_node(&nodes);
     let _ = client.put_and_verify(sent_data.clone(), &mut nodes);
 
     // The first response is not yet cached, so it comes from a NAE manager authority.
@@ -511,5 +512,25 @@ fn caching() {
     match src {
         Authority::ManagedNode(_) => (),
         authority => panic!("Response is not cached (unexpected src authority {:?})", authority),
+    }
+}
+
+fn gen_random_immutable_data_not_closest_to_first_node(nodes: &[TestNode]) -> Data {
+    loop {
+        let data = Data::Immutable(ImmutableData::new(test_utils::generate_random_vec_u8(8)));
+        let data_name = data.name();
+
+        let mut closest_index = 0;
+
+        for index in 1..nodes.len() {
+            if data_name.cmp_distance(&nodes[index].name(),
+                                      &nodes[closest_index].name()) == Ordering::Less {
+                closest_index = index;
+            }
+        }
+
+        if closest_index != 0 {
+            return data;
+        }
     }
 }
