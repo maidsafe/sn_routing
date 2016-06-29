@@ -15,6 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std::fs;
+use std::path::PathBuf;
+
 use config_handler::Config;
 use kademlia_routing_table::RoutingTable;
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
@@ -29,6 +32,7 @@ use super::poll;
 pub struct TestNode {
     handle: ServiceHandle,
     vault: Vault,
+    chunk_store_root: PathBuf,
 }
 
 impl TestNode {
@@ -44,9 +48,6 @@ impl TestNode {
         use rustc_serialize::hex::ToHex;
 
         let handle = network.new_service_handle(crust_config, None);
-        let mut vault = mock_crust::make_current(&handle,
-                                                 || unwrap_result!(Vault::new(first_node, use_cache)));
-
         let temp_root = env::temp_dir();
         let chunk_store_root = temp_root.join(rand::thread_rng().gen_iter()
                                                                 .take(8)
@@ -68,11 +69,15 @@ impl TestNode {
                 }
             }
         };
-        unwrap_result!(vault.apply_config(vault_config));
-
+        let vault =
+            mock_crust::make_current(&handle,
+                                     || unwrap_result!(Vault::new_with_config(first_node,
+                                                                              use_cache,
+                                                                              vault_config)));
         TestNode {
             handle: handle,
             vault: vault,
+            chunk_store_root: chunk_store_root,
         }
     }
     /// Empty the event queue for this node on the mock network
@@ -160,4 +165,10 @@ pub fn drop_node(nodes: &mut Vec<TestNode>, index: usize) {
 /// Process all events
 fn _poll_all(nodes: &mut [TestNode]) {
     while nodes.iter_mut().any(|node| node.poll() > 0) {}
+}
+
+impl Drop for TestNode {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.chunk_store_root);
+    }
 }

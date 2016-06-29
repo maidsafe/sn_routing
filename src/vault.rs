@@ -21,9 +21,7 @@ use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 
 use cache::Cache;
-#[cfg(feature = "use-mock-crust")]
-use config_handler::Config;
-use config_handler;
+use config_handler::{self, Config};
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
 use personas::maid_manager::MaidManager;
@@ -51,21 +49,29 @@ pub struct Vault {
 impl Vault {
     /// Creates a network Vault instance.
     pub fn new(first_vault: bool, use_cache: bool) -> Result<Self, InternalError> {
+        let config = try!(config_handler::read_config_file());
+        Self::vault_with_config(first_vault, use_cache, config)
+    }
+
+    /// Allow construct vault with config for mock-crust tests.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn new_with_config(first_vault: bool,
+                           use_cache: bool,
+                           config: Config)
+                           -> Result<Self, InternalError> {
+        Self::vault_with_config(first_vault, use_cache, config)
+    }
+
+    /// Allow construct vault with config for mock-crust tests.
+    fn vault_with_config(first_vault: bool,
+                         use_cache: bool,
+                         config: Config)
+                         -> Result<Self, InternalError> {
         sodiumoxide::init();
 
-        let config = config_handler::read_config_file().ok().unwrap_or_default();
-        let mut chunk_store_root = if config.chunk_store_root.is_none() {
-            env::temp_dir()
-        } else {
-            let path_str = config.chunk_store_root.unwrap();
-            let root_path = Path::new(&path_str);
-            if root_path.is_dir() {
-                root_path.to_path_buf()
-            } else {
-                warn!("configured chunk_store_root {:?} is not a directory",
-                      root_path);
-                env::temp_dir()
-            }
+        let mut chunk_store_root = match config.chunk_store_root {
+            Some(path_str) => Path::new(&path_str).to_path_buf(),
+            None => env::temp_dir(),
         };
         chunk_store_root.push(CHUNK_STORE_DIR);
 
@@ -81,28 +87,11 @@ impl Vault {
             data_manager: try!(DataManager::new(routing_node.clone(),
                                                 chunk_store_root,
                                                 config.max_capacity
-                                                    .unwrap_or(DEFAULT_MAX_CAPACITY))),
+                                                      .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
-    }
 
-    /// Allow replacing the default config values for use with the mock-crust tests.  This should
-    /// only be called immediately after constructing a new Vault.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn apply_config(&mut self, config: Config) -> Result<(), InternalError> {
-        let max_capacity = config.max_capacity.unwrap_or(DEFAULT_MAX_CAPACITY);
-        let mut chunk_store_root = if config.chunk_store_root.is_none() {
-            env::temp_dir()
-        } else {
-            let path_str = config.chunk_store_root.unwrap();
-            let root_path = Path::new(&path_str);
-            root_path.to_path_buf()
-        };
-        chunk_store_root.push(CHUNK_STORE_DIR);
-        self.data_manager =
-            try!(DataManager::new(self.routing_node.clone(), chunk_store_root, max_capacity));
-        Ok(())
     }
 
     /// Run the event loop, processing events received from Routing.

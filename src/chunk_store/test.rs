@@ -26,9 +26,6 @@ macro_rules! assert_err {
 
 #[cfg(test)]
 mod test {
-    use std::env;
-    use std::path::PathBuf;
-
     use chunk_store::{ChunkStore, Error};
     use maidsafe_utilities::serialisation;
     use rand::{self, Rng};
@@ -60,13 +57,6 @@ mod test {
             chunks.data_and_sizes.push((data, serialised_size));
         }
         chunks
-    }
-
-    fn temp_test_dir() -> PathBuf {
-        use rustc_serialize::hex::ToHex;
-        let mut temp_dir = env::temp_dir();
-        temp_dir.push(rand::thread_rng().gen_iter().take(8).collect::<Vec<u8>>().to_hex());
-        temp_dir
     }
 
     #[test]
@@ -105,8 +95,8 @@ mod test {
     #[test]
     fn successful_put() {
         let chunks = generate_random_chunks();
-        let mut chunk_store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"),
-                                                             chunks.total_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
         {
             let mut put = |key, value, size| {
                 let size_before_insert = chunk_store.used_space();
@@ -134,7 +124,8 @@ mod test {
     #[test]
     fn failed_put_when_not_enough_space() {
         let k_disk_size = 32;
-        let mut store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"), k_disk_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut store = unwrap_result!(ChunkStore::new(root.into_path(), k_disk_size));
         let key: u8 = rand::random();
         let data = generate_random_bytes(k_disk_size + 1);
 
@@ -144,8 +135,8 @@ mod test {
     #[test]
     fn delete() {
         let chunks = generate_random_chunks();
-        let mut chunk_store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"),
-                                                             chunks.total_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
         let mut put_and_delete = |key, value, size| {
             unwrap_result!(chunk_store.put(&key, value));
             assert_eq!(chunk_store.used_space(), size);
@@ -163,8 +154,8 @@ mod test {
     #[test]
     fn put_and_get_value_should_be_same() {
         let chunks = generate_random_chunks();
-        let mut chunk_store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"),
-                                                             chunks.total_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
         for (index, &(ref data, _)) in chunks.data_and_sizes.iter().enumerate() {
             unwrap_result!(chunk_store.put(&(index as u32), data));
         }
@@ -177,8 +168,8 @@ mod test {
     #[test]
     fn overwrite_value() {
         let chunks = generate_random_chunks();
-        let mut chunk_store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"),
-                                                             chunks.total_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
         for (ref data, ref size) in chunks.data_and_sizes {
             unwrap_result!(chunk_store.put(&0, data));
             assert_eq!(chunk_store.used_space(), *size);
@@ -189,8 +180,8 @@ mod test {
 
     #[test]
     fn get_fails_when_key_does_not_exist() {
-        let chunk_store = unwrap_result!(ChunkStore::<u8, u8>::new(temp_test_dir().join("test"),
-                                                                   64));
+        let root = unwrap_result!(TempDir::new("test"));
+        let chunk_store = unwrap_result!(ChunkStore::<u8, u8>::new(root.into_path(), 64));
         let key = rand::random();
         assert_err!(chunk_store.get(&key), Error::NotFound);
     }
@@ -198,8 +189,8 @@ mod test {
     #[test]
     fn keys() {
         let chunks = generate_random_chunks();
-        let mut chunk_store = unwrap_result!(ChunkStore::new(temp_test_dir().join("test"),
-                                                             chunks.total_size));
+        let root = unwrap_result!(TempDir::new("test"));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
 
         for (index, &(ref data, _)) in chunks.data_and_sizes.iter().enumerate() {
             assert!(!chunk_store.keys().contains(&index));
