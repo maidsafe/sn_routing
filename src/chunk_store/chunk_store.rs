@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::{cmp, fs};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -56,11 +56,6 @@ quick_error! {
             description("Key, Value not found")
             display("Key, Value not found")
         }
-        /// Could not delete chunk store directory.
-        CouldNotDeleteChunkStoreDir {
-            description("Could not delete chunk store directory")
-            display("Could not delete chunk store directory")
-        }
     }
 }
 
@@ -85,17 +80,7 @@ impl<Key, Value> ChunkStore<Key, Value>
     ///
     /// The data is stored in a root directory. If `root` doesn't exist, it will be created.
     pub fn new(root: PathBuf, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
-        match fs::create_dir_all(&root) {
-            Ok(_) => {}
-            // when multiple chunk_stores being created concurrently under the same root directory
-            // there is chance more than one instance tests the root dir as non-exists and trying
-            // to create it, which will cause one of them raise AlreadyExists error during
-            // fs::create_dir_all. A re-attempt needs to be carried out in that case.
-            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                try!(fs::create_dir_all(&root));
-            }
-            Err(e) => return Err(From::from(e)),
-        }
+        try!(fs::create_dir_all(&root));
         try!(Self::verify_file_creation(&root));
         Ok(ChunkStore {
             rootdir: root,
@@ -205,11 +190,10 @@ impl<Key, Value> ChunkStore<Key, Value>
 
     /// Cleans up the chunk_store dir.
     pub fn reset_store(&self) -> Result<(), InternalError> {
-        let _ = fs::remove_dir_all(&self.rootdir); // If it exists, remove it.
-        if self.rootdir.as_path().exists() {
-            return Err(Error::CouldNotDeleteChunkStoreDir.into());
+        for entry in try!(fs::read_dir(&self.rootdir)) {
+            let entry = try!(entry);
+            try!(fs::remove_file(entry.path()));
         }
-        try!(fs::create_dir_all(&self.rootdir));
         Ok(())
     }
 
