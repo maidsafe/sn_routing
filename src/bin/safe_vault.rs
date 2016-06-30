@@ -52,6 +52,7 @@ extern crate rustc_serialize;
 extern crate safe_vault;
 
 use std::ffi::OsString;
+use std::fs;
 use std::process;
 use docopt::Docopt;
 use safe_vault::Vault;
@@ -77,9 +78,12 @@ struct Args {
 /// Runs a SAFE Network vault.
 #[cfg_attr(feature="clippy", allow(print_stdout))]
 pub fn main() {
+    // TODO - remove the following line once maidsafe_utilities is updated to use log4rs v4.
+    let _ = fs::remove_file("Node.log");
+
     let args: Args = Docopt::new(USAGE)
-                         .and_then(|docopt| docopt.decode())
-                         .unwrap_or_else(|error| error.exit());
+        .and_then(|docopt| docopt.decode())
+        .unwrap_or_else(|error| error.exit());
 
     let name = config_file_handler::exe_file_stem().unwrap_or_else(|_| OsString::new());
     let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));

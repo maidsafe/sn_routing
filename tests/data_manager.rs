@@ -18,10 +18,11 @@
 // For explanation of lint checks, run `rustc -W help` or see
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
-use std::cmp::{self, Ordering};
-
 use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
+use std::cmp;
+use std::collections::HashSet;
+
 use routing::{Authority, Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{MutationError, GetError};
@@ -29,7 +30,6 @@ use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_node::TestNode;
 use safe_vault::mock_crust_detail::test_client::TestClient;
 use safe_vault::test_utils;
-use std::collections::HashSet;
 
 const TEST_NET_SIZE: usize = 20;
 
@@ -487,7 +487,7 @@ fn handle_delete_error_flow() {
 }
 
 #[test]
-fn caching() {
+fn caching_with_data_not_close_to_proxy_node() {
     let network = Network::new(None);
     let node_count = GROUP_SIZE + 2;
     let mut nodes = test_node::create_nodes(&network, node_count, None, true);
@@ -499,7 +499,7 @@ fn caching() {
     client.create_account(&mut nodes);
     let mut rng = network.new_rng();
 
-    let sent_data = gen_random_immutable_data_not_closest_to_first_node(&nodes, &mut rng);
+    let sent_data = gen_random_immutable_data_not_close_to(&nodes[0], &mut rng);
     let _ = client.put_and_verify(sent_data.clone(), &mut nodes);
 
     // The first response is not yet cached, so it comes from a NAE manager authority.
@@ -527,23 +527,59 @@ fn caching() {
     }
 }
 
-fn gen_random_immutable_data_not_closest_to_first_node<R: Rng>(nodes: &[TestNode],
-                                                               rng: &mut R)
-                                                               -> Data {
-    loop {
-        let data = Data::Immutable(ImmutableData::new(rng.gen_iter().take(8).collect()));
-        let data_name = data.name();
+#[test]
+fn caching_with_data_close_to_proxy_node() {
+    let network = Network::new(None);
+    let node_count = GROUP_SIZE + 2;
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
 
-        let mut closest_index = 0;
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
 
-        for index in 1..nodes.len() {
-            if data_name.cmp_distance(&nodes[index].name(), &nodes[closest_index].name()) ==
-               Ordering::Less {
-                closest_index = index;
-            }
+    let mut client = TestClient::new(&network, Some(config));
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+    let mut rng = network.new_rng();
+
+    let sent_data = gen_random_immutable_data_close_to(&nodes[0], &mut rng);
+    let _ = client.put_and_verify(sent_data.clone(), &mut nodes);
+
+    // Send two requests and verify the response is not cached in any of them
+    let (received_data, src) = client.get_with_src(sent_data.identifier(), &mut nodes);
+    assert_eq!(received_data, sent_data);
+
+    match src {
+        Authority::NaeManager(_) => (),
+        authority => {
+            panic!("Response is cached (unexpected src authority {:?})",
+                   authority)
         }
+    }
 
-        if closest_index != 0 {
+    let (received_data, src) = client.get_with_src(sent_data.identifier(), &mut nodes);
+    assert_eq!(received_data, sent_data);
+
+    match src {
+        Authority::NaeManager(_) => (),
+        authority => {
+            panic!("Response is cached (unexpected src authority {:?})",
+                   authority)
+        }
+    }
+}
+
+fn gen_random_immutable_data_close_to<R: Rng>(node: &TestNode, rng: &mut R) -> Data {
+    loop {
+        let data = Data::Immutable(test_utils::random_immutable_data(10, rng));
+        if node.routing_table().is_close(&data.name(), GROUP_SIZE) {
+            return data;
+        }
+    }
+}
+
+fn gen_random_immutable_data_not_close_to<R: Rng>(node: &TestNode, rng: &mut R) -> Data {
+    loop {
+        let data = Data::Immutable(test_utils::random_immutable_data(10, rng));
+        if !node.routing_table().is_close(&data.name(), GROUP_SIZE) {
             return data;
         }
     }

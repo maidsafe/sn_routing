@@ -520,7 +520,10 @@ impl DataManager {
         try!(self.chunk_store.put(&data_id, &data));
         if got_new_data {
             self.count_added_data(&data_id);
-            info!("{:?}", self);
+            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                self.logging_time = Instant::now();
+                info!("{:?}", self);
+            }
         }
         Ok(())
     }
@@ -636,7 +639,10 @@ impl DataManager {
             let _ = self.send_refresh(Authority::ManagedNode(*node_name), data_list);
         }
         if has_pruned_data {
-            info!("{:?}", self);
+            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                self.logging_time = Instant::now();
+                info!("{:?}", self);
+            }
         }
     }
 
@@ -648,7 +654,10 @@ impl DataManager {
         let pruned_unneeded_chunks = self.cache.prune_unneeded_chunks(routing_table);
         if pruned_unneeded_chunks != 0 {
             self.immutable_data_count += pruned_unneeded_chunks;
-            info!("{:?}", self);
+            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                self.logging_time = Instant::now();
+                info!("{:?}", self);
+            }
         }
         self.cache.prune_data_holders(routing_table);
         if self.cache.prune_ongoing_gets(routing_table) {
