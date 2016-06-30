@@ -80,7 +80,7 @@ mod test {
     }
 
     #[test]
-    fn storedir_cleanup() {
+    fn storedir_should_not_cleanup() {
         let tempdir = unwrap_result!(TempDir::new("test"));
         let storedir = tempdir.path().join("test");
 
@@ -89,7 +89,7 @@ mod test {
             assert!(storedir.exists());
         }
 
-        assert!(!storedir.exists());
+        assert!(storedir.exists());
     }
 
     #[test]
