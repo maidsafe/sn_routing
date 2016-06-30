@@ -20,8 +20,11 @@ use std::path::PathBuf;
 
 use config_handler::Config;
 use kademlia_routing_table::RoutingTable;
+use rand::{self, Rng};
 use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
 use routing::XorName;
+use rustc_serialize::hex::ToHex;
+use std::env;
 use vault::Vault;
 
 use personas::data_manager::IdAndVersion;
@@ -43,16 +46,13 @@ impl TestNode {
                first_node: bool,
                use_cache: bool)
                -> Self {
-        use std::env;
-        use rand::{self, Rng};
-        use rustc_serialize::hex::ToHex;
-
         let handle = network.new_service_handle(crust_config, None);
         let temp_root = env::temp_dir();
-        let chunk_store_root = temp_root.join(rand::thread_rng().gen_iter()
-                                                                .take(8)
-                                                                .collect::<Vec<u8>>()
-                                                                .to_hex());
+        let chunk_store_root = temp_root.join(rand::thread_rng()
+            .gen_iter()
+            .take(8)
+            .collect::<Vec<u8>>()
+            .to_hex());
         let vault_config = match config {
             Some(config) => {
                 Config {
@@ -69,11 +69,9 @@ impl TestNode {
                 }
             }
         };
-        let vault =
-            mock_crust::make_current(&handle,
-                                     || unwrap_result!(Vault::new_with_config(first_node,
-                                                                              use_cache,
-                                                                              vault_config)));
+        let vault = mock_crust::make_current(&handle, || {
+            unwrap_result!(Vault::new_with_config(first_node, use_cache, vault_config))
+        });
         TestNode {
             handle: handle,
             vault: vault,
@@ -121,7 +119,11 @@ impl TestNode {
 }
 
 /// Create nodes for mock network
-pub fn create_nodes(network: &Network, size: usize, config: Option<Config>, use_cache: bool) -> Vec<TestNode> {
+pub fn create_nodes(network: &Network,
+                    size: usize,
+                    config: Option<Config>,
+                    use_cache: bool)
+                    -> Vec<TestNode> {
     let mut nodes = Vec::new();
 
     // Create the seed node.
@@ -132,7 +134,11 @@ pub fn create_nodes(network: &Network, size: usize, config: Option<Config>, use_
 
     // Create other nodes using the seed node endpoint as bootstrap contact.
     for _ in 1..size {
-        nodes.push(TestNode::new(network, Some(crust_config.clone()), config.clone(), false, use_cache));
+        nodes.push(TestNode::new(network,
+                                 Some(crust_config.clone()),
+                                 config.clone(),
+                                 false,
+                                 use_cache));
         poll::nodes(&mut nodes);
     }
 

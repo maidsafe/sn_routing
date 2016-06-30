@@ -22,7 +22,7 @@ mod test {
     use safe_vault::mock_crust_detail::{poll, test_node};
     use safe_vault::mock_crust_detail::test_client::TestClient;
     use safe_vault::test_utils;
-    use rand::{random, thread_rng};
+    use rand::Rng;
     use rand::distributions::{IndependentSample, Range};
     use routing::{Data, ImmutableData};
     use routing::mock_crust::{self, Network};
@@ -42,16 +42,17 @@ mod test {
         let crust_config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
         let mut client = TestClient::new(&network, Some(crust_config));
         let full_id = client.full_id().clone();
+        let mut rng = network.new_rng();
 
         client.ensure_connected(&mut nodes);
         client.create_account(&mut nodes);
 
         loop {
-            let data = if random() {
-                let content = test_utils::generate_random_vec_u8(100);
+            let data = if rng.gen() {
+                let content = rng.gen_iter().take(100).collect();
                 Data::Immutable(ImmutableData::new(content))
             } else {
-                Data::Structured(test_utils::random_structured_data(100000, &full_id))
+                Data::Structured(test_utils::random_structured_data(100000, &full_id, &mut rng))
             };
             let data_id = data.identifier();
             match client.put_and_verify(data, &mut nodes) {
@@ -65,13 +66,12 @@ mod test {
                 }
             }
         }
-        let mut rng = thread_rng();
         for _ in 0..10 {
             let index = Range::new(1, nodes.len()).ind_sample(&mut rng);
             trace!("Adding node with bootstrap node {}.", index);
             test_node::add_node(&network, &mut nodes, index, true);
             let _ = poll::poll_and_resend_unacknowledged(&mut nodes, &mut client);
-            let content = test_utils::generate_random_vec_u8(100);
+            let content = rng.gen_iter().take(100).collect();
             let data = Data::Immutable(ImmutableData::new(content));
             let data_id = data.identifier();
             match client.put_and_verify(data, &mut nodes) {
