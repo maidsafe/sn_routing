@@ -1,5 +1,11 @@
 # Safe Vault - Change Log
 
+## [0.10.1]
+- Fix chunk store directory handling.
+- Remove remaining uses of the thread-local random number generator to make
+  tests deterministic.
+- Make data manager statistics less verbose to reduce spam in the logs.
+
 ## [0.10.0]
 - Merge chunk_store into safe_vault and make its root directory configurable.
 - Implement caching for immutable data.
