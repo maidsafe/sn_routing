@@ -212,9 +212,3 @@ impl<Key, Value> ChunkStore<Key, Value>
         Ok(self.rootdir.join(path_name))
     }
 }
-
-impl<Key, Value> Drop for ChunkStore<Key, Value> {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.rootdir);
-    }
-}
