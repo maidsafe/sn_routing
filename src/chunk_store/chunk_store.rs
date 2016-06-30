@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::{cmp, fs};
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -24,6 +24,9 @@ use error::InternalError;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::hex::{FromHex, ToHex};
+
+/// The max name length for a chunk file.
+const MAX_CHUNK_FILE_NAME_LENGTH: usize = 104;
 
 quick_error! {
     /// `ChunkStore` error.
@@ -77,23 +80,21 @@ impl<Key, Value> ChunkStore<Key, Value>
     ///
     /// The data is stored in a root directory. If `root` doesn't exist, it will be created.
     pub fn new(root: PathBuf, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
-        match fs::create_dir_all(&root) {
-            Ok(_) => {}
-            // when multiple chunk_stores being created concurrently under the same root directory
-            // there is chance more than one instance tests the root dir as non-exists and trying
-            // to create it, which will cause one of them raise AlreadyExists error during
-            // fs::create_dir_all. A re-attempt needs to be carried out in that case.
-            Err(ref e) if e.kind() == ErrorKind::AlreadyExists => {
-                try!(fs::create_dir_all(&root));
-            }
-            Err(e) => return Err(From::from(e)),
-        }
+        try!(fs::create_dir_all(&root));
+        try!(Self::verify_file_creation(&root));
         Ok(ChunkStore {
             rootdir: root,
             max_space: max_space,
             used_space: 0,
             phantom: PhantomData,
         })
+    }
+
+    fn verify_file_creation(root: &PathBuf) -> Result<(), Error> {
+        let name: String = (0..MAX_CHUNK_FILE_NAME_LENGTH).map(|_| '0').collect();
+        let file_path = root.join(name);
+        let _ = try!(fs::File::create(&file_path));
+        fs::remove_file(file_path).map_err(From::from)
     }
 
     /// Stores a new data chunk under `key`.
@@ -189,8 +190,10 @@ impl<Key, Value> ChunkStore<Key, Value>
 
     /// Cleans up the chunk_store dir.
     pub fn reset_store(&self) -> Result<(), InternalError> {
-        try!(fs::remove_dir_all(&self.rootdir));
-        try!(fs::create_dir_all(&self.rootdir));
+        for entry in try!(fs::read_dir(&self.rootdir)) {
+            let entry = try!(entry);
+            try!(fs::remove_file(entry.path()));
+        }
         Ok(())
     }
 
