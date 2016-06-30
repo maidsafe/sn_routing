@@ -60,7 +60,9 @@ impl Vault {
         match Self::vault_with_config(first_vault, use_cache, config.clone()) {
             Ok(vault) => Ok(vault),
             Err(InternalError::ChunkStore(e)) => {
-                error!("Incorrect path {:?} for chunk_store_root : {:?}", config.chunk_store_root, e);
+                error!("Incorrect path {:?} for chunk_store_root : {:?}",
+                       config.chunk_store_root,
+                       e);
                 Err(From::from(e))
             }
             Err(e) => Err(From::from(e)),
@@ -101,7 +103,7 @@ impl Vault {
             data_manager: try!(DataManager::new(routing_node.clone(),
                                                 chunk_store_root,
                                                 config.max_capacity
-                                                      .unwrap_or(DEFAULT_MAX_CAPACITY))),
+                                                    .unwrap_or(DEFAULT_MAX_CAPACITY))),
             routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
@@ -186,7 +188,13 @@ impl Vault {
             Event::NodeLost(node_lost, routing_table) => {
                 self.on_node_lost(node_lost, routing_table)
             }
-            Event::Connected => self.on_connected(),
+            Event::Connected => {
+                if let Err(error) = self.on_connected() {
+                    error!("Error resetting chunk store: {:?}", error);
+                    ret = Some(true);
+                }
+                Ok(())
+            }
             Event::RestartRequired => {
                 warn!("Restarting Vault");
                 ret = Some(false);
@@ -318,5 +326,4 @@ impl Vault {
     fn on_connected(&self) -> Result<(), InternalError> {
         self.data_manager.reset_store()
     }
-
 }
