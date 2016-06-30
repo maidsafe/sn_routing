@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.23.2]
+- Don't cache as a member of recipient group: this can cause redundant
+  responses.
+- Disconnect previous bootstrap node when retrying to bootstrap.
+
 ## [0.23.1]
 - Fix tests involving sorting nodes by names.
 - Fix random seeds when multiple tests are run at once.
