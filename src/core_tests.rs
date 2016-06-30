@@ -1224,16 +1224,14 @@ fn request_during_churn_group_to_group() {
 // Generate random immutable data, but make sure the first node in the given
 // node slice (the proxy node) is not the closest to the data. Also sorts
 // the nodes by distance to the data.
-fn gen_immutable_data_not_closest_to_first_node<T: Rng>(rng: &mut T,
-                                                        nodes: &mut [TestNode])
-                                                        -> Data {
+fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [TestNode]) -> Data {
     let first_name = nodes[0].name();
 
     loop {
         let data = gen_immutable_data(rng, 8);
         sort_nodes_by_distance_to(nodes, &data.name());
 
-        if first_name != nodes[0].name() {
+        if nodes.iter().take(GROUP_SIZE).all(|node| node.name() != first_name) {
             return data;
         }
     }
@@ -1244,7 +1242,7 @@ fn response_caching() {
     let network = Network::new(None);
 
     let mut rng = network.new_rng();
-    let mut nodes = create_connected_nodes_with_cache(&network, GROUP_SIZE + 1, true);
+    let mut nodes = create_connected_nodes_with_cache(&network, GROUP_SIZE * 2, true);
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let proxy_node_name = nodes[0].name();
@@ -1253,9 +1251,9 @@ fn response_caching() {
     // because in that case the full response (as opposed to just a hash of it)
     // would originate from the proxy node and would never be relayed by it, thus
     // it would never be stored in the cache.
-    let data = gen_immutable_data_not_closest_to_first_node(&mut rng, &mut nodes);
-    let data_name = data.name();
+    let data = gen_immutable_data_not_close_to_first_node(&mut rng, &mut nodes);
     let data_id = data.identifier();
+    let data_name = data_id.name();
     let message_id = MessageId::new();
     let dst = Authority::NaeManager(data_name);
 

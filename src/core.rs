@@ -845,11 +845,14 @@ impl Core {
         }
 
         if self.state == State::Node {
-            if self.routing_table.is_close(routing_msg.dst.name(), GROUP_SIZE) {
-                try!(self.signed_msg_security_check(&signed_msg));
-            }
-
-            if try!(self.respond_from_cache(&routing_msg, route)) {
+            if self.is_recipient(&routing_msg.dst) {
+                // TODO: If group, verify the sender's membership.
+                if let Authority::Client { ref client_key, .. } = signed_msg.routing_message().src {
+                    if client_key != signed_msg.public_id().signing_public_key() {
+                        return Err(RoutingError::FailedSignature);
+                    };
+                }
+            } else if try!(self.respond_from_cache(&routing_msg, route)) {
                 return Ok(());
             }
 
@@ -867,16 +870,6 @@ impl Core {
         } else {
             Ok(())
         }
-    }
-
-    fn signed_msg_security_check(&self, signed_msg: &SignedMessage) -> Result<(), RoutingError> {
-        // TODO: If group, verify the sender's membership.
-        if let Authority::Client { ref client_key, .. } = signed_msg.routing_message().src {
-            if client_key != signed_msg.public_id().signing_public_key() {
-                return Err(RoutingError::FailedSignature);
-            };
-        }
-        Ok(())
     }
 
     fn respond_from_cache(&mut self,
