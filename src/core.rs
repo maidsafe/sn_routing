@@ -849,7 +849,8 @@ impl Core {
                 try!(self.signed_msg_security_check(&signed_msg));
             }
 
-            if try!(self.respond_from_cache(&routing_msg, route)) {
+            if !self.is_recipient(&routing_msg.dst) &&
+               try!(self.respond_from_cache(&routing_msg, route)) {
                 return Ok(());
             }
 
