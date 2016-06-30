@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.10.2]
+- Prevent vaults from removing existing chunk_store when terminating.
+
 ## [0.10.1]
 - Fix chunk store directory handling.
 - Remove remaining uses of the thread-local random number generator to make
