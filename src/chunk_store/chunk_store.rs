@@ -25,6 +25,9 @@ use maidsafe_utilities::serialisation::{self, SerialisationError};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::hex::{FromHex, ToHex};
 
+/// The max name length for a chunk file.
+const MAX_CHUNK_FILE_NAME_LENGTH: usize = 104;
+
 quick_error! {
     /// `ChunkStore` error.
     #[derive(Debug)]
@@ -88,12 +91,20 @@ impl<Key, Value> ChunkStore<Key, Value>
             }
             Err(e) => return Err(From::from(e)),
         }
+        try!(Self::verify_file_creation(&root));
         Ok(ChunkStore {
             rootdir: root,
             max_space: max_space,
             used_space: 0,
             phantom: PhantomData,
         })
+    }
+
+    fn verify_file_creation(root: &PathBuf) -> Result<(), Error> {
+        let name: String = (0..MAX_CHUNK_FILE_NAME_LENGTH).map(|_| '0').collect();
+        let file_path = root.join(name);
+        let _ = try!(fs::File::create(&file_path));
+        fs::remove_file(file_path).map_err(From::from)
     }
 
     /// Stores a new data chunk under `key`.
