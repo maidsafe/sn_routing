@@ -56,6 +56,11 @@ quick_error! {
             description("Key, Value not found")
             display("Key, Value not found")
         }
+        /// Could not delete chunk store directory.
+        CouldNotDeleteChunkStoreDir {
+            description("Could not delete chunk store directory")
+            display("Could not delete chunk store directory")
+        }
     }
 }
 
@@ -200,7 +205,10 @@ impl<Key, Value> ChunkStore<Key, Value>
 
     /// Cleans up the chunk_store dir.
     pub fn reset_store(&self) -> Result<(), InternalError> {
-        try!(fs::remove_dir_all(&self.rootdir));
+        let _ = fs::remove_dir_all(&self.rootdir); // If it exists, remove it.
+        if self.rootdir.as_path().exists() {
+            return Err(Error::CouldNotDeleteChunkStoreDir.into());
+        }
         try!(fs::create_dir_all(&self.rootdir));
         Ok(())
     }
