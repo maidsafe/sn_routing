@@ -638,11 +638,9 @@ impl DataManager {
         if !data_list.is_empty() {
             let _ = self.send_refresh(Authority::ManagedNode(*node_name), data_list);
         }
-        if has_pruned_data {
-            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
-                self.logging_time = Instant::now();
-                info!("{:?}", self);
-            }
+        if has_pruned_data && self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+            self.logging_time = Instant::now();
+            info!("{:?}", self);
         }
     }
 
