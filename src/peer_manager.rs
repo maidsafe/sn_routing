@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use authority::Authority;
 use sodiumoxide::crypto::sign;
 use id::PublicId;
@@ -479,9 +479,9 @@ mod tests {
     use super::*;
     use authority::Authority;
     use id::FullId;
-    use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+    use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
     use mock_crust::Endpoint;
-    use xor_name::{XorName, XOR_NAME_LEN};
+    use xor_name::{XOR_NAME_LEN, XorName};
 
     fn node_auth(byte: u8) -> Authority {
         Authority::ManagedNode(XorName([byte; XOR_NAME_LEN]))

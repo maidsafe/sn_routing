@@ -32,8 +32,8 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
-use messages::{UserMessage, Request, Response, RELOCATE_PRIORITY, DEFAULT_PRIORITY,
-               CLIENT_GET_PRIORITY};
+use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
+               UserMessage};
 use xor_name::XorName;
 use types::MessageId;
 

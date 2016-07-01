@@ -21,7 +21,7 @@ use crust::PeerId;
 use mock_crust::crust::PeerId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
-use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
 use std::collections::BTreeMap;

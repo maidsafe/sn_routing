@@ -17,7 +17,7 @@
 
 use rand;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
+use rustc_serialize::hex::{FromHex, FromHexError, ToHex};
 use std::cmp::Ordering;
 use std::{fmt, ops};
 use kademlia_routing_table::Xorable;
