@@ -96,7 +96,8 @@ mod test {
     fn successful_put() {
         let chunks = generate_random_chunks();
         let root = unwrap_result!(TempDir::new("test"));
-        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                             chunks.total_size));
         {
             let mut put = |key, value, size| {
                 let size_before_insert = chunk_store.used_space();
@@ -125,7 +126,8 @@ mod test {
     fn failed_put_when_not_enough_space() {
         let k_disk_size = 32;
         let root = unwrap_result!(TempDir::new("test"));
-        let mut store = unwrap_result!(ChunkStore::new(root.into_path(), k_disk_size));
+        let mut store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                       k_disk_size));
         let key: u8 = rand::random();
         let data = generate_random_bytes(k_disk_size + 1);
 
@@ -136,7 +138,8 @@ mod test {
     fn delete() {
         let chunks = generate_random_chunks();
         let root = unwrap_result!(TempDir::new("test"));
-        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                             chunks.total_size));
         let mut put_and_delete = |key, value, size| {
             unwrap_result!(chunk_store.put(&key, value));
             assert_eq!(chunk_store.used_space(), size);
@@ -155,7 +158,8 @@ mod test {
     fn put_and_get_value_should_be_same() {
         let chunks = generate_random_chunks();
         let root = unwrap_result!(TempDir::new("test"));
-        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                             chunks.total_size));
         for (index, &(ref data, _)) in chunks.data_and_sizes.iter().enumerate() {
             unwrap_result!(chunk_store.put(&(index as u32), data));
         }
@@ -169,7 +173,8 @@ mod test {
     fn overwrite_value() {
         let chunks = generate_random_chunks();
         let root = unwrap_result!(TempDir::new("test"));
-        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                             chunks.total_size));
         for (ref data, ref size) in chunks.data_and_sizes {
             unwrap_result!(chunk_store.put(&0, data));
             assert_eq!(chunk_store.used_space(), *size);
@@ -181,7 +186,7 @@ mod test {
     #[test]
     fn get_fails_when_key_does_not_exist() {
         let root = unwrap_result!(TempDir::new("test"));
-        let chunk_store = unwrap_result!(ChunkStore::<u8, u8>::new(root.into_path(), 64));
+        let chunk_store = unwrap_result!(ChunkStore::<u8, u8>::new(root.path().to_path_buf(), 64));
         let key = rand::random();
         assert_err!(chunk_store.get(&key), Error::NotFound);
     }
@@ -190,7 +195,8 @@ mod test {
     fn keys() {
         let chunks = generate_random_chunks();
         let root = unwrap_result!(TempDir::new("test"));
-        let mut chunk_store = unwrap_result!(ChunkStore::new(root.into_path(), chunks.total_size));
+        let mut chunk_store = unwrap_result!(ChunkStore::new(root.path().to_path_buf(),
+                                                             chunks.total_size));
 
         for (index, &(ref data, _)) in chunks.data_and_sizes.iter().enumerate() {
             assert!(!chunk_store.keys().contains(&index));
