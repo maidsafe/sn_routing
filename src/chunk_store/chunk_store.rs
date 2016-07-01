@@ -15,18 +15,21 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::{cmp, fs};
+use std::fs::{self, File};
+use std::cmp;
 use std::io::{self, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use error::InternalError;
+use fs2::FileExt;
 use maidsafe_utilities::serialisation::{self, SerialisationError};
 use rustc_serialize::{Decodable, Encodable};
 use rustc_serialize::hex::{FromHex, ToHex};
 
 /// The max name length for a chunk file.
 const MAX_CHUNK_FILE_NAME_LENGTH: usize = 104;
+/// The name of the lock file for the chunk directory.
+const LOCK_FILE_NAME: &'static str = "lock";
 
 quick_error! {
     /// `ChunkStore` error.
@@ -67,6 +70,7 @@ quick_error! {
 /// The data chunks are deleted when the `ChunkStore` goes out of scope.
 pub struct ChunkStore<Key, Value> {
     rootdir: PathBuf,
+    lock_file: Option<File>,
     max_space: u64,
     used_space: u64,
     phantom: PhantomData<(Key, Value)>,
@@ -76,31 +80,24 @@ impl<Key, Value> ChunkStore<Key, Value>
     where Key: Decodable + Encodable,
           Value: Decodable + Encodable
 {
-    /// Creates new ChunkStore with `max_space` allowed storage space.
+    /// Creates a new `ChunkStore` with `max_space` allowed storage space.
     ///
     /// The data is stored in a root directory. If `root` doesn't exist, it will be created.
     pub fn new(root: PathBuf, max_space: u64) -> Result<ChunkStore<Key, Value>, Error> {
-        try!(fs::create_dir_all(&root));
-        try!(Self::verify_file_creation(&root));
+        let lock_file = try!(Self::lock_and_clear_dir(&root));
         Ok(ChunkStore {
             rootdir: root,
+            lock_file: Some(lock_file),
             max_space: max_space,
             used_space: 0,
             phantom: PhantomData,
         })
     }
 
-    fn verify_file_creation(root: &PathBuf) -> Result<(), Error> {
-        let name: String = (0..MAX_CHUNK_FILE_NAME_LENGTH).map(|_| '0').collect();
-        let file_path = root.join(name);
-        let _ = try!(fs::File::create(&file_path));
-        fs::remove_file(file_path).map_err(From::from)
-    }
-
     /// Stores a new data chunk under `key`.
     ///
     /// If there is not enough storage space available, returns `Error::NotEnoughSpace`.  In case of
-    // an IO error, it returns `Error::Io`.
+    /// an IO error, it returns `Error::Io`.
     ///
     /// If the key already exists, it will be overwritten.
     pub fn put(&mut self, key: &Key, value: &Value) -> Result<(), Error> {
@@ -114,7 +111,7 @@ impl<Key, Value> ChunkStore<Key, Value>
         let _ = self.do_delete(&file_path);
 
         // Write the file.
-        fs::File::create(&file_path)
+        File::create(&file_path)
             .and_then(|mut file| {
                 file.write_all(&serialised_value)
                     .and_then(|()| file.sync_all())
@@ -139,7 +136,7 @@ impl<Key, Value> ChunkStore<Key, Value>
     ///
     /// If the data file can't be accessed, it returns `Error::ChunkNotFound`.
     pub fn get(&self, key: &Key) -> Result<Value, Error> {
-        match fs::File::open(try!(self.file_path(key))) {
+        match File::open(try!(self.file_path(key))) {
             Ok(mut file) => {
                 let mut contents = Vec::<u8>::new();
                 let _ = try!(file.read_to_end(&mut contents));
@@ -188,13 +185,26 @@ impl<Key, Value> ChunkStore<Key, Value>
         self.used_space
     }
 
-    /// Cleans up the chunk_store dir.
-    pub fn reset_store(&self) -> Result<(), InternalError> {
-        for entry in try!(fs::read_dir(&self.rootdir)) {
-            let entry = try!(entry);
-            try!(fs::remove_file(entry.path()));
+    /// Creates and clears the given root directory and returns a locked file inside it.
+    fn lock_and_clear_dir(root: &PathBuf) -> Result<File, Error> {
+        // Create the chunk directory and a lock file.
+        try!(fs::create_dir_all(&root));
+        let lock_file_path = root.join(LOCK_FILE_NAME);
+        let lock_file = try!(File::create(&lock_file_path));
+        try!(lock_file.try_lock_exclusive());
+
+        // Verify that chunk files can be created.
+        let name: String = (0..MAX_CHUNK_FILE_NAME_LENGTH).map(|_| '0').collect();
+        let _ = try!(File::create(&root.join(name)));
+
+        // Clear the chunk directory.
+        for entry_result in try!(fs::read_dir(&root)) {
+            let entry = try!(entry_result);
+            if entry.path() != lock_file_path.as_path() {
+                try!(fs::remove_file(entry.path()));
+            }
         }
-        Ok(())
+        Ok(lock_file)
     }
 
     fn do_delete(&mut self, file_path: &Path) -> Result<(), Error> {
@@ -210,5 +220,12 @@ impl<Key, Value> ChunkStore<Key, Value>
         let filename = try!(serialisation::serialise(key)).to_hex();
         let path_name = Path::new(&filename);
         Ok(self.rootdir.join(path_name))
+    }
+}
+
+impl<Key, Value> Drop for ChunkStore<Key, Value> {
+    fn drop(&mut self) {
+        let _ = self.lock_file.take().iter().map(File::unlock);
+        let _ = fs::remove_dir_all(&self.rootdir);
     }
 }

@@ -49,6 +49,7 @@
 #![cfg_attr(feature="clippy", allow(use_debug, similar_names))] // "mpid" and "maid" are similar.
 
 extern crate accumulator;
+extern crate fs2;
 #[macro_use]
 extern crate log;
 extern crate lru_time_cache;
