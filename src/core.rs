@@ -131,7 +131,7 @@ pub enum Role {
 /// A copy of a message which has been sent and is pending the ack from the recipient.
 #[derive(Clone, Debug)]
 struct UnacknowledgedMessage {
-    signed_msg: SignedMessage,
+    routing_msg: RoutingMessage,
     route: u8,
     timer_token: u64,
 }
@@ -1883,8 +1883,10 @@ impl Core {
                        unacked_msg);
                 self.stats.count_unacked();
             } else {
-                let hop = *self.name();
-                let _ = self.send(&unacked_msg.signed_msg, unacked_msg.route, &hop, &[hop]);
+                if let Err(error) =
+                       self.send_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+                    debug!("{:?} Failed to send message: {:?}", self, error);
+                }
             }
         }
     }
@@ -2253,7 +2255,7 @@ impl Core {
 
         let token = self.timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
-            signed_msg: signed_msg.clone(),
+            routing_msg: signed_msg.routing_message().clone(),
             route: route,
             timer_token: token,
         };
