@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::rc::{Rc, Weak};
 
-use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
+use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivConnectionInfo,
                    PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
 use rand::XorShiftRng;

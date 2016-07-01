@@ -190,4 +190,4 @@ pub use node::Node;
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
-pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN, XOR_NAME_BITS};
+pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

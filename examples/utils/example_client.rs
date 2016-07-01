@@ -22,7 +22,7 @@ extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
 use sodiumoxide::crypto;
-use routing::{FullId, Event, Data, DataIdentifier, Authority, Response, Client, MessageId, XorName};
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct ExampleClient {

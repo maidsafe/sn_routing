@@ -56,19 +56,19 @@ mod utils;
 
 use std::io::Write;
 use std::time::Duration;
-use std::{io, env, thread};
-use std::sync::{Arc, Mutex, Condvar};
+use std::{env, io, thread};
+use std::sync::{Arc, Condvar, Mutex};
 use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
 use sodiumoxide::crypto::hash;
-use utils::{ExampleNode, ExampleClient};
-use routing::{Data, DataIdentifier, PlainData, XorName, GROUP_SIZE};
+use utils::{ExampleClient, ExampleNode};
+use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 
-use rand::{thread_rng, random, ThreadRng};
+use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 
 use term::color;

@@ -32,7 +32,7 @@ use data::{Data, DataIdentifier, ImmutableData};
 use event::Event;
 use id::FullId;
 use itertools::Itertools;
-use kademlia_routing_table::{RoutingTable, ContactInfo};
+use kademlia_routing_table::{ContactInfo, RoutingTable};
 use messages::{Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use node::Node;
@@ -498,11 +498,14 @@ fn did_receive_get_success(node: &TestNode,
                            expected_message_id: MessageId)
                            -> bool {
     loop {
+        let expected = |src: &Authority, dst: &Authority, data: &Data, message_id: MessageId| {
+            *src == expected_src && *dst == expected_dst && *data == expected_data &&
+            message_id == expected_message_id
+        };
         match node.event_rx.try_recv() {
             Ok(Event::Response { response: Response::GetSuccess(ref data, message_id),
                                  ref src,
-                                 ref dst }) if *src == expected_src && *dst == expected_dst && *data == expected_data &&
-                          message_id == expected_message_id => return true,
+                                 ref dst }) if expected(src, dst, data, message_id) => return true,
             Ok(_) => (),
             Err(_) => return false,
         }

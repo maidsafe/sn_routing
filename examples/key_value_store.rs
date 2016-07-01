@@ -64,9 +64,9 @@ use std::io::Write;
 use docopt::Docopt;
 use sodiumoxide::crypto;
 
-use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Data, DataIdentifier, PlainData, XorName};
-use utils::{ExampleNode, ExampleClient};
+use utils::{ExampleClient, ExampleNode};
 
 // ==========================   Program Options   =================================
 static USAGE: &'static str = "
