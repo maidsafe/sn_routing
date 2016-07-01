@@ -188,13 +188,6 @@ impl Vault {
             Event::NodeLost(node_lost, routing_table) => {
                 self.on_node_lost(node_lost, routing_table)
             }
-            Event::Connected => {
-                if let Err(error) = self.on_connected() {
-                    error!("Error resetting chunk store: {:?}", error);
-                    ret = Some(true);
-                }
-                Ok(())
-            }
             Event::RestartRequired => {
                 warn!("Restarting Vault");
                 ret = Some(false);
@@ -204,7 +197,7 @@ impl Vault {
                 ret = Some(true);
                 Ok(())
             }
-            Event::Tick => Ok(()),
+            Event::Connected | Event::Tick => Ok(()),
         } {
             debug!("Failed to handle event: {:?}", error);
         }
@@ -321,9 +314,5 @@ impl Vault {
         self.maid_manager.handle_node_lost(&node_lost);
         self.data_manager.handle_node_lost(&node_lost, &routing_table);
         Ok(())
-    }
-
-    fn on_connected(&self) -> Result<(), InternalError> {
-        self.data_manager.reset_store()
     }
 }

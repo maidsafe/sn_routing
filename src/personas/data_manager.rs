@@ -775,8 +775,4 @@ impl DataManager {
             }
         }
     }
-
-    pub fn reset_store(&self) -> Result<(), InternalError> {
-        self.chunk_store.reset_store()
-    }
 }

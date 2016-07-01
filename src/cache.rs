@@ -44,8 +44,7 @@ impl RoutingCache for Cache {
             self.store
                 .borrow_mut()
                 .get(&name)
-                .map(|data| Response::GetSuccess(Data::Immutable(data.clone()),
-                                                 message_id))
+                .map(|data| Response::GetSuccess(Data::Immutable(data.clone()), message_id))
         } else {
             None
         }
