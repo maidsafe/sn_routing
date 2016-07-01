@@ -31,7 +31,7 @@ use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
-use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
+use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
 use types::MessageId;
 use xor_name::XorName;
 

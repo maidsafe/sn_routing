@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use action::Action;

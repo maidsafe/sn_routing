@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use core::GROUP_SIZE;
-use messages::{DirectMessage, MessageContent, RoutingMessage, Request, Response};
+use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage};
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;

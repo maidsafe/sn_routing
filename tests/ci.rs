@@ -61,8 +61,8 @@ use std::time::Duration;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
-use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
-              Response, XorName, GROUP_SIZE, QUORUM_SIZE};
+use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Node, PlainData,
+              QUORUM_SIZE, Request, Response, XorName};
 use sodiumoxide::crypto;
 use sodiumoxide::crypto::hash::sha256;
 use utils::recv_with_timeout;
