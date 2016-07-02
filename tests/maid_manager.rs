@@ -21,7 +21,7 @@
 use itertools::Itertools;
 use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, ImmutableData, GROUP_SIZE, XorName};
+use routing::{Data, GROUP_SIZE, ImmutableData, XorName};
 use routing::mock_crust::{self, Network};
 use safe_network_common::client_errors::{GetError, MutationError};
 use safe_vault::Config;

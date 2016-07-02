@@ -23,9 +23,9 @@ use rand::distributions::{IndependentSample, Range};
 use std::cmp;
 use std::collections::HashSet;
 
-use routing::{Authority, Data, FullId, ImmutableData, StructuredData, GROUP_SIZE};
+use routing::{Authority, Data, FullId, GROUP_SIZE, ImmutableData, StructuredData};
 use routing::mock_crust::{self, Network};
-use safe_network_common::client_errors::{MutationError, GetError};
+use safe_network_common::client_errors::{GetError, MutationError};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_node::TestNode;
 use safe_vault::mock_crust_detail::test_client::TestClient;
