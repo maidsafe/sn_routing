@@ -243,7 +243,7 @@ fn store_and_verify(requests: usize, batches: usize) {
             print!(" - getting - ");
             io::stdout().flush().expect("Could not flush stdout");
             stored_data.push(data.clone());
-            if let Some(got_data) = example_client.get(DataIdentifier::Plain(data.name())) {
+            if let Some(got_data) = example_client.get(DataIdentifier::Plain(*data.name())) {
                 assert_eq!(got_data, data);
                 print_color("OK\n", color::GREEN);
             } else {
@@ -266,7 +266,7 @@ fn store_and_verify(requests: usize, batches: usize) {
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
             io::stdout().flush().expect("Could not flush stdout");
-            if let Some(data) = example_client.get(DataIdentifier::Plain(data_item.name())) {
+            if let Some(data) = example_client.get(DataIdentifier::Plain(*data_item.name())) {
                 assert_eq!(data, stored_data[i]);
                 print_color("OK\n", color::GREEN);
             } else {

@@ -46,8 +46,8 @@ impl PlainData {
 
 
     /// Returns the name.
-    pub fn name(&self) -> XorName {
-        self.name
+    pub fn name(&self) -> &XorName {
+        &self.name
     }
 
     /// Returns the size of the contained data. Equivalent to `value().len()`.
@@ -57,7 +57,7 @@ impl PlainData {
 
     /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Plain(self.name())
+        DataIdentifier::Plain(*self.name())
     }
 }
 
