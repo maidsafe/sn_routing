@@ -69,7 +69,7 @@ impl ExampleClient {
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-            .send_get_request(Authority::NaeManager(request.name()),
+            .send_get_request(Authority::NaeManager(*request.name()),
                               request.clone(),
                               message_id));
 

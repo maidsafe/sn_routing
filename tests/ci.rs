@@ -275,7 +275,7 @@ fn core() {
 
                             unwrap_result!(node.send_put_success(dst,
                                                   src,
-                                                  DataIdentifier::Plain(data.name()),
+                                                  DataIdentifier::Plain(*data.name()),
                                                   id.clone()));
                         }
                     }
@@ -352,7 +352,7 @@ fn core() {
                                                src: Authority::Client { .. },
                                                dst: Authority::ClientManager(name) }) => {
                         let src = Authority::ClientManager(name);
-                        let dst = Authority::NaeManager(data.name());
+                        let dst = Authority::NaeManager(*data.name());
                         unwrap_result!(nodes[index]
                             .node
                             .send_put_request(src, dst, data.clone(), id.clone()));
@@ -453,7 +453,7 @@ fn core() {
                                            src: Authority::Client { .. },
                                            dst: Authority::ClientManager(name) }) => {
                     let src = Authority::ClientManager(name);
-                    let dst = Authority::NaeManager(data.name());
+                    let dst = Authority::NaeManager(*data.name());
                     unwrap_result!(nodes[index]
                         .node
                         .send_put_request(src, dst, data.clone(), id.clone()));
@@ -496,7 +496,7 @@ fn core() {
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
-                        let data_id = DataIdentifier::Plain(data.name());
+                        let data_id = DataIdentifier::Plain(*data.name());
                         if let Request::Put(_, id) = request {
                             unwrap_result!(nodes[index]
                                 .node
@@ -507,7 +507,7 @@ fn core() {
                               Event::Response { response: Response::PutSuccess(name, id), .. })
                         if index == client.index => {
                         assert!(received_ids.insert(id));
-                        assert_eq!(name, DataIdentifier::Plain(data.name()));
+                        assert_eq!(name, DataIdentifier::Plain(*data.name()));
                     }
                     _ => (),
                 }
