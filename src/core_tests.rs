@@ -633,7 +633,7 @@ fn messages_accumulate_with_quorum() {
     let mut nodes = create_connected_nodes(&network, 15);
 
     let data = gen_immutable_data(&mut rng, 8);
-    let src = Authority::NaeManager(data.name()); // The data's NaeManager.
+    let src = Authority::NaeManager(*data.name()); // The data's NaeManager.
     sort_nodes_by_distance_to(&mut nodes, src.name());
 
     let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
@@ -833,7 +833,7 @@ fn successful_get_request() {
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
-    let dst = Authority::NaeManager(data.name());
+    let dst = Authority::NaeManager(*data.name());
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
@@ -845,7 +845,7 @@ fn successful_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
@@ -899,7 +899,7 @@ fn failed_get_request() {
     let mut clients = create_connected_clients(&network, &mut nodes, 1);
 
     let data = gen_immutable_data(&mut rng, 1024);
-    let dst = Authority::NaeManager(data.name());
+    let dst = Authority::NaeManager(*data.name());
     let data_request = data.identifier();
     let message_id = MessageId::new();
 
@@ -911,7 +911,7 @@ fn failed_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref data_id, ref id),
@@ -965,8 +965,8 @@ fn disconnect_on_get_request() {
 
     let immutable_data = ImmutableData::new(gen_bytes(&mut rng, 1024));
     let data = Data::Immutable(immutable_data.clone());
-    let dst = Authority::NaeManager(data.name());
-    let data_request = DataIdentifier::Immutable(data.name());
+    let dst = Authority::NaeManager(*data.name());
+    let data_request = DataIdentifier::Immutable(*data.name());
     let message_id = MessageId::new();
 
     assert!(clients[0].inner
@@ -977,7 +977,7 @@ fn disconnect_on_get_request() {
 
     let mut request_received_count = 0;
 
-    for node in nodes.iter().filter(|n| n.routing_table().is_close(&data.name(), GROUP_SIZE)) {
+    for node in nodes.iter().filter(|n| n.routing_table().is_close(data.name(), GROUP_SIZE)) {
         loop {
             match node.event_rx.try_recv() {
                 Ok(Event::Request { request: Request::Get(ref request, ref id),
@@ -1086,7 +1086,7 @@ fn request_during_churn_node_to_group() {
 
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::ManagedNode(nodes[index].name());
-        let dst = Authority::NaeManager(data.name());
+        let dst = Authority::NaeManager(*data.name());
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
@@ -1159,7 +1159,7 @@ fn request_during_churn_group_to_node() {
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let data = gen_immutable_data(&mut rng, 8);
-        let src = Authority::NaeManager(data.name());
+        let src = Authority::NaeManager(*data.name());
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
         let added_index = random_churn(&mut rng, &network, &mut nodes);
@@ -1229,7 +1229,7 @@ fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [
 
     loop {
         let data = gen_immutable_data(rng, 8);
-        sort_nodes_by_distance_to(nodes, &data.name());
+        sort_nodes_by_distance_to(nodes, data.name());
 
         if nodes.iter().take(GROUP_SIZE).all(|node| node.name() != first_name) {
             return data;
@@ -1253,9 +1253,8 @@ fn response_caching() {
     // it would never be stored in the cache.
     let data = gen_immutable_data_not_close_to_first_node(&mut rng, &mut nodes);
     let data_id = data.identifier();
-    let data_name = data_id.name();
     let message_id = MessageId::new();
-    let dst = Authority::NaeManager(data_name);
+    let dst = Authority::NaeManager(*data.name());
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager group of the data.
@@ -1291,11 +1290,11 @@ fn response_caching() {
         clients[0],
         Event::Response {
             response: Response::GetSuccess(ref res_data, res_message_id),
-            src: Authority::NaeManager(src_name),
+            src: Authority::NaeManager(ref src_name),
             ..
         } if *res_data == data &&
              res_message_id == message_id &&
-             src_name == data_name
+             src_name == data.name()
     );
 
     // Drain remaining events if any.

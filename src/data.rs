@@ -34,7 +34,7 @@ pub enum Data {
 
 impl Data {
     /// Return data name.
-    pub fn name(&self) -> XorName {
+    pub fn name(&self) -> &XorName {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
@@ -84,11 +84,11 @@ impl Debug for Data {
 
 impl DataIdentifier {
     /// DataIdentifier name.
-    pub fn name(&self) -> XorName {
+    pub fn name(&self) -> &XorName {
         match *self {
-            DataIdentifier::Structured(name, tag) => StructuredData::compute_name(tag, &name),
-            DataIdentifier::Immutable(name) |
-            DataIdentifier::Plain(name) => name,
+            DataIdentifier::Structured(ref name, _) |
+            DataIdentifier::Immutable(ref name) |
+            DataIdentifier::Plain(ref name) => name,
         }
     }
 }
@@ -117,7 +117,7 @@ mod test {
             Ok(structured_data) => {
                 assert_eq!(structured_data.clone().name(),
                            Data::Structured(structured_data.clone()).name());
-                assert_eq!(DataIdentifier::Structured(*structured_data.get_identifier(),
+                assert_eq!(DataIdentifier::Structured(*structured_data.name(),
                                                       structured_data.get_type_tag()),
                            structured_data.identifier());
             }
@@ -131,14 +131,14 @@ mod test {
         assert_eq!(immutable_data.name(),
                    Data::Immutable(immutable_data.clone()).name());
         assert_eq!(immutable_data.identifier(),
-                   DataIdentifier::Immutable(immutable_data.name()));
+                   DataIdentifier::Immutable(*immutable_data.name()));
 
         // name() resolves correctly for PlainData
         let name = XorName(sha256::hash(&[]).0);
         let plain_data = PlainData::new(name, vec![]);
         assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
         assert_eq!(plain_data.identifier(),
-                   DataIdentifier::Plain(plain_data.name()));
+                   DataIdentifier::Plain(*plain_data.name()));
     }
 
     #[test]
@@ -179,14 +179,12 @@ mod test {
 
         // name() resolves correctly for StructuredData
         let tag = 0;
-        assert_eq!(StructuredData::compute_name(tag, &name),
-                   DataIdentifier::Structured(name, tag).name());
+        assert_eq!(&name, DataIdentifier::Structured(name, tag).name());
 
         // name() resolves correctly for ImmutableData
-        let actual_name = DataIdentifier::Immutable(name).name();
-        assert_eq!(name, actual_name);
+        assert_eq!(&name, DataIdentifier::Immutable(name).name());
 
         // name() resolves correctly for PlainData
-        assert_eq!(name, DataIdentifier::Plain(name).name());
+        assert_eq!(&name, DataIdentifier::Plain(name).name());
     }
 }
