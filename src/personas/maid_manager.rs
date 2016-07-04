@@ -25,8 +25,8 @@ use safe_network_common::client_errors::{GetError, MutationError};
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use routing::{ImmutableData, StructuredData, Authority, Data, MessageId, XorName, DataIdentifier,
-              GROUP_SIZE};
+use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, ImmutableData, MessageId,
+              StructuredData, XorName};
 use utils;
 use vault::RoutingNode;
 

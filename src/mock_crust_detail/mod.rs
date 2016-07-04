@@ -26,7 +26,7 @@ use kademlia_routing_table::RoutingTable;
 use itertools::Itertools;
 use mock_crust_detail::test_node::TestNode;
 use personas::data_manager::IdAndVersion;
-use routing::{self, GROUP_SIZE, Data, XorName};
+use routing::{self, Data, GROUP_SIZE, XorName};
 use std::collections::{HashMap, HashSet};
 
 /// Checks that none of the given nodes has any copy of the given data left.

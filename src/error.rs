@@ -18,9 +18,9 @@
 use config_file_handler;
 use chunk_store;
 use safe_network_common::messaging;
-use safe_network_common::client_errors::{MutationError, GetError};
+use safe_network_common::client_errors::{GetError, MutationError};
 use maidsafe_utilities::serialisation::SerialisationError;
-use routing::{InterfaceError, MessageId, RoutingError, Request, Response};
+use routing::{InterfaceError, MessageId, Request, Response, RoutingError};
 use std::io;
 
 quick_error! {
