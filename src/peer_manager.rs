@@ -28,6 +28,7 @@ use std::collections::HashMap;
 use std::{error, fmt};
 use std::time::{Duration, Instant};
 use xor_name::XorName;
+use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
@@ -38,6 +39,38 @@ const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// With mock Crust, all pending connections are removed explicitly.
 #[cfg(feature = "use-mock-crust")]
 const CONNECTION_TIMEOUT_SECS: u64 = 0;
+/// The group size for the routing table. This is the maximum that can be used for consensus.
+pub const GROUP_SIZE: usize = 8;
+/// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
+/// table.
+const EXTRA_BUCKET_ENTRIES: usize = 2;
+
+/// `RoutingTable` managing `NodeInfo`s.
+pub type RoutingTable = ::kademlia_routing_table::RoutingTable<NodeInfo>;
+
+/// Info about nodes in the routing table.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct NodeInfo {
+    pub public_id: PublicId,
+    pub peer_id: PeerId,
+}
+
+impl NodeInfo {
+    pub fn new(public_id: PublicId, peer_id: PeerId) -> Self {
+        NodeInfo {
+            public_id: public_id,
+            peer_id: peer_id,
+        }
+    }
+}
+
+impl ContactInfo for NodeInfo {
+    type Name = XorName;
+
+    fn name(&self) -> &XorName {
+        self.public_id.name()
+    }
+}
 
 /// Info about client a proxy kept in a proxy node.
 pub struct ClientInfo {
@@ -151,18 +184,69 @@ pub struct ConnectionInfoPreparedResult {
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
 /// we have verified, whom we are directly connected to or via a tunnel.
-#[derive(Default)]
 pub struct PeerManager {
-    pub_id_map: HashMap<PeerId, PublicId>,
+    // Any clients we have proxying through us, and whether they have `client_restriction`.
+    client_map: HashMap<PeerId, ClientInfo>,
+    connection_token_map: HashMap<u32, PublicId>,
     node_map: HashMap<PublicId, (Instant, PeerState)>,
     /// Our bootstrap connection.
     proxy: Option<(PeerId, PublicId)>,
-    /// Any clients we have proxying through us, and whether they have `client_restriction`.
-    client_map: HashMap<PeerId, ClientInfo>,
-    connection_token_map: HashMap<u32, PublicId>,
+    pub_id_map: HashMap<PeerId, PublicId>,
+    routing_table: RoutingTable,
 }
 
 impl PeerManager {
+    pub fn new(our_info: NodeInfo) -> PeerManager {
+        PeerManager {
+            client_map: HashMap::new(),
+            connection_token_map: HashMap::new(),
+            node_map: HashMap::new(),
+            proxy: None,
+            pub_id_map: HashMap::new(),
+            routing_table: RoutingTable::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES),
+        }
+    }
+
+    pub fn set_routing_table(&mut self, our_info: NodeInfo) {
+        self.routing_table = RoutingTable::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
+    }
+
+    pub fn routing_table(&self) -> &RoutingTable {
+        &self.routing_table
+    }
+
+    pub fn close_group(&self, name: &XorName) -> Option<Vec<XorName>> {
+        self.routing_table.close_nodes(name, GROUP_SIZE)
+                          .map(|infos| {
+                                infos.iter().map(NodeInfo::name).cloned().collect()
+                          })
+    }
+
+    pub fn has_peer(&self, peer_id: &PeerId) -> bool {
+        self.get_peer(peer_id).is_some()
+    }
+
+    pub fn get_peer(&self, peer_id: &PeerId) -> Option<&NodeInfo> {
+        self.routing_table.iter().find(|node| node.peer_id == *peer_id)
+    }
+
+    pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<NodeInfo>> {
+        self.routing_table.add(info)
+    }
+
+    pub fn remove_if_unneeded(&mut self, name: &XorName) -> bool {
+        self.routing_table.remove_if_unneeded(name)
+    }
+
+    pub fn remove_node(&mut self, name: &XorName) -> Option<DroppedNodeDetails> {
+        self.routing_table.remove(name)
+    }
+
+    pub fn is_tunnel(&self, peer_id: &PeerId, dst_id: &PeerId) -> bool {
+        self.routing_table.iter().any(|node| node.peer_id == *peer_id) &&
+                self.routing_table.iter().any(|node| node.peer_id == *dst_id)
+    }
+
     pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
         &self.proxy
     }
@@ -263,7 +347,7 @@ impl PeerManager {
         self.set_peer_state(peer_id, PeerState::Connected)
     }
 
-    /// Marks the given peer as "connected".
+    /// Marks the given peer as "Tunnelling to".
     pub fn tunnelling_to(&mut self, peer_id: PeerId) -> bool {
         self.set_peer_state(peer_id, PeerState::Tunnel)
     }
@@ -386,6 +470,9 @@ impl PeerManager {
             })
             .collect()
     }
+    pub fn allow_connect(&self, name: &XorName) -> bool {
+        !self.routing_table.contains(name) && self.routing_table.allow_connection(name)
+    }
 
     /// Returns `true` if we are in the process of connecting to the given peer.
     pub fn is_connecting(&self, pub_id: &PublicId) -> bool {
@@ -472,6 +559,14 @@ impl PeerManager {
             let _ = self.pub_id_map.remove(&peer_id);
         }
     }
+
+    pub fn bucket_len(&self, index: usize) -> usize {
+        self.routing_table.bucket_len(index)
+    }
+
+    pub fn bucket_count(&self) -> usize {
+        self.routing_table.bucket_count()
+    }
 }
 
 #[cfg(all(test, feature = "use-mock-crust"))]
@@ -489,8 +584,9 @@ mod tests {
 
     #[test]
     pub fn connection_info_prepare_receive() {
-        let mut peer_mgr: PeerManager = Default::default();
         let orig_pub_id = *FullId::new().public_id();
+        let mut peer_mgr = PeerManager::new(NodeInfo::new(orig_pub_id, PeerId(0)));
+
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
         // We decide to connect to the peer with `pub_id`:
@@ -524,8 +620,8 @@ mod tests {
 
     #[test]
     pub fn connection_info_receive_prepare() {
-        let mut peer_mgr: PeerManager = Default::default();
         let orig_pub_id = *FullId::new().public_id();
+        let mut peer_mgr = PeerManager::new(NodeInfo::new(orig_pub_id, PeerId(0)));
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
         // We received a connection info from the peer and get a token to prepare ours.
