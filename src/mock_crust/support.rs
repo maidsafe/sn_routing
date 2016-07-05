@@ -127,11 +127,9 @@ impl Network {
 
         if let Some(service) = self.find_service(receiver) {
             service.borrow_mut().receive_packet(sender, packet);
-        } else {
+        } else if let Some(failure) = packet.to_failure() {
             // Packet was sent to a non-existing receiver.
-            if let Some(failure) = packet.to_failure() {
-                self.send(receiver, sender, failure);
-            }
+            self.send(receiver, sender, failure);
         }
     }
 
@@ -159,6 +157,11 @@ impl ServiceHandle {
     /// Endpoint of the `Service` bound to this handle.
     pub fn endpoint(&self) -> Endpoint {
         self.0.borrow().endpoint
+    }
+
+    /// Returns `true` if this service is connected to the given one.
+    pub fn is_connected(&self, handle: &ServiceHandle) -> bool {
+        self.0.borrow().is_peer_connected(&handle.0.borrow().peer_id)
     }
 }
 
@@ -202,16 +205,14 @@ impl ServiceImpl {
         self.start(event_sender)
     }
 
-    pub fn start_bootstrap(&mut self) {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) {
         let mut pending_bootstraps = 0;
 
         for endpoint in &self.config.hard_coded_contacts {
-            if *endpoint == self.endpoint {
-                continue;
+            if *endpoint != self.endpoint && !blacklist.contains(&to_socket_addr(endpoint)) {
+                self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
+                pending_bootstraps += 1;
             }
-
-            self.send_packet(*endpoint, Packet::BootstrapRequest(self.peer_id));
-            pending_bootstraps += 1;
         }
 
         // If we have no contacts in the config, we can fire BootstrapFailed
@@ -295,9 +296,7 @@ impl ServiceImpl {
 
     fn handle_bootstrap_success(&mut self, peer_endpoint: Endpoint, peer_id: PeerId) {
         self.add_connection(peer_id, peer_endpoint);
-        let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
-                                          peer_id.0 as u16);
-        self.send_event(Event::BootstrapConnect(peer_id, socket_addr));
+        self.send_event(Event::BootstrapConnect(peer_id, to_socket_addr(&peer_endpoint)));
         self.decrement_pending_bootstraps();
     }
 
@@ -438,6 +437,13 @@ impl Drop for ServiceImpl {
     fn drop(&mut self) {
         self.disconnect_all();
     }
+}
+
+/// Creates a `SocketAddr` with the endpoint as its port, so that endpoints and addresses can be
+/// easily mapped to each other during testing.
+fn to_socket_addr(endpoint: &Endpoint) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(123, 123, 255, 255)),
+                    endpoint.0 as u16)
 }
 
 /// Simulated crust config file.
