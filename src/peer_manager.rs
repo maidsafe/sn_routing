@@ -428,8 +428,8 @@ impl PeerManager {
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
-        self.remove_expired();
         let _ = self.node_map.insert(pub_id, (Instant::now(), state));
+        self.remove_expired();
     }
 
     fn get_state(&self, pub_id: &PublicId) -> Option<&PeerState> {

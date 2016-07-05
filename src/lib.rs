@@ -78,8 +78,7 @@
 //! use routing::{Node, Event};
 //!
 //! let (sender, _receiver) = mpsc::channel::<Event>();
-//! let first_node = false;
-//! let _ = Node::new(sender, first_node).unwrap();
+//! let _ = Node::builder().create(sender).unwrap();
 //! ```
 //!
 //! Upon creation, the node will first connect to the network as a client. Once it has client
@@ -186,7 +185,7 @@ pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use immutable_data::ImmutableData;
 pub use messages::{Request, Response};
-pub use node::Node;
+pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;

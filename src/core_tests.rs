@@ -144,7 +144,7 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap_result!(Node::with_cache(event_tx, first_node, cache))
+            unwrap_result!(Node::builder().cache(cache).first(first_node).create(event_tx))
         });
 
         TestNode {
