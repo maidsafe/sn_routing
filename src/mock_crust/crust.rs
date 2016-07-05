@@ -57,8 +57,8 @@ impl Service {
     }
 
     /// Start the bootstrapping procedure.
-    pub fn start_bootstrap(&self, _blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
-        self.lock_and_poll(|imp| imp.start_bootstrap());
+    pub fn start_bootstrap(&self, blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
+        self.lock_and_poll(|imp| imp.start_bootstrap(blacklist));
         Ok(())
     }
 
