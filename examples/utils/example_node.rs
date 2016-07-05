@@ -51,7 +51,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone(), first));
+        let node = unwrap_result!(Node::builder().first(first).create(sender.clone()));
 
         ExampleNode {
             node: node,
@@ -92,8 +92,8 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    let _ = mem::replace(&mut self.node,
-                                         unwrap_result!(Node::new(self.sender.clone(), false)));
+                    let new_node = unwrap_result!(Node::builder().create(self.sender.clone()));
+                    let _ = mem::replace(&mut self.node, new_node);
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
