@@ -84,7 +84,7 @@ impl TestNode {
         let first_node = index == 0;
 
         TestNode {
-            node: unwrap_result!(Node::new(sender, first_node)),
+            node: unwrap_result!(Node::builder().first(first_node).create(sender)),
             _thread_joiner: joiner,
         }
     }
@@ -521,7 +521,6 @@ fn core() {
 }
 
 #[test]
-#[ignore]
 fn main() {
     init();
     core();

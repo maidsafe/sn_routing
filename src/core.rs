@@ -229,7 +229,8 @@ impl Core {
     pub fn new(event_sender: mpsc::Sender<Event>,
                role: Role,
                keys: Option<FullId>,
-               cache: Box<Cache>)
+               cache: Box<Cache>,
+               deny_other_local_nodes: bool)
                -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -299,7 +300,7 @@ impl Core {
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
-            if role == Role::Node && core.crust_service.has_peers_on_lan() {
+            if deny_other_local_nodes && core.crust_service.has_peers_on_lan() {
                 error!("{:?} More than 1 routing node found on LAN. Currently this is not \
                         supported",
                        core);
