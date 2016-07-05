@@ -32,7 +32,7 @@ use maidsafe_utilities::{self, serialisation};
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, NodeInfo,
-                   PeerManager, RoutingTable};
+                   PeerManager, RoutingTable, CONNECTION_TIMEOUT_SECS};
 pub use peer_manager::GROUP_SIZE;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
@@ -391,6 +391,9 @@ impl Core {
     }
 
     fn handle_event(&mut self, category: MaidSafeEventCategory) -> bool {
+        if CONNECTION_TIMEOUT_SECS > 0 {
+            self.peer_mgr.remove_expired();
+        }
         match category {
             MaidSafeEventCategory::Routing => {
                 if let Ok(action) = self.action_rx.try_recv() {
@@ -590,7 +593,7 @@ impl Core {
             warn!("{:?} Received ConnectFailure event as a client.", self);
         } else if !self.peer_mgr.has_peer(&peer_id) {
             info!("{:?} Failed to connect to peer {:?}.", self, peer_id);
-            if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
+            if let Some(pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
                 self.find_tunnel_for_peer(peer_id, &pub_id);
             }
         }
