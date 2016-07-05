@@ -561,6 +561,19 @@ impl Cache for TestCache {
 }
 
 #[test]
+fn disconnect_on_rebootstrap() {
+    let network = Network::new(None);
+    let mut nodes = create_connected_nodes(&network, 2);
+    // Try to bootstrap to another than the first node. With network size 2, this should fail.
+    let config = Config::with_contacts(&[nodes[1].handle.endpoint()]);
+    nodes.push(TestNode::builder(&network).config(config).endpoint(Endpoint(2)).create());
+    let _ = poll_all(&mut nodes, &mut []);
+    // When retrying to bootstrap, we should have disconnected from the bootstrap node.
+    assert!(!unwrap!(nodes.last()).handle.is_connected(&nodes[1].handle));
+    expect_next_event!(unwrap!(nodes.last()), Event::Terminate);
+}
+
+#[test]
 fn less_than_group_size_nodes() {
     test_nodes(3)
 }
