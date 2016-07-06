@@ -26,7 +26,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use action::Action;
 use authority::Authority;
 use cache::{Cache, NullCache};
-use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
@@ -35,6 +34,7 @@ use kademlia_routing_table::RoutingTable;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
 use xor_name::XorName;
+use state_machine::{Role, StateMachine};
 use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
@@ -77,15 +77,16 @@ impl NodeBuilder {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender,
-                                                  self.role,
-                                                  None,
-                                                  self.cache,
-                                                  self.deny_other_local_nodes);
+        let (action_sender, mut machine) =
+            StateMachine::new(event_sender,
+                              self.role,
+                              None,
+                              self.cache,
+                              self.deny_other_local_nodes);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
-            core.run();
+            machine.run();
         }));
 
         Ok(Node {
@@ -100,18 +101,19 @@ impl NodeBuilder {
     #[cfg(feature = "use-mock-crust")]
     pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender,
-                                              self.role,
-                                              None,
-                                              self.cache,
-                                              self.deny_other_local_nodes);
+        let (action_sender, machine) =
+            StateMachine::new(event_sender,
+                              self.role,
+                              None,
+                              self.cache,
+                              self.deny_other_local_nodes);
         let (tx, rx) = channel();
 
         Ok(Node {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            core: RefCell::new(core),
+            machine: RefCell::new(machine),
         })
     }
 }
@@ -130,7 +132,7 @@ pub struct Node {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    core: RefCell<Core>,
+    machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -149,31 +151,31 @@ impl Node {
     #[cfg(feature = "use-mock-crust")]
     /// Poll and process all events in this node's `Core` instance.
     pub fn poll(&self) -> bool {
-        self.core.borrow_mut().poll()
+        self.machine.borrow_mut().poll()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.core.borrow_mut().resend_unacknowledged()
+        self.machine.borrow_mut().resend_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.core.borrow().has_unacknowledged()
+        self.machine.borrow().has_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Routing table of this node.
     pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.core.borrow().routing_table().to_names()
+        self.machine.borrow().routing_table().to_names()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn clear_state(&self) {
-        self.core.borrow_mut().clear_state()
+        self.machine.borrow_mut().clear_state()
     }
 
     /// Send a `Get` request to `dst` to retrieve data from the network.

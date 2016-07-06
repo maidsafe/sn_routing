@@ -16,22 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use accumulator::Accumulator;
-
-#[cfg(not(feature = "use-mock-crust"))]
 use crust::{self, ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
             Service};
-
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo,
-                        PubConnectionInfo, Service};
-
 use itertools::Itertools;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::{self, serialisation};
-use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use message_filter::MessageFilter;
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, NodeInfo,
                    PeerManager};
@@ -53,9 +45,10 @@ use cache::Cache;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
+use state_machine::{Role, Transition};
 use stats::Stats;
 use timer::Timer;
-use types::{MessageId, RoutingActionSender};
+use types::MessageId;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use utils;
@@ -157,13 +150,10 @@ struct UnacknowledgedMessage {
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
 /// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
-pub struct Core {
+pub struct Node {
     crust_service: Service,
     role: Role,
     is_listening: bool,
-    category_rx: mpsc::Receiver<MaidSafeEventCategory>,
-    crust_rx: mpsc::Receiver<crust::Event>,
-    action_rx: mpsc::Receiver<Action>,
     event_sender: mpsc::Sender<Event>,
     timer: Timer,
     signed_message_filter: MessageFilter<SignedMessage>,
@@ -192,47 +182,27 @@ pub struct Core {
     bootstrap_blacklist: HashSet<SocketAddr>,
 }
 
-#[cfg_attr(feature="clippy", allow(new_ret_no_self))] // TODO: Maybe rename `new` to `start`?
-impl Core {
+impl Node {
     /// A Core instance for a client or node with the given id. Sends events to upper layer via the
     /// mpsc sender passed in.
     pub fn new(event_sender: mpsc::Sender<Event>,
+               crust_service: Service,
+               timer: Timer,
                role: Role,
                keys: Option<FullId>,
                cache: Box<Cache>,
                deny_other_local_nodes: bool)
-               -> (RoutingActionSender, Self) {
-        let (crust_tx, crust_rx) = mpsc::channel();
-        let (action_tx, action_rx) = mpsc::channel();
-        let (category_tx, category_rx) = mpsc::channel();
-
-        let routing_event_category = MaidSafeEventCategory::Routing;
-        let action_sender =
-            RoutingActionSender::new(action_tx, routing_event_category, category_tx.clone());
-        let action_sender2 = action_sender.clone();
-
-        let crust_event_category = MaidSafeEventCategory::Crust;
-        let crust_sender =
-            crust::CrustEventSender::new(crust_tx, crust_event_category, category_tx);
-
-        // TODO(afck): Add the listening port to the Service constructor.
-        let crust_service = match Service::new(crust_sender) {
-            Ok(service) => service,
-            Err(what) => panic!(format!("Unable to start crust::Service {:?}", what)),
-        };
-
+               -> Self {
         let full_id = keys.unwrap_or_else(FullId::new);
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
         let user_msg_cache_duration = Duration::from_secs(60 * 20);
-        let mut core = Core {
+
+        let mut node = Node {
             crust_service: crust_service,
             role: role,
             is_listening: false,
-            category_rx: category_rx,
-            crust_rx: crust_rx,
-            action_rx: action_rx,
             event_sender: event_sender.clone(),
-            timer: Timer::new(action_sender2),
+            timer: timer,
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
             pending_acks: HashMap::new(),
@@ -259,51 +229,25 @@ impl Core {
             response_cache: cache,
         };
 
-        core.crust_service.start_service_discovery();
+        node.crust_service.start_service_discovery();
         if role == Role::FirstNode {
-            core.start_new_network();
+            node.start_new_network();
         } else {
-            if deny_other_local_nodes && core.crust_service.has_peers_on_lan() {
+            if deny_other_local_nodes && node.crust_service.has_peers_on_lan() {
                 error!("{:?} More than 1 routing node found on LAN. Currently this is not \
                         supported",
-                       core);
+                       node);
                 let _ = event_sender.send(Event::Terminate);
-                return (action_sender, core);
+                return node;
             }
-            let _ = core.crust_service.start_bootstrap(core.bootstrap_blacklist.clone());
+            let _ = node.crust_service.start_bootstrap(node.bootstrap_blacklist.clone());
         }
 
-        (action_sender, core)
+        node
     }
 
-    /// If there is an event in the queue, processes it and returns true.
-    /// otherwise returns false. Never blocks.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn poll(&mut self) -> bool {
-        match self.category_rx.try_recv() {
-            Ok(category) => {
-                self.handle_event(category);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Run the event loop for sending and receiving messages. Blocks until
-    /// the core is terminated, so it must be called in a separate thread.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn run(&mut self) {
-        // Note: can't use self.category_rx.iter()... because of borrow checker.
-        loop {
-            let run = self.category_rx
-                .recv()
-                .map(|category| self.handle_event(category))
-                .unwrap_or(false);
-
-            if !run {
-                break;
-            }
-        }
+    pub fn into_client(self) -> Client {
+        unimplemented!()
     }
 
     /// Returns the `XorName` of this node.
@@ -390,79 +334,53 @@ impl Core {
         }
     }
 
-    fn handle_event(&mut self, category: MaidSafeEventCategory) -> bool {
-        match category {
-            MaidSafeEventCategory::Routing => {
-                if let Ok(action) = self.action_rx.try_recv() {
-                    if !self.handle_action(action) {
-                        return false;
+    pub fn handle_action(&mut self, action: Action) -> Transition {
+        let result = match action {
+            Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
+                result_tx.send(match self.send_user_message(src, dst, content, priority) {
+                    Err(RoutingError::Interface(err)) => Err(err),
+                    Err(_err) => Ok(()),
+                    Ok(()) => Ok(()),
+                }).is_ok()
+            }
+            Action::ClientSendRequest { content, dst, priority, result_tx } => {
+                result_tx.send(if let Ok(src) = self.get_client_authority() {
+                    let user_msg = UserMessage::Request(content);
+
+                    match self.send_user_message(src, dst, user_msg, priority) {
+                        Err(RoutingError::Interface(err)) => Err(err),
+                        Err(_) | Ok(()) => Ok(()),
                     }
-                }
+                } else {
+                    Err(InterfaceError::NotConnected)
+                }).is_ok()
             }
-            MaidSafeEventCategory::Crust => {
-                if let Ok(crust_event) = self.crust_rx.try_recv() {
-                    self.handle_crust_event(crust_event);
-                }
+            Action::CloseGroup { name, result_tx } => {
+                result_tx.send(self.peer_mgr.close_group(&name)).is_ok()
             }
-        } // Category Match
+            Action::Name { result_tx } => {
+                result_tx.send(*self.name()).is_ok()
+            }
+            Action::QuorumSize { result_tx } => {
+                result_tx.send(self.dynamic_quorum_size()).is_ok()
+            }
+            Action::Timeout(token) => {
+                self.handle_timeout(token);
+                true
+            }
+            Action::Terminate => false,
+        };
 
         self.update_stats();
 
-        true
-    }
-
-    fn handle_action(&mut self, action: Action) -> bool {
-        match action {
-            Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
-                if result_tx.send(match self.send_user_message(src, dst, content, priority) {
-                        Err(RoutingError::Interface(err)) => Err(err),
-                        Err(_err) => Ok(()),
-                        Ok(()) => Ok(()),
-                    })
-                    .is_err() {
-                    return false;
-                }
-            }
-            Action::ClientSendRequest { content, dst, priority, result_tx } => {
-                if result_tx.send(if let Ok(src) = self.get_client_authority() {
-                        let user_msg = UserMessage::Request(content);
-
-                        match self.send_user_message(src, dst, user_msg, priority) {
-                            Err(RoutingError::Interface(err)) => Err(err),
-                            Err(_) | Ok(()) => Ok(()),
-                        }
-                    } else {
-                        Err(InterfaceError::NotConnected)
-                    })
-                    .is_err() {
-                    return false;
-                }
-            }
-            Action::CloseGroup { name, result_tx } => {
-                if result_tx.send(self.peer_mgr.close_group(&name)).is_err() {
-                    return false;
-                }
-            }
-            Action::Name { result_tx } => {
-                if result_tx.send(*self.name()).is_err() {
-                    return false;
-                }
-            }
-            Action::QuorumSize { result_tx } => {
-                if result_tx.send(self.dynamic_quorum_size()).is_err() {
-                    return false;
-                }
-            }
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::Terminate => {
-                return false;
-            }
+        if result {
+            Transition::Node
+        } else {
+            Transition::Terminate
         }
-
-        true
     }
 
-    fn handle_crust_event(&mut self, crust_event: crust::Event) {
+    pub fn handle_crust_event(&mut self, crust_event: crust::Event) -> Transition {
         match crust_event {
             crust::Event::BootstrapFailed => self.handle_bootstrap_failed(),
             crust::Event::BootstrapConnect(peer_id, socket_addr) => {
@@ -503,6 +421,9 @@ impl Core {
                        peer_id);
             }
         }
+
+        self.update_stats();
+        Transition::Node
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) {
@@ -1182,7 +1103,7 @@ impl Core {
             DirectMessage::ClientIdentify { ref serialised_public_id,
                                             ref signature,
                                             client_restriction } => {
-                if let Ok(public_id) = Core::verify_signed_public_id(serialised_public_id,
+                if let Ok(public_id) = Self::verify_signed_public_id(serialised_public_id,
                                                                      signature) {
                     self.handle_client_identify(public_id, peer_id, client_restriction)
                 } else {
@@ -1195,7 +1116,7 @@ impl Core {
                 }
             }
             DirectMessage::NodeIdentify { ref serialised_public_id, ref signature } => {
-                if let Ok(public_id) = Core::verify_signed_public_id(serialised_public_id,
+                if let Ok(public_id) = Self::verify_signed_public_id(serialised_public_id,
                                                                      signature) {
                     self.handle_node_identify(public_id, peer_id);
                 } else {
@@ -2313,6 +2234,7 @@ impl Core {
                            bucket_index,
                            e);
                 }
+                self.reset_bucket_refresh_timer();
             }
             if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
                 debug!("{:?} Lost connection, less than {} remaining.",
@@ -2361,7 +2283,7 @@ impl Core {
     }
 }
 
-impl Debug for Core {
+impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "{:?}({})", self.state, self.name())
     }

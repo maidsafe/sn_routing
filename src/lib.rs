@@ -146,7 +146,6 @@ mod authority;
 mod client;
 
 mod cache;
-mod core;
 mod data;
 mod error;
 mod event;
@@ -157,6 +156,9 @@ mod messages;
 mod node;
 mod peer_manager;
 mod plain_data;
+mod routing_table;
+mod state_machine;
+mod states;
 mod stats;
 mod structured_data;
 mod timer;
@@ -172,13 +174,15 @@ mod core_tests;
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
+
+#[cfg(feature = "use-mock-crust")]
+pub use mock_crust::crust;
 #[cfg(feature = "use-mock-crust")]
 pub use core_tests::verify_kademlia_invariant;
 
 pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
-pub use core::{GROUP_SIZE, QUORUM_SIZE};
 pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
@@ -187,6 +191,7 @@ pub use immutable_data::ImmutableData;
 pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
+pub use routing_table::{GROUP_SIZE, QUORUM_SIZE};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};
