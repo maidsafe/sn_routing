@@ -15,8 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use core::GROUP_SIZE;
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage};
+use routing_table::GROUP_SIZE;
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;

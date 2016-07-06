@@ -27,7 +27,6 @@ use std::thread;
 use authority::Authority;
 use client::Client;
 use cache::{Cache, NullCache};
-use core::{GROUP_SIZE, QUORUM_SIZE};
 use data::{Data, DataIdentifier, ImmutableData};
 use event::Event;
 use id::FullId;
@@ -36,6 +35,7 @@ use kademlia_routing_table::{ContactInfo, RoutingTable};
 use messages::{Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use node::Node;
+use routing_table::{GROUP_SIZE, QUORUM_SIZE};
 use types::MessageId;
 use xor_name::XorName;
 

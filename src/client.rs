@@ -27,11 +27,11 @@ use id::FullId;
 use action::Action;
 use event::Event;
 use cache::NullCache;
-use core::{Core, Role};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
+use state_machine::{Role, StateMachine};
 use types::MessageId;
 use xor_name::XorName;
 
@@ -48,7 +48,7 @@ pub struct Client {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    core: RefCell<Core>,
+    machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -70,12 +70,12 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut core) =
-            Core::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
+        let (action_sender, mut machine) =
+            StateMachine::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
-            core.run();
+            machine.run();
         }));
 
         Ok(Client {
@@ -90,34 +90,34 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, core) =
-            Core::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
+        let (action_sender, machine) =
+            StateMachine::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
         let (tx, rx) = channel();
 
         Ok(Client {
             interface_result_tx: tx,
             interface_result_rx: rx,
             action_sender: action_sender,
-            core: RefCell::new(core),
+            machine: RefCell::new(machine),
         })
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Poll and process all events in this client's `Core` instance.
     pub fn poll(&self) -> bool {
-        self.core.borrow_mut().poll()
+        self.machine.borrow_mut().poll()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.core.borrow_mut().resend_unacknowledged()
+        self.machine.borrow_mut().resend_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.core.borrow().has_unacknowledged()
+        self.machine.borrow().has_unacknowledged()
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
