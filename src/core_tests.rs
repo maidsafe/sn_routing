@@ -35,7 +35,7 @@ use kademlia_routing_table::{ContactInfo, RoutingTable};
 use messages::{Request, Response};
 use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
 use node::Node;
-use routing_table::{GROUP_SIZE, QUORUM_SIZE};
+use peer_manager::{GROUP_SIZE, QUORUM_SIZE};
 use types::MessageId;
 use xor_name::XorName;
 
@@ -255,7 +255,7 @@ impl TestClient {
     }
 
     fn name(&self) -> XorName {
-        unwrap_result!(self.inner.name())
+        unwrap!(self.inner.name())
     }
 }
 
@@ -1048,11 +1048,10 @@ fn request_during_churn_node_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index].inner
-                                   .send_get_request(src.clone(),
-                                                     dst.clone(),
-                                                     data_id,
-                                                     message_id));
+        unwrap!(nodes[index].inner.send_get_request(src.clone(),
+                                                    dst.clone(),
+                                                    data_id,
+                                                    message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index], src, dst, data_id, message_id));
@@ -1078,11 +1077,10 @@ fn request_during_churn_node_to_node() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index0].inner
-                                    .send_get_request(src.clone(),
-                                                      dst.clone(),
-                                                      data_id,
-                                                      message_id));
+        unwrap!(nodes[index0].inner.send_get_request(src.clone(),
+                                                     dst.clone(),
+                                                     data_id,
+                                                     message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index1], src, dst, data_id, message_id));
@@ -1106,11 +1104,10 @@ fn request_during_churn_node_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index].inner
-                                   .send_get_request(src.clone(),
-                                                     dst.clone(),
-                                                     data_id,
-                                                     message_id));
+        unwrap!(nodes[index].inner.send_get_request(src.clone(),
+                                                    dst.clone(),
+                                                    data_id,
+                                                    message_id));
 
         poll_and_resend(&mut nodes, &mut []);
 
@@ -1145,11 +1142,10 @@ fn request_during_churn_group_to_self() {
         sort_nodes_by_distance_to(&mut nodes, &name);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
-                               .send_get_request(src.clone(),
-                                                 dst.clone(),
-                                                 data_id,
-                                                 message_id));
+            unwrap!(node.inner.send_get_request(src.clone(),
+                                                dst.clone(),
+                                                data_id,
+                                                message_id));
         }
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
@@ -1173,7 +1169,7 @@ fn request_during_churn_group_to_node() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
-    for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
+    for i in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let data = gen_immutable_data(&mut rng, 8);
         let src = Authority::NaeManager(*data.name());
         sort_nodes_by_distance_to(&mut nodes, src.name());
@@ -1185,11 +1181,10 @@ fn request_during_churn_group_to_node() {
         let message_id = MessageId::new();
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
-                               .send_get_success(src.clone(),
-                                                 dst.clone(),
-                                                 data.clone(),
-                                                 message_id));
+            unwrap!(node.inner.send_get_success(src.clone(),
+                                                dst.clone(),
+                                                data.clone(),
+                                                message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -1215,11 +1210,10 @@ fn request_during_churn_group_to_group() {
         let _ = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
-                               .send_get_request(src.clone(),
-                                                 dst.clone(),
-                                                 data_id,
-                                                 message_id));
+            unwrap!(node.inner.send_get_request(src.clone(),
+                                                dst.clone(),
+                                                data_id,
+                                                message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);

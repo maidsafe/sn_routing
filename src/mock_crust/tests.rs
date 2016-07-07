@@ -64,14 +64,14 @@ fn start_two_services_bootstrap_communicate_exit() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
+    let mut service_0 = unwrap!(Service::with_handle(&handle0, event_sender_0));
 
     unwrap_result!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, Event::ListenerStarted(..));
 
     service_0.start_service_discovery();
 
-    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
+    let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
 
     unwrap_result!(service_1.start_bootstrap(HashSet::new()));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
@@ -208,13 +208,13 @@ fn drop() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
+    let mut service_0 = unwrap!(Service::with_handle(&handle0, event_sender_0));
 
-    unwrap_result!(service_0.start_listening_tcp());
+    unwrap!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, Event::ListenerStarted(_));
 
-    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
-    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
+    let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
+    unwrap!(service_1.start_bootstrap(HashSet::new()));
 
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     expect_event!(event_rx_0, Event::BootstrapAccept(..));
