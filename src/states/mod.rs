@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 mod client;
+mod common;
 mod node;
 
 pub use self::client::Client;

@@ -141,22 +141,22 @@ extern crate sodiumoxide;
 #[cfg(feature = "use-mock-crust")]
 extern crate sodiumoxide_extras;
 
+mod ack_manager;
 mod action;
 mod authority;
 mod client;
-
 mod cache;
 mod data;
 mod error;
 mod event;
 mod id;
 mod immutable_data;
+mod message_accumulator;
 mod message_filter;
 mod messages;
 mod node;
 mod peer_manager;
 mod plain_data;
-mod routing_table;
 mod state_machine;
 mod states;
 mod stats;
@@ -190,8 +190,8 @@ pub use id::{FullId, PublicId};
 pub use immutable_data::ImmutableData;
 pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
+pub use peer_manager::{GROUP_SIZE, QUORUM_SIZE};
 pub use plain_data::PlainData;
-pub use routing_table::{GROUP_SIZE, QUORUM_SIZE};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

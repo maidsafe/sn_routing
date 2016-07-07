@@ -18,7 +18,7 @@
 use crust::PeerId;
 
 use kademlia_routing_table::Destination;
-use routing_table::GROUP_SIZE;
+use peer_manager::GROUP_SIZE;
 use sodiumoxide::crypto::{hash, sign};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
