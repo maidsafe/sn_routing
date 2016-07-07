@@ -81,10 +81,9 @@ impl TestNode {
     fn new(index: usize, main_sender: Sender<TestEvent>) -> Self {
         let thread_name = format!("TestNode {} event sender", index);
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
-        let first_node = index == 0;
 
         TestNode {
-            node: unwrap_result!(Node::builder().first(first_node).create(sender)),
+            node: unwrap_result!(Node::builder().first(index == 0).create(sender)),
             _thread_joiner: joiner,
         }
     }
@@ -192,7 +191,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                 let k = nodes.len();
                 let all_events_received = (0..k)
                     .map(|i| connection_counts[i])
-                    .all(|n| n >= k - 1 || n >= GROUP_SIZE - 1);
+                    .all(|n| n >= k - 1 || n >= GROUP_SIZE);
                 if all_events_received {
                     break;
                 }
