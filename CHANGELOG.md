@@ -1,5 +1,13 @@
 # Routing - Change Log
 
+## [0.24.0]
+- Fix sodiumoxide to v0.0.10 as the new released v0.0.12 does not support
+  rustc-serializable types anymore and breaks builds.
+- Avoid redundant hash calculations by making the data `name` method a simple
+  getter.
+- Fix ack handling when resending a message.
+- Some refactoring and test updates.
+
 ## [0.23.2]
 - Don't cache as a member of recipient group: this can cause redundant
   responses.
