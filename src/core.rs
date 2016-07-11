@@ -223,7 +223,7 @@ impl Core {
 
         let full_id = keys.unwrap_or_else(FullId::new);
 
-        let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
+        let our_name = *full_id.public_id().name();
 
         let user_msg_cache_duration = Duration::from_secs(60 * 20);
 
@@ -257,7 +257,7 @@ impl Core {
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
             cacheable_user_msg_cache:
                 UserMessageCache::with_expiry_duration(user_msg_cache_duration),
-            peer_mgr: PeerManager::new(our_info),
+            peer_mgr: PeerManager::new(our_name),
             bootstrap_blacklist: HashSet::new(),
             response_cache: cache,
         };
@@ -316,7 +316,7 @@ impl Core {
 
     /// Routing table of this node.
     #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<NodeInfo> {
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
         self.peer_mgr.routing_table()
     }
 
@@ -598,10 +598,10 @@ impl Core {
     }
 
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        for node in self.peer_mgr.set_searching_for_tunnel(peer_id, pub_id) {
-            trace!("{:?} Asking {:?} to serve as a tunnel.", self, node.name());
+        for (name, peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, pub_id) {
+            trace!("{:?} Asking {:?} to serve as a tunnel.", self, name);
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
-            let _ = self.send_direct_message(&node.peer_id, tunnel_request);
+            let _ = self.send_direct_message(&peer_id, tunnel_request);
         }
     }
 
@@ -1379,19 +1379,19 @@ impl Core {
                 if self.peer_mgr.routing_table().len() == 1 {
                     let _ = self.event_sender.send(Event::Connected);
                 }
-                for notify_info in must_notify {
+                for peer_id in self.peer_mgr.get_peer_ids(&must_notify) {
                     let message = DirectMessage::NewNode(public_id);
-                    let _ = self.send_direct_message(&notify_info.peer_id, message);
+                    let _ = self.send_direct_message(&peer_id, message);
                 }
-                for node_info in unneeded {
+                for peer_id in self.peer_mgr.get_peer_ids(&unneeded) {
                     let message = DirectMessage::ConnectionUnneeded(*self.name());
-                    let _ = self.send_direct_message(&node_info.peer_id, message);
+                    let _ = self.send_direct_message(&peer_id, message);
                 }
 
                 self.reset_bucket_refresh_timer();
 
                 if common_groups {
-                    let event = Event::NodeAdded(name, self.peer_mgr.routing_table().to_names());
+                    let event = Event::NodeAdded(name, self.peer_mgr.routing_table().clone());
                     if let Err(err) = self.event_sender.send(event) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);
                     }
@@ -1580,7 +1580,7 @@ impl Core {
         }
 
         let close_group = match self.peer_mgr.routing_table().close_nodes(&dst_name, GROUP_SIZE) {
-            Some(close_group) => close_group.iter().map(NodeInfo::name).cloned().collect(),
+            Some(close_group) => close_group,
             None => return Err(RoutingError::InvalidDestination),
         };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
@@ -1627,7 +1627,7 @@ impl Core {
 
         let public_ids = match self.peer_mgr.routing_table().close_nodes(expect_id.name(),
                                                                          GROUP_SIZE) {
-            Some(close_group) => close_group.into_iter().map(|info| info.public_id).collect_vec(),
+            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
             None => return Err(RoutingError::InvalidDestination),
         };
 
@@ -1686,7 +1686,7 @@ impl Core {
         }
 
         let public_ids = match self.peer_mgr.routing_table().close_nodes(&dst_name, GROUP_SIZE) {
-            Some(close_group) => close_group.into_iter().map(|info| info.public_id).collect_vec(),
+            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
             None => return Err(RoutingError::InvalidDestination),
         };
 
@@ -2142,13 +2142,10 @@ impl Core {
                     .routing_table()
                     .target_nodes(destination, hop, route as usize)
                     .into_iter()
-                    .filter(|target| !sent_to.contains(target.name()))
+                    .filter(|target| !sent_to.contains(target))
                     .collect_vec();
-                let new_sent_to = sent_to.iter()
-                    .chain(targets.iter().map(NodeInfo::name))
-                    .cloned()
-                    .collect_vec();
-                Ok((new_sent_to, targets.into_iter().map(|target| target.peer_id).collect()))
+                let new_sent_to = sent_to.iter().chain(targets.iter()).cloned().collect_vec();
+                Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
             }
         }
     }
@@ -2244,8 +2241,7 @@ impl Core {
                 new_name);
 
         self.full_id.public_id_mut().set_name(new_name);
-        let our_info = NodeInfo::new(*self.full_id.public_id(), self.crust_service.id());
-        self.peer_mgr.reset_routing_table(our_info);
+        self.peer_mgr.reset_routing_table(new_name);
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
@@ -2286,20 +2282,20 @@ impl Core {
         let peers = self.tunnels
             .remove_tunnel(peer_id)
             .into_iter()
-            .filter_map(|dst_id| {
-                self.peer_mgr.routing_table()
-                    .iter()
-                    .find(|node| node.peer_id == dst_id)
-                    .map(|&node| (dst_id, node))
+            .filter_map(|dst_peer_id| {
+                match self.peer_mgr.get_communicating_peer(&dst_peer_id) {
+                    Some(dst_pub_id) => Some((dst_peer_id, *dst_pub_id)),
+                    None => None,
+                }
             })
             .collect_vec();
-        for (dst_id, node) in peers {
-            self.dropped_routing_node_connection(&dst_id);
+        for (dst_peer_id, dst_pub_id) in peers {
+            self.dropped_routing_node_connection(&dst_peer_id);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
-                   dst_id,
-                   node.name());
-            self.find_tunnel_for_peer(dst_id, &node.public_id);
+                   dst_peer_id,
+                   dst_pub_id.name());
+            self.find_tunnel_for_peer(dst_peer_id, &dst_pub_id);
         }
     }
 
@@ -2312,7 +2308,7 @@ impl Core {
                 .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
             if common_groups {
                 // If the lost node shared some close group with us, send a NodeLost event.
-                let event = Event::NodeLost(name, self.peer_mgr.routing_table().to_names());
+                let event = Event::NodeLost(name, self.peer_mgr.routing_table().clone());
                 if let Err(err) = self.event_sender.send(event) {
                     error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
