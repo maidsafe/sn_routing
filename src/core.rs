@@ -568,12 +568,12 @@ impl Core {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(peer_id);
             let _ = self.send_direct_message(&tunnel_id, message);
-        } else if let Some(node) = self.peer_mgr.routing_table().iter().find(|node| node.peer_id == peer_id) {
+        } else if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
             warn!("{:?} Received ConnectSuccess from {:?}, but node {:?} is already in our \
                    routing table.",
                   self,
                   peer_id,
-                  node.name());
+                  pub_id.name());
             return;
         }
         self.peer_mgr.connected_to(peer_id);
@@ -591,22 +591,17 @@ impl Core {
         }
         if self.role == Role::Client {
             warn!("{:?} Received ConnectFailure event as a client.", self);
-        } else if self.peer_mgr.routing_table().iter().all(|node| node.peer_id != peer_id) {
-            info!("{:?} Failed to connect to peer {:?}.", self, peer_id);
-            if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-                self.find_tunnel_for_peer(peer_id, &pub_id);
-            }
+        } else if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
+            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.", self, peer_id, pub_id);
+            self.find_tunnel_for_peer(peer_id, &pub_id);
         }
     }
 
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        if self.peer_mgr.set_searching_for_tunnel(peer_id, pub_id) {
-            for node in self.peer_mgr.routing_table()
-                                     .closest_nodes_to(pub_id.name(), GROUP_SIZE, false) {
-                trace!("{:?} Asking {:?} to serve as a tunnel.", self, node.name());
-                let tunnel_request = DirectMessage::TunnelRequest(peer_id);
-                let _ = self.send_direct_message(&node.peer_id, tunnel_request);
-            }
+        for node in self.peer_mgr.set_searching_for_tunnel(peer_id, pub_id) {
+            trace!("{:?} Asking {:?} to serve as a tunnel.", self, node.name());
+            let tunnel_request = DirectMessage::TunnelRequest(peer_id);
+            let _ = self.send_direct_message(&node.peer_id, tunnel_request);
         }
     }
 
@@ -719,10 +714,9 @@ impl Core {
                           -> Result<(), RoutingError> {
         let hop_name;
         if self.state == State::Node {
-            if let Some(info) = self.peer_mgr.routing_table().iter().find(|node| node.peer_id == peer_id) {
-                try!(hop_msg.verify(info.public_id.signing_public_key()));
-                // try!(self.check_direction(hop_msg));
-                hop_name = *info.name();
+            if let Some(public_id) = self.peer_mgr.get_routing_peer(&peer_id) {
+                try!(hop_msg.verify(public_id.signing_public_key()));
+                hop_name = *public_id.name();
             } else if let Some(client_info) = self.peer_mgr.get_client(&peer_id) {
                 try!(hop_msg.verify(&client_info.public_key));
                 if client_info.client_restriction {
@@ -1052,12 +1046,13 @@ impl Core {
             return;
         }
         debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-        self.peer_mgr.remove_peer(&peer_id);
         if self.role != Role::Client {
             self.dropped_tunnel_client(&peer_id);
             self.dropped_routing_node_connection(&peer_id);
             self.dropped_client_connection(&peer_id);
             self.dropped_tunnel_node(&peer_id);
+        } else {
+            let _ = self.peer_mgr.remove_peer(&peer_id);
         }
         self.dropped_bootstrap_connection(&peer_id);
     }
@@ -1192,7 +1187,7 @@ impl Core {
                           peer_id);
                 }
                 // TODO(afck): Try adding them to the routing table?
-                if self.peer_mgr.routing_table().iter().all(|node| node.peer_id != peer_id) {
+                if self.peer_mgr.get_routing_peer(&peer_id).is_none() {
                     warn!("{:?} Client requested ClientToNode, but is not in routing table: {:?}",
                           self,
                           peer_id);
@@ -1238,14 +1233,14 @@ impl Core {
                 Ok(())
             }
             DirectMessage::ConnectionUnneeded(ref name) => {
-                if let Some(node_info) = self.peer_mgr.routing_table().get(name) {
-                    if node_info.peer_id != peer_id {
+                if let Some(fetched_peer_id) = self.peer_mgr.get_peer_id(name) {
+                    if fetched_peer_id != peer_id {
                         debug!("{:?} Received ConnectionUnneeded from {:?} with name {:?}, but \
                                 that name actually belongs to {:?}.",
                                self,
                                peer_id,
                                name,
-                               node_info.peer_id);
+                               fetched_peer_id);
                         return Err(RoutingError::InvalidSource);
                     }
                 }
@@ -1496,7 +1491,6 @@ impl Core {
                    dst_id,
                    peer_id);
             if !self.crust_service.is_connected(&dst_id) {
-                self.peer_mgr.remove_peer(&dst_id);
                 self.dropped_routing_node_connection(&dst_id);
             }
         }
@@ -1522,10 +1516,10 @@ impl Core {
     /// Disconnects from the given peer, via Crust or by dropping the tunnel node, if the peer is
     /// not a proxy, client or routing table entry.
     fn disconnect_peer(&mut self, peer_id: &PeerId) {
-        if let Some(&node) = self.peer_mgr.routing_table().iter().find(|node| node.peer_id == *peer_id) {
+        if let Some(&pub_id) = self.peer_mgr.get_routing_peer(peer_id) {
             debug!("{:?} Not disconnecting routing table entry {:?} ({:?}).",
                    self,
-                   node.name(),
+                   pub_id.name(),
                    peer_id);
         } else if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
             debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
@@ -1775,17 +1769,15 @@ impl Core {
                             src: Authority,
                             dst: Authority)
                             -> Result<(), RoutingError> {
+        let their_name = *their_public_id.name();
         if let Some(peer_id) = self.peer_mgr.get_proxy_or_client_peer_id(&their_public_id) {
             try!(self.node_identify(peer_id));
             self.handle_node_identify(their_public_id, peer_id);
-        } else if self.peer_mgr.allow_connect(their_public_id.name()) {
-            if self.peer_mgr.is_connecting(&their_public_id) {
-                debug!("{:?} Already sent connection info to {:?}!",
-                       self,
-                       their_public_id.name());
-            } else {
-                let token = self.peer_mgr.get_connection_info_token(src, dst, their_public_id);
+        } else if self.peer_mgr.allow_connect(&their_name) {
+            if let Some(token) = self.peer_mgr.get_connection_token(src, dst, their_public_id) {
                 self.crust_service.prepare_connection_info(token);
+            } else {
+                trace!("{:?} Already sent connection info to {:?}!", self, their_name);
             }
         }
         Ok(())
@@ -2295,62 +2287,53 @@ impl Core {
             .remove_tunnel(peer_id)
             .into_iter()
             .filter_map(|dst_id| {
-                self.peer_mgr.routing_table()
-                    .iter()
-                    .find(|node| node.peer_id == dst_id)
-                    .map(|&node| (dst_id, node))
+                self.peer_mgr.get_routing_peer(&dst_id).map(|dst_pub_id| (dst_id, *dst_pub_id))
             })
             .collect_vec();
-        for (dst_id, node) in peers {
-            self.peer_mgr.remove_peer(&dst_id);
+        for (dst_id, pub_id) in peers {
             self.dropped_routing_node_connection(&dst_id);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
                    dst_id,
-                   node.name());
-            self.find_tunnel_for_peer(dst_id, &node.public_id);
+                   pub_id.name());
+            self.find_tunnel_for_peer(dst_id, &pub_id);
         }
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
-        if let Some(&node) = self.peer_mgr.routing_table().iter().find(|node| node.peer_id == *peer_id) {
-            if let Some(DroppedNodeDetails { incomplete_bucket }) = self.peer_mgr
-                .remove_node(node.name()) {
-                info!("{:?} Dropped {:?} from the routing table.",
-                      self,
-                      node.name());
+        if let (Some(name), Some(DroppedNodeDetails { incomplete_bucket })) =
+                self.peer_mgr.remove_peer(&peer_id) {
+            info!("{:?} Dropped {:?} from the routing table.", self, &name);
 
-                let common_groups = self.peer_mgr.routing_table()
-                    .is_in_any_close_group_with(self.name().bucket_index(node.name()), GROUP_SIZE);
-                if common_groups {
-                    // If the lost node shared some close group with us, send a NodeLost event.
-                    let event = Event::NodeLost(*node.name(),
-                                                self.peer_mgr.routing_table().to_names());
-                    if let Err(err) = self.event_sender.send(event) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
+            let common_groups = self.peer_mgr.routing_table()
+                .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
+            if common_groups {
+                // If the lost node shared some close group with us, send a NodeLost event.
+                let event = Event::NodeLost(name, self.peer_mgr.routing_table().to_names());
+                if let Err(err) = self.event_sender.send(event) {
+                    error!("{:?} Error sending event to routing user - {:?}", self, err);
                 }
-                if let Some(bucket_index) = incomplete_bucket {
-                    if let Err(e) = self.request_bucket_ids(bucket_index) {
-                        debug!("{:?} Failed to request replacement connection_info from bucket \
-                                {}: {:?}.",
-                               self,
-                               bucket_index,
-                               e);
-                    }
-                }
-                if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
-                    debug!("{:?} Lost connection, less than {} remaining.",
-                           self,
-                           GROUP_SIZE - 1);
-                    let _ = self.event_sender.send(if self.role == Role::FirstNode {
-                        Event::Terminate
-                    } else {
-                        Event::RestartRequired
-                    });
-                }
-                self.reset_bucket_refresh_timer();
             }
+            if let Some(bucket_index) = incomplete_bucket {
+                if let Err(e) = self.request_bucket_ids(bucket_index) {
+                    debug!("{:?} Failed to request replacement connection_info from bucket \
+                            {}: {:?}.",
+                           self,
+                           bucket_index,
+                           e);
+                }
+            }
+            if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
+                debug!("{:?} Lost connection, less than {} remaining.",
+                       self,
+                       GROUP_SIZE - 1);
+                let _ = self.event_sender.send(if self.role == Role::FirstNode {
+                    Event::Terminate
+                } else {
+                    Event::RestartRequired
+                });
+            }
+            self.reset_bucket_refresh_timer();
         };
     }
 
