@@ -53,7 +53,6 @@ extern crate safe_vault;
 
 use std::ffi::OsString;
 use std::fs;
-use std::process;
 use docopt::Docopt;
 use safe_vault::Vault;
 
@@ -89,7 +88,7 @@ pub fn main() {
     let name_and_version = format!("{} v{}", name.to_string_lossy(), env!("CARGO_PKG_VERSION"));
     if args.flag_version {
         println!("{}", name_and_version);
-        process::exit(0);
+        return;
     }
 
     let _ = maidsafe_utilities::log::init(false);

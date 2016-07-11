@@ -157,7 +157,7 @@ fn structured_data_operations_with_churn(use_cache: bool) {
                         continue;
                     }
                     unwrap_result!(StructuredData::new(sd.get_type_tag(),
-                                                       *sd.get_identifier(),
+                                                       *sd.name(),
                                                        sd.get_version() + 1,
                                                        rng.gen_iter().take(10).collect(),
                                                        sd.get_owner_keys().clone(),
@@ -334,7 +334,7 @@ fn handle_post_error_flow() {
 
     // Posting with incorrect type_tag
     let incorrect_tag_sd = StructuredData::new(200000,
-                                               *sd.get_identifier(),
+                                               *sd.name(),
                                                1,
                                                sd.get_data().clone(),
                                                vec![full_id.public_id()
@@ -350,7 +350,7 @@ fn handle_post_error_flow() {
 
     // Posting with incorrect version
     let incorrect_version_sd = StructuredData::new(100000,
-                                                   *sd.get_identifier(),
+                                                   *sd.name(),
                                                    3,
                                                    sd.get_data().clone(),
                                                    vec![full_id.public_id()
@@ -367,7 +367,7 @@ fn handle_post_error_flow() {
     // Posting with incorrect signature
     let new_full_id = FullId::new();
     let incorrect_signed_sd = StructuredData::new(100000,
-                                                  *sd.get_identifier(),
+                                                  *sd.name(),
                                                   1,
                                                   sd.get_data().clone(),
                                                   vec![new_full_id.public_id()
@@ -383,7 +383,7 @@ fn handle_post_error_flow() {
 
     // Posting correctly
     let new_sd = StructuredData::new(100000,
-                                     *sd.get_identifier(),
+                                     *sd.name(),
                                      1,
                                      sd.get_data().clone(),
                                      vec![full_id.public_id().signing_public_key().clone()],
@@ -422,7 +422,7 @@ fn handle_delete_error_flow() {
 
     // Deleting with incorrect type_tag
     let incorrect_tag_sd = StructuredData::new(200000,
-                                               *sd.get_identifier(),
+                                               *sd.name(),
                                                1,
                                                sd.get_data().clone(),
                                                vec![full_id.public_id()
@@ -440,7 +440,7 @@ fn handle_delete_error_flow() {
 
     // Deleting with incorrect version
     let incorrect_version_sd = StructuredData::new(100000,
-                                                   *sd.get_identifier(),
+                                                   *sd.name(),
                                                    3,
                                                    sd.get_data().clone(),
                                                    vec![full_id.public_id()
@@ -457,7 +457,7 @@ fn handle_delete_error_flow() {
     // Deleting with incorrect signature
     let new_full_id = FullId::new();
     let incorrect_signed_sd = StructuredData::new(100000,
-                                                  *sd.get_identifier(),
+                                                  *sd.name(),
                                                   1,
                                                   sd.get_data().clone(),
                                                   vec![new_full_id.public_id()
@@ -473,7 +473,7 @@ fn handle_delete_error_flow() {
 
     // Deleting correctly
     let new_sd = StructuredData::new(100000,
-                                     *sd.get_identifier(),
+                                     *sd.name(),
                                      1,
                                      sd.get_data().clone(),
                                      vec![full_id.public_id().signing_public_key().clone()],

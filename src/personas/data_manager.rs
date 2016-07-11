@@ -139,7 +139,7 @@ impl Cache {
     fn prune_unneeded_chunks(&mut self, routing_table: &RoutingTable<XorName>) -> u64 {
         let pruned_unneeded_chunks: HashSet<_> = self.unneeded_chunks
             .iter()
-            .filter(|data_id| routing_table.is_close(&data_id.name(), GROUP_SIZE))
+            .filter(|data_id| routing_table.is_close(data_id.name(), GROUP_SIZE))
             .cloned()
             .collect();
         if !pruned_unneeded_chunks.is_empty() {
@@ -160,7 +160,7 @@ impl Cache {
                 .filter(|&&(ref data_id, _)| {
                     // The data needs to be removed if either we are not close to it anymore, i. e.
                     // other_close_nodes returns None, or `holder` is not in it anymore.
-                    routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE)
+                    routing_table.other_close_nodes(data_id.name(), GROUP_SIZE)
                         .map_or(true, |group| !group.contains(holder))
                 })
                 .cloned()
@@ -183,7 +183,7 @@ impl Cache {
         let lost_gets = self.ongoing_gets
             .iter()
             .filter(|&(ref holder, &(_, (ref data_id, _)))| {
-                routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE)
+                routing_table.other_close_nodes(data_id.name(), GROUP_SIZE)
                     .map_or(true, |group| !group.contains(*holder))
             })
             .map(|(holder, _)| *holder)
@@ -392,7 +392,7 @@ impl DataManager {
             }
             let _ = self.routing_node.send_put_success(dst, src, data_id, message_id);
             let data_list = vec![(data_id, version)];
-            let _ = self.send_refresh(Authority::NaeManager(data.name()), data_list);
+            let _ = self.send_refresh(Authority::NaeManager(*data.name()), data_list);
             Ok(())
         }
     }
@@ -450,7 +450,7 @@ impl DataManager {
         trace!("DM updated for: {:?}", data_id);
         let _ = self.routing_node.send_post_success(dst, src, data_id, message_id);
         let data_list = vec![(data_id, version)];
-        let _ = self.send_refresh(Authority::NaeManager(data_id.name()), data_list);
+        let _ = self.send_refresh(Authority::NaeManager(*data_id.name()), data_list);
         Ok(())
     }
 
@@ -492,7 +492,7 @@ impl DataManager {
         self.cache.handle_get_success(src, &data_id, version);
         try!(self.send_gets_for_needed_data());
         // If we're no longer in the close group, return.
-        if !self.close_to_address(&data_id.name()) {
+        if !self.close_to_address(data_id.name()) {
             return Ok(());
         }
         // TODO: Check that the data's hash actually agrees with an accumulated entry.
@@ -579,7 +579,7 @@ impl DataManager {
         let src = Authority::ManagedNode(try!(self.routing_node.name()));
         let candidates = self.cache.needed_data();
         for (idle_holder, data_idv) in candidates {
-            if let Ok(Some(group)) = self.routing_node.close_group(data_idv.0.name()) {
+            if let Ok(Some(group)) = self.routing_node.close_group(*data_idv.0.name()) {
                 if group.contains(&idle_holder) {
                     self.cache.insert_into_ongoing_gets(&idle_holder, &data_idv);
                     let (data_id, _) = data_idv;
@@ -615,7 +615,7 @@ impl DataManager {
         // Only retain data for which we're still in the close group.
         let mut data_list = Vec::new();
         for (data_id, version) in data_idvs {
-            match routing_table.other_close_nodes(&data_id.name(), GROUP_SIZE) {
+            match routing_table.other_close_nodes(data_id.name(), GROUP_SIZE) {
                 None => {
                     trace!("No longer a DM for {:?}", data_id);
                     if self.chunk_store.has(&data_id) && !self.cache.is_in_unneeded(&data_id) {
@@ -669,7 +669,7 @@ impl DataManager {
             .collect_vec());
         let mut data_lists: HashMap<XorName, Vec<IdAndVersion>> = HashMap::new();
         for data_idv in data_idvs {
-            match routing_table.other_close_nodes(&data_idv.0.name(), GROUP_SIZE) {
+            match routing_table.other_close_nodes(data_idv.0.name(), GROUP_SIZE) {
                 None => {
                     error!("Moved out of close group of {:?} in a NodeLost event!",
                            node_name);

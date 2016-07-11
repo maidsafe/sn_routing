@@ -12,7 +12,7 @@ version = "0.10.2"
 
 [dependencies]
 accumulator = "~0.4.0"
-clippy = {version = "~0.0.77", optional = true}
+clippy = {version = "~0.0.79", optional = true}
 config_file_handler = "~0.3.1"
 docopt = "~0.6.80"
 fs2 = "~0.2.5"
@@ -23,10 +23,10 @@ log = "~0.3.6"
 maidsafe_utilities = "~0.8.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
-routing = "~0.23.2"
+routing = "~0.24.0"
 rustc-serialize = "~0.3.19"
-safe_network_common = "~0.4.1"
-sodiumoxide = "~0.0.10"
+safe_network_common = "~0.5.0"
+sodiumoxide = "=0.0.10"
 
 [build-dependencies]
 hyper = {version = "~0.9.6", optional = true}

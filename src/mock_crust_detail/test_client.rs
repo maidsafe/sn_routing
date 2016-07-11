@@ -110,7 +110,7 @@ impl TestClient {
                         request: DataIdentifier,
                         nodes: &mut [TestNode])
                         -> (Data, Authority) {
-        let dst = Authority::NaeManager(request.name());
+        let dst = Authority::NaeManager(*request.name());
         let request_message_id = MessageId::new();
         self.flush();
 
@@ -140,7 +140,7 @@ impl TestClient {
                         request: DataIdentifier,
                         nodes: &mut [TestNode])
                         -> Result<Data, Option<GetError>> {
-        let dst = Authority::NaeManager(request.name());
+        let dst = Authority::NaeManager(*request.name());
         let request_message_id = MessageId::new();
         self.flush();
         unwrap_result!(self.routing_client
@@ -179,7 +179,7 @@ impl TestClient {
                          data: Data,
                          nodes: &mut [TestNode])
                          -> Result<DataIdentifier, Option<MutationError>> {
-        let dst = Authority::NaeManager(data.name());
+        let dst = Authority::NaeManager(*data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client
             .send_post_request(dst.clone(), data, request_message_id));
@@ -217,7 +217,7 @@ impl TestClient {
                            data: Data,
                            nodes: &mut [TestNode])
                            -> Result<DataIdentifier, Option<MutationError>> {
-        let dst = Authority::NaeManager(data.name());
+        let dst = Authority::NaeManager(*data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client
             .send_delete_request(dst.clone(), data, request_message_id));
@@ -288,7 +288,7 @@ impl TestClient {
 
     /// Post request
     pub fn post(&mut self, data: Data) {
-        let dst = Authority::NaeManager(data.name());
+        let dst = Authority::NaeManager(*data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_post_request(dst, data, request_message_id));
     }
@@ -300,7 +300,7 @@ impl TestClient {
     }
     /// Delete request
     pub fn delete(&mut self, data: Data) {
-        let dst = Authority::NaeManager(data.name());
+        let dst = Authority::NaeManager(*data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_delete_request(dst, data, request_message_id));
     }

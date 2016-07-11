@@ -29,7 +29,7 @@ use personas::data_manager::DataManager;
 #[cfg(feature = "use-mock-crust")]
 use personas::data_manager::IdAndVersion;
 
-use routing::{Authority, Data, Request, Response, XorName};
+use routing::{Authority, Data, NodeBuilder, Request, Response, XorName};
 use sodiumoxide;
 
 pub const CHUNK_STORE_DIR: &'static str = "safe_vault_chunk_store";
@@ -57,7 +57,8 @@ impl Vault {
             }
             Err(e) => return Err(From::from(e)),
         };
-        match Self::vault_with_config(first_vault, use_cache, config.clone()) {
+        let builder = RoutingNode::builder().first(first_vault).deny_other_local_nodes();
+        match Self::vault_with_config(builder, use_cache, config.clone()) {
             Ok(vault) => Ok(vault),
             Err(InternalError::ChunkStore(e)) => {
                 error!("Incorrect path {:?} for chunk_store_root : {:?}",
@@ -75,11 +76,11 @@ impl Vault {
                            use_cache: bool,
                            config: Config)
                            -> Result<Self, InternalError> {
-        Self::vault_with_config(first_vault, use_cache, config)
+        Self::vault_with_config(RoutingNode::builder().first(first_vault), use_cache, config)
     }
 
     /// Allow construct vault with config for mock-crust tests.
-    fn vault_with_config(first_vault: bool,
+    fn vault_with_config(builder: NodeBuilder,
                          use_cache: bool,
                          config: Config)
                          -> Result<Self, InternalError> {
@@ -93,9 +94,9 @@ impl Vault {
 
         let (routing_sender, routing_receiver) = mpsc::channel();
         let routing_node = Rc::new(try!(if use_cache {
-            RoutingNode::with_cache(routing_sender, first_vault, Box::new(Cache::new()))
+            builder.cache(Box::new(Cache::new())).create(routing_sender)
         } else {
-            RoutingNode::new(routing_sender, first_vault)
+            builder.create(routing_sender)
         }));
 
         Ok(Vault {

@@ -305,7 +305,7 @@ impl MaidManager {
         {
             // forwarding data_request to NAE Manager
             let src = dst.clone();
-            let dst = Authority::NaeManager(data.name());
+            let dst = Authority::NaeManager(*data.name());
             trace!("MM forwarding put request to {:?}", dst);
             let _ = self.routing_node.send_put_request(src, dst, data, msg_id);
         }

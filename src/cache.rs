@@ -52,7 +52,7 @@ impl RoutingCache for Cache {
 
     fn put(&self, response: Response) {
         if let Response::GetSuccess(Data::Immutable(data), _) = response {
-            let _ = self.store.borrow_mut().insert(data.name(), data);
+            let _ = self.store.borrow_mut().insert(*data.name(), data);
         }
     }
 }
