@@ -108,9 +108,6 @@ pub enum DirectMessage {
         /// Signature of the originator of this message.
         signature: sign::Signature,
     },
-    /// Sent from a client that became a full routing node. The recipient can remove it from its
-    /// client map.
-    ClientToNode,
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
@@ -390,7 +387,6 @@ impl Debug for DirectMessage {
                        current_quorum_size)
             }
             DirectMessage::BootstrapDeny => write!(formatter, "BootstrapDeny"),
-            DirectMessage::ClientToNode => write!(formatter, "ClientToNode"),
             DirectMessage::ClientIdentify { client_restriction: true, .. } => {
                 write!(formatter, "ClientIdentify (client only)")
             }

@@ -630,7 +630,8 @@ impl Core {
         let (pub_id, src, dst) = match self.peer_mgr
             .connection_info_prepared(result_token, our_connection_info) {
             Err(error) => {
-                error!("{:?} Prepared connection info, but no entry found in token map: {:?}",
+                // This usually means we have already connected.
+                debug!("{:?} Prepared connection info, but no entry found in token map: {:?}",
                        self,
                        error);
                 return;
@@ -1181,21 +1182,6 @@ impl Core {
                        clients.",
                       self);
                 self.rebootstrap();
-                Ok(())
-            }
-            DirectMessage::ClientToNode => {
-                if self.peer_mgr.remove_client(&peer_id).is_none() {
-                    warn!("{:?} Client requested ClientToNode, but is not in client map: {:?}",
-                          self,
-                          peer_id);
-                }
-                // TODO(afck): Try adding them to the routing table?
-                if self.peer_mgr.get_routing_peer(&peer_id).is_none() {
-                    warn!("{:?} Client requested ClientToNode, but is not in routing table: {:?}",
-                          self,
-                          peer_id);
-                    self.disconnect_peer(&peer_id);
-                }
                 Ok(())
             }
             DirectMessage::ClientIdentify { ref serialised_public_id,
@@ -1902,7 +1888,13 @@ impl Core {
             Ok(ConnectionInfoReceivedResult::Prepare(token)) => {
                 self.crust_service.prepare_connection_info(token);
             }
-            Ok(ConnectionInfoReceivedResult::Waiting) => (),
+            Ok(ConnectionInfoReceivedResult::IsProxy) |
+            Ok(ConnectionInfoReceivedResult::IsClient) => {
+                try!(self.node_identify(peer_id));
+                self.handle_node_identify(their_public_id, peer_id);
+            }
+            Ok(ConnectionInfoReceivedResult::Waiting) |
+            Ok(ConnectionInfoReceivedResult::IsConnected) => (),
             Err(error) => {
                 warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
                       self,
