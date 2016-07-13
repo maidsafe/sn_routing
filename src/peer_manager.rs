@@ -149,6 +149,12 @@ pub enum ConnectionInfoReceivedResult {
     /// We are currently preparing our own connection info and need to wait for it. The peer
     /// remains in `ConnectionInfoPreparing` status.
     Waiting,
+    /// We are already connected: They are our proxy.
+    IsProxy,
+    /// We are already connected: They are our client.
+    IsClient,
+    /// We are already connected: They are a routing peer.
+    IsConnected,
 }
 
 /// The result of adding our prepared `PrivConnectionInfo`. It needs to be sent to a peer as a
@@ -201,12 +207,15 @@ impl PeerManager {
             node_map: HashMap::new(),
             proxy: None,
             pub_id_map: HashMap::new(),
-            routing_table: RoutingTable::<NodeInfo>::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES),
+            routing_table: RoutingTable::<NodeInfo>::new(our_info,
+                                                         GROUP_SIZE,
+                                                         EXTRA_BUCKET_ENTRIES),
         }
     }
 
     pub fn reset_routing_table(&mut self, our_info: NodeInfo) {
-        self.routing_table = RoutingTable::<NodeInfo>::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
+        self.routing_table =
+            RoutingTable::<NodeInfo>::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
     }
 
     pub fn routing_table(&self) -> &RoutingTable<NodeInfo> {
@@ -214,21 +223,23 @@ impl PeerManager {
     }
 
     pub fn close_group(&self, name: &XorName) -> Option<Vec<XorName>> {
-        self.routing_table.close_nodes(name, GROUP_SIZE)
-                          .map(|infos| {
-                                infos.iter().map(NodeInfo::name).cloned().collect()
-                          })
+        self.routing_table
+            .close_nodes(name, GROUP_SIZE)
+            .map(|infos| infos.iter().map(NodeInfo::name).cloned().collect())
     }
 
     pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<NodeInfo>> {
-        let _ = self.node_map.insert(*info.public_id.name(), (Instant::now(), PeerState::Connected));
+        let _ = self.node_map.insert(*info.public_id.name(),
+                                     (Instant::now(), PeerState::Connected));
         let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
         self.routing_table.add(info)
     }
 
     pub fn remove_if_unneeded(&mut self, name: &XorName, target_id: &PeerId) -> Option<bool> {
-        if let Some(true) = self.pub_id_map.iter().find(|elt| elt.1.name() == name)
-                                                  .map(|(peer_id, _)| target_id == peer_id) {
+        if let Some(true) = self.pub_id_map
+            .iter()
+            .find(|elt| elt.1.name() == name)
+            .map(|(peer_id, _)| target_id == peer_id) {
             Some(self.routing_table.remove_if_unneeded(name))
         } else {
             None
@@ -237,7 +248,7 @@ impl PeerManager {
 
     pub fn is_tunnel(&self, peer_id: &PeerId, dst_id: &PeerId) -> bool {
         self.routing_table.iter().any(|node| node.peer_id == *peer_id) &&
-                self.routing_table.iter().any(|node| node.peer_id == *dst_id)
+        self.routing_table.iter().any(|node| node.peer_id == *dst_id)
     }
 
     pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
@@ -372,7 +383,10 @@ impl PeerManager {
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates
     /// returns empty vector of candidates if it is already in Connected or Tunnel state.
-    pub fn set_searching_for_tunnel(&mut self, peer_id: PeerId, pub_id: &PublicId) -> Vec<NodeInfo> {
+    pub fn set_searching_for_tunnel(&mut self,
+                                    peer_id: PeerId,
+                                    pub_id: &PublicId)
+                                    -> Vec<NodeInfo> {
         match self.get_state(pub_id) {
             Some(&PeerState::Connected) |
             Some(&PeerState::Tunnel) => {
@@ -427,6 +441,12 @@ impl PeerManager {
                                     their_info: PubConnectionInfo)
                                     -> Result<ConnectionInfoReceivedResult, Error> {
         let peer_id = their_info.id();
+        if self.get_client(&peer_id).is_some() {
+            return Ok(ConnectionInfoReceivedResult::IsClient);
+        }
+        if self.get_proxy_public_id(&peer_id).is_some() {
+            return Ok(ConnectionInfoReceivedResult::IsProxy);
+        }
         match self.node_map.remove(pub_id.name()) {
             Some((_, PeerState::ConnectionInfoReady(our_info))) => {
                 self.insert_state(pub_id, PeerState::CrustConnecting);
@@ -437,6 +457,14 @@ impl PeerManager {
                 let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
                 self.insert_state(pub_id, state);
                 Ok(ConnectionInfoReceivedResult::Waiting)
+            }
+            Some((_, PeerState::CrustConnecting)) => {
+                self.insert_state(pub_id, PeerState::CrustConnecting);
+                Ok(ConnectionInfoReceivedResult::Waiting)
+            }
+            Some((timestamp, PeerState::Connected)) => {
+                let _ = self.node_map.insert(*pub_id.name(), (timestamp, PeerState::Connected));
+                Ok(ConnectionInfoReceivedResult::IsConnected)
             }
             Some((timestamp, state)) => {
                 let _ = self.node_map.insert(*pub_id.name(), (timestamp, state));
@@ -460,8 +488,12 @@ impl PeerManager {
                                 dst: Authority,
                                 pub_id: PublicId)
                                 -> Option<u32> {
-        if self.is_connecting(&pub_id) {
-            return None;
+        match self.get_state(&pub_id) {
+            Some(&PeerState::Connected) |
+            Some(&PeerState::ConnectionInfoPreparing(..)) |
+            Some(&PeerState::ConnectionInfoReady(..)) |
+            Some(&PeerState::CrustConnecting) => return None,
+            _ => (),
         }
         let token = rand::random();
         let _ = self.connection_token_map.insert(token, pub_id);
@@ -481,16 +513,6 @@ impl PeerManager {
     }
     pub fn allow_connect(&self, name: &XorName) -> bool {
         !self.routing_table.contains(name) && self.routing_table.allow_connection(name)
-    }
-
-    /// Returns `true` if we are in the process of connecting to the given peer.
-    pub fn is_connecting(&self, pub_id: &PublicId) -> bool {
-        match self.get_state(pub_id) {
-            Some(&PeerState::ConnectionInfoPreparing(..)) |
-            Some(&PeerState::ConnectionInfoReady(..)) |
-            Some(&PeerState::CrustConnecting) => true,
-            _ => false,
-        }
     }
 
     /// Removes the given entry, returns the pair of (peer's public name, the removal result)
@@ -559,7 +581,10 @@ impl PeerManager {
         }
         let remove_tokens = self.connection_token_map
             .iter()
-            .filter(|&(_, pub_id)| !self.node_map.contains_key(pub_id.name()))
+            .filter(|&(_, pub_id)| match self.get_state(pub_id) {
+                Some(&PeerState::ConnectionInfoPreparing(..)) => false,
+                _ => true,
+            })
             .map(|(token, _)| *token)
             .collect_vec();
         for token in remove_tokens {
