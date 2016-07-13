@@ -592,7 +592,10 @@ impl Core {
         if self.role == Role::Client {
             warn!("{:?} Received ConnectFailure event as a client.", self);
         } else if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.", self, peer_id, pub_id);
+            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
+                  self,
+                  peer_id,
+                  pub_id);
             self.find_tunnel_for_peer(peer_id, &pub_id);
         }
     }
@@ -1363,8 +1366,9 @@ impl Core {
         let info = NodeInfo::new(public_id, peer_id);
 
         let bucket_index = self.name().bucket_index(&name);
-        let common_groups = self.peer_mgr.routing_table()
-                                         .is_in_any_close_group_with(bucket_index, GROUP_SIZE);
+        let common_groups = self.peer_mgr
+            .routing_table()
+            .is_in_any_close_group_with(bucket_index, GROUP_SIZE);
 
         match self.peer_mgr.add_to_routing_table(info) {
             None => {
@@ -1624,8 +1628,9 @@ impl Core {
             self.sent_network_name_to = None;
         }
 
-        let public_ids = match self.peer_mgr.routing_table().close_nodes(expect_id.name(),
-                                                                         GROUP_SIZE) {
+        let public_ids = match self.peer_mgr
+            .routing_table()
+            .close_nodes(expect_id.name(), GROUP_SIZE) {
             Some(close_group) => close_group.into_iter().map(|info| info.public_id).collect_vec(),
             None => return Err(RoutingError::InvalidDestination),
         };
@@ -1776,7 +1781,9 @@ impl Core {
             if let Some(token) = self.peer_mgr.get_connection_token(src, dst, their_public_id) {
                 self.crust_service.prepare_connection_info(token);
             } else {
-                trace!("{:?} Already sent connection info to {:?}!", self, their_name);
+                trace!("{:?} Already sent connection info to {:?}!",
+                       self,
+                       their_name);
             }
         }
         Ok(())
@@ -2300,11 +2307,12 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
-        if let Some((name, DroppedNodeDetails{ incomplete_bucket })) =
-                self.peer_mgr.remove_peer(&peer_id) {
+        if let Some((name, DroppedNodeDetails { incomplete_bucket })) = self.peer_mgr
+            .remove_peer(peer_id) {
             info!("{:?} Dropped {:?} from the routing table.", self, &name);
 
-            let common_groups = self.peer_mgr.routing_table()
+            let common_groups = self.peer_mgr
+                .routing_table()
                 .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
             if common_groups {
                 // If the lost node shared some close group with us, send a NodeLost event.
