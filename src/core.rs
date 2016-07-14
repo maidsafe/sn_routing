@@ -1052,8 +1052,6 @@ impl Core {
             self.dropped_routing_node_connection(&peer_id);
             self.dropped_client_connection(&peer_id);
             self.dropped_tunnel_node(&peer_id);
-        } else {
-            let _ = self.peer_mgr.remove_peer(&peer_id);
         }
         self.dropped_bootstrap_connection(&peer_id);
     }
@@ -1434,7 +1432,7 @@ impl Core {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if self.peer_mgr.is_tunnel(&peer_id, &dst_id) {
+        if self.peer_mgr.can_tunnel_for(&peer_id, &dst_id) {
             if let Some((id0, id1)) = self.tunnels.consider_clients(peer_id, dst_id) {
                 debug!("{:?} Accepted tunnel request from {:?} for {:?}.",
                        self,
