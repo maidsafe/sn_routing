@@ -77,12 +77,11 @@ impl NodeBuilder {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut machine) =
-            StateMachine::new(event_sender,
-                              self.role,
-                              None,
-                              self.cache,
-                              self.deny_other_local_nodes);
+        let (action_sender, mut machine) = StateMachine::new(event_sender,
+                                                             self.role,
+                                                             None,
+                                                             self.cache,
+                                                             self.deny_other_local_nodes);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -101,12 +100,11 @@ impl NodeBuilder {
     #[cfg(feature = "use-mock-crust")]
     pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, machine) =
-            StateMachine::new(event_sender,
-                              self.role,
-                              None,
-                              self.cache,
-                              self.deny_other_local_nodes);
+        let (action_sender, machine) = StateMachine::new(event_sender,
+                                                         self.role,
+                                                         None,
+                                                         self.cache,
+                                                         self.deny_other_local_nodes);
         let (tx, rx) = channel();
 
         Ok(Node {

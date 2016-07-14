@@ -38,8 +38,8 @@ use event::Event;
 use id::{FullId, PublicId};
 use message_accumulator::MessageAccumulator;
 use message_filter::MessageFilter;
-use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage,
-               SignedMessage, UserMessage, UserMessageCache};
+use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+               UserMessage, UserMessageCache};
 use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager};
 use state_machine::Transition;
 use stats::Stats;
@@ -94,8 +94,7 @@ impl Client {
                event_sender: Sender<Event>,
                full_id: FullId,
                timer: Timer)
-               -> Self
-    {
+               -> Self {
         let _ = crust_service.start_bootstrap(bootstrap_blacklist.clone());
 
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
@@ -115,7 +114,8 @@ impl Client {
             message_accumulator: Default::default(),
             peer_mgr: PeerManager::new(our_info),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
-            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
+            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
+                                                                                           20)),
             stats: Default::default(),
             timer: timer,
             tunnels: Default::default(),
@@ -147,12 +147,8 @@ impl Client {
 
                 result_tx.send(result).is_ok()
             }
-            Action::CloseGroup { result_tx, .. } => {
-                result_tx.send(None).is_ok()
-            }
-            Action::Name { result_tx } => {
-                result_tx.send(*self.name()).is_ok()
-            }
+            Action::CloseGroup { result_tx, .. } => result_tx.send(None).is_ok(),
+            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
             Action::QuorumSize { result_tx } => {
                 // TODO: return the actual quorum size. To do that, we need to
                 // extend the MessageAccumulator's API with a method to retrieve it.
@@ -171,7 +167,9 @@ impl Client {
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
         match crust_event {
-            CrustEvent::BootstrapConnect(peer_id, socket_addr) => self.handle_bootstrap_connect(peer_id, socket_addr),
+            CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
+                self.handle_bootstrap_connect(peer_id, socket_addr)
+            }
             CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(),
             CrustEvent::ListenerStarted(port) => self.handle_listener_started(port),
             CrustEvent::ListenerFailed => {
@@ -225,7 +223,7 @@ impl Client {
         self.peer_mgr.routing_table()
     }
 
-    /// resends all unacknowledged messages.
+    /// Resends all unacknowledged messages.
     #[cfg(feature = "use-mock-crust")]
     pub fn resend_unacknowledged(&mut self) -> bool {
         self.timer.stop();
@@ -292,25 +290,16 @@ impl Client {
         }
     }
 
-    fn handle_new_message(&mut self, peer_id: PeerId, bytes: Vec<u8>) -> Result<Transition, RoutingError> {
+    fn handle_new_message(&mut self,
+                          peer_id: PeerId,
+                          bytes: Vec<u8>)
+                          -> Result<Transition, RoutingError> {
         match serialisation::deserialise(&bytes) {
             Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
-            Ok(Message::TunnelDirect { content, src, dst }) => {
-                if dst == self.crust_service.id() &&
-                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
-                    self.handle_direct_message(content, src)
-                } else {
-                    Err(RoutingError::InvalidDestination)
-                }
-            }
-            Ok(Message::TunnelHop { content, src, dst }) => {
-                if dst == self.crust_service.id() &&
-                   self.tunnels.tunnel_for(&src) == Some(&peer_id) {
-                    self.handle_hop_message(&content, src)
-                } else {
-                    Err(RoutingError::InvalidDestination)
-                }
+            Ok(message) => {
+                debug!("{:?} - Unhandled new message: {:?}", self, message);
+                Ok(Transition::Stay)
             }
             Err(error) => Err(RoutingError::SerialisationError(error)),
         }
@@ -319,8 +308,7 @@ impl Client {
     fn handle_direct_message(&mut self,
                              direct_message: DirectMessage,
                              peer_id: PeerId)
-                             -> Result<Transition, RoutingError>
-    {
+                             -> Result<Transition, RoutingError> {
         match direct_message {
             DirectMessage::BootstrapIdentify { public_id, current_quorum_size } => {
                 self.handle_bootstrap_identify(public_id, peer_id, current_quorum_size)
@@ -333,7 +321,9 @@ impl Client {
                 Ok(Transition::Stay)
             }
             _ => {
-                debug!("{:?} - Unhandled direct message: {:?}", self, direct_message);
+                debug!("{:?} - Unhandled direct message: {:?}",
+                       self,
+                       direct_message);
                 Ok(Transition::Stay)
             }
         }
@@ -342,8 +332,7 @@ impl Client {
     fn handle_hop_message(&mut self,
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
-                          -> Result<Transition, RoutingError>
-    {
+                          -> Result<Transition, RoutingError> {
         if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
             try!(hop_msg.verify(pub_id.signing_public_key()));
         } else {
@@ -361,7 +350,7 @@ impl Client {
         let routing_msg = signed_msg.routing_message();
 
         if !self.is_recipient(&routing_msg.dst) {
-            return Ok(Transition::Stay)
+            return Ok(Transition::Stay);
         }
 
         self.handle_routing_message(routing_msg, *signed_msg.public_id())
@@ -370,8 +359,7 @@ impl Client {
     fn handle_routing_message(&mut self,
                               routing_msg: &RoutingMessage,
                               public_id: PublicId)
-                              -> Result<Transition, RoutingError>
-    {
+                              -> Result<Transition, RoutingError> {
         if let Some(msg) = try!(self.message_accumulator.add(routing_msg, public_id)) {
             if msg.src.is_group() {
                 self.send_ack(&msg, 0);
@@ -405,20 +393,11 @@ impl Client {
             // GetNodeNameResponse
             (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
              Authority::NodeManager(_),
-             dst) => {
-                self.handle_get_node_name_response(relocated_id, close_group_ids, dst)
-            }
+             dst) => self.handle_get_node_name_response(relocated_id, close_group_ids, dst),
             // UserMessagePart
             (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
-             dst) => {
-                self.handle_user_message_part(hash,
-                                              part_count,
-                                              part_index,
-                                              payload,
-                                              src,
-                                              dst)
-            }
+             dst) => self.handle_user_message_part(hash, part_count, part_index, payload, src, dst),
             // other
             _ => {
                 debug!("{:?} - Unhandled routing message: {:?}", self, routing_msg);
@@ -464,7 +443,8 @@ impl Client {
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
                                      close_group_ids: Vec<PublicId>,
-                                     dst: Authority) -> Transition {
+                                     dst: Authority)
+                                     -> Transition {
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         let our_info = NodeInfo::new(*self.full_id.public_id(), self.crust_service.id());
         self.peer_mgr.reset_routing_table(our_info);
@@ -487,14 +467,9 @@ impl Client {
                                 payload: Vec<u8>,
                                 src: Authority,
                                 dst: Authority)
-                                -> Transition
-    {
+                                -> Transition {
         if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
-            common::handle_user_message(msg,
-                                        src,
-                                        dst,
-                                        &self.event_sender,
-                                        &mut self.stats)
+            common::handle_user_message(msg, src, dst, &self.event_sender, &mut self.stats)
         }
 
         Transition::Stay
@@ -656,7 +631,10 @@ impl Client {
         self.send_routing_message_via_route(routing_msg, 0)
     }
 
-    fn send_routing_message_via_route(&mut self, routing_msg: RoutingMessage, route: u8) -> Result<(), RoutingError> {
+    fn send_routing_message_via_route(&mut self,
+                                      routing_msg: RoutingMessage,
+                                      route: u8)
+                                      -> Result<(), RoutingError> {
         if let Authority::Client { .. } = routing_msg.dst {
             if self.is_recipient(&routing_msg.dst) {
                 return Ok(()); // Message is for us.
@@ -668,11 +646,13 @@ impl Client {
             if let Some(&peer_id) = self.peer_mgr.get_proxy_peer_id(proxy_node_name) {
                 peer_id
             } else {
-                error!("{:?} - Unable to find connection to proxy node in proxy map", self);
+                error!("{:?} - Unable to find connection to proxy node in proxy map",
+                       self);
                 return Err(RoutingError::ProxyConnectionNotFound);
             }
         } else {
-            error!("{:?} - Source should be client if our state is a Client", self);
+            error!("{:?} - Source should be client if our state is a Client",
+                   self);
             return Err(RoutingError::InvalidSource);
         };
 
@@ -686,33 +666,23 @@ impl Client {
         }
 
         let (peer_id, bytes) = if self.crust_service.is_connected(&peer_id) {
-            let bytes = try!(common::to_hop_bytes(signed_msg.clone(),
-                                                  route,
-                                                  Vec::new(),
-                                                  &self.full_id));
+            let bytes =
+                try!(common::to_hop_bytes(signed_msg.clone(), route, Vec::new(), &self.full_id));
             (peer_id, bytes)
-        } else if let Some(&tunnel_id) = self.tunnels.tunnel_for(&peer_id) {
-            let bytes = try!(common::to_tunnel_hop_bytes(signed_msg.clone(),
-                                                         route,
-                                                         Vec::new(),
-                                                         self.crust_service.id(),
-                                                         peer_id,
-                                                         &self.full_id));
-            (tunnel_id, bytes)
         } else {
-            trace!("{:?} - Not connected or tunneling to {:?}. Dropping peer.",
+            trace!("{:?} - Not connected to {:?}. Dropping peer.",
                    self,
                    peer_id);
             self.disconnect_peer(&peer_id);
-            return Ok(())
+            return Ok(());
         };
 
         if !self.filter_signed_msg(&signed_msg, &peer_id, route) {
             if let Err(error) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",
-                       self,
-                       peer_id,
-                       error);
+                      self,
+                      peer_id,
+                      error);
             }
         }
 
@@ -749,7 +719,8 @@ impl Client {
                        self,
                        unacked_msg);
                 self.stats.count_unacked();
-            } else if let Err(error) = self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+            } else if let Err(error) =
+                   self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }

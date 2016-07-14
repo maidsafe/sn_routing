@@ -33,8 +33,7 @@ pub fn handle_user_message(msg: UserMessage,
                            src: Authority,
                            dst: Authority,
                            event_sender: &Sender<Event>,
-                           stats: &mut Stats)
-{
+                           stats: &mut Stats) {
     let event = match msg {
         UserMessage::Request(request) => {
             stats.count_request(&request);
@@ -62,10 +61,7 @@ pub fn to_hop_bytes(signed_msg: SignedMessage,
                     sent_to: Vec<XorName>,
                     full_id: &FullId)
                     -> Result<Vec<u8>, RoutingError> {
-    let hop_msg = try!(HopMessage::new(signed_msg,
-                                       route,
-                                       sent_to,
-                                       full_id.signing_private_key()));
+    let hop_msg = try!(HopMessage::new(signed_msg, route, sent_to, full_id.signing_private_key()));
     let message = Message::Hop(hop_msg);
     Ok(try!(serialisation::serialise(&message)))
 }

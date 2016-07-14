@@ -63,8 +63,8 @@ impl AckManager {
                           signed_msg: &SignedMessage,
                           route: u8,
                           public_id: &PublicId,
-                          timer: &mut Timer) -> bool
-    {
+                          timer: &mut Timer)
+                          -> bool {
         // If this is not an ack and we're the source, expect to receive an ack for this.
         if let MessageContent::Ack(..) = signed_msg.routing_message().content {
             return true;
@@ -129,9 +129,10 @@ impl AckManager {
 
     #[cfg(feature = "use-mock-crust")]
     pub fn timer_tokens(&self) -> Vec<u64> {
-        self.pending.iter()
-                    .map(|(_, unacked_msg)| unacked_msg.timer_token)
-                    .collect::<Vec<_>>()
+        self.pending
+            .iter()
+            .map(|(_, unacked_msg)| unacked_msg.timer_token)
+            .collect::<Vec<_>>()
     }
 
     #[cfg(feature = "use-mock-crust")]

@@ -26,7 +26,7 @@ use id::PublicId;
 use message_filter::MessageFilter;
 use messages::{MessageContent, RoutingMessage};
 
-const EXPIRY_DURATION_SECS : u64 = 60 * 20;
+const EXPIRY_DURATION_SECS: u64 = 60 * 20;
 
 pub struct MessageAccumulator {
     accumulator: Accumulator<RoutingMessage, sign::PublicKey>,
@@ -39,9 +39,10 @@ impl MessageAccumulator {
         self.accumulator.set_quorum_size(size)
     }
 
-    pub fn add(&mut self, msg: &RoutingMessage, public_id: PublicId)
-               -> Result<Option<RoutingMessage>, RoutingError>
-    {
+    pub fn add(&mut self,
+               msg: &RoutingMessage,
+               public_id: PublicId)
+               -> Result<Option<RoutingMessage>, RoutingError> {
         if !msg.src.is_group() {
             return Ok(Some(msg.clone()));
         }
@@ -70,11 +71,7 @@ impl MessageAccumulator {
         self.filter.clear();
     }
 
-    fn accumulate(&mut self,
-                  msg: &RoutingMessage,
-                  public_id: &PublicId)
-                  -> Option<RoutingMessage>
-    {
+    fn accumulate(&mut self, msg: &RoutingMessage, public_id: &PublicId) -> Option<RoutingMessage> {
         let key = *public_id.signing_public_key();
         let hash_msg = if let Ok(hash_msg) = msg.to_grp_msg_hash() {
             hash_msg

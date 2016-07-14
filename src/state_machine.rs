@@ -79,8 +79,7 @@ impl StateMachine {
                keys: Option<FullId>,
                cache: Box<Cache>,
                deny_other_local_nodes: bool)
-               -> (RoutingActionSender, Self)
-    {
+               -> (RoutingActionSender, Self) {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -89,9 +88,8 @@ impl StateMachine {
                                                      MaidSafeEventCategory::Routing,
                                                      category_tx.clone());
 
-        let crust_sender = CrustEventSender::new(crust_tx,
-                                                 MaidSafeEventCategory::Crust,
-                                                 category_tx);
+        let crust_sender =
+            CrustEventSender::new(crust_tx, MaidSafeEventCategory::Crust, category_tx);
 
         let mut crust_service = match Service::new(crust_sender) {
             Ok(service) => service,
@@ -103,15 +101,11 @@ impl StateMachine {
         let full_id = keys.unwrap_or_else(FullId::new);
 
         let state = if role == Role::FirstNode {
-            State::Node(Node::first(cache,
-                                    crust_service,
-                                    event_sender,
-                                    full_id,
-                                    timer))
+            State::Node(Node::first(cache, crust_service, event_sender, full_id, timer))
         } else if deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("Disconnected({:?}) More than 1 routing node found on LAN. Currently this is not \
-                    supported",
-                    full_id.public_id().name());
+            error!("Disconnected({:?}) More than 1 routing node found on LAN. Currently this is \
+                    not supported",
+                   full_id.public_id().name());
             let _ = event_sender.send(Event::Terminate);
             State::Terminated
         } else {
@@ -235,20 +229,13 @@ impl StateMachine {
         }
     }
 
-    fn transition_to_node(&mut self,
-                          close_group_ids: Vec<PublicId>,
-                          dst: Authority) {
-        if let State::Node(_) = self.state {
-            unreachable!();
-        }
-
+    fn transition_to_node(&mut self, close_group_ids: Vec<PublicId>, dst: Authority) {
         let prev_state = mem::replace(&mut self.state, State::Transitioning);
-        let next_state = prev_state.into_node(close_group_ids, dst);
-        let _ = mem::replace(&mut self.state, next_state);
+        self.state = prev_state.into_node(close_group_ids, dst);
     }
 
     fn terminate(&mut self) {
-        let _ = mem::replace(&mut self.state, State::Terminated);
+        self.state = State::Terminated;
     }
 }
 
@@ -269,12 +256,9 @@ impl State {
         }
     }
 
-    fn into_node(self,
-                 close_group_ids: Vec<PublicId>,
-                 dst: Authority) -> State {
+    fn into_node(self, close_group_ids: Vec<PublicId>, dst: Authority) -> State {
         match self {
-            State::Client(state) => State::Node(state.into_node(close_group_ids,
-                                                                dst)),
+            State::Client(state) => State::Node(state.into_node(close_group_ids, dst)),
             _ => unreachable!(),
         }
     }
