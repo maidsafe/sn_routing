@@ -375,7 +375,7 @@ impl PeerManager {
     }
 
     /// Return the peer_ids of the peer_nodes bearing the names.
-    pub fn get_peer_ids(&self, names: &Vec<XorName>) -> Vec<PeerId> {
+    pub fn get_peer_ids(&self, names: &[XorName]) -> Vec<PeerId> {
         self.pub_id_map
             .iter()
             .filter_map(|(peer_id, pub_id)| if names.contains(pub_id.name()) {
@@ -387,15 +387,15 @@ impl PeerManager {
     }
 
     /// Return the pub_ids of the peer_nodes bearing the names.
-    pub fn get_pub_ids(&self, names: &Vec<XorName>) -> Vec<PublicId> {
+    pub fn get_pub_ids(&self, names: &[XorName]) -> Vec<PublicId> {
         let mut result_map: HashMap<XorName, PublicId> = HashMap::new();
-        for (_, pub_id) in self.pub_id_map.iter() {
+        for pub_id in self.pub_id_map.values() {
             if names.contains(pub_id.name()) {
                 let _ = result_map.insert(*pub_id.name(), *pub_id);
             }
         }
         if names.contains(self.our_info.name()) {
-            let _ = result_map.insert(*self.our_info.name(), self.our_info.public_id.clone());
+            let _ = result_map.insert(*self.our_info.name(), self.our_info.public_id);
         }
         names.iter()
             .filter_map(|name| result_map.get(name))
