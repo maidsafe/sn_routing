@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.24.1]
+- Fix redundant calls to Crust `connect`.
+
 ## [0.24.0]
 - Fix sodiumoxide to v0.0.10 as the new released v0.0.12 does not support
   rustc-serializable types anymore and breaks builds.

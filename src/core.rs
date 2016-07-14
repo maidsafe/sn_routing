@@ -589,7 +589,10 @@ impl Core {
         if self.role == Role::Client {
             warn!("{:?} Received ConnectFailure event as a client.", self);
         } else if let Some(&pub_id) = self.peer_mgr.get_connecting_peer(&peer_id) {
-            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.", self, peer_id, pub_id);
+            info!("{:?} Failed to connect to peer {:?} with pub_id {:?}.",
+                  self,
+                  peer_id,
+                  pub_id);
             self.find_tunnel_for_peer(peer_id, &pub_id);
         }
     }
@@ -624,7 +627,8 @@ impl Core {
         let (pub_id, src, dst) = match self.peer_mgr
             .connection_info_prepared(result_token, our_connection_info) {
             Err(error) => {
-                error!("{:?} Prepared connection info, but no entry found in token map: {:?}",
+                // This usually means we have already connected.
+                debug!("{:?} Prepared connection info, but no entry found in token map: {:?}",
                        self,
                        error);
                 return;
@@ -1177,21 +1181,6 @@ impl Core {
                 self.rebootstrap();
                 Ok(())
             }
-            DirectMessage::ClientToNode => {
-                if self.peer_mgr.remove_client(&peer_id).is_none() {
-                    warn!("{:?} Client requested ClientToNode, but is not in client map: {:?}",
-                          self,
-                          peer_id);
-                }
-                // TODO(afck): Try adding them to the routing table?
-                if self.peer_mgr.get_routing_peer(&peer_id).is_none() {
-                    warn!("{:?} Client requested ClientToNode, but is not in routing table: {:?}",
-                          self,
-                          peer_id);
-                    self.disconnect_peer(&peer_id);
-                }
-                Ok(())
-            }
             DirectMessage::ClientIdentify { ref serialised_public_id,
                                             ref signature,
                                             client_restriction } => {
@@ -1360,8 +1349,9 @@ impl Core {
         let info = NodeInfo::new(public_id, peer_id);
 
         let bucket_index = self.name().bucket_index(&name);
-        let common_groups = self.peer_mgr.routing_table()
-                                         .is_in_any_close_group_with(bucket_index, GROUP_SIZE);
+        let common_groups = self.peer_mgr
+            .routing_table()
+            .is_in_any_close_group_with(bucket_index, GROUP_SIZE);
 
         match self.peer_mgr.add_to_routing_table(info) {
             None => {
@@ -1621,8 +1611,9 @@ impl Core {
             self.sent_network_name_to = None;
         }
 
-        let public_ids = match self.peer_mgr.routing_table().close_nodes(expect_id.name(),
-                                                                         GROUP_SIZE) {
+        let public_ids = match self.peer_mgr
+            .routing_table()
+            .close_nodes(expect_id.name(), GROUP_SIZE) {
             Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
             None => return Err(RoutingError::InvalidDestination),
         };
@@ -1773,7 +1764,9 @@ impl Core {
             if let Some(token) = self.peer_mgr.get_connection_token(src, dst, their_public_id) {
                 self.crust_service.prepare_connection_info(token);
             } else {
-                trace!("{:?} Already sent connection info to {:?}!", self, their_name);
+                trace!("{:?} Already sent connection info to {:?}!",
+                       self,
+                       their_name);
             }
         }
         Ok(())
@@ -1892,7 +1885,13 @@ impl Core {
             Ok(ConnectionInfoReceivedResult::Prepare(token)) => {
                 self.crust_service.prepare_connection_info(token);
             }
-            Ok(ConnectionInfoReceivedResult::Waiting) => (),
+            Ok(ConnectionInfoReceivedResult::IsProxy) |
+            Ok(ConnectionInfoReceivedResult::IsClient) => {
+                try!(self.node_identify(peer_id));
+                self.handle_node_identify(their_public_id, peer_id);
+            }
+            Ok(ConnectionInfoReceivedResult::Waiting) |
+            Ok(ConnectionInfoReceivedResult::IsConnected) => (),
             Err(error) => {
                 warn!("{:?} Failed to insert connection info from {:?} ({:?}): {:?}",
                       self,
@@ -2294,11 +2293,12 @@ impl Core {
     }
 
     fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) {
-        if let Some((name, DroppedNodeDetails{ incomplete_bucket })) =
-                self.peer_mgr.remove_peer(&peer_id) {
+        if let Some((name, DroppedNodeDetails { incomplete_bucket })) = self.peer_mgr
+            .remove_peer(peer_id) {
             info!("{:?} Dropped {:?} from the routing table.", self, &name);
 
-            let common_groups = self.peer_mgr.routing_table()
+            let common_groups = self.peer_mgr
+                .routing_table()
                 .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
             if common_groups {
                 // If the lost node shared some close group with us, send a NodeLost event.
