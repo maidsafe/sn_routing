@@ -42,8 +42,8 @@ use message_accumulator::MessageAccumulator;
 use message_filter::MessageFilter;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{GROUP_SIZE, QUORUM_SIZE, ConnectionInfoPreparedResult,
-                   ConnectionInfoReceivedResult, NodeInfo, PeerManager};
+use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, GROUP_SIZE,
+                   NodeInfo, PeerManager, QUORUM_SIZE};
 use state_machine::Transition;
 use stats::Stats;
 use super::common::{self, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
@@ -138,7 +138,8 @@ impl Node {
                  crust_service: Service,
                  event_sender: Sender<Event>,
                  mut full_id: FullId,
-                 timer: Timer) -> Self {
+                 timer: Timer)
+                 -> Self {
 
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
@@ -168,8 +169,8 @@ impl Node {
                        peer_mgr: PeerManager,
                        stats: Stats,
                        timer: Timer,
-                       tunnels: Tunnels) -> Self
-    {
+                       tunnels: Tunnels)
+                       -> Self {
         timer.stop();
 
         let mut node = Self::new(cache,
@@ -195,8 +196,7 @@ impl Node {
            stats: Stats,
            mut timer: Timer,
            tunnels: Tunnels)
-           -> Self
-    {
+           -> Self {
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
 
         let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
@@ -214,7 +214,8 @@ impl Node {
             is_first_node: false,
             is_listening: false,
             message_accumulator: message_accumulator,
-            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 * 20)),
+            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
+                                                                                           20)),
             peer_mgr: peer_mgr,
             response_cache: cache,
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
@@ -311,19 +312,16 @@ impl Node {
             }
             Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
                 result_tx.send(match self.send_user_message(src, dst, content, priority) {
-                    Err(RoutingError::Interface(err)) => Err(err),
-                    Err(_) | Ok(_) => Ok(()),
-                }).is_ok()
+                        Err(RoutingError::Interface(err)) => Err(err),
+                        Err(_) | Ok(_) => Ok(()),
+                    })
+                    .is_ok()
             }
             Action::CloseGroup { name, result_tx } => {
                 result_tx.send(self.peer_mgr.close_group(&name)).is_ok()
             }
-            Action::Name { result_tx } => {
-                result_tx.send(*self.name()).is_ok()
-            }
-            Action::QuorumSize { result_tx } => {
-                result_tx.send(self.dynamic_quorum_size()).is_ok()
-            }
+            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
+            Action::QuorumSize { result_tx } => result_tx.send(self.dynamic_quorum_size()).is_ok(),
             Action::Timeout(token) => {
                 self.handle_timeout(token);
                 true
@@ -380,9 +378,6 @@ impl Node {
     }
 
     fn handle_listener_started(&mut self, port: u16) {
-        // We are the first node.
-        self.is_first_node = true;
-
         trace!("{:?} Listener started on port {}.", self, port);
         self.crust_service.set_service_discovery_listen(true);
 
@@ -559,8 +554,7 @@ impl Node {
     fn handle_hop_message(&mut self,
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
-                          -> Result<(), RoutingError>
-    {
+                          -> Result<(), RoutingError> {
         let hop_name;
 
         if self.is_bootstrapped() {
@@ -647,11 +641,7 @@ impl Node {
             return Ok(());
         }
 
-        if let Err(error) = self.send_signed_message(signed_msg,
-                                                     route,
-                                                     hop_name,
-                                                     sent_to)
-        {
+        if let Err(error) = self.send_signed_message(signed_msg, route, hop_name, sent_to) {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
@@ -712,8 +702,7 @@ impl Node {
     fn handle_routing_message(&mut self,
                               routing_msg: &RoutingMessage,
                               public_id: PublicId)
-                              -> Result<(), RoutingError>
-    {
+                              -> Result<(), RoutingError> {
         if self.is_bootstrapped() {
             let dynamic_quorum_size = self.dynamic_quorum_size();
             self.message_accumulator.set_quorum_size(dynamic_quorum_size);
@@ -800,19 +789,10 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::Ack(ack, _), _, _) => {
-                self.handle_ack_response(ack)
-            }
+            (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
             (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
-             dst) => {
-                self.handle_user_message_part(hash,
-                                              part_count,
-                                              part_index,
-                                              payload,
-                                              src,
-                                              dst)
-            }
+             dst) => self.handle_user_message_part(hash, part_count, part_index, payload, src, dst),
             _ => {
                 debug!("{:?} Unhandled routing message {:?}", self, routing_msg);
                 Err(RoutingError::BadAuthority)
@@ -821,6 +801,8 @@ impl Node {
     }
 
     fn start_new_network(&mut self) {
+        self.is_first_node = true;
+
         if !self.start_listening() {
             error!("{:?} - Failed to start listening.", self);
             let _ = self.event_sender.send(Event::Terminate);
@@ -828,10 +810,7 @@ impl Node {
         }
     }
 
-    fn join_network(&mut self,
-                    mut close_group_ids: Vec<PublicId>,
-                    dst: Authority)
-    {
+    fn join_network(&mut self, mut close_group_ids: Vec<PublicId>, dst: Authority) {
         close_group_ids.truncate(GROUP_SIZE / 2);
 
         // From A -> Closest in Y
@@ -1036,9 +1015,11 @@ impl Node {
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
             DirectMessage::TunnelDisconnect(dst_id) => {
                 self.handle_tunnel_disconnect(peer_id, dst_id)
-            },
+            }
             _ => {
-                debug!("{:?} - Unhandled direct message: {:?}", self, direct_message);
+                debug!("{:?} - Unhandled direct message: {:?}",
+                       self,
+                       direct_message);
                 Ok(())
             }
         }
@@ -1328,8 +1309,7 @@ impl Node {
                                         expect_id: PublicId,
                                         client_auth: Authority,
                                         message_id: MessageId)
-                                        -> Result<(), RoutingError>
-    {
+                                        -> Result<(), RoutingError> {
         if expect_id == *self.full_id.public_id() {
             return Ok(());
         }
@@ -1463,14 +1443,9 @@ impl Node {
                                 payload: Vec<u8>,
                                 src: Authority,
                                 dst: Authority)
-                                -> Result<(), RoutingError>
-    {
+                                -> Result<(), RoutingError> {
         if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
-            common::handle_user_message(msg,
-                                        src,
-                                        dst,
-                                        &self.event_sender,
-                                        &mut self.stats)
+            common::handle_user_message(msg, src, dst, &self.event_sender, &mut self.stats)
         }
 
         Ok(())
@@ -1676,28 +1651,28 @@ impl Node {
             if self.name() == routing_msg.dst.name() {
                 // This is a message for a client we are the proxy of. Relay it.
                 return self.relay_to_client(signed_msg.clone(), peer_id);
+            } else if self.is_recipient(&routing_msg.dst) {
+                return Ok(()); // Message is for us as a client.
             }
         }
 
         let (new_sent_to, target_peer_ids) =
             try!(self.get_targets(routing_msg, route, hop, sent_to));
 
-        if !self.ack_mgr.add_to_pending(signed_msg,
-                                        route,
-                                        self.full_id.public_id(),
-                                        &mut self.timer) {
+        if !self.ack_mgr
+            .add_to_pending(signed_msg, route, self.full_id.public_id(), &mut self.timer) {
             return Ok(());
         }
 
         let send_msg = try!(self.message_to_send(signed_msg, route, hop));
-        let raw_bytes = try!(common::to_hop_bytes(send_msg.clone(),
-                                                  route, new_sent_to.clone(),
-                                                  &self.full_id));
+        let raw_bytes =
+            try!(common::to_hop_bytes(send_msg.clone(), route, new_sent_to.clone(), &self.full_id));
 
         for target_peer_id in target_peer_ids {
             let (peer_id, bytes) = if self.crust_service.is_connected(&target_peer_id) {
                 (target_peer_id, raw_bytes.clone())
-            } else if let Some(&tunnel_id) = self.tunnels.tunnel_for(&target_peer_id) {
+            } else if let Some(&tunnel_id) = self.tunnels
+                .tunnel_for(&target_peer_id) {
                 let bytes = try!(common::to_tunnel_hop_bytes(send_msg.clone(),
                                                              route,
                                                              new_sent_to.clone(),
@@ -1766,8 +1741,7 @@ impl Node {
                    route: u8,
                    hop: &XorName,
                    sent_to: &[XorName])
-                   -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError>
-    {
+                   -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         if self.is_bootstrapped() {
             let destination = routing_msg.dst.to_destination();
             let targets = self.peer_mgr
@@ -1789,11 +1763,12 @@ impl Node {
                     Ok((vec![], vec![peer_id]))
                 } else {
                     error!("{:?} - Unable to find connection to proxy node in proxy map",
-                            self);
+                           self);
                     Err(RoutingError::ProxyConnectionNotFound)
                 }
             } else {
-                error!("{:?} - Source should be client if our state is a Client", self);
+                error!("{:?} - Source should be client if our state is a Client",
+                       self);
                 Err(RoutingError::InvalidSource)
             }
         }
@@ -1833,7 +1808,8 @@ impl Node {
                        self,
                        unacked_msg);
                 self.stats.count_unacked();
-            } else if let Err(error) = self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+            } else if let Err(error) =
+                   self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
@@ -1900,7 +1876,6 @@ impl Node {
                            bucket_index,
                            e);
                 }
-                self.reset_bucket_refresh_timer();
             }
             if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
                 debug!("{:?} Lost connection, less than {} remaining.",
@@ -1933,6 +1908,13 @@ impl Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "{}({})", if self.is_first_node { "Seed" } else { "Node" }, self.name())
+        write!(formatter,
+               "{}({})",
+               if self.is_first_node {
+                   "Seed"
+               } else {
+                   "Node"
+               },
+               self.name())
     }
 }
