@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.10.3]
+- Set default Put limit to 500 and default chunk store limit to 2 GB.
+
 ## [0.10.2]
 - Prevent vaults from removing existing chunk_store when terminating.
 
