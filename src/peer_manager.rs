@@ -241,7 +241,9 @@ impl PeerManager {
             .iter()
             .find(|elt| elt.1.name() == name)
             .map(|(peer_id, _)| target_id == peer_id) {
-            Some(self.routing_table.remove_if_unneeded(name))
+            Some(self.routing_table.remove_if_unneeded(name) &&
+                 !self.client_map.contains_key(target_id) &&
+                 !self.get_proxy_public_id(target_id).is_some())
         } else {
             None
         }

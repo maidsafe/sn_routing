@@ -226,12 +226,6 @@ impl Node {
             tunnels: tunnels,
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
         }
-
-        node
-    }
-
-    pub fn into_client(self) -> Client {
-        unimplemented!()
     }
 
     /// Returns the `XorName` of this node.

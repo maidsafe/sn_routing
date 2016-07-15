@@ -29,11 +29,11 @@ use authority::Authority;
 use cache::Cache;
 use event::Event;
 use id::{FullId, PublicId};
-#[cfg(feature = "use-mock-crust")]
-use peer_manager::NodeInfo;
 use states::{Client, Node};
 use timer::Timer;
 use types::RoutingActionSender;
+#[cfg(feature = "use-mock-crust")]
+use xor_name::XorName;
 
 /// Holds the current state and handles state transitions.
 pub struct StateMachine {
@@ -164,7 +164,7 @@ impl StateMachine {
 
     /// Routing table of this node.
     #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<NodeInfo> {
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
         match self.state {
             State::Client(ref state) => state.routing_table(),
             State::Node(ref state) => state.routing_table(),

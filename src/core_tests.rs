@@ -19,7 +19,7 @@ use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
 use std::cell::RefCell;
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops;
 use std::sync::mpsc;
 use std::thread;
@@ -380,7 +380,6 @@ fn random_churn<R: Rng>(rng: &mut R,
                         nodes: &mut Vec<TestNode>)
                         -> Option<usize> {
     let len = nodes.len();
-
     if len > GROUP_SIZE + 2 && rng.gen_weighted_bool(3) {
         let _ = nodes.remove(rng.gen_range(0, len));
         let _ = nodes.remove(rng.gen_range(0, len - 1));
@@ -397,8 +396,8 @@ fn random_churn<R: Rng>(rng: &mut R,
     }
 }
 
-// Get names of all entries in the `bucket_index`-th bucket in the routing table.
-fn entry_names_in_bucket(table: &RoutingTable<XorName>, bucket_index: usize) -> HashSet<XorName> {
+// Get names of all nodes in the `bucket_index`-th bucket in the routing table.
+fn actual_names_in_bucket(table: &RoutingTable<XorName>, bucket_index: usize) -> BTreeSet<XorName> {
     let our_name = table.our_name();
     let far_name = our_name.with_flipped_bit(bucket_index);
 
@@ -409,12 +408,12 @@ fn entry_names_in_bucket(table: &RoutingTable<XorName>, bucket_index: usize) -> 
         .collect()
 }
 
-// Get names of all nodes that belong to the `index`-th bucket in the `name`s
+// Get names of all nodes that belong to the `bucket_index`-th bucket in the `target`s
 // routing table.
-fn node_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
-                        target: &XorName,
-                        bucket_index: usize)
-                        -> HashSet<XorName> {
+fn expected_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
+                            target: &XorName,
+                            bucket_index: usize)
+                            -> BTreeSet<XorName> {
     routing_tables.iter()
         .filter(|routing_table| target.bucket_index(routing_table.our_name()) == bucket_index)
         .map(|routing_table| *routing_table.our_name())
@@ -442,16 +441,16 @@ pub fn verify_kademlia_invariant(routing_tables: &[RoutingTable<XorName>], index
     let mut bucket_index = 0;
 
     while count > 0 {
-        let entries = entry_names_in_bucket(&routing_tables[index], bucket_index);
-        let actual_bucket = node_names_in_bucket(routing_tables, target, bucket_index);
-        if entries.len() < GROUP_SIZE {
-            assert!(actual_bucket == entries,
+        let actual_bucket = actual_names_in_bucket(&routing_tables[index], bucket_index);
+        let expected_bucket = expected_names_in_bucket(routing_tables, target, bucket_index);
+        if actual_bucket.len() < GROUP_SIZE {
+            assert!(expected_bucket == actual_bucket,
                     "Node: {:?}, expected: {:?}. found: {:?}",
                     target,
-                    actual_bucket,
-                    entries);
+                    expected_bucket,
+                    actual_bucket);
         }
-        count -= actual_bucket.len();
+        count -= expected_bucket.len();
         bucket_index += 1;
     }
 }

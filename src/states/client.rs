@@ -219,7 +219,7 @@ impl Client {
 
     /// Routing table of this node.
     #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<NodeInfo> {
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
         self.peer_mgr.routing_table()
     }
 
