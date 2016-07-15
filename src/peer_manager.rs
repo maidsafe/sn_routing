@@ -194,7 +194,7 @@ pub struct PeerManager {
     // node_map indexed by public_id.name()
     node_map: HashMap<XorName, (Instant, PeerState)>,
     /// Our bootstrap connection.
-    proxy: Option<(PeerId, PublicId)>,
+    proxy: Option<(Instant, PeerId, PublicId)>,
     pub_id_map: HashMap<PeerId, PublicId>,
     routing_table: RoutingTable<XorName>,
     our_info: NodeInfo,
@@ -241,9 +241,7 @@ impl PeerManager {
             .iter()
             .find(|elt| elt.1.name() == name)
             .map(|(peer_id, _)| target_id == peer_id) {
-            Some(self.routing_table.remove_if_unneeded(name) &&
-                 !self.client_map.contains_key(target_id) &&
-                 !self.get_proxy_public_id(target_id).is_some())
+            Some(self.routing_table.remove_if_unneeded(name))
         } else {
             None
         }
@@ -261,14 +259,14 @@ impl PeerManager {
         self.routing_table.contains(&peer_name) && self.routing_table.contains(&dst_name)
     }
 
-    pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
+    pub fn proxy(&self) -> &Option<(Instant, PeerId, PublicId)> {
         &self.proxy
     }
 
     /// Returns the proxy node's public ID, if it has the given peer ID.
     pub fn get_proxy_public_id(&self, peer_id: &PeerId) -> Option<&PublicId> {
         match self.proxy {
-            Some((ref proxy_id, ref pub_id)) if proxy_id == peer_id => Some(pub_id),
+            Some((_, ref proxy_id, ref pub_id)) if proxy_id == peer_id => Some(pub_id),
             _ => None,
         }
     }
@@ -276,7 +274,7 @@ impl PeerManager {
     /// Returns the proxy node's peer ID, if it has the given name.
     pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
         match self.proxy {
-            Some((ref peer_id, ref pub_id)) if pub_id.name() == name => Some(peer_id),
+            Some((_, ref peer_id, ref pub_id)) if pub_id.name() == name => Some(peer_id),
             _ => None,
         }
     }
@@ -284,17 +282,17 @@ impl PeerManager {
     /// Inserts the given peer as a proxy node if applicable, returns `false` if it is not accepted
     /// and should be disconnected.
     pub fn set_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
-        if let Some((ref proxy_id, _)) = self.proxy {
+        if let Some((_, ref proxy_id, _)) = self.proxy {
             debug!("Not accepting further bootstrap connections.");
             *proxy_id == peer_id
         } else {
-            self.proxy = Some((peer_id, public_id));
+            self.proxy = Some((Instant::now(), peer_id, public_id));
             true
         }
     }
 
     /// Removes the from and returns it, if present.
-    pub fn remove_proxy(&mut self) -> Option<(PeerId, PublicId)> {
+    pub fn remove_proxy(&mut self) -> Option<(Instant, PeerId, PublicId)> {
         self.proxy.take()
     }
 
@@ -318,15 +316,22 @@ impl PeerManager {
     }
 
     /// Removes all clients that intend to become a node but have timed out, and returns their peer
-    /// IDs.
+    /// IDs. Also, removes our proxy if we have timed out.
     pub fn remove_stale_joining_nodes(&mut self) -> Vec<PeerId> {
-        let stale_keys = self.client_map
+        let mut stale_keys = self.client_map
             .iter()
             .filter(|&(_, info)| info.is_stale())
             .map(|(&peer_id, _)| peer_id)
             .collect_vec();
         for peer_id in &stale_keys {
             let _ = self.client_map.remove(peer_id);
+        }
+        if let Some((timestamp, peer_id, pub_id)) = self.proxy.take() {
+            if timestamp.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
+                stale_keys.push(peer_id);
+            } else {
+                self.proxy = Some((timestamp, peer_id, pub_id));
+            }
         }
         stale_keys
     }
@@ -339,7 +344,7 @@ impl PeerManager {
             return Some(peer_id);
         }
         match self.proxy {
-            Some((ref peer_id, ref proxy_pub_id)) if proxy_pub_id == public_id => Some(*peer_id),
+            Some((_, ref peer_id, ref proxy_pub_id)) if proxy_pub_id == public_id => Some(*peer_id),
             _ => None,
         }
     }

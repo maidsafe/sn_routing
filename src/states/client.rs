@@ -511,7 +511,7 @@ impl Client {
 
     fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
         if self.peer_mgr.get_proxy_public_id(peer_id).is_some() {
-            if let Some((_, public_id)) = self.peer_mgr.remove_proxy() {
+            if let Some((_, _, public_id)) = self.peer_mgr.remove_proxy() {
                 debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
                        self,
                        public_id.name(),
@@ -787,7 +787,7 @@ impl Client {
                    self,
                    bootstrap_id);
             self.crust_service.disconnect(bootstrap_id);
-            if let Some((peer_id, _)) = self.peer_mgr.remove_proxy() {
+            if let Some((_, peer_id, _)) = self.peer_mgr.remove_proxy() {
                 debug!("{:?} Dropping proxy node {:?} and retrying.",
                        self,
                        bootstrap_id);
@@ -803,7 +803,7 @@ impl Client {
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {
         match *self.peer_mgr.proxy() {
-            Some((_, ref bootstrap_pub_id)) => {
+            Some((_, _, ref bootstrap_pub_id)) => {
                 Ok(Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
                     proxy_node_name: *bootstrap_pub_id.name(),
