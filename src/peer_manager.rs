@@ -196,7 +196,8 @@ pub struct PeerManager {
     /// Our bootstrap connection.
     proxy: Option<(PeerId, PublicId)>,
     pub_id_map: HashMap<PeerId, PublicId>,
-    routing_table: RoutingTable<NodeInfo>,
+    routing_table: RoutingTable<XorName>,
+    our_info: NodeInfo,
 }
 
 impl PeerManager {
@@ -207,32 +208,32 @@ impl PeerManager {
             node_map: HashMap::new(),
             proxy: None,
             pub_id_map: HashMap::new(),
-            routing_table: RoutingTable::<NodeInfo>::new(our_info,
-                                                         GROUP_SIZE,
-                                                         EXTRA_BUCKET_ENTRIES),
+            routing_table: RoutingTable::<XorName>::new(*our_info.name(),
+                                                        GROUP_SIZE,
+                                                        EXTRA_BUCKET_ENTRIES),
+            our_info: our_info,
         }
     }
 
     pub fn reset_routing_table(&mut self, our_info: NodeInfo) {
+        self.our_info = our_info;
         self.routing_table =
-            RoutingTable::<NodeInfo>::new(our_info, GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
+            RoutingTable::<XorName>::new(*our_info.name(), GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
     }
 
-    pub fn routing_table(&self) -> &RoutingTable<NodeInfo> {
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
         &self.routing_table
     }
 
     pub fn close_group(&self, name: &XorName) -> Option<Vec<XorName>> {
-        self.routing_table
-            .close_nodes(name, GROUP_SIZE)
-            .map(|infos| infos.iter().map(NodeInfo::name).cloned().collect())
+        self.routing_table.close_nodes(name, GROUP_SIZE)
     }
 
-    pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<NodeInfo>> {
+    pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<XorName>> {
         let _ = self.node_map.insert(*info.public_id.name(),
                                      (Instant::now(), PeerState::Connected));
         let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
-        self.routing_table.add(info)
+        self.routing_table.add(*info.public_id.name())
     }
 
     pub fn remove_if_unneeded(&mut self, name: &XorName, target_id: &PeerId) -> Option<bool> {
@@ -246,9 +247,16 @@ impl PeerManager {
         }
     }
 
-    pub fn is_tunnel(&self, peer_id: &PeerId, dst_id: &PeerId) -> bool {
-        self.routing_table.iter().any(|node| node.peer_id == *peer_id) &&
-        self.routing_table.iter().any(|node| node.peer_id == *dst_id)
+    pub fn can_tunnel_for(&self, peer_id: &PeerId, dst_id: &PeerId) -> bool {
+        let peer_name = match self.pub_id_map.get(peer_id) {
+            Some(&pub_id) => *pub_id.name(),
+            _ => return false,
+        };
+        let dst_name = match self.pub_id_map.get(dst_id) {
+            Some(&pub_id) => *pub_id.name(),
+            _ => return false,
+        };
+        self.routing_table.contains(&peer_name) && self.routing_table.contains(&dst_name)
     }
 
     pub fn proxy(&self) -> &Option<(PeerId, PublicId)> {
@@ -358,16 +366,41 @@ impl PeerManager {
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
     pub fn get_connecting_peer(&mut self, peer_id: &PeerId) -> Option<&PublicId> {
-        if self.routing_table.iter().all(|node| node.peer_id != *peer_id) {
-            self.pub_id_map.get(peer_id).and_then(|pub_id| {
-                match self.get_state(pub_id) {
-                    Some(&PeerState::CrustConnecting) => Some(pub_id),
-                    _ => None,
-                }
+        self.pub_id_map.get(peer_id).and_then(|pub_id| {
+            match self.get_state(pub_id) {
+                Some(&PeerState::CrustConnecting) => Some(pub_id),
+                _ => None,
+            }
+        })
+    }
+
+    /// Return the PeerIds of nodes bearing the names.
+    pub fn get_peer_ids(&self, names: &[XorName]) -> Vec<PeerId> {
+        self.pub_id_map
+            .iter()
+            .filter_map(|(peer_id, pub_id)| if names.contains(pub_id.name()) {
+                Some(*peer_id)
+            } else {
+                None
             })
-        } else {
-            None
+            .collect()
+    }
+
+    /// Return the PublicIds of nodes bearing the names.
+    pub fn get_pub_ids(&self, names: &[XorName]) -> Vec<PublicId> {
+        let mut result_map: HashMap<XorName, PublicId> = HashMap::new();
+        for pub_id in self.pub_id_map.values() {
+            if names.contains(pub_id.name()) {
+                let _ = result_map.insert(*pub_id.name(), *pub_id);
+            }
         }
+        if names.contains(self.our_info.name()) {
+            let _ = result_map.insert(*self.our_info.name(), self.our_info.public_id);
+        }
+        names.iter()
+            .filter_map(|name| result_map.get(name))
+            .cloned()
+            .collect()
     }
 
     /// Returns the public ID of the given peer, if it is in `Connected` or `Tunnel` state.
@@ -386,7 +419,7 @@ impl PeerManager {
     pub fn set_searching_for_tunnel(&mut self,
                                     peer_id: PeerId,
                                     pub_id: &PublicId)
-                                    -> Vec<NodeInfo> {
+                                    -> Vec<(XorName, PeerId)> {
         match self.get_state(pub_id) {
             Some(&PeerState::Connected) |
             Some(&PeerState::Tunnel) => {
@@ -396,7 +429,15 @@ impl PeerManager {
         }
         let _ = self.pub_id_map.insert(peer_id, *pub_id);
         self.insert_state(*pub_id, PeerState::SearchingForTunnel);
-        self.routing_table.closest_nodes_to(pub_id.name(), GROUP_SIZE, false)
+        let close_group = self.routing_table.closest_nodes_to(pub_id.name(), GROUP_SIZE, false);
+        self.pub_id_map
+            .iter()
+            .filter_map(|(peer_id, pub_id)| if close_group.contains(pub_id.name()) {
+                Some((*pub_id.name(), *peer_id))
+            } else {
+                None
+            })
+            .collect()
     }
 
     /// Inserts the given connection info in the map to wait for the peer's info, or returns both
