@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.24.2]
+- Refactoring: Turn `Core` into a state machine with `Client` and `Node` states.
+  Move some more logic onto the `PeerManager`.
+- Fix a bug that caused some nodes to refuse to close an unneeded connection.
+
 ## [0.24.1]
 - Fix redundant calls to Crust `connect`.
 
