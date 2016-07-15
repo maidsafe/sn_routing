@@ -33,7 +33,7 @@ use routing::{Authority, Data, NodeBuilder, Request, Response, XorName};
 use sodiumoxide;
 
 pub const CHUNK_STORE_DIR: &'static str = "safe_vault_chunk_store";
-const DEFAULT_MAX_CAPACITY: u64 = 500 * 1024 * 1024;
+const DEFAULT_MAX_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
 
 pub use routing::Event;
 pub use routing::Node as RoutingNode;

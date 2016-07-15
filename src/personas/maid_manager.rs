@@ -30,7 +30,10 @@ use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, ImmutableData, Messag
 use utils;
 use vault::RoutingNode;
 
-// 100 units, max 100MB for immutable_data (1MB per chunk)
+// 500 units, max 100MB for immutable_data (1MB per chunk)
+#[cfg(not(feature = "use-mock-crust"))]
+const DEFAULT_ACCOUNT_SIZE: u64 = 500;
+#[cfg(feature = "use-mock-crust")]
 const DEFAULT_ACCOUNT_SIZE: u64 = 100;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
