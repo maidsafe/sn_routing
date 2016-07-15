@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.10.4]
+- Remove spammy trace statement.
+
 ## [0.10.3]
 - Set default Put limit to 500 and default chunk store limit to 2 GB.
 

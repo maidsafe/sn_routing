@@ -42,7 +42,7 @@ pub use routing::Node as RoutingNode;
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
-    routing_node: Rc<RoutingNode>,
+    _routing_node: Rc<RoutingNode>,
     routing_receiver: Receiver<Event>,
 }
 
@@ -105,7 +105,7 @@ impl Vault {
                                                 chunk_store_root,
                                                 config.max_capacity
                                                     .unwrap_or(DEFAULT_MAX_CAPACITY))),
-            routing_node: routing_node.clone(),
+            _routing_node: routing_node.clone(),
             routing_receiver: routing_receiver,
         })
 
@@ -126,7 +126,7 @@ impl Vault {
     /// any received, otherwise returns false.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        let mut result = self.routing_node.poll();
+        let mut result = self._routing_node.poll();
 
         while let Ok(event) = self.routing_receiver.try_recv() {
             let _ignored_for_mock = self.process_event(event);
@@ -151,33 +151,28 @@ impl Vault {
     /// Resend all unacknowledged messages.
     #[cfg(feature = "use-mock-crust")]
     pub fn resend_unacknowledged(&self) -> bool {
-        self.routing_node.resend_unacknowledged()
+        self._routing_node.resend_unacknowledged()
     }
 
     /// Clear routing node state.
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&self) {
-        self.routing_node.clear_state()
+        self._routing_node.clear_state()
     }
 
     /// Vault node name
     #[cfg(feature = "use-mock-crust")]
     pub fn name(&self) -> XorName {
-        unwrap_result!(self.routing_node.name())
+        unwrap_result!(self._routing_node.name())
     }
 
     /// Vault routing_table
     #[cfg(feature = "use-mock-crust")]
     pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.routing_node.routing_table()
+        self._routing_node.routing_table()
     }
 
     fn process_event(&mut self, event: Event) -> Option<bool> {
-        let name = self.routing_node
-            .name()
-            .expect("Failed to get name from routing node.");
-        trace!("Vault {} received an event from routing: {:?}", name, event);
-
         let mut ret = None;
 
         if let Err(error) = match event {
