@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.24.3]
+- Fix: Don't drop proxy node if unneeded in routing table.
+
 ## [0.24.1]
 - Fix redundant calls to Crust `connect`.
 
