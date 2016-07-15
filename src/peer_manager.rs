@@ -15,10 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-crust"))]
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use authority::Authority;
 use sodiumoxide::crypto::sign;
 use id::PublicId;
@@ -30,6 +27,11 @@ use std::time::{Duration, Instant};
 use xor_name::XorName;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, RoutingTable};
 
+/// The group size for the routing table. This is the maximum that can be used for consensus.
+pub const GROUP_SIZE: usize = 8;
+/// The quorum for group consensus.
+pub const QUORUM_SIZE: usize = 5;
+
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
@@ -39,8 +41,6 @@ const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// With mock Crust, all pending connections are removed explicitly.
 #[cfg(feature = "use-mock-crust")]
 const CONNECTION_TIMEOUT_SECS: u64 = 0;
-/// The group size for the routing table. This is the maximum that can be used for consensus.
-pub const GROUP_SIZE: usize = 8;
 /// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
 /// table.
 const EXTRA_BUCKET_ENTRIES: usize = 2;
@@ -241,7 +241,9 @@ impl PeerManager {
             .iter()
             .find(|elt| elt.1.name() == name)
             .map(|(peer_id, _)| target_id == peer_id) {
-            Some(self.routing_table.remove_if_unneeded(name))
+            Some(self.routing_table.remove_if_unneeded(name) &&
+                 !self.client_map.contains_key(target_id) &&
+                 !self.get_proxy_public_id(target_id).is_some())
         } else {
             None
         }

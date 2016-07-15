@@ -16,10 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
-#[cfg(not(feature = "use-mock-crust"))]
 use crust::{self, PeerId};
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{self, PeerId};
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
@@ -29,6 +26,8 @@ use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 pub enum InterfaceError {
     /// We are not connected to the network.
     NotConnected,
+    /// We are not in a state to handle the action.
+    InvalidState,
     /// Error while trying to receive a message from a channel
     ChannelRxError(RecvError),
     /// Error while trying to transmit an event via a channel

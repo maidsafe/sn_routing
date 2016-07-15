@@ -57,7 +57,7 @@ impl Service {
     }
 
     /// Start the bootstrapping procedure.
-    pub fn start_bootstrap(&self, blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
+    pub fn start_bootstrap(&mut self, blacklist: HashSet<SocketAddr>) -> Result<(), CrustError> {
         self.lock_and_poll(|imp| imp.start_bootstrap(blacklist));
         Ok(())
     }
@@ -65,7 +65,7 @@ impl Service {
     /// Stops the ongoing bootstrap.
     /// Note: This currently doesn't do anything, because mock bootstrap is
     /// not interruptible. This might change in the future, if needed.
-    pub fn stop_bootstrap(&self) -> Result<(), CrustError> {
+    pub fn stop_bootstrap(&mut self) -> Result<(), CrustError> {
         // Nothing to do here, as mock bootstrapping is not interruptible.
         Ok(())
     }
