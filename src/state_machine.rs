@@ -88,6 +88,7 @@ pub struct StateMachine {
     category_rx: Receiver<MaidSafeEventCategory>,
     crust_rx: Receiver<CrustEvent>,
     action_rx: Receiver<Action>,
+    is_running: bool,
 }
 
 pub enum State {
@@ -146,6 +147,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
         let full_id = keys.unwrap_or_else(FullId::new);
+        let mut is_running = true;
 
         let state = if role == Role::FirstNode {
             State::Node(Node::first(cache, crust_service, event_sender, full_id, timer))
@@ -154,6 +156,7 @@ impl StateMachine {
                     not supported",
                    full_id.public_id().name());
             let _ = event_sender.send(Event::Terminate);
+            is_running = false;
             State::Terminated
         } else {
             State::Client(Client::new(HashSet::new(),
@@ -170,6 +173,7 @@ impl StateMachine {
             crust_rx: crust_rx,
             action_rx: action_rx,
             state: state,
+            is_running: is_running,
         };
 
         (action_sender, machine)
@@ -179,7 +183,7 @@ impl StateMachine {
     /// otherwise returns false. Never blocks.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        if let State::Terminated = self.state {
+        if !self.is_running {
             return false;
         }
 
@@ -196,11 +200,7 @@ impl StateMachine {
     /// the core is terminated, so it must be called in a separate thread.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn run(&mut self) {
-        loop {
-            if let State::Terminated = self.state {
-                break;
-            }
-
+        while self.is_running {
             if let Ok(category) = self.category_rx.recv() {
                 self.handle_event(category);
             } else {
@@ -282,7 +282,7 @@ impl StateMachine {
     }
 
     fn terminate(&mut self) {
-        self.state = State::Terminated;
+        self.is_running = false;
     }
 }
 
