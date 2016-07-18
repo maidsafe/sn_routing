@@ -20,7 +20,7 @@ use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use sodiumoxide::crypto::hash::sha256;
 use sodiumoxide::crypto::sign;
 use std::collections::HashSet;
@@ -41,6 +41,7 @@ use message_filter::MessageFilter;
 use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
                UserMessage, UserMessageCache};
 use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager};
+use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use super::common::{self, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
@@ -69,8 +70,7 @@ pub struct Client {
     message_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     request_msg_ids: LruCache<u64, MessageId>,
-    send_filter: LruCache<(u64, PeerId, u8), ()>,
-    signed_message_filter: MessageFilter<SignedMessage>,
+    signed_msg_filter: SignedMessageFilter,
     stats: Stats,
     timer: Timer,
     tunnels: Tunnels,
@@ -116,10 +116,8 @@ impl Client {
             peer_mgr: PeerManager::new(our_info),
             request_msg_ids: LruCache::with_expiry_duration(Duration::from_secs(GROUP_SIZE as u64 *
                                                                                 ACK_TIMEOUT_SECS *
-                                                                                2)),
-            send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
-            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
-                                                                                           20)),
+										2)),
+	    signed_msg_filter: SignedMessageFilter::new(),
             stats: Default::default(),
             timer: timer,
             tunnels: Default::default(),
@@ -248,10 +246,9 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
-        self.send_filter.clear();
-        self.signed_message_filter.clear();
         self.message_accumulator.clear();
         self.peer_mgr.clear_caches();
+        self.signed_msg_filter.clear();
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
@@ -347,7 +344,7 @@ impl Client {
         try!(signed_msg.check_integrity());
 
         // Prevents someone sending messages repeatedly to us
-        if self.signed_message_filter.insert(signed_msg) > GROUP_SIZE {
+        if self.signed_msg_filter.filter_incoming(signed_msg) > GROUP_SIZE {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -685,7 +682,7 @@ impl Client {
             return Ok(());
         };
 
-        if !self.filter_signed_msg(&signed_msg, &peer_id, route) {
+        if !self.filter_outgoing_signed_msg(&signed_msg, &peer_id, route) {
             if let Err(error) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",
                       self,
@@ -770,13 +767,13 @@ impl Client {
         Ok(())
     }
 
-    /// Adds the signed message to the statistics and returns `true` if it should be blocked due
-    /// to deduplication.
-    fn filter_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
-        let hash = maidsafe_utilities::big_endian_sip_hash(msg);
-        if self.send_filter.insert((hash, *peer_id, route), ()).is_some() {
+    /// Adds the outgoing signed message to the statistics and returns `true`
+    /// if it should be blocked due to deduplication.
+    fn filter_outgoing_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
+        if self.signed_msg_filter.filter_outgoing(msg, peer_id, route) {
             return true;
         }
+
         self.stats.count_routing_message(msg.routing_message());
         false
     }

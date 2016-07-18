@@ -73,6 +73,7 @@ impl<Message: Hash> MessageFilter<Message> {
     }
 
     /// Returns the number of times this message has already been inserted.
+    #[cfg(test)]
     pub fn count(&self, message: &Message) -> usize {
         let hash_code = hash(message);
         self.entries.iter().find(|t| t.hash_code == hash_code).map_or(0, |t| t.count)
