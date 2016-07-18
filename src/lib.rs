@@ -157,6 +157,7 @@ mod messages;
 mod node;
 mod peer_manager;
 mod plain_data;
+mod signed_message_filter;
 mod state_machine;
 mod states;
 mod stats;
