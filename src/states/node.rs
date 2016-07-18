@@ -944,21 +944,24 @@ impl Node {
                 Ok(())
             }
             DirectMessage::ConnectionUnneeded(ref name) => {
-                match self.peer_mgr.remove_if_unneeded(name, &peer_id) {
-                    None => {
-                        debug!("{:?} Received ConnectionUnneeded from {:?} with name {:?}, but \
-                                that name actually belongs to someone else.",
-                               self,
-                               peer_id,
-                               name);
-                        return Err(RoutingError::InvalidSource);
+                if !self.peer_mgr.get_proxy_public_id(&peer_id).is_some() &&
+                   !self.peer_mgr.get_client(&peer_id).is_some() {
+                    match self.peer_mgr.remove_if_unneeded(name, &peer_id) {
+                        None => {
+                            debug!("{:?} Received ConnectionUnneeded from {:?} with name {:?}, \
+                                    but that name actually belongs to someone else.",
+                                   self,
+                                   peer_id,
+                                   name);
+                            return Err(RoutingError::InvalidSource);
+                        }
+                        Some(true) => {
+                            info!("{:?} Dropped {:?} from the routing table.", self, name);
+                            self.crust_service.disconnect(peer_id);
+                            self.handle_lost_peer(peer_id);
+                        }
+                        Some(false) => {}
                     }
-                    Some(true) => {
-                        info!("{:?} Dropped {:?} from the routing table.", self, name);
-                        self.crust_service.disconnect(peer_id);
-                        self.handle_lost_peer(peer_id);
-                    }
-                    Some(false) => {}
                 }
                 Ok(())
             }
