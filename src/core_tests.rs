@@ -796,6 +796,32 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+fn node_restart() {
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
+
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+
+    // Drop one node, causing the remaining nodes to end up with too few entries
+    // in their routing tables and to request a restart.
+    let index = rng.gen_range(1, nodes.len());
+    drop_node(&mut nodes, index);
+
+    for node in &nodes[1..] {
+        expect_next_event!(node, Event::RestartRequired);
+    }
+
+    // Restart the nodes that requested it
+    for index in 1..nodes.len() {
+        nodes[index] = TestNode::builder(&network).config(config.clone()).create();
+        poll_all(&mut nodes, &mut []);
+    }
+
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+}
+
+#[test]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(None), GROUP_SIZE);
     let close_groups_complete = nodes.iter()
