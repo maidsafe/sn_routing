@@ -20,6 +20,7 @@ use crust::{self, PeerId};
 use event::Event;
 use std::sync::mpsc::{RecvError, SendError};
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
+use maidsafe_utilities::serialisation;
 
 #[derive(Debug)]
 /// The type of errors that can occur if routing is unable to handle a send request.
@@ -94,7 +95,7 @@ pub enum RoutingError {
     /// Current state is invalid for the operation
     InvalidStateForOperation,
     /// Serialisation Error
-    SerialisationError(::maidsafe_utilities::serialisation::SerialisationError),
+    SerialisationError(serialisation::SerialisationError),
     /// Asymmetric Decryption Failure
     AsymmetricDecryptionFailure,
     /// Unknown Connection
@@ -147,8 +148,8 @@ impl From<SendError<Event>> for RoutingError {
     }
 }
 
-impl From<::maidsafe_utilities::serialisation::SerialisationError> for RoutingError {
-    fn from(error: ::maidsafe_utilities::serialisation::SerialisationError) -> RoutingError {
+impl From<serialisation::SerialisationError> for RoutingError {
+    fn from(error: serialisation::SerialisationError) -> RoutingError {
         RoutingError::SerialisationError(error)
     }
 }
