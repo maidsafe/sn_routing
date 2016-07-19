@@ -79,9 +79,18 @@ impl Bootstrapping {
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
+            Action::ClientSendRequest { ref result_tx, .. } |
+            Action::NodeSendMessage { ref result_tx, .. } => {
+                warn!("{:?} - Cannot handle {:?} - not bootstrapped", self, action);
+                let _ = result_tx.send(Ok(()));
+                Transition::Stay
+            }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => Transition::Terminate,
-            _ => panic!("unhandled action {:?}", action),
+            _ => {
+                debug!("{:?} - Unhandled action {:?}", self, action);
+                Transition::Stay
+            }
         }
     }
 
