@@ -21,6 +21,7 @@ use xor_name::XorName;
 use authority::Authority;
 use messages::{Request, Response};
 use std::fmt::{self, Debug, Formatter};
+use types::MessageId;
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///
@@ -49,6 +50,8 @@ pub enum Event {
         /// The destination authority that receives the response.
         dst: Authority,
     },
+    /// Sending the request with the given message ID has failed.
+    RequestFailure(MessageId),
     /// A new node joined the network and may be a member of group authorities we also belong to.
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
@@ -80,6 +83,9 @@ impl Debug for Event {
                        response,
                        src,
                        dst)
+            }
+            Event::RequestFailure(ref msg_id) => {
+                write!(formatter, "Event::RequestFailure ( {:?} )", msg_id)
             }
             Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
