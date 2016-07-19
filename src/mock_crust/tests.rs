@@ -116,8 +116,8 @@ fn start_two_services_rendezvous_connect() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
-    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
+    let service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
+    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {
@@ -174,8 +174,8 @@ fn unidirectional_rendezvous_connect() {
     let (event_tx_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_tx_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let mut service_0 = unwrap_result!(Service::with_handle(&handle0, event_tx_0));
-    let mut service_1 = unwrap_result!(Service::with_handle(&handle1, event_tx_1));
+    let service_0 = unwrap_result!(Service::with_handle(&handle0, event_tx_0));
+    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_tx_1));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {

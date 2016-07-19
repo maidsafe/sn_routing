@@ -512,6 +512,9 @@ fn did_receive_get_success(node: &TestNode,
 }
 
 fn test_nodes(size: usize) {
+    // use maidsafe_utilities::log;
+    // log::init(false);
+
     let network = Network::new(None);
     let nodes = create_connected_nodes(&network, size);
     verify_kademlia_invariant_for_all_nodes(&nodes);
