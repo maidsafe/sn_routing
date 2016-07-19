@@ -273,9 +273,6 @@ impl Client {
                 Ok(Transition::Stay)
             }
             Err(error) => Err(RoutingError::SerialisationError(error)),
-        }
-    }
-
     fn handle_hop_message(&mut self,
                           hop_msg: &HopMessage,
                           peer_id: PeerId)
