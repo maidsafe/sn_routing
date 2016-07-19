@@ -15,25 +15,15 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use crust::{CrustEventSender, Service};
 use crust::Event as CrustEvent;
-use crust::{CrustEventSender, PeerId, Service};
-#[cfg(feature = "use-mock-crust")]
-use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
-use std::collections::HashSet;
 use std::mem;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver};
 
 use action::Action;
-use authority::Authority;
-use cache::Cache;
-use event::Event;
-use id::{FullId, PublicId};
-use states::{Bootstrapping, Client, Node};
 use timer::Timer;
 use types::RoutingActionSender;
-#[cfg(feature = "use-mock-crust")]
-use xor_name::XorName;
 
 /// Holds the current state and handles state transitions.
 ///
@@ -83,58 +73,35 @@ use xor_name::XorName;
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
 /// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
-pub struct StateMachine {
-    state: State,
+pub struct StateMachine<T> {
+    state: T,
     category_rx: Receiver<MaidSafeEventCategory>,
     crust_rx: Receiver<CrustEvent>,
     action_rx: Receiver<Action>,
     is_running: bool,
 }
 
-pub enum State {
-    Bootstrapping(Bootstrapping),
-    Client(Client),
-    Node(Node),
-    Transitioning,
-    Terminated,
+pub trait State {
+    fn terminated() -> Self;
+    fn is_terminated(&self) -> bool;
+    fn handle_action(&mut self, action: Action) -> Transition;
+    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition;
+    fn into_next(self) -> Self;
 }
 
 pub enum Transition {
     // Stay in the current state
     Stay,
-    // Transition to Client
-    IntoClient {
-        proxy_public_id: PublicId,
-        proxy_peer_id: PeerId,
-        quorum_size: usize,
-    },
-    // Transition to Node
-    IntoNode {
-        close_group_ids: Vec<PublicId>,
-        dst: Authority,
-    },
+    // Go to the next state
+    Next,
     // Terminate
     Terminate,
 }
 
-/// The role this `StateMachine` instance intends to act as once it joined the network.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
-pub enum Role {
-    /// Remain a client and not become a full routing node.
-    Client,
-    /// Join an existing network as a routing node.
-    Node,
-    /// Start a new network as its first node.
-    FirstNode,
-}
-
-impl StateMachine {
-    pub fn new(event_sender: Sender<Event>,
-               role: Role,
-               keys: Option<FullId>,
-               cache: Box<Cache>,
-               deny_other_local_nodes: bool)
-               -> (RoutingActionSender, Self) {
+impl<T: State> StateMachine<T> {
+    pub fn new<F>(f: F) -> (RoutingActionSender, Self)
+        where F: FnOnce(Service, Timer) -> T
+    {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -153,27 +120,9 @@ impl StateMachine {
         crust_service.start_service_discovery();
 
         let timer = Timer::new(action_sender.clone());
-        let full_id = keys.unwrap_or_else(FullId::new);
-        let mut is_running = true;
 
-        let state = if role == Role::FirstNode {
-            State::Node(Node::first(cache, crust_service, event_sender, full_id, timer))
-        } else if deny_other_local_nodes && crust_service.has_peers_on_lan() {
-            error!("Disconnected({:?}) More than 1 routing node found on LAN. Currently this is \
-                    not supported",
-                   full_id.public_id().name());
-            let _ = event_sender.send(Event::Terminate);
-            is_running = false;
-            State::Terminated
-        } else {
-            State::Bootstrapping(Bootstrapping::new(HashSet::new(),
-                                                    cache,
-                                                    role == Role::Client,
-                                                    crust_service,
-                                                    event_sender,
-                                                    full_id,
-                                                    timer))
-        };
+        let state = f(crust_service, timer);
+        let is_running = !state.is_terminated();
 
         let machine = StateMachine {
             category_rx: category_rx,
@@ -216,44 +165,16 @@ impl StateMachine {
         }
     }
 
-    /// Routing table of this node.
+    /// Get reference to the current state.
     #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        match self.state {
-            State::Client(ref state) => state.routing_table(),
-            State::Node(ref state) => state.routing_table(),
-            _ => unreachable!(),
-        }
+    pub fn current(&self) -> &T {
+        &self.state
     }
 
-    /// resends all unacknowledged messages.
+    /// Get mutable reference to the current state.
     #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        match self.state {
-            State::Client(ref mut state) => state.resend_unacknowledged(),
-            State::Node(ref mut state) => state.resend_unacknowledged(),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Are there any unacknowledged messages?
-    #[cfg(feature = "use-mock-crust")]
-    pub fn has_unacknowledged(&self) -> bool {
-        match self.state {
-            State::Client(ref state) => state.has_unacknowledged(),
-            State::Node(ref state) => state.has_unacknowledged(),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Clears all state containers except `bootstrap_blacklist`.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn clear_state(&mut self) {
-        match self.state {
-            State::Client(ref mut state) => state.clear_state(),
-            State::Node(ref mut state) => state.clear_state(),
-            _ => unreachable!(),
-        }
+    pub fn current_mut(&mut self) -> &mut T {
+        &mut self.state
     }
 
     fn handle_event(&mut self, category: MaidSafeEventCategory) {
@@ -277,65 +198,18 @@ impl StateMachine {
         match transition {
             Transition::Stay => (),
             Transition::Terminate => self.terminate(),
-            Transition::IntoClient { proxy_public_id, proxy_peer_id, quorum_size } => {
-                self.transition(move |state| {
-                    state.into_client(proxy_public_id, proxy_peer_id, quorum_size)
-                })
-            }
-            Transition::IntoNode { close_group_ids, dst } => {
-                self.transition(move |state| state.into_node(close_group_ids, dst))
-            }
+            Transition::Next => self.next(),
         }
     }
 
-    fn transition<F>(&mut self, f: F)
-        where F: FnOnce(State) -> State
-    {
-        let prev_state = mem::replace(&mut self.state, State::Transitioning);
-        self.state = f(prev_state)
+    fn next(&mut self) {
+        // Temporarily switch to `Terminated` to allow moving out of the current
+        // state without moving `self`.
+        let prev_state = mem::replace(&mut self.state, State::terminated());
+        self.state = prev_state.into_next()
     }
 
     fn terminate(&mut self) {
         self.is_running = false;
-    }
-}
-
-impl State {
-    fn handle_action(&mut self, action: Action) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action),
-            State::Node(ref mut state) => state.handle_action(action),
-            State::Terminated | State::Transitioning => unreachable!(),
-        }
-    }
-
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
-            State::Client(ref mut state) => state.handle_crust_event(event),
-            State::Node(ref mut state) => state.handle_crust_event(event),
-            State::Terminated | State::Transitioning => unreachable!(),
-        }
-    }
-
-    fn into_client(self,
-                   proxy_public_id: PublicId,
-                   proxy_peer_id: PeerId,
-                   quorum_size: usize)
-                   -> State {
-        match self {
-            State::Bootstrapping(state) => {
-                State::Client(state.into_client(proxy_public_id, proxy_peer_id, quorum_size))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn into_node(self, close_group_ids: Vec<PublicId>, dst: Authority) -> State {
-        match self {
-            State::Client(state) => State::Node(state.into_node(close_group_ids, dst)),
-            _ => unreachable!(),
-        }
     }
 }

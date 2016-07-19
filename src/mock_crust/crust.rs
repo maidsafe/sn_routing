@@ -98,7 +98,7 @@ impl Service {
 
     /// Request connection info structure used for establishing peer-to-peer
     /// connections.
-    pub fn prepare_connection_info(&mut self, result_token: u32) {
+    pub fn prepare_connection_info(&self, result_token: u32) {
         self.lock_and_poll(|imp| imp.prepare_connection_info(result_token))
     }
 

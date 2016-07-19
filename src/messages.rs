@@ -260,10 +260,6 @@ pub struct RoutingMessage {
 
 impl RoutingMessage {
     /// Create ack for the given message
-    pub fn ack(msg: &RoutingMessage) -> Result<Self, RoutingError> {
-        Self::ack_from(msg, msg.dst.clone())
-    }
-
     pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
         let hash_msg = try!(msg.to_grp_msg_hash());
         let hash = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
