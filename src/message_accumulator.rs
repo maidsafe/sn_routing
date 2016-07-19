@@ -45,13 +45,19 @@ impl MessageAccumulator {
         }
     }
 
+    pub fn with_quorum_size(quorum_size: usize) -> Self {
+        let mut accumulator = Self::new();
+        accumulator.set_quorum_size(quorum_size);
+        accumulator
+    }
+
     pub fn set_quorum_size(&mut self, size: usize) {
         self.accumulator.set_quorum_size(size)
     }
 
     pub fn add(&mut self,
                msg: &RoutingMessage,
-               public_id: PublicId)
+               public_id: &PublicId)
                -> Result<Option<RoutingMessage>, RoutingError> {
         if !msg.src.is_group() {
             return Ok(Some(msg.clone()));
@@ -61,7 +67,7 @@ impl MessageAccumulator {
             return Err(RoutingError::FilterCheckFailed);
         }
 
-        if let Some(group_msg) = self.accumulate(msg, &public_id) {
+        if let Some(group_msg) = self.accumulate(msg, public_id) {
             let _ = self.filter.insert(&group_msg);
             let _ = self.filter.insert(&try!(msg.to_grp_msg_hash()));
             Ok(Some(group_msg))
