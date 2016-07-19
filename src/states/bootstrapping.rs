@@ -78,11 +78,28 @@ impl Bootstrapping {
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
-        match action {
-            Action::Timeout(token) => self.handle_timeout(token),
-            Action::Terminate => Transition::Terminate,
-            _ => panic!("unhandled action {:?}", action),
-        }
+        let result = match action {
+            Action::ClientSendRequest { ref result_tx, .. } |
+            Action::NodeSendMessage { ref result_tx, .. } => {
+                warn!("{:?} - Cannot handle {:?} - not bootstrapped", self, action);
+                // TODO: return Err here eventually. Returning Ok for now to
+                // preserve the pre-refactor behaviour.
+                result_tx.send(Ok(())).is_ok()
+            }
+            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
+            Action::Timeout(token) => {
+                self.handle_timeout(token);
+                true
+            }
+            Action::Terminate => false,
+
+            // TODO: these actions make no sense in this state, but we handle
+            // them for now, to preserve the pre-refactor behaviour.
+            Action::CloseGroup { result_tx, .. } => result_tx.send(None).is_ok(),
+            Action::QuorumSize { result_tx } => result_tx.send(0).is_ok(),
+        };
+
+        if result { Transition::Stay } else { Transition::Terminate }
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
@@ -128,7 +145,7 @@ impl Bootstrapping {
         self.full_id.public_id().name()
     }
 
-    fn handle_timeout(&mut self, token: u64) -> Transition {
+    fn handle_timeout(&mut self, token: u64) {
         if let Some((bootstrap_id, bootstrap_token)) = self.bootstrap_info {
             if bootstrap_token == token {
                 debug!("{:?} Timeout when trying to bootstrap against {:?}.",
@@ -138,8 +155,6 @@ impl Bootstrapping {
                 self.rebootstrap();
             }
         }
-
-        Transition::Stay
     }
 
     fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {

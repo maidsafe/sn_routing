@@ -20,7 +20,7 @@ use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::{self, serialisation}   ;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -59,6 +59,7 @@ pub struct Client {
     is_listening: bool,
     msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
+    request_msg_ids: LruCache<u64, MessageId>,
     signed_msg_filter: SignedMessageFilter,
     stats: Stats,
     timer: Timer,
@@ -98,6 +99,9 @@ impl Client {
             is_listening: false,
             msg_accumulator: msg_accumulator,
             peer_mgr: peer_mgr,
+            request_msg_ids: LruCache::with_expiry_duration(Duration::from_secs(GROUP_SIZE as u64 *
+                                                                                ACK_TIMEOUT_SECS *
+                                                                                2)),
             signed_msg_filter: SignedMessageFilter::new(),
             stats: stats,
             timer: timer,

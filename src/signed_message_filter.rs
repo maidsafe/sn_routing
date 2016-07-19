@@ -49,7 +49,7 @@ impl SignedMessageFilter {
         self.incoming.insert(msg)
     }
 
-    // Fitler outgoing signed message. Return whether this specific message has
+    // Filter outgoing signed message. Return whether this specific message has
     // been seen recently (and thus should not be sent, due to deduplication).
     pub fn filter_outgoing(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
         let hash = maidsafe_utilities::big_endian_sip_hash(msg);
