@@ -29,7 +29,7 @@ use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use ack_manager::AckManager;
+use ack_manager::{ACK_TIMEOUT_SECS, AckManager};
 use action::Action;
 use authority::Authority;
 use cache::Cache;
@@ -68,6 +68,7 @@ pub struct Client {
     is_listening: bool,
     message_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
+    request_msg_ids: LruCache<u64, MessageId>,
     send_filter: LruCache<(u64, PeerId, u8), ()>,
     signed_message_filter: MessageFilter<SignedMessage>,
     stats: Stats,
@@ -113,6 +114,9 @@ impl Client {
             is_listening: false,
             message_accumulator: Default::default(),
             peer_mgr: PeerManager::new(our_info),
+            request_msg_ids: LruCache::with_expiry_duration(Duration::from_secs(GROUP_SIZE as u64 *
+                                                                                ACK_TIMEOUT_SECS *
+                                                                                2)),
             send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
             signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
                                                                                            20)),
@@ -614,7 +618,11 @@ impl Client {
                          priority: u8)
                          -> Result<(), RoutingError> {
         match user_msg {
-            UserMessage::Request(ref request) => self.stats.count_request(request),
+            UserMessage::Request(ref request) => {
+                let hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
+                let _ = self.request_msg_ids.insert(hash, request.message_id());
+                self.stats.count_request(request);
+            }
             UserMessage::Response(ref response) => self.stats.count_response(response),
         }
         for part in try!(user_msg.to_parts(priority)) {
@@ -719,6 +727,12 @@ impl Client {
                        self,
                        unacked_msg);
                 self.stats.count_unacked();
+                if let MessageContent::UserMessagePart { ref hash, .. } = unacked_msg.routing_msg
+                    .content {
+                    if let Some(msg_id) = self.request_msg_ids.remove(hash) {
+                        let _ = self.event_sender.send(Event::RequestFailure(msg_id));
+                    }
+                }
             } else if let Err(error) =
                    self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);

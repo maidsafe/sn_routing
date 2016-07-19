@@ -796,6 +796,7 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+#[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -995,6 +996,35 @@ fn failed_get_request() {
     }
 
     assert!(response_received_count == 1);
+}
+
+#[test]
+fn timeout_get_request() {
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
+    let mut clients = create_connected_clients(&network, &mut nodes, 1);
+
+    let data_request = gen_immutable_data(&mut rng, 1024).identifier();
+    let dst = Authority::ManagedNode(rng.gen()); // Node doesn't exist!
+    let message_id = MessageId::new();
+
+    assert!(clients[0].inner
+                      .send_get_request(dst, data_request, message_id)
+                      .is_ok());
+
+    poll_and_resend(&mut nodes, &mut clients);
+
+    loop {
+        match clients[0].event_rx.try_recv() {
+            Ok(Event::RequestFailure(id)) => {
+                assert_eq!(message_id, id);
+                break;
+            }
+            Ok(_) => (),
+            _ => panic!("Event::RequestFailure not received"),
+        }
+    }
 }
 
 #[test]
