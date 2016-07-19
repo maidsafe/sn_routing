@@ -133,7 +133,7 @@ pub struct Node {
     machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
+    _raii_joiner: RaiiThreadJoiner,
 }
 
 impl Node {

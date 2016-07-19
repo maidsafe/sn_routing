@@ -71,7 +71,7 @@ pub struct Node {
     full_id: FullId,
     is_first_node: bool,
     is_listening: bool,
-    message_accumulator: MessageAccumulator,
+    msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
     /// The last joining node we have sent a `GetNodeName` response to, and when.
@@ -100,7 +100,7 @@ impl Node {
                                  crust_service,
                                  event_sender,
                                  full_id,
-                                 Default::default(),
+                                 MessageAccumulator::new(),
                                  PeerManager::new(our_info),
                                  Default::default(),
                                  timer,
@@ -116,7 +116,7 @@ impl Node {
                        crust_service: Service,
                        event_sender: Sender<Event>,
                        full_id: FullId,
-                       message_accumulator: MessageAccumulator,
+                       msg_accumulator: MessageAccumulator,
                        peer_mgr: PeerManager,
                        stats: Stats,
                        timer: Timer,
@@ -128,7 +128,7 @@ impl Node {
                                  crust_service,
                                  event_sender,
                                  full_id,
-                                 message_accumulator,
+                                 msg_accumulator,
                                  peer_mgr,
                                  stats,
                                  timer,
@@ -142,7 +142,7 @@ impl Node {
            crust_service: Service,
            event_sender: Sender<Event>,
            full_id: FullId,
-           message_accumulator: MessageAccumulator,
+           msg_accumulator: MessageAccumulator,
            peer_mgr: PeerManager,
            stats: Stats,
            mut timer: Timer,
@@ -164,7 +164,7 @@ impl Node {
             full_id: full_id,
             is_first_node: false,
             is_listening: false,
-            message_accumulator: message_accumulator,
+            msg_accumulator: msg_accumulator,
             peer_mgr: peer_mgr,
             response_cache: cache,
             signed_msg_filter: SignedMessageFilter::new(),
@@ -210,7 +210,7 @@ impl Node {
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
         self.bucket_filter.clear();
-        self.message_accumulator.clear();
+        self.msg_accumulator.clear();
         self.peer_mgr.clear_caches();
         self.signed_msg_filter.clear();
         self.sent_network_name_to = None;
@@ -566,7 +566,7 @@ impl Node {
 
         // FIXME: This is currently only in place so acks can get delivered if the
         // original ack was lost in transit
-        if (self.message_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
+        if (self.msg_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
            self.is_recipient(&routing_msg.dst) {
             self.send_ack(routing_msg, route);
         }
@@ -654,10 +654,10 @@ impl Node {
                               -> Result<(), RoutingError> {
         if self.is_bootstrapped() {
             let dynamic_quorum_size = self.dynamic_quorum_size();
-            self.message_accumulator.set_quorum_size(dynamic_quorum_size);
+            self.msg_accumulator.set_quorum_size(dynamic_quorum_size);
         }
 
-        if let Some(msg) = try!(self.message_accumulator.add(routing_msg, public_id)) {
+        if let Some(msg) = try!(self.msg_accumulator.add(routing_msg, public_id)) {
             if msg.src.is_group() {
                 self.send_ack(&msg, 0);
             }
@@ -875,9 +875,13 @@ impl Node {
         Ok(())
     }
 
-    /// Adds the outgoing signed message to the statistics and returns `true` if it should be blocked due
-    /// to deduplication.
-    fn filter_outgoing_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
+    /// Adds the outgoing signed message to the statistics and returns `true`
+    /// if it should be blocked due to deduplication.
+    fn filter_outgoing_signed_msg(&mut self,
+                                  msg: &SignedMessage,
+                                  peer_id: &PeerId,
+                                  route: u8)
+                                  -> bool {
         if self.signed_msg_filter.filter_outgoing(msg, peer_id, route) {
             return true;
         }

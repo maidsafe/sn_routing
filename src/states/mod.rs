@@ -15,9 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+mod bootstrapping;
 mod client;
 mod common;
 mod node;
 
+pub use self::bootstrapping::Bootstrapping;
 pub use self::client::Client;
 pub use self::node::Node;

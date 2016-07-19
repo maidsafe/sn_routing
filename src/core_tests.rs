@@ -796,6 +796,7 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+#[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1199,7 +1200,13 @@ fn request_during_churn_group_to_node() {
         let src = Authority::NaeManager(*data.name());
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let mut added_index = random_churn(&mut rng, &network, &mut nodes);
+
+        // Do not send from the newly added node.
+        if let Some(index) = added_index {
+            nodes.swap(index, GROUP_SIZE);
+            added_index = Some(GROUP_SIZE);
+        }
 
         let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -1232,7 +1239,12 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
         sort_nodes_by_distance_to(&mut nodes, &name0);
-        let _ = random_churn(&mut rng, &network, &mut nodes);
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
+
+        // Do not send from the newly added node.
+        if let Some(index) = added_index {
+            nodes.swap(index, GROUP_SIZE);
+        }
 
         for node in &nodes[0..GROUP_SIZE] {
             unwrap!(node.inner.send_get_request(src.clone(),

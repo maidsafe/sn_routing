@@ -35,6 +35,16 @@ pub struct MessageAccumulator {
 }
 
 impl MessageAccumulator {
+    pub fn new() -> Self {
+        let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
+
+        MessageAccumulator {
+            accumulator: Accumulator::with_duration(1, expiry_duration),
+            cache: LruCache::with_expiry_duration(expiry_duration),
+            filter: MessageFilter::with_expiry_duration(expiry_duration),
+        }
+    }
+
     pub fn set_quorum_size(&mut self, size: usize) {
         self.accumulator.set_quorum_size(size)
     }
@@ -92,18 +102,6 @@ impl MessageAccumulator {
             }
         } else {
             self.accumulator.add(hash_msg, key).map(|_| msg.clone())
-        }
-    }
-}
-
-impl Default for MessageAccumulator {
-    fn default() -> Self {
-        let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
-
-        MessageAccumulator {
-            accumulator: Accumulator::with_duration(1, expiry_duration),
-            cache: LruCache::with_expiry_duration(expiry_duration),
-            filter: MessageFilter::with_expiry_duration(expiry_duration),
         }
     }
 }

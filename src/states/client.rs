@@ -20,11 +20,7 @@ use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
-use sodiumoxide::crypto::hash::sha256;
-use sodiumoxide::crypto::sign;
-use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
-use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
@@ -36,8 +32,8 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use message_accumulator::MessageAccumulator;
-use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
-               UserMessage, UserMessageCache};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+               UserMessageCache};
 use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
@@ -49,23 +45,18 @@ use tunnels::Tunnels;
 use types::MessageId;
 use xor_name::XorName;
 
-/// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
-const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 /// Time (in seconds) after which a `GetNodeName` request is resent.
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 
 pub struct Client {
     ack_mgr: AckManager,
-    bootstrap_blacklist: HashSet<SocketAddr>,
-    bootstrap_state: BootstrapState,
     cache: Box<Cache>,
-    client_restriction: bool,
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     is_listening: bool,
-    message_accumulator: MessageAccumulator,
+    msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     signed_msg_filter: SignedMessageFilter,
     stats: Stats,
@@ -74,49 +65,57 @@ pub struct Client {
     user_msg_cache: UserMessageCache,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-enum BootstrapState {
-    /// Not connected to any node.
-    Disconnected,
-    /// Transition state while validating a peer as a proxy node.
-    Bootstrapping(PeerId, u64),
-    /// We are bootstrapped and connected to a valid proxy node.
-    Bootstrapped,
-}
-
 impl Client {
-    pub fn new(bootstrap_blacklist: HashSet<SocketAddr>,
-               cache: Box<Cache>,
-               client_restriction: bool,
-               mut crust_service: Service,
-               event_sender: Sender<Event>,
-               full_id: FullId,
-               timer: Timer)
-               -> Self {
-        let _ = crust_service.start_bootstrap(bootstrap_blacklist.clone());
-
+    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
+    pub fn from_bootstrapping(proxy_public_id: PublicId,
+                              proxy_peer_id: PeerId,
+                              quorum_size: usize,
+                              cache: Box<Cache>,
+                              client_restriction: bool,
+                              crust_service: Service,
+                              event_sender: Sender<Event>,
+                              full_id: FullId,
+                              stats: Stats,
+                              timer: Timer)
+                              -> Self {
         let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
+        let mut peer_mgr = PeerManager::new(our_info);
+        let _ = peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+
+        let mut msg_accumulator = MessageAccumulator::new();
+        msg_accumulator.set_quorum_size(quorum_size);
+
         let user_msg_cache_duration = Duration::from_secs(USER_MSG_CACHE_EXPIRY_DURATION_SECS);
 
-        Client {
+        let mut client = Client {
             ack_mgr: AckManager::new(),
-            bootstrap_blacklist: bootstrap_blacklist,
-            bootstrap_state: BootstrapState::Disconnected,
             cache: cache,
-            client_restriction: client_restriction,
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
             get_node_name_timer_token: None,
             is_listening: false,
-            message_accumulator: Default::default(),
-            peer_mgr: PeerManager::new(our_info),
+            msg_accumulator: msg_accumulator,
+            peer_mgr: peer_mgr,
             signed_msg_filter: SignedMessageFilter::new(),
-            stats: Default::default(),
+            stats: stats,
             timer: timer,
             tunnels: Default::default(),
             user_msg_cache: UserMessageCache::with_expiry_duration(user_msg_cache_duration),
+        };
+
+        debug!("{:?} - State changed to client, quorum size: {}.",
+               client,
+               quorum_size);
+
+        if client_restriction {
+            let _ = client.event_sender.send(Event::Connected);
+        } else if !client.start_listening() {
+            // We are a client trying to become a node.
+            let _ = client.event_sender.send(Event::Terminate);
         }
+
+        client
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
@@ -163,10 +162,10 @@ impl Client {
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
         match crust_event {
-            CrustEvent::BootstrapConnect(peer_id, socket_addr) => {
-                self.handle_bootstrap_connect(peer_id, socket_addr)
+            CrustEvent::BootstrapConnect(peer_id, _) => {
+                self.disconnect_peer(&peer_id);
+                Transition::Stay
             }
-            CrustEvent::BootstrapFailed => self.handle_bootstrap_failed(),
             CrustEvent::ListenerStarted(port) => self.handle_listener_started(port),
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
@@ -201,7 +200,7 @@ impl Client {
                           self.crust_service,
                           self.event_sender,
                           self.full_id,
-                          self.message_accumulator,
+                          self.msg_accumulator,
                           self.peer_mgr,
                           self.stats,
                           self.timer,
@@ -240,36 +239,9 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
-        self.message_accumulator.clear();
+        self.msg_accumulator.clear();
         self.peer_mgr.clear_caches();
         self.signed_msg_filter.clear();
-    }
-
-    fn handle_bootstrap_connect(&mut self, peer_id: PeerId, socket_addr: SocketAddr) -> Transition {
-        match self.bootstrap_state {
-            BootstrapState::Disconnected => {
-                debug!("{:?} Received BootstrapConnect from {:?}.", self, peer_id);
-                // Established connection. Pending Validity checks
-                let _ = self.send_client_identify(peer_id);
-                let _ = self.bootstrap_blacklist.insert(socket_addr);
-            }
-            BootstrapState::Bootstrapping(bootstrap_id, _) if bootstrap_id == peer_id => {
-                warn!("{:?} Got more than one BootstrapConnect for peer {:?}.",
-                      self,
-                      peer_id);
-            }
-            _ => {
-                self.disconnect_peer(&peer_id);
-            }
-        }
-
-        Transition::Stay
-    }
-
-    fn handle_bootstrap_failed(&mut self) -> Transition {
-        debug!("{:?} Failed to bootstrap.", self);
-        let _ = self.event_sender.send(Event::Terminate);
-        Transition::Terminate
     }
 
     fn handle_listener_started(&mut self, port: u16) -> Transition {
@@ -290,37 +262,12 @@ impl Client {
                           bytes: Vec<u8>)
                           -> Result<Transition, RoutingError> {
         match serialisation::deserialise(&bytes) {
-            Ok(Message::Direct(direct_msg)) => self.handle_direct_message(direct_msg, peer_id),
             Ok(Message::Hop(ref hop_msg)) => self.handle_hop_message(hop_msg, peer_id),
             Ok(message) => {
                 debug!("{:?} - Unhandled new message: {:?}", self, message);
                 Ok(Transition::Stay)
             }
             Err(error) => Err(RoutingError::SerialisationError(error)),
-        }
-    }
-
-    fn handle_direct_message(&mut self,
-                             direct_message: DirectMessage,
-                             peer_id: PeerId)
-                             -> Result<Transition, RoutingError> {
-        match direct_message {
-            DirectMessage::BootstrapIdentify { public_id, current_quorum_size } => {
-                self.handle_bootstrap_identify(public_id, peer_id, current_quorum_size)
-            }
-            DirectMessage::BootstrapDeny => {
-                info!("{:?} Connection failed: Proxy node needs a larger routing table to accept \
-                       clients.",
-                      self);
-                self.rebootstrap();
-                Ok(Transition::Stay)
-            }
-            _ => {
-                debug!("{:?} - Unhandled direct message: {:?}",
-                       self,
-                       direct_message);
-                Ok(Transition::Stay)
-            }
         }
     }
 
@@ -355,7 +302,7 @@ impl Client {
                               routing_msg: &RoutingMessage,
                               public_id: PublicId)
                               -> Result<Transition, RoutingError> {
-        if let Some(msg) = try!(self.message_accumulator.add(routing_msg, public_id)) {
+        if let Some(msg) = try!(self.msg_accumulator.add(routing_msg, public_id)) {
             if msg.src.is_group() {
                 self.send_ack(&msg, 0);
             }
@@ -401,40 +348,6 @@ impl Client {
         }
     }
 
-    fn handle_bootstrap_identify(&mut self,
-                                 public_id: PublicId,
-                                 peer_id: PeerId,
-                                 current_quorum_size: usize)
-                                 -> Result<Transition, RoutingError> {
-        if *public_id.name() == XorName(sha256::hash(&public_id.signing_public_key().0).0) {
-            warn!("{:?} Incoming Connection not validated as a proper node - dropping",
-                  self);
-            self.rebootstrap();
-            return Ok(Transition::Stay);
-        }
-
-        if !self.peer_mgr.set_proxy(peer_id, public_id) {
-            self.disconnect_peer(&peer_id);
-            return Ok(Transition::Stay);
-        }
-
-        self.bootstrap_state = BootstrapState::Bootstrapped;
-        debug!("{:?} - State changed to client, quorum size: {}.",
-               self,
-               current_quorum_size);
-        self.message_accumulator.set_quorum_size(current_quorum_size);
-
-        if self.client_restriction {
-            let _ = self.event_sender.send(Event::Connected);
-        } else if !self.start_listening() {
-            // We are a client trying to become a node.
-            let _ = self.event_sender.send(Event::Terminate);
-            return Ok(Transition::Terminate);
-        }
-
-        Ok(Transition::Stay)
-    }
-
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
                                      close_group_ids: Vec<PublicId>,
@@ -471,17 +384,6 @@ impl Client {
     }
 
     fn handle_timeout(&mut self, token: u64) -> bool {
-        // We haven't received response from a node we are trying to bootstrap against.
-        if let BootstrapState::Bootstrapping(peer_id, bootstrap_token) = self.bootstrap_state {
-            if bootstrap_token == token {
-                debug!("{:?} Timeout when trying to bootstrap against {:?}.",
-                       self,
-                       peer_id);
-                self.rebootstrap();
-                return true;
-            }
-        }
-
         if self.get_node_name_timer_token == Some(token) {
             info!("{:?} Failed to get GetNodeName response.", self);
             let _ = self.event_sender.send(Event::RestartRequired);
@@ -501,10 +403,10 @@ impl Client {
 
         debug!("{:?} Received LostPeer - {:?}", self, peer_id);
         let _ = self.peer_mgr.remove_peer(&peer_id);
-        self.dropped_bootstrap_connection(&peer_id);
+        self.dropped_proxy_connection(&peer_id);
     }
 
-    fn dropped_bootstrap_connection(&mut self, peer_id: &PeerId) {
+    fn dropped_proxy_connection(&mut self, peer_id: &PeerId) {
         if self.peer_mgr.get_proxy_public_id(peer_id).is_some() {
             if let Some((_, _, public_id)) = self.peer_mgr.remove_proxy() {
                 debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
@@ -529,25 +431,6 @@ impl Client {
         self.is_listening
     }
 
-    fn send_client_identify(&mut self, peer_id: PeerId) -> Result<(), RoutingError> {
-        debug!("{:?} - Sending ClientIdentify to {:?}.", self, peer_id);
-
-        let token = self.timer.schedule(Duration::from_secs(BOOTSTRAP_TIMEOUT_SECS));
-        self.bootstrap_state = BootstrapState::Bootstrapping(peer_id, token);
-
-        let serialised_public_id = try!(serialisation::serialise(self.full_id.public_id()));
-        let signature = sign::sign_detached(&serialised_public_id,
-                                            self.full_id.signing_private_key());
-
-        let direct_message = DirectMessage::ClientIdentify {
-            serialised_public_id: serialised_public_id,
-            signature: signature,
-            client_restriction: self.client_restriction,
-        };
-
-        self.send_direct_message(&peer_id, direct_message)
-    }
-
     fn relocate(&mut self) -> Result<(), RoutingError> {
         let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
         self.get_node_name_timer_token = Some(self.timer.schedule(duration));
@@ -567,38 +450,6 @@ impl Client {
               self,
               self.full_id.public_id());
         self.send_routing_message(request_msg)
-    }
-
-    fn send_direct_message(&mut self,
-                           dst_id: &PeerId,
-                           direct_message: DirectMessage)
-                           -> Result<(), RoutingError> {
-        self.stats.count_direct_message(&direct_message);
-
-        let priority = direct_message.priority();
-        let (message, peer_id) = if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
-            let message = Message::TunnelDirect {
-                content: direct_message,
-                src: self.crust_service.id(),
-                dst: *dst_id,
-            };
-            (message, tunnel_id)
-        } else {
-            (Message::Direct(direct_message), *dst_id)
-        };
-
-        let raw_bytes = match serialisation::serialise(&message) {
-            Err(error) => {
-                error!("{:?} Failed to serialise message {:?}: {:?}",
-                       self,
-                       message,
-                       error);
-                return Err(error.into());
-            }
-            Ok(bytes) => bytes,
-        };
-
-        self.send_or_drop(&peer_id, raw_bytes, priority)
     }
 
     /// Sends the given message, possibly splitting it up into smaller parts.
@@ -724,7 +575,6 @@ impl Client {
     /// Returns whether we are the recipient of a message for the given authority.
     fn is_recipient(&self, dst: &Authority) -> bool {
         if let Authority::Client { ref client_key, .. } = *dst {
-            self.bootstrap_state == BootstrapState::Bootstrapped &&
             client_key == self.full_id.public_id().signing_public_key()
         } else {
             false
@@ -753,7 +603,11 @@ impl Client {
 
     /// Adds the outgoing signed message to the statistics and returns `true`
     /// if it should be blocked due to deduplication.
-    fn filter_outgoing_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
+    fn filter_outgoing_signed_msg(&mut self,
+                                  msg: &SignedMessage,
+                                  peer_id: &PeerId,
+                                  route: u8)
+                                  -> bool {
         if self.signed_msg_filter.filter_outgoing(msg, peer_id, route) {
             return true;
         }
@@ -774,26 +628,6 @@ impl Client {
                    peer_id);
             let _ = self.crust_service.disconnect(*peer_id);
         }
-    }
-
-    fn rebootstrap(&mut self) {
-        if let BootstrapState::Bootstrapping(bootstrap_id, _) = self.bootstrap_state {
-            debug!("{:?} Dropping bootstrap node {:?} and retrying.",
-                   self,
-                   bootstrap_id);
-            self.crust_service.disconnect(bootstrap_id);
-            if let Some((_, peer_id, _)) = self.peer_mgr.remove_proxy() {
-                debug!("{:?} Dropping proxy node {:?} and retrying.",
-                       self,
-                       bootstrap_id);
-                self.crust_service.disconnect(peer_id);
-            }
-        } else {
-            warn!("Should only be called while in Bootstrapping state");
-        }
-
-        self.bootstrap_state = BootstrapState::Disconnected;
-        let _ = self.crust_service.start_bootstrap(self.bootstrap_blacklist.clone());
     }
 
     fn get_client_authority(&self) -> Result<Authority, RoutingError> {

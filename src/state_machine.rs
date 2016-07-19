@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use crust::Event as CrustEvent;
-use crust::{CrustEventSender, Service};
+use crust::{CrustEventSender, PeerId, Service};
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
@@ -29,7 +29,7 @@ use authority::Authority;
 use cache::Cache;
 use event::Event;
 use id::{FullId, PublicId};
-use states::{Client, Node};
+use states::{Bootstrapping, Client, Node};
 use timer::Timer;
 use types::RoutingActionSender;
 #[cfg(feature = "use-mock-crust")]
@@ -92,6 +92,7 @@ pub struct StateMachine {
 }
 
 pub enum State {
+    Bootstrapping(Bootstrapping),
     Client(Client),
     Node(Node),
     Transitioning,
@@ -101,6 +102,12 @@ pub enum State {
 pub enum Transition {
     // Stay in the current state
     Stay,
+    // Transition to Client
+    IntoClient {
+        proxy_public_id: PublicId,
+        proxy_peer_id: PeerId,
+        quorum_size: usize,
+    },
     // Transition to Node
     IntoNode {
         close_group_ids: Vec<PublicId>,
@@ -159,13 +166,13 @@ impl StateMachine {
             is_running = false;
             State::Terminated
         } else {
-            State::Client(Client::new(HashSet::new(),
-                                      cache,
-                                      role == Role::Client,
-                                      crust_service,
-                                      event_sender,
-                                      full_id,
-                                      timer))
+            State::Bootstrapping(Bootstrapping::new(HashSet::new(),
+                                                    cache,
+                                                    role == Role::Client,
+                                                    crust_service,
+                                                    event_sender,
+                                                    full_id,
+                                                    timer))
         };
 
         let machine = StateMachine {
@@ -270,15 +277,22 @@ impl StateMachine {
         match transition {
             Transition::Stay => (),
             Transition::Terminate => self.terminate(),
+            Transition::IntoClient { proxy_public_id, proxy_peer_id, quorum_size } => {
+                self.transition(move |state| {
+                    state.into_client(proxy_public_id, proxy_peer_id, quorum_size)
+                })
+            }
             Transition::IntoNode { close_group_ids, dst } => {
-                self.transition_to_node(close_group_ids, dst)
+                self.transition(move |state| state.into_node(close_group_ids, dst))
             }
         }
     }
 
-    fn transition_to_node(&mut self, close_group_ids: Vec<PublicId>, dst: Authority) {
+    fn transition<F>(&mut self, f: F)
+        where F: FnOnce(State) -> State
+    {
         let prev_state = mem::replace(&mut self.state, State::Transitioning);
-        self.state = prev_state.into_node(close_group_ids, dst);
+        self.state = f(prev_state)
     }
 
     fn terminate(&mut self) {
@@ -289,6 +303,7 @@ impl StateMachine {
 impl State {
     fn handle_action(&mut self, action: Action) -> Transition {
         match *self {
+            State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
             State::Node(ref mut state) => state.handle_action(action),
             State::Terminated | State::Transitioning => unreachable!(),
@@ -297,9 +312,23 @@ impl State {
 
     fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
         match *self {
+            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
             State::Client(ref mut state) => state.handle_crust_event(event),
             State::Node(ref mut state) => state.handle_crust_event(event),
             State::Terminated | State::Transitioning => unreachable!(),
+        }
+    }
+
+    fn into_client(self,
+                   proxy_public_id: PublicId,
+                   proxy_peer_id: PeerId,
+                   quorum_size: usize)
+                   -> State {
+        match self {
+            State::Bootstrapping(state) => {
+                State::Client(state.into_client(proxy_public_id, proxy_peer_id, quorum_size))
+            }
+            _ => unreachable!(),
         }
     }
 
