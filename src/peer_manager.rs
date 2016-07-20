@@ -470,6 +470,7 @@ impl PeerManager {
             infos: match opt_their_info {
                 Some(their_info) => {
                     self.insert_state(pub_id, PeerState::CrustConnecting);
+                    let _ = self.pub_id_map.insert(their_info.id(), pub_id);
                     Some((our_info, their_info))
                 }
                 None => {
