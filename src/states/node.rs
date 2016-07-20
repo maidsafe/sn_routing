@@ -22,8 +22,7 @@ use itertools::Itertools;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
-use lru_time_cache::LruCache;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
 use std::{cmp, fmt, iter};
@@ -44,6 +43,7 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageCont
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, GROUP_SIZE,
                    NodeInfo, PeerManager, QUORUM_SIZE};
+use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use super::common::{self, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
@@ -71,13 +71,12 @@ pub struct Node {
     full_id: FullId,
     is_first_node: bool,
     is_listening: bool,
-    message_accumulator: MessageAccumulator,
+    msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
-    send_filter: LruCache<(u64, PeerId, u8), ()>,
     /// The last joining node we have sent a `GetNodeName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
-    signed_message_filter: MessageFilter<SignedMessage>,
+    signed_msg_filter: SignedMessageFilter,
     stats: Stats,
     tick_timer_token: u64,
     timer: Timer,
@@ -101,7 +100,7 @@ impl Node {
                                  crust_service,
                                  event_sender,
                                  full_id,
-                                 Default::default(),
+                                 MessageAccumulator::new(),
                                  PeerManager::new(our_info),
                                  Default::default(),
                                  timer,
@@ -117,7 +116,7 @@ impl Node {
                        crust_service: Service,
                        event_sender: Sender<Event>,
                        full_id: FullId,
-                       message_accumulator: MessageAccumulator,
+                       msg_accumulator: MessageAccumulator,
                        peer_mgr: PeerManager,
                        stats: Stats,
                        timer: Timer,
@@ -129,7 +128,7 @@ impl Node {
                                  crust_service,
                                  event_sender,
                                  full_id,
-                                 message_accumulator,
+                                 msg_accumulator,
                                  peer_mgr,
                                  stats,
                                  timer,
@@ -143,7 +142,7 @@ impl Node {
            crust_service: Service,
            event_sender: Sender<Event>,
            full_id: FullId,
-           message_accumulator: MessageAccumulator,
+           msg_accumulator: MessageAccumulator,
            peer_mgr: PeerManager,
            stats: Stats,
            mut timer: Timer,
@@ -165,12 +164,10 @@ impl Node {
             full_id: full_id,
             is_first_node: false,
             is_listening: false,
-            message_accumulator: message_accumulator,
-            signed_message_filter: MessageFilter::with_expiry_duration(Duration::from_secs(60 *
-                                                                                           20)),
+            msg_accumulator: msg_accumulator,
             peer_mgr: peer_mgr,
             response_cache: cache,
-            send_filter: LruCache::with_expiry_duration(Duration::from_secs(60 * 10)),
+            signed_msg_filter: SignedMessageFilter::new(),
             sent_network_name_to: None,
             stats: stats,
             tick_timer_token: tick_timer_token,
@@ -212,12 +209,11 @@ impl Node {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         self.ack_mgr.clear();
-        self.send_filter.clear();
-        self.signed_message_filter.clear();
         self.bucket_filter.clear();
-        self.message_accumulator.clear();
-        self.sent_network_name_to = None;
+        self.msg_accumulator.clear();
         self.peer_mgr.clear_caches();
+        self.signed_msg_filter.clear();
+        self.sent_network_name_to = None;
     }
 
     fn update_stats(&mut self) {
@@ -570,15 +566,17 @@ impl Node {
 
         // FIXME: This is currently only in place so acks can get delivered if the
         // original ack was lost in transit
-        if (self.message_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
+        if (self.msg_accumulator.contains(routing_msg) || !routing_msg.src.is_group()) &&
            self.is_recipient(&routing_msg.dst) {
             self.send_ack(routing_msg, route);
         }
 
+        let count = self.signed_msg_filter.filter_incoming(signed_msg);
+
         // Prevents
         // 1) someone sending messages repeatedly to us
         // 2) swarm messages generated by us reaching us again
-        if self.signed_message_filter.insert(signed_msg) > GROUP_SIZE {
+        if count > GROUP_SIZE {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -597,8 +595,7 @@ impl Node {
             debug!("{:?} Failed to send {:?}: {:?}", self, signed_msg, error);
         }
 
-        if self.signed_message_filter.count(signed_msg) == 1 &&
-           self.is_recipient(&routing_msg.dst) {
+        if count == 1 && self.is_recipient(&routing_msg.dst) {
             self.handle_routing_message(routing_msg, *signed_msg.public_id())
         } else {
             Ok(())
@@ -657,10 +654,10 @@ impl Node {
                               -> Result<(), RoutingError> {
         if self.is_bootstrapped() {
             let dynamic_quorum_size = self.dynamic_quorum_size();
-            self.message_accumulator.set_quorum_size(dynamic_quorum_size);
+            self.msg_accumulator.set_quorum_size(dynamic_quorum_size);
         }
 
-        if let Some(msg) = try!(self.message_accumulator.add(routing_msg, public_id)) {
+        if let Some(msg) = try!(self.msg_accumulator.add(routing_msg, public_id)) {
             if msg.src.is_group() {
                 self.send_ack(&msg, 0);
             }
@@ -878,11 +875,14 @@ impl Node {
         Ok(())
     }
 
-    /// Adds the signed message to the statistics and returns `true` if it should be blocked due
-    /// to deduplication.
-    fn filter_signed_msg(&mut self, msg: &SignedMessage, peer_id: &PeerId, route: u8) -> bool {
-        let hash = maidsafe_utilities::big_endian_sip_hash(msg);
-        if self.send_filter.insert((hash, *peer_id, route), ()).is_some() {
+    /// Adds the outgoing signed message to the statistics and returns `true`
+    /// if it should be blocked due to deduplication.
+    fn filter_outgoing_signed_msg(&mut self,
+                                  msg: &SignedMessage,
+                                  peer_id: &PeerId,
+                                  route: u8)
+                                  -> bool {
+        if self.signed_msg_filter.filter_outgoing(msg, peer_id, route) {
             return true;
         }
         self.stats.count_routing_message(msg.routing_message());
@@ -1559,7 +1559,7 @@ impl Node {
         // If we need to handle this message, handle it.
         let sent_msg = try!(self.message_to_send(&signed_msg, route, &hop));
         if self.is_recipient(&sent_msg.routing_message().dst) &&
-           self.signed_message_filter.insert(&sent_msg) == 1 {
+           self.signed_msg_filter.filter_incoming(&sent_msg) == 1 {
             self.handle_routing_message(sent_msg.routing_message(), *sent_msg.public_id())
         } else {
             Ok(())
@@ -1572,7 +1572,7 @@ impl Node {
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
         if self.peer_mgr.get_client(peer_id).is_some() {
-            if self.filter_signed_msg(&signed_msg, peer_id, 0) {
+            if self.filter_outgoing_signed_msg(&signed_msg, peer_id, 0) {
                 return Ok(());
             }
             let hop_msg =
@@ -1642,7 +1642,7 @@ impl Node {
                 self.disconnect_peer(&target_peer_id);
                 continue;
             };
-            if !self.filter_signed_msg(signed_msg, &target_peer_id, route) {
+            if !self.filter_outgoing_signed_msg(signed_msg, &target_peer_id, route) {
                 if let Err(err) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
                     info!("{:?} Error sending message to {:?}: {:?}.",
                           self,
