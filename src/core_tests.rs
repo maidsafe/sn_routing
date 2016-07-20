@@ -1017,12 +1017,12 @@ fn timeout_get_request() {
 
     loop {
         match clients[0].event_rx.try_recv() {
-            Ok(Event::RequestFailure(id)) => {
+            Ok(Event::RequestTimeout(id)) => {
                 assert_eq!(message_id, id);
                 break;
             }
             Ok(_) => (),
-            _ => panic!("Event::RequestFailure not received"),
+            _ => panic!("Event::RequestTimeout not received"),
         }
     }
 }

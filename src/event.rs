@@ -51,7 +51,7 @@ pub enum Event {
         dst: Authority,
     },
     /// Sending the request with the given message ID has failed.
-    RequestFailure(MessageId),
+    RequestTimeout(MessageId),
     /// A new node joined the network and may be a member of group authorities we also belong to.
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
@@ -84,8 +84,8 @@ impl Debug for Event {
                        src,
                        dst)
             }
-            Event::RequestFailure(ref msg_id) => {
-                write!(formatter, "Event::RequestFailure ( {:?} )", msg_id)
+            Event::RequestTimeout(ref msg_id) => {
+                write!(formatter, "Event::RequestTimeout ( {:?} )", msg_id)
             }
             Event::NodeAdded(ref node_name, _) => {
                 write!(formatter,
