@@ -20,7 +20,7 @@ use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use maidsafe_utilities::{self, serialisation}   ;
+use maidsafe_utilities::{self, serialisation};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -577,7 +577,8 @@ impl Client {
                 if let MessageContent::UserMessagePart { ref hash, .. } = unacked_msg.routing_msg
                     .content {
                     if let Some(msg_id) = self.request_msg_ids.remove(hash) {
-                        let _ = self.event_sender.send(Event::RequestFailure(msg_id));
+                        trace!("{:?} - Sending RequestTimeout({:?}).", self, msg_id);
+                        let _ = self.event_sender.send(Event::RequestTimeout(msg_id));
                     }
                 }
             } else if let Err(error) =
