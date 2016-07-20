@@ -1229,7 +1229,7 @@ fn request_during_churn_group_to_node() {
         let src = Authority::NaeManager(*data.name());
         sort_nodes_by_distance_to(&mut nodes, src.name());
 
-        let added_index = random_churn(&mut rng, &network, &mut nodes);
+        let mut added_index = random_churn(&mut rng, &network, &mut nodes);
 
         let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let dst = Authority::ManagedNode(nodes[index].name());
@@ -1262,7 +1262,7 @@ fn request_during_churn_group_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
         sort_nodes_by_distance_to(&mut nodes, &name0);
-        let _ = random_churn(&mut rng, &network, &mut nodes);
+        let added_index = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..GROUP_SIZE] {
             unwrap!(node.inner.send_get_request(src.clone(),
