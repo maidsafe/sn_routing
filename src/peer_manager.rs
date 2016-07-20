@@ -230,10 +230,13 @@ impl PeerManager {
     }
 
     pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<XorName>> {
-        let _ = self.node_map.insert(*info.public_id.name(),
-                                     (Instant::now(), PeerState::Connected));
-        let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
-        self.routing_table.add(*info.public_id.name())
+        let result = self.routing_table.add(*info.public_id.name());
+        if result.is_some() {
+            let _ = self.node_map.insert(*info.public_id.name(),
+                                         (Instant::now(), PeerState::Connected));
+            let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
+        }
+        result
     }
 
     pub fn remove_if_unneeded(&mut self, name: &XorName, target_id: &PeerId) -> Option<bool> {

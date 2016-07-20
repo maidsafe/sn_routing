@@ -1322,7 +1322,7 @@ impl Node {
             None => return Err(RoutingError::InvalidDestination),
         };
 
-        trace!("{:?} Sending GetCloseGroup response with {:?} to client {:?}.",
+        trace!("{:?} Sending GetCloseGroup response with {:?} to {:?}.",
                self,
                public_ids.iter().map(PublicId::name).collect_vec(),
                src);
