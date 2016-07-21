@@ -1863,13 +1863,6 @@ impl Node {
 
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter,
-               "{}({})",
-               if self.is_first_node {
-                   "Seed"
-               } else {
-                   "Node"
-               },
-               self.name())
+        write!(formatter, "Node({})", self.name())
     }
 }
