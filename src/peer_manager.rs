@@ -232,8 +232,12 @@ impl PeerManager {
     pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<XorName>> {
         let result = self.routing_table.add(*info.public_id.name());
         if result.is_some() {
-            let _ = self.node_map.insert(*info.public_id.name(),
-                                         (Instant::now(), PeerState::Connected));
+            let state = match self.node_map.remove(info.public_id.name()) {
+                Some((_, PeerState::SearchingForTunnel)) |
+                Some((_, PeerState::Tunnel)) => PeerState::Tunnel,
+                _ => PeerState::Connected,
+            };
+            let _ = self.node_map.insert(*info.public_id.name(), (Instant::now(), state));
             let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
         }
         result
