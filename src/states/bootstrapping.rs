@@ -156,6 +156,10 @@ impl Bootstrapping {
                                         self.timer)
     }
 
+    pub fn client_restriction(&self) -> bool {
+        self.client_restriction
+    }
+
     fn handle_timeout(&mut self, token: u64) {
         if let Some((bootstrap_id, bootstrap_token)) = self.bootstrap_connection {
             if bootstrap_token == token {

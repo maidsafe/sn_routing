@@ -20,13 +20,12 @@ use maidsafe_utilities;
 use std::time::Duration;
 
 use ack_manager::{ACK_TIMEOUT_SECS, AckManager, UnacknowledgedMessage};
-use authority::Authority;
 use error::RoutingError;
 use id::PublicId;
 use messages::{MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::{GROUP_SIZE, PeerManager};
 use signed_message_filter::SignedMessageFilter;
-use super::{DisconnectPeer, GetClientAuthority, SendRoutingMessage, StateCommon};
+use super::{SendRoutingMessage, StateCommon};
 use timer::Timer;
 
 // Common functionality for states that are bootstrapped (have established a crust
@@ -102,10 +101,6 @@ pub trait Bootstrapped: SendRoutingMessage + StateCommon {
         false
     }
 
-    fn filter_incoming_signed_msg(&mut self, msg: &SignedMessage) -> usize {
-        self.signed_msg_filter().filter_incoming(msg)
-    }
-
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
@@ -122,41 +117,6 @@ pub trait Bootstrapped: SendRoutingMessage + StateCommon {
                    self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
-        }
-    }
-}
-
-impl<T> DisconnectPeer for T
-    where T: Bootstrapped
-{
-    fn disconnect_peer(&mut self, peer_id: &PeerId) {
-        if let Some(&public_id) = self.peer_mgr().get_proxy_public_id(peer_id) {
-            debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
-                   self,
-                   public_id.name(),
-                   peer_id);
-        } else {
-            debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
-                   self,
-                   peer_id);
-            let _ = self.crust_service().disconnect(*peer_id);
-        }
-    }
-}
-
-impl<T> GetClientAuthority for T
-    where T: Bootstrapped
-{
-    fn get_client_authority(&self) -> Result<Authority, RoutingError> {
-        match *self.peer_mgr().proxy() {
-            Some((_, _, ref proxy_pub_id)) => {
-                Ok(Authority::Client {
-                    client_key: *self.full_id().public_id().signing_public_key(),
-                    proxy_node_name: *proxy_pub_id.name(),
-                    peer_id: self.crust_service().id(),
-                })
-            }
-            None => Err(RoutingError::NotBootstrapped),
         }
     }
 }

@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -35,10 +34,8 @@ use event::Event;
 use id::FullId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-use state_machine::{self, StateMachine, Transition};
+use state_machine::{State, StateMachine};
 use states;
-#[cfg(feature = "use-mock-crust")]
-use states::Testable;
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -111,7 +108,7 @@ impl NodeBuilder {
 
     fn make_state_machine(self,
                           event_sender: Sender<Event>)
-                          -> (RoutingActionSender, StateMachine<State>) {
+                          -> (RoutingActionSender, StateMachine) {
         let full_id = FullId::new();
 
         StateMachine::new(move |crust_service, timer| {
@@ -158,7 +155,7 @@ pub struct Node {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    machine: RefCell<StateMachine<State>>,
+    machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: RaiiThreadJoiner,
@@ -468,101 +465,6 @@ impl Drop for Node {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
             error!("Error {:?} sending event Core", err);
         }
-    }
-}
-
-pub enum State {
-    Bootstrapping(states::Bootstrapping),
-    JoiningNode(states::JoiningNode),
-    Node(states::Node),
-    Terminated,
-}
-
-impl State {
-    #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        match *self {
-            State::JoiningNode(ref mut state) => state.resend_unacknowledged(),
-            State::Node(ref mut state) => state.resend_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn has_unacknowledged(&self) -> bool {
-        match *self {
-            State::JoiningNode(ref state) => state.has_unacknowledged(),
-            State::Node(ref state) => state.has_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        match *self {
-            State::JoiningNode(ref state) => state.routing_table(),
-            State::Node(ref state) => state.routing_table(),
-            _ => unreachable!(),
-        }
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn clear_state(&mut self) {
-        match *self {
-            State::JoiningNode(ref mut state) => state.clear_state(),
-            State::Node(ref mut state) => state.clear_state(),
-            State::Bootstrapping(_) |
-            State::Terminated => (),
-        }
-    }
-}
-
-impl state_machine::State for State {
-    fn terminated() -> Self {
-        State::Terminated
-    }
-
-    fn is_terminated(&self) -> bool {
-        if let &State::Terminated = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn handle_action(&mut self, action: Action) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::JoiningNode(ref mut state) => state.handle_action(action),
-            State::Node(ref mut state) => state.handle_action(action),
-            State::Terminated => Transition::Terminate,
-        }
-    }
-
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
-            State::JoiningNode(ref mut state) => state.handle_crust_event(event),
-            State::Node(ref mut state) => state.handle_crust_event(event),
-            State::Terminated => Transition::Terminate,
-        }
-    }
-
-    fn into_next(self) -> Self {
-        match self {
-            State::Bootstrapping(state) => {
-                if let Some(state) = state.into_joining_node() {
-                    State::JoiningNode(state)
-                } else {
-                    State::Terminated
-                }
-            }
-            State::JoiningNode(state) => State::Node(state.into_node()),
-            _ => unreachable!(),
-        }
-
     }
 }
 
