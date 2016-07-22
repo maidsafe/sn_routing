@@ -37,9 +37,8 @@ use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, Connect, DisconnectPeer, DispatchRoutingMessage,
-                    GetClientAuthority, HandleHopMessage, ProxyClient, SendDirectMessage,
-                    SendRoutingMessage, StateCommon};
+use super::common::{self, Bootstrapped, Connect, DispatchRoutingMessage, HandleHopMessage,
+                    ProxyClient, SendDirectMessage, SendRoutingMessage, StateCommon};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use super::Node;
@@ -251,7 +250,7 @@ impl JoiningNode {
                     warn!("{:?} Signature check failed in NodeIdentify - Dropping peer {:?}",
                           self,
                           peer_id);
-                    self.disconnect_peer(&peer_id);
+                    common::disconnect_peer(self, &self.crust_service, &self.peer_mgr, &peer_id);
                     Ok(Transition::Stay)
                 }
             }
@@ -327,7 +326,9 @@ impl JoiningNode {
         };
 
         let request_msg = RoutingMessage {
-            src: try!(self.get_client_authority()),
+            src: try!(common::get_client_authority(&self.crust_service,
+                                                   &self.peer_mgr,
+                                                   self.full_id.public_id())),
             dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };

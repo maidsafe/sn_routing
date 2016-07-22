@@ -20,11 +20,12 @@ use crust::PeerId;
 use authority::Authority;
 use error::RoutingError;
 use event::Event;
+use id::PublicId;
 use messages::{HopMessage, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use state_machine::Transition;
-use super::{Bootstrapped, DisconnectPeer, DispatchRoutingMessage, HandleHopMessage,
-            HandleLostPeer, IsRecipient, SendOrDrop, SendRoutingMessage, StateCommon, to_hop_bytes};
+use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage, HandleLostPeer, SendOrDrop,
+            SendRoutingMessage};
 
 // Marker trait for states that connect via proxy node.
 pub trait ProxyClient {}
@@ -46,13 +47,13 @@ impl<T> HandleHopMessage for T
         try!(signed_msg.check_integrity());
 
         // Prevents someone sending messages repeatedly to us
-        if self.filter_incoming_signed_msg(signed_msg) > GROUP_SIZE {
+        if self.signed_msg_filter().filter_incoming(signed_msg) > GROUP_SIZE {
             return Err(RoutingError::FilterCheckFailed);
         }
 
         let routing_msg = signed_msg.routing_message();
 
-        if !self.is_recipient(&routing_msg.dst) {
+        if !is_recipient(self.full_id().public_id(), &routing_msg.dst) {
             return Ok(Transition::Stay);
         }
 
@@ -95,20 +96,8 @@ impl<T> HandleLostPeer for T
     }
 }
 
-impl<T> IsRecipient for T
-    where T: StateCommon + ProxyClient
-{
-    fn is_recipient(&self, dst: &Authority) -> bool {
-        if let Authority::Client { ref client_key, .. } = *dst {
-            client_key == self.full_id().public_id().signing_public_key()
-        } else {
-            false
-        }
-    }
-}
-
 impl<T> SendRoutingMessage for T
-    where T: Bootstrapped + DisconnectPeer + IsRecipient + ProxyClient + SendOrDrop
+    where T: Bootstrapped + ProxyClient + SendOrDrop
 {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -117,7 +106,7 @@ impl<T> SendRoutingMessage for T
         self.stats().count_route(route);
 
         if let Authority::Client { .. } = routing_msg.dst {
-            if self.is_recipient(&routing_msg.dst) {
+            if is_recipient(self.full_id().public_id(), &routing_msg.dst) {
                 return Ok(()); // Message is for us.
             }
         }
@@ -144,13 +133,14 @@ impl<T> SendRoutingMessage for T
         }
 
         let (peer_id, bytes) = if self.crust_service().is_connected(&peer_id) {
-            let bytes = try!(to_hop_bytes(signed_msg.clone(), route, Vec::new(), &self.full_id()));
+            let bytes =
+                try!(super::to_hop_bytes(signed_msg.clone(), route, Vec::new(), &self.full_id()));
             (peer_id, bytes)
         } else {
             trace!("{:?} - Not connected to {:?}. Dropping peer.",
                    self,
                    peer_id);
-            self.disconnect_peer(&peer_id);
+            super::disconnect_peer(self, self.crust_service(), self.peer_mgr(), &peer_id);
             return Ok(());
         };
 
@@ -164,5 +154,13 @@ impl<T> SendRoutingMessage for T
         }
 
         Ok(())
+    }
+}
+
+fn is_recipient(public_id: &PublicId, dst: &Authority) -> bool {
+    if let Authority::Client { ref client_key, .. } = *dst {
+        client_key == public_id.signing_public_key()
+    } else {
+        false
     }
 }

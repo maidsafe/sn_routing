@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::Event as CrustEvent;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -33,10 +32,8 @@ use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
 use types::RoutingActionSender;
-use state_machine::{self, StateMachine, Transition};
+use state_machine::{State, StateMachine};
 use states;
-#[cfg(feature = "use-mock-crust")]
-use states::Testable;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -53,7 +50,7 @@ pub struct Client {
     action_sender: ::types::RoutingActionSender,
 
     #[cfg(feature = "use-mock-crust")]
-    machine: RefCell<StateMachine<State>>,
+    machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
     _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
@@ -107,7 +104,7 @@ impl Client {
 
     fn make_state_machine(event_sender: Sender<Event>,
                           keys: Option<FullId>)
-                          -> (RoutingActionSender, StateMachine<State>) {
+                          -> (RoutingActionSender, StateMachine) {
         let cache = Box::new(NullCache);
         let full_id = keys.unwrap_or_else(FullId::new);
 
@@ -225,69 +222,6 @@ impl Drop for Client {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
             error!("Error {:?} sending event to Core", err);
-        }
-    }
-}
-
-enum State {
-    Bootstrapping(states::Bootstrapping),
-    Client(states::Client),
-    Terminated,
-}
-
-impl State {
-    #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        match *self {
-            State::Client(ref mut state) => state.resend_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn has_unacknowledged(&self) -> bool {
-        match *self {
-            State::Client(ref state) => state.has_unacknowledged(),
-            State::Bootstrapping(_) |
-            State::Terminated => false,
-        }
-    }
-}
-
-impl state_machine::State for State {
-    fn terminated() -> Self {
-        State::Terminated
-    }
-
-    fn is_terminated(&self) -> bool {
-        if let &State::Terminated = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn handle_action(&mut self, action: Action) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_action(action),
-            State::Client(ref mut state) => state.handle_action(action),
-            State::Terminated => Transition::Terminate,
-        }
-    }
-
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
-        match *self {
-            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
-            State::Client(ref mut state) => state.handle_crust_event(event),
-            State::Terminated => Transition::Terminate,
-        }
-    }
-
-    fn into_next(self) -> Self {
-        match self {
-            State::Bootstrapping(state) => State::Client(state.into_client()),
-            _ => unreachable!(),
         }
     }
 }

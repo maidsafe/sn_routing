@@ -17,13 +17,19 @@
 
 use crust::{CrustEventSender, Service};
 use crust::Event as CrustEvent;
+#[cfg(feature = "use-mock-crust")]
+use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
 
 use action::Action;
+use states::{Bootstrapping, Client, JoiningNode, Node};
+#[cfg(feature = "use-mock-crust")]
+use states::Testable;
 use timer::Timer;
 use types::RoutingActionSender;
+use xor_name::XorName;
 
 /// Holds the current state and handles state transitions.
 ///
@@ -73,20 +79,100 @@ use types::RoutingActionSender;
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
 /// they exchange `NodeIdentify` messages and add each other to their routing tables. When A
 /// receives its first `NodeIdentify`, it finally moves to the `Node` state.
-pub struct StateMachine<T> {
-    state: T,
+pub struct StateMachine {
+    state: State,
     category_rx: Receiver<MaidSafeEventCategory>,
     crust_rx: Receiver<CrustEvent>,
     action_rx: Receiver<Action>,
     is_running: bool,
 }
 
-pub trait State {
-    fn terminated() -> Self;
-    fn is_terminated(&self) -> bool;
-    fn handle_action(&mut self, action: Action) -> Transition;
-    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition;
-    fn into_next(self) -> Self;
+pub enum State {
+    Bootstrapping(Bootstrapping),
+    Client(Client),
+    JoiningNode(JoiningNode),
+    Node(Node),
+    Terminated,
+}
+
+impl State {
+    fn handle_action(&mut self, action: Action) -> Transition {
+        match *self {
+            State::Bootstrapping(ref mut state) => state.handle_action(action),
+            State::Client(ref mut state) => state.handle_action(action),
+            State::JoiningNode(ref mut state) => state.handle_action(action),
+            State::Node(ref mut state) => state.handle_action(action),
+            State::Terminated => Transition::Terminate,
+        }
+    }
+
+    fn handle_crust_event(&mut self, event: CrustEvent) -> Transition {
+        match *self {
+            State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
+            State::Client(ref mut state) => state.handle_crust_event(event),
+            State::JoiningNode(ref mut state) => state.handle_crust_event(event),
+            State::Node(ref mut state) => state.handle_crust_event(event),
+            State::Terminated => Transition::Terminate,
+        }
+    }
+
+    fn into_next(self) -> Self {
+        match self {
+            State::Bootstrapping(state) => {
+                if state.client_restriction() {
+                    State::Client(state.into_client())
+                } else if let Some(state) = state.into_joining_node() {
+                    State::JoiningNode(state)
+                } else {
+                    State::Terminated
+                }
+            }
+            State::JoiningNode(state) => State::Node(state.into_node()),
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        match *self {
+            State::Client(ref mut state) => state.resend_unacknowledged(),
+            State::JoiningNode(ref mut state) => state.resend_unacknowledged(),
+            State::Node(ref mut state) => state.resend_unacknowledged(),
+            State::Bootstrapping(_) |
+            State::Terminated => false,
+        }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn has_unacknowledged(&self) -> bool {
+        match *self {
+            State::Client(ref state) => state.has_unacknowledged(),
+            State::JoiningNode(ref state) => state.has_unacknowledged(),
+            State::Node(ref state) => state.has_unacknowledged(),
+            State::Bootstrapping(_) |
+            State::Terminated => false,
+        }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+        match *self {
+            State::JoiningNode(ref state) => state.routing_table(),
+            State::Node(ref state) => state.routing_table(),
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(feature = "use-mock-crust")]
+    pub fn clear_state(&mut self) {
+        match *self {
+            State::JoiningNode(ref mut state) => state.clear_state(),
+            State::Node(ref mut state) => state.clear_state(),
+            State::Bootstrapping(_) |
+            State::Client(_) |
+            State::Terminated => (),
+        }
+    }
 }
 
 pub enum Transition {
@@ -98,9 +184,9 @@ pub enum Transition {
     Terminate,
 }
 
-impl<T: State> StateMachine<T> {
+impl StateMachine {
     pub fn new<F>(f: F) -> (RoutingActionSender, Self)
-        where F: FnOnce(Service, Timer) -> T
+        where F: FnOnce(Service, Timer) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
         let (crust_tx, crust_rx) = mpsc::channel();
@@ -122,7 +208,10 @@ impl<T: State> StateMachine<T> {
         let timer = Timer::new(action_sender.clone());
 
         let state = f(crust_service, timer);
-        let is_running = !state.is_terminated();
+        let is_running = match state {
+            State::Terminated => false,
+            _ => true,
+        };
 
         let machine = StateMachine {
             category_rx: category_rx,
@@ -167,13 +256,13 @@ impl<T: State> StateMachine<T> {
 
     /// Get reference to the current state.
     #[cfg(feature = "use-mock-crust")]
-    pub fn current(&self) -> &T {
+    pub fn current(&self) -> &State {
         &self.state
     }
 
     /// Get mutable reference to the current state.
     #[cfg(feature = "use-mock-crust")]
-    pub fn current_mut(&mut self) -> &mut T {
+    pub fn current_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
@@ -205,7 +294,7 @@ impl<T: State> StateMachine<T> {
     fn next(&mut self) {
         // Temporarily switch to `Terminated` to allow moving out of the current
         // state without moving `self`.
-        let prev_state = mem::replace(&mut self.state, State::terminated());
+        let prev_state = mem::replace(&mut self.state, State::Terminated);
         self.state = prev_state.into_next()
     }
 

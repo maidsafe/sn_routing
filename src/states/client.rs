@@ -35,9 +35,9 @@ use peer_manager::{GROUP_SIZE, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{Bootstrapped, DispatchRoutingMessage, GetClientAuthority, HandleHopMessage,
-                    HandleLostPeer, HandleUserMessage, ProxyClient, SendRoutingMessage,
-                    StateCommon, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{self, Bootstrapped, DispatchRoutingMessage, HandleHopMessage, HandleLostPeer,
+                    HandleUserMessage, ProxyClient, SendRoutingMessage, StateCommon,
+                    USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use timer::Timer;
@@ -96,7 +96,10 @@ impl Client {
     pub fn handle_action(&mut self, action: Action) -> Transition {
         let result = match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
-                let result = if let Ok(src) = self.get_client_authority() {
+                let result = if let Ok(src) = common::get_client_authority(&self.crust_service,
+                                                                           &self.peer_mgr,
+                                                                           self.full_id
+                                                                               .public_id()) {
                     let user_msg = UserMessage::Request(content);
 
                     match self.send_user_message(src, dst, user_msg, priority) {

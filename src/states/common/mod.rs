@@ -30,6 +30,7 @@ use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
 use messages::{HopMessage, Message, RoutingMessage, SignedMessage, UserMessage};
+use peer_manager::PeerManager;
 use state_machine::Transition;
 use stats::Stats;
 use xor_name::XorName;
@@ -82,6 +83,39 @@ pub fn verify_signed_public_id(serialised_public_id: &[u8],
     }
 }
 
+pub fn get_client_authority(crust_service: &Service,
+                            peer_mgr: &PeerManager,
+                            public_id: &PublicId)
+                            -> Result<Authority, RoutingError> {
+    match *peer_mgr.proxy() {
+        Some((_, _, ref proxy_pub_id)) => {
+            Ok(Authority::Client {
+                client_key: *public_id.signing_public_key(),
+                proxy_node_name: *proxy_pub_id.name(),
+                peer_id: crust_service.id(),
+            })
+        }
+        None => Err(RoutingError::NotBootstrapped),
+    }
+}
+
+pub fn disconnect_peer<T: Debug>(state: &T,
+                                 crust_service: &Service,
+                                 peer_mgr: &PeerManager,
+                                 peer_id: &PeerId) {
+    if let Some(&public_id) = peer_mgr.get_proxy_public_id(peer_id) {
+        debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
+                state,
+                public_id.name(),
+                peer_id);
+    } else {
+        debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
+                state,
+                peer_id);
+        let _ = crust_service.disconnect(*peer_id);
+    }
+}
+
 // Trait for all states.
 pub trait StateCommon: Debug {
     fn crust_service(&self) -> &Service;
@@ -94,18 +128,10 @@ pub trait StateCommon: Debug {
     }
 }
 
-pub trait DisconnectPeer {
-    fn disconnect_peer(&mut self, peer_id: &PeerId);
-}
-
 pub trait DispatchRoutingMessage {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<Transition, RoutingError>;
-}
-
-pub trait GetClientAuthority {
-    fn get_client_authority(&self) -> Result<Authority, RoutingError>;
 }
 
 pub trait HandleLostPeer {
@@ -161,10 +187,6 @@ pub trait HandleUserMessage: StateCommon {
 
         self.send_event(event);
     }
-}
-
-pub trait IsRecipient {
-    fn is_recipient(&self, dst: &Authority) -> bool;
 }
 
 #[cfg(feature = "use-mock-crust")]
