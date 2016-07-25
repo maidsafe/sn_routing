@@ -49,6 +49,10 @@ impl MessageAccumulator {
         self.accumulator.set_quorum_size(size)
     }
 
+    pub fn get_quorum_size(&self) -> usize {
+        self.accumulator.get_quorum_size()
+    }
+
     pub fn add(&mut self,
                msg: &RoutingMessage,
                public_id: PublicId)
