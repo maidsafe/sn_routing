@@ -40,7 +40,7 @@ use message_accumulator::MessageAccumulator;
 use message_filter::MessageFilter;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
-use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager, QUORUM_SIZE};
+use peer_manager::{GROUP_SIZE, PeerManager, QUORUM_SIZE};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
@@ -94,14 +94,14 @@ impl Node {
                  -> Option<Self> {
         let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
         full_id.public_id_mut().set_name(name);
-        let our_info = NodeInfo::new(*full_id.public_id(), crust_service.id());
+        let public_id = *full_id.public_id();
 
         let mut node = Self::new(cache,
                                  crust_service,
                                  event_sender,
                                  full_id,
                                  MessageAccumulator::new(),
-                                 PeerManager::new(our_info),
+                                 PeerManager::new(public_id),
                                  Default::default(),
                                  timer);
 
@@ -791,14 +791,12 @@ impl Node {
             return; // We already sent a `NodeIdentify` to this peer.
         }
 
-        let info = NodeInfo::new(public_id, peer_id);
-
         let bucket_index = self.name().bucket_index(&name);
         let common_groups = self.peer_mgr
             .routing_table()
             .is_in_any_close_group_with(bucket_index, GROUP_SIZE);
 
-        match self.peer_mgr.add_to_routing_table(info) {
+        match self.peer_mgr.add_to_routing_table(public_id, peer_id) {
             None => {
                 debug!("{:?} Peer was not added to the routing table: {:?}",
                        self,

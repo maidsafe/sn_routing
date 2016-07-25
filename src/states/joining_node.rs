@@ -33,7 +33,7 @@ use event::Event;
 use id::{FullId, PublicId};
 use message_accumulator::MessageAccumulator;
 use messages::{DirectMessage, Message, MessageContent, RoutingMessage};
-use peer_manager::{GROUP_SIZE, NodeInfo, PeerManager};
+use peer_manager::{GROUP_SIZE, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
@@ -66,6 +66,7 @@ pub struct JoiningNode {
 }
 
 impl JoiningNode {
+    #[cfg_attr(feature = "clippy", allow(too_many_arguments))]
     pub fn from_bootstrapping(cache: Box<Cache>,
                               crust_service: Service,
                               event_sender: Sender<Event>,
@@ -274,8 +275,7 @@ impl JoiningNode {
                                      dst: Authority)
                                      -> Transition {
         self.full_id.public_id_mut().set_name(*relocated_id.name());
-        let our_info = NodeInfo::new(*self.full_id.public_id(), self.crust_service.id());
-        self.peer_mgr.reset_routing_table(our_info);
+        self.peer_mgr.reset_routing_table(*self.full_id.public_id());
 
         close_group_ids.truncate(GROUP_SIZE / 2);
 

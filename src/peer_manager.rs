@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::{error, fmt};
 use std::time::{Duration, Instant};
 use xor_name::XorName;
-use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails, RoutingTable};
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, RoutingTable};
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
 pub const GROUP_SIZE: usize = 8;
@@ -44,30 +44,6 @@ const CONNECTION_TIMEOUT_SECS: u64 = 0;
 /// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
 /// table.
 const EXTRA_BUCKET_ENTRIES: usize = 2;
-
-/// Info about nodes in the routing table.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct NodeInfo {
-    pub public_id: PublicId,
-    pub peer_id: PeerId,
-}
-
-impl NodeInfo {
-    pub fn new(public_id: PublicId, peer_id: PeerId) -> Self {
-        NodeInfo {
-            public_id: public_id,
-            peer_id: peer_id,
-        }
-    }
-}
-
-impl ContactInfo for NodeInfo {
-    type Name = XorName;
-
-    fn name(&self) -> &XorName {
-        self.public_id.name()
-    }
-}
 
 /// Info about client a proxy kept in a proxy node.
 pub struct ClientInfo {
@@ -197,28 +173,28 @@ pub struct PeerManager {
     proxy: Option<(Instant, PeerId, PublicId)>,
     pub_id_map: HashMap<PeerId, PublicId>,
     routing_table: RoutingTable<XorName>,
-    our_info: NodeInfo,
+    our_public_id: PublicId,
 }
 
 impl PeerManager {
-    pub fn new(our_info: NodeInfo) -> PeerManager {
+    pub fn new(our_public_id: PublicId) -> PeerManager {
         PeerManager {
             client_map: HashMap::new(),
             connection_token_map: HashMap::new(),
             node_map: HashMap::new(),
             proxy: None,
             pub_id_map: HashMap::new(),
-            routing_table: RoutingTable::<XorName>::new(*our_info.name(),
+            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(),
                                                         GROUP_SIZE,
                                                         EXTRA_BUCKET_ENTRIES),
-            our_info: our_info,
+            our_public_id: our_public_id,
         }
     }
 
-    pub fn reset_routing_table(&mut self, our_info: NodeInfo) {
-        self.our_info = our_info;
+    pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
+        self.our_public_id = our_public_id;
         self.routing_table =
-            RoutingTable::<XorName>::new(*our_info.name(), GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
+            RoutingTable::<XorName>::new(*our_public_id.name(), GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
     }
 
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
@@ -229,16 +205,16 @@ impl PeerManager {
         self.routing_table.close_nodes(name, GROUP_SIZE)
     }
 
-    pub fn add_to_routing_table(&mut self, info: NodeInfo) -> Option<AddedNodeDetails<XorName>> {
-        let result = self.routing_table.add(*info.public_id.name());
+    pub fn add_to_routing_table(&mut self, public_id: PublicId, peer_id: PeerId) -> Option<AddedNodeDetails<XorName>> {
+        let result = self.routing_table.add(*public_id.name());
         if result.is_some() {
-            let state = match self.node_map.remove(info.public_id.name()) {
+            let state = match self.node_map.remove(public_id.name()) {
                 Some((_, PeerState::SearchingForTunnel)) |
                 Some((_, PeerState::Tunnel)) => PeerState::Tunnel,
                 _ => PeerState::Connected,
             };
-            let _ = self.node_map.insert(*info.public_id.name(), (Instant::now(), state));
-            let _ = self.pub_id_map.insert(info.peer_id, info.public_id);
+            let _ = self.node_map.insert(*public_id.name(), (Instant::now(), state));
+            let _ = self.pub_id_map.insert(peer_id, public_id);
         }
         result
     }
@@ -408,8 +384,8 @@ impl PeerManager {
                 let _ = result_map.insert(*pub_id.name(), *pub_id);
             }
         }
-        if names.contains(self.our_info.name()) {
-            let _ = result_map.insert(*self.our_info.name(), self.our_info.public_id);
+        if names.contains(self.our_public_id.name()) {
+            let _ = result_map.insert(*self.our_public_id.name(), self.our_public_id);
         }
         names.iter()
             .filter_map(|name| result_map.get(name))
@@ -673,7 +649,7 @@ mod tests {
     #[test]
     pub fn connection_info_prepare_receive() {
         let orig_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(NodeInfo::new(orig_pub_id, PeerId(0)));
+        let mut peer_mgr = PeerManager::new(orig_pub_id);
 
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
@@ -709,7 +685,7 @@ mod tests {
     #[test]
     pub fn connection_info_receive_prepare() {
         let orig_pub_id = *FullId::new().public_id();
-        let mut peer_mgr = PeerManager::new(NodeInfo::new(orig_pub_id, PeerId(0)));
+        let mut peer_mgr = PeerManager::new(orig_pub_id);
         let our_connection_info = PrivConnectionInfo(PeerId(0), Endpoint(0));
         let their_connection_info = PubConnectionInfo(PeerId(1), Endpoint(1));
         // We received a connection info from the peer and get a token to prepare ours.

@@ -32,7 +32,7 @@ use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
 use messages::{DirectMessage, Message};
-use peer_manager::{NodeInfo, PeerManager};
+use peer_manager::PeerManager;
 use state_machine::Transition;
 use stats::Stats;
 use super::{Client, JoiningNode};
@@ -243,8 +243,7 @@ impl Bootstrapping {
             return Transition::Stay;
         }
 
-        let our_info = NodeInfo::new(*self.full_id.public_id(), self.crust_service.id());
-        let mut peer_mgr = PeerManager::new(our_info);
+        let mut peer_mgr = PeerManager::new(*self.full_id.public_id());
         let _ = peer_mgr.set_proxy(peer_id, public_id);
 
         self.next_state_details = Some((peer_mgr, current_quorum_size));
