@@ -51,8 +51,6 @@ pub struct Bootstrapping {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
-    // PublicId and PeerId of the proxy node + current quorum size.
-    next_state_details: Option<(PeerId, PublicId, usize)>,
     stats: Stats,
     timer: Timer,
 }
@@ -75,7 +73,6 @@ impl Bootstrapping {
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
-            next_state_details: None,
             stats: Default::default(),
             timer: timer,
         }
@@ -132,9 +129,11 @@ impl Bootstrapping {
         }
     }
 
-    pub fn into_client(self) -> Client {
-        let (proxy_peer_id, proxy_public_id, quorum_size) = unwrap!(self.next_state_details);
-
+    pub fn into_client(self,
+                       proxy_peer_id: PeerId,
+                       proxy_public_id: PublicId,
+                       quorum_size: usize)
+                       -> Client {
         Client::from_bootstrapping(self.crust_service,
                                    self.event_sender,
                                    self.full_id,
@@ -145,9 +144,11 @@ impl Bootstrapping {
                                    self.timer)
     }
 
-    pub fn into_joining_node(self) -> Option<JoiningNode> {
-        let (proxy_peer_id, proxy_public_id, quorum_size) = unwrap!(self.next_state_details);
-
+    pub fn into_joining_node(self,
+                             proxy_peer_id: PeerId,
+                             proxy_public_id: PublicId,
+                             quorum_size: usize)
+                             -> Option<JoiningNode> {
         JoiningNode::from_bootstrapping(self.cache,
                                         self.crust_service,
                                         self.event_sender,
@@ -246,8 +247,11 @@ impl Bootstrapping {
             return Transition::Stay;
         }
 
-        self.next_state_details = Some((peer_id, public_id, current_quorum_size));
-        Transition::Next
+        Transition::IntoBootstrapped {
+            proxy_peer_id: peer_id,
+            proxy_public_id: public_id,
+            quorum_size: current_quorum_size,
+        }
     }
 
     fn handle_bootstrap_deny(&mut self) -> Transition {

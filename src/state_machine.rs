@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::{CrustEventSender, Service};
+use crust::{CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
@@ -24,6 +24,7 @@ use std::mem;
 use std::sync::mpsc::{self, Receiver};
 
 use action::Action;
+use id::PublicId;
 use states::{Bootstrapping, Client, JoiningNode, Node};
 #[cfg(feature = "use-mock-crust")]
 use states::Testable;
@@ -117,18 +118,29 @@ impl State {
         }
     }
 
-    fn into_next(self) -> Self {
+    fn into_bootstrapped(self,
+                         proxy_peer_id: PeerId,
+                         proxy_public_id: PublicId,
+                         quorum_size: usize)
+                         -> Self {
         match self {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
-                    State::Client(state.into_client())
-                } else if let Some(state) = state.into_joining_node() {
+                    State::Client(state.into_client(proxy_peer_id, proxy_public_id, quorum_size))
+                } else if let Some(state) =
+                       state.into_joining_node(proxy_peer_id, proxy_public_id, quorum_size) {
                     State::JoiningNode(state)
                 } else {
                     State::Terminated
                 }
             }
-            State::JoiningNode(state) => State::Node(state.into_node()),
+            _ => unreachable!(),
+        }
+    }
+
+    fn into_node(self, peer_id: PeerId, public_id: PublicId) -> Self {
+        match self {
+            State::JoiningNode(state) => State::Node(state.into_node(peer_id, public_id)),
             _ => unreachable!(),
         }
     }
@@ -177,16 +189,27 @@ impl State {
 }
 
 pub enum Transition {
-    // Stay in the current state
+    // Stay in the current state.
     Stay,
-    // Go to the next state
-    Next,
+    // Transition into a bootstrapped state (JoiningNode or Client).
+    IntoBootstrapped {
+        proxy_peer_id: PeerId,
+        proxy_public_id: PublicId,
+        quorum_size: usize,
+    },
+    // Transition into Node.
+    IntoNode {
+        peer_id: PeerId,
+        public_id: PublicId,
+    },
     // Terminate
     Terminate,
 }
 
 impl StateMachine {
-    pub fn new<F>(f: F) -> (RoutingActionSender, Self)
+    // Construct a new StateMachine by passing a function returning the initial
+    // state.
+    pub fn new<F>(init_state: F) -> (RoutingActionSender, Self)
         where F: FnOnce(Service, Timer) -> State
     {
         let (category_tx, category_rx) = mpsc::channel();
@@ -208,7 +231,7 @@ impl StateMachine {
 
         let timer = Timer::new(action_sender.clone());
 
-        let state = f(crust_service, timer);
+        let state = init_state(crust_service, timer);
         let is_running = match state {
             State::Terminated => false,
             _ => true,
@@ -287,19 +310,37 @@ impl StateMachine {
 
         match transition {
             Transition::Stay => (),
+            Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id, quorum_size } => {
+                self.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
+            }
+            Transition::IntoNode { peer_id, public_id } => self.into_node(peer_id, public_id),
             Transition::Terminate => self.terminate(),
-            Transition::Next => self.next(),
         }
     }
 
-    fn next(&mut self) {
-        // Temporarily switch to `Terminated` to allow moving out of the current
-        // state without moving `self`.
-        let prev_state = mem::replace(&mut self.state, State::Terminated);
-        self.state = prev_state.into_next()
+    fn into_bootstrapped(&mut self,
+                         proxy_peer_id: PeerId,
+                         proxy_public_id: PublicId,
+                         quorum_size: usize) {
+        self.transition(|state| {
+            state.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
+        })
+    }
+
+    fn into_node(&mut self, peer_id: PeerId, public_id: PublicId) {
+        self.transition(|state| state.into_node(peer_id, public_id))
     }
 
     fn terminate(&mut self) {
         self.is_running = false;
+    }
+
+    fn transition<F>(&mut self, f: F)
+        where F: FnOnce(State) -> State
+    {
+        // Temporarily switch to `Terminated` to allow moving out of the current
+        // state without moving `self`.
+        let prev_state = mem::replace(&mut self.state, State::Terminated);
+        self.state = f(prev_state);
     }
 }

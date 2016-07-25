@@ -59,7 +59,6 @@ pub struct JoiningNode {
     full_id: FullId,
     get_node_name_timer_token: Option<u64>,
     msg_accumulator: MessageAccumulator,
-    next_state_details: Option<(PeerId, PublicId)>,
     peer_mgr: PeerManager,
     signed_msg_filter: SignedMessageFilter,
     stats: Stats,
@@ -89,7 +88,6 @@ impl JoiningNode {
             full_id: full_id,
             get_node_name_timer_token: None,
             msg_accumulator: MessageAccumulator::with_quorum_size(quorum_size),
-            next_state_details: None,
             peer_mgr: peer_mgr,
             signed_msg_filter: SignedMessageFilter::new(),
             stats: stats,
@@ -106,9 +104,7 @@ impl JoiningNode {
         }
     }
 
-    pub fn into_node(self) -> Node {
-        let (peer_id, public_id) = unwrap!(self.next_state_details);
-
+    pub fn into_node(self, peer_id: PeerId, public_id: PublicId) -> Node {
         Node::from_joining_node(peer_id,
                                 public_id,
                                 self.cache,
@@ -394,8 +390,10 @@ impl Connect for JoiningNode {
                self,
                public_id.name());
 
-        self.next_state_details = Some((peer_id, public_id));
-        Transition::Next
+        Transition::IntoNode {
+            peer_id: peer_id,
+            public_id: public_id,
+        }
     }
 }
 
