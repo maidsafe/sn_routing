@@ -26,12 +26,12 @@ use id::PublicId;
 use messages::{DirectMessage, MessageContent, RoutingMessage};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult};
 use state_machine::Transition;
-use super::{Bootstrapped, SendDirectMessage, SendRoutingMessage, StateCommon};
+use super::{Bootstrapped, GetPeerManager, SendDirectMessage, SendRoutingMessage, StateCommon};
 use xor_name::XorName;
 
 // Common functionality for states that need to connect to other nodes.
 pub trait Connect
-    : Bootstrapped + SendDirectMessage + SendRoutingMessage + StateCommon {
+    : Bootstrapped + GetPeerManager + SendDirectMessage + SendRoutingMessage + StateCommon {
     fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition;
 
     /// Checks whether the given `name` is allowed to be added to our routing table or is already

@@ -44,7 +44,7 @@ use peer_manager::{GROUP_SIZE, PeerManager, QUORUM_SIZE};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, Connect, HandleLostPeer, HandleUserMessage,
+use super::common::{self, Bootstrapped, Connect, GetPeerManager, HandleLostPeer, HandleUserMessage,
                     SendDirectMessage, SendOrDrop, SendRoutingMessage, StateCommon,
                     USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 #[cfg(feature = "use-mock-crust")]
@@ -1416,14 +1416,6 @@ impl Bootstrapped for Node {
         &mut self.ack_mgr
     }
 
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
         &mut self.signed_msg_filter
     }
@@ -1462,6 +1454,16 @@ impl Connect for Node {
 impl Debug for Node {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Node({})", self.name())
+    }
+}
+
+impl GetPeerManager for Node {
+    fn peer_mgr(&self) -> &PeerManager {
+        &self.peer_mgr
+    }
+
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
+        &mut self.peer_mgr
     }
 }
 

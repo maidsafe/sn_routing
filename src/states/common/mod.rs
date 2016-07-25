@@ -99,23 +99,6 @@ pub fn get_client_authority(crust_service: &Service,
     }
 }
 
-pub fn disconnect_peer<T: Debug>(state: &T,
-                                 crust_service: &Service,
-                                 peer_mgr: &PeerManager,
-                                 peer_id: &PeerId) {
-    if let Some(&public_id) = peer_mgr.get_proxy_public_id(peer_id) {
-        debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
-                state,
-                public_id.name(),
-                peer_id);
-    } else {
-        debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
-                state,
-                peer_id);
-        let _ = crust_service.disconnect(*peer_id);
-    }
-}
-
 // Trait for all states.
 pub trait StateCommon: Debug {
     fn crust_service(&self) -> &Service;
@@ -132,6 +115,11 @@ pub trait DispatchRoutingMessage {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<Transition, RoutingError>;
+}
+
+pub trait GetPeerManager {
+    fn peer_mgr(&self) -> &PeerManager;
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
 }
 
 pub trait HandleLostPeer {

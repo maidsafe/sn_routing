@@ -31,13 +31,13 @@ use event::Event;
 use id::{FullId, PublicId};
 use message_accumulator::MessageAccumulator;
 use messages::{Message, MessageContent, RoutingMessage, UserMessage, UserMessageCache};
-use peer_manager::{GROUP_SIZE, PeerManager};
+use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, DispatchRoutingMessage, HandleHopMessage, HandleLostPeer,
-                    HandleUserMessage, ProxyClient, SendRoutingMessage, StateCommon,
-                    USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage,
+                    HandleLostPeer, HandleUserMessage, ProxyClient, SendRoutingMessage,
+                    StateCommon, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use timer::Timer;
@@ -49,7 +49,8 @@ pub struct Client {
     event_sender: Sender<Event>,
     full_id: FullId,
     msg_accumulator: MessageAccumulator,
-    peer_mgr: PeerManager,
+    proxy_peer_id: PeerId,
+    proxy_public_id: PublicId,
     request_msg_ids: LruCache<u64, MessageId>,
     signed_msg_filter: SignedMessageFilter,
     stats: Stats,
@@ -62,7 +63,8 @@ impl Client {
     pub fn from_bootstrapping(crust_service: Service,
                               event_sender: Sender<Event>,
                               full_id: FullId,
-                              peer_mgr: PeerManager,
+                              proxy_peer_id: PeerId,
+                              proxy_public_id: PublicId,
                               quorum_size: usize,
                               stats: Stats,
                               timer: Timer)
@@ -73,7 +75,8 @@ impl Client {
             event_sender: event_sender,
             full_id: full_id,
             msg_accumulator: MessageAccumulator::with_quorum_size(quorum_size),
-            peer_mgr: peer_mgr,
+            proxy_peer_id: proxy_peer_id,
+            proxy_public_id: proxy_public_id,
             request_msg_ids: LruCache::with_expiry_duration(Duration::from_secs(GROUP_SIZE as u64 *
                                                                                 ACK_TIMEOUT_SECS *
                                                                                 2)),
@@ -96,18 +99,16 @@ impl Client {
     pub fn handle_action(&mut self, action: Action) -> Transition {
         let result = match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
-                let result = if let Ok(src) = common::get_client_authority(&self.crust_service,
-                                                                           &self.peer_mgr,
-                                                                           self.full_id
-                                                                               .public_id()) {
-                    let user_msg = UserMessage::Request(content);
+                let src = Authority::Client {
+                    client_key: *self.full_id.public_id().signing_public_key(),
+                    proxy_node_name: *self.proxy_public_id.name(),
+                    peer_id: self.crust_service.id(),
+                };
 
-                    match self.send_user_message(src, dst, user_msg, priority) {
-                        Err(RoutingError::Interface(err)) => Err(err),
-                        Err(_) | Ok(_) => Ok(()),
-                    }
-                } else {
-                    Err(InterfaceError::NotConnected)
+                let user_msg = UserMessage::Request(content);
+                let result = match self.send_user_message(src, dst, user_msg, priority) {
+                    Err(RoutingError::Interface(err)) => Err(err),
+                    Err(_) | Ok(_) => Ok(()),
                 };
 
                 result_tx.send(result).is_ok()
@@ -218,14 +219,6 @@ impl Bootstrapped for Client {
         &mut self.ack_mgr
     }
 
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
-    }
-
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
@@ -316,7 +309,15 @@ impl HandleUserMessage for Client {
     }
 }
 
-impl ProxyClient for Client {}
+impl ProxyClient for Client {
+    fn proxy_peer_id(&self) -> &PeerId {
+        &self.proxy_peer_id
+    }
+
+    fn proxy_public_id(&self) -> &PublicId {
+        &self.proxy_public_id
+    }
+}
 
 impl StateCommon for Client {
     fn crust_service(&self) -> &Service {

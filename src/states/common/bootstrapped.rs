@@ -23,7 +23,7 @@ use ack_manager::{ACK_TIMEOUT_SECS, AckManager, UnacknowledgedMessage};
 use error::RoutingError;
 use id::PublicId;
 use messages::{MessageContent, RoutingMessage, SignedMessage};
-use peer_manager::{GROUP_SIZE, PeerManager};
+use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use super::{SendRoutingMessage, StateCommon};
 use timer::Timer;
@@ -37,8 +37,6 @@ pub trait Bootstrapped: SendRoutingMessage + StateCommon {
                   -> Result<Option<RoutingMessage>, RoutingError>;
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
-    fn peer_mgr(&self) -> &PeerManager;
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter;
     fn timer(&mut self) -> &mut Timer;
 

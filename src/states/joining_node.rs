@@ -37,8 +37,9 @@ use peer_manager::{GROUP_SIZE, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, Connect, DispatchRoutingMessage, HandleHopMessage,
-                    ProxyClient, SendDirectMessage, SendRoutingMessage, StateCommon};
+use super::common::{self, Bootstrapped, Connect, DispatchRoutingMessage, GetPeerManager,
+                    HandleHopMessage, ProxyClient, SendDirectMessage, SendRoutingMessage,
+                    StateCommon};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use super::Node;
@@ -71,11 +72,15 @@ impl JoiningNode {
                               crust_service: Service,
                               event_sender: Sender<Event>,
                               full_id: FullId,
-                              peer_mgr: PeerManager,
+                              proxy_peer_id: PeerId,
+                              proxy_public_id: PublicId,
                               quorum_size: usize,
                               stats: Stats,
                               timer: Timer)
                               -> Option<Self> {
+        let mut peer_mgr = PeerManager::new(*full_id.public_id());
+        let _ = peer_mgr.set_proxy(proxy_peer_id, proxy_public_id);
+
         let mut node = JoiningNode {
             ack_mgr: AckManager::new(),
             cache: cache,
@@ -251,7 +256,7 @@ impl JoiningNode {
                     warn!("{:?} Signature check failed in NodeIdentify - Dropping peer {:?}",
                           self,
                           peer_id);
-                    common::disconnect_peer(self, &self.crust_service, &self.peer_mgr, &peer_id);
+                    self.disconnect_peer(&peer_id);
                     Ok(Transition::Stay)
                 }
             }
@@ -338,6 +343,20 @@ impl JoiningNode {
               self.full_id.public_id());
         self.send_routing_message(request_msg)
     }
+
+    fn disconnect_peer(&self, peer_id: &PeerId) {
+        if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
+            debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
+                    self,
+                    public_id.name(),
+                    peer_id);
+        } else {
+            debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
+                    self,
+                    peer_id);
+            let _ = self.crust_service.disconnect(*peer_id);
+        }
+    }
 }
 
 impl Bootstrapped for JoiningNode {
@@ -354,14 +373,6 @@ impl Bootstrapped for JoiningNode {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
-    }
-
-    fn peer_mgr(&self) -> &PeerManager {
-        &self.peer_mgr
-    }
-
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
-        &mut self.peer_mgr
     }
 
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
@@ -447,7 +458,28 @@ impl DispatchRoutingMessage for JoiningNode {
     }
 }
 
-impl ProxyClient for JoiningNode {}
+impl GetPeerManager for JoiningNode {
+    fn peer_mgr(&self) -> &PeerManager {
+        &self.peer_mgr
+    }
+
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager {
+        &mut self.peer_mgr
+    }
+}
+
+impl ProxyClient for JoiningNode {
+    fn proxy_peer_id(&self) -> &PeerId {
+        // It should safe to unwrap here, because we set the proxy node in the
+        // constructor and never remove it.
+        &unwrap!(self.peer_mgr.proxy().as_ref()).1
+    }
+
+    fn proxy_public_id(&self) -> &PublicId {
+        // Safe to unwrap. See the above comment.
+        &unwrap!(self.peer_mgr.proxy().as_ref()).2
+    }
+}
 
 impl SendDirectMessage for JoiningNode {}
 

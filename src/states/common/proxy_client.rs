@@ -24,11 +24,14 @@ use id::PublicId;
 use messages::{HopMessage, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use state_machine::Transition;
-use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage, HandleLostPeer, SendOrDrop,
-            SendRoutingMessage};
+use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage,
+            HandleLostPeer, SendOrDrop, SendRoutingMessage};
 
-// Marker trait for states that connect via proxy node.
-pub trait ProxyClient {}
+// Trait for states that connect via proxy node.
+pub trait ProxyClient {
+    fn proxy_peer_id(&self) -> &PeerId;
+    fn proxy_public_id(&self) -> &PublicId;
+}
 
 impl<T> HandleHopMessage for T
     where T: Bootstrapped + DispatchRoutingMessage + ProxyClient + SendRoutingMessage
@@ -37,8 +40,9 @@ impl<T> HandleHopMessage for T
                           hop_msg: HopMessage,
                           peer_id: PeerId)
                           -> Result<Transition, RoutingError> {
-        if let Some(pub_id) = self.peer_mgr().get_proxy_public_id(&peer_id) {
-            try!(hop_msg.verify(pub_id.signing_public_key()));
+
+        if *self.proxy_peer_id() == peer_id {
+            try!(hop_msg.verify(self.proxy_public_id().signing_public_key()));
         } else {
             return Err(RoutingError::UnknownConnection(peer_id));
         }
@@ -69,8 +73,7 @@ impl<T> HandleHopMessage for T
     }
 }
 
-impl<T> HandleLostPeer for T
-    where T: Bootstrapped + ProxyClient
+impl<T> HandleLostPeer for T where T: Bootstrapped + ProxyClient
 {
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
         if peer_id == self.crust_service().id() {
@@ -79,26 +82,24 @@ impl<T> HandleLostPeer for T
         }
 
         debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-        let _ = self.peer_mgr_mut().remove_peer(&peer_id);
 
-        if self.peer_mgr().get_proxy_public_id(&peer_id).is_some() {
-            if let Some((_, _, public_id)) = self.peer_mgr_mut().remove_proxy() {
-                debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                       self,
-                       public_id.name(),
-                       peer_id);
-                self.send_event(Event::Terminate);
-                return Transition::Terminate;
-            }
+        // TODO(adam): remove this but make sure it's handled in JoiningNode.
+        // let _ = self.peer_mgr_mut().remove_peer(&peer_id);
+
+        if *self.proxy_peer_id() == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id().name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
         }
-
-        Transition::Stay
     }
 }
 
-impl<T> SendRoutingMessage for T
-    where T: Bootstrapped + ProxyClient + SendOrDrop
-{
+impl<T> SendRoutingMessage for T where T: Bootstrapped + ProxyClient + SendOrDrop {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
@@ -112,9 +113,9 @@ impl<T> SendRoutingMessage for T
         }
 
         // Get PeerId of the proxy node
-        let peer_id = if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
-            if let Some(&peer_id) = self.peer_mgr().get_proxy_peer_id(proxy_node_name) {
-                peer_id
+        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
+            if *self.proxy_public_id().name() == *proxy_node_name {
+                *self.proxy_peer_id()
             } else {
                 error!("{:?} - Unable to find connection to proxy node in proxy map",
                        self);
@@ -132,23 +133,16 @@ impl<T> SendRoutingMessage for T
             return Ok(());
         }
 
-        let (peer_id, bytes) = if self.crust_service().is_connected(&peer_id) {
-            let bytes =
-                try!(super::to_hop_bytes(signed_msg.clone(), route, Vec::new(), &self.full_id()));
-            (peer_id, bytes)
-        } else {
-            trace!("{:?} - Not connected to {:?}. Dropping peer.",
-                   self,
-                   peer_id);
-            super::disconnect_peer(self, self.crust_service(), self.peer_mgr(), &peer_id);
-            return Ok(());
-        };
+        if !self.filter_outgoing_signed_msg(&signed_msg, &proxy_peer_id, route) {
+            let bytes = try!(super::to_hop_bytes(signed_msg.clone(),
+                                                 route,
+                                                 Vec::new(),
+                                                 &self.full_id()));
 
-        if !self.filter_outgoing_signed_msg(&signed_msg, &peer_id, route) {
-            if let Err(error) = self.send_or_drop(&peer_id, bytes, signed_msg.priority()) {
+            if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",
                       self,
-                      peer_id,
+                      proxy_peer_id,
                       error);
             }
         }

@@ -32,7 +32,6 @@ use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
 use messages::{DirectMessage, Message};
-use peer_manager::PeerManager;
 use state_machine::Transition;
 use stats::Stats;
 use super::{Client, JoiningNode};
@@ -51,7 +50,8 @@ pub struct Bootstrapping {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
-    next_state_details: Option<(PeerManager, usize)>,
+    // PublicId and PeerId of the proxy node + current quorum size.
+    next_state_details: Option<(PeerId, PublicId, usize)>,
     stats: Stats,
     timer: Timer,
 }
@@ -132,25 +132,27 @@ impl Bootstrapping {
     }
 
     pub fn into_client(self) -> Client {
-        let (peer_mgr, quorum_size) = unwrap!(self.next_state_details);
+        let (proxy_peer_id, proxy_public_id, quorum_size) = unwrap!(self.next_state_details);
 
         Client::from_bootstrapping(self.crust_service,
                                    self.event_sender,
                                    self.full_id,
-                                   peer_mgr,
+                                   proxy_peer_id,
+                                   proxy_public_id,
                                    quorum_size,
                                    self.stats,
                                    self.timer)
     }
 
     pub fn into_joining_node(self) -> Option<JoiningNode> {
-        let (peer_mgr, quorum_size) = unwrap!(self.next_state_details);
+        let (proxy_peer_id, proxy_public_id, quorum_size) = unwrap!(self.next_state_details);
 
         JoiningNode::from_bootstrapping(self.cache,
                                         self.crust_service,
                                         self.event_sender,
                                         self.full_id,
-                                        peer_mgr,
+                                        proxy_peer_id,
+                                        proxy_public_id,
                                         quorum_size,
                                         self.stats,
                                         self.timer)
@@ -243,10 +245,7 @@ impl Bootstrapping {
             return Transition::Stay;
         }
 
-        let mut peer_mgr = PeerManager::new(*self.full_id.public_id());
-        let _ = peer_mgr.set_proxy(peer_id, public_id);
-
-        self.next_state_details = Some((peer_mgr, current_quorum_size));
+        self.next_state_details = Some((peer_id, public_id, current_quorum_size));
         Transition::Next
     }
 
