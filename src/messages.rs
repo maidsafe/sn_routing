@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
 
+use ack_manager::Ack;
 use authority::Authority;
 use data::{Data, DataIdentifier};
 use error::RoutingError;
@@ -261,13 +262,10 @@ pub struct RoutingMessage {
 impl RoutingMessage {
     /// Create ack for the given message
     pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
-        let hash_msg = try!(msg.to_grp_msg_hash());
-        let hash = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
-
         Ok(RoutingMessage {
             src: src,
             dst: msg.src.clone(),
-            content: MessageContent::Ack(hash, msg.priority()),
+            content: MessageContent::Ack(try!(Ack::compute(msg)), msg.priority()),
         })
     }
 
@@ -355,7 +353,7 @@ pub enum MessageContent {
     },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
-    Ack(u64, u8),
+    Ack(Ack, u8),
     /// The hash of a `RoutingMessage`. This is sent by the source group authority members as a
     /// confirmation, so that only one of them needs to send the full message. The second field is
     /// the message priority.
@@ -477,8 +475,8 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::Ack(ref ack, priority) => {
-                write!(formatter, "Ack({:x}, {})", ack, priority)
+            MessageContent::Ack(ack, priority) => {
+                write!(formatter, "Ack({}, {})", ack, priority)
             }
             MessageContent::GroupMessageHash(ref hash, priority) => {
                 write!(formatter,

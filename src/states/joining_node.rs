@@ -24,7 +24,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use ack_manager::AckManager;
+use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use cache::Cache;
@@ -265,7 +265,7 @@ impl JoiningNode {
         }
     }
 
-    fn handle_ack_response(&mut self, ack: u64) -> Transition {
+    fn handle_ack_response(&mut self, ack: Ack) -> Transition {
         self.ack_mgr.receive(ack);
         Transition::Stay
     }

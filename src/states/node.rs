@@ -29,7 +29,7 @@ use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
-use ack_manager::AckManager;
+use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use cache::Cache;
@@ -1105,7 +1105,7 @@ impl Node {
         Ok(())
     }
 
-    fn handle_ack_response(&mut self, ack: u64) -> Result<(), RoutingError> {
+    fn handle_ack_response(&mut self, ack: Ack) -> Result<(), RoutingError> {
         self.ack_mgr.receive(ack);
         Ok(())
     }

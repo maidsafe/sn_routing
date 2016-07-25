@@ -16,10 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use crust::PeerId;
-use maidsafe_utilities;
 use std::time::Duration;
 
-use ack_manager::{ACK_TIMEOUT_SECS, AckManager, UnacknowledgedMessage};
+use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use error::RoutingError;
 use id::PublicId;
 use messages::{MessageContent, RoutingMessage, SignedMessage};
@@ -50,14 +49,13 @@ pub trait Bootstrapped: SendRoutingMessage + StateCommon {
             return true;
         }
 
-        let hash_msg = match signed_msg.routing_message().to_grp_msg_hash() {
-            Ok(hash_msg) => hash_msg,
+        let ack = match Ack::compute(signed_msg.routing_message()) {
+            Ok(ack) => ack,
             Err(error) => {
-                error!("Failed to create hash message: {:?}", error);
+                error!("Failed to create ack: {:?}", error);
                 return true;
             }
         };
-        let ack = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
 
         if self.ack_mgr_mut().did_receive(ack) {
             return false;

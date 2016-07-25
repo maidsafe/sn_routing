@@ -23,7 +23,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use ack_manager::{ACK_TIMEOUT_SECS, AckManager};
+use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use error::{InterfaceError, RoutingError};
@@ -148,7 +148,7 @@ impl Client {
         }
     }
 
-    fn handle_ack_response(&mut self, ack: u64) -> Transition {
+    fn handle_ack_response(&mut self, ack: Ack) -> Transition {
         self.ack_mgr.receive(ack);
         Transition::Stay
     }

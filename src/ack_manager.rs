@@ -15,9 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use maidsafe_utilities;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 
+use error::RoutingError;
 use message_filter::MessageFilter;
 use messages::RoutingMessage;
 
@@ -35,9 +38,12 @@ pub struct UnacknowledgedMessage {
 }
 
 pub struct AckManager {
-    pending: HashMap<u64, UnacknowledgedMessage>,
-    received: MessageFilter<u64>,
+    pending: HashMap<Ack, UnacknowledgedMessage>,
+    received: MessageFilter<Ack>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+pub struct Ack(u64);
 
 impl AckManager {
     pub fn new() -> Self {
@@ -50,18 +56,18 @@ impl AckManager {
     }
 
     // Handle received ack.
-    pub fn receive(&mut self, ack: u64) {
+    pub fn receive(&mut self, ack: Ack) {
         if self.pending.remove(&ack).is_none() {
             let _ = self.received.insert(&ack);
         }
     }
 
-    pub fn did_receive(&mut self, ack: u64) -> bool {
+    pub fn did_receive(&mut self, ack: Ack) -> bool {
         self.received.contains(&ack)
     }
 
     pub fn add_to_pending(&mut self,
-                          ack: u64,
+                          ack: Ack,
                           unacked_msg: UnacknowledgedMessage)
                           -> Option<UnacknowledgedMessage> {
         self.pending.insert(ack, unacked_msg)
@@ -70,7 +76,7 @@ impl AckManager {
     // Find a timed out unacknowledged message corresponding to the given timer token.
     // If such message exists, returns it with the corresponding ack hash. Otherwise
     // returns None.
-    pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, u64)> {
+    pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) = self.pending
             .iter()
             .find(|&(_, ref unacked_msg)| unacked_msg.timer_token == token) {
@@ -102,5 +108,18 @@ impl AckManager {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {
         self.received.clear()
+    }
+}
+
+impl Ack {
+    pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
+        let hash_msg = try!(routing_msg.to_grp_msg_hash());
+        Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
+    }
+}
+
+impl fmt::Display for Ack {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x}", self.0)
     }
 }

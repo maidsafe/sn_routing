@@ -161,6 +161,7 @@ pub trait Connect
         }
     }
 
+    // TODO: check whether these two methods can be merged into one.
     fn handle_connection_info_from_client(&mut self,
                                           encrypted_connection_info: Vec<u8>,
                                           nonce_bytes: [u8; box_::NONCEBYTES],
