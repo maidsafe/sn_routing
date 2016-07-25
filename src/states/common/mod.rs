@@ -42,6 +42,7 @@ pub use self::send::{SendDirectMessage, SendOrDrop, SendRoutingMessage};
 
 pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 
+// Serialize HopMessage containing the given signed message.
 pub fn to_hop_bytes(signed_msg: SignedMessage,
                     route: u8,
                     sent_to: Vec<XorName>,
@@ -52,25 +53,7 @@ pub fn to_hop_bytes(signed_msg: SignedMessage,
     Ok(try!(serialisation::serialise(&message)))
 }
 
-pub fn to_tunnel_hop_bytes(signed_msg: SignedMessage,
-                           route: u8,
-                           sent_to: Vec<XorName>,
-                           src: PeerId,
-                           dst: PeerId,
-                           full_id: &FullId)
-                           -> Result<Vec<u8>, RoutingError> {
-    let hop_msg = try!(HopMessage::new(signed_msg.clone(),
-                                       route,
-                                       sent_to,
-                                       full_id.signing_private_key()));
-    let message = Message::TunnelHop {
-        content: hop_msg,
-        src: src,
-        dst: dst,
-    };
-    Ok(try!(serialisation::serialise(&message)))
-}
-
+// Verify the serialized public id against the signature.
 pub fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &sign::Signature)
                                -> Result<PublicId, RoutingError> {
@@ -80,22 +63,6 @@ pub fn verify_signed_public_id(serialised_public_id: &[u8],
         Ok(public_id)
     } else {
         Err(RoutingError::FailedSignature)
-    }
-}
-
-pub fn get_client_authority(crust_service: &Service,
-                            peer_mgr: &PeerManager,
-                            public_id: &PublicId)
-                            -> Result<Authority, RoutingError> {
-    match *peer_mgr.proxy() {
-        Some((_, _, ref proxy_pub_id)) => {
-            Ok(Authority::Client {
-                client_key: *public_id.signing_public_key(),
-                proxy_node_name: *proxy_pub_id.name(),
-                peer_id: crust_service.id(),
-            })
-        }
-        None => Err(RoutingError::NotBootstrapped),
     }
 }
 
@@ -111,21 +78,25 @@ pub trait StateCommon: Debug {
     }
 }
 
+// Trait for states that handle routing messages.
 pub trait DispatchRoutingMessage {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<Transition, RoutingError>;
 }
 
+// Trait for states that have PeerManager.
 pub trait GetPeerManager {
     fn peer_mgr(&self) -> &PeerManager;
     fn peer_mgr_mut(&mut self) -> &mut PeerManager;
 }
 
+// Trait for handling lost peers.
 pub trait HandleLostPeer {
     fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition;
 }
 
+// Trait for handling received hop messages.
 pub trait HandleHopMessage {
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
@@ -133,7 +104,11 @@ pub trait HandleHopMessage {
                           -> Result<Transition, RoutingError>;
 }
 
+// Trait for handling received user messages.
 pub trait HandleUserMessage: StateCommon {
+    // Implement this method to add the given user message part to the user
+    // message cache, and returning the complete user message if it has all the
+    // parts, or None otherwise.
     fn add_to_user_msg_cache(&mut self,
                              hash: u64,
                              part_count: u32,
@@ -177,6 +152,7 @@ pub trait HandleUserMessage: StateCommon {
     }
 }
 
+// Trait to provide test-only details from states.
 #[cfg(feature = "use-mock-crust")]
 pub trait Testable: Bootstrapped {
     /// Clears all state containers.

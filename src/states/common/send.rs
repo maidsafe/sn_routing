@@ -24,7 +24,9 @@ use error::RoutingError;
 use messages::{DirectMessage, Message, MessageContent, RoutingMessage};
 use super::{HandleLostPeer, StateCommon};
 
+// Trait for states that need to send direct messages.
 pub trait SendDirectMessage: SendOrDrop + StateCommon {
+    // Wrap the given `DirectMessage` into `Message`.
     fn wrap_direct_message(&self,
                            dst_id: &PeerId,
                            direct_message: DirectMessage)
@@ -56,6 +58,7 @@ pub trait SendDirectMessage: SendOrDrop + StateCommon {
     }
 }
 
+// Trait for states that need to send routing messages.
 pub trait SendRoutingMessage: Debug {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
@@ -89,6 +92,7 @@ pub trait SendRoutingMessage: Debug {
     }
 }
 
+// Trait for low-level message sending to peers.
 pub trait SendOrDrop {
     /// Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
     /// error, it disconnects from the peer.
@@ -101,8 +105,7 @@ pub trait SendOrDrop {
 
 // ----- Default trait implementations -----------------------------------------
 
-impl<T> SendOrDrop for T
-    where T: StateCommon + HandleLostPeer
+impl<T> SendOrDrop for T where T: StateCommon + HandleLostPeer
 {
     fn send_or_drop(&mut self,
                     peer_id: &PeerId,

@@ -1215,12 +1215,10 @@ impl Node {
                 (target_peer_id, raw_bytes.clone())
             } else if let Some(&tunnel_id) = self.tunnels
                 .tunnel_for(&target_peer_id) {
-                let bytes = try!(common::to_tunnel_hop_bytes(send_msg.clone(),
-                                                             route,
-                                                             new_sent_to.clone(),
-                                                             self.crust_service.id(),
-                                                             target_peer_id,
-                                                             &self.full_id));
+                let bytes = try!(self.to_tunnel_hop_bytes(send_msg.clone(),
+                                                          route,
+                                                          new_sent_to.clone(),
+                                                          target_peer_id));
                 (tunnel_id, bytes)
             } else {
                 trace!("{:?} Not connected or tunneling to {:?}. Dropping peer.",
@@ -1321,6 +1319,25 @@ impl Node {
             .cloned()
             .collect_vec();
         Ok((new_sent_to, self.peer_mgr.get_peer_ids(&targets)))
+    }
+
+    fn to_tunnel_hop_bytes(&self,
+                           signed_msg: SignedMessage,
+                           route: u8,
+                           sent_to: Vec<XorName>,
+                           dst: PeerId)
+                           -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = try!(HopMessage::new(signed_msg.clone(),
+                                           route,
+                                           sent_to,
+                                           self.full_id.signing_private_key()));
+        let message = Message::TunnelHop {
+            content: hop_msg,
+            src: self.crust_service.id(),
+            dst: dst,
+        };
+
+        Ok(try!(serialisation::serialise(&message)))
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {

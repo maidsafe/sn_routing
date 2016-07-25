@@ -19,13 +19,11 @@ use crust::PeerId;
 
 use authority::Authority;
 use error::RoutingError;
-use event::Event;
 use id::PublicId;
 use messages::{HopMessage, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use state_machine::Transition;
-use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage,
-            HandleLostPeer, SendOrDrop, SendRoutingMessage};
+use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage, SendOrDrop, SendRoutingMessage};
 
 // Trait for states that connect via proxy node.
 pub trait ProxyClient {
@@ -73,33 +71,9 @@ impl<T> HandleHopMessage for T
     }
 }
 
-impl<T> HandleLostPeer for T where T: Bootstrapped + ProxyClient
+impl<T> SendRoutingMessage for T
+    where T: Bootstrapped + ProxyClient + SendOrDrop
 {
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
-        if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
-            return Transition::Stay;
-        }
-
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        // TODO(adam): remove this but make sure it's handled in JoiningNode.
-        // let _ = self.peer_mgr_mut().remove_peer(&peer_id);
-
-        if *self.proxy_peer_id() == peer_id {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   self.proxy_public_id().name(),
-                   peer_id);
-            self.send_event(Event::Terminate);
-            Transition::Terminate
-        } else {
-            Transition::Stay
-        }
-    }
-}
-
-impl<T> SendRoutingMessage for T where T: Bootstrapped + ProxyClient + SendOrDrop {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)
@@ -113,7 +87,8 @@ impl<T> SendRoutingMessage for T where T: Bootstrapped + ProxyClient + SendOrDro
         }
 
         // Get PeerId of the proxy node
-        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } = routing_msg.src {
+        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } =
+                                   routing_msg.src {
             if *self.proxy_public_id().name() == *proxy_node_name {
                 *self.proxy_peer_id()
             } else {
@@ -134,10 +109,8 @@ impl<T> SendRoutingMessage for T where T: Bootstrapped + ProxyClient + SendOrDro
         }
 
         if !self.filter_outgoing_signed_msg(&signed_msg, &proxy_peer_id, route) {
-            let bytes = try!(super::to_hop_bytes(signed_msg.clone(),
-                                                 route,
-                                                 Vec::new(),
-                                                 &self.full_id()));
+            let bytes =
+                try!(super::to_hop_bytes(signed_msg.clone(), route, Vec::new(), &self.full_id()));
 
             if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
                 info!("{:?} - Error sending message to {:?}: {:?}.",

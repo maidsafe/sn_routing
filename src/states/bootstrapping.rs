@@ -39,9 +39,10 @@ use super::common::{HandleLostPeer, SendDirectMessage, StateCommon};
 use timer::Timer;
 use xor_name::XorName;
 
-/// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
+// Time (in seconds) after which bootstrap is cancelled (and possibly retried).
 const BOOTSTRAP_TIMEOUT_SECS: u64 = 20;
 
+// State of Client or Node while bootstrapping.
 pub struct Bootstrapping {
     bootstrap_blacklist: HashSet<SocketAddr>,
     bootstrap_connection: Option<(PeerId, u64)>,

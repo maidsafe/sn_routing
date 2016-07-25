@@ -38,8 +38,8 @@ use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use super::common::{self, Bootstrapped, Connect, DispatchRoutingMessage, GetPeerManager,
-                    HandleHopMessage, ProxyClient, SendDirectMessage, SendRoutingMessage,
-                    StateCommon};
+                    HandleHopMessage, HandleLostPeer, ProxyClient, SendDirectMessage,
+                    SendRoutingMessage, StateCommon};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use super::Node;
@@ -330,10 +330,14 @@ impl JoiningNode {
             message_id: MessageId::new(),
         };
 
+        let src = Authority::Client {
+            client_key: *self.full_id.public_id().signing_public_key(),
+            proxy_node_name: *self.proxy_public_id().name(),
+            peer_id: self.crust_service.id(),
+        };
+
         let request_msg = RoutingMessage {
-            src: try!(common::get_client_authority(&self.crust_service,
-                                                   &self.peer_mgr,
-                                                   self.full_id.public_id())),
+            src: src,
             dst: Authority::NaeManager(*self.name()),
             content: request_content,
         };
@@ -347,13 +351,13 @@ impl JoiningNode {
     fn disconnect_peer(&self, peer_id: &PeerId) {
         if let Some(&public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
             debug!("{:?} Not disconnecting proxy node {:?} ({:?}).",
-                    self,
-                    public_id.name(),
-                    peer_id);
+                   self,
+                   public_id.name(),
+                   peer_id);
         } else {
             debug!("{:?} Disconnecting {:?}. Calling crust::Service::disconnect.",
-                    self,
-                    peer_id);
+                   self,
+                   peer_id);
             let _ = self.crust_service.disconnect(*peer_id);
         }
     }
@@ -465,6 +469,30 @@ impl GetPeerManager for JoiningNode {
 
     fn peer_mgr_mut(&mut self) -> &mut PeerManager {
         &mut self.peer_mgr
+    }
+}
+
+impl HandleLostPeer for JoiningNode {
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service().id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        let _ = self.peer_mgr.remove_peer(&peer_id);
+
+        if *self.proxy_peer_id() == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id().name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
     }
 }
 

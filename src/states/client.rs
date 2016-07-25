@@ -298,6 +298,28 @@ impl DispatchRoutingMessage for Client {
     }
 }
 
+impl HandleLostPeer for Client {
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service().id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        if *self.proxy_peer_id() == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id().name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
+    }
+}
+
 impl HandleUserMessage for Client {
     fn add_to_user_msg_cache(&mut self,
                              hash: u64,
