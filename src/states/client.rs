@@ -150,7 +150,7 @@ impl Client {
             Action::CloseGroup { result_tx, .. } => result_tx.send(None).is_ok(),
             Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
             Action::QuorumSize { result_tx } =>
-                result_tx.send(self.msg_accumulator.get_quorum_size()).is_ok(),
+                result_tx.send(self.msg_accumulator.quorum_size()).is_ok(),
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => false,
         };
