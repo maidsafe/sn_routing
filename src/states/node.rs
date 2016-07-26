@@ -214,7 +214,7 @@ impl Node {
             let status_str = format!("{:?} {:?} - Routing Table size: {:3}",
                                      self,
                                      self.crust_service.id(),
-                                     self.peer_mgr.routing_table().len());
+                                     self.stats.cur_routing_table_size);
             info!(" -{}- ",
                   iter::repeat('-').take(status_str.len()).collect::<String>());
             info!("| {} |", status_str); // Temporarily error for ci_test.
@@ -236,7 +236,7 @@ impl Node {
                     .is_ok()
             }
             Action::CloseGroup { name, result_tx } => {
-                result_tx.send(self.peer_mgr.close_group(&name)).is_ok()
+                result_tx.send(self.peer_mgr.routing_table().close_nodes(&name, GROUP_SIZE)).is_ok()
             }
             Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
             Action::QuorumSize { result_tx } => result_tx.send(self.dynamic_quorum_size()).is_ok(),
@@ -336,11 +336,18 @@ impl Node {
                   pub_id.name());
             return;
         }
+        // TODO: Keep track of this peer, even if this returns false.
         self.peer_mgr.connected_to(peer_id);
         debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
                self,
                peer_id);
-        let _ = self.send_node_identify(peer_id);
+        if let Err(error) = self.send_node_identify(peer_id) {
+            warn!("{:?} Failed to send NodeIdentify to {:?}: {:?}",
+                  self,
+                  peer_id,
+                  error);
+            self.disconnect_peer(&peer_id);
+        }
     }
 
     fn handle_connect_failure(&mut self, peer_id: PeerId) {
@@ -633,24 +640,10 @@ impl Node {
                 Ok(())
             }
             DirectMessage::ConnectionUnneeded(ref name) => {
-                if !self.peer_mgr.get_proxy_public_id(&peer_id).is_some() &&
-                   !self.peer_mgr.get_client(&peer_id).is_some() {
-                    match self.peer_mgr.remove_if_unneeded(name, &peer_id) {
-                        None => {
-                            debug!("{:?} Received ConnectionUnneeded from {:?} with name {:?}, \
-                                    but that name actually belongs to someone else.",
-                                   self,
-                                   peer_id,
-                                   name);
-                            return Err(RoutingError::InvalidSource);
-                        }
-                        Some(true) => {
-                            info!("{:?} Dropped {:?} from the routing table.", self, name);
-                            self.crust_service.disconnect(peer_id);
-                            let _ = self.handle_lost_peer(peer_id);
-                        }
-                        Some(false) => {}
-                    }
+                if self.peer_mgr.remove_if_unneeded(name, &peer_id) {
+                    info!("{:?} Dropped {:?} from the routing table.", self, name);
+                    self.crust_service.disconnect(peer_id);
+                    let _ = self.handle_lost_peer(peer_id);
                 }
                 Ok(())
             }
