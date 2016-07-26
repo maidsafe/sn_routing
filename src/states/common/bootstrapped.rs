@@ -16,32 +16,46 @@
 // relating to use of the SAFE Network Software.
 
 use crust::PeerId;
+use maidsafe_utilities::serialisation;
 use std::time::Duration;
 
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
+use authority::Authority;
 use error::RoutingError;
+use event::Event;
 use id::PublicId;
-use messages::{MessageContent, RoutingMessage, SignedMessage};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage};
 use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
-use state_machine::Transition;
-use super::{AnyState, SendRoutingMessage};
+use super::Base;
 use timer::Timer;
+use xor_name::XorName;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
-pub trait Bootstrapped: AnyState + SendRoutingMessage {
+pub trait Bootstrapped: Base {
     fn accumulate(&mut self,
                   routing_msg: &RoutingMessage,
                   public_id: &PublicId)
                   -> Result<Option<RoutingMessage>, RoutingError>;
 
+    // Implement this method to add the given user message part to the user
+    // message cache, and returning the complete user message if it has all the
+    // parts, or None otherwise.
+    fn add_to_user_msg_cache(&mut self,
+                             hash: u64,
+                             part_count: u32,
+                             part_index: u32,
+                             payload: Vec<u8>)
+                             -> Option<UserMessage>;
+
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
 
-    fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage)
-                                -> Result<Transition, RoutingError>;
+    fn send_routing_message_via_route(&mut self,
+                                      routing_msg: RoutingMessage,
+                                      route: u8)
+                                      -> Result<(), RoutingError>;
 
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter;
     fn timer(&mut self) -> &mut Timer;
@@ -104,6 +118,41 @@ pub trait Bootstrapped: AnyState + SendRoutingMessage {
         false
     }
 
+    fn handle_user_message_part(&mut self,
+                                hash: u64,
+                                part_count: u32,
+                                part_index: u32,
+                                payload: Vec<u8>,
+                                src: Authority,
+                                dst: Authority) {
+        if let Some(msg) = self.add_to_user_msg_cache(hash, part_count, part_index, payload) {
+            self.handle_user_message(msg, src, dst)
+        }
+    }
+
+    fn handle_user_message(&mut self, msg: UserMessage, src: Authority, dst: Authority) {
+        let event = match msg {
+            UserMessage::Request(request) => {
+                self.stats().count_request(&request);
+                Event::Request {
+                    request: request,
+                    src: src,
+                    dst: dst,
+                }
+            }
+            UserMessage::Response(response) => {
+                self.stats().count_response(&response);
+                Event::Response {
+                    response: response,
+                    src: src,
+                    dst: dst,
+                }
+            }
+        };
+
+        self.send_event(event);
+    }
+
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr_mut().find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
@@ -121,5 +170,45 @@ pub trait Bootstrapped: AnyState + SendRoutingMessage {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
+    }
+
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        self.send_routing_message_via_route(routing_msg, 0)
+    }
+
+    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
+        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
+    }
+
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
+        if let MessageContent::Ack(..) = routing_msg.content {
+            return;
+        }
+
+        let response = match RoutingMessage::ack_from(routing_msg, src) {
+            Ok(response) => response,
+            Err(error) => {
+                error!("{:?} - Failed to create ack: {:?}", self, error);
+                return;
+            }
+        };
+
+        if let Err(error) = self.send_routing_message_via_route(response, route) {
+            error!("{:?} - Failed to send ack: {:?}", self, error);
+        }
+    }
+
+    // Serialise HopMessage containing the given signed message.
+    fn to_hop_bytes(&self,
+                    signed_msg: SignedMessage,
+                    route: u8,
+                    sent_to: Vec<XorName>)
+                    -> Result<Vec<u8>, RoutingError> {
+        let hop_msg = try!(HopMessage::new(signed_msg,
+                                           route,
+                                           sent_to,
+                                           self.full_id().signing_private_key()));
+        let message = Message::Hop(hop_msg);
+        Ok(try!(serialisation::serialise(&message)))
     }
 }

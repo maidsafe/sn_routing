@@ -34,8 +34,8 @@ use id::{FullId, PublicId};
 use messages::{DirectMessage, Message};
 use state_machine::Transition;
 use stats::Stats;
-use super::{Client, JoiningNode};
-use super::common::AnyState;
+use super::{Client, Node};
+use super::common::Base;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -144,20 +144,20 @@ impl Bootstrapping {
                                    self.timer)
     }
 
-    pub fn into_joining_node(self,
-                             proxy_peer_id: PeerId,
-                             proxy_public_id: PublicId,
-                             quorum_size: usize)
-                             -> Option<JoiningNode> {
-        JoiningNode::from_bootstrapping(self.cache,
-                                        self.crust_service,
-                                        self.event_sender,
-                                        self.full_id,
-                                        proxy_peer_id,
-                                        proxy_public_id,
-                                        quorum_size,
-                                        self.stats,
-                                        self.timer)
+    pub fn into_node(self,
+                     proxy_peer_id: PeerId,
+                     proxy_public_id: PublicId,
+                     quorum_size: usize)
+                     -> Option<Node> {
+        Node::from_bootstrapping(self.cache,
+                                 self.crust_service,
+                                 self.event_sender,
+                                 self.full_id,
+                                 proxy_peer_id,
+                                 proxy_public_id,
+                                 quorum_size,
+                                 self.stats,
+                                 self.timer)
     }
 
     pub fn client_restriction(&self) -> bool {
@@ -299,7 +299,7 @@ impl Bootstrapping {
     }
 }
 
-impl AnyState for Bootstrapping {
+impl Base for Bootstrapping {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
