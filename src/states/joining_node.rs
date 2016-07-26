@@ -37,9 +37,8 @@ use peer_manager::{GROUP_SIZE, PeerManager};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, Connect, DispatchRoutingMessage, GetPeerManager,
-                    HandleHopMessage, HandleLostPeer, ProxyClient, SendDirectMessage,
-                    SendRoutingMessage, StateCommon};
+use super::common::{self, AnyState, Bootstrapped, Connect, HandleHopMessage, ProxyClient,
+                    SendRoutingMessage};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use super::Node;
@@ -359,6 +358,46 @@ impl JoiningNode {
     }
 }
 
+impl AnyState for JoiningNode {
+    fn crust_service(&self) -> &Service {
+        &self.crust_service
+    }
+
+    fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
+
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service().id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        let _ = self.peer_mgr.remove_peer(&peer_id);
+
+        if *self.proxy_peer_id() == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id().name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
+    }
+
+    fn send_event(&self, event: Event) {
+        let _ = self.event_sender.send(event);
+    }
+
+    fn stats(&mut self) -> &mut Stats {
+        &mut self.stats
+    }
+}
+
 impl Bootstrapped for JoiningNode {
     fn accumulate(&mut self,
                   routing_msg: &RoutingMessage,
@@ -375,35 +414,6 @@ impl Bootstrapped for JoiningNode {
         &mut self.ack_mgr
     }
 
-    fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
-        &mut self.signed_msg_filter
-    }
-
-    fn timer(&mut self) -> &mut Timer {
-        &mut self.timer
-    }
-}
-
-impl Connect for JoiningNode {
-    fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
-        debug!("{:?} Handling NodeIdentify from {:?}.",
-               self,
-               public_id.name());
-
-        Transition::IntoNode {
-            peer_id: peer_id,
-            public_id: public_id,
-        }
-    }
-}
-
-impl Debug for JoiningNode {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "JoiningNode({})", self.name())
-    }
-}
-
-impl DispatchRoutingMessage for JoiningNode {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<Transition, RoutingError> {
@@ -458,9 +468,28 @@ impl DispatchRoutingMessage for JoiningNode {
             }
         }
     }
+
+    fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
+        &mut self.signed_msg_filter
+    }
+
+    fn timer(&mut self) -> &mut Timer {
+        &mut self.timer
+    }
 }
 
-impl GetPeerManager for JoiningNode {
+impl Connect for JoiningNode {
+    fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
+        debug!("{:?} Handling NodeIdentify from {:?}.",
+               self,
+               public_id.name());
+
+        Transition::IntoNode {
+            peer_id: peer_id,
+            public_id: public_id,
+        }
+    }
+
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -470,27 +499,9 @@ impl GetPeerManager for JoiningNode {
     }
 }
 
-impl HandleLostPeer for JoiningNode {
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
-        if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
-            return Transition::Stay;
-        }
-
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        let _ = self.peer_mgr.remove_peer(&peer_id);
-
-        if *self.proxy_peer_id() == peer_id {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   self.proxy_public_id().name(),
-                   peer_id);
-            self.send_event(Event::Terminate);
-            Transition::Terminate
-        } else {
-            Transition::Stay
-        }
+impl Debug for JoiningNode {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "JoiningNode({})", self.name())
     }
 }
 
@@ -504,26 +515,6 @@ impl ProxyClient for JoiningNode {
     fn proxy_public_id(&self) -> &PublicId {
         // Safe to unwrap. See the above comment.
         &unwrap!(self.peer_mgr.proxy().as_ref()).2
-    }
-}
-
-impl SendDirectMessage for JoiningNode {}
-
-impl StateCommon for JoiningNode {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.full_id
-    }
-
-    fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
-    }
-
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
     }
 }
 

@@ -24,18 +24,25 @@ use id::PublicId;
 use messages::{MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
-use super::{SendRoutingMessage, StateCommon};
+use state_machine::Transition;
+use super::{AnyState, SendRoutingMessage};
 use timer::Timer;
 
 // Common functionality for states that are bootstrapped (have established a crust
 // connection to at least one peer).
-pub trait Bootstrapped: SendRoutingMessage + StateCommon {
+pub trait Bootstrapped: AnyState + SendRoutingMessage {
     fn accumulate(&mut self,
                   routing_msg: &RoutingMessage,
                   public_id: &PublicId)
                   -> Result<Option<RoutingMessage>, RoutingError>;
+
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
+
+    fn dispatch_routing_message(&mut self,
+                                routing_msg: RoutingMessage)
+                                -> Result<Transition, RoutingError>;
+
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter;
     fn timer(&mut self) -> &mut Timer;
 

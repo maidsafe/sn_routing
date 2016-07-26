@@ -35,9 +35,8 @@ use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage,
-                    HandleLostPeer, HandleUserMessage, ProxyClient, SendRoutingMessage,
-                    StateCommon, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
+use super::common::{AnyState, Bootstrapped, HandleHopMessage, HandleUserMessage, ProxyClient,
+                    SendRoutingMessage, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use timer::Timer;
@@ -203,6 +202,44 @@ impl Client {
     }
 }
 
+impl AnyState for Client {
+    fn crust_service(&self) -> &Service {
+        &self.crust_service
+    }
+
+    fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
+
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service().id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        if *self.proxy_peer_id() == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id().name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
+    }
+
+    fn stats(&mut self) -> &mut Stats {
+        &mut self.stats
+    }
+
+    fn send_event(&self, event: Event) {
+        let _ = self.event_sender.send(event);
+    }
+}
+
 impl Bootstrapped for Client {
     fn accumulate(&mut self,
                   routing_msg: &RoutingMessage,
@@ -217,6 +254,42 @@ impl Bootstrapped for Client {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
+    }
+
+    fn dispatch_routing_message(&mut self,
+                                routing_msg: RoutingMessage)
+                                -> Result<Transition, RoutingError> {
+        let msg_content = routing_msg.content.clone();
+        let msg_src = routing_msg.src.clone();
+        let msg_dst = routing_msg.dst.clone();
+
+        match msg_content {
+            MessageContent::Ack(..) => (),
+            _ => {
+                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
+                       self,
+                       msg_content,
+                       msg_src,
+                       msg_dst)
+            }
+        }
+
+        match (msg_content, msg_src, msg_dst) {
+            // Ack
+            (MessageContent::Ack(ack, _), _, _) => Ok(self.handle_ack_response(ack)),
+            // UserMessagePart
+            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
+             src,
+             dst) => {
+                self.handle_user_message_part(hash, part_count, part_index, payload, src, dst);
+                Ok(Transition::Stay)
+            }
+            // other
+            _ => {
+                debug!("{:?} - Unhandled routing message: {:?}", self, routing_msg);
+                Ok(Transition::Stay)
+            }
+        }
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
@@ -260,66 +333,6 @@ impl Debug for Client {
     }
 }
 
-impl DispatchRoutingMessage for Client {
-    fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage)
-                                -> Result<Transition, RoutingError> {
-        let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
-
-        match msg_content {
-            MessageContent::Ack(..) => (),
-            _ => {
-                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
-                       self,
-                       msg_content,
-                       msg_src,
-                       msg_dst)
-            }
-        }
-
-        match (msg_content, msg_src, msg_dst) {
-            // Ack
-            (MessageContent::Ack(ack, _), _, _) => Ok(self.handle_ack_response(ack)),
-            // UserMessagePart
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
-             src,
-             dst) => {
-                self.handle_user_message_part(hash, part_count, part_index, payload, src, dst);
-                Ok(Transition::Stay)
-            }
-            // other
-            _ => {
-                debug!("{:?} - Unhandled routing message: {:?}", self, routing_msg);
-                Ok(Transition::Stay)
-            }
-        }
-    }
-}
-
-impl HandleLostPeer for Client {
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
-        if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
-            return Transition::Stay;
-        }
-
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        if *self.proxy_peer_id() == peer_id {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   self.proxy_public_id().name(),
-                   peer_id);
-            self.send_event(Event::Terminate);
-            Transition::Terminate
-        } else {
-            Transition::Stay
-        }
-    }
-}
-
 impl HandleUserMessage for Client {
     fn add_to_user_msg_cache(&mut self,
                              hash: u64,
@@ -338,24 +351,6 @@ impl ProxyClient for Client {
 
     fn proxy_public_id(&self) -> &PublicId {
         &self.proxy_public_id
-    }
-}
-
-impl StateCommon for Client {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.full_id
-    }
-
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
-    }
-
-    fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
     }
 }
 

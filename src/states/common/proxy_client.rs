@@ -23,17 +23,15 @@ use id::PublicId;
 use messages::{HopMessage, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use state_machine::Transition;
-use super::{Bootstrapped, DispatchRoutingMessage, HandleHopMessage, SendOrDrop, SendRoutingMessage};
+use super::{Bootstrapped, HandleHopMessage, SendRoutingMessage};
 
 // Trait for states that connect via proxy node.
-pub trait ProxyClient {
+pub trait ProxyClient: Bootstrapped {
     fn proxy_peer_id(&self) -> &PeerId;
     fn proxy_public_id(&self) -> &PublicId;
 }
 
-impl<T> HandleHopMessage for T
-    where T: Bootstrapped + DispatchRoutingMessage + ProxyClient + SendRoutingMessage
-{
+impl<T> HandleHopMessage for T where T: ProxyClient + SendRoutingMessage {
     fn handle_hop_message(&mut self,
                           hop_msg: HopMessage,
                           peer_id: PeerId)
@@ -71,9 +69,7 @@ impl<T> HandleHopMessage for T
     }
 }
 
-impl<T> SendRoutingMessage for T
-    where T: Bootstrapped + ProxyClient + SendOrDrop
-{
+impl<T> SendRoutingMessage for T where T: ProxyClient {
     fn send_routing_message_via_route(&mut self,
                                       routing_msg: RoutingMessage,
                                       route: u8)

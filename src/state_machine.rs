@@ -311,23 +311,23 @@ impl StateMachine {
         match transition {
             Transition::Stay => (),
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id, quorum_size } => {
-                self.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
+                self.transition_to_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
             }
-            Transition::IntoNode { peer_id, public_id } => self.into_node(peer_id, public_id),
+            Transition::IntoNode { peer_id, public_id } => self.transition_to_node(peer_id, public_id),
             Transition::Terminate => self.terminate(),
         }
     }
 
-    fn into_bootstrapped(&mut self,
-                         proxy_peer_id: PeerId,
-                         proxy_public_id: PublicId,
-                         quorum_size: usize) {
+    fn transition_to_bootstrapped(&mut self,
+                                  proxy_peer_id: PeerId,
+                                  proxy_public_id: PublicId,
+                                  quorum_size: usize) {
         self.transition(|state| {
             state.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
         })
     }
 
-    fn into_node(&mut self, peer_id: PeerId, public_id: PublicId) {
+    fn transition_to_node(&mut self, peer_id: PeerId, public_id: PublicId) {
         self.transition(|state| state.into_node(peer_id, public_id))
     }
 

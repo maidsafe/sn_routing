@@ -44,8 +44,7 @@ use peer_manager::{GROUP_SIZE, PeerManager, QUORUM_SIZE};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{self, Bootstrapped, Connect, GetPeerManager, HandleLostPeer, HandleUserMessage,
-                    SendDirectMessage, SendOrDrop, SendRoutingMessage, StateCommon,
+use super::common::{self, AnyState, Bootstrapped, Connect, HandleUserMessage, SendRoutingMessage,
                     USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
@@ -553,7 +552,7 @@ impl Node {
                 self.send_ack(&msg, 0);
             }
 
-            self.dispatch_routing_message(msg)
+            self.dispatch_routing_message(msg).map(|_| ())
         } else {
             Ok(())
         }
@@ -567,81 +566,6 @@ impl Node {
         } else {
             cmp::max(network_size * QUORUM_SIZE / GROUP_SIZE,
                      network_size / 2 + 1)
-        }
-    }
-
-    fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage)
-                                -> Result<(), RoutingError> {
-        let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
-        match msg_content {
-            MessageContent::Ack(..) => (),
-            _ => {
-                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
-                       self,
-                       msg_content,
-                       msg_src,
-                       msg_dst)
-            }
-        }
-        match (msg_content, msg_src, msg_dst) {
-            (MessageContent::GetNodeName { current_id, message_id },
-             Authority::Client { client_key, proxy_node_name, peer_id },
-             Authority::NaeManager(dst_name)) => {
-                self.handle_get_node_name_request(current_id,
-                                                  client_key,
-                                                  proxy_node_name,
-                                                  dst_name,
-                                                  peer_id,
-                                                  message_id)
-            }
-            (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
-             Authority::NaeManager(_),
-             Authority::NaeManager(_)) => {
-                self.handle_expect_close_node_request(expect_id, client_auth, message_id)
-            }
-            (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
-                self.handle_get_close_group_request(src, dst_name, message_id)
-            }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
-             src @ Authority::Client { .. },
-             Authority::ManagedNode(dst_name)) => {
-                self.handle_connection_info_from_client(encrypted_connection_info,
-                                                        nonce_bytes,
-                                                        src,
-                                                        dst_name,
-                                                        public_id)
-                    .map(|_| ())
-            }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
-             Authority::ManagedNode(src_name),
-             Authority::Client { .. }) |
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
-             Authority::ManagedNode(src_name),
-             Authority::ManagedNode(_)) => {
-                self.handle_connection_info_from_node(encrypted_connection_info,
-                                                      nonce_bytes,
-                                                      src_name,
-                                                      routing_msg.dst.clone(),
-                                                      public_id)
-                    .map(|_| ())
-            }
-            (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
-             Authority::ManagedNode(_),
-             dst) => self.handle_get_close_group_response(close_group_ids, dst),
-            (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
-            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
-             src,
-             dst) => {
-                self.handle_user_message_part(hash, part_count, part_index, payload, src, dst);
-                Ok(())
-            }
-            _ => {
-                debug!("{:?} Unhandled routing message {:?}", self, routing_msg);
-                Err(RoutingError::BadAuthority)
-            }
         }
     }
 
@@ -1417,6 +1341,55 @@ impl Node {
     }
 }
 
+impl AnyState for Node {
+    fn crust_service(&self) -> &Service {
+        &self.crust_service
+    }
+
+    fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
+
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service.id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        self.dropped_tunnel_client(&peer_id);
+        self.dropped_routing_node_connection(&peer_id);
+        self.dropped_client_connection(&peer_id);
+        self.dropped_tunnel_node(&peer_id);
+
+        Transition::Stay
+    }
+
+    fn send_event(&self, event: Event) {
+        let _ = self.event_sender.send(event);
+    }
+
+    fn stats(&mut self) -> &mut Stats {
+        &mut self.stats
+    }
+
+    fn wrap_direct_message(&self,
+                           dst_id: &PeerId,
+                           direct_message: DirectMessage)
+                           -> (Message, PeerId) {
+        if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
+            let message = Message::TunnelDirect {
+                content: direct_message,
+                src: self.crust_service.id(),
+                dst: *dst_id,
+            };
+            (message, tunnel_id)
+        } else {
+            (Message::Direct(direct_message), *dst_id)
+        }
+    }
+}
+
 impl Bootstrapped for Node {
     fn accumulate(&mut self,
                   routing_msg: &RoutingMessage,
@@ -1431,6 +1404,84 @@ impl Bootstrapped for Node {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
+    }
+
+    fn dispatch_routing_message(&mut self,
+                                routing_msg: RoutingMessage)
+                                -> Result<Transition, RoutingError> {
+        let msg_content = routing_msg.content.clone();
+        let msg_src = routing_msg.src.clone();
+        let msg_dst = routing_msg.dst.clone();
+        match msg_content {
+            MessageContent::Ack(..) => (),
+            _ => {
+                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
+                       self,
+                       msg_content,
+                       msg_src,
+                       msg_dst)
+            }
+        }
+
+        let result = match (msg_content, msg_src, msg_dst) {
+            (MessageContent::GetNodeName { current_id, message_id },
+             Authority::Client { client_key, proxy_node_name, peer_id },
+             Authority::NaeManager(dst_name)) => {
+                self.handle_get_node_name_request(current_id,
+                                                  client_key,
+                                                  proxy_node_name,
+                                                  dst_name,
+                                                  peer_id,
+                                                  message_id)
+            }
+            (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
+             Authority::NaeManager(_),
+             Authority::NaeManager(_)) => {
+                self.handle_expect_close_node_request(expect_id, client_auth, message_id)
+            }
+            (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
+                self.handle_get_close_group_request(src, dst_name, message_id)
+            }
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+             src @ Authority::Client { .. },
+             Authority::ManagedNode(dst_name)) => {
+                self.handle_connection_info_from_client(encrypted_connection_info,
+                                                        nonce_bytes,
+                                                        src,
+                                                        dst_name,
+                                                        public_id)
+                    .map(|_| ())
+            }
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+             Authority::ManagedNode(src_name),
+             Authority::Client { .. }) |
+            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+             Authority::ManagedNode(src_name),
+             Authority::ManagedNode(_)) => {
+                self.handle_connection_info_from_node(encrypted_connection_info,
+                                                      nonce_bytes,
+                                                      src_name,
+                                                      routing_msg.dst.clone(),
+                                                      public_id)
+                    .map(|_| ())
+            }
+            (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
+             Authority::ManagedNode(_),
+             dst) => self.handle_get_close_group_response(close_group_ids, dst),
+            (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
+            (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
+             src,
+             dst) => {
+                self.handle_user_message_part(hash, part_count, part_index, payload, src, dst);
+                Ok(())
+            }
+            _ => {
+                debug!("{:?} Unhandled routing message {:?}", self, routing_msg);
+                Err(RoutingError::BadAuthority)
+            }
+        };
+
+        result.map(|_| Transition::Stay)
     }
 
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
@@ -1466,15 +1517,7 @@ impl Connect for Node {
             Err(RoutingError::RefusedFromRoutingTable)
         }
     }
-}
 
-impl Debug for Node {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Node({})", self.name())
-    }
-}
-
-impl GetPeerManager for Node {
     fn peer_mgr(&self) -> &PeerManager {
         &self.peer_mgr
     }
@@ -1484,20 +1527,9 @@ impl GetPeerManager for Node {
     }
 }
 
-impl HandleLostPeer for Node {
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
-        if peer_id == self.crust_service.id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
-            return Transition::Stay;
-        }
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        self.dropped_tunnel_client(&peer_id);
-        self.dropped_routing_node_connection(&peer_id);
-        self.dropped_client_connection(&peer_id);
-        self.dropped_tunnel_node(&peer_id);
-
-        Transition::Stay
+impl Debug for Node {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Node({})", self.name())
     }
 }
 
@@ -1509,24 +1541,6 @@ impl HandleUserMessage for Node {
                              payload: Vec<u8>)
                              -> Option<UserMessage> {
         self.user_msg_cache.add(hash, part_count, part_index, payload)
-    }
-}
-
-impl SendDirectMessage for Node {
-    fn wrap_direct_message(&self,
-                           dst_id: &PeerId,
-                           direct_message: DirectMessage)
-                           -> (Message, PeerId) {
-        if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
-            let message = Message::TunnelDirect {
-                content: direct_message,
-                src: self.crust_service.id(),
-                dst: *dst_id,
-            };
-            (message, tunnel_id)
-        } else {
-            (Message::Direct(direct_message), *dst_id)
-        }
     }
 }
 
@@ -1547,24 +1561,6 @@ impl SendRoutingMessage for Node {
         } else {
             Ok(())
         }
-    }
-}
-
-impl StateCommon for Node {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.full_id
-    }
-
-    fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
-    }
-
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
     }
 }
 

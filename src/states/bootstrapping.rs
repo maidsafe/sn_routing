@@ -35,7 +35,7 @@ use messages::{DirectMessage, Message};
 use state_machine::Transition;
 use stats::Stats;
 use super::{Client, JoiningNode};
-use super::common::{HandleLostPeer, SendDirectMessage, StateCommon};
+use super::common::AnyState;
 use timer::Timer;
 use xor_name::XorName;
 
@@ -299,21 +299,7 @@ impl Bootstrapping {
     }
 }
 
-impl Debug for Bootstrapping {
-    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        write!(formatter, "Bootstrapping({})", self.name())
-    }
-}
-
-impl HandleLostPeer for Bootstrapping {
-    fn handle_lost_peer(&mut self, _: PeerId) -> Transition {
-        Transition::Stay
-    }
-}
-
-impl SendDirectMessage for Bootstrapping {}
-
-impl StateCommon for Bootstrapping {
+impl AnyState for Bootstrapping {
     fn crust_service(&self) -> &Service {
         &self.crust_service
     }
@@ -328,5 +314,11 @@ impl StateCommon for Bootstrapping {
 
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
+    }
+}
+
+impl Debug for Bootstrapping {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Bootstrapping({})", self.name())
     }
 }

@@ -24,14 +24,13 @@ use authority::Authority;
 use error::RoutingError;
 use id::PublicId;
 use messages::{DirectMessage, MessageContent, RoutingMessage};
-use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult};
+use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, PeerManager};
 use state_machine::Transition;
-use super::{Bootstrapped, GetPeerManager, SendDirectMessage, SendRoutingMessage, StateCommon};
+use super::{Bootstrapped, SendRoutingMessage};
 use xor_name::XorName;
 
 // Common functionality for states that need to connect to other nodes.
-pub trait Connect
-    : Bootstrapped + GetPeerManager + SendDirectMessage + SendRoutingMessage + StateCommon {
+pub trait Connect: Bootstrapped + SendRoutingMessage {
     fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition;
 
     /// Checks whether the given `name` is allowed to be added to our routing table or is already
@@ -39,6 +38,9 @@ pub trait Connect
     fn check_address_for_routing_table(&self, _name: &XorName) -> Result<(), RoutingError> {
         Ok(())
     }
+
+    fn peer_mgr(&self) -> &PeerManager;
+    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
 
     fn connect(&mut self,
                encrypted_connection_info: Vec<u8>,

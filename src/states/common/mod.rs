@@ -18,7 +18,6 @@
 mod bootstrapped;
 mod connect;
 mod proxy_client;
-mod send;
 
 use crust::{PeerId, Service};
 use maidsafe_utilities::serialisation;
@@ -29,8 +28,8 @@ use authority::Authority;
 use error::RoutingError;
 use event::Event;
 use id::{FullId, PublicId};
-use messages::{HopMessage, Message, RoutingMessage, SignedMessage, UserMessage};
-use peer_manager::PeerManager;
+use messages::{DirectMessage, HopMessage, Message, MessageContent, RoutingMessage, SignedMessage,
+               UserMessage};
 use state_machine::Transition;
 use stats::Stats;
 use xor_name::XorName;
@@ -38,11 +37,10 @@ use xor_name::XorName;
 pub use self::bootstrapped::Bootstrapped;
 pub use self::connect::Connect;
 pub use self::proxy_client::ProxyClient;
-pub use self::send::{SendDirectMessage, SendOrDrop, SendRoutingMessage};
 
 pub const USER_MSG_CACHE_EXPIRY_DURATION_SECS: u64 = 60 * 20;
 
-// Serialize HopMessage containing the given signed message.
+// Serialise HopMessage containing the given signed message.
 pub fn to_hop_bytes(signed_msg: SignedMessage,
                     route: u8,
                     sent_to: Vec<XorName>,
@@ -53,7 +51,7 @@ pub fn to_hop_bytes(signed_msg: SignedMessage,
     Ok(try!(serialisation::serialise(&message)))
 }
 
-// Verify the serialized public id against the signature.
+// Verify the serialised public id against the signature.
 pub fn verify_signed_public_id(serialised_public_id: &[u8],
                                signature: &sign::Signature)
                                -> Result<PublicId, RoutingError> {
@@ -67,33 +65,71 @@ pub fn verify_signed_public_id(serialised_public_id: &[u8],
 }
 
 // Trait for all states.
-pub trait StateCommon: Debug {
+pub trait AnyState: Debug {
     fn crust_service(&self) -> &Service;
     fn full_id(&self) -> &FullId;
     fn stats(&mut self) -> &mut Stats;
     fn send_event(&self, event: Event);
 
+    fn handle_lost_peer(&mut self, _peer_id: PeerId) -> Transition {
+        Transition::Stay
+    }
+
     fn name(&self) -> &XorName {
         self.full_id().public_id().name()
     }
-}
 
-// Trait for states that handle routing messages.
-pub trait DispatchRoutingMessage {
-    fn dispatch_routing_message(&mut self,
-                                routing_msg: RoutingMessage)
-                                -> Result<Transition, RoutingError>;
-}
+    fn send_direct_message(&mut self,
+                           dst_id: &PeerId,
+                           direct_message: DirectMessage)
+                           -> Result<(), RoutingError> {
+        self.stats().count_direct_message(&direct_message);
 
-// Trait for states that have PeerManager.
-pub trait GetPeerManager {
-    fn peer_mgr(&self) -> &PeerManager;
-    fn peer_mgr_mut(&mut self) -> &mut PeerManager;
-}
+        let priority = direct_message.priority();
+        let (message, peer_id) = self.wrap_direct_message(dst_id, direct_message);
 
-// Trait for handling lost peers.
-pub trait HandleLostPeer {
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition;
+        let raw_bytes = match serialisation::serialise(&message) {
+            Err(error) => {
+                error!("{:?} Failed to serialise message {:?}: {:?}",
+                       self,
+                       message,
+                       error);
+                return Err(error.into());
+            }
+            Ok(bytes) => bytes,
+        };
+
+        self.send_or_drop(&peer_id, raw_bytes, priority)
+    }
+
+    // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
+    // error, it disconnects from the peer.
+    fn send_or_drop(&mut self,
+                    peer_id: &PeerId,
+                    bytes: Vec<u8>,
+                    priority: u8)
+                    -> Result<(), RoutingError> {
+        self.stats().count_bytes(bytes.len());
+
+        if let Err(err) = self.crust_service().send(*peer_id, bytes.clone(), priority) {
+            info!("{:?} Connection to {:?} failed. Calling crust::Service::disconnect.",
+                  self,
+                  peer_id);
+            self.crust_service().disconnect(*peer_id);
+            let _ = self.handle_lost_peer(*peer_id);
+            return Err(err.into());
+        }
+
+        Ok(())
+    }
+
+    // Wraps the given `DirectMessage` into `Message`.
+    fn wrap_direct_message(&self,
+                           dst_id: &PeerId,
+                           direct_message: DirectMessage)
+                           -> (Message, PeerId) {
+        (Message::Direct(direct_message), *dst_id)
+    }
 }
 
 // Trait for handling received hop messages.
@@ -105,7 +141,7 @@ pub trait HandleHopMessage {
 }
 
 // Trait for handling received user messages.
-pub trait HandleUserMessage: StateCommon {
+pub trait HandleUserMessage: AnyState {
     // Implement this method to add the given user message part to the user
     // message cache, and returning the complete user message if it has all the
     // parts, or None otherwise.
@@ -149,6 +185,40 @@ pub trait HandleUserMessage: StateCommon {
         };
 
         self.send_event(event);
+    }
+}
+
+// Trait for states that need to send routing messages.
+pub trait SendRoutingMessage: Debug {
+    fn send_routing_message_via_route(&mut self,
+                                      routing_msg: RoutingMessage,
+                                      route: u8)
+                                      -> Result<(), RoutingError>;
+
+    fn send_routing_message(&mut self, routing_msg: RoutingMessage) -> Result<(), RoutingError> {
+        self.send_routing_message_via_route(routing_msg, 0)
+    }
+
+    fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
+        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
+    }
+
+    fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
+        if let MessageContent::Ack(..) = routing_msg.content {
+            return;
+        }
+
+        let response = match RoutingMessage::ack_from(routing_msg, src) {
+            Ok(response) => response,
+            Err(error) => {
+                error!("{:?} - Failed to create ack: {:?}", self, error);
+                return;
+            }
+        };
+
+        if let Err(error) = self.send_routing_message_via_route(response, route) {
+            error!("{:?} - Failed to send ack: {:?}", self, error);
+        }
     }
 }
 
