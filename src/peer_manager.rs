@@ -255,6 +255,14 @@ impl PeerManager {
         }
     }
 
+    /// Returns the proxy node's peer ID, if it has the given name.
+    pub fn get_proxy_peer_id(&self, name: &XorName) -> Option<&PeerId> {
+        match self.proxy {
+            Some((_, ref peer_id, ref pub_id)) if pub_id.name() == name => Some(peer_id),
+            _ => None,
+        }
+    }
+
     /// Inserts the given peer as a proxy node if applicable, returns `false` if it is not accepted
     /// and should be disconnected.
     pub fn set_proxy(&mut self, peer_id: PeerId, public_id: PublicId) -> bool {
