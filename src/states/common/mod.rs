@@ -217,7 +217,7 @@ pub trait SendRoutingMessage: Debug {
         };
 
         if let Err(error) = self.send_routing_message_via_route(response, route) {
-            error!("{:?} - Failed to send ack: {:?}", self, error);
+            debug!("{:?} - Failed to send ack: {:?}", self, error);
         }
     }
 }
