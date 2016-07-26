@@ -25,9 +25,7 @@ use std::sync::mpsc::{self, Receiver};
 
 use action::Action;
 use id::PublicId;
-use states::{Bootstrapping, Client, JoiningNode, Node};
-#[cfg(feature = "use-mock-crust")]
-use states::Testable;
+use states::{Bootstrapping, Client, Node};
 use timer::Timer;
 use types::RoutingActionSender;
 #[cfg(feature = "use-mock-crust")]
@@ -92,7 +90,6 @@ pub struct StateMachine {
 pub enum State {
     Bootstrapping(Bootstrapping),
     Client(Client),
-    JoiningNode(JoiningNode),
     Node(Node),
     Terminated,
 }
@@ -102,7 +99,6 @@ impl State {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_action(action),
             State::Client(ref mut state) => state.handle_action(action),
-            State::JoiningNode(ref mut state) => state.handle_action(action),
             State::Node(ref mut state) => state.handle_action(action),
             State::Terminated => Transition::Terminate,
         }
@@ -112,7 +108,6 @@ impl State {
         match *self {
             State::Bootstrapping(ref mut state) => state.handle_crust_event(event),
             State::Client(ref mut state) => state.handle_crust_event(event),
-            State::JoiningNode(ref mut state) => state.handle_crust_event(event),
             State::Node(ref mut state) => state.handle_crust_event(event),
             State::Terminated => Transition::Terminate,
         }
@@ -128,8 +123,8 @@ impl State {
                 if state.client_restriction() {
                     State::Client(state.into_client(proxy_peer_id, proxy_public_id, quorum_size))
                 } else if let Some(state) =
-                       state.into_joining_node(proxy_peer_id, proxy_public_id, quorum_size) {
-                    State::JoiningNode(state)
+                       state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
+                    State::Node(state)
                 } else {
                     State::Terminated
                 }
@@ -138,18 +133,10 @@ impl State {
         }
     }
 
-    fn into_node(self, peer_id: PeerId, public_id: PublicId) -> Self {
-        match self {
-            State::JoiningNode(state) => State::Node(state.into_node(peer_id, public_id)),
-            _ => unreachable!(),
-        }
-    }
-
     #[cfg(feature = "use-mock-crust")]
     pub fn resend_unacknowledged(&mut self) -> bool {
         match *self {
             State::Client(ref mut state) => state.resend_unacknowledged(),
-            State::JoiningNode(ref mut state) => state.resend_unacknowledged(),
             State::Node(ref mut state) => state.resend_unacknowledged(),
             State::Bootstrapping(_) |
             State::Terminated => false,
@@ -160,7 +147,6 @@ impl State {
     pub fn has_unacknowledged(&self) -> bool {
         match *self {
             State::Client(ref state) => state.has_unacknowledged(),
-            State::JoiningNode(ref state) => state.has_unacknowledged(),
             State::Node(ref state) => state.has_unacknowledged(),
             State::Bootstrapping(_) |
             State::Terminated => false,
@@ -170,7 +156,6 @@ impl State {
     #[cfg(feature = "use-mock-crust")]
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         match *self {
-            State::JoiningNode(ref state) => state.routing_table(),
             State::Node(ref state) => state.routing_table(),
             _ => unreachable!(),
         }
@@ -179,7 +164,6 @@ impl State {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         match *self {
-            State::JoiningNode(ref mut state) => state.clear_state(),
             State::Node(ref mut state) => state.clear_state(),
             State::Bootstrapping(_) |
             State::Client(_) |
@@ -191,16 +175,11 @@ impl State {
 pub enum Transition {
     // Stay in the current state.
     Stay,
-    // Transition into a bootstrapped state (JoiningNode or Client).
+    // Transition into a bootstrapped state (Node or Client).
     IntoBootstrapped {
         proxy_peer_id: PeerId,
         proxy_public_id: PublicId,
         quorum_size: usize,
-    },
-    // Transition into Node.
-    IntoNode {
-        peer_id: PeerId,
-        public_id: PublicId,
     },
     // Terminate
     Terminate,
@@ -252,10 +231,6 @@ impl StateMachine {
     /// otherwise returns false. Never blocks.
     #[cfg(feature = "use-mock-crust")]
     pub fn poll(&mut self) -> bool {
-        if !self.is_running {
-            return false;
-        }
-
         match self.category_rx.try_recv() {
             Ok(category) => {
                 self.handle_event(category);
@@ -313,7 +288,6 @@ impl StateMachine {
             Transition::IntoBootstrapped { proxy_peer_id, proxy_public_id, quorum_size } => {
                 self.transition_to_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
             }
-            Transition::IntoNode { peer_id, public_id } => self.transition_to_node(peer_id, public_id),
             Transition::Terminate => self.terminate(),
         }
     }
@@ -322,25 +296,13 @@ impl StateMachine {
                                   proxy_peer_id: PeerId,
                                   proxy_public_id: PublicId,
                                   quorum_size: usize) {
-        self.transition(|state| {
-            state.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size)
-        })
-    }
-
-    fn transition_to_node(&mut self, peer_id: PeerId, public_id: PublicId) {
-        self.transition(|state| state.into_node(peer_id, public_id))
+        // Temporarily switch to `Terminated` to allow moving out of the current
+        // state without moving `self`.
+        let prev_state = mem::replace(&mut self.state, State::Terminated);
+        self.state = prev_state.into_bootstrapped(proxy_peer_id, proxy_public_id, quorum_size);
     }
 
     fn terminate(&mut self) {
         self.is_running = false;
-    }
-
-    fn transition<F>(&mut self, f: F)
-        where F: FnOnce(State) -> State
-    {
-        // Temporarily switch to `Terminated` to allow moving out of the current
-        // state without moving `self`.
-        let prev_state = mem::replace(&mut self.state, State::Terminated);
-        self.state = f(prev_state);
     }
 }

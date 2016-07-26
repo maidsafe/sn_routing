@@ -419,7 +419,6 @@ impl Node {
     pub fn name(&self) -> Result<XorName, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::Name { result_tx: result_tx }));
-
         self.receive_action_result(&result_rx)
     }
 

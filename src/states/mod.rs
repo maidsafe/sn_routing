@@ -18,13 +18,8 @@
 mod bootstrapping;
 mod common;
 mod client;
-mod joining_node;
 mod node;
 
 pub use self::bootstrapping::Bootstrapping;
 pub use self::client::Client;
-pub use self::joining_node::JoiningNode;
 pub use self::node::Node;
-
-#[cfg(feature = "use-mock-crust")]
-pub use self::common::Testable;

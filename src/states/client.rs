@@ -29,15 +29,13 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
 use message_accumulator::MessageAccumulator;
-use messages::{Message, MessageContent, RoutingMessage, UserMessage, UserMessageCache};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
+               UserMessageCache};
 use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
-use super::common::{AnyState, Bootstrapped, HandleHopMessage, HandleUserMessage, ProxyClient,
-                    SendRoutingMessage, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
-#[cfg(feature = "use-mock-crust")]
-use super::common::Testable;
+use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 
 pub struct Client {
@@ -65,12 +63,15 @@ impl Client {
                               stats: Stats,
                               timer: Timer)
                               -> Self {
+        let mut msg_accumulator = MessageAccumulator::new();
+        msg_accumulator.set_quorum_size(quorum_size);
+
         let client = Client {
             ack_mgr: AckManager::new(),
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
-            msg_accumulator: MessageAccumulator::with_quorum_size(quorum_size),
+            msg_accumulator: msg_accumulator,
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
             signed_msg_filter: SignedMessageFilter::new(),
@@ -87,6 +88,23 @@ impl Client {
                quorum_size);
 
         client
+    }
+
+    /// Resends all unacknowledged messages.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.timer.stop();
+        let timer_tokens = self.ack_mgr.timer_tokens();
+        for timer_token in &timer_tokens {
+            self.resend_unacknowledged_timed_out_msgs(*timer_token);
+        }
+        !timer_tokens.is_empty()
+    }
+
+    /// Are there any unacknowledged messages?
+    #[cfg(feature = "use-mock-crust")]
+    pub fn has_unacknowledged(&self) -> bool {
+        self.ack_mgr.has_pending()
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
@@ -169,80 +187,47 @@ impl Client {
         }
     }
 
-    /// Sends the given message, possibly splitting it up into smaller parts.
-    fn send_user_message(&mut self,
-                         src: Authority,
-                         dst: Authority,
-                         user_msg: UserMessage,
-                         priority: u8)
-                         -> Result<(), RoutingError> {
-        match user_msg {
-            UserMessage::Request(ref request) => self.stats.count_request(request),
-            UserMessage::Response(ref response) => self.stats.count_response(response),
-        }
-        for part in try!(user_msg.to_parts(priority)) {
-            try!(self.send_routing_message(RoutingMessage {
-                src: src.clone(),
-                dst: dst.clone(),
-                content: part,
-            }));
-        }
-        Ok(())
-    }
-}
+    fn handle_hop_message(&mut self,
+                          hop_msg: HopMessage,
+                          peer_id: PeerId)
+                          -> Result<Transition, RoutingError> {
 
-impl AnyState for Client {
-    fn crust_service(&self) -> &Service {
-        &self.crust_service
-    }
-
-    fn full_id(&self) -> &FullId {
-        &self.full_id
-    }
-
-    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
-        if peer_id == self.crust_service().id() {
-            error!("{:?} LostPeer fired with our crust peer id", self);
-            return Transition::Stay;
-        }
-
-        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
-
-        if *self.proxy_peer_id() == peer_id {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   self.proxy_public_id().name(),
-                   peer_id);
-            self.send_event(Event::Terminate);
-            Transition::Terminate
+        if self.proxy_peer_id == peer_id {
+            try!(hop_msg.verify(self.proxy_public_id.signing_public_key()));
         } else {
-            Transition::Stay
+            return Err(RoutingError::UnknownConnection(peer_id));
         }
+
+        let signed_msg = hop_msg.content();
+        try!(signed_msg.check_integrity());
+
+        // Prevents someone sending messages repeatedly to us
+        if self.signed_msg_filter.filter_incoming(signed_msg) > GROUP_SIZE {
+            return Err(RoutingError::FilterCheckFailed);
+        }
+
+        let routing_msg = signed_msg.routing_message();
+
+        if !self.is_recipient(&routing_msg.dst) {
+            return Ok(Transition::Stay);
+        }
+
+        self.handle_routing_message(routing_msg, signed_msg.public_id())
     }
 
-    fn stats(&mut self) -> &mut Stats {
-        &mut self.stats
-    }
+    fn handle_routing_message(&mut self,
+                              routing_msg: &RoutingMessage,
+                              public_id: &PublicId)
+                              -> Result<Transition, RoutingError> {
+        if let Some(msg) = try!(self.accumulate(routing_msg, public_id)) {
+            if msg.src.is_group() {
+                self.send_ack(&msg, 0);
+            }
 
-    fn send_event(&self, event: Event) {
-        let _ = self.event_sender.send(event);
-    }
-}
-
-impl Bootstrapped for Client {
-    fn accumulate(&mut self,
-                  routing_msg: &RoutingMessage,
-                  public_id: &PublicId)
-                  -> Result<Option<RoutingMessage>, RoutingError> {
-        self.msg_accumulator.add(routing_msg, public_id)
-    }
-
-    fn ack_mgr(&self) -> &AckManager {
-        &self.ack_mgr
-    }
-
-    fn ack_mgr_mut(&mut self) -> &mut AckManager {
-        &mut self.ack_mgr
+            self.dispatch_routing_message(msg)
+        } else {
+            Ok(Transition::Stay)
+        }
     }
 
     fn dispatch_routing_message(&mut self,
@@ -281,6 +266,99 @@ impl Bootstrapped for Client {
         }
     }
 
+    /// Sends the given message, possibly splitting it up into smaller parts.
+    fn send_user_message(&mut self,
+                         src: Authority,
+                         dst: Authority,
+                         user_msg: UserMessage,
+                         priority: u8)
+                         -> Result<(), RoutingError> {
+        match user_msg {
+            UserMessage::Request(ref request) => self.stats.count_request(request),
+            UserMessage::Response(ref response) => self.stats.count_response(response),
+        }
+        for part in try!(user_msg.to_parts(priority)) {
+            try!(self.send_routing_message(RoutingMessage {
+                src: src.clone(),
+                dst: dst.clone(),
+                content: part,
+            }));
+        }
+        Ok(())
+    }
+
+    fn is_recipient(&self, dst: &Authority) -> bool {
+        if let Authority::Client { ref client_key, .. } = *dst {
+            client_key == self.full_id.public_id().signing_public_key()
+        } else {
+            false
+        }
+    }
+}
+
+impl Base for Client {
+    fn crust_service(&self) -> &Service {
+        &self.crust_service
+    }
+
+    fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
+
+    fn handle_lost_peer(&mut self, peer_id: PeerId) -> Transition {
+        if peer_id == self.crust_service().id() {
+            error!("{:?} LostPeer fired with our crust peer id", self);
+            return Transition::Stay;
+        }
+
+        debug!("{:?} Received LostPeer - {:?}", self, peer_id);
+
+        if self.proxy_peer_id == peer_id {
+            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                   self,
+                   self.proxy_public_id.name(),
+                   peer_id);
+            self.send_event(Event::Terminate);
+            Transition::Terminate
+        } else {
+            Transition::Stay
+        }
+    }
+
+    fn stats(&mut self) -> &mut Stats {
+        &mut self.stats
+    }
+
+    fn send_event(&self, event: Event) {
+        let _ = self.event_sender.send(event);
+    }
+}
+
+impl Bootstrapped for Client {
+    fn accumulate(&mut self,
+                  routing_msg: &RoutingMessage,
+                  public_id: &PublicId)
+                  -> Result<Option<RoutingMessage>, RoutingError> {
+        self.msg_accumulator.add(routing_msg, public_id)
+    }
+
+    fn ack_mgr(&self) -> &AckManager {
+        &self.ack_mgr
+    }
+
+    fn ack_mgr_mut(&mut self) -> &mut AckManager {
+        &mut self.ack_mgr
+    }
+
+    fn add_to_user_msg_cache(&mut self,
+                             hash: u64,
+                             part_count: u32,
+                             part_index: u32,
+                             payload: Vec<u8>)
+                             -> Option<UserMessage> {
+        self.user_msg_cache.add(hash, part_count, part_index, payload)
+    }
+
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {
         if let Some((unacked_msg, ack)) = self.ack_mgr.find_timed_out(token) {
             trace!("{:?} - Timed out waiting for ack({}) {:?}",
@@ -300,6 +378,54 @@ impl Bootstrapped for Client {
         }
     }
 
+    fn send_routing_message_via_route(&mut self,
+                                      routing_msg: RoutingMessage,
+                                      route: u8)
+                                      -> Result<(), RoutingError> {
+        self.stats.count_route(route);
+
+        if let Authority::Client { .. } = routing_msg.dst {
+            if self.is_recipient(&routing_msg.dst) {
+                return Ok(()); // Message is for us.
+            }
+        }
+
+        // Get PeerId of the proxy node
+        let proxy_peer_id = if let Authority::Client { ref proxy_node_name, .. } =
+                                   routing_msg.src {
+            if *self.proxy_public_id.name() == *proxy_node_name {
+                self.proxy_peer_id
+            } else {
+                error!("{:?} - Unable to find connection to proxy node in proxy map",
+                       self);
+                return Err(RoutingError::ProxyConnectionNotFound);
+            }
+        } else {
+            error!("{:?} - Source should be client if our state is a Client",
+                   self);
+            return Err(RoutingError::InvalidSource);
+        };
+
+        let signed_msg = try!(SignedMessage::new(routing_msg, &self.full_id()));
+
+        if !self.add_to_pending_acks(&signed_msg, route) {
+            return Ok(());
+        }
+
+        if !self.filter_outgoing_signed_msg(&signed_msg, &proxy_peer_id, route) {
+            let bytes = try!(self.to_hop_bytes(signed_msg.clone(), route, Vec::new()));
+
+            if let Err(error) = self.send_or_drop(&proxy_peer_id, bytes, signed_msg.priority()) {
+                info!("{:?} - Error sending message to {:?}: {:?}.",
+                      self,
+                      proxy_peer_id,
+                      error);
+            }
+        }
+
+        Ok(())
+    }
+
     fn signed_msg_filter(&mut self) -> &mut SignedMessageFilter {
         &mut self.signed_msg_filter
     }
@@ -314,27 +440,3 @@ impl Debug for Client {
         write!(formatter, "Client({})", self.name())
     }
 }
-
-impl HandleUserMessage for Client {
-    fn add_to_user_msg_cache(&mut self,
-                             hash: u64,
-                             part_count: u32,
-                             part_index: u32,
-                             payload: Vec<u8>)
-                             -> Option<UserMessage> {
-        self.user_msg_cache.add(hash, part_count, part_index, payload)
-    }
-}
-
-impl ProxyClient for Client {
-    fn proxy_peer_id(&self) -> &PeerId {
-        &self.proxy_peer_id
-    }
-
-    fn proxy_public_id(&self) -> &PublicId {
-        &self.proxy_public_id
-    }
-}
-
-#[cfg(feature = "use-mock-crust")]
-impl Testable for Client {}
