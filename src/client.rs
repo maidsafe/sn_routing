@@ -31,7 +31,9 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
-use state_machine::{Role, StateMachine};
+use types::RoutingActionSender;
+use state_machine::{State, StateMachine};
+use states;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -70,8 +72,7 @@ impl Client {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, mut machine) =
-            StateMachine::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
+        let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys);
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
@@ -90,8 +91,7 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
         // start the handler for routing with a restriction to become a full node
-        let (action_sender, machine) =
-            StateMachine::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
+        let (action_sender, machine) = Self::make_state_machine(event_sender, keys);
         let (tx, rx) = channel();
 
         Ok(Client {
@@ -99,6 +99,22 @@ impl Client {
             interface_result_rx: rx,
             action_sender: action_sender,
             machine: RefCell::new(machine),
+        })
+    }
+
+    fn make_state_machine(event_sender: Sender<Event>,
+                          keys: Option<FullId>)
+                          -> (RoutingActionSender, StateMachine) {
+        let cache = Box::new(NullCache);
+        let full_id = keys.unwrap_or_else(FullId::new);
+
+        StateMachine::new(move |crust_service, timer| {
+            State::Bootstrapping(states::Bootstrapping::new(cache,
+                                                            true,
+                                                            crust_service,
+                                                            event_sender,
+                                                            full_id,
+                                                            timer))
         })
     }
 
@@ -111,13 +127,13 @@ impl Client {
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().resend_unacknowledged()
+        self.machine.borrow_mut().current_mut().resend_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().has_unacknowledged()
+        self.machine.borrow().current().has_unacknowledged()
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.

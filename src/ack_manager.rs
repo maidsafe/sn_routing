@@ -17,12 +17,12 @@
 
 use maidsafe_utilities;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 
-use id::PublicId;
+use error::RoutingError;
 use message_filter::MessageFilter;
-use messages::{MessageContent, RoutingMessage, SignedMessage};
-use timer::Timer;
+use messages::RoutingMessage;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -38,9 +38,12 @@ pub struct UnacknowledgedMessage {
 }
 
 pub struct AckManager {
-    pending: HashMap<u64, UnacknowledgedMessage>,
-    received: MessageFilter<u64>,
+    pending: HashMap<Ack, UnacknowledgedMessage>,
+    received: MessageFilter<Ack>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+pub struct Ack(u64);
 
 impl AckManager {
     pub fn new() -> Self {
@@ -53,60 +56,27 @@ impl AckManager {
     }
 
     // Handle received ack.
-    pub fn receive(&mut self, ack: u64) {
+    pub fn receive(&mut self, ack: Ack) {
         if self.pending.remove(&ack).is_none() {
             let _ = self.received.insert(&ack);
         }
     }
 
+    pub fn did_receive(&mut self, ack: Ack) -> bool {
+        self.received.contains(&ack)
+    }
+
     pub fn add_to_pending(&mut self,
-                          signed_msg: &SignedMessage,
-                          route: u8,
-                          public_id: &PublicId,
-                          timer: &mut Timer)
-                          -> bool {
-        // If this is not an ack and we're the source, expect to receive an ack for this.
-        if let MessageContent::Ack(..) = signed_msg.routing_message().content {
-            return true;
-        }
-
-        if *signed_msg.public_id() != *public_id {
-            return true;
-        }
-
-        let hash_msg = match signed_msg.routing_message().to_grp_msg_hash() {
-            Ok(hash_msg) => hash_msg,
-            Err(error) => {
-                error!("Failed to create hash message: {:?}", error);
-                return true;
-            }
-        };
-        let ack = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
-        if self.received.contains(&ack) {
-            return false;
-        }
-
-        let token = timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
-        let unacked_msg = UnacknowledgedMessage {
-            routing_msg: signed_msg.routing_message().clone(),
-            route: route,
-            timer_token: token,
-        };
-
-        if let Some(ejected) = self.pending.insert(ack, unacked_msg) {
-            // FIXME: This currently occurs for Connect request and
-            // GetNodeName response. Connect requests arent filtered which
-            // should get resolved with peer_mgr completion.
-            // GetNodeName response resends from a node needs to get looked into.
-            trace!("Ejected pending ack: {:?} - {:?}", ack, ejected);
-        }
-        true
+                          ack: Ack,
+                          unacked_msg: UnacknowledgedMessage)
+                          -> Option<UnacknowledgedMessage> {
+        self.pending.insert(ack, unacked_msg)
     }
 
     // Find a timed out unacknowledged message corresponding to the given timer token.
     // If such message exists, returns it with the corresponding ack hash. Otherwise
     // returns None.
-    pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, u64)> {
+    pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) = self.pending
             .iter()
             .find(|&(_, ref unacked_msg)| unacked_msg.timer_token == token) {
@@ -138,5 +108,18 @@ impl AckManager {
     #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {
         self.received.clear()
+    }
+}
+
+impl Ack {
+    pub fn compute(routing_msg: &RoutingMessage) -> Result<Ack, RoutingError> {
+        let hash_msg = try!(routing_msg.to_grp_msg_hash());
+        Ok(Ack(maidsafe_utilities::big_endian_sip_hash(&hash_msg)))
+    }
+}
+
+impl fmt::Display for Ack {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:x}", self.0)
     }
 }

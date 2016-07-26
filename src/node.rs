@@ -15,6 +15,8 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg(feature = "use-mock-crust")]
+use kademlia_routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 #[cfg(not(feature = "use-mock-crust"))]
@@ -29,20 +31,20 @@ use cache::{Cache, NullCache};
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
-#[cfg(feature = "use-mock-crust")]
-use kademlia_routing_table::RoutingTable;
+use id::FullId;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
+use state_machine::{State, StateMachine};
+use states;
+use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
-use state_machine::{Role, StateMachine};
-use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
 /// A builder to configure and create a new `Node`.
 pub struct NodeBuilder {
     cache: Box<Cache>,
-    role: Role,
+    first: bool,
     deny_other_local_nodes: bool,
 }
 
@@ -54,11 +56,7 @@ impl NodeBuilder {
 
     /// Configures the node to start a new network instead of joining an existing one.
     pub fn first(self, first: bool) -> NodeBuilder {
-        if first {
-            NodeBuilder { role: Role::FirstNode, ..self }
-        } else {
-            NodeBuilder { role: Role::Node, ..self }
-        }
+        NodeBuilder { first: first, ..self }
     }
 
     /// Causes node creation to fail if another node on the local network is detected.
@@ -77,11 +75,8 @@ impl NodeBuilder {
         sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut machine) = StateMachine::new(event_sender,
-                                                             self.role,
-                                                             None,
-                                                             self.cache,
-                                                             self.deny_other_local_nodes);
+        let (action_sender, mut machine) = self.make_state_machine(event_sender);
+
         let (tx, rx) = channel();
 
         let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
@@ -100,11 +95,7 @@ impl NodeBuilder {
     #[cfg(feature = "use-mock-crust")]
     pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
         // start the handler for routing without a restriction to become a full node
-        let (action_sender, machine) = StateMachine::new(event_sender,
-                                                         self.role,
-                                                         None,
-                                                         self.cache,
-                                                         self.deny_other_local_nodes);
+        let (action_sender, machine) = self.make_state_machine(event_sender);
         let (tx, rx) = channel();
 
         Ok(Node {
@@ -112,6 +103,40 @@ impl NodeBuilder {
             interface_result_rx: rx,
             action_sender: action_sender,
             machine: RefCell::new(machine),
+        })
+    }
+
+    fn make_state_machine(self,
+                          event_sender: Sender<Event>)
+                          -> (RoutingActionSender, StateMachine) {
+        let full_id = FullId::new();
+
+        StateMachine::new(move |crust_service, timer| {
+            if self.first {
+                if let Some(state) = states::Node::first(self.cache,
+                                                         crust_service,
+                                                         event_sender,
+                                                         full_id,
+                                                         timer) {
+                    State::Node(state)
+                } else {
+                    State::Terminated
+                }
+            } else if self.deny_other_local_nodes && crust_service.has_peers_on_lan() {
+                error!("Bootstrapping({:?}) More than 1 routing node found on LAN. Currently \
+                        this is not supported",
+                       full_id.public_id().name());
+
+                let _ = event_sender.send(Event::Terminate);
+                State::Terminated
+            } else {
+                State::Bootstrapping(states::Bootstrapping::new(self.cache,
+                                                                false,
+                                                                crust_service,
+                                                                event_sender,
+                                                                full_id,
+                                                                timer))
+            }
         })
     }
 }
@@ -141,7 +166,7 @@ impl Node {
     pub fn builder() -> NodeBuilder {
         NodeBuilder {
             cache: Box::new(NullCache),
-            role: Role::Node,
+            first: false,
             deny_other_local_nodes: false,
         }
     }
@@ -155,25 +180,25 @@ impl Node {
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().resend_unacknowledged()
+        self.machine.borrow_mut().current_mut().resend_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Are there any unacknowledged messages?
     pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().has_unacknowledged()
+        self.machine.borrow().current().has_unacknowledged()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Routing table of this node.
     pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.machine.borrow().routing_table().to_names()
+        self.machine.borrow().current().routing_table().to_names()
     }
 
     #[cfg(feature = "use-mock-crust")]
     /// Resend all unacknowledged messages.
     pub fn clear_state(&self) {
-        self.machine.borrow_mut().clear_state()
+        self.machine.borrow_mut().current_mut().clear_state()
     }
 
     /// Send a `Get` request to `dst` to retrieve data from the network.
