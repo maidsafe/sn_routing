@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.25.0]
+- Refactoring: Further split up and reorganise the states and move more logic
+  into the peer manager module.
+- Several bug fixes and test improvements.
+
 ## [0.24.2]
 - Refactoring: Turn `Core` into a state machine with `Client` and `Node` states.
   Move some more logic onto the `PeerManager`.
