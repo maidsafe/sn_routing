@@ -463,7 +463,7 @@ impl Node {
 impl Drop for Node {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
-            error!("Error {:?} sending event Core", err);
+            debug!("Error {:?} sending event Core", err);
         }
     }
 }

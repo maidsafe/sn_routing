@@ -29,9 +29,6 @@ pub const ACK_TIMEOUT_SECS: u64 = 20;
 
 const EXPIRY_DURATION_SECS: u64 = 4 * 60;
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
-pub struct Ack(u64);
-
 /// A copy of a message which has been sent and is pending the ack from the recipient.
 #[derive(Clone, Debug)]
 pub struct UnacknowledgedMessage {
@@ -41,17 +38,18 @@ pub struct UnacknowledgedMessage {
 }
 
 pub struct AckManager {
-    timer_tokens: HashMap<u64, Ack>,
     pending: HashMap<Ack, UnacknowledgedMessage>,
     received: MessageFilter<Ack>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, RustcDecodable, RustcEncodable)]
+pub struct Ack(u64);
 
 impl AckManager {
     pub fn new() -> Self {
         let expiry_duration = Duration::from_secs(EXPIRY_DURATION_SECS);
 
         AckManager {
-            timer_tokens: HashMap::new(),
             pending: HashMap::new(),
             received: MessageFilter::with_expiry_duration(expiry_duration),
         }
@@ -59,13 +57,8 @@ impl AckManager {
 
     // Handle received ack.
     pub fn receive(&mut self, ack: Ack) {
-        match self.pending.remove(&ack) {
-            Some(UnacknowledgedMessage { timer_token, .. }) => {
-                let _ = self.timer_tokens.remove(&timer_token);
-            }
-            None => {
-                let _ = self.received.insert(&ack);
-            }
+        if self.pending.remove(&ack).is_none() {
+            let _ = self.received.insert(&ack);
         }
     }
 
@@ -77,7 +70,6 @@ impl AckManager {
                           ack: Ack,
                           unacked_msg: UnacknowledgedMessage)
                           -> Option<UnacknowledgedMessage> {
-        let _ = self.timer_tokens.insert(unacked_msg.timer_token, ack);
         self.pending.insert(ack, unacked_msg)
     }
 
@@ -85,14 +77,19 @@ impl AckManager {
     // If such message exists, returns it with the corresponding ack hash. Otherwise
     // returns None.
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
-        if let Some(timed_out_ack) = self.timer_tokens.remove(&token) {
-            // Safe to use `unwrap!()` here as the timer_tokens map is in sync with pending.
-            let mut unacked_msg = unwrap!(self.pending.remove(&timed_out_ack));
-            unacked_msg.route += 1;
-            Some((unacked_msg, timed_out_ack))
+        let timed_out_ack = if let Some((sip_hash, _)) = self.pending
+            .iter()
+            .find(|&(_, ref unacked_msg)| unacked_msg.timer_token == token) {
+            *sip_hash
         } else {
-            None
-        }
+            return None;
+        };
+
+        // Safe to use `unwrap!()` here as we just got a valid key in the `find` call above.
+        let mut unacked_msg = unwrap!(self.pending.remove(&timed_out_ack));
+        unacked_msg.route += 1;
+
+        Some((unacked_msg, timed_out_ack))
     }
 
     #[cfg(feature = "use-mock-crust")]
@@ -102,7 +99,10 @@ impl AckManager {
 
     #[cfg(feature = "use-mock-crust")]
     pub fn timer_tokens(&self) -> Vec<u64> {
-        self.timer_tokens.keys().cloned().collect()
+        self.pending
+            .iter()
+            .map(|(_, unacked_msg)| unacked_msg.timer_token)
+            .collect::<Vec<_>>()
     }
 
     #[cfg(feature = "use-mock-crust")]
