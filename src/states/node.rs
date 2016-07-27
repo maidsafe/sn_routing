@@ -108,7 +108,7 @@ impl Node {
             debug!("{:?} - State changed to node.", node);
             Some(node)
         } else {
-            let _ = node.event_sender.send(Event::Terminate);
+            node.send_event(Event::Terminate);
             None
         }
     }
@@ -280,7 +280,7 @@ impl Node {
             }
             CrustEvent::ListenerFailed => {
                 error!("{:?} Failed to start listening.", self);
-                let _ = self.event_sender.send(Event::Terminate);
+                self.send_event(Event::Terminate);
             }
             CrustEvent::WriteMsgSizeProhibitive(peer_id, msg) => {
                 error!("{:?} Failed to send {}-byte message to {:?}. Message too large.",
@@ -1324,11 +1324,9 @@ impl Node {
                 debug!("{:?} Lost connection, less than {} remaining.",
                        self,
                        GROUP_SIZE - 1);
-                let _ = self.event_sender.send(if self.is_first_node {
-                    Event::Terminate
-                } else {
-                    Event::RestartRequired
-                });
+                if !self.is_first_node {
+                    self.send_event(Event::RestartRequired);
+                }
             }
             self.reset_bucket_refresh_timer();
         };
