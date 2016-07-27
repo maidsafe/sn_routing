@@ -475,9 +475,7 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::Ack(ack, priority) => {
-                write!(formatter, "Ack({}, {})", ack, priority)
-            }
+            MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
             MessageContent::GroupMessageHash(ref hash, priority) => {
                 write!(formatter,
                        "GroupMessageHash({}, {})",
@@ -663,18 +661,6 @@ impl Request {
             true
         } else {
             false
-        }
-    }
-
-    /// Returns this request's message ID.
-    pub fn message_id(&self) -> MessageId {
-        match *self {
-            Request::Refresh(_, msg_id) |
-            Request::Get(_, msg_id) |
-            Request::GetAccountInfo(msg_id) |
-            Request::Put(_, msg_id) |
-            Request::Post(_, msg_id) |
-            Request::Delete(_, msg_id) => msg_id,
         }
     }
 }
