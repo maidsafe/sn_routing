@@ -1,5 +1,9 @@
 # Safe Vault - Change Log
 
+## [0.10.5]
+- Update the crate documentation.
+- Upgrade to routing 0.25.0.
+
 ## [0.10.4]
 - Remove spammy trace statement.
 
