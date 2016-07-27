@@ -17,13 +17,12 @@
 
 use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
-use lru_time_cache::LruCache;
-use maidsafe_utilities::{self, serialisation};
+use maidsafe_utilities::serialisation;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager};
+use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use error::{InterfaceError, RoutingError};
@@ -40,7 +39,6 @@ use super::common::{AnyState, Bootstrapped, HandleHopMessage, HandleUserMessage,
 #[cfg(feature = "use-mock-crust")]
 use super::common::Testable;
 use timer::Timer;
-use types::MessageId;
 
 pub struct Client {
     ack_mgr: AckManager,
@@ -50,7 +48,6 @@ pub struct Client {
     msg_accumulator: MessageAccumulator,
     proxy_peer_id: PeerId,
     proxy_public_id: PublicId,
-    request_msg_ids: LruCache<u64, MessageId>,
     signed_msg_filter: SignedMessageFilter,
     stats: Stats,
     timer: Timer,
@@ -76,9 +73,6 @@ impl Client {
             msg_accumulator: MessageAccumulator::with_quorum_size(quorum_size),
             proxy_peer_id: proxy_peer_id,
             proxy_public_id: proxy_public_id,
-            request_msg_ids: LruCache::with_expiry_duration(Duration::from_secs(GROUP_SIZE as u64 *
-                                                                                ACK_TIMEOUT_SECS *
-                                                                                2)),
             signed_msg_filter: SignedMessageFilter::new(),
             stats: stats,
             timer: timer,
@@ -184,11 +178,7 @@ impl Client {
                          priority: u8)
                          -> Result<(), RoutingError> {
         match user_msg {
-            UserMessage::Request(ref request) => {
-                let hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
-                let _ = self.request_msg_ids.insert(hash, request.message_id());
-                self.stats.count_request(request);
-            }
+            UserMessage::Request(ref request) => self.stats.count_request(request),
             UserMessage::Response(ref response) => self.stats.count_response(response),
         }
         for part in try!(user_msg.to_parts(priority)) {
@@ -304,13 +294,6 @@ impl Bootstrapped for Client {
                        self,
                        unacked_msg);
                 self.stats.count_unacked();
-                if let MessageContent::UserMessagePart { ref hash, .. } = unacked_msg.routing_msg
-                    .content {
-                    if let Some(msg_id) = self.request_msg_ids.remove(hash) {
-                        trace!("{:?} - Sending RequestTimeout({:?}).", self, msg_id);
-                        self.send_event(Event::RequestTimeout(msg_id));
-                    }
-                }
             } else if let Err(error) =
                    self.send_routing_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
