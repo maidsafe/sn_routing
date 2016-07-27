@@ -221,7 +221,7 @@ impl Client {
 impl Drop for Client {
     fn drop(&mut self) {
         if let Err(err) = self.action_sender.send(Action::Terminate) {
-            error!("Error {:?} sending event to Core", err);
+            debug!("Error {:?} sending event to Core", err);
         }
     }
 }
