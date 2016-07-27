@@ -79,32 +79,33 @@ impl Bootstrapping {
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
-        let result = match action {
+        match action {
             Action::ClientSendRequest { ref result_tx, .. } |
             Action::NodeSendMessage { ref result_tx, .. } => {
                 warn!("{:?} - Cannot handle {:?} - not bootstrapped", self, action);
                 // TODO: return Err here eventually. Returning Ok for now to
                 // preserve the pre-refactor behaviour.
-                result_tx.send(Ok(())).is_ok()
+                let _ = result_tx.send(Ok(()));
             }
-            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
-            Action::Timeout(token) => {
-                self.handle_timeout(token);
-                true
+            Action::Name { result_tx } => {
+                let _ = result_tx.send(*self.name());
             }
-            Action::Terminate => false,
+            Action::Timeout(token) => self.handle_timeout(token),
+            Action::Terminate => {
+                return Transition::Terminate;
+            }
 
             // TODO: these actions make no sense in this state, but we handle
             // them for now, to preserve the pre-refactor behaviour.
-            Action::CloseGroup { result_tx, .. } => result_tx.send(None).is_ok(),
-            Action::QuorumSize { result_tx } => result_tx.send(0).is_ok(),
-        };
-
-        if result {
-            Transition::Stay
-        } else {
-            Transition::Terminate
+            Action::CloseGroup { result_tx, .. } => {
+                let _ = result_tx.send(None);
+            }
+            Action::QuorumSize { result_tx } => {
+                let _ = result_tx.send(0);
+            }
         }
+
+        Transition::Stay
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {

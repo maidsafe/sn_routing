@@ -224,36 +224,36 @@ impl Node {
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
-        let result = match action {
+        match action {
             Action::ClientSendRequest { result_tx, .. } => {
-                result_tx.send(Err(InterfaceError::InvalidState)).is_ok()
+                let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
             Action::NodeSendMessage { src, dst, content, priority, result_tx } => {
-                result_tx.send(match self.send_user_message(src, dst, content, priority) {
-                        Err(RoutingError::Interface(err)) => Err(err),
-                        Err(_) | Ok(_) => Ok(()),
-                    })
-                    .is_ok()
+                let result = match self.send_user_message(src, dst, content, priority) {
+                    Err(RoutingError::Interface(err)) => Err(err),
+                    Err(_) | Ok(_) => Ok(()),
+                };
+
+                let _ = result_tx.send(result);
             }
             Action::CloseGroup { name, result_tx } => {
-                result_tx.send(self.peer_mgr.routing_table().close_nodes(&name, GROUP_SIZE)).is_ok()
+                let _ =
+                    result_tx.send(self.peer_mgr.routing_table().close_nodes(&name, GROUP_SIZE));
             }
-            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
-            Action::QuorumSize { result_tx } => result_tx.send(self.dynamic_quorum_size()).is_ok(),
-            Action::Timeout(token) => {
-                self.handle_timeout(token);
-                true
+            Action::Name { result_tx } => {
+                let _ = result_tx.send(*self.name());
             }
-            Action::Terminate => false,
-        };
+            Action::QuorumSize { result_tx } => {
+                let _ = result_tx.send(self.dynamic_quorum_size());
+            }
+            Action::Timeout(token) => self.handle_timeout(token),
+            Action::Terminate => {
+                return Transition::Terminate;
+            }
+        }
 
         self.update_stats();
-
-        if result {
-            Transition::Stay
-        } else {
-            Transition::Terminate
-        }
+        Transition::Stay
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {

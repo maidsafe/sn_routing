@@ -90,7 +90,7 @@ impl Client {
     }
 
     pub fn handle_action(&mut self, action: Action) -> Transition {
-        let result = match action {
+        match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
                 let src = Authority::Client {
                     client_key: *self.full_id.public_id().signing_public_key(),
@@ -104,30 +104,29 @@ impl Client {
                     Err(_) | Ok(_) => Ok(()),
                 };
 
-                result_tx.send(result).is_ok()
+                let _ = result_tx.send(result);
             }
             Action::NodeSendMessage { result_tx, .. } => {
-                result_tx.send(Err(InterfaceError::InvalidState)).is_ok()
+                let _ = result_tx.send(Err(InterfaceError::InvalidState));
             }
-            Action::CloseGroup { result_tx, .. } => result_tx.send(None).is_ok(),
-            Action::Name { result_tx } => result_tx.send(*self.name()).is_ok(),
+            Action::CloseGroup { result_tx, .. } => {
+                let _ = result_tx.send(None);
+            }
+            Action::Name { result_tx } => {
+                let _ = result_tx.send(*self.name());
+            }
             Action::QuorumSize { result_tx } => {
                 // TODO: return the actual quorum size. To do that, we need to
                 // extend the MessageAccumulator's API with a method to retrieve it.
-                result_tx.send(0).is_ok()
+                let _ = result_tx.send(0);
             }
-            Action::Timeout(token) => {
-                self.handle_timeout(token);
-                true
+            Action::Timeout(token) => self.handle_timeout(token),
+            Action::Terminate => {
+                return Transition::Terminate;
             }
-            Action::Terminate => false,
-        };
-
-        if result {
-            Transition::Stay
-        } else {
-            Transition::Terminate
         }
+
+        Transition::Stay
     }
 
     pub fn handle_crust_event(&mut self, crust_event: CrustEvent) -> Transition {
