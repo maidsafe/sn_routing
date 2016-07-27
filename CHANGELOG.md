@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.25.1]
+- Fix a panic in ack manager.
+
 ## [0.25.0]
 - Refactoring: Further split up and reorganise the states and move more logic
   into the peer manager module.
