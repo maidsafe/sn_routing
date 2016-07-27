@@ -8,7 +8,7 @@ license = "GPL-3.0"
 name = "safe_vault"
 readme = "README.md"
 repository = "https://github.com/maidsafe/safe_vault"
-version = "0.10.4"
+version = "0.10.5"
 
 [dependencies]
 accumulator = "~0.4.0"
@@ -23,9 +23,9 @@ log = "~0.3.6"
 maidsafe_utilities = "~0.8.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
-routing = "~0.24.3"
+routing = "~0.25.1"
 rustc-serialize = "~0.3.19"
-safe_network_common = "~0.5.0"
+safe_network_common = "~0.6.0"
 sodiumoxide = "=0.0.10"
 
 [build-dependencies]
