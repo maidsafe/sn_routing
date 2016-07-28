@@ -21,7 +21,7 @@ lru_time_cache = "~0.4.0"
 maidsafe_utilities = "~0.8.0"
 rand = "~0.3.14"
 rustc-serialize = "~0.3.19"
-sodiumoxide = "~0.0.10"
+sodiumoxide = "=0.0.10"
 sodiumoxide_extras = {version = "~0.1.0", optional = true}
 term = "~0.4.4"
 unwrap = "~1.1.0"
