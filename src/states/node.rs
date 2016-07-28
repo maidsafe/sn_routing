@@ -520,14 +520,15 @@ impl Node {
                           -> Result<(), RoutingError> {
         let hop_name;
         if self.is_proper() {
-            if let Some(public_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-                try!(hop_msg.verify(public_id.signing_public_key()));
-                hop_name = *public_id.name();
-            } else if let Some(client_info) = self.peer_mgr.get_client(&peer_id) {
-                try!(hop_msg.verify(&client_info.public_key));
-                if client_info.client_restriction {
-                    try!(self.check_valid_client_message(hop_msg.content().routing_message()));
-                }
+            if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
+                try!(hop_msg.verify(pub_id.signing_public_key()));
+                hop_name = *pub_id.name();
+            } else if let Some(pub_key) = self.peer_mgr.get_client(&peer_id) {
+                try!(hop_msg.verify(&pub_key));
+                try!(self.check_valid_client_message(hop_msg.content().routing_message()));
+                hop_name = *self.name();
+            } else if let Some(pub_key) = self.peer_mgr.get_joining_node(&peer_id) {
+                try!(hop_msg.verify(&pub_key));
                 hop_name = *self.name();
             } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
                 try!(hop_msg.verify(pub_id.signing_public_key()));
@@ -853,12 +854,18 @@ impl Node {
                    GROUP_SIZE - 1);
             return self.send_direct_message(&peer_id, DirectMessage::BootstrapDeny);
         }
-        if self.peer_mgr.get_client(&peer_id).is_some() {
+
+        let non_unique = if client_restriction {
+            self.peer_mgr.insert_client(peer_id, &public_id)
+        } else {
+            self.peer_mgr.insert_joining_node(peer_id, &public_id)
+        };
+
+        if non_unique {
             debug!("{:?} Received two ClientInfo from the same peer ID {:?}.",
                    self,
                    peer_id);
         }
-        self.peer_mgr.insert_client(peer_id, &public_id, client_restriction);
 
         debug!("{:?} Accepted client {:?}.", self, public_id.name());
 
@@ -1150,6 +1157,8 @@ impl Node {
                    peer_id);
         } else if self.peer_mgr.get_client(peer_id).is_some() {
             debug!("{:?} Not disconnecting client {:?}.", self, peer_id);
+        } else if self.peer_mgr.get_joining_node(peer_id).is_some() {
+            debug!("{:?} Not disconnecting joining node {:?}.", self, peer_id);
         } else if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(peer_id) {
             debug!("{:?} Disconnecting {:?} (indirect).", self, peer_id);
             let message = DirectMessage::TunnelDisconnect(*peer_id);
@@ -1420,7 +1429,8 @@ impl Node {
                 self.crust_service.prepare_connection_info(token);
             }
             Ok(ConnectionInfoReceivedResult::IsProxy) |
-            Ok(ConnectionInfoReceivedResult::IsClient) => {
+            Ok(ConnectionInfoReceivedResult::IsClient) |
+            Ok(ConnectionInfoReceivedResult::IsJoiningNode) => {
                 try!(self.send_node_identify(peer_id));
                 self.handle_node_identify(their_public_id, peer_id);
             }
@@ -1532,7 +1542,10 @@ impl Node {
                        peer_id: &PeerId)
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
-        if self.peer_mgr.get_client(peer_id).is_some() {
+
+        if self.peer_mgr.get_client(peer_id).is_some() ||
+           self.peer_mgr.get_joining_node(peer_id).is_some() ||
+           self.peer_mgr.get_routing_peer(peer_id).is_some() {
             if self.filter_outgoing_signed_msg(&signed_msg, peer_id, 0) {
                 return Ok(());
             }
@@ -1678,15 +1691,17 @@ impl Node {
     }
 
     fn dropped_client_connection(&mut self, peer_id: &PeerId) {
-        if let Some(info) = self.peer_mgr.remove_client(peer_id) {
-            if info.client_restriction {
-                debug!("{:?} Client disconnected: {:?}", self, peer_id);
-            } else {
-                debug!("{:?} Joining node {:?} dropped. {} remaining.",
-                       self,
-                       peer_id,
-                       self.peer_mgr.joining_nodes_num());
-            }
+        if self.peer_mgr.remove_client(peer_id) {
+            debug!("{:?} Client disconnected: {:?}", self, peer_id);
+        }
+    }
+
+    fn dropped_joining_node_connection(&mut self, peer_id: &PeerId) {
+        if self.peer_mgr.remove_joining_node(peer_id) {
+            debug!("{:?} Joining node {:?} dropped. {} remaining.",
+                   self,
+                   peer_id,
+                   self.peer_mgr.joining_nodes_num());
         }
     }
 
@@ -1793,8 +1808,9 @@ impl Base for Node {
         debug!("{:?} Received LostPeer - {:?}", self, peer_id);
 
         self.dropped_tunnel_client(&peer_id);
-        self.dropped_client_connection(&peer_id);
         self.dropped_tunnel_node(&peer_id);
+        self.dropped_client_connection(&peer_id);
+        self.dropped_joining_node_connection(&peer_id);
 
         let mut result = Transition::Stay;
 

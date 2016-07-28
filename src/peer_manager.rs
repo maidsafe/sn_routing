@@ -34,38 +34,22 @@ pub const QUORUM_SIZE: usize = 5;
 
 /// Time (in seconds) after which a joining node will get dropped from the map
 /// of joining nodes.
+#[cfg(not(feature = "use-mock-crust"))]
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
+
 /// Time (in seconds) after which the connection to a peer is considered failed.
 #[cfg(not(feature = "use-mock-crust"))]
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
+
 /// With mock Crust, all pending connections are removed explicitly.
 #[cfg(feature = "use-mock-crust")]
 const CONNECTION_TIMEOUT_SECS: u64 = 0;
+#[cfg(feature = "use-mock-crust")]
+const JOINING_NODE_TIMEOUT_SECS: u64 = 0;
+
 /// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
 /// table.
 const EXTRA_BUCKET_ENTRIES: usize = 2;
-
-/// Info about client a proxy kept in a proxy node.
-pub struct ClientInfo {
-    pub public_key: sign::PublicKey,
-    pub client_restriction: bool,
-    pub timestamp: Instant,
-}
-
-impl ClientInfo {
-    fn new(public_key: sign::PublicKey, client_restriction: bool) -> Self {
-        ClientInfo {
-            public_key: public_key,
-            client_restriction: client_restriction,
-            timestamp: Instant::now(),
-        }
-    }
-
-    fn is_stale(&self) -> bool {
-        !self.client_restriction &&
-        self.timestamp.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
-    }
-}
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -108,6 +92,10 @@ pub enum PeerState {
     SearchingForTunnel,
     /// We are connected - via a tunnel if the field is `true` - and waiting for a `NodeIdentify`.
     AwaitingNodeIdentify(bool),
+    /// We are the proxy for the client
+    Client(sign::PublicKey),
+    /// We are the proxy for the joining node
+    JoiningNode(sign::PublicKey),
     /// We are connected and routing to that peer - via a tunnel if the field is `true`.
     Routing(bool),
 }
@@ -129,6 +117,8 @@ pub enum ConnectionInfoReceivedResult {
     IsProxy,
     /// We are already connected: They are our client.
     IsClient,
+    /// We are already connected: They are becoming a routing node.
+    IsJoiningNode,
     /// We are already connected: They are a routing peer.
     IsConnected,
 }
@@ -148,16 +138,35 @@ pub struct ConnectionInfoPreparedResult {
     pub infos: Option<(PrivConnectionInfo, PubConnectionInfo)>,
 }
 
+pub struct Peer(Instant, PeerState);
+
+impl Peer {
+    fn new(state: PeerState) -> Self {
+        Peer(Instant::now(), state)
+    }
+
+    pub fn state(&self) -> &PeerState {
+        &self.1
+    }
+
+    fn is_stale(&self) -> bool {
+        match self.1 {
+            PeerState::JoiningNode(_) => {
+                self.0.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
+            }
+            _ => false,
+        }
+    }
+}
+
 /// A container for information about other nodes in the network.
 ///
 /// This keeps track of which nodes we know of, which ones we have tried to connect to, which IDs
 /// we have verified, whom we are directly connected to or via a tunnel.
 pub struct PeerManager {
-    // Any clients we have proxying through us, and whether they have `client_restriction`.
-    client_map: HashMap<PeerId, ClientInfo>,
     connection_token_map: HashMap<u32, PublicId>,
     // node_map indexed by public_id.name()
-    node_map: HashMap<XorName, (Instant, PeerState)>,
+    peer_map: HashMap<XorName, Peer>,
     /// Our bootstrap connection.
     proxy: Option<(Instant, PeerId, PublicId)>,
     pub_id_map: HashMap<PeerId, PublicId>,
@@ -169,9 +178,8 @@ impl PeerManager {
     /// Returns a new peer manager with no entries.
     pub fn new(our_public_id: PublicId) -> PeerManager {
         PeerManager {
-            client_map: HashMap::new(),
             connection_token_map: HashMap::new(),
-            node_map: HashMap::new(),
+            peer_map: HashMap::new(),
             proxy: None,
             pub_id_map: HashMap::new(),
             routing_table: RoutingTable::<XorName>::new(*our_public_id.name(),
@@ -187,7 +195,7 @@ impl PeerManager {
         let new_rt = RoutingTable::new(*our_public_id.name(), GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
-            let _ = self.node_map.remove(name);
+            let _ = self.peer_map.remove(name);
         }
         self.cleanup_pub_id_map();
     }
@@ -204,17 +212,17 @@ impl PeerManager {
                                 -> Option<AddedNodeDetails<XorName>> {
         let result = self.routing_table.add(*public_id.name());
         if result.is_some() {
-            let state = PeerState::Routing(match self.node_map.remove(public_id.name()) {
-                Some((_, PeerState::SearchingForTunnel)) |
-                Some((_, PeerState::AwaitingNodeIdentify(true))) => true,
-                Some((_, PeerState::Routing(tunnel))) => {
+            let state = PeerState::Routing(match self.peer_map.remove(public_id.name()) {
+                Some(Peer(_, PeerState::SearchingForTunnel)) |
+                Some(Peer(_, PeerState::AwaitingNodeIdentify(true))) => true,
+                Some(Peer(_, PeerState::Routing(tunnel))) => {
                     error!("Peer {:?} added to routing table, but already in state Routing.",
                            peer_id);
                     tunnel
                 }
                 _ => false,
             });
-            let _ = self.node_map.insert(*public_id.name(), (Instant::now(), state));
+            let _ = self.peer_map.insert(*public_id.name(), Peer::new(state));
             let _ = self.pub_id_map.insert(peer_id, public_id);
         }
         result
@@ -222,13 +230,15 @@ impl PeerManager {
 
     /// If unneeded, removes the given peer from the routing table and returns `true`.
     pub fn remove_if_unneeded(&mut self, name: &XorName, peer_id: &PeerId) -> bool {
-        if self.get_proxy_public_id(peer_id).is_some() || self.get_client(peer_id).is_some() ||
+        if self.get_proxy_public_id(peer_id).is_some() ||
+           self.get_client(peer_id).is_some() ||
+           self.get_joining_node(peer_id).is_some() ||
            Some(name) != self.pub_id_map.get(peer_id).map(PublicId::name) ||
            !self.routing_table.remove_if_unneeded(name) {
             return false;
         }
         let _ = self.pub_id_map.remove(peer_id);
-        let _ = self.node_map.remove(name);
+        let _ = self.peer_map.remove(name);
         true
     }
 
@@ -275,55 +285,96 @@ impl PeerManager {
         }
     }
 
-    /// Inserts the given client into the map.
-    pub fn insert_client(&mut self,
-                         peer_id: PeerId,
-                         public_id: &PublicId,
-                         client_restriction: bool) {
-        let client_info = ClientInfo::new(*public_id.signing_public_key(), client_restriction);
-        let _ = self.client_map.insert(peer_id, client_info);
+    /// Inserts the given client into the map. Returns true if we already had
+    /// a peer with the given peer id.
+    pub fn insert_client(&mut self, peer_id: PeerId, pub_id: &PublicId) -> bool {
+        let state = PeerState::Client(*pub_id.signing_public_key());
+        self.insert_state(*pub_id, state);
+        self.pub_id_map.insert(peer_id, *pub_id).is_some()
     }
 
-    /// Returns the given client's `ClientInfo`, if present.
-    pub fn get_client(&self, peer_id: &PeerId) -> Option<&ClientInfo> {
-        self.client_map.get(peer_id)
+    /// Returns the given client's public key, if present.
+    pub fn get_client(&self, peer_id: &PeerId) -> Option<&sign::PublicKey> {
+        self.get_state_by_peer_id(peer_id).and_then(|state| match state {
+            &PeerState::Client(ref pub_key) => Some(pub_key),
+            _ => None,
+        })
     }
 
-    /// Removes the given peer ID from the client nodes and returns their `ClientInfo`, if present.
-    pub fn remove_client(&mut self, peer_id: &PeerId) -> Option<ClientInfo> {
-        self.client_map.remove(peer_id)
+    /// Removes the given peer ID from the client nodes and returns whether it was present.
+    pub fn remove_client(&mut self, peer_id: &PeerId) -> bool {
+        if let Some(&PeerState::Client(_)) = self.get_state_by_peer_id(peer_id) {
+            self.remove_peer(peer_id).is_some()
+        } else {
+            false
+        }
     }
 
-    /// Removes all clients that intend to become a node but have timed out, and returns their peer
+    /// Inserts the given joining node into the map. Returns true if we already
+    /// had a peer with the given peer id.
+    pub fn insert_joining_node(&mut self, peer_id: PeerId, pub_id: &PublicId) -> bool {
+        let state = PeerState::JoiningNode(*pub_id.signing_public_key());
+        self.insert_state(*pub_id, state);
+        self.pub_id_map.insert(peer_id, *pub_id).is_some()
+    }
+
+    /// Returns the given joining node's public key, if present.
+    pub fn get_joining_node(&self, peer_id: &PeerId) -> Option<&sign::PublicKey> {
+        self.get_state_by_peer_id(peer_id).and_then(|state| match state {
+            &PeerState::JoiningNode(ref pub_key) => Some(pub_key),
+            _ => None,
+        })
+    }
+
+    /// Removes the given joining nodes and returns whether it was present.
+    pub fn remove_joining_node(&mut self, peer_id: &PeerId) -> bool {
+        if let Some(&PeerState::JoiningNode(_)) = self.get_state_by_peer_id(peer_id) {
+            self.remove_peer(peer_id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Removes all joining nodes that have timed out, and returns their peer
     /// IDs. Also, removes our proxy if we have timed out.
     pub fn remove_stale_joining_nodes(&mut self) -> Vec<PeerId> {
-        let mut stale_keys = self.client_map
+        let mut stale_ids = self.pub_id_map
             .iter()
-            .filter(|&(_, info)| info.is_stale())
-            .map(|(&peer_id, _)| peer_id)
+            .filter(|&(_, pub_id)| self.peer_map.get(pub_id.name())
+                                                .map(Peer::is_stale)
+                                                .unwrap_or(false))
+            .map(|(peer_id, _)| *peer_id)
             .collect_vec();
-        for peer_id in &stale_keys {
-            let _ = self.client_map.remove(peer_id);
+
+        for peer_id in &stale_ids {
+            let _ = self.remove_peer(peer_id);
         }
+
         if let Some((timestamp, peer_id, pub_id)) = self.proxy.take() {
             if timestamp.elapsed() > Duration::from_secs(JOINING_NODE_TIMEOUT_SECS) {
-                stale_keys.push(peer_id);
+                stale_ids.push(peer_id);
             } else {
                 self.proxy = Some((timestamp, peer_id, pub_id));
             }
         }
-        stale_keys
+
+        stale_ids
     }
 
     /// Returns the peer ID of the given node if it is our proxy or client.
-    pub fn get_proxy_or_client_peer_id(&self, public_id: &PublicId) -> Option<PeerId> {
-        if let Some((&peer_id, _)) = self.client_map
-            .iter()
-            .find(|elt| &elt.1.public_key == public_id.signing_public_key()) {
-            return Some(peer_id);
+    pub fn get_proxy_or_client_peer_id(&self, pub_id: &PublicId) -> Option<PeerId> {
+        let peer_id = match self.peer_map.get(pub_id.name()) {
+            Some(&Peer(_, PeerState::Client(_))) |
+            Some(&Peer(_, PeerState::JoiningNode(_))) => self.get_peer_id(pub_id),
+            _ => None,
+        };
+
+        if let Some(peer_id) = peer_id {
+            return Some(*peer_id);
         }
+
         match self.proxy {
-            Some((_, ref peer_id, ref proxy_pub_id)) if proxy_pub_id == public_id => Some(*peer_id),
+            Some((_, peer_id, ref proxy_pub_id)) if proxy_pub_id == pub_id => Some(peer_id),
             _ => None,
         }
     }
@@ -331,13 +382,19 @@ impl PeerManager {
     /// Returns the number of clients for which we act as a proxy and which intend to become a
     /// node.
     pub fn joining_nodes_num(&self) -> usize {
-        self.client_map.len() - self.client_num()
+        self.peer_map.values().filter(|&peer| match peer {
+            &Peer(_, PeerState::JoiningNode(_)) => true,
+            _ => false,
+        }).count()
     }
 
     /// Returns the number of clients for which we act as a proxy and which do not intend to become
     /// a node.
     pub fn client_num(&self) -> usize {
-        self.client_map.values().filter(|&info| info.client_restriction).count()
+        self.peer_map.values().filter(|&peer| match peer {
+            &Peer(_, PeerState::Client(_)) => true,
+            _ => false,
+        }).count()
     }
 
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
@@ -432,10 +489,10 @@ impl PeerManager {
                                     our_info: PrivConnectionInfo)
                                     -> Result<ConnectionInfoPreparedResult, Error> {
         let pub_id = try!(self.connection_token_map.remove(&token).ok_or(Error::PeerNotFound));
-        let (src, dst, opt_their_info) = match self.node_map.remove(pub_id.name()) {
-            Some((_, PeerState::ConnectionInfoPreparing(src, dst, info))) => (src, dst, info),
-            Some((timestamp, state)) => {
-                let _ = self.node_map.insert(*pub_id.name(), (timestamp, state));
+        let (src, dst, opt_their_info) = match self.peer_map.remove(pub_id.name()) {
+            Some(Peer(_, PeerState::ConnectionInfoPreparing(src, dst, info))) => (src, dst, info),
+            Some(Peer(timestamp, state)) => {
+                let _ = self.peer_map.insert(*pub_id.name(), Peer(timestamp, state));
                 return Err(Error::UnexpectedState);
             }
             None => return Err(Error::PeerNotFound),
@@ -467,35 +524,42 @@ impl PeerManager {
                                     their_info: PubConnectionInfo)
                                     -> Result<ConnectionInfoReceivedResult, Error> {
         let peer_id = their_info.id();
-        if self.get_client(&peer_id).is_some() {
-            return Ok(ConnectionInfoReceivedResult::IsClient);
-        }
+
         if self.get_proxy_public_id(&peer_id).is_some() {
             return Ok(ConnectionInfoReceivedResult::IsProxy);
         }
-        match self.node_map.remove(pub_id.name()) {
-            Some((_, PeerState::ConnectionInfoReady(our_info))) => {
+
+        match self.peer_map.remove(pub_id.name()) {
+            Some(Peer(_, PeerState::ConnectionInfoReady(our_info))) => {
                 self.insert_state(pub_id, PeerState::CrustConnecting);
                 let _ = self.pub_id_map.insert(peer_id, pub_id);
                 Ok(ConnectionInfoReceivedResult::Ready(our_info, their_info))
             }
-            Some((_, PeerState::ConnectionInfoPreparing(src, dst, None))) => {
+            Some(Peer(_, PeerState::ConnectionInfoPreparing(src, dst, None))) => {
                 let state = PeerState::ConnectionInfoPreparing(src, dst, Some(their_info));
                 self.insert_state(pub_id, state);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some((_, PeerState::CrustConnecting)) => {
+            Some(Peer(_, PeerState::CrustConnecting)) => {
                 self.insert_state(pub_id, PeerState::CrustConnecting);
                 Ok(ConnectionInfoReceivedResult::Waiting)
             }
-            Some((timestamp, PeerState::Routing(tunnel))) => {
+            Some(Peer(_, PeerState::Client(pub_key))) => {
+                self.insert_state(pub_id, PeerState::Client(pub_key));
+                Ok(ConnectionInfoReceivedResult::IsClient)
+            }
+            Some(Peer(_, PeerState::JoiningNode(pub_key))) => {
+                self.insert_state(pub_id, PeerState::JoiningNode(pub_key));
+                Ok(ConnectionInfoReceivedResult::IsJoiningNode)
+            }
+            Some(Peer(timestamp, PeerState::Routing(tunnel))) => {
                 // TODO: We _should_ retry connecting if the peer is connected via tunnel.
-                let _ = self.node_map
-                    .insert(*pub_id.name(), (timestamp, PeerState::Routing(tunnel)));
+                let _ = self.peer_map
+                    .insert(*pub_id.name(), Peer(timestamp, PeerState::Routing(tunnel)));
                 Ok(ConnectionInfoReceivedResult::IsConnected)
             }
-            Some((timestamp, state)) => {
-                let _ = self.node_map.insert(*pub_id.name(), (timestamp, state));
+            Some(Peer(timestamp, state)) => {
+                let _ = self.peer_map.insert(*pub_id.name(), Peer(timestamp, state));
                 Err(Error::UnexpectedState)
             }
             None => {
@@ -518,11 +582,14 @@ impl PeerManager {
                                 -> Option<u32> {
         match self.get_state(&pub_id) {
             Some(&PeerState::AwaitingNodeIdentify(_)) |
-            Some(&PeerState::Routing(_)) |
+            Some(&PeerState::Client(_)) |
             Some(&PeerState::ConnectionInfoPreparing(..)) |
             Some(&PeerState::ConnectionInfoReady(..)) |
-            Some(&PeerState::CrustConnecting) => return None,
-            _ => (),
+            Some(&PeerState::CrustConnecting) |
+            Some(&PeerState::JoiningNode(_)) |
+            Some(&PeerState::Routing(_)) => return None,
+            Some(&PeerState::SearchingForTunnel) |
+            None => (),
         }
         let token = rand::random();
         let _ = self.connection_token_map.insert(token, pub_id);
@@ -550,7 +617,7 @@ impl PeerManager {
     pub fn remove_peer(&mut self, peer_id: &PeerId) -> Option<(XorName, DroppedNodeDetails)> {
         if let Some(pub_id) = self.pub_id_map.remove(peer_id) {
             let name = *pub_id.name();
-            let _ = self.node_map.remove(&name);
+            let _ = self.peer_map.remove(&name);
             self.cleanup_pub_id_map();
             self.routing_table.remove(&name).map(|result| (name, result))
         } else {
@@ -575,40 +642,55 @@ impl PeerManager {
     }
 
     fn get_state(&self, pub_id: &PublicId) -> Option<&PeerState> {
-        self.node_map.get(pub_id.name()).map(|&(_, ref state)| state)
+        self.peer_map.get(pub_id.name()).map(Peer::state)
+    }
+
+    fn get_state_by_peer_id(&self, peer_id: &PeerId) -> Option<&PeerState> {
+        self.pub_id_map.get(peer_id).and_then(|pub_id| self.get_state(pub_id))
     }
 
     #[cfg(feature = "use-mock-crust")]
     fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
         // In mock Crust tests, "expired" entries are removed with `clear_caches`.
-        let _ = self.node_map.insert(*pub_id.name(), (Instant::now(), state));
+        let _ = self.peer_map.insert(*pub_id.name(), Peer::new(state));
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
     fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
-        let _ = self.node_map.insert(*pub_id.name(), (Instant::now(), state));
+        let _ = self.peer_map.insert(*pub_id.name(), Peer::new(state));
         self.remove_expired();
+    }
+
+    fn get_peer_id(&self, pub_id: &PublicId) -> Option<&PeerId> {
+        self.pub_id_map
+            .iter()
+            .find(|&(_, other_pub_id)| other_pub_id == pub_id)
+            .map(|(peer_id, _)| peer_id)
     }
 
     // CONNECTION_TIMEOUT_SECS == 0 if use-mock-crust.
     #[cfg_attr(feature="clippy", allow(absurd_extreme_comparisons))]
     fn remove_expired(&mut self) {
-        let remove_ids = self.node_map
+        let remove_ids = self.peer_map
             .iter()
-            .filter(|&(_, &(ref timestamp, ref state))| match *state {
+            .filter(|&(_, &Peer(ref timestamp, ref state))| match *state {
                 PeerState::ConnectionInfoPreparing(..) |
                 PeerState::ConnectionInfoReady(_) |
                 PeerState::CrustConnecting |
                 PeerState::SearchingForTunnel => {
                     timestamp.elapsed().as_secs() >= CONNECTION_TIMEOUT_SECS
                 }
+                PeerState::JoiningNode(_) => {
+                    timestamp.elapsed().as_secs() >= JOINING_NODE_TIMEOUT_SECS
+                }
+                PeerState::Client(_) |
                 PeerState::Routing(_) |
                 PeerState::AwaitingNodeIdentify(_) => false,
             })
             .map(|(pub_id, _)| *pub_id)
             .collect_vec();
         for pub_id in remove_ids {
-            let _ = self.node_map.remove(&pub_id);
+            let _ = self.peer_map.remove(&pub_id);
         }
         let remove_tokens = self.connection_token_map
             .iter()
@@ -627,7 +709,7 @@ impl PeerManager {
     fn cleanup_pub_id_map(&mut self) {
         let remove_peer_ids = self.pub_id_map
             .iter()
-            .filter(|&(_, pub_id)| !self.node_map.contains_key(pub_id.name()))
+            .filter(|&(_, pub_id)| !self.peer_map.contains_key(pub_id.name()))
             .map(|(peer_id, _)| *peer_id)
             .collect_vec();
         for peer_id in remove_peer_ids {
