@@ -45,12 +45,6 @@ impl MessageAccumulator {
         }
     }
 
-    pub fn with_quorum_size(quorum_size: usize) -> Self {
-        let mut accumulator = Self::new();
-        accumulator.set_quorum_size(quorum_size);
-        accumulator
-    }
-
     pub fn set_quorum_size(&mut self, size: usize) {
         self.accumulator.set_quorum_size(size)
     }

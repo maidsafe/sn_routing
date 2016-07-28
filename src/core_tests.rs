@@ -1060,11 +1060,11 @@ const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 fn request_during_churn_node_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
+
     let mut nodes = create_connected_nodes(&network, 2 * GROUP_SIZE);
 
     for _ in 0..REQUEST_DURING_CHURN_ITERATIONS {
         let added_index = random_churn(&mut rng, &network, &mut nodes);
-
         let index = gen_range_except(&mut rng, 0, nodes.len(), added_index);
         let name = nodes[index].name();
 
