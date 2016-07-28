@@ -52,7 +52,7 @@ use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
 use utils;
-use xor_name::{XOR_NAME_BITS, XorName};
+use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
@@ -88,11 +88,9 @@ impl Node {
     pub fn first(cache: Box<Cache>,
                  crust_service: Service,
                  event_sender: Sender<Event>,
-                 mut full_id: FullId,
+                 full_id: FullId,
                  timer: Timer)
                  -> Option<Self> {
-        let name = XorName(sha256::hash(&full_id.public_id().name().0).0);
-        full_id.public_id_mut().set_name(name);
         let public_id = *full_id.public_id();
 
         let mut node = Self::new(cache,
@@ -882,14 +880,14 @@ impl Node {
     }
 
     // Received by X; From A -> X
-    fn handle_get_node_name_request(&mut self,
-                                    mut their_public_id: PublicId,
-                                    client_key: sign::PublicKey,
-                                    proxy_name: XorName,
-                                    dst_name: XorName,
-                                    peer_id: PeerId,
-                                    message_id: MessageId)
-                                    -> Result<(), RoutingError> {
+    fn handle_get_name_range_request(&mut self,
+                                     their_public_id: PublicId,
+                                     client_key: sign::PublicKey,
+                                     proxy_name: XorName,
+                                     dst_name: XorName,
+                                     peer_id: PeerId,
+                                     message_id: MessageId)
+                                     -> Result<(), RoutingError> {
         let hashed_key = sha256::hash(&client_key.0);
         let close_group_to_client = XorName(hashed_key.0);
 
@@ -904,7 +902,6 @@ impl Node {
         };
         let relocated_name = try!(utils::calculate_relocated_name(close_group,
                                                                   &their_public_id.name()));
-        their_public_id.set_name(relocated_name);
 
         // From X -> Y; Send to close group of the relocated name
         let request_content = MessageContent::ExpectCloseNode {
@@ -944,7 +941,7 @@ impl Node {
             self.sent_network_name_to = None;
         }
 
-        let public_ids = match self.peer_mgr
+        let mut public_ids = match self.peer_mgr
             .routing_table()
             .close_nodes(expect_id.name(), GROUP_SIZE) {
             Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
@@ -953,8 +950,8 @@ impl Node {
 
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
-        let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: expect_id,
+        let response_content = MessageContent::GetNameRangeResponse {
+            name_range: self.max_range(&mut public_ids),
             close_group_ids: public_ids,
             message_id: message_id,
         };
@@ -971,6 +968,35 @@ impl Node {
         };
 
         self.send_routing_message(response_msg)
+    }
+
+    fn max_range(&self, nodes: &mut [PublicId]) -> (XorName, XorName) {
+        nodes.sort();
+
+        // TODO: this block of code can be removed once Disjoint Group has been implemented and
+        //       the upper/lower boundary to be included in the input, i.e. there will be at least
+        //       three elements in the vector.
+        if nodes.len() == 1 {
+            if nodes[0].name().0[0] == 0 {
+                return (*nodes[0].name(), XorName([0xFFu8; XOR_NAME_LEN]));
+            } else {
+                return (XorName([0u8; XOR_NAME_LEN]), *nodes[0].name());
+            }
+        } else if nodes.len() == 2 {
+            return (*nodes[0].name(), *nodes[1].name());
+        }
+
+        let mut max_range = XorName([0u8; XOR_NAME_LEN]);
+        let mut range_index = 0;
+        // TODO: once Disjoint Group implemented, the lower/upper boundaries shall aslo be included
+        for i in 0..(nodes.len() - 1) {
+            let range = nodes[i + 1].name().euclidean_distance(nodes[i].name());
+            if range > max_range {
+                max_range = range;
+                range_index = i;
+            }
+        }
+        (*nodes[range_index].name(), *nodes[range_index + 1].name())
     }
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
@@ -1416,15 +1442,15 @@ impl Bootstrapped for Node {
         }
 
         let result = match (msg_content, msg_src, msg_dst) {
-            (MessageContent::GetNodeName { current_id, message_id },
+            (MessageContent::GetNameRange { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
-                self.handle_get_node_name_request(current_id,
-                                                  client_key,
-                                                  proxy_node_name,
-                                                  dst_name,
-                                                  peer_id,
-                                                  message_id)
+                self.handle_get_name_range_request(current_id,
+                                                   client_key,
+                                                   proxy_node_name,
+                                                   dst_name,
+                                                   peer_id,
+                                                   message_id)
             }
             (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
              Authority::NaeManager(_),
@@ -1487,15 +1513,17 @@ impl Bootstrapped for Node {
 
 impl Connect for Node {
     fn handle_node_identify(&mut self, public_id: PublicId, peer_id: PeerId) -> Transition {
-        debug!("{:?} Handling NodeIdentify from {:?}.",
+        debug!("{:?} Handling NodeIdentify from {:?}. as node",
                self,
                public_id.name());
-
-        if let Some((name, _)) = self.sent_network_name_to {
-            if name == *public_id.name() {
-                self.sent_network_name_to = None;
-            }
-        }
+        // TODO: unless Disjoin Group being implemented, it is not guaranteered cache exists
+        //       also, the cached id is the previous id
+        // if let Some((name, _)) = self.sent_network_name_to {
+        //     if name == *public_id.name() {
+        //         self.sent_network_name_to = None;
+        //     }
+        // }
+		self.sent_network_name_to = None;
 
         self.add_to_routing_table(public_id, peer_id);
 

@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use sodiumoxide::crypto::{box_, hash, sign};
+use std::cmp;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -56,11 +57,6 @@ impl FullId {
         &self.public_id
     }
 
-    /// Returns mutable reference to public ID.
-    pub fn public_id_mut(&mut self) -> &mut PublicId {
-        &mut self.public_id
-    }
-
     /// Secret signing key.
     pub fn signing_private_key(&self) -> &sign::SecretKey {
         &self.private_sign_key
@@ -78,7 +74,7 @@ impl Default for FullId {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Copy, Clone, RustcEncodable, RustcDecodable)]
 /// Network identity component containing name and public keys.
 pub struct PublicId {
     public_encrypt_key: box_::PublicKey,
@@ -92,16 +88,16 @@ impl Debug for PublicId {
     }
 }
 
+impl Ord for PublicId {
+    fn cmp(&self, other: &PublicId) -> cmp::Ordering {
+        self.name().cmp(other.name())
+    }
+}
+
 impl PublicId {
     /// Return initial/relocated name.
     pub fn name(&self) -> &XorName {
         &self.name
-    }
-
-    /// Name field is initially same as original_name, this should be replaced by relocated name
-    /// calculated by the nodes close to original_name by using this method
-    pub fn set_name(&mut self, name: XorName) {
-        self.name = name;
     }
 
     /// Return public signing key.
@@ -119,6 +115,20 @@ impl PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
             name: XorName(hash::sha256::hash(&public_sign_key[..]).0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn public_id_sorting_test() {
+        let mut public_ids: Vec<PublicId> = (0..10).map(|_| *FullId::new().public_id()).collect();
+        public_ids.sort();
+        for i in 0..9 {
+            assert!(public_ids[i].name() < public_ids[i + 1].name());
         }
     }
 }
