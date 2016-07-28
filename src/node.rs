@@ -171,36 +171,6 @@ impl Node {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
-    /// Poll and process all events in this node's `Core` instance.
-    pub fn poll(&self) -> bool {
-        self.machine.borrow_mut().poll()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Routing table of this node.
-    pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.machine.borrow().current().routing_table().to_names()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Resend all unacknowledged messages.
-    pub fn clear_state(&self) {
-        self.machine.borrow_mut().current_mut().clear_state()
-    }
-
     /// Send a `Get` request to `dst` to retrieve data from the network.
     pub fn send_get_request(&self,
                             src: Authority,
@@ -451,8 +421,35 @@ impl Node {
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         Ok(try!(rx.recv()))
     }
+}
 
-    #[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "use-mock-crust")]
+impl Node {
+    /// Poll and process all events in this node's `Core` instance.
+    pub fn poll(&self) -> bool {
+        self.machine.borrow_mut().poll()
+    }
+
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) -> bool {
+        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+    }
+
+    /// Are there any unacknowledged messages?
+    pub fn has_unacknowledged(&self) -> bool {
+        self.machine.borrow().current().has_unacknowledged()
+    }
+
+    /// Routing table of this node.
+    pub fn routing_table(&self) -> RoutingTable<XorName> {
+        self.machine.borrow().current().routing_table().to_names()
+    }
+
+    /// Resend all unacknowledged messages.
+    pub fn clear_state(&self) {
+        self.machine.borrow_mut().current_mut().clear_state()
+    }
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
         Ok(try!(rx.recv()))
@@ -466,55 +463,3 @@ impl Drop for Node {
         }
     }
 }
-
-// #[cfg(test)]
-// mod test {
-
-// pub struct RoutingNetwork;
-
-// impl RoutingNetwork {
-
-//         fn new(size: u32) -> RoutingNetwork {
-//             ::utils::initialise_logger(true);
-
-
-//             let node = || { let _ =
-//                 ::std::thread::spawn(move || ::test_utils::node::Node::new().run());
-//             };
-//             for i in 0..size { node(); ::std::thread::sleep_ms(1000 + i * 1000); }
-//             ::std::thread::sleep_ms(size * 1000);
-
-//             RoutingNetwork
-//         }
-//     }
-
-//     fn calculate_key_name(key: &::std::string::String) -> XorName {
-//         XorName::new(::sodiumoxide::crypto::hash::sha256::hash(key.as_bytes()).0)
-//     }
-
-//     #[test]
-//     fn unit_client_put_get() {
-//         // let _ = RoutingNetwork::new(10u32);
-//         debug!("Starting client");
-//         let mut client = ::test_utils::client::Client::new();
-//         ::std::thread::sleep_ms(2000);
-
-//         let key = ::std::string::String::from("key");
-//         let value = ::std::string::String::from("value");
-//         let name = calculate_key_name(&key.clone());
-//         let data = unwrap_result!(::utils::encode(&(key, value)));
-//         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
-
-//         debug!("Putting data {:?}", data);
-//         client.put(data.clone());
-//         ::std::thread::sleep_ms(5000);
-
-//         let recovered_data = match client.get(::data::DataIdentifier::PlainData(name)) {
-//             Some(data) => data,
-//             None => panic!("Failed to recover stored data: {}.", name),
-//         };
-
-//         debug!("Recovered data {:?}", recovered_data);
-//         assert_eq!(recovered_data, data);
-//     }
-// }

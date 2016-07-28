@@ -90,23 +90,6 @@ impl Client {
         client
     }
 
-    /// Resends all unacknowledged messages.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.timer.stop();
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    #[cfg(feature = "use-mock-crust")]
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-
     pub fn handle_action(&mut self, action: Action) -> Transition {
         match action {
             Action::ClientSendRequest { content, dst, priority, result_tx } => {
@@ -432,6 +415,24 @@ impl Bootstrapped for Client {
 
     fn timer(&mut self) -> &mut Timer {
         &mut self.timer
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Client {
+    /// Resends all unacknowledged messages.
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.timer.stop();
+        let timer_tokens = self.ack_mgr.timer_tokens();
+        for timer_token in &timer_tokens {
+            self.resend_unacknowledged_timed_out_msgs(*timer_token);
+        }
+        !timer_tokens.is_empty()
+    }
+
+    /// Are there any unacknowledged messages?
+    pub fn has_unacknowledged(&self) -> bool {
+        self.ack_mgr.has_pending()
     }
 }
 

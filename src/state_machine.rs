@@ -226,19 +226,6 @@ impl StateMachine {
         (action_sender, machine)
     }
 
-    /// If there is an event in the queue, processes it and returns true.
-    /// otherwise returns false. Never blocks.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn poll(&mut self) -> bool {
-        match self.category_rx.try_recv() {
-            Ok(category) => {
-                self.handle_event(category);
-                true
-            }
-            _ => false,
-        }
-    }
-
     /// Run the event loop for sending and receiving messages. Blocks until
     /// the core is terminated, so it must be called in a separate thread.
     #[cfg(not(feature = "use-mock-crust"))]
@@ -250,18 +237,6 @@ impl StateMachine {
                 break;
             }
         }
-    }
-
-    /// Get reference to the current state.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn current(&self) -> &State {
-        &self.state
-    }
-
-    /// Get mutable reference to the current state.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn current_mut(&mut self) -> &mut State {
-        &mut self.state
     }
 
     fn handle_event(&mut self, category: MaidSafeEventCategory) {
@@ -303,5 +278,30 @@ impl StateMachine {
 
     fn terminate(&mut self) {
         self.is_running = false;
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl StateMachine {
+    /// If there is an event in the queue, processes it and returns true.
+    /// otherwise returns false. Never blocks.
+    pub fn poll(&mut self) -> bool {
+        match self.category_rx.try_recv() {
+            Ok(category) => {
+                self.handle_event(category);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Get reference to the current state.
+    pub fn current(&self) -> &State {
+        &self.state
+    }
+
+    /// Get mutable reference to the current state.
+    pub fn current_mut(&mut self) -> &mut State {
+        &mut self.state
     }
 }
