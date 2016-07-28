@@ -22,9 +22,8 @@ use std::time::Duration;
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use authority::Authority;
 use error::RoutingError;
-use event::Event;
 use id::PublicId;
-use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage};
+use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
 use peer_manager::GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use super::Base;
@@ -38,16 +37,6 @@ pub trait Bootstrapped: Base {
                   routing_msg: &RoutingMessage,
                   public_id: &PublicId)
                   -> Result<Option<RoutingMessage>, RoutingError>;
-
-    // Implement this method to add the given user message part to the user
-    // message cache, and returning the complete user message if it has all the
-    // parts, or None otherwise.
-    fn add_to_user_msg_cache(&mut self,
-                             hash: u64,
-                             part_count: u32,
-                             part_index: u32,
-                             payload: Vec<u8>)
-                             -> Option<UserMessage>;
 
     fn ack_mgr(&self) -> &AckManager;
     fn ack_mgr_mut(&mut self) -> &mut AckManager;
@@ -116,41 +105,6 @@ pub trait Bootstrapped: Base {
 
         self.stats().count_routing_message(msg.routing_message());
         false
-    }
-
-    fn handle_user_message_part(&mut self,
-                                hash: u64,
-                                part_count: u32,
-                                part_index: u32,
-                                payload: Vec<u8>,
-                                src: Authority,
-                                dst: Authority) {
-        if let Some(msg) = self.add_to_user_msg_cache(hash, part_count, part_index, payload) {
-            self.handle_user_message(msg, src, dst)
-        }
-    }
-
-    fn handle_user_message(&mut self, msg: UserMessage, src: Authority, dst: Authority) {
-        let event = match msg {
-            UserMessage::Request(request) => {
-                self.stats().count_request(&request);
-                Event::Request {
-                    request: request,
-                    src: src,
-                    dst: dst,
-                }
-            }
-            UserMessage::Response(response) => {
-                self.stats().count_response(&response);
-                Event::Response {
-                    response: response,
-                    src: src,
-                    dst: dst,
-                }
-            }
-        };
-
-        self.send_event(event);
     }
 
     fn resend_unacknowledged_timed_out_msgs(&mut self, token: u64) {

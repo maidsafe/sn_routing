@@ -657,7 +657,10 @@ impl Node {
             (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
              dst) => {
-                self.handle_user_message_part(hash, part_count, part_index, payload, src, dst);
+                if let Some(msg) = self.user_msg_cache.add(hash, part_count, part_index, payload) {
+                    self.stats().count_user_message(&msg);
+                    self.send_event(msg.into_event(src, dst));
+                }
                 Ok(())
             }
             _ => {
@@ -1420,10 +1423,7 @@ impl Node {
                          user_msg: UserMessage,
                          priority: u8)
                          -> Result<(), RoutingError> {
-        match user_msg {
-            UserMessage::Request(ref request) => self.stats.count_request(request),
-            UserMessage::Response(ref response) => self.stats.count_response(response),
-        }
+        self.stats.count_user_message(&user_msg);
 
         for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_routing_message(RoutingMessage {
@@ -1845,15 +1845,6 @@ impl Bootstrapped for Node {
 
     fn ack_mgr_mut(&mut self) -> &mut AckManager {
         &mut self.ack_mgr
-    }
-
-    fn add_to_user_msg_cache(&mut self,
-                             hash: u64,
-                             part_count: u32,
-                             part_index: u32,
-                             payload: Vec<u8>)
-                             -> Option<UserMessage> {
-        self.user_msg_cache.add(hash, part_count, part_index, payload)
     }
 
     fn send_routing_message_via_route(&mut self,
