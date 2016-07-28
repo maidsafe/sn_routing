@@ -54,26 +54,32 @@ use xor_name::XorName;
 /// ## Becoming a node
 ///
 /// If A wants to become a full routing node (`client_restriction == false`), it needs to relocate,
-/// i. e. change its name to a value chosen by the network, and then add its peers to its routing
-/// table and get added to their routing tables.
+/// i. e. change its name to a value that sits in the range chosen by the network, and then add its
+/// peers to its routing table and get added to their routing tables.
 ///
 ///
-/// ### Getting a new network name from the `NaeManager`
+/// ### Getting an identity range from the `NaeManager`
 ///
-/// Once in `Client` state, A sends a `GetNodeName` request to the `NaeManager` group authority X
-/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to  the
-/// `NaeManager` Y of A's new name. Each member of Y caches A's public ID, and Y sends a
-/// `GetNodeName` response back to A, which includes the public IDs of the members of Y.
+/// Once in `Client` state, A sends a `GetNameRange` request to the `NaeManager` group authority X
+/// of A's current name. X computes a new name and sends it in an `ExpectCloseNode` request to the
+/// `NaeManager` Y of A's possible new name. Each member of Y caches node A's ID, sends a `GetNameRange`
+/// response back to A, which includes the public IDs of the members of Y.
 ///
+///
+/// ### Computing the new identity
+///
+/// Once A accumulates the `GetNameRange` response (the quorum_size shall be the same as the previous received
+/// from `BootstrapIdentify`), it starts generating a key pair whose public_key falls into the give range. And such
+/// public_key will then be used as node A's new name address. Such computing must be completed in a given period,
+/// otherwise a new round of connecting shall be understaken.
 ///
 /// ### Connecting to the close group
 ///
-/// To the `ManagedNode` for each public ID it receives from members of Y, A sends its
-/// `ConnectionInfo`. It also caches the ID.
+/// For each public ID it receives from members of Y, A sends its `ConnectionInfo`.
 ///
-/// For each `ConnectionInfo` that a node Z receives from A, it decides whether it wants A in its
-/// routing table. If yes, and if A's ID is in its ID cache, Z sends its own `ConnectionInfo` back
-/// to A and also attempts to connect to A via Crust. A does the same, once it receives the
+/// For each `ConnectionInfo` that a node Z(members of Y) receives from A, it decides whether it wants A in its
+/// routing table. If yes, and if A's ID is in its ID cache(node A's original ID), Z sends its own
+/// `ConnectionInfo` back to A and also attempts to connect to A via Crust. A does the same, once it receives the
 /// `ConnectionInfo`.
 ///
 /// Once the connection between A and Z is established and a Crust `OnConnect` event is raised,
