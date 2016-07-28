@@ -1740,6 +1740,24 @@ impl Node {
     fn is_proper(&self) -> bool {
         self.is_first_node || self.peer_mgr.routing_table().len() >= 1
     }
+
+    fn send_direct_message(&mut self,
+                           dst_id: &PeerId,
+                           direct_message: DirectMessage)
+                           -> Result<(), RoutingError> {
+        self.stats().count_direct_message(&direct_message);
+
+        if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
+            let message = Message::TunnelDirect {
+                content: direct_message,
+                src: self.crust_service.id(),
+                dst: *dst_id,
+            };
+            self.send_message(&tunnel_id, message)
+        } else {
+            self.send_message(dst_id, Message::Direct(direct_message))
+        }
+    }
 }
 
 impl Base for Node {
@@ -1778,22 +1796,6 @@ impl Base for Node {
 
     fn stats(&mut self) -> &mut Stats {
         &mut self.stats
-    }
-
-    fn wrap_direct_message(&self,
-                           dst_id: &PeerId,
-                           direct_message: DirectMessage)
-                           -> (Message, PeerId) {
-        if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
-            let message = Message::TunnelDirect {
-                content: direct_message,
-                src: self.crust_service.id(),
-                dst: *dst_id,
-            };
-            (message, tunnel_id)
-        } else {
-            (Message::Direct(direct_message), *dst_id)
-        }
     }
 }
 

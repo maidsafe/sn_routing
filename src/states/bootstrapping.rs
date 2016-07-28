@@ -279,7 +279,8 @@ impl Bootstrapping {
             client_restriction: self.client_restriction,
         };
 
-        self.send_direct_message(&peer_id, direct_message)
+        self.stats().count_direct_message(&direct_message);
+        self.send_message(&peer_id, Message::Direct(direct_message))
     }
 
     fn disconnect_peer(&mut self, peer_id: &PeerId) {

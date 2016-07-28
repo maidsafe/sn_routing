@@ -78,6 +78,17 @@ pub enum Message {
     },
 }
 
+impl Message {
+    pub fn priority(&self) -> u8 {
+        match *self {
+            Message::Direct(ref content) |
+            Message::TunnelDirect { ref content, .. } => content.priority(),
+            Message::Hop(ref content) |
+            Message::TunnelHop { ref content, .. } => content.content.content.priority(),
+        }
+    }
+}
+
 /// Messages sent via a direct connection.
 ///
 /// Allows routing to directly send specific messages between nodes.
