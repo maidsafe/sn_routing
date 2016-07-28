@@ -52,7 +52,7 @@ use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
 use utils;
-use xor_name::{XOR_NAME_BITS, XorName};
+use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName};
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
@@ -882,14 +882,14 @@ impl Node {
     }
 
     // Received by X; From A -> X
-    fn handle_get_node_name_request(&mut self,
-                                    mut their_public_id: PublicId,
-                                    client_key: sign::PublicKey,
-                                    proxy_name: XorName,
-                                    dst_name: XorName,
-                                    peer_id: PeerId,
-                                    message_id: MessageId)
-                                    -> Result<(), RoutingError> {
+    fn handle_get_name_range_request(&mut self,
+                                     mut their_public_id: PublicId,
+                                     client_key: sign::PublicKey,
+                                     proxy_name: XorName,
+                                     dst_name: XorName,
+                                     peer_id: PeerId,
+                                     message_id: MessageId)
+                                     -> Result<(), RoutingError> {
         let hashed_key = sha256::hash(&client_key.0);
         let close_group_to_client = XorName(hashed_key.0);
 
@@ -944,7 +944,7 @@ impl Node {
             self.sent_network_name_to = None;
         }
 
-        let public_ids = match self.peer_mgr
+        let mut public_ids = match self.peer_mgr
             .routing_table()
             .close_nodes(expect_id.name(), GROUP_SIZE) {
             Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
@@ -953,8 +953,8 @@ impl Node {
 
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
-        let response_content = MessageContent::GetNodeNameResponse {
-            relocated_id: expect_id,
+        let response_content = MessageContent::GetNameRangeResponse {
+            name_range: Node::max_range(&mut public_ids),
             close_group_ids: public_ids,
             message_id: message_id,
         };
@@ -971,6 +971,24 @@ impl Node {
         };
 
         self.send_routing_message(response_msg)
+    }
+
+    fn max_range(nodes: &mut [PublicId]) -> (XorName, XorName) {
+        println!("input nodes {:?}", nodes);
+        let name = XorName([0u8; XOR_NAME_LEN]);
+        nodes.sort_by(|node0, node1| name.cmp_distance(&node0.name(), &node1.name()));
+        println!("sorted nodes {:?}", nodes);
+        let mut max_range = XorName([0u8; XOR_NAME_LEN]);
+        let mut range_index = 0;
+        for i in 0..(nodes.len() - 1) {
+            let range = nodes[i+1].name().minus(nodes[i].name());
+            if range > max_range {
+                max_range = range;
+                range_index = i;
+            }
+        }
+        println!("max_range {:?} between node {}", max_range, range_index);
+        (*nodes[range_index].name(), *nodes[range_index + 1].name())
     }
 
     // Received by Y; From A -> Y, or from any node to one of its bucket addresses.
@@ -1416,15 +1434,15 @@ impl Bootstrapped for Node {
         }
 
         let result = match (msg_content, msg_src, msg_dst) {
-            (MessageContent::GetNodeName { current_id, message_id },
+            (MessageContent::GetNameRange { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
-                self.handle_get_node_name_request(current_id,
-                                                  client_key,
-                                                  proxy_node_name,
-                                                  dst_name,
-                                                  peer_id,
-                                                  message_id)
+                self.handle_get_name_range_request(current_id,
+                                                   client_key,
+                                                   proxy_node_name,
+                                                   dst_name,
+                                                   peer_id,
+                                                   message_id)
             }
             (MessageContent::ExpectCloseNode { expect_id, client_auth, message_id },
              Authority::NaeManager(_),

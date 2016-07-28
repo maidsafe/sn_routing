@@ -119,6 +119,15 @@ impl XorName {
         self.0.cmp_distance(&lhs.0, &rhs.0)
     }
 
+    /// Returns the Xor distance to the target
+    pub fn minus(&self, target: &XorName) -> XorName {
+        let mut distance = XorName([0u8; XOR_NAME_LEN]);
+        for i in 0..XOR_NAME_BITS {
+            distance.0[i] = self.0[i] ^ target.0[i];
+        }
+        distance
+    }
+
     /// Returns `true` if the `i`-th bit of `name` is different from the `i`-th bit of `self`.
     pub fn differs_in_bit(&self, name: &XorName, i: usize) -> bool {
         self.0.differs_in_bit(&name.0, i)

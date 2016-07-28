@@ -46,7 +46,7 @@ pub struct Stats {
     msg_delete: usize,
     msg_get_account_info: usize,
     msg_get_close_group: usize,
-    msg_get_node_name: usize,
+    msg_get_name_range: usize,
     msg_expect_close_node: usize,
     msg_refresh: usize,
     msg_connection_info: usize,
@@ -61,7 +61,7 @@ pub struct Stats {
     msg_get_account_info_success: usize,
     msg_get_account_info_failure: usize,
     msg_get_close_group_rsp: usize,
-    msg_get_node_name_rsp: usize,
+    msg_get_name_range_rsp: usize,
     msg_ack: usize,
     msg_hash: usize,
 
@@ -116,12 +116,12 @@ impl Stats {
     /// Increments the counter for the given routing message type.
     pub fn count_routing_message(&mut self, msg: &RoutingMessage) {
         match msg.content {
-            MessageContent::GetNodeName { .. } => self.msg_get_node_name += 1,
+            MessageContent::GetNameRange { .. } => self.msg_get_name_range += 1,
             MessageContent::ExpectCloseNode { .. } => self.msg_expect_close_node += 1,
             MessageContent::GetCloseGroup(..) => self.msg_get_close_group += 1,
             MessageContent::ConnectionInfo { .. } => self.msg_connection_info += 1,
             MessageContent::GetCloseGroupResponse { .. } => self.msg_get_close_group_rsp += 1,
-            MessageContent::GetNodeNameResponse { .. } => self.msg_get_node_name_rsp += 1,
+            MessageContent::GetNameRangeResponse { .. } => self.msg_get_name_range_rsp += 1,
             MessageContent::Ack(..) => self.msg_ack += 1,
             MessageContent::GroupMessageHash(..) => self.msg_hash += 1,
             MessageContent::UserMessagePart { .. } => return, // Counted as request/response.
@@ -159,10 +159,10 @@ impl Stats {
                   self.msg_direct_node_identify,
                   self.msg_direct_new_node,
                   self.msg_direct_connection_unneeded);
-            info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
+            info!("Stats - Hops (Request/Response) - GetNameRange: {}/{}, ExpectCloseNode: {}, \
                    GetCloseGroup: {}/{}, ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
-                  self.msg_get_node_name,
-                  self.msg_get_node_name_rsp,
+                  self.msg_get_name_range,
+                  self.msg_get_name_range_rsp,
                   self.msg_expect_close_node,
                   self.msg_get_close_group,
                   self.msg_get_close_group_rsp,

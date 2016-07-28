@@ -277,7 +277,7 @@ impl RoutingMessage {
     /// Replaces this message's contents with its hash.
     pub fn to_grp_msg_hash(&self) -> Result<RoutingMessage, RoutingError> {
         let content = match self.content {
-            MessageContent::GetNodeNameResponse { .. } |
+            MessageContent::GetNameRangeResponse { .. } |
             MessageContent::GetCloseGroupResponse { .. } |
             MessageContent::UserMessagePart { .. } => {
                 let serialised_msg = try!(serialise(self));
@@ -300,8 +300,8 @@ pub enum MessageContent {
     /// Ask the network to alter your `PublicId` name.
     ///
     /// This is sent by a `Client` to its `NaeManager` with the intent to become a routing node with
-    /// a new name chosen by the `NaeManager`.
-    GetNodeName {
+    /// a new name range chosen by the `NaeManager`.
+    GetNameRange {
         /// The client's `PublicId` (public keys and name)
         current_id: PublicId,
         /// The message's unique identifier.
@@ -327,16 +327,15 @@ pub enum MessageContent {
         encrypted_connection_info: Vec<u8>,
         /// Nonce used to provide a salt in the encrypted message.
         nonce_bytes: [u8; box_::NONCEBYTES],
-        // TODO: The receiver should have that in the node_id_cache.
-        /// The sender's public ID.
+        /// The sender's public ID. The receiver should have that in the node_id_cache.
         public_id: PublicId,
     },
     /// Reply with the new `PublicId` for the joining node.
     ///
     /// Sent from the `NodeManager` to the `Client`.
-    GetNodeNameResponse {
-        /// Supplied `PublicId`, but with the new name
-        relocated_id: PublicId,
+    GetNameRangeResponse {
+        /// Name Range
+        name_range: (XorName, XorName),
         /// Our close group `PublicId`s.
         close_group_ids: Vec<PublicId>,
         /// The message's unique identifier.
@@ -445,9 +444,9 @@ impl Debug for SignedMessage {
 impl Debug for MessageContent {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         match *self {
-            MessageContent::GetNodeName { ref current_id, ref message_id } => {
+            MessageContent::GetNameRange { ref current_id, ref message_id } => {
                 write!(formatter,
-                       "GetNodeName {{ {:?}, {:?} }}",
+                       "GetNameRange {{ {:?}, {:?} }}",
                        current_id,
                        message_id)
             }
@@ -460,13 +459,13 @@ impl Debug for MessageContent {
             }
             MessageContent::GetCloseGroup(id) => write!(formatter, "GetCloseGroup({:?})", id),
             MessageContent::ConnectionInfo { .. } => write!(formatter, "ConnectionInfo {{ .. }}"),
-            MessageContent::GetNodeNameResponse { ref relocated_id,
-                                                  ref close_group_ids,
-                                                  ref message_id } => {
+            MessageContent::GetNameRangeResponse { ref name_range,
+                                                   ref close_group_ids,
+                                                   ref message_id } => {
                 write!(formatter,
-                       "GetNodeNameResponse {{ {:?}, {:?}, {:?} }}",
+                       "GetNameRangeResponse {{ {:?}, {:?}, {:?} }}",
                        close_group_ids,
-                       relocated_id,
+                       name_range,
                        message_id)
             }
             MessageContent::GetCloseGroupResponse { ref close_group_ids, message_id } => {

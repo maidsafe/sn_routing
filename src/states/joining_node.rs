@@ -22,7 +22,7 @@ use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ack_manager::{Ack, AckManager};
 use action::Action;
@@ -44,11 +44,12 @@ use super::common::Testable;
 use super::Node;
 use timer::Timer;
 use types::MessageId;
-#[cfg(feature = "use-mock-crust")]
 use xor_name::XorName;
 
-/// Time (in seconds) after which a `GetNodeName` request is resent.
-const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
+/// Time (in seconds) after which a `GetNameRange` request is resent.
+const GET_NAME_RANGE_TIMEOUT_SECS: u64 = 60;
+/// Time (in seconds) for the duration to compute a valid new id.
+const COMPUTING_IDENTITY_TIMEOUT_SECS: u64 = 30;
 
 pub struct JoiningNode {
     ack_mgr: AckManager,
@@ -56,7 +57,7 @@ pub struct JoiningNode {
     crust_service: Service,
     event_sender: Sender<Event>,
     full_id: FullId,
-    get_node_name_timer_token: Option<u64>,
+    get_name_range_timer_token: Option<u64>,
     msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     signed_msg_filter: SignedMessageFilter,
@@ -85,7 +86,7 @@ impl JoiningNode {
             crust_service: crust_service,
             event_sender: event_sender,
             full_id: full_id,
-            get_node_name_timer_token: None,
+            get_name_range_timer_token: None,
             msg_accumulator: MessageAccumulator::with_quorum_size(quorum_size),
             peer_mgr: peer_mgr,
             signed_msg_filter: SignedMessageFilter::new(),
@@ -183,8 +184,8 @@ impl JoiningNode {
     }
 
     fn handle_timeout(&mut self, token: u64) -> bool {
-        if self.get_node_name_timer_token == Some(token) {
-            info!("{:?} Failed to get GetNodeName response.", self);
+        if self.get_name_range_timer_token == Some(token) {
+            info!("{:?} Failed to get GetNameRange response.", self);
             self.send_event(Event::RestartRequired);
             return false;
         }
@@ -274,11 +275,11 @@ impl JoiningNode {
         Transition::Stay
     }
 
-    fn handle_get_node_name_response(&mut self,
-                                     relocated_id: PublicId,
-                                     mut close_group_ids: Vec<PublicId>,
-                                     dst: Authority)
-                                     -> Transition {
+    fn handle_get_name_range_response(&mut self,
+                                      relocated_id: PublicId,
+                                      mut close_group_ids: Vec<PublicId>,
+                                      dst: Authority)
+                                      -> Transition {
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
 
@@ -287,7 +288,7 @@ impl JoiningNode {
         let mut result = Transition::Stay;
 
         for close_node_id in close_group_ids {
-            debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
+            debug!("{:?} Sending connection info to {:?} on GetNameRange response.",
                    self,
                    close_node_id);
 
@@ -322,10 +323,10 @@ impl JoiningNode {
     }
 
     fn relocate(&mut self) -> Result<(), RoutingError> {
-        let duration = Duration::from_secs(GET_NODE_NAME_TIMEOUT_SECS);
-        self.get_node_name_timer_token = Some(self.timer.schedule(duration));
+        let duration = Duration::from_secs(GET_NAME_RANGE_TIMEOUT_SECS);
+        self.get_name_range_timer_token = Some(self.timer.schedule(duration));
 
-        let request_content = MessageContent::GetNodeName {
+        let request_content = MessageContent::GetNameRange {
             current_id: *self.full_id.public_id(),
             message_id: MessageId::new(),
         };
@@ -359,6 +360,20 @@ impl JoiningNode {
                    self,
                    peer_id);
             let _ = self.crust_service.disconnect(*peer_id);
+        }
+    }
+
+    fn compute_new_id(&self, name_range: &(XorName, XorName)) -> Result<PublicId, RoutingError> {
+        let now = Instant::now();
+        loop {
+            if now.elapsed() > Duration::from_secs(COMPUTING_IDENTITY_TIMEOUT_SECS) {
+                return Err(RoutingError::RejectedPublicId);
+            }
+            let new_id = FullId::new();
+            let new_public_name = *new_id.public_id().name();
+            if new_public_name > name_range.0 && new_public_name < name_range.1 {
+                return Ok(*new_id.public_id());
+            }
         }
     }
 }
@@ -441,9 +456,12 @@ impl Bootstrapped for JoiningNode {
             // Ack
             (MessageContent::Ack(ack, _), _, _) => Ok(self.handle_ack_response(ack)),
             // GetNodeNameResponse
-            (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
+            (MessageContent::GetNameRangeResponse { name_range, close_group_ids, .. },
              Authority::NodeManager(_),
-             dst) => Ok(self.handle_get_node_name_response(relocated_id, close_group_ids, dst)),
+             dst) => {
+			    let relocated_id = try!(self.compute_new_id(&name_range));
+				Ok(self.handle_get_name_range_response(relocated_id, close_group_ids, dst))
+			}
             // ConnectionInfo
             (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
              src @ Authority::Client { .. },
