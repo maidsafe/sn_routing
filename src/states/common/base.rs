@@ -22,7 +22,7 @@ use std::fmt::Debug;
 use error::RoutingError;
 use event::Event;
 use id::FullId;
-use messages::{DirectMessage, Message};
+use messages::Message;
 use state_machine::Transition;
 use stats::Stats;
 use xor_name::XorName;
@@ -42,14 +42,8 @@ pub trait Base: Debug {
         self.full_id().public_id().name()
     }
 
-    fn send_direct_message(&mut self,
-                           dst_id: &PeerId,
-                           direct_message: DirectMessage)
-                           -> Result<(), RoutingError> {
-        self.stats().count_direct_message(&direct_message);
-
-        let priority = direct_message.priority();
-        let (message, peer_id) = self.wrap_direct_message(dst_id, direct_message);
+    fn send_message(&mut self, peer_id: &PeerId, message: Message) -> Result<(), RoutingError> {
+        let priority = message.priority();
 
         let raw_bytes = match serialisation::serialise(&message) {
             Err(error) => {
@@ -62,7 +56,7 @@ pub trait Base: Debug {
             Ok(bytes) => bytes,
         };
 
-        self.send_or_drop(&peer_id, raw_bytes, priority)
+        self.send_or_drop(peer_id, raw_bytes, priority)
     }
 
     // Sends the given `bytes` to the peer with the given Crust `PeerId`. If that results in an
@@ -84,13 +78,5 @@ pub trait Base: Debug {
         }
 
         Ok(())
-    }
-
-    // Wraps the given `DirectMessage` into `Message`.
-    fn wrap_direct_message(&self,
-                           dst_id: &PeerId,
-                           direct_message: DirectMessage)
-                           -> (Message, PeerId) {
-        (Message::Direct(direct_message), *dst_id)
     }
 }
