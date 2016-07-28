@@ -122,8 +122,7 @@ impl State {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
                     State::Client(state.into_client(proxy_peer_id, proxy_public_id, quorum_size))
-                } else if let Some(state) =
-                       state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
+                } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
                     State::Node(state)
                 } else {
                     State::Terminated
