@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage};
+use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
 use peer_manager::GROUP_SIZE;
 
 /// The number of messages after which the message statistics should be printed.
@@ -84,31 +84,36 @@ impl Stats {
     }
 
     /// Increments the counter for the given request.
-    pub fn count_request(&mut self, request: &Request) {
-        match *request {
-            Request::Refresh(..) => self.msg_refresh += 1,
-            Request::Get(..) => self.msg_get += 1,
-            Request::Put(..) => self.msg_put += 1,
-            Request::Post(..) => self.msg_post += 1,
-            Request::Delete(..) => self.msg_delete += 1,
-            Request::GetAccountInfo(..) => self.msg_get_account_info += 1,
-        }
-        self.increment_msg_total();
-    }
-
-    /// Increments the counter for the given response.
-    pub fn count_response(&mut self, response: &Response) {
-        match *response {
-            Response::GetSuccess(..) => self.msg_get_success += 1,
-            Response::GetFailure { .. } => self.msg_get_failure += 1,
-            Response::PutSuccess(..) => self.msg_put_success += 1,
-            Response::PutFailure { .. } => self.msg_put_failure += 1,
-            Response::PostSuccess(..) => self.msg_post_success += 1,
-            Response::PostFailure { .. } => self.msg_post_failure += 1,
-            Response::DeleteSuccess(..) => self.msg_delete_success += 1,
-            Response::DeleteFailure { .. } => self.msg_delete_failure += 1,
-            Response::GetAccountInfoSuccess { .. } => self.msg_get_account_info_success += 1,
-            Response::GetAccountInfoFailure { .. } => self.msg_get_account_info_failure += 1,
+    pub fn count_user_message(&mut self, msg: &UserMessage) {
+        match *msg {
+            UserMessage::Request(ref request) => {
+                match *request {
+                    Request::Refresh(..) => self.msg_refresh += 1,
+                    Request::Get(..) => self.msg_get += 1,
+                    Request::Put(..) => self.msg_put += 1,
+                    Request::Post(..) => self.msg_post += 1,
+                    Request::Delete(..) => self.msg_delete += 1,
+                    Request::GetAccountInfo(..) => self.msg_get_account_info += 1,
+                }
+            }
+            UserMessage::Response(ref response) => {
+                match *response {
+                    Response::GetSuccess(..) => self.msg_get_success += 1,
+                    Response::GetFailure { .. } => self.msg_get_failure += 1,
+                    Response::PutSuccess(..) => self.msg_put_success += 1,
+                    Response::PutFailure { .. } => self.msg_put_failure += 1,
+                    Response::PostSuccess(..) => self.msg_post_success += 1,
+                    Response::PostFailure { .. } => self.msg_post_failure += 1,
+                    Response::DeleteSuccess(..) => self.msg_delete_success += 1,
+                    Response::DeleteFailure { .. } => self.msg_delete_failure += 1,
+                    Response::GetAccountInfoSuccess { .. } => {
+                        self.msg_get_account_info_success += 1
+                    }
+                    Response::GetAccountInfoFailure { .. } => {
+                        self.msg_get_account_info_failure += 1
+                    }
+                }
+            }
         }
         self.increment_msg_total();
     }

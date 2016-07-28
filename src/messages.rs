@@ -32,6 +32,7 @@ use ack_manager::Ack;
 use authority::Authority;
 use data::{Data, DataIdentifier};
 use error::RoutingError;
+use event::Event;
 use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
@@ -552,6 +553,27 @@ impl UserMessage {
             Err(RoutingError::HashMismatch)
         } else {
             Ok(user_msg)
+        }
+    }
+
+    /// Returns an event indicating that this message was received with the given source and
+    /// destination authorities.
+    pub fn into_event(self, src: Authority, dst: Authority) -> Event {
+        match self {
+            UserMessage::Request(request) => {
+                Event::Request {
+                    request: request,
+                    src: src,
+                    dst: dst,
+                }
+            }
+            UserMessage::Response(response) => {
+                Event::Response {
+                    response: response,
+                    src: src,
+                    dst: dst,
+                }
+            }
         }
     }
 
