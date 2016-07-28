@@ -39,6 +39,83 @@ use types::MessageId;
 
 type RoutingResult = Result<(), RoutingError>;
 
+/// A builder to configure and create a new `Node`.
+pub struct NodeBuilder {
+    cache: Box<Cache>,
+    role: Role,
+    deny_other_local_nodes: bool,
+}
+
+impl NodeBuilder {
+    /// Configures the node to use the given request cache.
+    pub fn cache(self, cache: Box<Cache>) -> NodeBuilder {
+        NodeBuilder { cache: cache, ..self }
+    }
+
+    /// Configures the node to start a new network instead of joining an existing one.
+    pub fn first(self, first: bool) -> NodeBuilder {
+        if first {
+            NodeBuilder { role: Role::FirstNode, ..self }
+        } else {
+            NodeBuilder { role: Role::Node, ..self }
+        }
+    }
+
+    /// Causes node creation to fail if another node on the local network is detected.
+    pub fn deny_other_local_nodes(self) -> NodeBuilder {
+        NodeBuilder { deny_other_local_nodes: true, ..self }
+    }
+
+    /// Creates new `Node`.
+    ///
+    /// It will automatically connect to the network in the same way a client does, but then
+    /// request a new name and integrate itself into the network using the new name.
+    ///
+    /// The initial `Node` object will have newly generated keys.
+    #[cfg(not(feature = "use-mock-crust"))]
+    pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+
+        // start the handler for routing without a restriction to become a full node
+        let (action_sender, mut core) = Core::new(event_sender,
+                                                  self.role,
+                                                  None,
+                                                  self.cache,
+                                                  self.deny_other_local_nodes);
+        let (tx, rx) = channel();
+
+        let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
+            core.run();
+        }));
+
+        Ok(Node {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            _raii_joiner: raii_joiner,
+        })
+    }
+
+    /// Creates a new `Node` for unit testing.
+    #[cfg(feature = "use-mock-crust")]
+    pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
+        // start the handler for routing without a restriction to become a full node
+        let (action_sender, core) = Core::new(event_sender,
+                                              self.role,
+                                              None,
+                                              self.cache,
+                                              self.deny_other_local_nodes);
+        let (tx, rx) = channel();
+
+        Ok(Node {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            core: RefCell::new(core),
+        })
+    }
+}
+
 /// Interface for sending and receiving messages to and from other nodes, in the role of a full
 /// routing node.
 ///
@@ -60,74 +137,13 @@ pub struct Node {
 }
 
 impl Node {
-    /// Create a new `Node`.
-    ///
-    /// It will automatically connect to the network in the same way a client does, but then
-    /// request a new name and integrate itself into the network using the new name.
-    ///
-    /// The initial `Node` object will have newly generated keys.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
-        Self::with_cache(event_sender, first_node, Box::new(NullCache))
-    }
-
-    /// Create a new `Node` given a cache instance.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn with_cache(event_sender: Sender<Event>,
-                      first_node: bool,
-                      cache: Box<Cache>)
-                      -> Result<Node, RoutingError> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
-
-        let role = if first_node {
-            Role::FirstNode
-        } else {
-            Role::Node
-        };
-        // start the handler for routing without a restriction to become a full node
-        let (action_sender, mut core) = Core::new(event_sender, role, None, cache);
-        let (tx, rx) = channel();
-
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
-            core.run();
-        }));
-
-        Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            _raii_joiner: raii_joiner,
-        })
-    }
-
-
-    /// Create a new `Node` for unit testing.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>, first_node: bool) -> Result<Node, RoutingError> {
-        Self::with_cache(event_sender, first_node, Box::new(NullCache))
-    }
-
-    /// Create a new `Node` for unit testing.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn with_cache(event_sender: Sender<Event>,
-                      first_node: bool,
-                      cache: Box<Cache>)
-                      -> Result<Node, RoutingError> {
-        let role = if first_node {
-            Role::FirstNode
-        } else {
-            Role::Node
-        };
-        // start the handler for routing without a restriction to become a full node
-        let (action_sender, core) = Core::new(event_sender, role, None, cache);
-        let (tx, rx) = channel();
-
-        Ok(Node {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            core: RefCell::new(core),
-        })
+    /// Creates a new builder to configure and create a `Node`.
+    pub fn builder() -> NodeBuilder {
+        NodeBuilder {
+            cache: Box::new(NullCache),
+            role: Role::Node,
+            deny_other_local_nodes: false,
+        }
     }
 
     #[cfg(feature = "use-mock-crust")]

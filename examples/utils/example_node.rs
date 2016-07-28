@@ -21,19 +21,19 @@ use routing::{Request, Response, MessageId, Authority, Node, Event, Data, DataId
 use maidsafe_utilities::serialisation::{serialise, deserialise};
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::sync::mpsc;
 use std::time::Duration;
 
 const STORE_REDUNDANCY: usize = 4;
 
 /// A simple example node implementation for a network based on the Routing library.
-#[allow(unused)]
 pub struct ExampleNode {
     /// The node interface to the Routing library.
     node: Node,
     /// The receiver through which the Routing library will send events.
-    receiver: ::std::sync::mpsc::Receiver<Event>,
+    receiver: mpsc::Receiver<Event>,
     /// A clone of the event sender passed to the Routing library.
-    sender: ::std::sync::mpsc::Sender<Event>,
+    sender: mpsc::Sender<Event>,
     /// A map of the data chunks this node is storing.
     db: HashMap<XorName, Data>,
     /// A map that contains for the name of each data chunk a list of nodes that are responsible
@@ -47,12 +47,11 @@ pub struct ExampleNode {
     put_request_cache: LruCache<MessageId, (Authority, Authority)>,
 }
 
-#[allow(unused)]
 impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
-        let (sender, receiver) = ::std::sync::mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::new(sender.clone(), first));
+        let (sender, receiver) = mpsc::channel::<Event>();
+        let node = unwrap_result!(Node::builder().first(first).create(sender.clone()));
 
         ExampleNode {
             node: node,
@@ -88,22 +87,19 @@ impl ExampleNode {
                     trace!("{} Received connected event", self.get_debug_name());
                 }
                 Event::Terminate => {
-                    trace!("{} Received Terminate event", self.get_debug_name());
+                    info!("{} Received Terminate event", self.get_debug_name());
+                    break;
                 }
                 Event::RestartRequired => {
-                    let _ = mem::replace(&mut self.node,
-                                         unwrap_result!(Node::new(self.sender.clone(), false)));
+                    info!("{} Received RestartRequired event", self.get_debug_name());
+                    let new_node = unwrap_result!(Node::builder().create(self.sender.clone()));
+                    let _ = mem::replace(&mut self.node, new_node);
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
                 }
             }
         }
-    }
-
-    /// Returns the event sender to allow external tests to send events.
-    pub fn get_sender(&self) -> ::std::sync::mpsc::Sender<Event> {
-        self.sender.clone()
     }
 
     fn handle_request(&mut self, request: Request, src: Authority, dst: Authority) {
@@ -139,15 +135,15 @@ impl ExampleNode {
             }
             (Response::GetFailure { id, data_id, .. }, Authority::NaeManager(_)) |
             (Response::PutFailure { id, data_id, .. }, Authority::NaeManager(_)) => {
-                self.process_failed_dm(&data_id.name(), src.name(), id);
+                self.process_failed_dm(data_id.name(), src.name(), id);
             }
-            (Response::PutSuccess(data_id, id), Authority::ClientManager(name)) => {
+            (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
                     unwrap_result!(self.node.send_put_success(src, dst, data_id, id));
                 }
             }
-            (Response::PutSuccess(data_name, id), Authority::NaeManager(name)) => {
-                trace!("Received PutSuccess for {:?} with ID {:?}", data_name, id);
+            (Response::PutSuccess(data_id, id), Authority::NaeManager(_name)) => {
+                trace!("Received PutSuccess for {:?} with ID {:?}", data_id, id);
             }
             _ => unreachable!(),
         }
@@ -173,10 +169,10 @@ impl ExampleNode {
                           dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                if let Some(managed_nodes) = self.dm_accounts.get(&data_id.name()) {
+                if let Some(managed_nodes) = self.dm_accounts.get(data_id.name()) {
                     {
                         let requests = self.client_request_cache
-                            .entry(data_id.name())
+                            .entry(*data_id.name())
                             .or_insert_with(Vec::new);
                         requests.push((src, id));
                         if requests.len() > 1 {
@@ -209,7 +205,7 @@ impl ExampleNode {
                 trace!("{:?} Handle get request for ManagedNode: data {:?}",
                        self.get_debug_name(),
                        data_id.name());
-                if let Some(data) = self.db.get(&data_id.name()) {
+                if let Some(data) = self.db.get(data_id.name()) {
                     unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {
                     trace!("{:?} GetDataRequest failed for {:?}.",
@@ -227,12 +223,12 @@ impl ExampleNode {
     fn handle_put_request(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
         match dst {
             Authority::NaeManager(_) => {
-                self.node
-                    .send_put_success(dst.clone(), src, DataIdentifier::Plain(data.name()), id);
-                if self.dm_accounts.contains_key(&data.name()) {
+                let _ = self.node
+                    .send_put_success(dst.clone(), src, DataIdentifier::Plain(*data.name()), id);
+                if self.dm_accounts.contains_key(data.name()) {
                     return; // Don't allow duplicate put.
                 }
-                let mut close_grp = match unwrap_result!(self.node.close_group(data.name())) {
+                let mut close_grp = match unwrap_result!(self.node.close_group(*data.name())) {
                     None => {
                         warn!("CloseGroup action returned None.");
                         return;
@@ -249,7 +245,7 @@ impl ExampleNode {
                                           id));
                 }
                 // We assume these messages are handled by the managed nodes.
-                let _ = self.dm_accounts.insert(data.name(), close_grp.clone());
+                let _ = self.dm_accounts.insert(*data.name(), close_grp.clone());
                 trace!("{:?} Put Request: Updating NaeManager: data {:?}, nodes {:?}",
                        self.get_debug_name(),
                        data.name(),
@@ -262,8 +258,8 @@ impl ExampleNode {
                        data);
                 {
                     let src = dst.clone();
-                    let dst = Authority::NaeManager(data.name());
-                    unwrap_result!(self.node.send_put_request(src, dst, data.clone(), id));
+                    let dst = Authority::NaeManager(*data.name());
+                    unwrap_result!(self.node.send_put_request(src, dst, data, id));
                 }
                 if self.put_request_cache.insert(id, (dst, src)).is_some() {
                     warn!("Overwrote message {:?} in put_request_cache.", id);
@@ -274,8 +270,9 @@ impl ExampleNode {
                        self.get_debug_name(),
                        data.name(),
                        data);
-                self.node.send_put_success(dst, src, DataIdentifier::Plain(data.name()), id);
-                let _ = self.db.insert(data.name(), data);
+                let _ = self.node
+                    .send_put_success(dst, src, DataIdentifier::Plain(*data.name()), id);
+                let _ = self.db.insert(*data.name(), data);
             }
             _ => unreachable!("ExampleNode: Unexpected dst ({:?})", dst),
         }
@@ -283,7 +280,7 @@ impl ExampleNode {
 
     fn handle_get_success(&mut self, data: Data, id: MessageId, src: Authority, dst: Authority) {
         // If the request came from a client, relay the retrieved data to them.
-        if let Some(requests) = self.client_request_cache.remove(&data.name()) {
+        if let Some(requests) = self.client_request_cache.remove(data.name()) {
             trace!("{:?} Sending GetSuccess to Client for data {:?}",
                    self.get_debug_name(),
                    data.name());
@@ -294,19 +291,19 @@ impl ExampleNode {
             }
         }
 
-        if self.add_dm(data.name(), *src.name()) {
+        if self.add_dm(*data.name(), *src.name()) {
             trace!("Added {:?} as a DM for {:?} on GetSuccess.",
                    src.name(),
                    data.name());
         }
 
         // If the retrieved data is missing a copy, send a `Put` request to store one.
-        if self.dm_accounts.get(&data.name()).into_iter().any(|dms| dms.len() < STORE_REDUNDANCY) {
+        if self.dm_accounts.get(data.name()).into_iter().any(|dms| dms.len() < STORE_REDUNDANCY) {
             trace!("{:?} GetSuccess received for data {:?}",
                    self.get_debug_name(),
                    data.name());
             // Find a member of our close group that doesn't already have the lost data item.
-            let close_grp = match unwrap_result!(self.node.close_group(data.name())) {
+            let close_grp = match unwrap_result!(self.node.close_group(*data.name())) {
                 None => {
                     warn!("CloseGroup action returned None.");
                     return;
@@ -314,25 +311,24 @@ impl ExampleNode {
                 Some(close_grp) => close_grp,
             };
             if let Some(node) = close_grp.into_iter().find(|close_node| {
-                self.dm_accounts[&data.name()].iter().all(|data_node| *data_node != *close_node)
+                self.dm_accounts[data.name()].iter().all(|data_node| *data_node != *close_node)
             }) {
                 let src = dst;
                 let dst = Authority::ManagedNode(node);
-                unwrap_result!(self.node
-                    .send_put_request(src.clone(), dst, data.clone(), id));
+                let data_name = *data.name();
+                unwrap_result!(self.node.send_put_request(src.clone(), dst, data, id));
 
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for Put success to confirm the same.
-                unwrap_option!(self.dm_accounts.get_mut(&data.name()), "").push(node);
+                unwrap_option!(self.dm_accounts.get_mut(&data_name), "").push(node);
+                let account = &self.dm_accounts[&data_name];
                 trace!("{:?} Replicating chunk {:?} to {:?}",
                        self.get_debug_name(),
-                       data.name(),
-                       self.dm_accounts[&data.name()]);
+                       data_name,
+                       account);
 
                 // Send Refresh message with updated storage locations in DataManager
-                self.send_data_manager_refresh_message(&data.name(),
-                                                       &self.dm_accounts[&data.name()],
-                                                       id);
+                self.send_data_manager_refresh_message(&data_name, account, id);
             }
         }
     }
@@ -510,7 +506,6 @@ impl ExampleNode {
 }
 
 /// Refresh messages.
-#[allow(unused)]
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.

@@ -132,7 +132,7 @@ pub enum Role {
 /// A copy of a message which has been sent and is pending the ack from the recipient.
 #[derive(Clone, Debug)]
 struct UnacknowledgedMessage {
-    signed_msg: SignedMessage,
+    routing_msg: RoutingMessage,
     route: u8,
     timer_token: u64,
 }
@@ -229,7 +229,8 @@ impl Core {
     pub fn new(event_sender: mpsc::Sender<Event>,
                role: Role,
                keys: Option<FullId>,
-               cache: Box<Cache>)
+               cache: Box<Cache>,
+               deny_other_local_nodes: bool)
                -> (RoutingActionSender, Self) {
         let (crust_tx, crust_rx) = mpsc::channel();
         let (action_tx, action_rx) = mpsc::channel();
@@ -299,7 +300,7 @@ impl Core {
         if role == Role::FirstNode {
             core.start_new_network();
         } else {
-            if role == Role::Node && core.crust_service.has_peers_on_lan() {
+            if deny_other_local_nodes && core.crust_service.has_peers_on_lan() {
                 error!("{:?} More than 1 routing node found on LAN. Currently this is not \
                         supported",
                        core);
@@ -1903,9 +1904,9 @@ impl Core {
                        self,
                        unacked_msg);
                 self.stats.count_unacked();
-            } else {
-                let hop = *self.name();
-                let _ = self.send(&unacked_msg.signed_msg, unacked_msg.route, &hop, &[hop]);
+            } else if let Err(error) =
+                   self.send_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+                debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
     }
@@ -2277,7 +2278,7 @@ impl Core {
 
         let token = self.timer.schedule(Duration::from_secs(ACK_TIMEOUT_SECS));
         let unacked_msg = UnacknowledgedMessage {
-            signed_msg: signed_msg.clone(),
+            routing_msg: signed_msg.routing_message().clone(),
             route: route,
             timer_token: token,
         };

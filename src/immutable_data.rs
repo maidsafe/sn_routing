@@ -17,21 +17,26 @@
 
 use std::fmt::{self, Debug, Formatter};
 
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use sodiumoxide::crypto::hash::sha256;
 use data::DataIdentifier;
 use xor_name::XorName;
 
 
 /// An immutable chunk of data.
-#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd, RustcEncodable, RustcDecodable)]
+#[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ImmutableData {
+    name: XorName,
     value: Vec<u8>,
 }
 
 impl ImmutableData {
     /// Creates a new instance of `ImmutableData`
     pub fn new(value: Vec<u8>) -> ImmutableData {
-        ImmutableData { value: value }
+        ImmutableData {
+            name: XorName(sha256::hash(&value).0),
+            value: value,
+        }
     }
 
     /// Returns the value
@@ -41,8 +46,8 @@ impl ImmutableData {
 
 
     /// Returns name ensuring invariant.
-    pub fn name(&self) -> XorName {
-        XorName(sha256::hash(&self.value).0)
+    pub fn name(&self) -> &XorName {
+        &self.name
     }
 
     /// Returns size of contained value.
@@ -52,7 +57,24 @@ impl ImmutableData {
 
     /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Immutable(self.name())
+        DataIdentifier::Immutable(self.name)
+    }
+}
+
+
+impl Encodable for ImmutableData {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
+        self.value.encode(encoder)
+    }
+}
+
+impl Decodable for ImmutableData {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<ImmutableData, D::Error> {
+        let value: Vec<u8> = try!(Decodable::decode(decoder));
+        Ok(ImmutableData {
+            name: XorName(sha256::hash(&value).0),
+            value: value,
+        })
     }
 }
 

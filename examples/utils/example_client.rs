@@ -25,7 +25,6 @@ use sodiumoxide::crypto;
 use routing::{FullId, Event, Data, DataIdentifier, Authority, Response, Client, MessageId, XorName};
 
 /// A simple example client implementation for a network based on the Routing library.
-#[allow(unused)]
 pub struct ExampleClient {
     /// The client interface to the Routing library.
     routing_client: Client,
@@ -35,7 +34,6 @@ pub struct ExampleClient {
     full_id: FullId,
 }
 
-#[allow(unused)]
 impl ExampleClient {
     /// Creates a new client and attempts to establish a connection to the network.
     pub fn new() -> ExampleClient {
@@ -71,7 +69,7 @@ impl ExampleClient {
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
         unwrap_result!(self.routing_client
-            .send_get_request(Authority::NaeManager(request.name()),
+            .send_get_request(Authority::NaeManager(*request.name()),
                               request.clone(),
                               message_id));
 
