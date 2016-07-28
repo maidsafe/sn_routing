@@ -1796,17 +1796,13 @@ impl Base for Node {
         self.dropped_client_connection(&peer_id);
         self.dropped_tunnel_node(&peer_id);
 
-        let mut result = Transition::Stay;
-
-        if !self.dropped_proxy_connection(&peer_id) {
-            result = Transition::Terminate;
+        let dropped_needed_proxy = !self.dropped_proxy_connection(&peer_id);
+        let dropped_needed_routing_node = !self.dropped_routing_node_connection(&peer_id);
+        if dropped_needed_proxy || dropped_needed_routing_node {
+            Transition::Terminate
+        } else {
+            Transition::Stay
         }
-
-        if !self.dropped_routing_node_connection(&peer_id) {
-            result = Transition::Terminate;
-        }
-
-        result
     }
 
     fn send_event(&self, event: Event) {
