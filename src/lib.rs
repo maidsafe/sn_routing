@@ -172,6 +172,19 @@ mod core_tests;
 /// Mock crust
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust;
+
+/// Messaging infrastructure
+pub mod messaging;
+/// Error communication between vaults and core
+pub mod client_errors;
+
+/// Structured Data Tag for Session Packet Type
+pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
+/// Structured Data Tag for DNS Packet Type
+pub const TYPE_TAG_DNS_PACKET: u64 = 5;
+
+#[cfg(feature = "use-mock-crust")]
+pub use mock_crust::crust;
 #[cfg(feature = "use-mock-crust")]
 pub use core_tests::verify_kademlia_invariant;
 
