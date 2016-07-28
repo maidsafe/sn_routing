@@ -558,12 +558,6 @@ impl PeerManager {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
-    /// Removes all entries that are not in `Routing` or `Tunnel` state.
-    pub fn clear_caches(&mut self) {
-        self.remove_expired();
-    }
-
     fn set_peer_state(&mut self, peer_id: PeerId, state: PeerState) -> bool {
         if let Some(&pub_id) = self.pub_id_map.get(&peer_id) {
             self.insert_state(pub_id, state);
@@ -576,12 +570,6 @@ impl PeerManager {
 
     fn get_state(&self, pub_id: &PublicId) -> Option<&PeerState> {
         self.node_map.get(pub_id.name()).map(|&(_, ref state)| state)
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
-        // In mock Crust tests, "expired" entries are removed with `clear_caches`.
-        let _ = self.node_map.insert(*pub_id.name(), (Instant::now(), state));
     }
 
     #[cfg(not(feature = "use-mock-crust"))]
@@ -633,6 +621,19 @@ impl PeerManager {
         for peer_id in remove_peer_ids {
             let _ = self.pub_id_map.remove(&peer_id);
         }
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl PeerManager {
+    /// Removes all entries that are not in `Routing` or `Tunnel` state.
+    pub fn clear_caches(&mut self) {
+        self.remove_expired();
+    }
+
+    fn insert_state(&mut self, pub_id: PublicId, state: PeerState) {
+        // In mock Crust tests, "expired" entries are removed with `clear_caches`.
+        let _ = self.node_map.insert(*pub_id.name(), (Instant::now(), state));
     }
 }
 

@@ -87,21 +87,6 @@ impl Client {
         })
     }
 
-    /// Create a new `Client` for unit testing.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
-        // start the handler for routing with a restriction to become a full node
-        let (action_sender, machine) = Self::make_state_machine(event_sender, keys);
-        let (tx, rx) = channel();
-
-        Ok(Client {
-            interface_result_tx: tx,
-            interface_result_rx: rx,
-            action_sender: action_sender,
-            machine: RefCell::new(machine),
-        })
-    }
-
     fn make_state_machine(event_sender: Sender<Event>,
                           keys: Option<FullId>)
                           -> (RoutingActionSender, StateMachine) {
@@ -116,24 +101,6 @@ impl Client {
                                                             full_id,
                                                             timer))
         })
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Poll and process all events in this client's `Core` instance.
-    pub fn poll(&self) -> bool {
-        self.machine.borrow_mut().poll()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Resend all unacknowledged messages.
-    pub fn resend_unacknowledged(&self) -> bool {
-        self.machine.borrow_mut().current_mut().resend_unacknowledged()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    /// Are there any unacknowledged messages?
-    pub fn has_unacknowledged(&self) -> bool {
-        self.machine.borrow().current().has_unacknowledged()
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
@@ -210,8 +177,39 @@ impl Client {
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         Ok(try!(rx.recv()))
     }
+}
 
-    #[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "use-mock-crust")]
+impl Client {
+    /// Create a new `Client` for unit testing.
+    pub fn new(event_sender: Sender<Event>, keys: Option<FullId>) -> Result<Client, RoutingError> {
+        // start the handler for routing with a restriction to become a full node
+        let (action_sender, machine) = Self::make_state_machine(event_sender, keys);
+        let (tx, rx) = channel();
+
+        Ok(Client {
+            interface_result_tx: tx,
+            interface_result_rx: rx,
+            action_sender: action_sender,
+            machine: RefCell::new(machine),
+        })
+    }
+
+    /// Poll and process all events in this client's `Core` instance.
+    pub fn poll(&self) -> bool {
+        self.machine.borrow_mut().poll()
+    }
+
+    /// Resend all unacknowledged messages.
+    pub fn resend_unacknowledged(&self) -> bool {
+        self.machine.borrow_mut().current_mut().resend_unacknowledged()
+    }
+
+    /// Are there any unacknowledged messages?
+    pub fn has_unacknowledged(&self) -> bool {
+        self.machine.borrow().current().has_unacknowledged()
+    }
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
         Ok(try!(rx.recv()))

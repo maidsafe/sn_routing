@@ -91,13 +91,14 @@ impl AckManager {
 
         Some((unacked_msg, timed_out_ack))
     }
+}
 
-    #[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "use-mock-crust")]
+impl AckManager {
     pub fn has_pending(&self) -> bool {
         !self.pending.is_empty()
     }
 
-    #[cfg(feature = "use-mock-crust")]
     pub fn timer_tokens(&self) -> Vec<u64> {
         self.pending
             .iter()
@@ -105,7 +106,6 @@ impl AckManager {
             .collect::<Vec<_>>()
     }
 
-    #[cfg(feature = "use-mock-crust")]
     pub fn clear(&mut self) {
         self.received.clear()
     }

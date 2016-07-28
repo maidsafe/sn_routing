@@ -180,39 +180,6 @@ impl Node {
         }
     }
 
-    /// Routing table of this node.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn routing_table(&self) -> &RoutingTable<XorName> {
-        self.peer_mgr.routing_table()
-    }
-
-    /// Resends all unacknowledged messages.
-    #[cfg(feature = "use-mock-crust")]
-    pub fn resend_unacknowledged(&mut self) -> bool {
-        self.timer.stop();
-        let timer_tokens = self.ack_mgr.timer_tokens();
-        for timer_token in &timer_tokens {
-            self.resend_unacknowledged_timed_out_msgs(*timer_token);
-        }
-        !timer_tokens.is_empty()
-    }
-
-    /// Are there any unacknowledged messages?
-    #[cfg(feature = "use-mock-crust")]
-    pub fn has_unacknowledged(&self) -> bool {
-        self.ack_mgr.has_pending()
-    }
-
-    #[cfg(feature = "use-mock-crust")]
-    pub fn clear_state(&mut self) {
-        self.ack_mgr.clear();
-        self.bucket_filter.clear();
-        self.msg_accumulator.clear();
-        self.peer_mgr.clear_caches();
-        self.signed_msg_filter.clear();
-        self.sent_network_name_to = None;
-    }
-
     fn update_stats(&mut self) {
         let old_client_num = self.stats.cur_client_num;
         self.stats.cur_client_num = self.peer_mgr.client_num();
@@ -1827,6 +1794,38 @@ impl Base for Node {
         } else {
             (Message::Direct(direct_message), *dst_id)
         }
+    }
+}
+
+#[cfg(feature = "use-mock-crust")]
+impl Node {
+    /// Routing table of this node.
+    pub fn routing_table(&self) -> &RoutingTable<XorName> {
+        self.peer_mgr.routing_table()
+    }
+
+    /// Resends all unacknowledged messages.
+    pub fn resend_unacknowledged(&mut self) -> bool {
+        self.timer.stop();
+        let timer_tokens = self.ack_mgr.timer_tokens();
+        for timer_token in &timer_tokens {
+            self.resend_unacknowledged_timed_out_msgs(*timer_token);
+        }
+        !timer_tokens.is_empty()
+    }
+
+    /// Are there any unacknowledged messages?
+    pub fn has_unacknowledged(&self) -> bool {
+        self.ack_mgr.has_pending()
+    }
+
+    pub fn clear_state(&mut self) {
+        self.ack_mgr.clear();
+        self.bucket_filter.clear();
+        self.msg_accumulator.clear();
+        self.peer_mgr.clear_caches();
+        self.signed_msg_filter.clear();
+        self.sent_network_name_to = None;
     }
 }
 
