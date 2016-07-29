@@ -349,7 +349,7 @@ impl Node {
             return;
         }
         // TODO: Keep track of this peer, even if this returns false.
-        self.peer_mgr.connected_to(peer_id);
+        self.peer_mgr.connected_to(&peer_id);
         debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
                self,
                peer_id);
@@ -379,7 +379,7 @@ impl Node {
     }
 
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
-        for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, pub_id) {
+        for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
             trace!("{:?} Asking {:?} to serve as a tunnel.", self, name);
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
             let _ = self.send_direct_message(&dst_peer_id, tunnel_request);
@@ -808,7 +808,7 @@ impl Node {
             return Ok(());
         }
 
-        for peer_id in self.peer_mgr.remove_stale_joining_nodes() {
+        for peer_id in self.peer_mgr.remove_expired_peers() {
             debug!("{:?} Removing stale joining node with Crust ID {:?}",
                    self,
                    peer_id);
@@ -1069,7 +1069,7 @@ impl Node {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if self.peer_mgr.tunnelling_to(dst_id) && self.tunnels.add(dst_id, peer_id) {
+        if self.peer_mgr.tunnelling_to(&dst_id) && self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,
