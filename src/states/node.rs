@@ -793,8 +793,8 @@ impl Node {
             message_id: MessageId::new(),
         };
 
-        let proxy_name = if let Some((_, _, ref proxy_public_id)) = *self.peer_mgr.proxy() {
-            *proxy_public_id.name()
+        let proxy_name = if let Some((_, proxy_pub_id)) = self.peer_mgr.proxy() {
+            *proxy_pub_id.name()
         } else {
             return Err(RoutingError::ProxyConnectionNotFound);
         };
@@ -856,9 +856,9 @@ impl Node {
         }
 
         let non_unique = if client_restriction {
-            self.peer_mgr.insert_client(peer_id, &public_id)
+            self.peer_mgr.insert_client(peer_id, public_id)
         } else {
-            self.peer_mgr.insert_joining_node(peer_id, &public_id)
+            self.peer_mgr.insert_joining_node(peer_id, public_id)
         };
 
         if non_unique {
@@ -1674,7 +1674,7 @@ impl Node {
                             dst: Authority)
                             -> Result<Transition, RoutingError> {
         let their_name = *their_public_id.name();
-        if let Some(peer_id) = self.peer_mgr.get_proxy_or_client_peer_id(&their_public_id) {
+        if let Some(peer_id) = self.peer_mgr.get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
             try!(self.send_node_identify(peer_id));
             self.handle_node_identify(their_public_id, peer_id);
         } else if self.peer_mgr.allow_connect(&their_name) {
