@@ -121,7 +121,7 @@ impl Client {
     }
 
     /// Send a Get message with a `DataIdentifier` to an `Authority`, signed with given keys.
-    pub fn send_get_request(&mut self,
+    pub fn send_get_request(&self,
                             dst: Authority,
                             data_id: DataIdentifier,
                             message_id: MessageId)
@@ -157,7 +157,7 @@ impl Client {
     }
 
     /// Request account information for the Client calling this function
-    pub fn send_get_account_info_request(&mut self,
+    pub fn send_get_account_info_request(&self,
                                          dst: Authority,
                                          message_id: MessageId)
                                          -> Result<(), InterfaceError> {
