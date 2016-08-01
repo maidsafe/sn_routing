@@ -214,7 +214,7 @@ fn create_connected_nodes(count: usize,
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
-    thread::sleep(Duration::from_secs(2));
+    thread::sleep(Duration::from_secs(5));
 
     // For each node, wait until it fully connects to the previous nodes before
     // continuing.
