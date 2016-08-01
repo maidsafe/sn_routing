@@ -12,7 +12,7 @@
 
 ## Overview
 
-An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. Please see below for a more detailed description of the operations involved in data storage.
+An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. See the documentation for a more detailed description of the operations involved in data storage.
 
 ## Prerequisite
 
