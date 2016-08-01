@@ -750,7 +750,7 @@ impl PeerManager {
     }
 
     fn set_state(&mut self, peer_id: &PeerId, state: PeerState) -> bool {
-        if let Some(peer) = self.peer_map.get_mut(&peer_id) {
+        if let Some(peer) = self.peer_map.get_mut(peer_id) {
             peer.state = state;
             true
         } else {
@@ -760,7 +760,7 @@ impl PeerManager {
     }
 
     fn remove_expired(&mut self) {
-        let _ = self.remove_expired_peers();
+        self.remove_expired_peers();
         let _ = self.remove_expired_tokens();
         self.cleanup_proxy_peer_id();
     }
