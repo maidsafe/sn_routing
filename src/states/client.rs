@@ -117,9 +117,7 @@ impl Client {
                 let _ = result_tx.send(*self.name());
             }
             Action::QuorumSize { result_tx } => {
-                // TODO: return the actual quorum size. To do that, we need to
-                // extend the MessageAccumulator's API with a method to retrieve it.
-                let _ = result_tx.send(0);
+                let _ = result_tx.send(self.msg_accumulator.quorum_size());
             }
             Action::Timeout(token) => self.handle_timeout(token),
             Action::Terminate => {
