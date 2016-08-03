@@ -135,7 +135,7 @@ impl ExampleNode {
                           src: Authority,
                           dst: Authority) {
         match (src, dst) {
-            (src @ Authority::Client{..}, dst @ Authority::NaeManager(_)) => {
+            (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
                 if let Some(data) = self.db.get(data_id.name()) {
                     unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {

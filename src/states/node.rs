@@ -484,32 +484,25 @@ impl Node {
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
         let hop_name;
-        if self.is_proper() {
-            if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-                try!(hop_msg.verify(pub_id.signing_public_key()));
-                hop_name = *pub_id.name();
-            } else if let Some(pub_key) = self.peer_mgr.get_client(&peer_id) {
-                try!(hop_msg.verify(&pub_key));
-                try!(self.check_valid_client_message(hop_msg.content().routing_message()));
-                hop_name = *self.name();
-            } else if let Some(pub_key) = self.peer_mgr.get_joining_node(&peer_id) {
-                try!(hop_msg.verify(&pub_key));
-                hop_name = *self.name();
-            } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
-                try!(hop_msg.verify(pub_id.signing_public_key()));
-                hop_name = *pub_id.name();
-            } else {
-                // TODO: Drop peer?
-                // debug!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
-                //        hop_msg.name(),
-                //        peer_id);
-                // self.disconnect_peer(&peer_id);
-                return Err(RoutingError::UnknownConnection(peer_id));
-            }
+        if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
+            try!(hop_msg.verify(pub_id.signing_public_key()));
+            hop_name = *pub_id.name();
+        } else if let Some(pub_key) = self.peer_mgr.get_client(&peer_id) {
+            try!(hop_msg.verify(&pub_key));
+            try!(self.check_valid_client_message(hop_msg.content().routing_message()));
+            hop_name = *self.name();
+        } else if let Some(pub_key) = self.peer_mgr.get_joining_node(&peer_id) {
+            try!(hop_msg.verify(&pub_key));
+            hop_name = *self.name();
         } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
             try!(hop_msg.verify(pub_id.signing_public_key()));
             hop_name = *pub_id.name();
         } else {
+            // TODO: Drop peer?
+            // debug!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
+            //        hop_msg.name(),
+            //        peer_id);
+            // self.disconnect_peer(&peer_id);
             return Err(RoutingError::UnknownConnection(peer_id));
         }
 
@@ -1417,7 +1410,7 @@ impl Node {
     }
 
     fn check_address_for_routing_table(&self, name: &XorName) -> Result<(), RoutingError> {
-        if !self.is_proper() || self.peer_mgr.allow_connect(name) {
+        if self.peer_mgr.allow_connect(name) {
             Ok(())
         } else {
             Err(RoutingError::RefusedFromRoutingTable)
@@ -1639,7 +1632,8 @@ impl Node {
                             dst: Authority)
                             -> Result<Transition, RoutingError> {
         let their_name = *their_public_id.name();
-        if let Some(peer_id) = self.peer_mgr.get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
+        if let Some(peer_id) = self.peer_mgr
+            .get_proxy_or_client_or_joining_node_peer_id(&their_public_id) {
             try!(self.send_node_identify(peer_id));
             self.handle_node_identify(their_public_id, peer_id);
         } else if self.peer_mgr.allow_connect(&their_name) {
