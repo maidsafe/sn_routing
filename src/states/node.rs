@@ -1183,6 +1183,8 @@ impl Node {
                                      relocated_id: PublicId,
                                      mut close_group_ids: Vec<PublicId>,
                                      dst: Authority) {
+        self.get_node_name_timer_token = None;
+
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
 
