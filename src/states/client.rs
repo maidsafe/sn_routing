@@ -413,7 +413,6 @@ impl Bootstrapped for Client {
 impl Client {
     /// Resends all unacknowledged messages.
     pub fn resend_unacknowledged(&mut self) -> bool {
-        self.timer.stop();
         let timer_tokens = self.ack_mgr.timer_tokens();
         for timer_token in &timer_tokens {
             self.resend_unacknowledged_timed_out_msgs(*timer_token);

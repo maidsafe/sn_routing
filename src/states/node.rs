@@ -116,8 +116,6 @@ impl Node {
                               stats: Stats,
                               timer: Timer)
                               -> Option<Self> {
-        timer.stop();
-
         let mut node = Self::new(cache,
                                  crust_service,
                                  event_sender,
@@ -1824,7 +1822,6 @@ impl Node {
 
     /// Resends all unacknowledged messages.
     pub fn resend_unacknowledged(&mut self) -> bool {
-        self.timer.stop();
         let timer_tokens = self.ack_mgr.timer_tokens();
         for timer_token in &timer_tokens {
             self.resend_unacknowledged_timed_out_msgs(*timer_token);
