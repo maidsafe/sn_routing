@@ -197,9 +197,11 @@ mod implementation {
 
 #[cfg(feature = "use-mock-crust")]
 mod implementation {
-    use types::RoutingActionSender;
     use std::time::Duration;
 
+    use types::RoutingActionSender;
+
+    // The mock timer currently never raises timeout events.
     pub struct Timer {
         next_token: u64,
     }
@@ -211,7 +213,7 @@ mod implementation {
             }
         }
 
-        pub fn schedule(&mut self, _duration: Duration) -> u64 {
+        pub fn schedule(&mut self, _: Duration) -> u64 {
             let token = self.next_token;
             self.next_token = token.wrapping_add(1);
             token
