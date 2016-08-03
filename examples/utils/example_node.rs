@@ -242,14 +242,13 @@ impl ExampleNode {
     }
 
     fn get_debug_name(&self) -> String {
-        format!("Node({:?})",
-                match self.node.name() {
-                    Ok(name) => name,
-                    Err(err) => {
-                        error!("Could not get node name - {:?}", err);
-                        panic!("Could not get node name - {:?}", err);
-                    }
-                })
+        match self.node.name() {
+            Ok(name) => format!("Node({:?})", name),
+            Err(err) => {
+                error!("Could not get node name - {:?}", err);
+                "Node(unknown)".to_owned()
+            }
+        }
     }
 }
 

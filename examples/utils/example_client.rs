@@ -49,12 +49,16 @@ impl ExampleClient {
 
         // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
         // requests to the network.
+        let mut connected = false;
         for it in receiver.iter() {
             if let Event::Connected = it {
                 println!("Client Connected to network");
+                connected = true;
                 break;
             }
         }
+
+        assert!(connected, "Client failed to connect to the network");
 
         ExampleClient {
             routing_client: routing_client,
