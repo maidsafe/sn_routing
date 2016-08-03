@@ -1832,7 +1832,7 @@ impl Node {
         self.ack_mgr.clear();
         self.bucket_filter.clear();
         self.msg_accumulator.clear();
-        self.peer_mgr.clear_caches();
+        self.peer_mgr.clear();
         self.signed_msg_filter.clear();
         self.sent_network_name_to = None;
     }

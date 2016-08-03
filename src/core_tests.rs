@@ -748,6 +748,7 @@ fn node_drops() {
 #[test]
 fn churn() {
     let network = Network::new(None);
+
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 

@@ -131,8 +131,10 @@ impl State {
             _ => unreachable!(),
         }
     }
+}
 
-    #[cfg(feature = "use-mock-crust")]
+#[cfg(feature = "use-mock-crust")]
+impl State {
     pub fn resend_unacknowledged(&mut self) -> bool {
         match *self {
             State::Client(ref mut state) => state.resend_unacknowledged(),
@@ -142,7 +144,6 @@ impl State {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
     pub fn has_unacknowledged(&self) -> bool {
         match *self {
             State::Client(ref state) => state.has_unacknowledged(),
@@ -152,7 +153,6 @@ impl State {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
     pub fn routing_table(&self) -> &RoutingTable<XorName> {
         match *self {
             State::Node(ref state) => state.routing_table(),
@@ -160,7 +160,6 @@ impl State {
         }
     }
 
-    #[cfg(feature = "use-mock-crust")]
     pub fn clear_state(&mut self) {
         match *self {
             State::Node(ref mut state) => state.clear_state(),
@@ -226,19 +225,6 @@ impl StateMachine {
         (action_sender, machine)
     }
 
-    /// Run the event loop for sending and receiving messages. Blocks until
-    /// the core is terminated, so it must be called in a separate thread.
-    #[cfg(not(feature = "use-mock-crust"))]
-    pub fn run(&mut self) {
-        while self.is_running {
-            if let Ok(category) = self.category_rx.recv() {
-                self.handle_event(category);
-            } else {
-                break;
-            }
-        }
-    }
-
     fn handle_event(&mut self, category: MaidSafeEventCategory) {
         let transition = match category {
             MaidSafeEventCategory::Routing => {
@@ -278,6 +264,21 @@ impl StateMachine {
 
     fn terminate(&mut self) {
         self.is_running = false;
+    }
+}
+
+#[cfg(not(feature = "use-mock-crust"))]
+impl StateMachine {
+    /// Run the event loop for sending and receiving messages. Blocks until
+    /// the core is terminated, so it must be called in a separate thread.
+    pub fn run(&mut self) {
+        while self.is_running {
+            if let Ok(category) = self.category_rx.recv() {
+                self.handle_event(category);
+            } else {
+                break;
+            }
+        }
     }
 }
 

@@ -36,11 +36,7 @@ pub const QUORUM_SIZE: usize = 5;
 /// of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
-#[cfg(not(feature = "use-mock-crust"))]
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
-/// With mock Crust, all pending connections are removed explicitly.
-#[cfg(feature = "use-mock-crust")]
-const CONNECTION_TIMEOUT_SECS: u64 = 0;
 /// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
 /// table.
 const EXTRA_BUCKET_ENTRIES: usize = 2;
@@ -168,7 +164,6 @@ impl Peer {
         &self.state
     }
 
-    // CONNECTION_TIMEOUT_SECS == 0 if use-mock-crust.
     fn is_expired(&self) -> bool {
         match self.state {
             PeerState::ConnectionInfoPreparing(..) |
@@ -759,9 +754,15 @@ impl PeerManager {
         }
     }
 
+    fn insert_peer(&mut self, pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> bool {
+        let result = self.peer_map.insert(Peer::new(pub_id, peer_id, state)).is_some();
+        self.remove_expired();
+        result
+    }
+
     fn remove_expired(&mut self) {
         self.remove_expired_peers();
-        let _ = self.remove_expired_tokens();
+        self.remove_expired_tokens();
         self.cleanup_proxy_peer_id();
     }
 
@@ -779,7 +780,7 @@ impl PeerManager {
         self.cleanup_proxy_peer_id();
     }
 
-    fn remove_expired_tokens(&mut self) -> Vec<u32> {
+    fn remove_expired_tokens(&mut self) {
         let remove_tokens = self.connection_token_map
             .iter()
             .filter(|&(_, pub_id)| match self.get_state_by_name(pub_id.name()) {
@@ -789,11 +790,9 @@ impl PeerManager {
             .map(|(token, _)| *token)
             .collect_vec();
 
-        for token in &remove_tokens {
-            let _ = self.connection_token_map.remove(token);
+        for token in remove_tokens {
+            let _ = self.connection_token_map.remove(&token);
         }
-
-        remove_tokens
     }
 
     fn cleanup_proxy_peer_id(&mut self) {
@@ -805,24 +804,25 @@ impl PeerManager {
     }
 }
 
-#[cfg(not(feature = "use-mock-crust"))]
-impl PeerManager {
-    fn insert_peer(&mut self, pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> bool {
-        self.remove_expired();
-        self.peer_map.insert(Peer::new(pub_id, peer_id, state)).is_some()
-    }
-}
-
 #[cfg(feature = "use-mock-crust")]
 impl PeerManager {
-    /// Removes all entries that are not in `Routing` or `Tunnel` state.
-    pub fn clear_caches(&mut self) {
-        self.remove_expired();
-    }
+    pub fn clear(&mut self) {
+        // Remove all peers that are not yet connected.
+        let remove_names = self.peer_map
+            .peers()
+            .filter(|peer| match peer.state {
+                PeerState::ConnectionInfoPreparing(..) |
+                PeerState::ConnectionInfoReady(_) |
+                PeerState::CrustConnecting |
+                PeerState::SearchingForTunnel => true,
+                _ => false,
+            })
+            .map(|peer| *peer.name())
+            .collect_vec();
 
-    fn insert_peer(&mut self, pub_id: PublicId, peer_id: Option<PeerId>, state: PeerState) -> bool {
-        // In mock Crust tests, "expired" entries are removed with `clear_caches`.
-        self.peer_map.insert(Peer::new(pub_id, peer_id, state)).is_some()
+        for name in remove_names {
+            let _ = self.peer_map.remove_by_name(&name);
+        }
     }
 }
 

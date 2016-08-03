@@ -282,7 +282,7 @@ fn store_and_verify(requests: usize, batches: usize) {
 static USAGE: &'static str = "
 Usage:
   ci_test -h
-  ci_test --output=<log_file> [-c [<requests> [<batches>]]] [-f] [-d]
+  ci_test [--output=<log_file>] [-c [<requests> [<batches>]]] [-f] [-d]
   ci_test [<nodes> <requests> [<batches>]]
 
 Options:
@@ -344,8 +344,12 @@ fn main() {
             *unwrap_result!(lock.lock()) = true;
             cvar.notify_one();
         }
-    } else if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, true));
+    } else {
+        if let Some(log_file) = args.flag_output {
+            unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, true));
+        } else {
+            unwrap_result!(maidsafe_utilities::log::init(false));
+        }
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file
