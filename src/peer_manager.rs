@@ -156,6 +156,14 @@ impl Peer {
         &self.pub_id
     }
 
+    pub fn pub_key(&self) -> &sign::PublicKey {
+        match self.state {
+            PeerState::Client(ref pub_key) => pub_key,
+            PeerState::JoiningNode(ref pub_key) => pub_key,
+            _ => self.pub_id().signing_public_key(),
+        }
+    }
+
     pub fn name(&self) -> &XorName {
         self.pub_id.name()
     }
@@ -343,6 +351,17 @@ impl PeerManager {
         }
     }
 
+    /// Returns the public ID of the given peer, if it is in `Routing` state.
+    pub fn get_routing_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
+        self.peer_map.get(peer_id).and_then(|peer| {
+            if let PeerState::Routing(_) = peer.state {
+                Some(&peer.pub_id)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Returns the proxy node, if connected.
     pub fn proxy(&self) -> Option<(&PeerId, &PublicId)> {
         if let Some(peer_id) = self.proxy_peer_id.as_ref() {
@@ -402,15 +421,6 @@ impl PeerManager {
         }
     }
 
-    /// Removes the given peer ID from the client nodes and returns whether it was present.
-    pub fn remove_client(&mut self, peer_id: &PeerId) -> bool {
-        if let Some(&PeerState::Client(_)) = self.get_state(peer_id) {
-            self.peer_map.remove(peer_id).is_some()
-        } else {
-            false
-        }
-    }
-
     /// Inserts the given joining node into the map. Returns true if we already
     /// had a peer with the given peer id.
     pub fn insert_joining_node(&mut self, peer_id: PeerId, pub_id: PublicId) -> bool {
@@ -424,15 +434,6 @@ impl PeerManager {
             Some(&PeerState::JoiningNode(ref pub_key)) => Some(pub_key),
             _ => None,
 
-        }
-    }
-
-    /// Removes the given joining node and returns whether it was present.
-    pub fn remove_joining_node(&mut self, peer_id: &PeerId) -> bool {
-        if let Some(&PeerState::JoiningNode(_)) = self.get_state(peer_id) {
-            self.peer_map.remove(peer_id).is_some()
-        } else {
-            false
         }
     }
 
@@ -508,12 +509,24 @@ impl PeerManager {
     }
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
-    pub fn get_connecting_peer(&mut self, peer_id: &PeerId) -> Option<&PublicId> {
+    pub fn get_connecting_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
         self.peer_map.get(peer_id).and_then(|peer| {
             if let PeerState::CrustConnecting = peer.state {
                 return Some(&peer.pub_id);
             } else {
                 None
+            }
+        })
+    }
+
+    pub fn get_connected_peer(&self, peer_id: &PeerId) -> Option<&Peer> {
+        self.peer_map.get(peer_id).and_then(|peer| {
+            match peer.state {
+                PeerState::Client(_) |
+                PeerState::JoiningNode(_) |
+                PeerState::Proxy |
+                PeerState::Routing(_) => Some(peer),
+                _ => None,
             }
         })
     }
@@ -546,17 +559,6 @@ impl PeerManager {
             .filter_map(|name| result_map.get(name))
             .cloned()
             .collect()
-    }
-
-    /// Returns the public ID of the given peer, if it is in `Routing` state.
-    pub fn get_routing_peer(&self, peer_id: &PeerId) -> Option<&PublicId> {
-        self.peer_map.get(peer_id).and_then(|peer| {
-            if let PeerState::Routing(_) = peer.state {
-                Some(&peer.pub_id)
-            } else {
-                None
-            }
-        })
     }
 
     /// Sets the given peer to state `SearchingForTunnel` and returns querying candidates.
@@ -722,15 +724,13 @@ impl PeerManager {
         !self.routing_table.contains(name) && self.routing_table.allow_connection(name)
     }
 
-    /// Removes the given entry, returns the pair of (peer's public name, the removal result)
-    pub fn remove_peer(&mut self, peer_id: &PeerId) -> Option<(XorName, DroppedNodeDetails)> {
-        if let Some(name) = self.peer_map
-            .get(peer_id)
-            .map(Peer::name)
-            .cloned() {
-            let _ = self.peer_map.remove(peer_id);
+    /// Removes the given entry, returns the removed peer and if it was a routing node,
+    /// the removal details
+    pub fn remove_peer(&mut self, peer_id: &PeerId) -> Option<(Peer, Option<DroppedNodeDetails>)> {
+        if let Some(peer) = self.peer_map.remove(peer_id) {
             self.cleanup_proxy_peer_id();
-            self.routing_table.remove(&name).map(|result| (name, result))
+            let name = *peer.name();
+            Some((peer, self.routing_table.remove(&name)))
         } else {
             None
         }
