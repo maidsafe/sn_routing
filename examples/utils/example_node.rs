@@ -20,7 +20,6 @@ use lru_time_cache::LruCache;
 use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Request, Response, XorName};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use std::collections::HashMap;
-use std::mem;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -82,8 +81,7 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    let new_node = unwrap_result!(Node::builder().create(self.sender.clone()));
-                    let _ = mem::replace(&mut self.node, new_node);
+                    self.node = unwrap_result!(Node::builder().create(self.sender.clone()));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
