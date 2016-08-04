@@ -21,6 +21,8 @@ extern crate sodiumoxide;
 extern crate maidsafe_utilities;
 
 use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 use sodiumoxide::crypto;
 use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
 
@@ -45,21 +47,33 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap_result!(Client::new(sender, Some(full_id)));
+        let mut routing_client;
 
-        // Wait indefinitely for a `Connected` event, notifying us that we are now ready to send
-        // requests to the network.
-        for it in receiver.iter() {
-            if let Event::Connected = it {
-                println!("Client Connected to network");
-                break;
+        // Try to connect the client to the network. If it fails, it probably means
+        // the network isn't fully formed yet, so we restart and try again.
+        'outer: loop {
+            routing_client = unwrap_result!(Client::new(sender.clone(), Some(full_id.clone())));
+
+            for event in receiver.iter() {
+                match event {
+                    Event::Connected => {
+                        println!("Client Connected to the network");
+                        break 'outer;
+                    },
+                    Event::Terminate => {
+                        println!("Client failed to connect to the network. Restarting.");
+                        thread::sleep(Duration::from_secs(5));
+                        break;
+                    },
+                    _ => (),
+                }
             }
         }
 
         ExampleClient {
             routing_client: routing_client,
             receiver: receiver,
-            full_id: FullId::with_keys(encrypt_keys, sign_keys),
+            full_id: full_id,
         }
     }
 
