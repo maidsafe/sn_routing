@@ -20,18 +20,20 @@ extern crate routing;
 extern crate sodiumoxide;
 extern crate maidsafe_utilities;
 
-use std::sync::mpsc;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use sodiumoxide::crypto;
 use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
+
+const RESPONSE_TIMEOUT_SECS: u64 = 10;
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct ExampleClient {
     /// The client interface to the Routing library.
     routing_client: Client,
     /// The receiver through which the Routing library will send events.
-    receiver: mpsc::Receiver<Event>,
+    receiver: Receiver<Event>,
     /// This client's ID.
     full_id: FullId,
 }
@@ -88,9 +90,9 @@ impl ExampleClient {
                               message_id));
 
         // Wait for Get success event from Routing
-        for it in self.receiver.iter() {
-            match it {
-                Event::Response { response: Response::GetSuccess(data, id), .. } => {
+        loop {
+            match recv_with_timeout(&self.receiver, Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
+                Some(Event::Response { response: Response::GetSuccess(data, id), .. }) => {
                     if message_id != id {
                         error!("GetSuccess for {:?}, but with wrong message_id {:?} instead of \
                                 {:?}.",
@@ -100,20 +102,19 @@ impl ExampleClient {
                     }
                     return Some(data);
                 }
-                Event::Response {
+                Some(Event::Response {
                     response: Response::GetFailure { external_error_indicator, .. },
-                .. } => {
+                .. }) => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
                            unwrap_result!(String::from_utf8(external_error_indicator)));
                     return None;
                 }
-                Event::Terminate | Event::RestartRequired => self.disconnected(),
-                _ => (),
+                Some(Event::Terminate) | Some(Event::RestartRequired) => self.disconnected(),
+                Some(_) => (),
+                None => return None,
             }
         }
-
-        None
     }
 
     /// Send a `Put` request to the network.
@@ -127,9 +128,9 @@ impl ExampleClient {
             .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
 
         // Wait for Put success event from Routing
-        for it in self.receiver.iter() {
-            match it {
-                Event::Response { response: Response::PutSuccess(rec_data_id, id), .. } => {
+        loop {
+            match recv_with_timeout(&self.receiver, Duration::from_secs(RESPONSE_TIMEOUT_SECS)) {
+                Some(Event::Response { response: Response::PutSuccess(rec_data_id, id), .. }) => {
                     if message_id != id {
                         error!("Stored {:?}, but with wrong message_id {:?} instead of {:?}.",
                                data_id.name(),
@@ -146,15 +147,16 @@ impl ExampleClient {
                         return Err(());
                     }
                 }
-                Event::Response { response: Response::PutFailure { .. }, .. } => {
+                Some(Event::Response { response: Response::PutFailure { .. }, .. }) => {
                     error!("Received PutFailure for {:?}.", data_id.name());
                     return Err(());
                 }
-                Event::Terminate | Event::RestartRequired => self.disconnected(),
-                _ => (),
+                Some(Event::Terminate) |
+                Some(Event::RestartRequired) => self.disconnected(),
+                Some(_) => (),
+                None => return Err(()),
             }
         }
-        Err(())
     }
 
     fn disconnected(&self) {
@@ -182,5 +184,22 @@ impl ExampleClient {
 impl Default for ExampleClient {
     fn default() -> ExampleClient {
         ExampleClient::new()
+    }
+}
+
+fn recv_with_timeout<T>(rx: &Receiver<T>, timeout: Duration) -> Option<T> {
+    let start = Instant::now();
+    let wait = Duration::from_millis(100);
+
+    loop {
+        match rx.try_recv() {
+            Ok(value) => return Some(value),
+            Err(TryRecvError::Empty) => thread::sleep(wait),
+            Err(TryRecvError::Disconnected) => return None,
+        }
+
+        if Instant::now() - start > timeout {
+            return None;
+        }
     }
 }
