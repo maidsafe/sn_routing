@@ -1336,18 +1336,24 @@ impl Node {
             }
         }
 
-        self.pending_node_identify.retain(|e| {
-            e.0 >= token || {
-                debug!("Unhandled pending node identify timeout.");
-                false
-            }
-        });
-
-        if let Some(&(node_identify_token, peer_id)) = self.pending_node_identify.front() {
-            if node_identify_token == token {
+        while let Some(&(node_identify_token, peer_id)) = self.pending_node_identify.front() {
+            if node_identify_token < token {
                 let _ = self.pending_node_identify.pop_front();
-                debug!("{:?} Timed out waiting for `NodeIdentify` from {}.", self, peer_id);
-                self.disconnect_peer(&peer_id);
+                debug!("{:?} Unhandled pending `NodeIdentify` timeout for peer {} with timer \
+                        token {}.",
+                       self,
+                       peer_id,
+                       node_identify_token);
+            } else {
+                if node_identify_token == token {
+                    let _ = self.pending_node_identify.pop_front();
+                    debug!("{:?} Timed out waiting for `NodeIdentify` from {}.",
+                           self,
+                           peer_id);
+                    self.disconnect_peer(&peer_id);
+                }
+
+                break;
             }
         }
 
