@@ -42,7 +42,7 @@ use message_filter::MessageFilter;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, GROUP_SIZE,
-                   PeerManager, QUORUM_SIZE};
+                   PeerManager, PeerState, QUORUM_SIZE};
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
@@ -483,28 +483,20 @@ impl Node {
                           hop_msg: HopMessage,
                           peer_id: PeerId)
                           -> Result<(), RoutingError> {
-        let hop_name;
-        if let Some(pub_id) = self.peer_mgr.get_routing_peer(&peer_id) {
-            try!(hop_msg.verify(pub_id.signing_public_key()));
-            hop_name = *pub_id.name();
-        } else if let Some(pub_key) = self.peer_mgr.get_client(&peer_id) {
-            try!(hop_msg.verify(&pub_key));
-            try!(self.check_valid_client_message(hop_msg.content().routing_message()));
-            hop_name = *self.name();
-        } else if let Some(pub_key) = self.peer_mgr.get_joining_node(&peer_id) {
-            try!(hop_msg.verify(&pub_key));
-            hop_name = *self.name();
-        } else if let Some(pub_id) = self.peer_mgr.get_proxy_public_id(&peer_id) {
-            try!(hop_msg.verify(pub_id.signing_public_key()));
-            hop_name = *pub_id.name();
+        let hop_name = if let Some(peer) = self.peer_mgr.get_connected_peer(&peer_id) {
+            try!(hop_msg.verify(peer.pub_id().signing_public_key()));
+
+            match *peer.state() {
+                PeerState::Client => {
+                    try!(self.check_valid_client_message(hop_msg.content().routing_message()));
+                    *self.name()
+                }
+                PeerState::JoiningNode => *self.name(),
+                _ => *peer.name(),
+            }
         } else {
-            // TODO: Drop peer?
-            // debug!("Received hop message from unknown name {:?}. Dropping peer {:?}.",
-            //        hop_msg.name(),
-            //        peer_id);
-            // self.disconnect_peer(&peer_id);
             return Err(RoutingError::UnknownConnection(peer_id));
-        }
+        };
 
         self.handle_signed_message(hop_msg.content(),
                                    hop_msg.route(),
@@ -1081,7 +1073,7 @@ impl Node {
                    dst_id,
                    peer_id);
             if !self.crust_service.is_connected(&dst_id) {
-                self.dropped_routing_node_connection(&dst_id);
+                self.dropped_peer(&dst_id);
             }
         }
         Ok(())
@@ -1503,9 +1495,7 @@ impl Node {
                        -> Result<(), RoutingError> {
         let priority = signed_msg.priority();
 
-        if self.peer_mgr.get_client(peer_id).is_some() ||
-           self.peer_mgr.get_joining_node(peer_id).is_some() ||
-           self.peer_mgr.get_routing_peer(peer_id).is_some() {
+        if self.peer_mgr.get_connected_peer(peer_id).is_some() {
             if self.filter_outgoing_signed_msg(&signed_msg, peer_id, 0) {
                 return Ok(());
             }
@@ -1651,19 +1641,85 @@ impl Node {
         Ok(Transition::Stay)
     }
 
-    fn dropped_client_connection(&mut self, peer_id: &PeerId) {
-        if self.peer_mgr.remove_client(peer_id) {
-            debug!("{:?} Client disconnected: {:?}", self, peer_id);
+    // Handle dropped peer with the given peer id. Returns true if we should keep
+    // running, false if we should terminate.
+    fn dropped_peer(&mut self, peer_id: &PeerId) -> bool {
+        let (peer, dropped_node_details) = match self.peer_mgr.remove_peer(peer_id) {
+            Some(result) => result,
+            None => return true,
+        };
+
+        if let Some(details) = dropped_node_details {
+            if !self.dropped_routing_node(*peer.name(), details) {
+                return false;
+            }
         }
+
+        match *peer.state() {
+            PeerState::Client => {
+                debug!("{:?} Client disconnected: {:?}", self, peer_id);
+            }
+            PeerState::JoiningNode => {
+                debug!("{:?} Joining node {:?} dropped. {} remaining.",
+                       self,
+                       peer_id,
+                       self.peer_mgr.joining_nodes_num());
+            }
+            PeerState::Proxy => {
+                debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
+                       self,
+                       peer.name(),
+                       peer_id);
+
+                if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
+                    self.send_event(Event::Terminate);
+                    return false;
+                }
+            }
+            _ => (),
+        }
+
+        true
     }
 
-    fn dropped_joining_node_connection(&mut self, peer_id: &PeerId) {
-        if self.peer_mgr.remove_joining_node(peer_id) {
-            debug!("{:?} Joining node {:?} dropped. {} remaining.",
-                   self,
-                   peer_id,
-                   self.peer_mgr.joining_nodes_num());
+    // Handle dropped routing peer with the given name and removal details.
+    // Returns true if we should keep running, false if we should terminate.
+    fn dropped_routing_node(&mut self, name: XorName, details: DroppedNodeDetails) -> bool {
+        info!("{:?} Dropped {:?} from the routing table.", self, name);
+
+        let common_groups = self.peer_mgr
+            .routing_table()
+            .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
+        if common_groups {
+            // If the lost node shared some close group with us, send a NodeLost event.
+            let event = Event::NodeLost(name, self.peer_mgr.routing_table().clone());
+            if let Err(err) = self.event_sender.send(event) {
+                error!("{:?} Error sending event to routing user - {:?}", self, err);
+            }
         }
+
+        if let DroppedNodeDetails { incomplete_bucket: Some(bucket_index) } = details {
+            if let Err(e) = self.request_bucket_ids(bucket_index) {
+                debug!("{:?} Failed to request replacement connection_info from bucket \
+                        {}: {:?}.",
+                       self,
+                       bucket_index,
+                       e);
+            }
+        }
+
+        if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
+            debug!("{:?} Lost connection, less than {} remaining.",
+                   self,
+                   GROUP_SIZE - 1);
+            if !self.is_first_node {
+                self.send_event(Event::RestartRequired);
+                return false;
+            }
+        }
+
+        self.reset_bucket_refresh_timer();
+        true
     }
 
     fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {
@@ -1682,65 +1738,12 @@ impl Node {
             })
             .collect_vec();
         for (dst_id, pub_id) in peers {
-            self.dropped_routing_node_connection(&dst_id);
+            self.dropped_peer(&dst_id);
             debug!("{:?} Lost tunnel for peer {:?} ({:?}). Requesting new tunnel.",
                    self,
                    dst_id,
                    pub_id.name());
             self.find_tunnel_for_peer(dst_id, &pub_id);
-        }
-    }
-
-    fn dropped_routing_node_connection(&mut self, peer_id: &PeerId) -> bool {
-        if let Some((name, DroppedNodeDetails { incomplete_bucket })) = self.peer_mgr
-            .remove_peer(peer_id) {
-            info!("{:?} Dropped {:?} from the routing table.", self, &name);
-
-            let common_groups = self.peer_mgr
-                .routing_table()
-                .is_in_any_close_group_with(self.name().bucket_index(&name), GROUP_SIZE);
-            if common_groups {
-                // If the lost node shared some close group with us, send a NodeLost event.
-                let event = Event::NodeLost(name, self.peer_mgr.routing_table().clone());
-                if let Err(err) = self.event_sender.send(event) {
-                    error!("{:?} Error sending event to routing user - {:?}", self, err);
-                }
-            }
-            if let Some(bucket_index) = incomplete_bucket {
-                if let Err(e) = self.request_bucket_ids(bucket_index) {
-                    debug!("{:?} Failed to request replacement connection_info from bucket \
-                            {}: {:?}.",
-                           self,
-                           bucket_index,
-                           e);
-                }
-            }
-            if self.peer_mgr.routing_table().len() < GROUP_SIZE - 1 {
-                debug!("{:?} Lost connection, less than {} remaining.",
-                       self,
-                       GROUP_SIZE - 1);
-                if !self.is_first_node {
-                    self.send_event(Event::RestartRequired);
-                    return false;
-                }
-            }
-
-            self.reset_bucket_refresh_timer();
-        };
-
-        true
-    }
-
-    fn dropped_proxy_connection(&self, peer_id: &PeerId) -> bool {
-        if let Some(proxy_public_id) = self.peer_mgr.get_proxy_public_id(peer_id) {
-            debug!("{:?} Lost bootstrap connection to {:?} ({:?}).",
-                   self,
-                   proxy_public_id.name(),
-                   peer_id);
-            self.send_event(Event::Terminate);
-            false
-        } else {
-            true
         }
     }
 
@@ -1788,15 +1791,11 @@ impl Base for Node {
 
         self.dropped_tunnel_client(&peer_id);
         self.dropped_tunnel_node(&peer_id);
-        self.dropped_client_connection(&peer_id);
-        self.dropped_joining_node_connection(&peer_id);
 
-        let dropped_needed_proxy = !self.dropped_proxy_connection(&peer_id);
-        let dropped_needed_routing_node = !self.dropped_routing_node_connection(&peer_id);
-        if dropped_needed_proxy || dropped_needed_routing_node {
-            Transition::Terminate
-        } else {
+        if self.dropped_peer(&peer_id) {
             Transition::Stay
+        } else {
+            Transition::Terminate
         }
     }
 
