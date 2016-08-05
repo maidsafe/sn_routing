@@ -1339,7 +1339,7 @@ impl Node {
         while let Some(&(node_identify_token, peer_id)) = self.pending_node_identify.front() {
             if node_identify_token < token {
                 let _ = self.pending_node_identify.pop_front();
-                debug!("{:?} Unhandled pending `NodeIdentify` timeout for peer {} with timer \
+                debug!("{:?} Unhandled pending `NodeIdentify` timeout for {:?} with timer \
                         token {}.",
                        self,
                        peer_id,
@@ -1347,7 +1347,7 @@ impl Node {
             } else {
                 if node_identify_token == token {
                     let _ = self.pending_node_identify.pop_front();
-                    debug!("{:?} Timed out waiting for `NodeIdentify` from {}.",
+                    debug!("{:?} Timed out waiting for `NodeIdentify` from {:?}.",
                            self,
                            peer_id);
                     self.disconnect_peer(&peer_id);
