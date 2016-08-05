@@ -34,9 +34,17 @@ pub trait Xorable {
     /// equal if the arguments are equal.)
     fn cmp_distance(&self, lhs: &Self, rhs: &Self) -> Ordering;
 
-    /// Returns `true` if the `i`-th bit of other has a different value than the `i`-th bit of
-    /// `self`.
+    /// Returns `true` if the `i`-th bit of other has a different value to the `i`-th bit of `self`.
     fn differs_in_bit(&self, other: &Self, i: usize) -> bool;
+
+    /// Returns a copy of `self`, with the `index`-th bit flipped.
+    ///
+    /// If the parameter does not address one of the name's bits, i. e. if it does not satisfy
+    /// `index < XOR_NAME_BITS`, the result will be equal to the argument.
+    fn with_flipped_bit(&self, index: usize) -> Self;
+
+    /// Returns a default copy(all zero)
+    fn all_zero_copy() -> Self;
 }
 
 
@@ -68,6 +76,20 @@ macro_rules! impl_xorable_for_array {
                 let pow_i = 1 << (bits - 1 - (i % bits));
                 (self[index] ^ name[index]) & pow_i != 0
             }
+
+            fn with_flipped_bit(&self, index: usize) -> Self {
+                let bits = mem::size_of::<$t>() * 8;
+                let mut copy = *self;
+                if index >= bits * self.len() {
+                    return copy;
+                }
+                copy[index / bits] ^= 1 << (bits - 1 - index % bits);
+                copy
+            }
+
+            fn all_zero_copy() -> Self {
+                [0; $l]
+            }
         }
     }
 }
@@ -92,6 +114,18 @@ macro_rules! impl_xorable {
             fn differs_in_bit(&self, name: &Self, i: usize) -> bool {
                 let pow_i = 1 << (mem::size_of::<Self>() * 8 - 1 - i); // 1 on bit i.
                 (self ^ name) & pow_i != 0
+            }
+
+            fn with_flipped_bit(&self, index: usize) -> Self {
+                if index >= mem::size_of::<Self>() * 8 {
+                    return *self;
+                }
+                let pow_i = 1 << (mem::size_of::<Self>() * 8 - 1 - index); // 1 on bit i.
+                self ^ pow_i
+            }
+
+            fn all_zero_copy() -> Self {
+                0
             }
         }
     }
