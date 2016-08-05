@@ -18,12 +18,15 @@
 #![cfg(test)]
 
 use std::cmp;
+use std::fmt::{self, Binary, Debug, Formatter};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{ATOMIC_USIZE_INIT, AtomicUsize, Ordering};
 
+use super::contact_info::ContactInfo;
 use rand;
-use routing_table::{AddedNodeDetails, ContactInfo, Destination, DroppedNodeDetails, RoutingTable,
-                    Xorable};
+use super::result::{AddedNodeDetails, DroppedNodeDetails};
+use super::routing_table::{Destination, RoutingTable};
+use super::xorable::Xorable;
 
 const GROUP_SIZE: usize = 8;
 
@@ -35,6 +38,21 @@ impl ContactInfo for Contact {
 
     fn name(&self) -> &u64 {
         &self.0
+    }
+}
+
+
+impl Binary for Contact {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let val = self.0;
+        write!(f, "{:b}", val)
+    }
+}
+
+impl Debug for Contact {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let val = self.0;
+        write!(f, "{:b}", val)
     }
 }
 
@@ -148,9 +166,15 @@ struct Node {
     inbox: HashMap<MessageId, Message>,
 }
 
+impl Debug for Node {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "node {:?}", self.name)
+    }
+}
+
 impl Node {
     fn new(name: u64, endpoint: Endpoint) -> Self {
-        let table = RoutingTable::new(Contact(name.clone()), GROUP_SIZE, 2);
+        let table = RoutingTable::new(Contact(name.clone()), GROUP_SIZE);
 
         Node {
             name: name,
@@ -388,57 +412,24 @@ impl Network {
     // This forms only half of the connection. Full connection is achieved by
     // also calling connect(node1, node0)
     fn connect(&mut self, node0: NodeHandle, node1: NodeHandle) -> Vec<Action> {
-        let mut actions = Vec::new();
-
         let (node1_name, node1_endpoint) = {
             let node1 = self.get_node_ref(node1);
             (node1.name.clone(), node1.endpoint)
         };
 
-        let notify_contacts = {
-            let node0 = self.get_node_mut_ref(node0);
+        let node0 = self.get_node_mut_ref(node0);
+        let _ = node0.table.add(Contact(node1_name));
 
-            if let Some(AddedNodeDetails { must_notify, .. }) = node0.table
-                .add(Contact(node1_name)) {
-                let _ = node0.connections.insert(node1_name.clone(), Connection(node1_endpoint));
-                must_notify
-            } else {
-                Vec::new()
-            }
-        };
-
-        for notify_name in notify_contacts.iter().map(|c| c.name()) {
-            if let Some(node2) = self.find_node_by_name(notify_name) {
-                actions.push(Action::Connect(node1.0, node2.0));
-            }
-        }
-
-        actions
+        Vec::new()
     }
 
     // Disconnect the node with `name` from `node0`.
     fn disconnect(&mut self, node0: NodeHandle, name: &u64) -> Vec<Action> {
-        let mut actions = Vec::new();
+        let node = self.get_node_mut_ref(node0);
+        let _ = node.table.remove(name);
+        let _ = node.connections.remove(&name);
 
-        let incomplete_bucket = {
-            let node = self.get_node_mut_ref(node0);
-
-            if let Some(DroppedNodeDetails { incomplete_bucket, .. }) = node.table.remove(name) {
-                let _ = node.connections.remove(&name);
-                incomplete_bucket
-            } else {
-                None
-            }
-        };
-
-        // If removing the node caused a full bucket to become not full, we have
-        // to refill it.
-        if let Some(bucket_index) = incomplete_bucket {
-            let bucket_name = self.get_node_name(node0) ^ (1 << (63 - bucket_index));
-            actions.push(Action::ConnectToCloseGroup(node0.0, bucket_name));
-        }
-
-        actions
+        Vec::new()
     }
 
     // Send a message from the node.

@@ -34,8 +34,7 @@ pub trait Xorable {
     /// equal if the arguments are equal.)
     fn cmp_distance(&self, lhs: &Self, rhs: &Self) -> Ordering;
 
-    /// Returns `true` if the `i`-th bit of other has a different value than the `i`-th bit of
-    /// `self`.
+    /// Returns `true` if the `i`-th bit of other has a different value to the `i`-th bit of `self`.
     fn differs_in_bit(&self, other: &Self, i: usize) -> bool;
 }
 

@@ -17,20 +17,21 @@
 
 use super::ContactInfo;
 
-/// This is returned by `RoutingTable::add_node` if a new node has been added.
+use xor_name::XorName;
+
+// This is returned by `RoutingTable::add_node` if a new node has been added.
 #[derive(PartialEq, Eq, Debug)]
-pub struct AddedNodeDetails<T: ContactInfo> {
-    /// List of contacts no longer within the close group at the bucket index of the contact added.
-    pub unneeded: Vec<T>,
+pub struct AddedNodeDetails {
+    // List of contacts no longer within the close group at the bucket index of the contact added.
+    pub unneeded: Vec<XorName>,
 }
 
-/// This is returned by `RoutingTable::drop_connection` if a node was dropped.
-///
-/// If the dropped connection was the last one that connected us to one of the table's entries,
-/// that node is removed from the table.
+// This is returned by `RoutingTable::drop_connection` if a node was dropped.
+//
+// If the dropped connection was the last one that connected us to one of the table's entries,
+// that node is removed from the table.
 #[derive(PartialEq, Eq, Debug)]
 pub struct DroppedNodeDetails {
-    /// `Some(i)` if the entry has been removed from a full bucket with index `i`, indicating
-    /// that an attempt to refill that bucket has to be made.
+    // `Some(i)` if the removal of the entry causing a merge into bucket with index `i`
     pub merged_bucket: Option<usize>,
 }
