@@ -25,6 +25,7 @@ use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
 use maidsafe_utilities::serialisation;
 use sodiumoxide::crypto::{box_, sign};
 use sodiumoxide::crypto::hash::sha256;
+use std::collections::VecDeque;
 use std::{cmp, fmt, iter};
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
@@ -59,6 +60,8 @@ const TICK_TIMEOUT_SECS: u64 = 60;
 const GET_NODE_NAME_TIMEOUT_SECS: u64 = 60;
 /// Time (in seconds) the new close group waits for a joining node it sent a network name to.
 const SENT_NETWORK_NAME_TIMEOUT_SECS: u64 = 30;
+/// Time (in seconds) the node waits for a `NodeIdentify` after a `ConnectSuccess`.
+const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
 /// Initial period for requesting bucket close groups of all non-full buckets. This is doubled each
 /// time.
 const REFRESH_BUCKET_GROUPS_SECS: u64 = 120;
@@ -76,6 +79,7 @@ pub struct Node {
     msg_accumulator: MessageAccumulator,
     peer_mgr: PeerManager,
     response_cache: Box<Cache>,
+    pending_node_identify: VecDeque<(u64, PeerId)>,
     /// The last joining node we have sent a `GetNodeName` response to, and when.
     sent_network_name_to: Option<(XorName, Instant)>,
     signed_msg_filter: SignedMessageFilter,
@@ -161,6 +165,7 @@ impl Node {
             peer_mgr: PeerManager::new(public_id),
             response_cache: cache,
             signed_msg_filter: SignedMessageFilter::new(),
+            pending_node_identify: VecDeque::new(),
             sent_network_name_to: None,
             stats: stats,
             tick_timer_token: tick_timer_token,
@@ -330,8 +335,10 @@ impl Node {
             return;
         }
 
-        // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
-        // NodeIdentify.
+        // Keep track of this connection and disconnect from this peer if we don't receive a
+        // `NodeIdentify` after `NODE_IDENTIFY_TIMEOUT_SECS`.
+        let duration = Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS);
+        self.pending_node_identify.push_back((self.timer.schedule(duration), peer_id));
 
         // Remove tunnel connection if we have one for this peer already
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
@@ -830,6 +837,11 @@ impl Node {
                self,
                public_id.name());
 
+        // Remove peer from the list of pending node identify
+        if let Some(index) = self.pending_node_identify.iter().position(|e| e.1 == peer_id) {
+            let _ = self.pending_node_identify.remove(index);
+        }
+
         if let Some((name, _)) = self.sent_network_name_to {
             if name == *public_id.name() {
                 self.sent_network_name_to = None;
@@ -1321,6 +1333,21 @@ impl Node {
                 let new_token = self.timer.schedule(Duration::from_secs(new_delay));
                 self.bucket_refresh_token_and_delay = Some((new_token, new_delay));
                 return true;
+            }
+        }
+
+        self.pending_node_identify.retain(|e| {
+            e.0 >= token || {
+                debug!("Unhandled pending node identify timeout.");
+                false
+            }
+        });
+
+        if let Some(&(node_identify_token, peer_id)) = self.pending_node_identify.front() {
+            if node_identify_token == token {
+                let _ = self.pending_node_identify.pop_front();
+                debug!("{:?} Timed out waiting for `NodeIdentify` from {}.", self, peer_id);
+                self.disconnect_peer(&peer_id);
             }
         }
 
