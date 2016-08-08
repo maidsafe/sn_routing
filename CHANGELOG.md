@@ -1,5 +1,9 @@
 # Routing - Change Log
 
+## [0.23.4]
+- Use rust_sodium instead of sodiumoxide.
+- Merge safe_network_common into routing.
+
 ## [0.23.3]
 - Backport fixes from master.
 

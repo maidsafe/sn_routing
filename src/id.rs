@@ -17,20 +17,22 @@
 
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
+use rust_sodium::crypto::{box_, sign};
+use rust_sodium::crypto::hash::sha256;
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]
 pub struct FullId {
     public_id: ::PublicId,
-    private_encrypt_key: ::sodiumoxide::crypto::box_::SecretKey,
-    private_sign_key: ::sodiumoxide::crypto::sign::SecretKey,
+    private_encrypt_key: box_::SecretKey,
+    private_sign_key: sign::SecretKey,
 }
 
 impl FullId {
     /// Construct a FullId with newly generated keys.
     pub fn new() -> FullId {
-        let encrypt_keys = ::sodiumoxide::crypto::box_::gen_keypair();
-        let sign_keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let sign_keys = sign::gen_keypair();
         FullId {
             public_id: ::PublicId::new(encrypt_keys.0, sign_keys.0),
             private_encrypt_key: encrypt_keys.1,
@@ -39,10 +41,10 @@ impl FullId {
     }
 
     /// Construct with given keys, (Client requirement).
-    pub fn with_keys(encrypt_keys: (::sodiumoxide::crypto::box_::PublicKey,
-                                    ::sodiumoxide::crypto::box_::SecretKey),
-                     sign_keys: (::sodiumoxide::crypto::sign::PublicKey,
-                                 ::sodiumoxide::crypto::sign::SecretKey))
+    pub fn with_keys(encrypt_keys: (box_::PublicKey,
+                                    box_::SecretKey),
+                     sign_keys: (sign::PublicKey,
+                                 sign::SecretKey))
                      -> FullId {
         // TODO Verify that pub/priv key pairs match
         FullId {
@@ -63,12 +65,12 @@ impl FullId {
     }
 
     /// Secret signing key.
-    pub fn signing_private_key(&self) -> &::sodiumoxide::crypto::sign::SecretKey {
+    pub fn signing_private_key(&self) -> &sign::SecretKey {
         &self.private_sign_key
     }
 
     /// Private encryption key.
-    pub fn encrypting_private_key(&self) -> &::sodiumoxide::crypto::box_::SecretKey {
+    pub fn encrypting_private_key(&self) -> &box_::SecretKey {
         &self.private_encrypt_key
     }
 }
@@ -82,8 +84,8 @@ impl Default for FullId {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, RustcEncodable, RustcDecodable)]
 /// Network identity component containing name and public keys.
 pub struct PublicId {
-    public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
-    public_sign_key: ::sodiumoxide::crypto::sign::PublicKey,
+    public_encrypt_key: box_::PublicKey,
+    public_sign_key: sign::PublicKey,
     name: XorName,
 }
 
@@ -106,22 +108,22 @@ impl PublicId {
     }
 
     /// Return public signing key.
-    pub fn encrypting_public_key(&self) -> &::sodiumoxide::crypto::box_::PublicKey {
+    pub fn encrypting_public_key(&self) -> &box_::PublicKey {
         &self.public_encrypt_key
     }
 
     /// Return public signing key.
-    pub fn signing_public_key(&self) -> &::sodiumoxide::crypto::sign::PublicKey {
+    pub fn signing_public_key(&self) -> &sign::PublicKey {
         &self.public_sign_key
     }
 
-    fn new(public_encrypt_key: ::sodiumoxide::crypto::box_::PublicKey,
-           public_sign_key: ::sodiumoxide::crypto::sign::PublicKey)
+    fn new(public_encrypt_key: box_::PublicKey,
+           public_sign_key: sign::PublicKey)
            -> PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(::sodiumoxide::crypto::hash::sha256::hash(&public_sign_key[..]).0),
+            name: XorName(sha256::hash(&public_sign_key[..]).0),
         }
     }
 }

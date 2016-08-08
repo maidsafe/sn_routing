@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
@@ -271,7 +271,7 @@ struct SerialisableStructuredData<'a> {
 mod test {
     extern crate rand;
 
-    use sodiumoxide::crypto::sign;
+    use rust_sodium::crypto::sign;
     use xor_name::XorName;
 
     #[test]

@@ -6,6 +6,7 @@ env:
 branches:
   only:
     - master
+    - 0.23
 os:
   - linux
   - osx
@@ -20,11 +21,7 @@ sudo: false
 cache:
   cargo: true
   directories:
-    - $HOME/libsodium
     - $HOME/elfutils
-install:
-  - curl -sSLO https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/install_libsodium.sh
-  - . install_libsodium.sh
 script:
   - curl -sSL https://github.com/maidsafe/QA/raw/master/Bash%20Scripts/Travis/build_and_run_tests.sh | bash
   - cd $TRAVIS_BUILD_DIR && cargo build --example ci_test

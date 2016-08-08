@@ -136,10 +136,8 @@ extern crate itertools;
 extern crate lru_time_cache;
 extern crate kademlia_routing_table;
 extern crate rand;
+extern crate rust_sodium;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
-#[cfg(feature = "use-mock-crust")]
-extern crate sodiumoxide_extras;
 
 mod action;
 mod authority;

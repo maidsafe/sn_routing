@@ -47,7 +47,7 @@ extern crate libc;
 extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
-extern crate sodiumoxide;
+extern crate rust_sodium;
 
 mod utils;
 
@@ -63,8 +63,8 @@ use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
               Response, XorName, GROUP_SIZE, QUORUM_SIZE};
-use sodiumoxide::crypto;
-use sodiumoxide::crypto::hash::sha256;
+use rust_sodium::crypto;
+use rust_sodium::crypto::hash::sha256;
 use utils::recv_with_timeout;
 use routing::DataIdentifier;
 

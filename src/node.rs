@@ -18,7 +18,7 @@
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 #[cfg(not(feature = "use-mock-crust"))]
-use sodiumoxide;
+use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -74,7 +74,7 @@ impl NodeBuilder {
     /// The initial `Node` object will have newly generated keys.
     #[cfg(not(feature = "use-mock-crust"))]
     pub fn create(self, event_sender: Sender<Event>) -> Result<Node, RoutingError> {
-        sodiumoxide::init();  // enable shared global (i.e. safe to multithread now)
+        rust_sodium::init();  // enable shared global (i.e. safe to multithread now)
 
         // start the handler for routing without a restriction to become a full node
         let (action_sender, mut core) = Core::new(event_sender,
@@ -465,7 +465,7 @@ impl Drop for Node {
 //     }
 
 //     fn calculate_key_name(key: &::std::string::String) -> XorName {
-//         XorName::new(::sodiumoxide::crypto::hash::sha256::hash(key.as_bytes()).0)
+//         XorName::new(::rust_sodium::crypto::hash::sha256::hash(key.as_bytes()).0)
 //     }
 
 //     #[test]
