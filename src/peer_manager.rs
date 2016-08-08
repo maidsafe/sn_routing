@@ -20,7 +20,7 @@ use crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
 use authority::Authority;
-use sodiumoxide::crypto::sign;
+use rust_sodium::crypto::sign;
 use id::PublicId;
 use lru_time_cache::LruCache;
 use std::collections::HashMap;

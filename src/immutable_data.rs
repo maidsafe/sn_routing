@@ -18,7 +18,7 @@
 use std::fmt::{self, Debug, Formatter};
 
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use sodiumoxide::crypto::hash::sha256;
+use rust_sodium::crypto::hash::sha256;
 use data::DataIdentifier;
 use xor_name::XorName;
 

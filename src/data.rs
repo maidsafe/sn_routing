@@ -98,8 +98,8 @@ mod test {
     extern crate rand;
 
     use super::*;
-    use sodiumoxide::crypto::sign;
-    use sodiumoxide::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
+    use rust_sodium::crypto::hash::sha256;
     use xor_name::XorName;
 
     #[test]
@@ -144,7 +144,7 @@ mod test {
     #[test]
     fn data_payload_size() {
         // payload_size() resolves correctly for StructuredData
-        let keys = ::sodiumoxide::crypto::sign::gen_keypair();
+        let keys = ::rust_sodium::crypto::sign::gen_keypair();
         let owner_keys = vec![keys.0];
         match StructuredData::new(0,
                                   rand::random(),

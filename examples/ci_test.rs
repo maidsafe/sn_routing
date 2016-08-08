@@ -46,7 +46,7 @@ extern crate maidsafe_utilities;
 extern crate rand;
 extern crate rustc_serialize;
 extern crate docopt;
-extern crate sodiumoxide;
+extern crate rust_sodium;
 extern crate routing;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
@@ -61,7 +61,7 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
-use sodiumoxide::crypto::hash;
+use rust_sodium::crypto::hash;
 use utils::{ExampleNode, ExampleClient};
 use routing::{Data, DataIdentifier, PlainData, XorName, GROUP_SIZE};
 
