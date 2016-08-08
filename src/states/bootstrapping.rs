@@ -18,8 +18,8 @@
 use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
 use maidsafe_utilities::serialisation;
-use sodiumoxide::crypto::hash::sha256;
-use sodiumoxide::crypto::sign;
+use rust_sodium::crypto::hash::sha256;
+use rust_sodium::crypto::sign;
 use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;

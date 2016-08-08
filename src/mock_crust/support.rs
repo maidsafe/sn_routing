@@ -25,7 +25,7 @@ use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PeerId, PrivCo
                    PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
 use rand::XorShiftRng;
-use sodiumoxide_extras;
+use rust_sodium;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
 #[derive(Clone)]
@@ -47,7 +47,7 @@ impl Network {
         } else {
             SeededRng::new()
         };
-        unwrap!(sodiumoxide_extras::init_with_rng(&mut rng));
+        unwrap!(rust_sodium::init_with_rng(&mut rng));
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             next_endpoint: 0,

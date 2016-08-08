@@ -15,9 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto::{box_, hash, sign};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
+use rust_sodium::crypto::{box_, hash, sign};
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]

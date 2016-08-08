@@ -24,15 +24,15 @@ use std::sync::{ONCE_INIT, Once};
 
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
-use sodiumoxide;
-use sodiumoxide::crypto::hash::sha256;
-use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use rust_sodium;
+use rust_sodium::crypto::hash::sha256;
+use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use super::{Error, GUID_SIZE};
 use utils;
 use xor_name::XorName;
 
 static INITIALISE_SODIUMOXIDE: Once = ONCE_INIT;
-static mut sodiumoxide_init_result: bool = false;
+static mut rust_sodium_init_result: bool = false;
 
 #[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
 struct Detail {
@@ -68,7 +68,7 @@ impl MpidHeader {
                metadata: Vec<u8>,
                secret_key: &SecretKey)
                -> Result<MpidHeader, Error> {
-        assert!(Self::initialise_sodiumoxide());
+        assert!(Self::initialise_rust_sodium());
         if metadata.len() > MAX_HEADER_METADATA_SIZE {
             return Err(Error::MetadataTooLarge);
         }
@@ -123,12 +123,12 @@ impl MpidHeader {
     }
 
     #[allow(unsafe_code)]
-    fn initialise_sodiumoxide() -> bool {
+    fn initialise_rust_sodium() -> bool {
         unsafe {
             INITIALISE_SODIUMOXIDE.call_once(|| {
-                sodiumoxide_init_result = sodiumoxide::init();
+                rust_sodium_init_result = rust_sodium::init();
             });
-            sodiumoxide_init_result
+            rust_sodium_init_result
         }
     }
 }
@@ -149,7 +149,7 @@ mod test {
     use super::*;
     use messaging;
     use rand;
-    use sodiumoxide::crypto::sign;
+    use rust_sodium::crypto::sign;
     use xor_name::XorName;
 
     #[test]
