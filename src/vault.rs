@@ -30,7 +30,7 @@ use personas::data_manager::DataManager;
 use personas::data_manager::IdAndVersion;
 
 use routing::{Authority, Data, NodeBuilder, Request, Response, XorName};
-use sodiumoxide;
+use rust_sodium;
 
 pub const CHUNK_STORE_DIR: &'static str = "safe_vault_chunk_store";
 const DEFAULT_MAX_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
@@ -84,7 +84,7 @@ impl Vault {
                          use_cache: bool,
                          config: Config)
                          -> Result<Self, InternalError> {
-        sodiumoxide::init();
+        rust_sodium::init();
 
         let mut chunk_store_root = match config.chunk_store_root {
             Some(path_str) => Path::new(&path_str).to_path_buf(),

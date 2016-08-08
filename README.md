@@ -14,10 +14,6 @@
 
 An autonomous network capable of data storage/publishing/sharing as well as computation, value transfer (crypto currency support) and more. See the documentation for a more detailed description of the operations involved in data storage.
 
-## Prerequisite
-
-[libsodium](https://github.com/jedisct1/libsodium) is a native dependency, and can be installed by following the instructions [for Windows](https://github.com/maidsafe/QA/blob/master/Documentation/Install%20libsodium%20for%20Windows.md) or [for OS X and Linux](https://github.com/maidsafe/QA/blob/master/Documentation/Install%20libsodium%20for%20OS%20X%20or%20Linux.md).
-
 ## License
 
 Licensed under either of
