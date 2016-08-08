@@ -17,7 +17,7 @@
 
 
 use routing::{Authority, XorName};
-use sodiumoxide::crypto::hash::sha256;
+use rust_sodium::crypto::hash::sha256;
 
 pub fn client_name(authority: &Authority) -> XorName {
     if let Authority::Client { ref client_key, .. } = *authority {
