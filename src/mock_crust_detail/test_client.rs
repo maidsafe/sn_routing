@@ -22,7 +22,7 @@ use rand::{Rng, XorShiftRng};
 use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId, Response,
               StructuredData, XorName};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
-use safe_network_common::client_errors::{GetError, MutationError};
+use routing::client_errors::{GetError, MutationError};
 
 use super::test_node::TestNode;
 use super::poll;

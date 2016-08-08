@@ -23,9 +23,8 @@ log = "~0.3.6"
 maidsafe_utilities = "~0.8.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
-routing = "~0.25.1"
+routing = "~0.23.2"
 rustc-serialize = "~0.3.19"
-safe_network_common = "~0.6.0"
 sodiumoxide = "=0.0.10"
 
 [build-dependencies]
