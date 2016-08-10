@@ -23,7 +23,7 @@ use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
 use routing::{Data, GROUP_SIZE, ImmutableData, XorName};
 use routing::mock_crust::{self, Network};
-use safe_network_common::client_errors::{GetError, MutationError};
+use routing::client_errors::{GetError, MutationError};
 use safe_vault::Config;
 use safe_vault::mock_crust_detail::{self, poll, test_node};
 use safe_vault::mock_crust_detail::test_client::TestClient;

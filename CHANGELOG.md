@@ -1,5 +1,8 @@
 # Safe Vault - Change Log
 
+## [0.10.6]
+- Revert to routing 0.23.3.
+
 ## [0.10.5]
 - Update the crate documentation.
 - Upgrade to routing 0.25.0.

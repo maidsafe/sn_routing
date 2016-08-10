@@ -232,8 +232,7 @@ extern crate quick_error;
 extern crate rand;
 extern crate routing;
 extern crate rustc_serialize;
-extern crate safe_network_common;
-extern crate sodiumoxide;
+extern crate rust_sodium;
 #[cfg(test)]
 extern crate tempdir;
 

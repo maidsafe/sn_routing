@@ -20,14 +20,10 @@ cache:
 install:
   - ps: |
         $url = "https://github.com/maidsafe/QA/raw/master/Powershell%20Scripts/AppVeyor"
-        Start-FileDownload "$url/Install%20Rust.ps1" -FileName "Install Rust.ps1"
-        Start-FileDownload "$url/Install%20MinGW.ps1" -FileName "Install MinGW.ps1"
-        Start-FileDownload "$url/Install%20libsodium.ps1" -FileName "Install libsodium.ps1"
+        Start-FileDownload "$url/Install%20Rustup.ps1" -FileName "Install Rustup.ps1"
         Start-FileDownload "$url/Build.ps1" -FileName "Build.ps1"
         Start-FileDownload "$url/Run%20Tests.ps1" -FileName "Run Tests.ps1"
-        . ".\Install Rust.ps1"
-        . ".\Install MinGW.ps1"
-        . ".\Install libsodium.ps1"
+        . ".\Install Rustup.ps1"
 
         $commit_message = "$env:APPVEYOR_REPO_COMMIT_MESSAGE $env:APPVEYOR_REPO_COMMIT_MESSAGE_EXTENDED"
 

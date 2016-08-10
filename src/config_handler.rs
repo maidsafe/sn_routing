@@ -34,7 +34,7 @@ pub struct Config {
 /// Reads the default vault config file.
 pub fn read_config_file() -> Result<Config, InternalError> {
     // if the config file is not present, a default one will be generated
-    let file_handler = try!(FileHandler::new(&try!(get_file_name())));
+    let file_handler = try!(FileHandler::new(&try!(get_file_name()), false));
     let cfg = try!(file_handler.read_file());
     Ok(cfg)
 }

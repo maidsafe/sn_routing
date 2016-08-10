@@ -30,7 +30,7 @@ use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, MessageId, StructuredData, XorName};
-use safe_network_common::client_errors::{GetError, MutationError};
+use routing::client_errors::{GetError, MutationError};
 use vault::RoutingNode;
 
 const MAX_FULL_PERCENT: u64 = 50;

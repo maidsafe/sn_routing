@@ -21,7 +21,7 @@ use std::collections::hash_map::Entry;
 use std::rc::Rc;
 
 use error::InternalError;
-use safe_network_common::client_errors::{GetError, MutationError};
+use routing::client_errors::{GetError, MutationError};
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
