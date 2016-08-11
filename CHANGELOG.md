@@ -1,5 +1,9 @@
 # Safe Vault - Change Log
 
+## [0.11.0]
+- Use rust_sodium instead of sodiumoxide.
+- Upgrade to routing 0.23.4, with merged safe_network_common.
+
 ## [0.10.6]
 - Revert to routing 0.23.3.
 
