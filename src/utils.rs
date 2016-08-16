@@ -15,7 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use sodiumoxide::crypto::hash::sha256;
+use rust_sodium::crypto::hash::sha256;
 use std::fmt::Write;
 use xor_name::XorName;
 
@@ -80,7 +80,7 @@ mod test {
     extern crate rand;
 
     use peer_manager::GROUP_SIZE;
-    use sodiumoxide::crypto::hash::sha256;
+    use rust_sodium::crypto::hash::sha256;
     use xor_name::XorName;
 
     #[test]

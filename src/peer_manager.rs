@@ -17,7 +17,7 @@
 
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use authority::Authority;
-use sodiumoxide::crypto::sign;
+use rust_sodium::crypto::sign;
 use id::PublicId;
 use itertools::Itertools;
 use rand;

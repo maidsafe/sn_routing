@@ -22,7 +22,7 @@ pub const MAX_BODY_SIZE: usize = 102400 - 512 - super::MAX_HEADER_METADATA_SIZE;
 use std::fmt::{self, Debug, Formatter};
 
 use maidsafe_utilities::serialisation::serialise;
-use sodiumoxide::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use super::{Error, MpidHeader};
 use utils;
 use xor_name::XorName;
@@ -131,7 +131,7 @@ mod test {
     use super::*;
     use rand;
     use xor_name::XorName;
-    use sodiumoxide::crypto::sign;
+    use rust_sodium::crypto::sign;
     use messaging;
 
     #[test]

@@ -49,7 +49,7 @@ extern crate maidsafe_utilities;
 extern crate docopt;
 extern crate kademlia_routing_table;
 extern crate rustc_serialize;
-extern crate sodiumoxide;
+extern crate rust_sodium;
 
 extern crate routing;
 extern crate lru_time_cache;
@@ -62,7 +62,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::io::Write;
 
 use docopt::Docopt;
-use sodiumoxide::crypto;
+use rust_sodium::crypto;
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Data, DataIdentifier, PlainData, XorName};

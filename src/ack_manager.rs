@@ -15,14 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use error::RoutingError;
 use maidsafe_utilities;
+use message_filter::MessageFilter;
+use messages::RoutingMessage;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
-
-use error::RoutingError;
-use message_filter::MessageFilter;
-use messages::RoutingMessage;
 
 /// Time (in seconds) after which a message is resent due to being unacknowledged by recipient.
 pub const ACK_TIMEOUT_SECS: u64 = 20;
@@ -79,7 +79,7 @@ impl AckManager {
     pub fn find_timed_out(&mut self, token: u64) -> Option<(UnacknowledgedMessage, Ack)> {
         let timed_out_ack = if let Some((sip_hash, _)) = self.pending
             .iter()
-            .find(|&(_, ref unacked_msg)| unacked_msg.timer_token == token) {
+            .find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
             *sip_hash
         } else {
             return None;

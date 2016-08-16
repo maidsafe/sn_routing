@@ -22,8 +22,8 @@ use mock_crust::crust::PeerId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use sodiumoxide::crypto::{box_, sign};
-use sodiumoxide::crypto::hash::sha256;
+use rust_sodium::crypto::{box_, sign};
+use rust_sodium::crypto::hash::sha256;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
@@ -838,7 +838,7 @@ mod test {
     use immutable_data::ImmutableData;
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
-    use sodiumoxide::crypto::sign;
+    use rust_sodium::crypto::sign;
     use types::MessageId;
     use xor_name::XorName;
 

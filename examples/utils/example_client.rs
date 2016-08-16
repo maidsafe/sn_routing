@@ -17,14 +17,14 @@
 
 extern crate log;
 extern crate routing;
-extern crate sodiumoxide;
+extern crate rust_sodium;
 extern crate maidsafe_utilities;
 
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
-use sodiumoxide::crypto;
 use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
+use rust_sodium::crypto;
 
 const RESPONSE_TIMEOUT_SECS: u64 = 10;
 
@@ -61,12 +61,12 @@ impl ExampleClient {
                     Event::Connected => {
                         println!("Client Connected to the network");
                         break 'outer;
-                    },
+                    }
                     Event::Terminate => {
                         println!("Client failed to connect to the network. Restarting.");
                         thread::sleep(Duration::from_secs(5));
                         break;
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -110,7 +110,8 @@ impl ExampleClient {
                            unwrap_result!(String::from_utf8(external_error_indicator)));
                     return None;
                 }
-                Some(Event::Terminate) | Some(Event::RestartRequired) => self.disconnected(),
+                Some(Event::Terminate) |
+                Some(Event::RestartRequired) => self.disconnected(),
                 Some(_) => (),
                 None => return None,
             }
