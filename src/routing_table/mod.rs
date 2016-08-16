@@ -121,5 +121,5 @@ pub mod routing_table;
 pub use self::result::{AddedNodeDetails, DroppedNodeDetails};
 pub use self::xorable::Xorable;
 
-// #[cfg(test)]
-// mod network_test;
+#[cfg(test)]
+mod network_test;

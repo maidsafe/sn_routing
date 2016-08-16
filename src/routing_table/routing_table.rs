@@ -76,7 +76,7 @@ impl<N> Destination<N> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Prefix<T: Xorable> {
     // The length of the prefix.
     valid_bit_count: usize,
@@ -109,21 +109,35 @@ impl<T> Prefix<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fm
     }
 
     pub fn decrease_valid_bit_count(&mut self) {
-        self.valid_bit_count += 1;
+        self.valid_bit_count -= 1;
     }
 
     pub fn max_bucket_index(&self, name: &T) -> usize {
         cmp::min(self.valid_bit_count, self.address.max_bucket_index(name))
     }
+
+    pub fn max_identical_index(&self, name: &T) -> usize {
+        self.address.max_bucket_index(name)
+    }
+
+    pub fn address(&self) -> &T {
+        &self.address
+    }
 }
 
 impl<T> fmt::Binary for Prefix<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fmt::Debug {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(formatter, "Prefix (valid_bit_count: {}, address: {:08b}", self.valid_bit_count, self.address)
+        write!(formatter, "Prefix (valid_bit_count: {}, address: {:08b}", self.valid_bit_count, self.address)
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl<T> fmt::Debug for Prefix<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fmt::Debug {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "Prefix (valid_bit_count: {}, address: {:08b}", self.valid_bit_count, self.address)
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct CloseGroup<T: Xorable> {
     min_group_size: usize,
     prefix: Prefix<T>,
@@ -199,8 +213,33 @@ impl<T> CloseGroup<T> where T: Clone + Ord + PartialEq + Xorable + fmt::Binary +
         }
     }
 
+    // Returns whether the group should be split
+    pub fn should_split(&self) -> bool {
+        match self.split_position() {
+            Some(_) => true,
+            None => false,
+        }
+    }
+
+    // Returns the new group after merge
+    fn merge(&mut self, merging_in_group: &CloseGroup<T>) -> Option<CloseGroup<T>> {
+        if self.prefix.belongs_to(merging_in_group.prefix.address()) {
+            let new_members = self.members.iter()
+                .chain(merging_in_group.members().clone().iter())
+                .cloned()
+                .collect_vec();
+            self.members = new_members;
+            return Some(self.clone());
+        }
+        None
+    }
+
     pub fn max_bucket_index(&self, name: &T) -> usize {
         self.prefix.max_bucket_index(name)
+    }
+
+    pub fn max_identical_index(&self, name: &T) -> usize {
+        self.prefix.max_identical_index(name)
     }
 
     // Checks to see if the group can be split.  This returns `Some` if:
@@ -231,13 +270,23 @@ impl<T> CloseGroup<T> where T: Clone + Ord + PartialEq + Xorable + fmt::Binary +
 
 impl<T> fmt::Binary for CloseGroup<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fmt::Debug {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        try!(writeln!(formatter,
-               "Group {{\tprefix: {:?} [ ", self.prefix));
+        try!(writeln!(formatter, "\t\tGroup {{ {:?}", self.prefix));
         for (member_index, member) in self.members.iter().enumerate() {
-            let comma = if member_index == self.members.len() - 1 { "" } else { "," };
-            try!(writeln!(formatter, " {:08b} {} ", member, comma));
+            let comma = if member_index == self.members.len() - 1 { "]" } else { "," };
+            try!(writeln!(formatter, "\t\t\t{:08b} {} ", member, comma));
         }
-        write!(formatter, " ] }}")
+        write!(formatter, " \t\t}}")
+    }
+}
+
+impl<T> fmt::Debug for CloseGroup<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fmt::Debug {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        try!(writeln!(formatter, "\t\tGroup {{ {:?}", self.prefix));
+        for (member_index, member) in self.members.iter().enumerate() {
+            let comma = if member_index == self.members.len() - 1 { "]" } else { "," };
+            try!(writeln!(formatter, "\t\t\t{:08b} {} ", member, comma));
+        }
+        write!(formatter, " \t\t}}")
     }
 }
 
@@ -314,6 +363,39 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
         }
     }
 
+    // Resturns the indexing of the group that should be split
+    pub fn should_split(&self) -> Option<(usize, usize)> {
+        for (bucket_index, bucket) in self.buckets.iter().enumerate() {
+            for (group_index, group) in bucket.1.iter().enumerate() {
+                if group.should_split() {
+                    return Some((bucket_index, group_index));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn split(&mut self) {
+        self.split_last_bucket();
+        if let Some((bucket_index, group_index)) = self.should_split() {
+            let split_result = self.buckets[bucket_index].1[group_index].split();
+            match split_result {
+                Some(split_off_group) => self.buckets[bucket_index].1.push(split_off_group),
+                None => {}
+            }
+        }
+    }
+
+    pub fn connected_peers(&self) -> Vec<T> {
+        let mut connected_peers = vec![];
+        for bucket in self.buckets.iter() {
+            for group in bucket.1.iter() {
+                connected_peers.append(&mut group.members().clone());
+            }
+        }
+        connected_peers
+    }
+
     // Split only carries out for the last bucket and once it happens, only update the group prefix
     // for each bucket, say bucket 1 changing from 010 to 0100. But the members won't be updated
     // untill received merge_group message, i.e. calling split_group function
@@ -349,7 +431,6 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
     pub fn remove(&mut self, name: &T) -> Option<DroppedNodeDetails> {
         if let (Ok(bucket_index), Ok(group_index)) = self.search(name) {
             let _ = self.buckets[bucket_index].1[group_index].remove(name);
-            self.merge_buckets();
             // TODO: merge notification
             Some(DroppedNodeDetails { merged_bucket: None })
         } else {
@@ -357,16 +438,50 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
         }
     }
 
-    // only update the group prefix for each bucket, say bucket 1 changing from 0100 to 010
-    // but the members won't be updated till received merge_group message, i.e. calling merge_group function
-    fn merge_buckets(&mut self) {
-        if self.buckets[self.buckets.len() - 1].1[0].len() < self.min_group_size {
+    // Returns the new group after merge
+    pub fn merge(&mut self) -> Option<CloseGroup<T>> {
+        let last_bucket = self.buckets.len() - 1;
+        if self.buckets[last_bucket].1[0].len() < self.min_group_size {
             if self.buckets.len() - 1 > 0 {
                 for i in 0..(self.buckets.len() - 1) {
                     self.buckets[i].0.decrease_valid_bit_count();
                 }
             }
         }
+
+        if let Some((bucket_index, group_index)) = self.should_merge() {
+            let removed_group = self.buckets[bucket_index].1.remove(group_index);
+            if self.buckets[bucket_index].1.len() == 0 {
+                let _ = self.buckets.remove(bucket_index);
+            }
+            return self.merge_group(&removed_group);
+        }
+        None
+    }
+
+    // Resturns the indexing of the group that should be merged into other
+    pub fn should_merge(&self) -> Option<(usize, usize)> {
+        for (bucket_index, bucket) in self.buckets.iter().enumerate() {
+            for (group_index, group) in bucket.1.iter().enumerate() {
+                if group.len() < self.min_group_size {
+                    return Some((bucket_index, group_index));
+                }
+            }
+        }
+        None
+    }
+
+    // Returns the new group after merge
+    fn merge_group(&mut self, merging_in_group: &CloseGroup<T>) -> Option<CloseGroup<T>> {
+        for bucket in self.buckets.iter_mut() {
+            for group in bucket.1.iter_mut() {
+                match group.merge(merging_in_group) {
+                    Some(new_group) => return Some(new_group),
+                    None => {}
+                }
+            }
+        }
+        None
     }
 
     // // DroppedNodeDetails shall now contains the nodes that to be disconnected
@@ -413,7 +528,7 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
     }
 
     // Returns `true` whenever the name belongs to our_group, otherwise returns `false`
-    pub fn is_close(&self, name: &T, _group_size: usize) -> bool {
+    pub fn is_close(&self, name: &T) -> bool {
         if self.buckets.len() == 0 {
             true
         } else {
@@ -423,7 +538,7 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
 
     // Returns the Group that name belongs to or the closest Group we know
     // or just return ALL nodes sorted/truncated to GROUP_SIZE, as this function may not needed later on
-    pub fn closest_nodes_to(&self, target: &T, n: usize, ourselves: bool) -> Vec<T> {
+    fn closest_nodes_to(&self, target: &T, n: usize, ourselves: bool) -> Vec<T> {
         if self.buckets.len() == 0 {
             return vec![];
         }
@@ -431,13 +546,30 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
         let mut max_bucket_index = 0;
         for bucket in self.buckets.iter() {
             for group in bucket.1.iter() {
-                let common_bits = group.max_bucket_index(target);
+                let common_bits = group.max_identical_index(target);
                 if common_bits >= max_bucket_index {
+                    max_bucket_index = common_bits;
                     closest_group = group;
                 }
             }
         }
         closest_group.members().clone()
+    }
+
+    // Returns the members of the group that name belongs to or the closest Group we know
+    pub fn close_nodes(&self, target: &T) -> Option<Vec<T>> {
+        let mut result = None;
+        let mut max_bucket_index = 0;
+        for bucket in self.buckets.iter() {
+            for group in bucket.1.iter() {
+                let common_bits = group.max_bucket_index(target);
+                if common_bits >= max_bucket_index {
+                    max_bucket_index = common_bits;
+                    result = Some(group.members().clone());
+                }
+            }
+        }
+        result
     }
 
     // Returns a collection of nodes to which a message should be sent onwards.
@@ -496,13 +628,13 @@ impl<T> RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binar
     pub fn is_recipient(&self, dst: Destination<T>) -> bool {
         match dst {
             Destination::Node(ref target) => target == self.our_name(),
-            Destination::Group(ref target, group_size) => self.is_close(target, group_size),
+            Destination::Group(ref target, group_size) => self.is_close(target),
         }
     }
 
     // Returns the other members of `name`'s close group, or `None` if we are not a member of it.
-    pub fn other_close_nodes(&self, name: &T, group_size: usize) -> Option<Vec<T>> {
-        if self.is_close(name, group_size) {
+    pub fn other_close_nodes(&self, name: &T, _group_size: usize) -> Option<Vec<T>> {
+        if self.is_close(name) {
             Some(self.buckets[self.buckets.len() - 1].1[0].members().clone())
         } else {
             None
@@ -556,9 +688,26 @@ impl<T> fmt::Binary for RoutingTable<T> where T: Clone +  Ord + PartialEq + Xora
         try!(writeln!(formatter,
                "RoutingTable {{\n\tour_info: {:08b},\n\tmin_group_size: {},", self.our_info, self.min_group_size));
         for (bucket_index, bucket) in self.buckets.iter().enumerate() {
-            try!(write!(formatter, "\tbucket {} : {:?} ; [", bucket_index, bucket.0));
+            try!(write!(formatter, "\tbucket {} : {:?} \n", bucket_index, bucket.0));
             for (group_index, group) in bucket.1.iter().enumerate() {
-                let comma = if group_index == bucket.1.len() - 1 { "" } else { ", " };
+                let comma = if group_index == bucket.1.len() - 1 { "" } else { "\n" };
+                try!(write!(formatter, "{:?} {}", group, comma));
+            }
+            let comma = if bucket_index == self.buckets.len() - 1 { "" } else { "," };
+            try!(writeln!(formatter, "]{}", comma));
+        }
+        write!(formatter, "}}")
+    }
+}
+
+impl<T> fmt::Debug for RoutingTable<T> where T: Clone +  Ord + PartialEq + Xorable + fmt::Binary + fmt::Debug {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        try!(writeln!(formatter,
+               "RoutingTable {{\n\tour_info: {:08b},\n\tmin_group_size: {},", self.our_info, self.min_group_size));
+        for (bucket_index, bucket) in self.buckets.iter().enumerate() {
+            try!(write!(formatter, "\tbucket {} : {:?} \n", bucket_index, bucket.0));
+            for (group_index, group) in bucket.1.iter().enumerate() {
+                let comma = if group_index == bucket.1.len() - 1 { "" } else { "\n" };
                 try!(write!(formatter, "{:?} {}", group, comma));
             }
             let comma = if bucket_index == self.buckets.len() - 1 { "" } else { "," };
