@@ -330,9 +330,6 @@ impl Node {
             return;
         }
 
-        // TODO(afck): Keep track of this connection: Disconnect if we don't receive a
-        // NodeIdentify.
-
         // Remove tunnel connection if we have one for this peer already
         if let Some(tunnel_id) = self.tunnels.remove_tunnel_for(&peer_id) {
             debug!("{:?} Removing unwanted tunnel for {:?}", self, peer_id);
@@ -346,8 +343,9 @@ impl Node {
                   pub_id.name());
             return;
         }
-        // TODO: Keep track of this peer, even if this returns false.
+
         self.peer_mgr.connected_to(&peer_id);
+
         debug!("{:?} Received ConnectSuccess from {:?}. Sending NodeIdentify.",
                self,
                peer_id);
@@ -1311,6 +1309,12 @@ impl Node {
             let _ = self.event_sender.send(Event::Tick);
             let tick_period = Duration::from_secs(TICK_TIMEOUT_SECS);
             self.tick_timer_token = self.timer.schedule(tick_period);
+
+            for peer_id in self.peer_mgr.remove_expired_connections() {
+                debug!("{:?} Disconnecting from timed out peer {:?}", self, peer_id);
+                let _ = self.crust_service.disconnect(peer_id);
+            }
+
             return true;
         }
 
