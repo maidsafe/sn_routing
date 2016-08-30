@@ -509,10 +509,7 @@ impl ExampleNode {
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
-    Client {
-        client_name: XorName,
-        data: u64,
-    },
+    Client { client_name: XorName, data: u64 },
     /// A message to an `NaeManager` to add a new data chunk.
     Nae {
         data_name: XorName,

@@ -41,10 +41,8 @@ impl FullId {
     }
 
     /// Construct with given keys, (Client requirement).
-    pub fn with_keys(encrypt_keys: (box_::PublicKey,
-                                    box_::SecretKey),
-                     sign_keys: (sign::PublicKey,
-                                 sign::SecretKey))
+    pub fn with_keys(encrypt_keys: (box_::PublicKey, box_::SecretKey),
+                     sign_keys: (sign::PublicKey, sign::SecretKey))
                      -> FullId {
         // TODO Verify that pub/priv key pairs match
         FullId {
@@ -117,9 +115,7 @@ impl PublicId {
         &self.public_sign_key
     }
 
-    fn new(public_encrypt_key: box_::PublicKey,
-           public_sign_key: sign::PublicKey)
-           -> PublicId {
+    fn new(public_encrypt_key: box_::PublicKey, public_sign_key: sign::PublicKey) -> PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,

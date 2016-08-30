@@ -501,8 +501,12 @@ fn did_receive_get_success(node: &TestNode,
         match node.event_rx.try_recv() {
             Ok(Event::Response { response: Response::GetSuccess(ref data, message_id),
                                  ref src,
-                                 ref dst }) if *src == expected_src && *dst == expected_dst && *data == expected_data &&
-                          message_id == expected_message_id => return true,
+                                 ref dst }) => {
+                if *src == expected_src && *dst == expected_dst && *data == expected_data &&
+                   message_id == expected_message_id {
+                    return true;
+                }
+            }
             Ok(_) => (),
             Err(_) => return false,
         }

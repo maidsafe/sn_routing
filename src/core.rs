@@ -1831,7 +1831,7 @@ impl Core {
             try!(self.node_identify(peer_id));
             self.handle_node_identify(their_public_id, peer_id);
         } else if !self.routing_table.contains(their_public_id.name()) &&
-           self.routing_table.allow_connection(their_public_id.name()) {
+                  self.routing_table.allow_connection(their_public_id.name()) {
             if self.peer_mgr
                 .connection_token_map
                 .peek_iter()
@@ -1885,7 +1885,7 @@ impl Core {
         }
         let timed_out_ack = if let Some((sip_hash, _)) = self.pending_acks
             .iter()
-            .find(|&(_, ref unacked_msg)| unacked_msg.timer_token == token) {
+            .find(|&(_, unacked_msg)| unacked_msg.timer_token == token) {
             Some(*sip_hash)
         } else {
             None
@@ -1905,7 +1905,7 @@ impl Core {
                        unacked_msg);
                 self.stats.count_unacked();
             } else if let Err(error) =
-                   self.send_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
+                          self.send_message_via_route(unacked_msg.routing_msg, unacked_msg.route) {
                 debug!("{:?} Failed to send message: {:?}", self, error);
             }
         }
