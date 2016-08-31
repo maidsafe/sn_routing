@@ -32,6 +32,7 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
+use pub_appendable_data::PubAppendWrapper;
 use types::MessageId;
 use xor_name::XorName;
 
@@ -155,6 +156,16 @@ impl Client {
                                -> Result<(), InterfaceError> {
         self.send_action(Request::Delete(data, message_id), dst, DEFAULT_PRIORITY)
     }
+
+    /// Append an item to public appendable data.
+    pub fn send_pub_append_request(&self,
+                                   dst: Authority,
+                                   wrapper: PubAppendWrapper,
+                                   message_id: MessageId)
+                                   -> Result<(), InterfaceError> {
+        self.send_action(Request::Append(wrapper, message_id), dst, DEFAULT_PRIORITY)
+    }
+
 
     /// Request account information for the Client calling this function
     pub fn send_get_account_info_request(&mut self,

@@ -17,73 +17,142 @@
 
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
 
-/// Maximum allowed size for a Structured Data to grow to
-pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
+/// Maximum allowed size for a public appendable data to grow to
+pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 
-/// Mutable structured data.
+const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
+
+/// The type of access filter for appendable data.
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
+pub enum Filter {
+    /// Everyone except the listed keys are allowed to append data.
+    BlackList(Vec<PublicKey>),
+    /// Only the listed keys are allowed to append data.
+    WhiteList(Vec<PublicKey>),
+}
+
+/// An appended data item, pointing to another data chunk in the network.
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+pub struct AppendedData {
+    pointer: DataIdentifier, // Pointer to actual data
+    sign_key: PublicKey,
+    signature: Signature, // All the above fields
+}
+
+/// An `AppendedData` item, together with the identifier of the data to append it to.
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
+pub struct PubAppendWrapper {
+    append_to: XorName,
+    data: AppendedData,
+}
+
+impl AppendedData {
+    /// Returns a new signed appended data.
+    pub fn new(pointer: DataIdentifier,
+               pub_key: PublicKey,
+               secret_key: &SecretKey)
+               -> Result<AppendedData, RoutingError> {
+        let signed_data = try!(serialise(&(&pointer, &pub_key)));
+        let signature = sign::sign_detached(&signed_data, secret_key);
+        Ok(AppendedData {
+            pointer: pointer,
+            sign_key: pub_key,
+            signature: signature,
+        })
+    }
+}
+
+/// Public appendable data.
 ///
 /// These types may be stored unsigned with previous and current owner keys
 /// set to the same keys. Updates require a signature to validate.
+///
+/// Data can be appended by any key that is not excluded by the filter.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
-pub struct StructuredData {
-    type_tag: u64,
+pub struct PubAppendableData {
     name: XorName,
-    data: Vec<u8>,
-    previous_owner_keys: Vec<PublicKey>,
     version: u64,
     current_owner_keys: Vec<PublicKey>,
-    previous_owner_signatures: Vec<Signature>,
+    previous_owner_keys: Vec<PublicKey>,
+    filter: Filter,
+    deleted_data: BTreeSet<AppendedData>,
+    previous_owner_signatures: Vec<Signature>, // All the above fields
+    data: BTreeSet<AppendedData>, // Unsigned
 }
 
-impl StructuredData {
-    /// Creates a new `StructuredData` signed with `signing_key`.
-    pub fn new(type_tag: u64,
-               name: XorName,
+impl PubAppendableData {
+    /// Creates a new `PubAppendableData` signed with `signing_key`.
+    pub fn new(name: XorName,
                version: u64,
-               data: Vec<u8>,
                current_owner_keys: Vec<PublicKey>,
                previous_owner_keys: Vec<PublicKey>,
+               filter: Filter,
                signing_key: Option<&SecretKey>)
-               -> Result<StructuredData, RoutingError> {
+               -> Result<PubAppendableData, RoutingError> {
 
-        let mut structured_data = StructuredData {
-            type_tag: type_tag,
+        let mut pub_appendable_data = PubAppendableData {
             name: name,
-            data: data,
-            previous_owner_keys: previous_owner_keys,
             version: version,
             current_owner_keys: current_owner_keys,
+            previous_owner_keys: previous_owner_keys,
+            filter: filter,
+            deleted_data: BTreeSet::new(),
             previous_owner_signatures: vec![],
+            data: BTreeSet::new(),
         };
 
         if let Some(key) = signing_key {
-            let _ = try!(structured_data.add_signature(key));
+            let _ = try!(pub_appendable_data.add_signature(key));
         }
-        Ok(structured_data)
+        Ok(pub_appendable_data)
     }
 
-    /// Replaces this data item with the given updated version if the update is valid, otherwise
+    /// Updates this data item with the given updated version if the update is valid, otherwise
     /// returns an error.
     ///
     /// This allows types to be created and `previous_owner_signatures` added one by one.
     /// To transfer ownership, the current owner signs over the data; the previous owners field
     /// must have the previous owners of `version - 1` as the current owners of that last version.
-    pub fn replace_with_other(&mut self, other: StructuredData) -> Result<(), RoutingError> {
+    ///
+    /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
+    /// given in the update.
+    pub fn update_with_other(&mut self, other: PubAppendableData) -> Result<(), RoutingError> {
         try!(self.validate_self_against_successor(&other));
 
-        self.type_tag = other.type_tag;
         self.name = other.name;
-        self.data = other.data;
-        self.previous_owner_keys = other.previous_owner_keys;
         self.version = other.version;
+        self.previous_owner_keys = other.previous_owner_keys;
         self.current_owner_keys = other.current_owner_keys;
+        self.deleted_data = other.deleted_data;
         self.previous_owner_signatures = other.previous_owner_signatures;
+        self.data.extend(other.data);
+        for ad in &self.deleted_data {
+            let _ = self.data.remove(ad);
+        }
         Ok(())
+    }
+
+    /// Deletes the given data item and returns `true` if it was there.
+    pub fn delete(&mut self, appended_data: AppendedData) -> bool {
+        let removed = self.data.remove(&appended_data);
+        let _ = self.deleted_data.insert(appended_data);
+        removed
+    }
+
+    /// Inserts the given data item, or returns `false` if it cannot be added because it has
+    /// recently been deleted.
+    pub fn append(&mut self, appended_data: AppendedData) -> bool {
+        if self.deleted_data.contains(&appended_data) {
+            return false;
+        }
+        let _ = self.data.insert(appended_data);
+        true
     }
 
     /// Returns the name.
@@ -93,18 +162,18 @@ impl StructuredData {
 
     /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
-        DataIdentifier::Structured(self.name, self.type_tag)
+        DataIdentifier::PubAppendable(self.name)
     }
 
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
     ///
-    /// An update is valid if it doesn't change type tag or identifier (these are immutable),
-    /// increases the version by 1 and is signed by (more than 50% of) the owners.
+    /// An update is valid if it doesn't change the name, increases the version by 1 and is signed
+    /// by (more than 50% of) the owners.
     ///
     /// In case of an ownership transfer, the `previous_owner_keys` in `other` must match the
     /// `current_owner_keys` in `self`.
     pub fn validate_self_against_successor(&self,
-                                           other: &StructuredData)
+                                           other: &PubAppendableData)
                                            -> Result<(), RoutingError> {
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
@@ -112,9 +181,7 @@ impl StructuredData {
             &other.previous_owner_keys
         };
 
-        // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
-        if other.type_tag != self.type_tag || other.name != self.name ||
-           other.version != self.version + 1 ||
+        if other.name != self.name || other.version != self.version + 1 ||
            *owner_keys_to_match != self.current_owner_keys {
             return Err(RoutingError::UnknownMessageType);
         }
@@ -160,13 +227,13 @@ impl StructuredData {
     fn data_to_sign(&self) -> Result<Vec<u8>, RoutingError> {
         // Seems overkill to use serialisation here, but done to ensure cross platform signature
         // handling is OK
-        let sd = SerialisableStructuredData {
-            type_tag: self.type_tag.to_string().as_bytes().to_vec(),
+        let sd = SerialisablePubAppendableData {
             name: self.name,
-            data: &self.data,
             previous_owner_keys: &self.previous_owner_keys,
             current_owner_keys: &self.current_owner_keys,
             version: self.version.to_string().as_bytes().to_vec(),
+            filter: &self.filter,
+            deleted_data: &self.deleted_data,
         };
 
         serialise(&sd).map_err(From::from)
@@ -192,13 +259,8 @@ impl StructuredData {
         self.previous_owner_signatures = new_signatures;
     }
 
-    /// Get the type_tag
-    pub fn get_type_tag(&self) -> u64 {
-        self.type_tag
-    }
-
-    /// Get the serialised data
-    pub fn get_data(&self) -> &Vec<u8> {
+    /// Get the data
+    pub fn get_data(&self) -> &BTreeSet<AppendedData> {
         &self.data
     }
 
@@ -224,11 +286,11 @@ impl StructuredData {
 
     /// Return data size.
     pub fn payload_size(&self) -> usize {
-        self.data.len()
+        self.data.len() * SERIALISED_APPENDED_DATA_SIZE
     }
 }
 
-impl Debug for StructuredData {
+impl Debug for PubAppendableData {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         let previous_owner_keys: Vec<String> = self.previous_owner_keys
             .iter()
@@ -243,49 +305,59 @@ impl Debug for StructuredData {
             .map(|signature| ::utils::format_binary_array(&signature.0[..]))
             .collect();
         write!(formatter,
-               "StructuredData {{ type_tag: {}, name: {}, data: {}, previous_owner_keys: {:?}, \
+               "PubAppendableData {{ name: {}, previous_owner_keys: {:?}, \
                 version: {}, current_owner_keys: {:?}, previous_owner_signatures: {:?} }}",
-               self.type_tag,
                self.name(),
-               ::utils::format_binary_array(&self.data[..]),
                previous_owner_keys,
                self.version,
                current_owner_keys,
                previous_owner_signatures)
+        // TODO(afck): Print `data` and `deleted_data`.
     }
 }
 
 #[derive(RustcEncodable)]
-struct SerialisableStructuredData<'a> {
-    type_tag: Vec<u8>,
+struct SerialisablePubAppendableData<'a> {
     name: XorName,
-    data: &'a [u8],
     previous_owner_keys: &'a [PublicKey],
     current_owner_keys: &'a [PublicKey],
     version: Vec<u8>,
+    filter: &'a Filter,
+    deleted_data: &'a BTreeSet<AppendedData>,
 }
 
 #[cfg(test)]
 mod test {
     extern crate rand;
+    use super::*;
 
+    use data::DataIdentifier;
+    use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
+
+    #[test]
+    fn serialised_appended_data_size() {
+        let keys = sign::gen_keypair();
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+        let serialised = unwrap!(serialise(&appended_data));
+        assert_eq!(super::SERIALISED_APPENDED_DATA_SIZE, serialised.len());
+    }
 
     #[test]
     fn single_owner() {
         let keys = sign::gen_keypair();
         let owner_keys = vec![keys.0];
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         Some(&keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     owner_keys.clone(),
+                                     vec![],
+                                     Filter::WhiteList(vec![]),
+                                     Some(&keys.1)) {
+            Ok(pub_appendable_data) => {
+                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
                            Some(()))
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -298,15 +370,14 @@ mod test {
         let keys = sign::gen_keypair();
         let owner_keys = vec![keys.0];
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         None) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     vec![],
+                                     owner_keys.clone(),
+                                     Filter::WhiteList(vec![]),
+                                     None) {
+            Ok(pub_appendable_data) => {
+                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
                            Some(()))
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -320,15 +391,14 @@ mod test {
         let owner_keys = vec![keys.0];
         let other_keys = sign::gen_keypair();
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         Some(&other_keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     owner_keys.clone(),
+                                     vec![],
+                                     Filter::WhiteList(vec![]),
+                                     Some(&other_keys.1)) {
+            Ok(pub_appendable_data) => {
+                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
                            Some(()))
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -342,16 +412,16 @@ mod test {
         let owner_keys = vec![keys.0];
         let other_keys = sign::gen_keypair();
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         None) {
-            Ok(mut structured_data) => {
-                assert_eq!(structured_data.add_signature(&other_keys.1).ok(), Some(0));
-                assert_eq!(structured_data.verify_previous_owner_signatures(&owner_keys).ok(),
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     vec![],
+                                     owner_keys.clone(),
+                                     Filter::WhiteList(vec![]),
+                                     None) {
+            Ok(mut pub_appendable_data) => {
+                assert_eq!(pub_appendable_data.add_signature(&other_keys.1).ok(),
+                           Some(0));
+                assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
                            Some(()))
             }
             Err(error) => panic!("Error: {:?}", error),
@@ -366,23 +436,22 @@ mod test {
 
         let owner_keys = vec![keys1.0, keys2.0, keys3.0];
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         None) {
-            Ok(mut structured_data) => {
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     owner_keys.clone(),
+                                     vec![],
+                                     Filter::WhiteList(vec![]),
+                                     None) {
+            Ok(mut pub_appendable_data) => {
                 // After one signature, one more is required to reach majority.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys1.1)), 1);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_err());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys1.1)), 1);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
                 // Two out of three is enough.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys2.1)), 0);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Three out of three is also fine.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys3.1)), 0);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -397,23 +466,22 @@ mod test {
 
         let owner_keys = vec![keys1.0, keys2.0, keys3.0, keys4.0];
 
-        match super::StructuredData::new(0,
-                                         rand::random(),
-                                         0,
-                                         vec![],
-                                         owner_keys.clone(),
-                                         vec![],
-                                         Some(&keys1.1)) {
-            Ok(mut structured_data) => {
+        match PubAppendableData::new(rand::random(),
+                                     0,
+                                     owner_keys.clone(),
+                                     vec![],
+                                     Filter::WhiteList(vec![]),
+                                     Some(&keys1.1)) {
+            Ok(mut pub_appendable_data) => {
                 // Two signatures are not enough because they don't have a strict majority.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys2.1)), 1);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys2.1)), 1);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Three out of four is enough.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys3.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys3.1)), 0);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
                 // Four out of four is also fine.
-                assert_eq!(unwrap!(structured_data.add_signature(&keys4.1)), 0);
-                assert!(structured_data.verify_previous_owner_signatures(&owner_keys).is_ok());
+                assert_eq!(unwrap!(pub_appendable_data.add_signature(&keys4.1)), 0);
+                assert!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
             }
             Err(error) => panic!("Error: {:?}", error),
         }
@@ -429,40 +497,39 @@ mod test {
         let identifier: XorName = rand::random();
 
         // Owned by keys1 keys2 and keys3
-        match super::StructuredData::new(0,
-                                         identifier,
-                                         0,
-                                         vec![],
-                                         vec![keys1.0, keys2.0, keys3.0],
-                                         vec![],
-                                         Some(&keys1.1)) {
-            Ok(mut orig_structured_data) => {
-                assert_eq!(orig_structured_data.add_signature(&keys2.1).ok(), Some(0));
+        match PubAppendableData::new(identifier,
+                                     0,
+                                     vec![keys1.0, keys2.0, keys3.0],
+                                     vec![],
+                                     Filter::WhiteList(vec![]),
+                                     Some(&keys1.1)) {
+            Ok(mut orig_pub_appendable_data) => {
+                assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
+                           Some(0));
                 // Transfer ownership and update to new owner
-                match super::StructuredData::new(0,
-                                                 identifier,
-                                                 1,
-                                                 vec![],
-                                                 vec![new_owner.0],
-                                                 vec![keys1.0, keys2.0, keys3.0],
-                                                 Some(&keys1.1)) {
-                    Ok(mut new_structured_data) => {
-                        assert_eq!(new_structured_data.add_signature(&keys2.1).ok(), Some(0));
-                        match orig_structured_data.replace_with_other(new_structured_data) {
+                match PubAppendableData::new(identifier,
+                                             1,
+                                             vec![new_owner.0],
+                                             vec![keys1.0, keys2.0, keys3.0],
+                                             Filter::WhiteList(vec![]),
+                                             Some(&keys1.1)) {
+                    Ok(mut new_pub_appendable_data) => {
+                        assert_eq!(new_pub_appendable_data.add_signature(&keys2.1).ok(),
+                                   Some(0));
+                        match orig_pub_appendable_data.update_with_other(new_pub_appendable_data) {
                             Ok(()) => (),
                             Err(e) => panic!("Error {:?}", e),
                         }
                         // transfer ownership back to keys1 only
-                        match super::StructuredData::new(0,
-                                                         identifier,
-                                                         2,
-                                                         vec![],
-                                                         vec![keys1.0],
-                                                         vec![new_owner.0],
-                                                         Some(&new_owner.1)) {
-                            Ok(another_new_structured_data) => {
-                                match orig_structured_data.replace_with_other(
-                                        another_new_structured_data) {
+                        match PubAppendableData::new(identifier,
+                                                     2,
+                                                     vec![keys1.0],
+                                                     vec![new_owner.0],
+                                                     Filter::WhiteList(vec![]),
+                                                     Some(&new_owner.1)) {
+                            Ok(another_new_pub_appendable_data) => {
+                                match orig_pub_appendable_data.update_with_other(
+                                        another_new_pub_appendable_data) {
                                     Ok(()) => (),
                                     Err(e) => panic!("Error {:?}", e),
                                 }

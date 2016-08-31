@@ -19,6 +19,7 @@ use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
 pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
+pub use pub_appendable_data::PubAppendableData;
 use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
@@ -30,6 +31,10 @@ pub enum Data {
     Immutable(ImmutableData),
     /// `PlainData` data type.
     Plain(PlainData),
+    /// `PubAppendableData` data type.
+    PubAppendable(PubAppendableData),
+    /// `PrivAppendableData` data type.
+    PrivAppendable(PubAppendableData), // TODO(afck): Change to `PrivAppendableData`.
 }
 
 impl Data {
@@ -39,6 +44,8 @@ impl Data {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
             Data::Plain(ref data) => data.name(),
+            Data::PubAppendable(ref data) => data.name(),
+            Data::PrivAppendable(ref data) => data.name(),
         }
     }
 
@@ -48,6 +55,8 @@ impl Data {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
             Data::Plain(ref data) => data.identifier(),
+            Data::PubAppendable(ref data) => data.identifier(),
+            Data::PrivAppendable(ref data) => data.identifier(),
         }
     }
 
@@ -57,6 +66,8 @@ impl Data {
             Data::Structured(ref data) => data.payload_size(),
             Data::Immutable(ref data) => data.payload_size(),
             Data::Plain(ref data) => data.payload_size(),
+            Data::PubAppendable(ref data) => data.payload_size(),
+            Data::PrivAppendable(ref data) => data.payload_size(),
         }
     }
 }
@@ -70,6 +81,10 @@ pub enum DataIdentifier {
     Immutable(XorName),
     /// Request for PlainData.
     Plain(XorName),
+    /// Request for public appendable data.
+    PubAppendable(XorName),
+    /// Request for private appendable data.
+    PrivAppendable(XorName),
 }
 
 impl Debug for Data {
@@ -78,6 +93,8 @@ impl Debug for Data {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
             Data::Plain(ref data) => data.fmt(formatter),
+            Data::PubAppendable(ref data) => data.fmt(formatter),
+            Data::PrivAppendable(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -88,7 +105,9 @@ impl DataIdentifier {
         match *self {
             DataIdentifier::Structured(ref name, _) |
             DataIdentifier::Immutable(ref name) |
-            DataIdentifier::Plain(ref name) => name,
+            DataIdentifier::Plain(ref name) |
+            DataIdentifier::PubAppendable(ref name) |
+            DataIdentifier::PrivAppendable(ref name) => name,
         }
     }
 }
