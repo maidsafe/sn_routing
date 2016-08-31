@@ -15,18 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::convert::From;
-use std::collections::HashMap;
-use std::collections::hash_map::Entry;
-use std::rc::Rc;
 
 use error::InternalError;
-use routing::client_errors::{GetError, MutationError};
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, ImmutableData, MessageId,
               StructuredData, XorName};
+use routing::client_errors::{GetError, MutationError};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::convert::From;
+use std::rc::Rc;
 use utils;
 use vault::RoutingNode;
 

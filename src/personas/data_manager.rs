@@ -15,13 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::convert::From;
-use std::fmt::{self, Debug, Formatter};
-use std::ops::Add;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::time::{Duration, Instant};
 
 use accumulator::Accumulator;
 use chunk_store::ChunkStore;
@@ -31,6 +24,13 @@ use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::serialisation;
 use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, MessageId, StructuredData, XorName};
 use routing::client_errors::{GetError, MutationError};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::convert::From;
+use std::fmt::{self, Debug, Formatter};
+use std::ops::Add;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 use vault::RoutingNode;
 
 const MAX_FULL_PERCENT: u64 = 50;
@@ -182,9 +182,9 @@ impl Cache {
     fn prune_ongoing_gets(&mut self, routing_table: &RoutingTable<XorName>) -> bool {
         let lost_gets = self.ongoing_gets
             .iter()
-            .filter(|&(ref holder, &(_, (ref data_id, _)))| {
+            .filter(|&(holder, &(_, (ref data_id, _)))| {
                 routing_table.other_close_nodes(data_id.name(), GROUP_SIZE)
-                    .map_or(true, |group| !group.contains(*holder))
+                    .map_or(true, |group| !group.contains(holder))
             })
             .map(|(holder, _)| *holder)
             .collect_vec();
@@ -200,7 +200,7 @@ impl Cache {
     fn needed_data(&mut self) -> Vec<(XorName, IdAndVersion)> {
         let empty_holders = self.data_holders
             .iter()
-            .filter(|&(_, ref data_idvs)| data_idvs.is_empty())
+            .filter(|&(_, data_idvs)| data_idvs.is_empty())
             .map(|(holder, _)| *holder)
             .collect_vec();
         for holder in empty_holders {

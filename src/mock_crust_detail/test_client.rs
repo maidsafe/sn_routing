@@ -15,17 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::sync::mpsc::{self, Receiver};
 
 use maidsafe_utilities::serialisation;
 use rand::{Rng, XorShiftRng};
 use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId, Response,
               StructuredData, XorName};
-use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use routing::client_errors::{GetError, MutationError};
+use routing::mock_crust::{self, Config, Network, ServiceHandle};
+use std::sync::mpsc::{self, Receiver};
+use super::poll;
 
 use super::test_node::TestNode;
-use super::poll;
 
 /// Client for use in tests only
 pub struct TestClient {

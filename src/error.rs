@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use config_file_handler;
 use chunk_store;
-use routing::messaging;
-use routing::client_errors::{GetError, MutationError};
+use config_file_handler;
 use maidsafe_utilities::serialisation::SerialisationError;
 use routing::{InterfaceError, MessageId, Request, Response, RoutingError};
+use routing::client_errors::{GetError, MutationError};
+use routing::messaging;
 use std::io;
 
 quick_error! {

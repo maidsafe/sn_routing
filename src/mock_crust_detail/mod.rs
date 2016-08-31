@@ -22,8 +22,8 @@ pub mod test_client;
 /// Test full node
 pub mod test_node;
 
-use kademlia_routing_table::RoutingTable;
 use itertools::Itertools;
+use kademlia_routing_table::RoutingTable;
 use mock_crust_detail::test_node::TestNode;
 use personas::data_manager::IdAndVersion;
 use routing::{self, Data, GROUP_SIZE, XorName};

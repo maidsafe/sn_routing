@@ -20,16 +20,16 @@
 
 use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
-use std::cmp;
-use std::collections::HashSet;
 
 use routing::{Authority, Data, FullId, GROUP_SIZE, ImmutableData, StructuredData};
-use routing::mock_crust::{self, Network};
 use routing::client_errors::{GetError, MutationError};
+use routing::mock_crust::{self, Network};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
-use safe_vault::mock_crust_detail::test_node::TestNode;
 use safe_vault::mock_crust_detail::test_client::TestClient;
+use safe_vault::mock_crust_detail::test_node::TestNode;
 use safe_vault::test_utils;
+use std::cmp;
+use std::collections::HashSet;
 
 const TEST_NET_SIZE: usize = 20;
 
