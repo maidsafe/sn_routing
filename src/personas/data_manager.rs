@@ -21,7 +21,7 @@ use chunk_store::ChunkStore;
 use error::InternalError;
 use itertools::Itertools;
 use kademlia_routing_table::RoutingTable;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::{self, serialisation};
 use routing::{Authority, Data, DataIdentifier, GROUP_SIZE, MessageId, StructuredData, XorName};
 use routing::client_errors::{GetError, MutationError};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -38,6 +38,8 @@ const MAX_FULL_PERCENT: u64 = 50;
 const ACCUMULATOR_QUORUM: usize = GROUP_SIZE / 2 + 1;
 /// The timeout for accumulating refresh messages.
 const ACCUMULATOR_TIMEOUT_SECS: u64 = 180;
+/// The timeout for cached data from requests; if no consensus is reached, the data is dropped.
+const PENDING_WRITE_TIMEOUT_SECS: u64 = 60;
 /// The timeout for retrieving data chunks from individual peers.
 const GET_FROM_DATA_HOLDER_TIMEOUT_SECS: u64 = 60;
 /// The interval for print status log.
@@ -46,6 +48,23 @@ const STATUS_LOG_INTERVAL: u64 = 120;
 /// Specification of a particular version of a data chunk. For immutable data, the `u64` is always
 /// 0; for structured data, it specifies the version.
 pub type IdAndVersion = (DataIdentifier, u64);
+
+/// A pending write to the chunk store. This is cached in memory until the group either reaches
+/// consensus and stores the chunk, or it times out and is dropped.
+struct PendingWrite {
+    hash: u64,
+    data: Data,
+    timestamp: Instant,
+    src: Authority,
+    dst: Authority,
+    message_id: MessageId,
+    write_type: PendingWriteType,
+}
+
+enum PendingWriteType {
+    Put,
+    Post,
+}
 
 struct Cache {
     /// Chunks we are no longer responsible for. These can be deleted from the chunk store.
@@ -57,6 +76,8 @@ struct Cache {
     ongoing_gets_count: usize,
     data_holder_items_count: usize,
     logging_time: Instant,
+    /// Maps data identifiers to the list of pending writes that affect that chunk.
+    pending_writes: HashMap<DataIdentifier, Vec<PendingWrite>>,
 }
 
 impl Default for Cache {
@@ -68,6 +89,7 @@ impl Default for Cache {
             ongoing_gets_count: 0,
             data_holder_items_count: 0,
             logging_time: Instant::now(),
+            pending_writes: HashMap::new(),
         }
     }
 }
@@ -256,6 +278,62 @@ impl Cache {
                   new_dhi_count);
         }
     }
+
+    /// Inserts the given data as a pending write to the chunk store. If it is the first for that
+    /// data identifier, it returns a refresh message to send to ourselves as a group.
+    fn insert_pending_write(&mut self,
+                            data: Data,
+                            write_type: PendingWriteType,
+                            src: Authority,
+                            dst: Authority,
+                            msg_id: MessageId)
+                            -> Option<RefreshData> {
+        // Remove expired pending writes. If the list is empty, remove the entry from the map.
+        let timeout = Duration::from_secs(PENDING_WRITE_TIMEOUT_SECS);
+        let expired_keys = self.pending_writes
+            .iter_mut()
+            .filter_map(|(data_id, writes)| {
+                writes.retain(|write| write.timestamp.elapsed() <= timeout);
+                if writes.is_empty() {
+                    Some(*data_id)
+                } else {
+                    None
+                }
+            })
+            .collect_vec();
+        for data_id in expired_keys {
+            let _ = self.pending_writes.remove(&data_id);
+        }
+        // Hash the data, insert the new entry and return a refresh if it is the first one.
+        let hash = maidsafe_utilities::big_endian_sip_hash(&data);
+        let (data_id, version) = id_and_version_of(&data);
+        let pending_write = PendingWrite {
+            hash: hash,
+            data: data,
+            timestamp: Instant::now(),
+            src: src,
+            dst: dst,
+            message_id: msg_id,
+            write_type: write_type,
+        };
+        let mut result = None;
+        self.pending_writes
+            .entry(data_id)
+            .or_insert_with(|| {
+                result = Some(RefreshData((data_id, version), hash));
+                Vec::new()
+            })
+            .push(pending_write);
+        result
+    }
+
+    /// Removes all pending writes for the specified data identifier from the cache. Returns the one
+    /// with the matching hash, if it exists.
+    fn take_pending_write(&mut self, data_id: &DataIdentifier, hash: u64) -> Option<PendingWrite> {
+        self.pending_writes
+            .remove(data_id)
+            .and_then(|writes| writes.into_iter().find(|write| write.hash == hash))
+    }
 }
 
 
@@ -343,7 +421,7 @@ impl DataManager {
                       data: Data,
                       message_id: MessageId)
                       -> Result<(), InternalError> {
-        let (data_id, version) = id_and_version_of(&data);
+        let data_id = data.identifier();
 
         if self.chunk_store.has(&data_id) {
             match data_id {
@@ -376,25 +454,11 @@ impl DataManager {
             return Err(From::from(error));
         }
 
-        if let Err(err) = self.chunk_store.put(&data_id, &data) {
-            trace!("DM failed to store {:?} in chunkstore: {:?}", data_id, err);
-            let error = MutationError::NetworkOther(format!("Failed to store chunk: {:?}", err));
-            let external_error_indicator = try!(serialisation::serialise(&error));
-            let _ = self.routing_node
-                .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
-            Err(From::from(error))
-        } else {
-            self.count_added_data(&data_id);
-            trace!("DM sending PutSuccess for data {:?}", data_id);
-            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
-                self.logging_time = Instant::now();
-                info!("{:?}", self);
-            }
-            let _ = self.routing_node.send_put_success(dst, src, data_id, message_id);
-            let data_list = vec![(data_id, version)];
-            let _ = self.send_refresh(Authority::NaeManager(*data.name()), data_list);
-            Ok(())
+        if let Some(refresh_data) = self.cache
+            .insert_pending_write(data, PendingWriteType::Put, src, dst, message_id) {
+            let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
         }
+        Ok(())
     }
 
     // This function is only for SD
@@ -423,7 +487,6 @@ impl DataManager {
             }
         };
 
-        let version = new_data.get_version();
         if let Err(error) = data.replace_with_other(new_data) {
             trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
                    data_id,
@@ -432,25 +495,13 @@ impl DataManager {
             let post_error = try!(serialisation::serialise(&MutationError::InvalidSuccessor));
             return Ok(try!(self.routing_node
                 .send_post_failure(dst.clone(), src, data_id, post_error, message_id)));
-
         }
 
-        if let Err(error) = self.chunk_store.put(&data_id, &Data::Structured(data)) {
-            trace!("DM sending post_failure for: {:?} with {:?} - {:?}",
-                   data_id,
-                   message_id,
-                   error);
-            let mutation_error =
-                MutationError::NetworkOther(format!("Failed to store chunk: {:?}", error));
-            let post_error = try!(serialisation::serialise(&mutation_error));
-            return Ok(try!(self.routing_node
-                .send_post_failure(dst, src, data_id, post_error, message_id)));
+        let sd = Data::Structured(data);
+        if let Some(refresh_data) = self.cache
+            .insert_pending_write(sd, PendingWriteType::Post, src, dst, message_id) {
+            let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
         }
-
-        trace!("DM updated for: {:?}", data_id);
-        let _ = self.routing_node.send_post_success(dst, src, data_id, message_id);
-        let data_list = vec![(data_id, version)];
-        let _ = self.send_refresh(Authority::NaeManager(*data_id.name()), data_list);
         Ok(())
     }
 
@@ -462,22 +513,25 @@ impl DataManager {
                          message_id: MessageId)
                          -> Result<(), InternalError> {
         let data_id = new_data.identifier();
-        if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
-            if data.validate_self_against_successor(&new_data).is_ok() {
-                if let Ok(()) = self.chunk_store.delete(&data_id) {
-                    self.count_removed_data(&data_id);
-                    trace!("DM deleted {:?}", data.identifier());
-                    if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
-                        self.logging_time = Instant::now();
-                        info!("{:?}", self);
-                    }
-                    let _ = self.routing_node.send_delete_success(dst, src, data_id, message_id);
-                    // TODO: Send a refresh message.
-                    return Ok(());
-                }
-            }
-        }
-        trace!("DM sending delete_failure for {:?}", new_data.identifier());
+        // TODO: Re-enable delete once the flow has been agreed on.
+        // if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
+        //    if data.validate_self_against_successor(&new_data).is_ok() {
+        //        if let Ok(()) = self.chunk_store.delete(&data_id) {
+        //            self.count_removed_data(&data_id);
+        //            trace!("DM deleted {:?}", data.identifier());
+        //            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+        //                self.logging_time = Instant::now();
+        //                info!("{:?}", self);
+        //            }
+        //            let _ = self.routing_node.send_delete_success(dst, src, data_id, message_id);
+        //            // TODO: Send a refresh message.
+        //            return Ok(());
+        //        }
+        //    }
+        // }
+        // trace!("DM sending delete_failure for {:?}", new_data.identifier());
+        trace!("DM currently doesn't support Delete. Sending delete_failure for {:?}",
+               new_data.identifier());
         try!(self.routing_node.send_delete_failure(dst,
                                                    src,
                                                    data_id,
@@ -543,7 +597,7 @@ impl DataManager {
                           src: XorName,
                           serialised_data_list: &[u8])
                           -> Result<(), InternalError> {
-        let data_list = try!(serialisation::deserialise::<Vec<IdAndVersion>>(serialised_data_list));
+        let RefreshDataList(data_list) = try!(serialisation::deserialise(serialised_data_list));
         for data_idv in data_list {
             if self.cache.register_data_with_holder(&src, &data_idv) {
                 continue;
@@ -573,6 +627,62 @@ impl DataManager {
             }
         }
         self.send_gets_for_needed_data()
+    }
+
+    /// Handles an accumulated refresh message sent from the whole group.
+    pub fn handle_group_refresh(&mut self, serialised_refresh: &[u8]) -> Result<(), InternalError> {
+        let RefreshData((data_id, version), hash) =
+            try!(serialisation::deserialise(serialised_refresh));
+        let PendingWrite { data, write_type, src, dst, message_id, .. } =
+            if let Some(pending_write) = self.cache.take_pending_write(&data_id, hash) {
+                pending_write
+            } else {
+                trace!("DM failed to retrieve {:?} from write cache. Adding group to data \
+                        holders.",
+                       data_id);
+                if let Ok(Some(group)) = self.routing_node.close_group(*data_id.name()) {
+                    self.cache.add_records((data_id, version), group.into_iter().collect());
+                }
+                return self.send_gets_for_needed_data();
+            };
+        if let Err(error) = self.chunk_store.put(&data_id, &data) {
+            trace!("DM failed to store {:?} in chunkstore: {:?}",
+                   data_id,
+                   error);
+            let mutation_error =
+                MutationError::NetworkOther(format!("Failed to store chunk: {:?}", error));
+            let write_error = try!(serialisation::serialise(&mutation_error));
+            try!(match write_type {
+                PendingWriteType::Post => {
+                    self.routing_node
+                        .send_post_failure(dst, src, data_id, write_error, message_id)
+                }
+                PendingWriteType::Put => {
+                    self.routing_node
+                        .send_put_failure(dst, src, data_id, write_error, message_id)
+                }
+            });
+            return Err(From::from(error));
+        }
+        trace!("DM updated for: {:?}", data_id);
+        let _ = match write_type {
+            PendingWriteType::Post => {
+                trace!("DM sending PostSuccess for data {:?}", data_id);
+                self.routing_node.send_post_success(dst, src, data_id, message_id)
+            }
+            PendingWriteType::Put => {
+                self.count_added_data(&data_id);
+                if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                    self.logging_time = Instant::now();
+                    info!("{:?}", self);
+                }
+                trace!("DM sending PutSuccess for data {:?}", data_id);
+                self.routing_node.send_put_success(dst, src, data_id, message_id)
+            }
+        };
+        let data_list = vec![(data_id, version)];
+        let _ = self.send_refresh(Authority::NaeManager(*data_id.name()), data_list);
+        Ok(())
     }
 
     fn send_gets_for_needed_data(&mut self) -> Result<(), InternalError> {
@@ -762,7 +872,7 @@ impl DataManager {
                     -> Result<(), InternalError> {
         let src = Authority::ManagedNode(try!(self.routing_node.name()));
         // FIXME - We need to handle >2MB chunks
-        match serialisation::serialise(&data_list) {
+        match serialisation::serialise(&RefreshDataList(data_list)) {
             Ok(serialised_list) => {
                 trace!("DM sending refresh to {:?}.", dst);
                 let _ = self.routing_node
@@ -770,9 +880,40 @@ impl DataManager {
                 Ok(())
             }
             Err(error) => {
-                warn!("Failed to serialise account: {:?}", error);
+                warn!("Failed to serialise data list: {:?}", error);
+                Err(From::from(error))
+            }
+        }
+    }
+
+    fn send_group_refresh(&self,
+                          name: XorName,
+                          refresh_data: RefreshData,
+                          msg_id: MessageId)
+                          -> Result<(), InternalError> {
+        match serialisation::serialise(&refresh_data) {
+            Ok(serialised_data) => {
+                trace!("DM sending refresh data to group {:?}.", name);
+                let _ = self.routing_node
+                    .send_refresh_request(Authority::NaeManager(name),
+                                          Authority::NaeManager(name),
+                                          serialised_data,
+                                          msg_id);
+                Ok(())
+            }
+            Err(error) => {
+                warn!("Failed to serialise data: {:?}", error);
                 Err(From::from(error))
             }
         }
     }
 }
+
+/// A list of data held by the sender. Sent from node to node.
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Clone)]
+struct RefreshDataList(Vec<IdAndVersion>);
+
+/// A message from the group to itself to store the given data. If this accumulates, that means a
+/// quorum of group members approves.
+#[derive(RustcEncodable, RustcDecodable, PartialEq, Eq, Debug, Copy, Clone)]
+struct RefreshData(IdAndVersion, u64);

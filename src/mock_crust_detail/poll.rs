@@ -40,7 +40,7 @@ pub fn nodes(nodes: &mut [TestNode]) {
 pub fn resend_unacknowledged(nodes: &[TestNode], client: &TestClient) -> bool {
     let mut result = false;
     for node in nodes {
-        result = result || node.resend_unacknowledged()
+        result = result || node.resend_unacknowledged();
     }
     result || client.resend_unacknowledged()
 }

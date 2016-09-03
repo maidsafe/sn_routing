@@ -22,7 +22,7 @@ use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, P
               StructuredData, XorName};
 use routing::client_errors::{GetError, MutationError};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use super::poll;
 
 use super::test_node::TestNode;
@@ -61,6 +61,12 @@ impl TestClient {
             rng: network.new_rng(),
         }
     }
+
+    /// Returns the next event received from routing, if any.
+    pub fn try_recv(&mut self) -> Result<Event, TryRecvError> {
+        self.routing_rx.try_recv()
+    }
+
     /// empty this client event loop
     pub fn poll(&mut self) -> usize {
         let mut result = 0;
@@ -70,6 +76,11 @@ impl TestClient {
         }
 
         result
+    }
+
+    /// empty this client event loop
+    pub fn poll_once(&mut self) -> bool {
+        self.routing_client.poll()
     }
 
     /// Resend all unacknowledged messages.
@@ -292,18 +303,21 @@ impl TestClient {
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_post_request(dst, data, request_message_id));
     }
+
     /// Put request
     pub fn put(&mut self, data: Data) {
         let dst = Authority::ClientManager(*self.public_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_put_request(dst, data, request_message_id));
     }
+
     /// Delete request
     pub fn delete(&mut self, data: Data) {
         let dst = Authority::NaeManager(*data.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_delete_request(dst, data, request_message_id));
     }
+
     /// Put data and read from mock network
     pub fn put_and_verify(&mut self,
                           data: Data,

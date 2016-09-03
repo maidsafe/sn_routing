@@ -256,6 +256,11 @@ impl Vault {
              Request::Refresh(serialised_msg, _)) => {
                 self.data_manager.handle_refresh(src_name, &serialised_msg)
             }
+            (Authority::NaeManager(_),
+             Authority::NaeManager(_),
+             Request::Refresh(serialised_msg, _)) => {
+                self.data_manager.handle_group_refresh(&serialised_msg)
+            }
             // ================== Invalid Request ==================
             (_, _, request) => Err(InternalError::UnknownRequestType(request)),
         }

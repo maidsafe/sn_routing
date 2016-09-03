@@ -225,7 +225,8 @@ extern crate kademlia_routing_table;
 extern crate maidsafe_utilities;
 extern crate config_file_handler;
 // Needed because the crate is only used for macros
-#[allow(useless_attribute, unused_extern_crates)]
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
 #[cfg(any(test, feature = "use-mock-crust"))]
