@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::Xorable;
 use rand;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::hex::{FromHex, FromHexError, ToHex};
-use std::cmp::Ordering;
 use std::{fmt, ops};
-use kademlia_routing_table::Xorable;
+use std::cmp::Ordering;
 
 
 /// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
@@ -244,9 +244,9 @@ impl Decodable for XorName {
 #[cfg(test)]
 mod test {
     use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use rand;
     use std::cmp::Ordering;
     use super::*;
-    use rand;
 
     #[test]
     fn serialisation_xor_name() {

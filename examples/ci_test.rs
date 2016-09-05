@@ -21,7 +21,7 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -54,24 +54,24 @@ extern crate term;
 
 mod utils;
 
-use std::io::Write;
-use std::time::Duration;
-use std::{env, io, thread};
-use std::sync::{Arc, Condvar, Mutex};
-use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
-use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
-use rust_sodium::crypto::hash;
-use utils::{ExampleClient, ExampleNode};
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 
 use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
+use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
+use rust_sodium::crypto::hash;
+use std::{env, io, thread};
+use std::io::Write;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use term::color;
+use utils::{ExampleClient, ExampleNode};
 
 const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;

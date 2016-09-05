@@ -15,17 +15,17 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use action::Action;
 use crust::{CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
+use id::PublicId;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+use states::{Bootstrapping, Client, Node};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};
-
-use action::Action;
-use id::PublicId;
-use states::{Bootstrapping, Client, Node};
 use timer::Timer;
 use types::RoutingActionSender;
 #[cfg(feature = "use-mock-crust")]
@@ -122,7 +122,8 @@ impl State {
             State::Bootstrapping(state) => {
                 if state.client_restriction() {
                     State::Client(state.into_client(proxy_peer_id, proxy_public_id, quorum_size))
-                } else if let Some(state) = state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
+                } else if let Some(state) =
+                              state.into_node(proxy_peer_id, proxy_public_id, quorum_size) {
                     State::Node(state)
                 } else {
                     State::Terminated

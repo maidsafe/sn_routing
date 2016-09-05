@@ -22,7 +22,7 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, improper_ctypes, missing_docs,
       non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
       private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
       unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -51,22 +51,22 @@ extern crate rust_sodium;
 
 mod utils;
 
-use std::collections::HashSet;
-#[cfg(target_os = "macos")]
-use std::io;
-use std::{iter, thread};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
 
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Node, PlainData,
               QUORUM_SIZE, Request, Response, XorName};
+use routing::DataIdentifier;
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
+use std::{iter, thread};
+use std::collections::HashSet;
+#[cfg(target_os = "macos")]
+use std::io;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 use utils::recv_with_timeout;
-use routing::DataIdentifier;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);

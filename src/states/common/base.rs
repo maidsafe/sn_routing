@@ -16,15 +16,15 @@
 // relating to use of the SAFE Network Software.
 
 use crust::{PeerId, Service};
-use maidsafe_utilities::serialisation;
-use std::fmt::Debug;
 
 use error::RoutingError;
 use event::Event;
 use id::FullId;
+use maidsafe_utilities::serialisation;
 use messages::Message;
 use state_machine::Transition;
 use stats::Stats;
+use std::fmt::Debug;
 use xor_name::XorName;
 
 // Trait for all states.

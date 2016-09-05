@@ -20,11 +20,11 @@ extern crate routing;
 extern crate rust_sodium;
 extern crate maidsafe_utilities;
 
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
+use rust_sodium::crypto;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
-use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
-use rust_sodium::crypto;
 
 const RESPONSE_TIMEOUT_SECS: u64 = 10;
 
