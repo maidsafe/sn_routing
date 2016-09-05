@@ -199,7 +199,7 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -225,6 +225,7 @@ extern crate kademlia_routing_table;
 extern crate maidsafe_utilities;
 extern crate config_file_handler;
 // Needed because the crate is only used for macros
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
 #[allow(unused_extern_crates)]
 #[macro_use]
 extern crate quick_error;
@@ -249,5 +250,5 @@ mod vault;
 /// For integration tests only
 #[cfg(feature = "use-mock-crust")]
 pub mod mock_crust_detail;
-pub use vault::Vault;
 pub use config_handler::Config;
+pub use vault::Vault;

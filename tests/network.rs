@@ -19,14 +19,14 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 
 mod test {
-    use safe_vault::mock_crust_detail::{poll, test_node};
-    use safe_vault::mock_crust_detail::test_client::TestClient;
-    use safe_vault::test_utils;
     use rand::Rng;
     use rand::distributions::{IndependentSample, Range};
     use routing::{Data, ImmutableData};
     use routing::mock_crust::{self, Network};
     use safe_vault::Config;
+    use safe_vault::mock_crust_detail::{poll, test_node};
+    use safe_vault::mock_crust_detail::test_client::TestClient;
+    use safe_vault::test_utils;
 
     #[test]
     fn fill_network() {

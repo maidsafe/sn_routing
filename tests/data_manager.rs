@@ -20,16 +20,16 @@
 
 use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
+
+use routing::{Authority, Data, Event, FullId, GROUP_SIZE, ImmutableData, Response, StructuredData};
+use routing::client_errors::{GetError, MutationError};
+use routing::mock_crust::{self, Network};
+use safe_vault::mock_crust_detail::{self, poll, test_node};
+use safe_vault::mock_crust_detail::test_client::TestClient;
+use safe_vault::mock_crust_detail::test_node::TestNode;
+use safe_vault::test_utils;
 use std::cmp;
 use std::collections::HashSet;
-
-use routing::{Authority, Data, FullId, GROUP_SIZE, ImmutableData, StructuredData};
-use routing::mock_crust::{self, Network};
-use routing::client_errors::{GetError, MutationError};
-use safe_vault::mock_crust_detail::{self, poll, test_node};
-use safe_vault::mock_crust_detail::test_node::TestNode;
-use safe_vault::mock_crust_detail::test_client::TestClient;
-use safe_vault::test_utils;
 
 const TEST_NET_SIZE: usize = 20;
 
@@ -105,6 +105,130 @@ fn immutable_data_operations_with_churn(use_cache: bool) {
         }
     }
 }
+
+#[test]
+fn structured_data_parallel_posts() {
+    let network = Network::new(None);
+    let mut rng = network.new_rng();
+    let mut event_count = 0;
+    let node_count = TEST_NET_SIZE;
+    let mut nodes = test_node::create_nodes(&network, node_count, None, false);
+    let mut clients: Vec<_> = (0..3)
+        .map(|_| {
+            let endpoint = unwrap_option!(rng.choose(&nodes), "no nodes found").endpoint();
+            let config = mock_crust::Config::with_contacts(&[endpoint]);
+            TestClient::new(&network, Some(config.clone()))
+        })
+        .collect();
+
+    for client in &mut clients {
+        client.ensure_connected(&mut nodes);
+        client.create_account(&mut nodes);
+    }
+
+    let mut all_data = vec![];
+    for _ in 0..5 {
+        let type_tag = Range::new(10001, 20000).ind_sample(&mut rng);
+        let sd = test_utils::random_structured_data(type_tag, clients[0].full_id(), &mut rng);
+        let data = Data::Structured(sd);
+        trace!("Putting data {:?} with name {:?}.",
+               data.identifier(),
+               data.name());
+        unwrap_result!(clients[0].put_and_verify(data.clone(), &mut nodes));
+        all_data.push(data);
+    }
+
+    let key = clients[0].full_id().signing_private_key().clone();
+    for i in 0..30 {
+        trace!("Iteration {}. Network size: {}", i + 1, nodes.len());
+        let j = Range::new(0, all_data.len()).ind_sample(&mut rng);
+        let new_data: Vec<Data> = clients.iter_mut()
+            .map(|client| {
+                let data = Data::Structured(if let Data::Structured(sd) = all_data[j].clone() {
+                    unwrap_result!(StructuredData::new(sd.get_type_tag(),
+                                                       *sd.name(),
+                                                       sd.get_version() + 1,
+                                                       rng.gen_iter().take(10).collect(),
+                                                       sd.get_owner_keys().clone(),
+                                                       vec![],
+                                                       Some(&key)))
+                } else {
+                    panic!("Non-structured data found.");
+                });
+                trace!("Posting data {:?} with name {:?}.",
+                       data.identifier(),
+                       data.name());
+                client.post(data.clone());
+                data
+            })
+            .collect();
+
+        // A custom implementation of poll_and_resend_unacknowledged that handles more than one
+        // client and handles only one event per round for each node and client, to better simulate
+        // simultaneous requests.
+        loop {
+            let mut new_count = 0;
+            loop {
+                let prev_count = new_count;
+                for node in &mut nodes {
+                    if node.poll_once() {
+                        new_count += 1;
+                    }
+                }
+                for client in &mut clients {
+                    if client.poll_once() {
+                        new_count += 1;
+                    }
+                }
+                if prev_count == new_count {
+                    break;
+                }
+            }
+            event_count += new_count;
+            let mut result = false;
+            for node in &mut nodes {
+                result = result || node.resend_unacknowledged()
+            }
+            for client in &mut clients {
+                result = result || client.resend_unacknowledged();
+            }
+            if !result && new_count == 0 {
+                break;
+            }
+        }
+        for node in &mut nodes {
+            node.clear_state();
+        }
+        trace!("Processed {} events.", event_count);
+
+        for (client, data) in clients.iter_mut().zip(new_data) {
+            while let Ok(event) = client.try_recv() {
+                if let Event::Response { response: Response::PostSuccess(..), .. } = event {
+                    trace!("Client {:?} received PostSuccess.", client.name());
+                    all_data[j] = data.clone();
+                }
+            }
+        }
+
+        mock_crust_detail::check_data(all_data.clone(), &nodes);
+        mock_crust_detail::verify_kademlia_invariant_for_all_nodes(&nodes);
+    }
+
+    for data in &all_data {
+        match *data {
+            Data::Structured(ref sent_structured_data) => {
+                match clients[0].get(sent_structured_data.identifier(), &mut nodes) {
+                    Data::Structured(recovered_structured_data) => {
+                        assert_eq!(recovered_structured_data, *sent_structured_data);
+                    }
+                    unexpected_data => panic!("Got unexpected data: {:?}", unexpected_data),
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 
 #[test]
 fn structured_data_operations_with_churn_with_cache() {
@@ -397,6 +521,7 @@ fn handle_post_error_flow() {
 }
 
 #[test]
+#[ignore] // TODO: Delete is currently disabled.
 fn handle_delete_error_flow() {
     let network = Network::new(None);
     let node_count = 15;

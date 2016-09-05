@@ -17,8 +17,8 @@
 
 #![cfg(feature = "use-mock-crust")]
 
-use routing::{FullId, ImmutableData, StructuredData};
 use rand::Rng;
+use routing::{FullId, ImmutableData, StructuredData};
 
 /// creates random immutable data - tests only
 pub fn random_immutable_data<R: Rng>(size: usize, rng: &mut R) -> ImmutableData {

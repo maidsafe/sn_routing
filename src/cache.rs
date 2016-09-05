@@ -16,8 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use lru_time_cache::LruCache;
-use routing::Cache as RoutingCache;
 use routing::{Data, DataIdentifier, ImmutableData, Request, Response, XorName};
+use routing::Cache as RoutingCache;
 use std::cell::RefCell;
 use std::time::Duration;
 
@@ -59,9 +59,9 @@ impl RoutingCache for Cache {
 
 #[cfg(test)]
 mod tests {
-    use super::Cache;
     use routing::{Data, ImmutableData, MessageId, Request, Response};
     use routing::Cache as RoutingCache;
+    use super::Cache;
 
     #[test]
     fn put_and_get() {

@@ -15,21 +15,21 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fs;
-use std::path::PathBuf;
 
 use config_handler::Config;
 use kademlia_routing_table::RoutingTable;
-use rand::{self, Rng};
-use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
-use routing::XorName;
-use rustc_serialize::hex::ToHex;
-use std::env;
-use vault::Vault;
 
 use personas::data_manager::IdAndVersion;
+use rand::{self, Rng};
+use routing::XorName;
+use routing::mock_crust::{self, Endpoint, Network, ServiceHandle};
+use rustc_serialize::hex::ToHex;
+use std::env;
+use std::fs;
+use std::path::PathBuf;
 
 use super::poll;
+use vault::Vault;
 
 /// Test node for mock network
 pub struct TestNode {
@@ -88,30 +88,42 @@ impl TestNode {
 
         result
     }
+
+    /// empty this client event loop
+    pub fn poll_once(&mut self) -> bool {
+        self.vault.poll()
+    }
+
     /// Return endpoint for this node
     pub fn endpoint(&self) -> Endpoint {
         self.handle.endpoint()
     }
+
     /// return names of all data stored on mock network
     pub fn get_stored_names(&self) -> Vec<IdAndVersion> {
         self.vault.get_stored_names()
     }
+
     /// return the number of account packets stored for the given client
     pub fn get_maid_manager_put_count(&self, client_name: &XorName) -> Option<u64> {
         self.vault.get_maid_manager_put_count(client_name)
     }
+
     /// Resend all unacknowledged messages.
     pub fn resend_unacknowledged(&self) -> bool {
         self.vault.resend_unacknowledged()
     }
+
     /// Clear routing node state..
     pub fn clear_state(&self) {
         self.vault.clear_state()
     }
+
     /// name of vault.
     pub fn name(&self) -> XorName {
         self.vault.name()
     }
+
     /// returns the vault's routing_table.
     pub fn routing_table(&self) -> RoutingTable<XorName> {
         self.vault.routing_table()

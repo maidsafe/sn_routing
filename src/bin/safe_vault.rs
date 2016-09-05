@@ -27,7 +27,7 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -39,7 +39,7 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-#![cfg_attr(feature="clippy", deny(clippy, clippy_pedantic))]
+#![cfg_attr(feature="clippy", deny(clippy))]
 #![cfg_attr(feature="clippy", allow(use_debug))]
 
 #[macro_use]
@@ -51,10 +51,10 @@ extern crate docopt;
 extern crate rustc_serialize;
 extern crate safe_vault;
 
-use std::ffi::OsString;
-use std::fs;
 use docopt::Docopt;
 use safe_vault::Vault;
+use std::ffi::OsString;
+use std::fs;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "

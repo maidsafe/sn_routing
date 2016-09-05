@@ -15,22 +15,22 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::env;
-use std::rc::Rc;
-use std::path::Path;
-use std::sync::mpsc::{self, Receiver};
 
 use cache::Cache;
 use config_handler::{self, Config};
 use error::InternalError;
 use kademlia_routing_table::RoutingTable;
-use personas::maid_manager::MaidManager;
 use personas::data_manager::DataManager;
 #[cfg(feature = "use-mock-crust")]
 use personas::data_manager::IdAndVersion;
+use personas::maid_manager::MaidManager;
 
 use routing::{Authority, Data, NodeBuilder, Request, Response, XorName};
 use rust_sodium;
+use std::env;
+use std::path::Path;
+use std::rc::Rc;
+use std::sync::mpsc::{self, Receiver};
 
 pub const CHUNK_STORE_DIR: &'static str = "safe_vault_chunk_store";
 const DEFAULT_MAX_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
@@ -255,6 +255,11 @@ impl Vault {
              Authority::NaeManager(_),
              Request::Refresh(serialised_msg, _)) => {
                 self.data_manager.handle_refresh(src_name, &serialised_msg)
+            }
+            (Authority::NaeManager(_),
+             Authority::NaeManager(_),
+             Request::Refresh(serialised_msg, _)) => {
+                self.data_manager.handle_group_refresh(&serialised_msg)
             }
             // ================== Invalid Request ==================
             (_, _, request) => Err(InternalError::UnknownRequestType(request)),
