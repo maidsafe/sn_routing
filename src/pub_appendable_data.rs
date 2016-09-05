@@ -26,7 +26,8 @@ use error::RoutingError;
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 
-const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
+/// Maximum allowed size for an appendable data
+pub const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
 
 /// The type of access filter for appendable data.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
@@ -65,6 +66,21 @@ impl AppendedData {
             sign_key: pub_key,
             signature: signature,
         })
+    }
+
+    /// Returns reference to pointer.
+    pub fn pointer(&self) -> &DataIdentifier {
+        &self.pointer
+    }
+
+    /// Returns reference to sign_key.
+    pub fn sign_key(&self) -> &PublicKey {
+        &self.sign_key
+    }
+
+    /// Returns reference to signature.
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 }
 
@@ -342,7 +358,7 @@ mod test {
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
         let serialised = unwrap!(serialise(&appended_data));
-        assert_eq!(super::SERIALISED_APPENDED_DATA_SIZE, serialised.len());
+        assert_eq!(SERIALISED_APPENDED_DATA_SIZE, serialised.len());
     }
 
     #[test]
