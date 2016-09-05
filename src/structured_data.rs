@@ -147,7 +147,7 @@ impl StructuredData {
 
         let check_all_keys = |&sig| {
             owner_keys.iter()
-                .any(|ref pub_key| sign::verify_detached(&sig, &data, pub_key))
+                .any(|pub_key| sign::verify_detached(&sig, &data, pub_key))
         };
 
         if self.previous_owner_signatures

@@ -96,11 +96,7 @@ impl Tunnels {
         pairs.into_iter()
             .map(|pair| {
                 self.clients.remove(&pair);
-                if pair.0 == *peer_id {
-                    pair.1
-                } else {
-                    pair.0
-                }
+                if pair.0 == *peer_id { pair.1 } else { pair.0 }
             })
             .collect()
     }

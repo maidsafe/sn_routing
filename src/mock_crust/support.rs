@@ -24,7 +24,7 @@ use std::rc::{Rc, Weak};
 use super::crust::{ConnectionInfoResult, CrustEventSender, Event, PrivConnectionInfo, PeerId,
                    PubConnectionInfo};
 use maidsafe_utilities::SeededRng;
-use rand::XorShiftRng;
+use rand::{Rng, XorShiftRng};
 use rust_sodium;
 
 /// Mock network. Create one before testing with mocks. Use it to create `ServiceHandle`s.
@@ -34,7 +34,7 @@ pub struct Network(Rc<RefCell<NetworkImpl>>);
 pub struct NetworkImpl {
     services: HashMap<Endpoint, Weak<RefCell<ServiceImpl>>>,
     next_endpoint: usize,
-    queue: VecDeque<(Endpoint, Endpoint, Packet)>,
+    queue: HashMap<(Endpoint, Endpoint), VecDeque<Packet>>,
     blocked_connections: HashSet<(Endpoint, Endpoint)>,
     rng: SeededRng,
 }
@@ -51,7 +51,7 @@ impl Network {
         Network(Rc::new(RefCell::new(NetworkImpl {
             services: HashMap::new(),
             next_endpoint: 0,
-            queue: VecDeque::new(),
+            queue: HashMap::new(),
             blocked_connections: HashSet::new(),
             rng: SeededRng::new(),
         })))
@@ -110,11 +110,30 @@ impl Network {
     }
 
     fn send(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {
-        self.0.borrow_mut().queue.push_back((sender, receiver, packet));
+        self.0
+            .borrow_mut()
+            .queue
+            .entry((sender, receiver))
+            .or_insert_with(VecDeque::new)
+            .push_back(packet);
     }
 
     fn pop_packet(&self) -> Option<(Endpoint, Endpoint, Packet)> {
-        self.0.borrow_mut().queue.pop_front()
+        let mut network_impl = self.0.borrow_mut();
+        let keys: Vec<_> = network_impl.queue.keys().cloned().collect();
+        let (sender, receiver) = if let Some(key) = network_impl.rng.choose(&keys) {
+            *key
+        } else {
+            return None;
+        };
+        let result = network_impl.queue
+            .get_mut(&(sender, receiver))
+            .and_then(|packets| packets.pop_front().map(|packet| (sender, receiver, packet)));
+        if result.is_some() &&
+           network_impl.queue.get(&(sender, receiver)).map_or(false, VecDeque::is_empty) {
+            let _ = network_impl.queue.remove(&(sender, receiver));
+        }
+        result
     }
 
     fn process_packet(&self, sender: Endpoint, receiver: Endpoint, packet: Packet) {

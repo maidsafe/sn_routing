@@ -47,12 +47,8 @@ pub enum Action {
         name: XorName,
         result_tx: Sender<Option<Vec<XorName>>>,
     },
-    Name {
-        result_tx: Sender<XorName>,
-    },
-    QuorumSize {
-        result_tx: Sender<usize>,
-    },
+    Name { result_tx: Sender<XorName> },
+    QuorumSize { result_tx: Sender<usize> },
     Timeout(u64),
     Terminate,
 }
