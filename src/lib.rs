@@ -200,7 +200,7 @@ pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData,
-                              AppendedData, Filter};
+                              AppendedData, Filter, AppendWrapper};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN, XOR_NAME_BITS};
