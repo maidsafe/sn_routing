@@ -23,10 +23,13 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
+use append_types::{AppendedData, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
+
+/// Size of a serialised priv_appended_data item.
+pub const SERIALISED_PRIV_APPENDED_DATA_SIZE: usize = 260;
 
 /// A private appended data item.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
@@ -271,7 +274,7 @@ impl PrivAppendableData {
 
     /// Return data size.
     pub fn payload_size(&self) -> usize {
-        self.data.len() * SERIALISED_APPENDED_DATA_SIZE
+        self.data.len() * SERIALISED_PRIV_APPENDED_DATA_SIZE
     }
 }
 
@@ -320,15 +323,19 @@ mod test {
     use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
-    use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
+    use append_types::{AppendedData, Filter};
 
     #[test]
-    fn serialised_appended_data_size() {
+    fn serialised_priv_appended_data_size() {
         let keys = sign::gen_keypair();
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
-        let serialised = unwrap!(serialise(&appended_data));
-        assert_eq!(SERIALISED_APPENDED_DATA_SIZE, serialised.len());
+        let encrypt_keys = box_::gen_keypair();
+        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data,
+                                                               &encrypt_keys.0,
+                                                               &encrypt_keys.1));
+        let serialised = unwrap!(serialise(&priv_appended_data));
+        assert_eq!(SERIALISED_PRIV_APPENDED_DATA_SIZE, serialised.len());
     }
 
     #[test]

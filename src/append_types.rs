@@ -22,7 +22,7 @@ use data::DataIdentifier;
 use error::RoutingError;
 use priv_appendable_data::PrivAppendedData;
 
-/// Size of a serialised appended data item.
+/// Size of a serialised appended_data item.
 pub const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
 
 /// The type of access filter for appendable data.
@@ -125,5 +125,24 @@ impl AppendedData {
     /// Returns reference to signature.
     pub fn signature(&self) -> &Signature {
         &self.signature
+    }
+}
+
+#[cfg(test)]
+mod test {
+    extern crate rand;
+    use super::*;
+
+    use data::DataIdentifier;
+    use maidsafe_utilities::serialisation::serialise;
+    use rust_sodium::crypto::sign;
+
+    #[test]
+    fn serialised_appended_data_size() {
+        let keys = sign::gen_keypair();
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+        let serialised = unwrap!(serialise(&appended_data));
+        assert_eq!(SERIALISED_APPENDED_DATA_SIZE, serialised.len());
     }
 }

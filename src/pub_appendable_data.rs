@@ -290,20 +290,9 @@ mod test {
     extern crate rand;
     use super::*;
 
-    use data::DataIdentifier;
-    use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
-    use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
-
-    #[test]
-    fn serialised_appended_data_size() {
-        let keys = sign::gen_keypair();
-        let pointer = DataIdentifier::Structured(rand::random(), 10000);
-        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
-        let serialised = unwrap!(serialise(&appended_data));
-        assert_eq!(SERIALISED_APPENDED_DATA_SIZE, serialised.len());
-    }
+    use append_types::Filter;
 
     #[test]
     fn single_owner() {
