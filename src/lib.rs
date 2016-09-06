@@ -201,7 +201,7 @@ pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData,
-                              AppendedData, Filter};
+                              AppendedData, AppendWrapper, Filter};
 pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;

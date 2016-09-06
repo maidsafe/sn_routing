@@ -48,9 +48,48 @@ pub struct AppendedData {
 
 /// An `AppendedData` item, together with the identifier of the data to append it to.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
-pub struct PubAppendWrapper {
-    append_to: XorName,
-    data: AppendedData,
+pub enum AppendWrapper {
+    /// A wrapper for public appendable data.
+    Pub {
+        /// The name of the data chunk to add to.
+        append_to: XorName,
+        /// The item to add to the chunk.
+        data: AppendedData,
+        /// The current version of the chunk.
+        version: u64,
+    }, /* Priv {
+        *     append_to: XorName,
+        *     data: PrivAppendedData,
+        *     sign_key: sign::PublicKey,
+        *     version: u64,
+        *     signature: Signature, // All the above fields
+        * }, */
+}
+
+impl AppendWrapper {
+    /// Returns a new append wrapper for public data.
+    pub fn new_pub(append_to: XorName, data: AppendedData, version: u64) -> Self {
+        AppendWrapper::Pub {
+            append_to: append_to,
+            data: data,
+            version: version,
+        }
+    }
+
+    // /// Returns a new, signed append wrapper for private data.
+    // pub fn new_priv(append_to: XorName,
+    //                 data: PrivAppendedData,
+    //                 sign_pair: (&sign::PublicKey, &sign::SecretKey),
+    //                 version: u64)
+    //                 -> Self {
+    //     AppendWrapper::Priv {
+    //         append_to: append_to,
+    //         data: data,
+    //         sign_key: *sign_pair.0,
+    //         version: version,
+    //         signature: unimplemented!(), // TODO
+    //     }
+    // }
 }
 
 impl AppendedData {
