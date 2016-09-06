@@ -36,7 +36,7 @@ pub const SERIALISED_PRIV_APPENDED_DATA_SIZE: usize = 260;
 pub struct PrivAppendedData {
     pub encrypt_key: box_::PublicKey, // Recommended to be a part of a throwaway keypair
     pub nonce: box_::Nonce,
-    pub encrypted_appended_data : Vec<u8>, // Encrypted AppendedData
+    pub encrypted_appended_data: Vec<u8>, // Encrypted AppendedData
 }
 
 impl PrivAppendedData {
@@ -51,7 +51,7 @@ impl PrivAppendedData {
                                                  &nonce,
                                                  encrypt_pub_key,
                                                  encrypt_secret_key);
-        Ok(PrivAppendedData{
+        Ok(PrivAppendedData {
             encrypt_key: *encrypt_pub_key,
             nonce: nonce,
             encrypted_appended_data: encrypted_appended_data,
@@ -59,8 +59,7 @@ impl PrivAppendedData {
     }
 
     /// Returns `AppendedData` decrypted from this item.
-    pub fn open(&self, encrypt_secret_key: &box_::SecretKey)
-               -> Result<AppendedData, RoutingError> {
+    pub fn open(&self, encrypt_secret_key: &box_::SecretKey) -> Result<AppendedData, RoutingError> {
         let decipher_result = try!(box_::open(&self.encrypted_appended_data,
                                               &self.nonce,
                                               &self.encrypt_key,
@@ -131,7 +130,8 @@ impl PrivAppendableData {
     /// recently been deleted.
     pub fn append(&mut self,
                   priv_appended_data: PrivAppendedData,
-                  encrypt_secret_key: &box_::SecretKey) -> bool {
+                  encrypt_secret_key: &box_::SecretKey)
+                  -> bool {
         if self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
@@ -448,7 +448,8 @@ mod test {
             Ok(mut priv_appendable_data) => {
                 // After one signature, one more is required to reach majority.
                 assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys1.1)), 1);
-                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
+                assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys)
+                                            .is_err());
                 // Two out of three is enough.
                 assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys2.1)), 0);
                 assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
