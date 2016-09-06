@@ -22,7 +22,7 @@ use data::DataIdentifier;
 use error::RoutingError;
 use priv_appendable_data::PrivAppendedData;
 
-/// Maximum allowed size for an appendable data
+/// Size of a serialised appended data item.
 pub const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
 
 /// The type of access filter for appendable data.

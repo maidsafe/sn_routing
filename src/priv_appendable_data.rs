@@ -33,7 +33,7 @@ pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 pub struct PrivAppendedData {
     pub encrypt_key: box_::PublicKey, // Recommended to be a part of a throwaway keypair
     pub nonce: box_::Nonce,
-    pub encrypted_appeneded_data : Vec<u8>, // Encrypted AppendedData
+    pub encrypted_appended_data : Vec<u8>, // Encrypted AppendedData
 }
 
 impl PrivAppendedData {
@@ -44,21 +44,21 @@ impl PrivAppendedData {
                -> Result<PrivAppendedData, RoutingError> {
         let encoded_appended_data = try!(serialise(&appended_data));
         let nonce = box_::gen_nonce();
-        let encrypted_appeneded_data = box_::seal(&encoded_appended_data,
-                                                  &nonce,
-                                                  encrypt_pub_key,
-                                                  encrypt_secret_key);
+        let encrypted_appended_data = box_::seal(&encoded_appended_data,
+                                                 &nonce,
+                                                 encrypt_pub_key,
+                                                 encrypt_secret_key);
         Ok(PrivAppendedData{
             encrypt_key: *encrypt_pub_key,
             nonce: nonce,
-            encrypted_appeneded_data: encrypted_appeneded_data,
+            encrypted_appended_data: encrypted_appended_data,
         })
     }
 
     /// Returns `AppendedData` decrypted from this item.
     pub fn open(&self, encrypt_secret_key: &box_::SecretKey)
                -> Result<AppendedData, RoutingError> {
-        let decipher_result = try!(box_::open(&self.encrypted_appeneded_data,
+        let decipher_result = try!(box_::open(&self.encrypted_appended_data,
                                               &self.nonce,
                                               &self.encrypt_key,
                                               encrypt_secret_key).map_err(|()|
@@ -143,16 +143,22 @@ impl PrivAppendableData {
         if sign::verify_detached(appended_data.signature(),
                                  &signed_data,
                                  appended_data.sign_key()) {
-            // PrivAppendableData shall only allows working with white list
-            if let Filter::WhiteList(white_list) = self.filter.clone() {
-                if white_list.contains(appended_data.sign_key()) {
-                    let _ = self.data.insert(priv_appended_data);
-                    self.version += 1;
-                    return true;
+            match self.filter.clone() {
+                Filter::WhiteList(white_list) => {
+                    if !white_list.contains(appended_data.sign_key()) {
+                        return false;
+                    }
+                }
+                Filter::BlackList(black_list) => {
+                    if black_list.contains(appended_data.sign_key()) {
+                        return false;
+                    }
                 }
             }
         }
-        false
+        let _ = self.data.insert(priv_appended_data);
+        self.version += 1;
+        true
     }
 
     /// Returns the name.
