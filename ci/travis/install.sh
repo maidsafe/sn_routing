@@ -43,6 +43,3 @@ if [ -n "$GCC_PREFIX" ]; then
   echo "[target.$TARGET]" >> .cargo/config
   echo "linker = \"${GCC_PREFIX}gcc\"" >> .cargo/config
 fi
-
-# Install libsodium
-./ci/travis/install_libsodium.sh
