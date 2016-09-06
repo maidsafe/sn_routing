@@ -21,7 +21,8 @@
 use rand::Rng;
 use rand::distributions::{IndependentSample, Range};
 
-use routing::{Authority, Data, Event, FullId, GROUP_SIZE, ImmutableData, Response, StructuredData};
+use routing::{AppendWrapper, AppendedData, Authority, Data, DataIdentifier, Event, FullId,
+              GROUP_SIZE, ImmutableData, Response, StructuredData};
 use routing::client_errors::{GetError, MutationError};
 use routing::mock_crust::{self, Network};
 use safe_vault::mock_crust_detail::{self, poll, test_node};
@@ -359,6 +360,36 @@ fn structured_data_operations_with_churn(use_cache: bool) {
     }
 }
 
+#[test]
+fn handle_put_append_get_normal_flow() {
+    let network = Network::new(None);
+    let node_count = 15;
+    let mut nodes = test_node::create_nodes(&network, node_count, None, true);
+    let config = mock_crust::Config::with_contacts(&[nodes[0].endpoint()]);
+    let mut client = TestClient::new(&network, Some(config));
+
+    client.ensure_connected(&mut nodes);
+    client.create_account(&mut nodes);
+    let full_id = client.full_id().clone();
+    let mut rng = network.new_rng();
+    let mut ad = test_utils::random_pub_appendable_data(&full_id, &mut rng);
+    let data = Data::PubAppendable(ad.clone());
+    let _ = client.put_and_verify(data.clone(), &mut nodes);
+    assert_eq!(data, client.get(data.identifier(), &mut nodes));
+    let appended_data =
+        unwrap_result!(AppendedData::new(DataIdentifier::Structured(rng.gen(), 12345),
+                                         *full_id.public_id().signing_public_key(),
+                                         full_id.signing_private_key()));
+    let wrapper = AppendWrapper::Pub {
+        append_to: *data.name(),
+        data: appended_data.clone(),
+        version: 0,
+    };
+    let _ = client.append_and_verify(wrapper, &mut nodes);
+    ad.append(appended_data);
+    assert_eq!(Data::PubAppendable(ad),
+               client.get(data.identifier(), &mut nodes));
+}
 
 #[test]
 fn handle_put_get_normal_flow() {

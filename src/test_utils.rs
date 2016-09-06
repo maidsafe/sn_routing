@@ -18,14 +18,14 @@
 #![cfg(feature = "use-mock-crust")]
 
 use rand::Rng;
-use routing::{FullId, ImmutableData, StructuredData};
+use routing::{Filter, FullId, ImmutableData, PubAppendableData, StructuredData};
 
-/// creates random immutable data - tests only
+/// Creates random immutable data - tests only
 pub fn random_immutable_data<R: Rng>(size: usize, rng: &mut R) -> ImmutableData {
     ImmutableData::new(rng.gen_iter().take(size).collect())
 }
 
-/// creates random structured data - tests only
+/// Creates random structured data - tests only
 pub fn random_structured_data<R: Rng>(type_tag: u64,
                                       full_id: &FullId,
                                       rng: &mut R)
@@ -38,4 +38,15 @@ pub fn random_structured_data<R: Rng>(type_tag: u64,
                         vec![],
                         Some(full_id.signing_private_key()))
         .expect("Cannot create structured data for test")
+}
+
+/// Creates random public appendable data - tests only
+pub fn random_pub_appendable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> PubAppendableData {
+    PubAppendableData::new(rng.gen(),
+                           0,
+                           vec![full_id.public_id().signing_public_key().clone()],
+                           vec![],
+                           Filter::BlackList(vec![]),
+                           Some(full_id.signing_private_key()))
+        .expect("Cannot create public appendable data for test")
 }

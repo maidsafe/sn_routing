@@ -104,6 +104,11 @@ impl MaidManager {
             Data::Structured(struct_data) => {
                 self.handle_put_structured_data(src, dst, struct_data, msg_id)
             }
+            data @ Data::PubAppendable(..) |
+            data @ Data::PrivAppendable(..) => {
+                let client_name = utils::client_name(&src);
+                self.forward_put_request(src, dst, client_name, data, msg_id)
+            }
             _ => {
                 self.reply_with_put_failure(src,
                                             dst,
