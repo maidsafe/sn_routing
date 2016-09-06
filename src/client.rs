@@ -32,7 +32,7 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use authority::Authority;
 use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
-use pub_appendable_data::AppendWrapper;
+use append_types::AppendWrapper;
 use types::MessageId;
 use xor_name::XorName;
 

@@ -19,6 +19,7 @@ use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
 pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
+pub use priv_appendable_data::PrivAppendableData;
 pub use pub_appendable_data::PubAppendableData;
 use xor_name::XorName;
 
@@ -34,7 +35,7 @@ pub enum Data {
     /// `PubAppendableData` data type.
     PubAppendable(PubAppendableData),
     /// `PrivAppendableData` data type.
-    PrivAppendable(PubAppendableData), // TODO(afck): Change to `PrivAppendableData`.
+    PrivAppendable(PrivAppendableData),
 }
 
 impl Data {

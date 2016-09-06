@@ -22,7 +22,7 @@ use mock_crust::crust::PeerId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{serialise, deserialise};
-use pub_appendable_data::AppendWrapper;
+use append_types::AppendWrapper;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::BTreeMap;
