@@ -22,106 +22,10 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
+use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
 
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
-
-/// Maximum allowed size for an appendable data
-pub const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
-
-/// The type of access filter for appendable data.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
-pub enum Filter {
-    /// Everyone except the listed keys are allowed to append data.
-    BlackList(Vec<PublicKey>),
-    /// Only the listed keys are allowed to append data.
-    WhiteList(Vec<PublicKey>),
-}
-
-/// An appended data item, pointing to another data chunk in the network.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
-pub struct AppendedData {
-    pointer: DataIdentifier, // Pointer to actual data
-    sign_key: PublicKey,
-    signature: Signature, // All the above fields
-}
-
-/// An `AppendedData` item, together with the identifier of the data to append it to.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
-pub enum AppendWrapper {
-    /// A wrapper for public appendable data.
-    Pub {
-        /// The name of the data chunk to add to.
-        append_to: XorName,
-        /// The item to add to the chunk.
-        data: AppendedData,
-        /// The current version of the chunk.
-        version: u64,
-    }, /* Priv {
-        *     append_to: XorName,
-        *     data: PrivAppendedData,
-        *     sign_key: sign::PublicKey,
-        *     version: u64,
-        *     signature: Signature, // All the above fields
-        * }, */
-}
-
-impl AppendWrapper {
-    /// Returns a new append wrapper for public data.
-    pub fn new_pub(append_to: XorName, data: AppendedData, version: u64) -> Self {
-        AppendWrapper::Pub {
-            append_to: append_to,
-            data: data,
-            version: version,
-        }
-    }
-
-    // /// Returns a new, signed append wrapper for private data.
-    // pub fn new_priv(append_to: XorName,
-    //                 data: PrivAppendedData,
-    //                 sign_pair: (&sign::PublicKey, &sign::SecretKey),
-    //                 version: u64)
-    //                 -> Self {
-    //     AppendWrapper::Priv {
-    //         append_to: append_to,
-    //         data: data,
-    //         sign_key: *sign_pair.0,
-    //         version: version,
-    //         signature: unimplemented!(), // TODO
-    //     }
-    // }
-}
-
-impl AppendedData {
-    /// Returns a new signed appended data.
-    pub fn new(pointer: DataIdentifier,
-               pub_key: PublicKey,
-               secret_key: &SecretKey)
-               -> Result<AppendedData, RoutingError> {
-        let signed_data = try!(serialise(&(&pointer, &pub_key)));
-        let signature = sign::sign_detached(&signed_data, secret_key);
-        Ok(AppendedData {
-            pointer: pointer,
-            sign_key: pub_key,
-            signature: signature,
-        })
-    }
-
-    /// Returns reference to pointer.
-    pub fn pointer(&self) -> &DataIdentifier {
-        &self.pointer
-    }
-
-    /// Returns reference to sign_key.
-    pub fn sign_key(&self) -> &PublicKey {
-        &self.sign_key
-    }
-
-    /// Returns reference to signature.
-    pub fn signature(&self) -> &Signature {
-        &self.signature
-    }
-}
 
 /// Public appendable data.
 ///
@@ -390,6 +294,7 @@ mod test {
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
+    use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
 
     #[test]
     fn serialised_appended_data_size() {

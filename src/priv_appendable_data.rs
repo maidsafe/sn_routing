@@ -23,7 +23,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use pub_appendable_data::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
+use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -314,7 +314,7 @@ mod test {
     use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
-    use pub_appendable_data::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
+    use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
 
     #[test]
     fn serialised_appended_data_size() {
