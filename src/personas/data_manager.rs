@@ -356,7 +356,7 @@ fn id_and_version_of(data: &Data) -> IdAndVersion {
     (data.identifier(),
      match *data {
         Data::Structured(ref sd) => sd.get_version(),
-        Data::PubAppendable(ref ad) |
+        Data::PubAppendable(ref ad) => ad.get_version(),
         Data::PrivAppendable(ref ad) => ad.get_version(),
         Data::Immutable(_) |
         Data::Plain(_) => 0,
@@ -571,39 +571,55 @@ impl DataManager {
                          wrapper: AppendWrapper,
                          message_id: MessageId)
                          -> Result<(), InternalError> {
-        let AppendWrapper::Pub { append_to, data: appended_data, version } = wrapper;
-        let data_id = DataIdentifier::PubAppendable(append_to);
-        let mut data = match self.chunk_store.get(&data_id) {
-            Ok(Data::PubAppendable(data)) => data,
-            Ok(_) => {
-                unreachable!("Append operation for Invalid Data Type. {:?} - {:?}",
-                             data_id,
-                             message_id)
-            }
-            Err(error) => {
-                trace!("DM sending append_failure for: {:?} with {:?} - {:?}",
-                       data_id,
-                       message_id,
-                       error);
-                let append_error = try!(serialisation::serialise(&MutationError::NoSuchData));
-                return Ok(try!(self.routing_node
-                    .send_append_failure(dst, src, data_id, append_error, message_id)));
+        let data_id = wrapper.identifier();
+        let append_result = if !wrapper.verify_signature() {
+            None
+        } else {
+            match (wrapper, self.chunk_store.get(&data_id)) {
+                (AppendWrapper::Pub { data, version, .. }, Ok(Data::PubAppendable(mut ad))) => {
+                    if ad.get_version() != version || !ad.append(data) {
+                        None
+                    } else {
+                        Some(Data::PubAppendable(ad))
+                    }
+                }
+                (AppendWrapper::Priv { data, version, sign_key, .. },
+                 Ok(Data::PrivAppendable(mut ad))) => {
+                    if ad.get_version() != version || !ad.append(data, &sign_key) {
+                        None
+                    } else {
+                        Some(Data::PrivAppendable(ad))
+                    }
+                }
+                (_, Ok(_)) => {
+                    unreachable!("Append operation for Invalid Data Type. {:?} - {:?}",
+                                 data_id,
+                                 message_id)
+                }
+                (_, Err(error)) => {
+                    trace!("DM sending append_failure for: {:?} with {:?} - {:?}",
+                           data_id,
+                           message_id,
+                           error);
+                    let append_error = try!(serialisation::serialise(&MutationError::NoSuchData));
+                    return Ok(try!(self.routing_node
+                        .send_append_failure(dst, src, data_id, append_error, message_id)));
+                }
             }
         };
 
-        if data.get_version() != version || !data.append(appended_data) {
+        if let Some(data) = append_result {
+            if let Some(refresh_data) = self.cache
+                .insert_pending_write(data, PendingWriteType::Append, src, dst, message_id) {
+                let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
+            }
+        } else {
             trace!("DM sending append_failure for: {:?} with {:?}",
                    data_id,
                    message_id);
             let append_error = try!(serialisation::serialise(&MutationError::InvalidSuccessor));
-            return Ok(try!(self.routing_node
-                .send_append_failure(dst.clone(), src, data_id, append_error, message_id)));
-        }
-
-        let ad = Data::PubAppendable(data);
-        if let Some(refresh_data) = self.cache
-            .insert_pending_write(ad, PendingWriteType::Append, src, dst, message_id) {
-            let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
+            try!(self.routing_node
+                .send_append_failure(dst.clone(), src, data_id, append_error, message_id))
         }
         Ok(())
     }
@@ -934,7 +950,7 @@ impl DataManager {
             DataIdentifier::PubAppendable(..) => {
                 match self.chunk_store.get(&data_id) {
                     Ok(Data::Structured(data)) => Some((data_id, data.get_version())),
-                    Ok(Data::PubAppendable(data)) |
+                    Ok(Data::PubAppendable(data)) => Some((data_id, data.get_version())),
                     Ok(Data::PrivAppendable(data)) => Some((data_id, data.get_version())),
                     _ => {
                         error!("Failed to get {:?} from chunk store.", data_id);

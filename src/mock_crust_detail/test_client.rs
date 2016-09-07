@@ -354,8 +354,8 @@ impl TestClient {
                              wrapper: AppendWrapper,
                              nodes: &mut [TestNode])
                              -> Result<(), Option<MutationError>> {
-        let AppendWrapper::Pub { append_to, .. } = wrapper;
-        let dst = Authority::NaeManager(append_to);
+        let request_data_id = wrapper.identifier();
+        let dst = Authority::NaeManager(*request_data_id.name());
         let request_message_id = MessageId::new();
         unwrap_result!(self.routing_client.send_append_request(dst, wrapper, request_message_id));
         let _ = poll::poll_and_resend_unacknowledged(nodes, self);
@@ -371,7 +371,7 @@ impl TestClient {
                     external_error_indicator: response_error
                 }, .. }) => {
                 assert_eq!(request_message_id, response_id);
-                assert!(DataIdentifier::PubAppendable(append_to) == data_id);
+                assert_eq!(request_data_id, data_id);
                 let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
                 Err(Some(parsed_error))
             }
