@@ -22,7 +22,7 @@ use data::DataIdentifier;
 use error::RoutingError;
 use priv_appendable_data::PrivAppendedData;
 
-/// Size of a serialised appended_data item.
+/// Size of a serialised `AppendedData` item.
 pub const SERIALISED_APPENDED_DATA_SIZE: usize = 164;
 
 /// The type of access filter for appendable data.
@@ -37,9 +37,12 @@ pub enum Filter {
 /// An appended data item, pointing to another data chunk in the network.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
 pub struct AppendedData {
-    pointer: DataIdentifier, // Pointer to actual data
-    sign_key: PublicKey,
-    signature: Signature, // All the above fields
+    /// A pointer to the chunk with the actual data.
+    pub pointer: DataIdentifier,
+    /// The public key of the signer.
+    pub sign_key: PublicKey,
+    /// The signature of the above fields.
+    pub signature: Signature,
 }
 
 /// An `AppendedData` item, together with the identifier of the data to append it to.
@@ -86,7 +89,7 @@ impl AppendWrapper {
                     version: u64)
                     -> Result<AppendWrapper, RoutingError> {
         let data_to_sign = try!(serialise(&(&append_to, &data, &sign_pair.0, &version)));
-        let signature = sign::sign_detached(&data_to_sign, &sign_pair.1);
+        let signature = sign::sign_detached(&data_to_sign, sign_pair.1);
         Ok(AppendWrapper::Priv {
             append_to: append_to,
             data: data,
@@ -94,6 +97,14 @@ impl AppendWrapper {
             version: version,
             signature: signature,
         })
+    }
+
+    /// Returns the identifier of the data to append to.
+    pub fn identifier(&self) -> DataIdentifier {
+        match *self {
+            AppendWrapper::Priv { append_to, .. } => DataIdentifier::PrivAppendable(append_to),
+            AppendWrapper::Pub { append_to, .. } => DataIdentifier::PubAppendable(append_to),
+        }
     }
 }
 

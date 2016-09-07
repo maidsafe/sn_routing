@@ -35,14 +35,23 @@ pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 /// Data can be appended by any key that is not excluded by the filter.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct PubAppendableData {
-    name: XorName,
-    version: u64,
-    current_owner_keys: Vec<PublicKey>,
-    previous_owner_keys: Vec<PublicKey>,
-    filter: Filter,
-    deleted_data: BTreeSet<AppendedData>,
-    previous_owner_signatures: Vec<Signature>, // All the above fields
-    data: BTreeSet<AppendedData>, // Unsigned
+    /// The name of this data chunk.
+    pub name: XorName,
+    /// The version, i.e. the number of times this has been updated by a `Post` request.
+    pub version: u64,
+    /// The keys of the current owners that have the right to modify this data.
+    pub current_owner_keys: Vec<PublicKey>,
+    /// The keys of the owners of the chunk's previous version.
+    pub previous_owner_keys: Vec<PublicKey>,
+    /// The filter defining who is allowed to append items.
+    pub filter: Filter,
+    /// A collection of previously deleted data items.
+    pub deleted_data: BTreeSet<AppendedData>,
+    /// The signatures of the above fields by the previous owners, confirming the last update.
+    pub previous_owner_signatures: Vec<Signature>,
+    /// The collection of appended data items. These are not signed by the owners, as they change
+    /// even between `Post`s.
+    pub data: BTreeSet<AppendedData>,
 }
 
 impl PubAppendableData {
@@ -88,6 +97,7 @@ impl PubAppendableData {
         self.version = other.version;
         self.previous_owner_keys = other.previous_owner_keys;
         self.current_owner_keys = other.current_owner_keys;
+        self.filter = other.filter;
         self.deleted_data = other.deleted_data;
         self.previous_owner_signatures = other.previous_owner_signatures;
         self.data.extend(other.data);

@@ -28,15 +28,18 @@ use append_types::{AppendedData, Filter};
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 
-/// Size of a serialised priv_appended_data item.
+/// Size of a serialised `PrivAppendedData` item.
 pub const SERIALISED_PRIV_APPENDED_DATA_SIZE: usize = 260;
 
 /// A private appended data item.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
 pub struct PrivAppendedData {
-    pub encrypt_key: box_::PublicKey, // Recommended to be a part of a throwaway keypair
+    /// The key used for encrypting the data item. Recommended to be a part of a throwaway keypair.
+    pub encrypt_key: box_::PublicKey,
+    /// The nonce used for encryption.
     pub nonce: box_::Nonce,
-    pub encrypted_appended_data: Vec<u8>, // Encrypted AppendedData
+    /// The encrypted `AppendedData` item.
+    pub encrypted_appended_data: Vec<u8>,
 }
 
 impl PrivAppendedData {
@@ -63,8 +66,8 @@ impl PrivAppendedData {
         let decipher_result = try!(box_::open(&self.encrypted_appended_data,
                                               &self.nonce,
                                               &self.encrypt_key,
-                                              encrypt_secret_key).map_err(|()|
-                                                  RoutingError::AsymmetricDecryptionFailure));
+                                              encrypt_secret_key)
+            .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
         Ok(try!(deserialise(&decipher_result)))
     }
 }
@@ -77,15 +80,25 @@ impl PrivAppendedData {
 /// Data can be appended by any key that is not excluded by the filter.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct PrivAppendableData {
-    name: XorName,
-    version: u64,
-    current_owner_keys: Vec<PublicKey>,
-    previous_owner_keys: Vec<PublicKey>,
-    filter: Filter,
-    encrypt_key: box_::PublicKey,
-    deleted_data: BTreeSet<PrivAppendedData>,
-    previous_owner_signatures: Vec<Signature>, // All the above fields
-    data: BTreeSet<PrivAppendedData>, // Unsigned
+    /// The name of this data chunk.
+    pub name: XorName,
+    /// The version, i.e. the number of times this has been updated by a `Post` request.
+    pub version: u64,
+    /// The keys of the current owners that have the right to modify this data.
+    pub current_owner_keys: Vec<PublicKey>,
+    /// The keys of the owners of the chunk's previous version.
+    pub previous_owner_keys: Vec<PublicKey>,
+    /// The filter defining who is allowed to append items.
+    pub filter: Filter,
+    /// The key to use for encrypting appended data items.
+    pub encrypt_key: box_::PublicKey,
+    /// A collection of previously deleted data items.
+    pub deleted_data: BTreeSet<PrivAppendedData>,
+    /// The signatures of the above fields by the previous owners, confirming the last update.
+    pub previous_owner_signatures: Vec<Signature>, // All the above fields
+    /// The collection of appended data items. These are not signed by the owners, as they change
+    /// even between `Post`s.
+    pub data: BTreeSet<PrivAppendedData>, // Unsigned
 }
 
 impl PrivAppendableData {
@@ -115,6 +128,56 @@ impl PrivAppendableData {
             let _ = try!(priv_appendable_data.add_signature(key));
         }
         Ok(priv_appendable_data)
+    }
+
+    /// Updates this data item with the given updated version if the update is valid, otherwise
+    /// returns an error.
+    ///
+    /// This allows types to be created and `previous_owner_signatures` added one by one.
+    /// To transfer ownership, the current owner signs over the data; the previous owners field
+    /// must have the previous owners of `version - 1` as the current owners of that last version.
+    ///
+    /// The `data` will contain the union of the data items, _excluding_ the `deleted_data` as
+    /// given in the update.
+    pub fn update_with_other(&mut self, other: PrivAppendableData) -> Result<(), RoutingError> {
+        try!(self.validate_self_against_successor(&other));
+
+        self.name = other.name;
+        self.version = other.version;
+        self.previous_owner_keys = other.previous_owner_keys;
+        self.current_owner_keys = other.current_owner_keys;
+        self.filter = other.filter;
+        self.encrypt_key = other.encrypt_key;
+        self.deleted_data = other.deleted_data;
+        self.previous_owner_signatures = other.previous_owner_signatures;
+        self.data.extend(other.data);
+        for ad in &self.deleted_data {
+            let _ = self.data.remove(ad);
+        }
+        Ok(())
+    }
+
+    /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
+    ///
+    /// An update is valid if it doesn't change the name, increases the version by 1 and is signed
+    /// by (more than 50% of) the owners.
+    ///
+    /// In case of an ownership transfer, the `previous_owner_keys` in `other` must match the
+    /// `current_owner_keys` in `self`.
+    pub fn validate_self_against_successor(&self,
+                                           other: &PrivAppendableData)
+                                           -> Result<(), RoutingError> {
+        let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
+            &other.current_owner_keys
+        } else {
+            &other.previous_owner_keys
+        };
+
+        if other.name != self.name || other.version != self.version + 1 ||
+           *owner_keys_to_match != self.current_owner_keys {
+            return Err(RoutingError::UnknownMessageType);
+        }
+        other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
     /// Deletes the given data item and returns `true` if it was there.
@@ -331,9 +394,8 @@ mod test {
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
         let encrypt_keys = box_::gen_keypair();
-        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data,
-                                                               &encrypt_keys.0,
-                                                               &encrypt_keys.1));
+        let priv_appended_data =
+            unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0, &encrypt_keys.1));
         let serialised = unwrap!(serialise(&priv_appended_data));
         assert_eq!(SERIALISED_PRIV_APPENDED_DATA_SIZE, serialised.len());
     }
@@ -449,7 +511,7 @@ mod test {
                 // After one signature, one more is required to reach majority.
                 assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys1.1)), 1);
                 assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys)
-                                            .is_err());
+                    .is_err());
                 // Two out of three is enough.
                 assert_eq!(unwrap!(priv_appendable_data.add_signature(&keys2.1)), 0);
                 assert!(priv_appendable_data.verify_previous_owner_signatures(&owner_keys).is_ok());
