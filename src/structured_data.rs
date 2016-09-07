@@ -221,11 +221,6 @@ impl StructuredData {
     pub fn get_previous_owner_signatures(&self) -> &Vec<Signature> {
         &self.previous_owner_signatures
     }
-
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
-        self.data.len()
-    }
 }
 
 impl Debug for StructuredData {

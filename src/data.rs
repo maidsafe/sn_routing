@@ -60,17 +60,6 @@ impl Data {
             Data::PrivAppendable(ref data) => data.identifier(),
         }
     }
-
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
-        match *self {
-            Data::Structured(ref data) => data.payload_size(),
-            Data::Immutable(ref data) => data.payload_size(),
-            Data::Plain(ref data) => data.payload_size(),
-            Data::PubAppendable(ref data) => data.payload_size(),
-            Data::PrivAppendable(ref data) => data.payload_size(),
-        }
-    }
 }
 
 #[derive(Hash, Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, RustcEncodable, RustcDecodable)]
@@ -159,38 +148,6 @@ mod test {
         assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
         assert_eq!(plain_data.identifier(),
                    DataIdentifier::Plain(*plain_data.name()));
-    }
-
-    #[test]
-    fn data_payload_size() {
-        // payload_size() resolves correctly for StructuredData
-        let keys = ::rust_sodium::crypto::sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.payload_size(),
-                           Data::Structured(structured_data).payload_size());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        // payload_size() resolves correctly for ImmutableData
-        let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(value);
-        assert_eq!(immutable_data.payload_size(),
-                   Data::Immutable(immutable_data).payload_size());
-
-        // payload_size() resolves correctly for PlainData
-        let name = XorName(sha256::hash(&[]).0);
-        let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.payload_size(),
-                   Data::Plain(plain_data).payload_size());
     }
 
     #[test]

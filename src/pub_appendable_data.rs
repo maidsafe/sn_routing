@@ -22,7 +22,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{SERIALISED_APPENDED_DATA_SIZE, AppendedData, Filter};
+use append_types::{AppendedData, Filter};
 
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -33,6 +33,7 @@ pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 /// set to the same keys. Updates require a signature to validate.
 ///
 /// Data can be appended by any key that is not excluded by the filter.
+// TODO: Deduplicate the logic shared with `PrivAppendableData` and `StructuredData`.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable)]
 pub struct PubAppendableData {
     /// The name of this data chunk.
@@ -117,7 +118,10 @@ impl PubAppendableData {
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
     /// recently been deleted.
     pub fn append(&mut self, appended_data: AppendedData) -> bool {
-        if self.deleted_data.contains(&appended_data) {
+        if match self.filter {
+            Filter::WhiteList(ref white_list) => !white_list.contains(&appended_data.sign_key),
+            Filter::BlackList(ref black_list) => black_list.contains(&appended_data.sign_key),
+        } || self.deleted_data.contains(&appended_data) {
             return false;
         }
         let _ = self.data.insert(appended_data);
@@ -252,11 +256,6 @@ impl PubAppendableData {
     pub fn get_previous_owner_signatures(&self) -> &Vec<Signature> {
         &self.previous_owner_signatures
     }
-
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
-        self.data.len() * SERIALISED_APPENDED_DATA_SIZE
-    }
 }
 
 impl Debug for PubAppendableData {
@@ -313,7 +312,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      Some(&keys.1)) {
             Ok(pub_appendable_data) => {
                 assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
@@ -333,7 +332,7 @@ mod test {
                                      0,
                                      vec![],
                                      owner_keys.clone(),
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      None) {
             Ok(pub_appendable_data) => {
                 assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
@@ -354,7 +353,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      Some(&other_keys.1)) {
             Ok(pub_appendable_data) => {
                 assert_eq!(pub_appendable_data.verify_previous_owner_signatures(&owner_keys).ok(),
@@ -375,7 +374,7 @@ mod test {
                                      0,
                                      vec![],
                                      owner_keys.clone(),
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      None) {
             Ok(mut pub_appendable_data) => {
                 assert_eq!(pub_appendable_data.add_signature(&other_keys.1).ok(),
@@ -399,7 +398,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      None) {
             Ok(mut pub_appendable_data) => {
                 // After one signature, one more is required to reach majority.
@@ -429,7 +428,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      Some(&keys1.1)) {
             Ok(mut pub_appendable_data) => {
                 // Two signatures are not enough because they don't have a strict majority.
@@ -460,7 +459,7 @@ mod test {
                                      0,
                                      vec![keys1.0, keys2.0, keys3.0],
                                      vec![],
-                                     Filter::WhiteList(vec![]),
+                                     Filter::white_list(None),
                                      Some(&keys1.1)) {
             Ok(mut orig_pub_appendable_data) => {
                 assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
@@ -470,7 +469,7 @@ mod test {
                                              1,
                                              vec![new_owner.0],
                                              vec![keys1.0, keys2.0, keys3.0],
-                                             Filter::WhiteList(vec![]),
+                                             Filter::white_list(None),
                                              Some(&keys1.1)) {
                     Ok(mut new_pub_appendable_data) => {
                         assert_eq!(new_pub_appendable_data.add_signature(&keys2.1).ok(),
@@ -484,7 +483,7 @@ mod test {
                                                      2,
                                                      vec![keys1.0],
                                                      vec![new_owner.0],
-                                                     Filter::WhiteList(vec![]),
+                                                     Filter::white_list(None),
                                                      Some(&new_owner.1)) {
                             Ok(another_new_pub_appendable_data) => {
                                 match orig_pub_appendable_data.update_with_other(

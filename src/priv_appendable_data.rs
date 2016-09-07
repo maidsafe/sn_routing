@@ -18,6 +18,7 @@
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use rustc_serialize::{Decoder, Decodable};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
@@ -28,17 +29,12 @@ use append_types::{AppendedData, Filter};
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
 
-/// Size of a serialised `PrivAppendedData` item.
-pub const SERIALISED_PRIV_APPENDED_DATA_SIZE: usize = 260;
+/// Maximum size of a serialised `PrivAppendedData` item, in bytes.
+pub const MAX_PRIV_APPENDED_DATA_BYTES: usize = 220;
 
-/// A private appended data item.
-#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
-pub struct PrivAppendedData {
-    /// The key used for encrypting the data item.
-    pub encrypt_key: box_::PublicKey,
-    /// The encrypted `AppendedData` item.
-    pub encrypted_appended_data: Vec<u8>,
-}
+/// A private appended data item: an encrypted `AppendedData`.
+#[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcEncodable, Debug)]
+pub struct PrivAppendedData(pub Vec<u8>);
 
 impl PrivAppendedData {
     /// Creates a new `PrivAppendedData` encrypted with `encrypting_key`.
@@ -47,19 +43,27 @@ impl PrivAppendedData {
                -> Result<PrivAppendedData, RoutingError> {
         let encoded_appended_data = try!(serialise(&appended_data));
         let encrypted_appended_data = sealedbox::seal(&encoded_appended_data, encrypt_pub_key);
-        Ok(PrivAppendedData {
-            encrypt_key: *encrypt_pub_key,
-            encrypted_appended_data: encrypted_appended_data,
-        })
+        Ok(PrivAppendedData(encrypted_appended_data))
     }
 
     /// Returns `AppendedData` decrypted from this item.
-    pub fn open(&self, encrypt_secret_key: &box_::SecretKey) -> Result<AppendedData, RoutingError> {
-        let decipher_result = try!(sealedbox::open(&self.encrypted_appended_data,
-                                                   &self.encrypt_key,
-                                                   encrypt_secret_key)
+    pub fn open(&self,
+                pub_key: &box_::PublicKey,
+                secret_key: &box_::SecretKey)
+                -> Result<AppendedData, RoutingError> {
+        let decipher_result = try!(sealedbox::open(&self.0, pub_key, secret_key)
             .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
         Ok(try!(deserialise(&decipher_result)))
+    }
+}
+
+impl Decodable for PrivAppendedData {
+    fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
+        let data: Vec<u8> = try!(Decodable::decode(d));
+        if data.len() > MAX_PRIV_APPENDED_DATA_BYTES {
+            return Err(d.error("wrong private appended data size"));
+        }
+        Ok(PrivAppendedData(data))
     }
 }
 
@@ -183,17 +187,13 @@ impl PrivAppendableData {
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
     /// recently been deleted.
     pub fn append(&mut self, priv_appended_data: PrivAppendedData, sign_key: &PublicKey) -> bool {
-        if self.deleted_data.contains(&priv_appended_data) {
-            return false;
-        }
         if match self.filter {
             Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
             Filter::BlackList(ref black_list) => black_list.contains(sign_key),
-        } {
+        } || self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
         let _ = self.data.insert(priv_appended_data);
-        self.version += 1;
         true
     }
 
@@ -304,11 +304,6 @@ impl PrivAppendableData {
     pub fn get_previous_owner_signatures(&self) -> &Vec<Signature> {
         &self.previous_owner_signatures
     }
-
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
-        self.data.len() * SERIALISED_PRIV_APPENDED_DATA_SIZE
-    }
 }
 
 impl Debug for PrivAppendableData {
@@ -366,7 +361,7 @@ mod test {
         let encrypt_keys = box_::gen_keypair();
         let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
         let serialised = unwrap!(serialise(&priv_appended_data));
-        assert_eq!(SERIALISED_PRIV_APPENDED_DATA_SIZE, serialised.len());
+        assert_eq!(MAX_PRIV_APPENDED_DATA_BYTES, serialised.len());
     }
 
     #[test]
@@ -379,7 +374,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&keys.1)) {
             Ok(priv_appendable_data) => {
@@ -401,7 +396,7 @@ mod test {
                                       0,
                                       vec![],
                                       owner_keys.clone(),
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
             Ok(priv_appendable_data) => {
@@ -424,7 +419,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&other_keys.1)) {
             Ok(priv_appendable_data) => {
@@ -447,7 +442,7 @@ mod test {
                                       0,
                                       vec![],
                                       owner_keys.clone(),
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
             Ok(mut priv_appendable_data) => {
@@ -473,7 +468,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
             Ok(mut priv_appendable_data) => {
@@ -506,7 +501,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
-                                      Filter::WhiteList(vec![]),
+                                      Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&keys1.1)) {
             Ok(mut priv_appendable_data) => {
