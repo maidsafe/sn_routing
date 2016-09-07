@@ -44,6 +44,7 @@ pub struct Stats {
     msg_put: usize,
     msg_post: usize,
     msg_delete: usize,
+    msg_append: usize,
     msg_get_account_info: usize,
     msg_get_close_group: usize,
     msg_get_node_name: usize,
@@ -58,6 +59,8 @@ pub struct Stats {
     msg_post_failure: usize,
     msg_delete_success: usize,
     msg_delete_failure: usize,
+    msg_append_success: usize,
+    msg_append_failure: usize,
     msg_get_account_info_success: usize,
     msg_get_account_info_failure: usize,
     msg_get_close_group_rsp: usize,
@@ -91,6 +94,7 @@ impl Stats {
             Request::Put(..) => self.msg_put += 1,
             Request::Post(..) => self.msg_post += 1,
             Request::Delete(..) => self.msg_delete += 1,
+            Request::Append(..) => self.msg_append += 1,
             Request::GetAccountInfo(..) => self.msg_get_account_info += 1,
         }
         self.increment_msg_total();
@@ -107,6 +111,8 @@ impl Stats {
             Response::PostFailure { .. } => self.msg_post_failure += 1,
             Response::DeleteSuccess(..) => self.msg_delete_success += 1,
             Response::DeleteFailure { .. } => self.msg_delete_failure += 1,
+            Response::AppendSuccess(..) => self.msg_append_success += 1,
+            Response::AppendFailure { .. } => self.msg_append_failure += 1,
             Response::GetAccountInfoSuccess { .. } => self.msg_get_account_info_success += 1,
             Response::GetAccountInfoFailure { .. } => self.msg_get_account_info_failure += 1,
         }
