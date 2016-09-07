@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use rust_sodium::crypto::box_;
+use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
@@ -34,10 +34,8 @@ pub const SERIALISED_PRIV_APPENDED_DATA_SIZE: usize = 260;
 /// A private appended data item.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, RustcDecodable, RustcEncodable, Debug)]
 pub struct PrivAppendedData {
-    /// The key used for encrypting the data item. Recommended to be a part of a throwaway keypair.
+    /// The key used for encrypting the data item.
     pub encrypt_key: box_::PublicKey,
-    /// The nonce used for encryption.
-    pub nonce: box_::Nonce,
     /// The encrypted `AppendedData` item.
     pub encrypted_appended_data: Vec<u8>,
 }
@@ -45,28 +43,21 @@ pub struct PrivAppendedData {
 impl PrivAppendedData {
     /// Creates a new `PrivAppendedData` encrypted with `encrypting_key`.
     pub fn new(appended_data: &AppendedData,
-               encrypt_pub_key: &box_::PublicKey,
-               encrypt_secret_key: &box_::SecretKey)
+               encrypt_pub_key: &box_::PublicKey)
                -> Result<PrivAppendedData, RoutingError> {
         let encoded_appended_data = try!(serialise(&appended_data));
-        let nonce = box_::gen_nonce();
-        let encrypted_appended_data = box_::seal(&encoded_appended_data,
-                                                 &nonce,
-                                                 encrypt_pub_key,
-                                                 encrypt_secret_key);
+        let encrypted_appended_data = sealedbox::seal(&encoded_appended_data, encrypt_pub_key);
         Ok(PrivAppendedData {
             encrypt_key: *encrypt_pub_key,
-            nonce: nonce,
             encrypted_appended_data: encrypted_appended_data,
         })
     }
 
     /// Returns `AppendedData` decrypted from this item.
     pub fn open(&self, encrypt_secret_key: &box_::SecretKey) -> Result<AppendedData, RoutingError> {
-        let decipher_result = try!(box_::open(&self.encrypted_appended_data,
-                                              &self.nonce,
-                                              &self.encrypt_key,
-                                              encrypt_secret_key)
+        let decipher_result = try!(sealedbox::open(&self.encrypted_appended_data,
+                                                   &self.encrypt_key,
+                                                   encrypt_secret_key)
             .map_err(|()| RoutingError::AsymmetricDecryptionFailure));
         Ok(try!(deserialise(&decipher_result)))
     }
@@ -191,36 +182,15 @@ impl PrivAppendableData {
 
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
     /// recently been deleted.
-    pub fn append(&mut self,
-                  priv_appended_data: PrivAppendedData,
-                  encrypt_secret_key: &box_::SecretKey)
-                  -> bool {
+    pub fn append(&mut self, priv_appended_data: PrivAppendedData, sign_key: &PublicKey) -> bool {
         if self.deleted_data.contains(&priv_appended_data) {
             return false;
         }
-        let appended_data = match priv_appended_data.open(encrypt_secret_key) {
-            Ok(appended_data) => appended_data,
-            Err(_) => return false,
-        };
-        let signed_data = match serialise(&(appended_data.pointer(), appended_data.sign_key())) {
-            Ok(result) => result,
-            Err(_) => return false,
-        };
-        if sign::verify_detached(appended_data.signature(),
-                                 &signed_data,
-                                 appended_data.sign_key()) {
-            match self.filter.clone() {
-                Filter::WhiteList(white_list) => {
-                    if !white_list.contains(appended_data.sign_key()) {
-                        return false;
-                    }
-                }
-                Filter::BlackList(black_list) => {
-                    if black_list.contains(appended_data.sign_key()) {
-                        return false;
-                    }
-                }
-            }
+        if match self.filter {
+            Filter::WhiteList(ref white_list) => !white_list.contains(sign_key),
+            Filter::BlackList(ref black_list) => black_list.contains(sign_key),
+        } {
+            return false;
         }
         let _ = self.data.insert(priv_appended_data);
         self.version += 1;
@@ -394,8 +364,7 @@ mod test {
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
         let encrypt_keys = box_::gen_keypair();
-        let priv_appended_data =
-            unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0, &encrypt_keys.1));
+        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
         let serialised = unwrap!(serialise(&priv_appended_data));
         assert_eq!(SERIALISED_PRIV_APPENDED_DATA_SIZE, serialised.len());
     }
