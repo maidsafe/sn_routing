@@ -338,6 +338,33 @@ impl Node {
         self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
     }
 
+    /// Respond to an `Append` request indicating success.
+    pub fn send_append_success(&self,
+                               src: Authority,
+                               dst: Authority,
+                               name: DataIdentifier,
+                               id: MessageId)
+                               -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::AppendSuccess(name, id));
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
+    }
+
+    /// Respond to an `Append` request indicating failure.
+    pub fn send_append_failure(&self,
+                               src: Authority,
+                               dst: Authority,
+                               data_id: DataIdentifier,
+                               external_error_indicator: Vec<u8>,
+                               id: MessageId)
+                               -> Result<(), InterfaceError> {
+        let user_msg = UserMessage::Response(Response::AppendFailure {
+            id: id,
+            data_id: data_id,
+            external_error_indicator: external_error_indicator,
+        });
+        self.send_action(src, dst, user_msg, DEFAULT_PRIORITY)
+    }
+
     /// Respond to a `GetAccountInfo` request indicating success.
     pub fn send_get_account_info_success(&self,
                                          src: Authority,

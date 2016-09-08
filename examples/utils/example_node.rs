@@ -122,6 +122,10 @@ impl ExampleNode {
                 warn!("{:?} ExampleNode: GetAccountInfo unimplemented.",
                       self.get_debug_name());
             }
+            Request::Append(..) => {
+                warn!("{:?} ExampleNode: Append unimplemented.",
+                      self.get_debug_name());
+            }
             Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }

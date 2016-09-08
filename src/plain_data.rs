@@ -50,11 +50,6 @@ impl PlainData {
         &self.name
     }
 
-    /// Returns the size of the contained data. Equivalent to `value().len()`.
-    pub fn payload_size(&self) -> usize {
-        self.value.len()
-    }
-
     /// Returns `DataIdentifier` for this data element.
     pub fn identifier(&self) -> DataIdentifier {
         DataIdentifier::Plain(*self.name())

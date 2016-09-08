@@ -19,6 +19,8 @@ use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
 pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
+pub use priv_appendable_data::PrivAppendableData;
+pub use pub_appendable_data::PubAppendableData;
 use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
@@ -30,6 +32,10 @@ pub enum Data {
     Immutable(ImmutableData),
     /// `PlainData` data type.
     Plain(PlainData),
+    /// `PubAppendableData` data type.
+    PubAppendable(PubAppendableData),
+    /// `PrivAppendableData` data type.
+    PrivAppendable(PrivAppendableData),
 }
 
 impl Data {
@@ -39,6 +45,8 @@ impl Data {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
             Data::Plain(ref data) => data.name(),
+            Data::PubAppendable(ref data) => data.name(),
+            Data::PrivAppendable(ref data) => data.name(),
         }
     }
 
@@ -48,15 +56,8 @@ impl Data {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
             Data::Plain(ref data) => data.identifier(),
-        }
-    }
-
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
-        match *self {
-            Data::Structured(ref data) => data.payload_size(),
-            Data::Immutable(ref data) => data.payload_size(),
-            Data::Plain(ref data) => data.payload_size(),
+            Data::PubAppendable(ref data) => data.identifier(),
+            Data::PrivAppendable(ref data) => data.identifier(),
         }
     }
 }
@@ -70,6 +71,10 @@ pub enum DataIdentifier {
     Immutable(XorName),
     /// Request for PlainData.
     Plain(XorName),
+    /// Request for public appendable data.
+    PubAppendable(XorName),
+    /// Request for private appendable data.
+    PrivAppendable(XorName),
 }
 
 impl Debug for Data {
@@ -78,6 +83,8 @@ impl Debug for Data {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
             Data::Plain(ref data) => data.fmt(formatter),
+            Data::PubAppendable(ref data) => data.fmt(formatter),
+            Data::PrivAppendable(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -88,7 +95,9 @@ impl DataIdentifier {
         match *self {
             DataIdentifier::Structured(ref name, _) |
             DataIdentifier::Immutable(ref name) |
-            DataIdentifier::Plain(ref name) => name,
+            DataIdentifier::Plain(ref name) |
+            DataIdentifier::PubAppendable(ref name) |
+            DataIdentifier::PrivAppendable(ref name) => name,
         }
     }
 }
@@ -139,38 +148,6 @@ mod test {
         assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
         assert_eq!(plain_data.identifier(),
                    DataIdentifier::Plain(*plain_data.name()));
-    }
-
-    #[test]
-    fn data_payload_size() {
-        // payload_size() resolves correctly for StructuredData
-        let keys = ::rust_sodium::crypto::sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.payload_size(),
-                           Data::Structured(structured_data).payload_size());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        // payload_size() resolves correctly for ImmutableData
-        let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(value);
-        assert_eq!(immutable_data.payload_size(),
-                   Data::Immutable(immutable_data).payload_size());
-
-        // payload_size() resolves correctly for PlainData
-        let name = XorName(sha256::hash(&[]).0);
-        let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.payload_size(),
-                   Data::Plain(plain_data).payload_size());
     }
 
     #[test]
