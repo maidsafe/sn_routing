@@ -20,6 +20,7 @@
 use rand::Rng;
 use routing::{Filter, FullId, ImmutableData, PrivAppendableData, PubAppendableData, StructuredData};
 use rust_sodium::crypto::box_;
+use std::collections::BTreeSet;
 
 /// Creates random immutable data - tests only
 pub fn random_immutable_data<R: Rng>(size: usize, rng: &mut R) -> ImmutableData {
@@ -47,6 +48,7 @@ pub fn random_pub_appendable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> PubA
                            0,
                            vec![full_id.public_id().signing_public_key().clone()],
                            vec![],
+                           BTreeSet::new(),
                            Filter::black_list(None),
                            Some(full_id.signing_private_key()))
         .expect("Cannot create public appendable data for test")
@@ -61,6 +63,7 @@ pub fn random_priv_appendable_data<R: Rng>(full_id: &FullId,
                             0,
                             vec![full_id.public_id().signing_public_key().clone()],
                             vec![],
+                            BTreeSet::new(),
                             Filter::black_list(None),
                             encrypt_key,
                             Some(full_id.signing_private_key()))
