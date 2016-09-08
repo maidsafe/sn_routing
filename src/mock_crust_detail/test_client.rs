@@ -361,7 +361,10 @@ impl TestClient {
         let _ = poll::poll_and_resend_unacknowledged(nodes, self);
 
         match self.routing_rx.try_recv() {
-            Ok(Event::Response { response: Response::AppendSuccess(_, response_message_id), .. }) => {
+            Ok(Event::Response {
+                    response: Response::AppendSuccess(_, response_message_id),
+                    ..
+                }) => {
                 assert_eq!(request_message_id, response_message_id);
                 Ok(())
             }

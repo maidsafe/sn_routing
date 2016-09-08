@@ -624,7 +624,10 @@ impl DataManager {
         Ok(())
     }
 
-    pub fn handle_get_success(&mut self, src: XorName, data: Data) -> Result<(), InternalError> {
+    pub fn handle_get_success(&mut self,
+                              src: XorName,
+                              mut data: Data)
+                              -> Result<(), InternalError> {
         let (data_id, version) = id_and_version_of(&data);
         self.cache.handle_get_success(src, &data_id, version);
         try!(self.send_gets_for_needed_data());
@@ -641,6 +644,14 @@ impl DataManager {
                     if appendable_data.get_version() > version {
                         return Ok(());
                     }
+                    if appendable_data.get_version() == version {
+                        if let Data::PubAppendable(ref mut received) = data {
+                            received.data =
+                                appendable_data.data.union(&received.data).cloned().collect();
+                        } else {
+                            unreachable!("DataIdentifier variant and Data variant mismatch");
+                        }
+                    }
                     got_new_data = false;
                 }
             }
@@ -649,6 +660,14 @@ impl DataManager {
                     // Make sure we don't 'update' to a lower version.
                     if appendable_data.get_version() > version {
                         return Ok(());
+                    }
+                    if appendable_data.get_version() == version {
+                        if let Data::PrivAppendable(ref mut received) = data {
+                            received.data =
+                                appendable_data.data.union(&received.data).cloned().collect();
+                        } else {
+                            unreachable!("DataIdentifier variant and Data variant mismatch");
+                        }
                     }
                     got_new_data = false;
                 }
