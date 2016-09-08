@@ -203,7 +203,8 @@ pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
 pub use append_types::{AppendedData, AppendWrapper, Filter};
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
-pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData};
+pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
+                               PrivAppendedData};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XorName, XorNameFromHexError, XOR_NAME_LEN, XOR_NAME_BITS};
