@@ -61,6 +61,7 @@ impl PubAppendableData {
                version: u64,
                current_owner_keys: Vec<PublicKey>,
                previous_owner_keys: Vec<PublicKey>,
+               deleted_data: BTreeSet<AppendedData>,
                filter: Filter,
                signing_key: Option<&SecretKey>)
                -> Result<PubAppendableData, RoutingError> {
@@ -71,7 +72,7 @@ impl PubAppendableData {
             current_owner_keys: current_owner_keys,
             previous_owner_keys: previous_owner_keys,
             filter: filter,
-            deleted_data: BTreeSet::new(),
+            deleted_data: deleted_data,
             previous_owner_signatures: vec![],
             data: BTreeSet::new(),
         };
@@ -302,6 +303,7 @@ mod test {
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
     use append_types::Filter;
+    use std::collections::BTreeSet;
 
     #[test]
     fn single_owner() {
@@ -312,6 +314,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      Some(&keys.1)) {
             Ok(pub_appendable_data) => {
@@ -332,6 +335,7 @@ mod test {
                                      0,
                                      vec![],
                                      owner_keys.clone(),
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      None) {
             Ok(pub_appendable_data) => {
@@ -353,6 +357,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      Some(&other_keys.1)) {
             Ok(pub_appendable_data) => {
@@ -374,6 +379,7 @@ mod test {
                                      0,
                                      vec![],
                                      owner_keys.clone(),
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      None) {
             Ok(mut pub_appendable_data) => {
@@ -398,6 +404,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      None) {
             Ok(mut pub_appendable_data) => {
@@ -428,6 +435,7 @@ mod test {
                                      0,
                                      owner_keys.clone(),
                                      vec![],
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      Some(&keys1.1)) {
             Ok(mut pub_appendable_data) => {
@@ -459,6 +467,7 @@ mod test {
                                      0,
                                      vec![keys1.0, keys2.0, keys3.0],
                                      vec![],
+                                     BTreeSet::new(),
                                      Filter::white_list(None),
                                      Some(&keys1.1)) {
             Ok(mut orig_pub_appendable_data) => {
@@ -469,6 +478,7 @@ mod test {
                                              1,
                                              vec![new_owner.0],
                                              vec![keys1.0, keys2.0, keys3.0],
+                                             BTreeSet::new(),
                                              Filter::white_list(None),
                                              Some(&keys1.1)) {
                     Ok(mut new_pub_appendable_data) => {
@@ -483,6 +493,7 @@ mod test {
                                                      2,
                                                      vec![keys1.0],
                                                      vec![new_owner.0],
+                                                     BTreeSet::new(),
                                                      Filter::white_list(None),
                                                      Some(&new_owner.1)) {
                             Ok(another_new_pub_appendable_data) => {

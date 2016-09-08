@@ -102,6 +102,7 @@ impl PrivAppendableData {
                version: u64,
                current_owner_keys: Vec<PublicKey>,
                previous_owner_keys: Vec<PublicKey>,
+               deleted_data: BTreeSet<PrivAppendedData>,
                filter: Filter,
                encrypt_key: box_::PublicKey,
                signing_key: Option<&SecretKey>)
@@ -114,7 +115,7 @@ impl PrivAppendableData {
             previous_owner_keys: previous_owner_keys,
             filter: filter,
             encrypt_key: encrypt_key,
-            deleted_data: BTreeSet::new(),
+            deleted_data: deleted_data,
             previous_owner_signatures: vec![],
             data: BTreeSet::new(),
         };
@@ -348,6 +349,7 @@ mod test {
     extern crate rand;
     use super::*;
 
+    use std::collections::BTreeSet;
     use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
@@ -374,6 +376,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&keys.1)) {
@@ -396,6 +399,7 @@ mod test {
                                       0,
                                       vec![],
                                       owner_keys.clone(),
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
@@ -419,6 +423,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&other_keys.1)) {
@@ -442,6 +447,7 @@ mod test {
                                       0,
                                       vec![],
                                       owner_keys.clone(),
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
@@ -468,6 +474,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       None) {
@@ -501,6 +508,7 @@ mod test {
                                       0,
                                       owner_keys.clone(),
                                       vec![],
+                                      BTreeSet::new(),
                                       Filter::white_list(None),
                                       encrypt_keys.0,
                                       Some(&keys1.1)) {
