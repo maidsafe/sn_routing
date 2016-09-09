@@ -176,15 +176,6 @@ impl PrivAppendableData {
         other.verify_previous_owner_signatures(owner_keys_to_match)
     }
 
-    /// Deletes the given data item and returns `true` if it was there.
-    pub fn delete(&mut self, appended_data: PrivAppendedData) -> bool {
-        let removed = self.data.remove(&appended_data);
-        if removed {
-            let _ = self.deleted_data.insert(appended_data);
-        }
-        removed
-    }
-
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
     /// recently been deleted.
     pub fn append(&mut self, priv_appended_data: PrivAppendedData, sign_key: &PublicKey) -> bool {
