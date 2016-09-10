@@ -109,13 +109,6 @@ impl PubAppendableData {
         Ok(())
     }
 
-    /// Deletes the given data item and returns `true` if it was there.
-    pub fn delete(&mut self, appended_data: AppendedData) -> bool {
-        let removed = self.data.remove(&appended_data);
-        let _ = self.deleted_data.insert(appended_data);
-        removed
-    }
-
     /// Inserts the given data item, or returns `false` if it cannot be added because it has
     /// recently been deleted.
     pub fn append(&mut self, appended_data: AppendedData) -> bool {
