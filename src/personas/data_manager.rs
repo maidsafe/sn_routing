@@ -646,8 +646,7 @@ impl DataManager {
                     }
                     if appendable_data.get_version() == version {
                         if let Data::PubAppendable(ref mut received) = data {
-                            received.data =
-                                appendable_data.data.union(&received.data).cloned().collect();
+                            received.data.extend(appendable_data.data.into_iter());
                         } else {
                             unreachable!("DataIdentifier variant and Data variant mismatch");
                         }
@@ -663,8 +662,7 @@ impl DataManager {
                     }
                     if appendable_data.get_version() == version {
                         if let Data::PrivAppendable(ref mut received) = data {
-                            received.data =
-                                appendable_data.data.union(&received.data).cloned().collect();
+                            received.data.extend(appendable_data.data.into_iter());
                         } else {
                             unreachable!("DataIdentifier variant and Data variant mismatch");
                         }
