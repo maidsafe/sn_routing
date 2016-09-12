@@ -37,6 +37,8 @@ pub const QUORUM_SIZE: usize = 5;
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
+/// Time (in seconds) the node waits for a `NodeIdentify` message.
+const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
 /// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
 /// table.
 const EXTRA_BUCKET_ENTRIES: usize = 2;
@@ -259,6 +261,7 @@ impl PeerMap {
 pub struct PeerManager {
     connection_token_map: HashMap<u32, PublicId>,
     peer_map: PeerMap,
+    unknown_peers: HashMap<PeerId, Instant>,
     proxy_peer_id: Option<PeerId>,
     routing_table: RoutingTable<XorName>,
     our_public_id: PublicId,
@@ -270,6 +273,7 @@ impl PeerManager {
         PeerManager {
             connection_token_map: HashMap::new(),
             peer_map: PeerMap::new(),
+            unknown_peers: HashMap::new(),
             proxy_peer_id: None,
             routing_table: RoutingTable::<XorName>::new(*our_public_id.name(),
                                                         GROUP_SIZE,
@@ -316,6 +320,9 @@ impl PeerManager {
             let state = PeerState::Routing(tunnel);
             let _ = self.peer_map.insert(Peer::new(pub_id, Some(peer_id), state));
         }
+
+        let _ = self.unknown_peers.remove(&peer_id);
+
         result
     }
 
@@ -446,6 +453,41 @@ impl PeerManager {
         expired_ids
     }
 
+    /// Removes all timed out connections to unknown peers (i.e. whose public id we don't have yet)
+    /// and also known peers from whom we're awaiting a `NodeIdentify`, and returns their peer IDs.
+    pub fn remove_expired_connections(&mut self) -> Vec<PeerId> {
+        let mut expired_connections = Vec::new();
+
+        for (peer_id, xor_name) in &self.peer_map.names {
+            if let Some(peer) = self.peer_map.peers.get(xor_name) {
+                if let PeerState::AwaitingNodeIdentify(_) = peer.state {
+                    if peer.timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
+                        expired_connections.push(*peer_id);
+                    }
+                }
+            }
+        }
+
+        for peer_id in &expired_connections {
+            let _ = self.peer_map.remove(peer_id);
+        }
+
+        let mut expired_unknown_peers = Vec::new();
+
+        for (peer_id, timestamp) in &self.unknown_peers {
+            if timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
+                expired_unknown_peers.push(*peer_id);
+            }
+        }
+
+        for peer_id in expired_unknown_peers {
+            expired_connections.push(peer_id);
+            let _ = self.unknown_peers.remove(&peer_id);
+        }
+
+        expired_connections
+    }
+
     /// Returns the peer ID of the given node if it is our proxy or client or
     /// joining node.
     pub fn get_proxy_or_client_or_joining_node_peer_id(&self, pub_id: &PublicId) -> Option<PeerId> {
@@ -486,13 +528,18 @@ impl PeerManager {
     }
 
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
-    pub fn connected_to(&mut self, peer_id: &PeerId) -> bool {
-        self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false))
+    pub fn connected_to(&mut self, peer_id: &PeerId) {
+        if !self.set_state(peer_id,
+                           PeerState::AwaitingNodeIdentify(false)) {
+            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
+        }
     }
 
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
-        self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true))
+        // TODO: handle unknown peer (similar to what is done in connected_to)
+        self.set_state(peer_id,
+                       PeerState::AwaitingNodeIdentify(true))
     }
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
