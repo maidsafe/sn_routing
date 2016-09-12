@@ -159,6 +159,30 @@ impl AppendWrapper {
             }
         }
     }
+
+    /// Returns `sign_key` if AppendWrapper::Priv.
+    pub fn sign_key(&self) -> Option<&PublicKey> {
+        match *self {
+            AppendWrapper::Pub { ref data, .. } => Some(&data.sign_key),
+            AppendWrapper::Priv { ref sign_key, .. } => Some(sign_key),
+        }
+    }
+
+    /// Returns `priv_appended_data` if AppendWrapper::Priv.
+    pub fn priv_appended_data(&self) -> Option<&PrivAppendedData> {
+        match *self {
+            AppendWrapper::Pub { .. } => None,
+            AppendWrapper::Priv { ref data, .. } => Some(data),
+        }
+    }
+
+    /// Returns `pub_appended_data` if AppendWrapper::Pub.
+    pub fn pub_appended_data(&self) -> Option<&AppendedData> {
+        match *self {
+            AppendWrapper::Pub { ref data, .. } => Some(data),
+            AppendWrapper::Priv { .. } => None,
+        }
+    }
 }
 
 #[cfg(test)]
