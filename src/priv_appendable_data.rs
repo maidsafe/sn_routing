@@ -24,7 +24,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{AppendedData, Filter};
+use append_types::{AppendedData, AppendWrapper, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -187,6 +187,23 @@ impl PrivAppendableData {
         }
         let _ = self.data.insert(priv_appended_data);
         true
+    }
+
+    
+    /// Inserts the given wrapper item, or returns `false` if cannot
+    pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
+        if !wrapper.verify_signature() {
+            return false;
+        }
+        let priv_appended_data = match wrapper.priv_appended_data() {
+            None => return false,
+            Some(priv_appended_data) => priv_appended_data,
+        };
+        let sign_key = match wrapper.sign_key() {
+            None => return false,
+            Some(sign_key) => sign_key,
+        };
+        self.append(priv_appended_data.clone(), sign_key)
     }
 
     /// Returns the name.
