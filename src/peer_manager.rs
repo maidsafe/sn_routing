@@ -459,7 +459,7 @@ impl PeerManager {
         let mut expired_connections = Vec::new();
 
         for (peer_id, xor_name) in &self.peer_map.names {
-            if let Some(peer) = self.peer_map.peers.get(&xor_name) {
+            if let Some(peer) = self.peer_map.peers.get(xor_name) {
                 if let PeerState::AwaitingNodeIdentify(_) = peer.state {
                     if peer.timestamp.elapsed() >= Duration::from_secs(NODE_IDENTIFY_TIMEOUT_SECS) {
                         expired_connections.push(*peer_id);
