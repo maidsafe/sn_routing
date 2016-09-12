@@ -22,7 +22,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{AppendedData, Filter};
+use append_types::{AppendedData, AppendWrapper, Filter};
 
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -120,6 +120,17 @@ impl PubAppendableData {
         }
         let _ = self.data.insert(appended_data);
         true
+    }
+
+    /// Inserts the given wrapper item, or returns `false` if cannot
+    pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
+        if !wrapper.verify_signature() && &self.version != wrapper.version() {
+            return false;
+        }
+        match wrapper.pub_appended_data() {
+            None => false,
+            Some(pub_appended_data) => self.append(pub_appended_data.clone()),
+        }
     }
 
     /// Returns the name.
@@ -514,26 +525,21 @@ mod test {
 
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
-        let mut white_list = BTreeSet::new();
-        white_list.insert(white_key.0.clone());
 
-        let mut pub_appendable_data = match PubAppendableData::new(rand::random(),
-                                                                   0,
-                                                                   owner_keys.clone(),
-                                                                   vec![],
-                                                                   BTreeSet::new(),
-                                                                   Filter::white_list(white_list),
-                                                                   Some(&keys.1)) {
-            Ok(pub_appendable_data) => pub_appendable_data,
-            Err(error) => panic!("Error: {:?}", error),
-        };
+        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           owner_keys.clone(),
+                                           vec![],
+                                           BTreeSet::new(),
+                                           Filter::white_list(vec![white_key.0]),
+                                           Some(&keys.1)));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
         let white_appended_data = unwrap!(AppendedData::new(pointer, white_key.0, &white_key.1));
 
-        assert!(!pub_appendable_data.append(black_appended_data.clone()));
-        assert!(pub_appendable_data.append(white_appended_data.clone()));
+        assert!(!pub_appendable_data.append(black_appended_data));
+        assert!(pub_appendable_data.append(white_appended_data));
     }
 
     #[test]
@@ -543,25 +549,20 @@ mod test {
 
         let black_key = sign::gen_keypair();
         let white_key = sign::gen_keypair();
-        let mut black_list = BTreeSet::new();
-        black_list.insert(black_key.0.clone());
 
-        let mut pub_appendable_data = match PubAppendableData::new(rand::random(),
-                                                                   0,
-                                                                   owner_keys.clone(),
-                                                                   vec![],
-                                                                   BTreeSet::new(),
-                                                                   Filter::black_list(black_list),
-                                                                   Some(&keys.1)) {
-            Ok(pub_appendable_data) => pub_appendable_data,
-            Err(error) => panic!("Error: {:?}", error),
-        };
+        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           owner_keys.clone(),
+                                           vec![],
+                                           BTreeSet::new(),
+                                           Filter::black_list(vec![black_key.0]),
+                                           Some(&keys.1)));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
         let white_appended_data = unwrap!(AppendedData::new(pointer, white_key.0, &white_key.1));
 
-        assert!(!pub_appendable_data.append(black_appended_data.clone()));
-        assert!(pub_appendable_data.append(white_appended_data.clone()));
+        assert!(!pub_appendable_data.append(black_appended_data));
+        assert!(pub_appendable_data.append(white_appended_data));
     }
 }

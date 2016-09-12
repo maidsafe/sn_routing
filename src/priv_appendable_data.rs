@@ -24,7 +24,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{AppendedData, Filter};
+use append_types::{AppendedData, AppendWrapper, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -38,6 +38,7 @@ pub struct PrivAppendedData(pub Vec<u8>);
 
 impl PrivAppendedData {
     /// Creates a new `PrivAppendedData` encrypted with `encrypting_key`.
+    #[cfg_attr(feature="clippy", allow(too_many_arguments))]
     pub fn new(appended_data: &AppendedData,
                encrypt_pub_key: &box_::PublicKey)
                -> Result<PrivAppendedData, RoutingError> {
@@ -187,6 +188,18 @@ impl PrivAppendableData {
         }
         let _ = self.data.insert(priv_appended_data);
         true
+    }
+
+
+    /// Inserts the given wrapper item, or returns `false` if cannot
+    pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
+        if !wrapper.verify_signature() && &self.version != wrapper.version() {
+            return false;
+        }
+        match wrapper.priv_appended_data() {
+            None => false,
+            Some(priv_appended_data) => self.append(priv_appended_data.clone(), wrapper.sign_key()),
+        }
     }
 
     /// Returns the name.
@@ -526,27 +539,22 @@ mod test {
 
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
-        let mut white_list = BTreeSet::new();
-        white_list.insert(white_key.0.clone());
 
-        let mut priv_appendable_data = match PrivAppendableData::new(rand::random(),
-                                                                     0,
-                                                                     owner_keys.clone(),
-                                                                     vec![],
-                                                                     BTreeSet::new(),
-                                                                     Filter::white_list(white_list),
-                                                                     encrypt_keys.0,
-                                                                     Some(&keys.1)) {
-            Ok(priv_appendable_data) => priv_appendable_data,
-            Err(error) => panic!("Error: {:?}", error),
-        };
+        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
+                                            0,
+                                            owner_keys.clone(),
+                                            vec![],
+                                            BTreeSet::new(),
+                                            Filter::white_list(vec![white_key.0]),
+                                            encrypt_keys.0,
+                                            Some(&keys.1)));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
         let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
 
         assert!(!priv_appendable_data.append(priv_appended_data.clone(), &black_key.0));
-        assert!(priv_appendable_data.append(priv_appended_data.clone(), &white_key.0));
+        assert!(priv_appendable_data.append(priv_appended_data, &white_key.0));
     }
 
     #[test]
@@ -557,26 +565,21 @@ mod test {
 
         let white_key = sign::gen_keypair();
         let black_key = sign::gen_keypair();
-        let mut black_list = BTreeSet::new();
-        black_list.insert(black_key.0.clone());
 
-        let mut priv_appendable_data = match PrivAppendableData::new(rand::random(),
-                                                                     0,
-                                                                     owner_keys.clone(),
-                                                                     vec![],
-                                                                     BTreeSet::new(),
-                                                                     Filter::black_list(black_list),
-                                                                     encrypt_keys.0,
-                                                                     Some(&keys.1)) {
-            Ok(priv_appendable_data) => priv_appendable_data,
-            Err(error) => panic!("Error: {:?}", error),
-        };
+        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(rand::random(),
+                                            0,
+                                            owner_keys.clone(),
+                                            vec![],
+                                            BTreeSet::new(),
+                                            Filter::black_list(vec![black_key.0]),
+                                            encrypt_keys.0,
+                                            Some(&keys.1)));
 
         let pointer = DataIdentifier::Structured(rand::random(), 10000);
         let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
         let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
 
         assert!(!priv_appendable_data.append(priv_appended_data.clone(), &black_key.0));
-        assert!(priv_appendable_data.append(priv_appended_data.clone(), &white_key.0));
+        assert!(priv_appendable_data.append(priv_appended_data, &white_key.0));
     }
 }
