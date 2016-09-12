@@ -17,8 +17,8 @@
 
 use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
-use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Request, Response, XorName};
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Request, Response, XorName};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -254,13 +254,7 @@ impl ExampleNode {
 #[derive(RustcEncodable, RustcDecodable)]
 enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
-    Client {
-        client_name: XorName,
-        data: u64,
-    },
+    Client { client_name: XorName, data: u64 },
     /// A message to an `NaeManager` to add a new data chunk.
-    NaeManager {
-        data_name: XorName,
-        data: Data,
-    },
+    NaeManager { data_name: XorName, data: Data },
 }

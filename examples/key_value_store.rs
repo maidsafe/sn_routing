@@ -24,7 +24,7 @@
 // https://github.com/maidsafe/QA/blob/master/Documentation/Rust%20Lint%20Checks.md
 #![forbid(bad_style, exceeding_bitshifts, mutable_transmutes, no_mangle_const_items,
           unknown_crate_types, warnings)]
-#![deny(deprecated, drop_with_repr_extern, improper_ctypes, missing_docs,
+#![deny(deprecated, improper_ctypes, missing_docs,
         non_shorthand_field_patterns, overflowing_literals, plugin_as_library,
         private_no_mangle_fns, private_no_mangle_statics, stable_features, unconditional_recursion,
         unknown_lints, unsafe_code, unused, unused_allocation, unused_attributes,
@@ -56,19 +56,20 @@ extern crate lru_time_cache;
 
 mod utils;
 
-use std::io;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::io::Write;
 
 use docopt::Docopt;
-use rust_sodium::crypto;
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Data, DataIdentifier, PlainData, XorName};
+use rust_sodium::crypto;
+use std::io;
+use std::io::Write;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use utils::{ExampleClient, ExampleNode};
 
 // ==========================   Program Options   =================================
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static USAGE: &'static str = "
 Usage:
   key_value_store
