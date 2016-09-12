@@ -531,7 +531,7 @@ impl PeerManager {
     pub fn connected_to(&mut self, peer_id: &PeerId) {
         if !self.set_state(peer_id,
                            PeerState::AwaitingNodeIdentify(false)) {
-            let _ = self.unknown_peers.insert(peer_id.clone(), Instant::now());
+            let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
     }
 
