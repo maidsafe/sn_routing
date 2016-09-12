@@ -517,4 +517,66 @@ mod test {
             Err(error) => panic!("Error: {:?}", error),
         }
     }
+
+    #[test]
+    fn appending_with_white_list() {
+        let keys = sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        let white_key = sign::gen_keypair();
+        let black_key = sign::gen_keypair();
+        let mut white_list = BTreeSet::new();
+        white_list.insert(white_key.0.clone());
+
+        let mut priv_appendable_data = match PrivAppendableData::new(rand::random(),
+                                                                     0,
+                                                                     owner_keys.clone(),
+                                                                     vec![],
+                                                                     BTreeSet::new(),
+                                                                     Filter::white_list(white_list),
+                                                                     encrypt_keys.0,
+                                                                     Some(&keys.1)) {
+            Ok(priv_appendable_data) => priv_appendable_data,
+            Err(error) => panic!("Error: {:?}", error),
+        };
+
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
+
+        assert!(!priv_appendable_data.append(priv_appended_data.clone(), &black_key.0));
+        assert!(priv_appendable_data.append(priv_appended_data.clone(), &white_key.0));
+    }
+
+    #[test]
+    fn appending_with_black_list() {
+        let keys = sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        let white_key = sign::gen_keypair();
+        let black_key = sign::gen_keypair();
+        let mut black_list = BTreeSet::new();
+        black_list.insert(black_key.0.clone());
+
+        let mut priv_appendable_data = match PrivAppendableData::new(rand::random(),
+                                                                     0,
+                                                                     owner_keys.clone(),
+                                                                     vec![],
+                                                                     BTreeSet::new(),
+                                                                     Filter::black_list(black_list),
+                                                                     encrypt_keys.0,
+                                                                     Some(&keys.1)) {
+            Ok(priv_appendable_data) => priv_appendable_data,
+            Err(error) => panic!("Error: {:?}", error),
+        };
+
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
+
+        assert!(!priv_appendable_data.append(priv_appended_data.clone(), &black_key.0));
+        assert!(priv_appendable_data.append(priv_appended_data.clone(), &white_key.0));
+    }
 }
