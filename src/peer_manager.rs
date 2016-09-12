@@ -537,6 +537,7 @@ impl PeerManager {
 
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
+        // TODO: handle unknown peer (similar to what is done in connected_to)
         self.set_state(peer_id,
                        PeerState::AwaitingNodeIdentify(true))
     }
