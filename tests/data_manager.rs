@@ -141,6 +141,7 @@ fn structured_data_parallel_posts() {
     }
 
     let key = clients[0].full_id().signing_private_key().clone();
+    let mut successes: usize = 0;
     for i in 0..30 {
         trace!("Iteration {}. Network size: {}", i + 1, nodes.len());
         let j = Range::new(0, all_data.len()).ind_sample(&mut rng);
@@ -203,13 +204,23 @@ fn structured_data_parallel_posts() {
         }
         trace!("Processed {} events.", event_count);
 
-        for (client, data) in clients.iter_mut().zip(new_data) {
+        'client_loop: for (client, data) in clients.iter_mut().zip(new_data) {
             while let Ok(event) = client.try_recv() {
-                if let Event::Response { response: Response::PostSuccess(..), .. } = event {
-                    trace!("Client {:?} received PostSuccess.", client.name());
-                    all_data[j] = data.clone();
+                match event {
+                    Event::Response { response: Response::PostSuccess(..), .. } => {
+                        trace!("Client {:?} received PostSuccess.", client.name());
+                        all_data[j] = data.clone();
+                        successes += 1;
+                        continue 'client_loop;
+                    }
+                    Event::Response { response: Response::PostFailure { .. }, .. } => {
+                        trace!("Client {:?} received PostFailure.", client.name());
+                        continue 'client_loop;
+                    }
+                    _ => (),
                 }
             }
+            panic!("No response received for {:?}.", data.identifier());
         }
 
         mock_crust_detail::check_data(all_data.clone(), &nodes);
@@ -229,6 +240,8 @@ fn structured_data_parallel_posts() {
             _ => unreachable!(),
         }
     }
+
+    assert!(successes > 0, "No Put attempt succeeded.");
 }
 
 
