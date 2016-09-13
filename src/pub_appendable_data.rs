@@ -22,7 +22,7 @@ use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
-use append_types::{AppendedData, Filter};
+use append_types::{AppendedData, AppendWrapper, Filter};
 
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -120,6 +120,17 @@ impl PubAppendableData {
         }
         let _ = self.data.insert(appended_data);
         true
+    }
+
+    /// Inserts the given wrapper item, or returns `false` if cannot
+    pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
+        if !wrapper.verify_signature() && &self.version != wrapper.version() {
+            return false;
+        }
+        match wrapper.pub_appended_data() {
+            None => false,
+            Some(pub_appended_data) => self.append(pub_appended_data.clone()),
+        }
     }
 
     /// Returns the name.
@@ -295,7 +306,8 @@ mod test {
 
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
-    use append_types::Filter;
+    use append_types::{AppendedData, Filter};
+    use data::DataIdentifier;
     use std::collections::BTreeSet;
 
     #[test]
@@ -504,5 +516,53 @@ mod test {
             }
             Err(error) => panic!("Error: {:?}", error),
         }
+    }
+
+    #[test]
+    fn appending_with_white_list() {
+        let keys = sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        let black_key = sign::gen_keypair();
+        let white_key = sign::gen_keypair();
+
+        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           owner_keys.clone(),
+                                           vec![],
+                                           BTreeSet::new(),
+                                           Filter::white_list(vec![white_key.0]),
+                                           Some(&keys.1)));
+
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
+        let white_appended_data = unwrap!(AppendedData::new(pointer, white_key.0, &white_key.1));
+
+        assert!(!pub_appendable_data.append(black_appended_data));
+        assert!(pub_appendable_data.append(white_appended_data));
+    }
+
+    #[test]
+    fn appending_with_black_list() {
+        let keys = sign::gen_keypair();
+        let owner_keys = vec![keys.0];
+
+        let black_key = sign::gen_keypair();
+        let white_key = sign::gen_keypair();
+
+        let mut pub_appendable_data = unwrap!(PubAppendableData::new(rand::random(),
+                                           0,
+                                           owner_keys.clone(),
+                                           vec![],
+                                           BTreeSet::new(),
+                                           Filter::black_list(vec![black_key.0]),
+                                           Some(&keys.1)));
+
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let black_appended_data = unwrap!(AppendedData::new(pointer, black_key.0, &black_key.1));
+        let white_appended_data = unwrap!(AppendedData::new(pointer, white_key.0, &white_key.1));
+
+        assert!(!pub_appendable_data.append(black_appended_data));
+        assert!(pub_appendable_data.append(white_appended_data));
     }
 }
