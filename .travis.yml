@@ -44,14 +44,12 @@ matrix:
     # TODO: Remove this once the musl build works again.
       env: >
         TARGET=x86_64-unknown-linux-gnu
-        PLATFORM=linux-x86
+        PLATFORM=linux-x64
         FEATURES=use-mock-crust
-        ONLY_DEPLOY=1
       sudo: required
       addons:
         apt:
           packages:
-            - gcc-multilib
             - rpm
             - sshpass
 
@@ -65,7 +63,6 @@ matrix:
       addons:
         apt:
           packages:
-            - gcc-multilib
             - rpm
             - sshpass
 

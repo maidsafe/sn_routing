@@ -18,8 +18,8 @@
 
 use maidsafe_utilities::serialisation;
 use rand::{Rng, XorShiftRng};
-use routing::{self, Authority, Data, DataIdentifier, Event, FullId, MessageId, PublicId, Response,
-              StructuredData, XorName};
+use routing::{self, AppendWrapper, Authority, Data, DataIdentifier, Event, FullId, MessageId,
+              PublicId, Response, StructuredData, XorName};
 use routing::client_errors::{GetError, MutationError};
 use routing::mock_crust::{self, Config, Network, ServiceHandle};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -348,10 +348,47 @@ impl TestClient {
             Err(_) => Err(None),
         }
     }
+
+    /// Append data and read from mock network
+    pub fn append_and_verify(&mut self,
+                             wrapper: AppendWrapper,
+                             nodes: &mut [TestNode])
+                             -> Result<(), Option<MutationError>> {
+        let request_data_id = wrapper.identifier();
+        let dst = Authority::NaeManager(*request_data_id.name());
+        let request_message_id = MessageId::new();
+        unwrap_result!(self.routing_client.send_append_request(dst, wrapper, request_message_id));
+        let _ = poll::poll_and_resend_unacknowledged(nodes, self);
+
+        match self.routing_rx.try_recv() {
+            Ok(Event::Response {
+                    response: Response::AppendSuccess(_, response_message_id),
+                    ..
+                }) => {
+                assert_eq!(request_message_id, response_message_id);
+                Ok(())
+            }
+            Ok(Event::Response { response: Response::AppendFailure {
+                    id: response_id,
+                    data_id,
+                    external_error_indicator: response_error
+                }, .. }) => {
+                assert_eq!(request_message_id, response_id);
+                assert_eq!(request_data_id, data_id);
+                let parsed_error = unwrap_result!(serialisation::deserialise(&response_error));
+                Err(Some(parsed_error))
+            }
+            Ok(response) => panic!("Unexpected Append response : {:?}", response),
+            // TODO: Once the network guarantees that every request gets a response, panic!
+            Err(_) => Err(None),
+        }
+    }
+
     /// Return a full id for this client
     pub fn full_id(&self) -> &FullId {
         &self.full_id
     }
+
     /// Return client's network name
     pub fn name(&self) -> &XorName {
         &self.name

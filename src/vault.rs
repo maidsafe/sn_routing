@@ -227,14 +227,18 @@ impl Vault {
             // ================== Post ==================
             (src @ Authority::Client { .. },
              dst @ Authority::NaeManager(_),
-             Request::Post(Data::Structured(data), msg_id)) => {
-                self.data_manager.handle_post(src, dst, data, msg_id)
-            }
+             Request::Post(data, msg_id)) => self.data_manager.handle_post(src, dst, data, msg_id),
             // ================== Delete ==================
             (src @ Authority::Client { .. },
              dst @ Authority::NaeManager(_),
              Request::Delete(Data::Structured(data), msg_id)) => {
                 self.data_manager.handle_delete(src, dst, data, msg_id)
+            }
+            // ================== Append ==================
+            (src @ Authority::Client { .. },
+             dst @ Authority::NaeManager(_),
+             Request::Append(wrapper, msg_id)) => {
+                self.data_manager.handle_append(src, dst, wrapper, msg_id)
             }
             // ================== GetAccountInfo ==================
             (src @ Authority::Client { .. },
