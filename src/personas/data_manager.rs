@@ -281,6 +281,29 @@ impl Cache {
         }
     }
 
+    /// Removes and returns all timed out pending writes.
+    fn remove_expired_writes(&mut self) -> Vec<PendingWrite> {
+        let timeout = Duration::from_secs(PENDING_WRITE_TIMEOUT_SECS);
+        let expired_writes = self.pending_writes
+            .iter_mut()
+            .flat_map(|(_, writes)| {
+                writes.iter()
+                    .position(|write| write.timestamp.elapsed() > timeout)
+                    .map_or_else(Vec::new, |index| writes.split_off(index))
+                    .into_iter()
+            })
+            .collect_vec();
+        let expired_keys = self.pending_writes
+            .iter_mut()
+            .filter(|entry| entry.1.is_empty())
+            .map(|(data_id, _)| *data_id)
+            .collect_vec();
+        for data_id in expired_keys {
+            let _ = self.pending_writes.remove(&data_id);
+        }
+        expired_writes
+    }
+
     /// Inserts the given data as a pending write to the chunk store. If it is the first for that
     /// data identifier, it returns a refresh message to send to ourselves as a group.
     fn insert_pending_write(&mut self,
@@ -290,23 +313,6 @@ impl Cache {
                             dst: Authority,
                             msg_id: MessageId)
                             -> Option<RefreshData> {
-        // Remove expired pending writes. If the list is empty, remove the entry from the map.
-        let timeout = Duration::from_secs(PENDING_WRITE_TIMEOUT_SECS);
-        let expired_keys = self.pending_writes
-            .iter_mut()
-            .filter_map(|(data_id, writes)| {
-                writes.retain(|write| write.timestamp.elapsed() <= timeout);
-                if writes.is_empty() {
-                    Some(*data_id)
-                } else {
-                    None
-                }
-            })
-            .collect_vec();
-        for data_id in expired_keys {
-            let _ = self.pending_writes.remove(&data_id);
-        }
-        // Hash the data, insert the new entry and return a refresh if it is the first one.
         let hash = maidsafe_utilities::big_endian_sip_hash(&data);
         let (data_id, version) = id_and_version_of(&data);
         let pending_write = PendingWrite {
@@ -325,16 +331,13 @@ impl Cache {
                 result = Some(RefreshData((data_id, version), hash));
                 Vec::new()
             })
-            .push(pending_write);
+            .insert(0, pending_write);
         result
     }
 
-    /// Removes all pending writes for the specified data identifier from the cache. Returns the one
-    /// with the matching hash, if it exists.
-    fn take_pending_write(&mut self, data_id: &DataIdentifier, hash: u64) -> Option<PendingWrite> {
-        self.pending_writes
-            .remove(data_id)
-            .and_then(|writes| writes.into_iter().find(|write| write.hash == hash))
+    /// Removes and returns all pending writes for the specified data identifier from the cache.
+    fn take_pending_writes(&mut self, data_id: &DataIdentifier) -> Vec<PendingWrite> {
+        self.pending_writes.remove(data_id).unwrap_or_else(Vec::new)
     }
 }
 
@@ -462,12 +465,7 @@ impl DataManager {
                 .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
             return Err(From::from(error));
         }
-
-        if let Some(refresh_data) = self.cache
-            .insert_pending_write(data, PendingWriteType::Put, src, dst, message_id) {
-            let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
-        }
-        Ok(())
+        self.update_pending_writes(data, PendingWriteType::Put, src, dst, message_id)
     }
 
     /// Handles a Post request for structured or appendable data.
@@ -521,11 +519,7 @@ impl DataManager {
                     .send_post_failure(dst.clone(), src, data_id, post_error, message_id)));
             }
         };
-        if let Some(refresh_data) = self.cache
-            .insert_pending_write(data, PendingWriteType::Post, src, dst, message_id) {
-            let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
-        }
-        Ok(())
+        self.update_pending_writes(data, PendingWriteType::Post, src, dst, message_id)
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
@@ -604,19 +598,15 @@ impl DataManager {
         };
 
         if let Some(data) = append_result {
-            if let Some(refresh_data) = self.cache
-                .insert_pending_write(data, PendingWriteType::Append, src, dst, message_id) {
-                let _ = self.send_group_refresh(*data_id.name(), refresh_data, message_id);
-            }
+            self.update_pending_writes(data, PendingWriteType::Append, src, dst, message_id)
         } else {
             trace!("DM sending append_failure for: {:?} with {:?}",
                    data_id,
                    message_id);
             let append_error = try!(serialisation::serialise(&MutationError::InvalidSuccessor));
-            try!(self.routing_node
-                .send_append_failure(dst.clone(), src, data_id, append_error, message_id))
+            Ok(try!(self.routing_node
+                .send_append_failure(dst.clone(), src, data_id, append_error, message_id)))
         }
-        Ok(())
     }
 
     pub fn handle_get_success(&mut self,
@@ -760,65 +750,92 @@ impl DataManager {
 
     /// Handles an accumulated refresh message sent from the whole group.
     pub fn handle_group_refresh(&mut self, serialised_refresh: &[u8]) -> Result<(), InternalError> {
-        let RefreshData((data_id, version), hash) =
+        let RefreshData((data_id, version), refresh_hash) =
             try!(serialisation::deserialise(serialised_refresh));
-        let PendingWrite { data, write_type, src, dst, message_id, .. } =
-            if let Some(pending_write) = self.cache.take_pending_write(&data_id, hash) {
-                pending_write
+        for PendingWrite { data, write_type, src, dst, message_id, hash, .. } in self.cache
+            .take_pending_writes(&data_id) {
+            if hash == refresh_hash {
+                if let Err(error) = self.chunk_store.put(&data_id, &data) {
+                    trace!("DM failed to store {:?} in chunkstore: {:?}",
+                           data_id,
+                           error);
+                    let error = MutationError::NetworkOther(format!("Failed to store chunk: {:?}",
+                                                                    error));
+                    try!(self.send_failure(write_type, src, dst, data_id, message_id, error));
+                } else {
+                    trace!("DM updated for: {:?}", data_id);
+                    let _ = match write_type {
+                        PendingWriteType::Append => {
+                            trace!("DM sending AppendSuccess for data {:?}", data_id);
+                            self.routing_node.send_append_success(dst, src, data_id, message_id)
+                        }
+                        PendingWriteType::Post => {
+                            trace!("DM sending PostSuccess for data {:?}", data_id);
+                            self.routing_node.send_post_success(dst, src, data_id, message_id)
+                        }
+                        PendingWriteType::Put => {
+                            self.count_added_data(&data_id);
+                            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
+                                self.logging_time = Instant::now();
+                                info!("{:?}", self);
+                            }
+                            trace!("DM sending PutSuccess for data {:?}", data_id);
+                            self.routing_node.send_put_success(dst, src, data_id, message_id)
+                        }
+                    };
+                    let data_list = vec![(data_id, version)];
+                    let _ = self.send_refresh(Authority::NaeManager(*data_id.name()), data_list);
+                }
             } else {
-                trace!("DM failed to retrieve {:?} from write cache. Adding group to data \
-                        holders.",
-                       data_id);
-                if let Ok(Some(group)) = self.routing_node.close_group(*data_id.name()) {
-                    self.cache.add_records((data_id, version), group.into_iter().collect());
-                }
-                return self.send_gets_for_needed_data();
-            };
-        if let Err(error) = self.chunk_store.put(&data_id, &data) {
-            trace!("DM failed to store {:?} in chunkstore: {:?}",
-                   data_id,
-                   error);
-            let mutation_error =
-                MutationError::NetworkOther(format!("Failed to store chunk: {:?}", error));
-            let write_error = try!(serialisation::serialise(&mutation_error));
-            try!(match write_type {
-                PendingWriteType::Append => {
-                    self.routing_node
-                        .send_append_failure(dst, src, data_id, write_error, message_id)
-                }
-                PendingWriteType::Post => {
-                    self.routing_node
-                        .send_post_failure(dst, src, data_id, write_error, message_id)
-                }
-                PendingWriteType::Put => {
-                    self.routing_node
-                        .send_put_failure(dst, src, data_id, write_error, message_id)
-                }
-            });
-            return Err(From::from(error));
+                trace!("{:?} did not accumulate. Sending failure", data_id);
+                let error = MutationError::NetworkOther("Concurrent modification.".to_owned());
+                try!(self.send_failure(write_type, src, dst, data.identifier(), message_id, error));
+            }
         }
-        trace!("DM updated for: {:?}", data_id);
-        let _ = match write_type {
+        Ok(())
+    }
+
+    fn send_failure(&self,
+                    write_type: PendingWriteType,
+                    src: Authority,
+                    dst: Authority,
+                    data_id: DataIdentifier,
+                    message_id: MessageId,
+                    error: MutationError)
+                    -> Result<(), InternalError> {
+        let write_error = try!(serialisation::serialise(&error));
+        Ok(try!(match write_type {
             PendingWriteType::Append => {
-                trace!("DM sending AppendSuccess for data {:?}", data_id);
-                self.routing_node.send_append_success(dst, src, data_id, message_id)
+                self.routing_node.send_append_failure(dst, src, data_id, write_error, message_id)
             }
             PendingWriteType::Post => {
-                trace!("DM sending PostSuccess for data {:?}", data_id);
-                self.routing_node.send_post_success(dst, src, data_id, message_id)
+                self.routing_node.send_post_failure(dst, src, data_id, write_error, message_id)
             }
             PendingWriteType::Put => {
-                self.count_added_data(&data_id);
-                if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
-                    self.logging_time = Instant::now();
-                    info!("{:?}", self);
-                }
-                trace!("DM sending PutSuccess for data {:?}", data_id);
-                self.routing_node.send_put_success(dst, src, data_id, message_id)
+                self.routing_node.send_put_failure(dst, src, data_id, write_error, message_id)
             }
-        };
-        let data_list = vec![(data_id, version)];
-        let _ = self.send_refresh(Authority::NaeManager(*data_id.name()), data_list);
+        }))
+    }
+
+    fn update_pending_writes(&mut self,
+                             data: Data,
+                             write_type: PendingWriteType,
+                             src: Authority,
+                             dst: Authority,
+                             message_id: MessageId)
+                             -> Result<(), InternalError> {
+        for PendingWrite { write_type, src, dst, data, message_id, .. } in self.cache
+            .remove_expired_writes() {
+            let data_id = data.identifier();
+            let error = MutationError::NetworkOther("Request expired.".to_owned());
+            trace!("{:?} did not accumulate. Sending failure", data_id);
+            try!(self.send_failure(write_type, src, dst, data_id, message_id, error));
+        }
+        let data_name = *data.name();
+        if let Some(refresh_data) = self.cache
+            .insert_pending_write(data, write_type, src, dst, message_id) {
+            let _ = self.send_group_refresh(data_name, refresh_data, message_id);
+        }
         Ok(())
     }
 
