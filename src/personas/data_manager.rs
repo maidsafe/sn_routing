@@ -572,39 +572,34 @@ impl DataManager {
                          message_id: MessageId)
                          -> Result<(), InternalError> {
         let data_id = wrapper.identifier();
-        let append_result = if !wrapper.verify_signature() {
-            None
-        } else {
-            match (wrapper, self.chunk_store.get(&data_id)) {
-                (AppendWrapper::Pub { data, version, .. }, Ok(Data::PubAppendable(mut ad))) => {
-                    if ad.get_version() != version || !ad.append(data) {
-                        None
-                    } else {
-                        Some(Data::PubAppendable(ad))
-                    }
+        let append_result = match (wrapper, self.chunk_store.get(&data_id)) {
+            (wrapper @ AppendWrapper::Pub { .. }, Ok(Data::PubAppendable(mut ad))) => {
+                if ad.apply_wrapper(wrapper) {
+                    Some(Data::PubAppendable(ad))
+                } else {
+                    None
                 }
-                (AppendWrapper::Priv { data, version, sign_key, .. },
-                 Ok(Data::PrivAppendable(mut ad))) => {
-                    if ad.get_version() != version || !ad.append(data, &sign_key) {
-                        None
-                    } else {
-                        Some(Data::PrivAppendable(ad))
-                    }
+            }
+            (wrapper @ AppendWrapper::Priv { .. }, Ok(Data::PrivAppendable(mut ad))) => {
+                if ad.apply_wrapper(wrapper) {
+                    Some(Data::PrivAppendable(ad))
+                } else {
+                    None
                 }
-                (_, Ok(_)) => {
-                    unreachable!("Append operation for Invalid Data Type. {:?} - {:?}",
-                                 data_id,
-                                 message_id)
-                }
-                (_, Err(error)) => {
-                    trace!("DM sending append_failure for: {:?} with {:?} - {:?}",
-                           data_id,
-                           message_id,
-                           error);
-                    let append_error = try!(serialisation::serialise(&MutationError::NoSuchData));
-                    return Ok(try!(self.routing_node
-                        .send_append_failure(dst, src, data_id, append_error, message_id)));
-                }
+            }
+            (_, Ok(_)) => {
+                unreachable!("Append operation for Invalid Data Type. {:?} - {:?}",
+                             data_id,
+                             message_id)
+            }
+            (_, Err(error)) => {
+                trace!("DM sending append_failure for: {:?} with {:?} - {:?}",
+                       data_id,
+                       message_id,
+                       error);
+                let append_error = try!(serialisation::serialise(&MutationError::NoSuchData));
+                return Ok(try!(self.routing_node
+                    .send_append_failure(dst, src, data_id, append_error, message_id)));
             }
         };
 
