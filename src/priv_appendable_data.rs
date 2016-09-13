@@ -193,7 +193,7 @@ impl PrivAppendableData {
 
     /// Inserts the given wrapper item, or returns `false` if cannot
     pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
-        if !wrapper.verify_signature() && &self.version != wrapper.version() {
+        if !wrapper.verify_signature() || &self.version != wrapper.version() {
             return false;
         }
         match wrapper.priv_appended_data() {
@@ -357,7 +357,8 @@ mod test {
     use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
-    use append_types::{AppendedData, Filter};
+    use append_types::{AppendedData, AppendWrapper, Filter};
+    use xor_name::XorName;
 
     #[test]
     fn serialised_priv_appended_data_size() {
@@ -532,6 +533,140 @@ mod test {
     }
 
     #[test]
+    fn transfer_owner_attack() {
+        let keys1 = sign::gen_keypair();
+        let keys2 = sign::gen_keypair();
+        let keys3 = sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let new_owner = sign::gen_keypair();
+        let attacker = sign::gen_keypair();
+
+        let identifier: XorName = rand::random();
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+        let attacker_keys = vec![keys1.0, keys2.0, keys3.0, attacker.0];
+
+        // Owned by keys1 keys2 and keys3
+        match PrivAppendableData::new(identifier,
+                                      0,
+                                      owner_keys.clone(),
+                                      vec![],
+                                      BTreeSet::new(),
+                                      Filter::white_list(None),
+                                      encrypt_keys.0,
+                                      Some(&keys1.1)) {
+            Ok(mut orig_priv_appendable_data) => {
+                assert_eq!(orig_priv_appendable_data.add_signature(&keys2.1).ok(),
+                           Some(0));
+                // Transfer ownership and update to new owner
+                match PrivAppendableData::new(identifier,
+                                              1,
+                                              vec![new_owner.0],
+                                              owner_keys.clone(),
+                                              BTreeSet::new(),
+                                              Filter::white_list(None),
+                                              encrypt_keys.0,
+                                              Some(&keys1.1)) {
+                    Ok(mut new_priv_appendable_data) => {
+                        assert_eq!(new_priv_appendable_data.add_signature(&attacker.1).ok(),
+                                   Some(0));
+                        assert!(new_priv_appendable_data
+                            .verify_previous_owner_signatures(&owner_keys).is_err());
+                        assert!(new_priv_appendable_data
+                            .verify_previous_owner_signatures(&attacker_keys).is_ok());
+                        // Shall throw error of NotEnoughSignatures
+                        assert!(orig_priv_appendable_data
+                            .update_with_other(new_priv_appendable_data).is_err());
+                    }
+                    Err(error) => panic!("Error: {:?}", error),
+                }
+            }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn update_with_wrong_info() {
+        let keys1 = sign::gen_keypair();
+        let keys2 = sign::gen_keypair();
+        let keys3 = sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let new_owner = sign::gen_keypair();
+
+        let identifier: XorName = rand::random();
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+
+        // Owned by keys1 keys2 and keys3
+        match PrivAppendableData::new(identifier,
+                                      0,
+                                      owner_keys.clone(),
+                                      vec![],
+                                      BTreeSet::new(),
+                                      Filter::white_list(None),
+                                      encrypt_keys.0,
+                                      Some(&keys1.1)) {
+            Ok(mut orig_priv_appendable_data) => {
+                assert_eq!(orig_priv_appendable_data.add_signature(&keys2.1).ok(),
+                           Some(0));
+                // Update with wrong version
+                match PrivAppendableData::new(identifier,
+                                              2,
+                                              vec![new_owner.0],
+                                              owner_keys.clone(),
+                                              BTreeSet::new(),
+                                              Filter::white_list(None),
+                                              encrypt_keys.0,
+                                              Some(&keys1.1)) {
+                    Ok(mut new_priv_appendable_data) => {
+                        assert_eq!(new_priv_appendable_data.add_signature(&keys2.1).ok(),
+                                   Some(0));
+                        // Shall throw error of UnknownMessageType
+                        assert!(orig_priv_appendable_data
+                            .update_with_other(new_priv_appendable_data).is_err());
+                    }
+                    Err(error) => panic!("Error: {:?}", error),
+                }
+                // Update with owner_keys in different order
+                match PrivAppendableData::new(identifier,
+                                              1,
+                                              vec![new_owner.0],
+                                              vec![keys3.0, keys2.0, keys1.0],
+                                              BTreeSet::new(),
+                                              Filter::white_list(None),
+                                              encrypt_keys.0,
+                                              Some(&keys1.1)) {
+                    Ok(mut new_priv_appendable_data) => {
+                        assert_eq!(new_priv_appendable_data.add_signature(&keys2.1).ok(),
+                                   Some(0));
+                        // Shall throw error of UnknownMessageType
+                        assert!(orig_priv_appendable_data
+                            .update_with_other(new_priv_appendable_data).is_err());
+                    }
+                    Err(error) => panic!("Error: {:?}", error),
+                }
+                // Update with wrong identifier
+                match PrivAppendableData::new(rand::random(),
+                                              1,
+                                              vec![new_owner.0],
+                                              owner_keys,
+                                              BTreeSet::new(),
+                                              Filter::white_list(None),
+                                              encrypt_keys.0,
+                                              Some(&keys1.1)) {
+                    Ok(mut new_priv_appendable_data) => {
+                        assert_eq!(new_priv_appendable_data.add_signature(&keys2.1).ok(),
+                                   Some(0));
+                        // Shall throw error of UnknownMessageType
+                        assert!(orig_priv_appendable_data
+                            .update_with_other(new_priv_appendable_data).is_err());
+                    }
+                    Err(error) => panic!("Error: {:?}", error),
+                }
+            }
+            Err(error) => panic!("Error: {:?}", error),
+        }
+    }
+
+    #[test]
     fn appending_with_white_list() {
         let keys = sign::gen_keypair();
         let encrypt_keys = box_::gen_keypair();
@@ -581,5 +716,37 @@ mod test {
 
         assert!(!priv_appendable_data.append(priv_appended_data.clone(), &black_key.0));
         assert!(priv_appendable_data.append(priv_appended_data, &white_key.0));
+    }
+
+    #[test]
+    fn apply_wrapper() {
+        let keys = sign::gen_keypair();
+        let encrypt_keys = box_::gen_keypair();
+        let identifier: XorName = rand::random();
+
+        let mut priv_appendable_data = unwrap!(PrivAppendableData::new(identifier,
+                                                                       0,
+                                                                       vec![keys.0],
+                                                                       vec![],
+                                                                       BTreeSet::new(),
+                                                                       Filter::black_list(None),
+                                                                       encrypt_keys.0,
+                                                                       Some(&keys.1)));
+
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+        let priv_appended_data = unwrap!(PrivAppendedData::new(&appended_data, &encrypt_keys.0));
+
+        // apply correct wrapper
+        let append_wrapper = unwrap!(AppendWrapper::new_priv(identifier,
+                                                             priv_appended_data.clone(),
+                                                             (&keys.0, &keys.1),
+                                                             0));
+        assert!(priv_appendable_data.apply_wrapper(append_wrapper));
+
+        // apply wrapper with incorrect version
+        let append_wrapper =
+            unwrap!(AppendWrapper::new_priv(identifier, priv_appended_data, (&keys.0, &keys.1), 1));
+        assert!(!priv_appendable_data.apply_wrapper(append_wrapper));
     }
 }
