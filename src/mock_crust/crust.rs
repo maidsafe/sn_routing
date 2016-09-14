@@ -128,9 +128,19 @@ impl Service {
         }
     }
 
-    /// Returns true if we are currently connected to the given `peer_id`
+    /// Returns `true` if we are currently connected to the given `peer_id`
     pub fn is_connected(&self, peer_id: &PeerId) -> bool {
         self.lock_and_poll(|imp| imp.is_peer_connected(peer_id))
+    }
+
+    /// Adds the peer to the whitelist, allowing them to connect to us.
+    pub fn whitelist_peer(&self, peer_id: PeerId) {
+        self.lock().whitelist_peer(peer_id);
+    }
+
+    /// Returns `true` if the specified peer is allowed to connect to us.
+    pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
+        self.lock().is_peer_whitelisted(peer_id)
     }
 
     /// Our `PeerId`.
