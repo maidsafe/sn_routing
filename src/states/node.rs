@@ -15,37 +15,37 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
-            Service};
-use crust::Event as CrustEvent;
-use itertools::Itertools;
-#[cfg(feature = "use-mock-crust")]
-use kademlia_routing_table::RoutingTable;
-use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
-use maidsafe_utilities::serialisation;
-use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
-use std::{cmp, fmt, iter};
-use std::fmt::{Debug, Formatter};
-use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant};
 
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
 use cache::Cache;
+use crust::{ConnectionInfoResult, CrustError, PeerId, PrivConnectionInfo, PubConnectionInfo,
+            Service};
+use crust::Event as CrustEvent;
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::{FullId, PublicId};
+use itertools::Itertools;
+use kademlia_routing_table::{AddedNodeDetails, ContactInfo, DroppedNodeDetails};
+#[cfg(feature = "use-mock-crust")]
+use kademlia_routing_table::RoutingTable;
+use maidsafe_utilities::serialisation;
 use message_accumulator::MessageAccumulator;
 use message_filter::MessageFilter;
 use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageContent,
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, GROUP_SIZE,
                    PeerManager, PeerState, QUORUM_SIZE};
+use rust_sodium::crypto::{box_, sign};
+use rust_sodium::crypto::hash::sha256;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
+use std::{cmp, fmt, iter};
+use std::fmt::{Debug, Formatter};
+use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 use super::common::{Base, Bootstrapped, USER_MSG_CACHE_EXPIRY_DURATION_SECS};
 use timer::Timer;
 use tunnels::Tunnels;
@@ -327,6 +327,13 @@ impl Node {
         if peer_id == self.crust_service.id() {
             debug!("{:?} Received ConnectSuccess event with our Crust peer ID.",
                    self);
+            return;
+        }
+        if !self.crust_service.is_peer_whitelisted(&peer_id) {
+            debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
+                   self,
+                   peer_id);
+            self.disconnect_peer(&peer_id);
             return;
         }
 
@@ -782,6 +789,11 @@ impl Node {
                               peer_id: PeerId,
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
+        if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
+            warn!("{:?} Client is not whitelisted - dropping", self);
+            self.disconnect_peer(&peer_id);
+            return Ok(());
+        }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper client - dropping",
                   self);
