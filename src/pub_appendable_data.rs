@@ -124,7 +124,7 @@ impl PubAppendableData {
 
     /// Inserts the given wrapper item, or returns `false` if cannot
     pub fn apply_wrapper(&mut self, wrapper: AppendWrapper) -> bool {
-        if !wrapper.verify_signature() && &self.version != wrapper.version() {
+        if !wrapper.verify_signature() || &self.version != wrapper.version() {
             return false;
         }
         match wrapper.pub_appended_data() {
@@ -306,7 +306,7 @@ mod test {
 
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
-    use append_types::{AppendedData, Filter};
+    use append_types::{AppendedData, AppendWrapper, Filter};
     use data::DataIdentifier;
     use std::collections::BTreeSet;
 
@@ -519,6 +519,107 @@ mod test {
     }
 
     #[test]
+    fn transfer_owner_attack() {
+        let keys1 = sign::gen_keypair();
+        let keys2 = sign::gen_keypair();
+        let keys3 = sign::gen_keypair();
+        let new_owner = sign::gen_keypair();
+        let attacker = sign::gen_keypair();
+
+        let name: XorName = rand::random();
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+        let attacker_keys = vec![keys1.0, keys2.0, keys3.0, attacker.0];
+
+        let mut orig_pub_appendable_data = unwrap!(PubAppendableData::new(name,
+                                                                         0,
+                                                                         owner_keys.clone(),
+                                                                         vec![],
+                                                                         BTreeSet::new(),
+                                                                         Filter::white_list(None),
+                                                                         Some(&keys1.1)));
+        assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
+                   Some(0));
+
+        let mut new_pub_appendable_data = unwrap!(PubAppendableData::new(name,
+                                                                         1,
+                                                                         vec![new_owner.0],
+                                                                         owner_keys.clone(),
+                                                                         BTreeSet::new(),
+                                                                         Filter::white_list(None),
+                                                                         Some(&keys1.1)));
+        assert_eq!(new_pub_appendable_data.add_signature(&attacker.1).ok(),
+                   Some(0));
+
+        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&owner_keys).is_err());
+        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_ok());
+        // Shall throw error of NotEnoughSignatures
+        assert!(orig_pub_appendable_data.update_with_other(new_pub_appendable_data.clone())
+            .is_err());
+
+        assert_eq!(new_pub_appendable_data.add_signature(&attacker.1).ok(),
+                   Some(0));
+        // Shall throw error of DuplicateSignatures
+        assert!(new_pub_appendable_data.verify_previous_owner_signatures(&attacker_keys).is_err());
+    }
+
+    #[test]
+    fn update_with_wrong_info() {
+        let keys1 = sign::gen_keypair();
+        let keys2 = sign::gen_keypair();
+        let keys3 = sign::gen_keypair();
+        let new_owner = sign::gen_keypair();
+
+        let name: XorName = rand::random();
+        let owner_keys = vec![keys1.0, keys2.0, keys3.0];
+
+        let mut orig_pub_appendable_data = unwrap!(PubAppendableData::new(name,
+                                                                         0,
+                                                                         owner_keys.clone(),
+                                                                         vec![],
+                                                                         BTreeSet::new(),
+                                                                         Filter::white_list(None),
+                                                                         Some(&keys1.1)));
+        assert_eq!(orig_pub_appendable_data.add_signature(&keys2.1).ok(),
+                   Some(0));
+
+        // Update with wrong version
+        let mut wrong_version = unwrap!(PubAppendableData::new(name,
+                                                               2,
+                                                               vec![new_owner.0],
+                                                               owner_keys.clone(),
+                                                               BTreeSet::new(),
+                                                               Filter::white_list(None),
+                                                               Some(&keys1.1)));
+        assert_eq!(wrong_version.add_signature(&keys2.1).ok(), Some(0));
+        // Shall throw error of UnknownMessageType
+        assert!(orig_pub_appendable_data.update_with_other(wrong_version).is_err());
+
+        // Update with owner_keys in different order
+        let mut wrong_order = unwrap!(PubAppendableData::new(name,
+                                                             1,
+                                                             vec![new_owner.0],
+                                                             vec![keys3.0, keys2.0, keys1.0],
+                                                             BTreeSet::new(),
+                                                             Filter::white_list(None),
+                                                             Some(&keys1.1)));
+        assert_eq!(wrong_order.add_signature(&keys2.1).ok(), Some(0));
+        // Shall throw error of UnknownMessageType
+        assert!(orig_pub_appendable_data.update_with_other(wrong_order).is_err());
+
+        // Update with wrong name
+        let mut wrong_name = unwrap!(PubAppendableData::new(rand::random(),
+                                                            1,
+                                                            vec![new_owner.0],
+                                                            owner_keys.clone(),
+                                                            BTreeSet::new(),
+                                                            Filter::white_list(None),
+                                                            Some(&keys1.1)));
+        assert_eq!(wrong_name.add_signature(&keys2.1).ok(), Some(0));
+        // Shall throw error of UnknownMessageType
+        assert!(orig_pub_appendable_data.update_with_other(wrong_name).is_err());
+    }
+
+    #[test]
     fn appending_with_white_list() {
         let keys = sign::gen_keypair();
         let owner_keys = vec![keys.0];
@@ -564,5 +665,29 @@ mod test {
 
         assert!(!pub_appendable_data.append(black_appended_data));
         assert!(pub_appendable_data.append(white_appended_data));
+    }
+
+    #[test]
+    fn apply_wrapper() {
+        let keys = sign::gen_keypair();
+        let name: XorName = rand::random();
+
+        let mut pub_appendable_data = unwrap!(PubAppendableData::new(name,
+                                                                     0,
+                                                                     vec![keys.0],
+                                                                     vec![],
+                                                                     BTreeSet::new(),
+                                                                     Filter::black_list(None),
+                                                                     Some(&keys.1)));
+        let pointer = DataIdentifier::Structured(rand::random(), 10000);
+        let appended_data = unwrap!(AppendedData::new(pointer, keys.0, &keys.1));
+
+        // apply correct wrapper
+        let append_wrapper = AppendWrapper::new_pub(name, appended_data.clone(), 0);
+        assert!(pub_appendable_data.apply_wrapper(append_wrapper));
+
+        // apply wrapper with incorrect version
+        let append_wrapper = AppendWrapper::new_pub(name, appended_data, 1);
+        assert!(!pub_appendable_data.apply_wrapper(append_wrapper));
     }
 }
