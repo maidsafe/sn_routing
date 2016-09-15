@@ -15,6 +15,20 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use authority::Authority;
+use cache::{Cache, NullCache};
+use client::Client;
+use data::{Data, DataIdentifier, ImmutableData};
+use event::Event;
+use id::FullId;
+use itertools::Itertools;
+use kademlia_routing_table::{ContactInfo, RoutingTable};
+use messages::{Request, Response};
+use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use mock_crust::crust::PeerId;
+use node::Node;
+use peer_manager::{GROUP_SIZE, QUORUM_SIZE};
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
 use std::cell::RefCell;
@@ -23,19 +37,6 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops;
 use std::sync::mpsc;
 use std::thread;
-
-use authority::Authority;
-use client::Client;
-use cache::{Cache, NullCache};
-use data::{Data, DataIdentifier, ImmutableData};
-use event::Event;
-use id::FullId;
-use itertools::Itertools;
-use kademlia_routing_table::{ContactInfo, RoutingTable};
-use messages::{Request, Response};
-use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use node::Node;
-use peer_manager::{GROUP_SIZE, QUORUM_SIZE};
 use types::MessageId;
 use xor_name::XorName;
 
@@ -829,6 +830,28 @@ fn check_close_groups_for_group_size_nodes() {
     let close_groups_complete = nodes.iter()
         .all(|n| nodes.iter().all(|m| m.close_group().contains(&n.name())));
     assert!(close_groups_complete);
+}
+
+#[test]
+fn whitelist() {
+    let network = Network::new(None);
+    let mut nodes = create_connected_nodes(&network, GROUP_SIZE);
+    let config = Config::with_contacts(&[nodes[0].handle.endpoint()]);
+    for node in &mut nodes {
+        node.handle.0.borrow_mut().whitelist_peer(PeerId(GROUP_SIZE));
+    }
+    // The next node has peer ID `GROUP_SIZE`: It should be able to join.
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    let _ = poll_all(&mut nodes, &mut []);
+    verify_kademlia_invariant_for_all_nodes(&nodes);
+    // The next node has peer ID `GROUP_SIZE + 1`: It is not whitelisted.
+    nodes.push(TestNode::builder(&network).config(config.clone()).create());
+    let _ = poll_all(&mut nodes, &mut []);
+    assert!(!unwrap!(nodes.pop()).inner.is_node());
+    // A client should be able to join anyway, regardless of the whitelist.
+    let mut clients = vec![TestClient::new(&network, Some(config), None)];
+    let _ = poll_all(&mut nodes, &mut clients);
+    expect_next_event!(clients[0], Event::Connected);
 }
 
 #[test]

@@ -450,6 +450,15 @@ impl Node {
         self.machine.borrow_mut().current_mut().clear_state()
     }
 
+    /// Returns whether the current state is `Node`.
+    pub fn is_node(&self) -> bool {
+        if let State::Node(..) = *self.machine.borrow().current() {
+            true
+        } else {
+            false
+        }
+    }
+
     fn receive_action_result<T>(&self, rx: &Receiver<T>) -> Result<T, InterfaceError> {
         while self.poll() {}
         Ok(try!(rx.recv()))

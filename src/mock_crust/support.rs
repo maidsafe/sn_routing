@@ -193,6 +193,7 @@ pub struct ServiceImpl {
     event_sender: Option<CrustEventSender>,
     pending_bootstraps: u64,
     connections: Vec<(PeerId, Endpoint)>,
+    whitelist: HashSet<PeerId>,
 }
 
 impl ServiceImpl {
@@ -206,6 +207,7 @@ impl ServiceImpl {
             event_sender: None,
             pending_bootstraps: 0,
             connections: Vec::new(),
+            whitelist: HashSet::new(),
         }
     }
 
@@ -257,6 +259,14 @@ impl ServiceImpl {
 
     pub fn is_peer_connected(&self, peer_id: &PeerId) -> bool {
         self.find_endpoint_by_peer_id(peer_id).is_some()
+    }
+
+    pub fn whitelist_peer(&mut self, peer_id: PeerId) {
+        let _ = self.whitelist.insert(peer_id);
+    }
+
+    pub fn is_peer_whitelisted(&self, peer_id: &PeerId) -> bool {
+        self.whitelist.is_empty() || self.whitelist.contains(peer_id)
     }
 
     pub fn prepare_connection_info(&self, result_token: u32) {
