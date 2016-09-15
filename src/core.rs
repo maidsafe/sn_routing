@@ -599,6 +599,14 @@ impl Core {
                    self);
             return;
         }
+        if !self.crust_service.is_peer_whitelisted(&peer_id) {
+            debug!("{:?} Received ConnectSuccess, but {:?} is not whitelisted.",
+                   self,
+                   peer_id);
+            self.disconnect_peer(&peer_id);
+            return;
+        }
+
         if self.role == Role::Client {
             warn!("{:?} Received ConnectSuccess event as a client.", self);
         } else {
@@ -1354,6 +1362,11 @@ impl Core {
                               peer_id: PeerId,
                               client_restriction: bool)
                               -> Result<(), RoutingError> {
+        if !client_restriction && !self.crust_service.is_peer_whitelisted(&peer_id) {
+            warn!("{:?} Client is not whitelisted - dropping", self);
+            self.disconnect_peer(&peer_id);
+            return Ok(());
+        }
         if *public_id.name() != XorName(sha256::hash(&public_id.signing_public_key().0).0) {
             warn!("{:?} Incoming Connection not validated as a proper client - dropping",
                   self);
