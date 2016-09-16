@@ -1,5 +1,10 @@
 # Routing - Change Log
 
+## [0.26.0]
+- Add the public and private appendable data types.
+- Allow whitelisting nodes via the crust config file.
+- Randomise message handling order in the mock crust tests.
+
 ## [0.23.4]
 - Use rust_sodium instead of sodiumoxide.
 - Merge safe_network_common into routing.
