@@ -1,5 +1,9 @@
 # Safe Vault - Change Log
 
+## [0.12.0]
+- Handle appendable data types in data manager.
+- Fix a synchronisation problem in Put/Post handling.
+
 ## [0.11.0]
 - Use rust_sodium instead of sodiumoxide.
 - Upgrade to routing 0.23.4, with merged safe_network_common.
