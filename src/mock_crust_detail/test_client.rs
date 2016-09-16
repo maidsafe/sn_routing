@@ -349,6 +349,14 @@ impl TestClient {
         }
     }
 
+    /// Append data
+    pub fn append(&mut self, wrapper: AppendWrapper) {
+        let request_data_id = wrapper.identifier();
+        let dst = Authority::NaeManager(*request_data_id.name());
+        let request_message_id = MessageId::new();
+        let _ = self.routing_client.send_append_request(dst, wrapper, request_message_id);
+    }
+
     /// Append data and read from mock network
     pub fn append_and_verify(&mut self,
                              wrapper: AppendWrapper,

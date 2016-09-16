@@ -18,7 +18,8 @@
 #![cfg(feature = "use-mock-crust")]
 
 use rand::Rng;
-use routing::{Filter, FullId, ImmutableData, PrivAppendableData, PubAppendableData, StructuredData};
+use routing::{AppendedData, DataIdentifier, Filter, FullId, ImmutableData, PrivAppendableData,
+              PubAppendableData, StructuredData};
 use rust_sodium::crypto::box_;
 use std::collections::BTreeSet;
 
@@ -52,6 +53,33 @@ pub fn random_pub_appendable_data<R: Rng>(full_id: &FullId, rng: &mut R) -> PubA
                            Filter::black_list(None),
                            Some(full_id.signing_private_key()))
         .expect("Cannot create public appendable data for test")
+}
+
+/// Creates a new public appendable data with an incremented version number
+pub fn pub_appendable_data_version_up<R: Rng>(full_id: &FullId,
+                                              old_ad: &PubAppendableData,
+                                              rng: &mut R)
+                                              -> PubAppendableData {
+    let mut new_ad = PubAppendableData::new(*old_ad.name(),
+                                            old_ad.get_version() + 1,
+                                            vec![full_id.public_id().signing_public_key().clone()],
+                                            vec![full_id.public_id().signing_public_key().clone()],
+                                            BTreeSet::new(),
+                                            Filter::black_list(None),
+                                            None)
+        .expect("Cannot create public appendable data for test");
+    for data in old_ad.get_data() {
+        new_ad.append(data.clone());
+    }
+    let pointer = DataIdentifier::Structured(rng.gen(), 12345);
+    let appended_data = unwrap_result!(AppendedData::new(pointer,
+                                                         full_id.public_id()
+                                                             .signing_public_key()
+                                                             .clone(),
+                                                         full_id.signing_private_key()));
+    new_ad.append(appended_data);
+    let _ = new_ad.add_signature(full_id.signing_private_key());
+    new_ad
 }
 
 /// Creates random private appendable data - tests only

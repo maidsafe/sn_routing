@@ -75,3 +75,43 @@ pub fn poll_and_resend_unacknowledged(nodes: &mut [TestNode], client: &mut TestC
         }
     }
 }
+
+/// Empty event queue of nodes and clients and resend unacknowledged messages.
+/// Handles more than one client and handles only one event per round for each node and client,
+/// to better simulate simultaneous requests.
+pub fn poll_and_resend_unacknowledged_parallel(nodes: &mut [TestNode],
+                                               clients: &mut [TestClient])
+                                               -> usize {
+    let mut event_count = 0;
+    loop {
+        let mut new_count = 0;
+        loop {
+            let prev_count = new_count;
+            for node in nodes.iter_mut() {
+                if node.poll_once() {
+                    new_count += 1;
+                }
+            }
+            for client in clients.iter_mut() {
+                if client.poll_once() {
+                    new_count += 1;
+                }
+            }
+            if prev_count == new_count {
+                break;
+            }
+        }
+        event_count += new_count;
+        let mut result = false;
+        for node in nodes.iter_mut() {
+            result = result || node.resend_unacknowledged()
+        }
+        for client in clients.iter_mut() {
+            result = result || client.resend_unacknowledged();
+        }
+        if !result && new_count == 0 {
+            break;
+        }
+    }
+    event_count
+}
