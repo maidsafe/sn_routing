@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -127,6 +127,10 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[allow(unused_extern_crates)]
+#[macro_use]
+extern crate quick_error;
 #[macro_use]
 extern crate unwrap;
 extern crate accumulator;
@@ -155,6 +159,7 @@ mod messages;
 mod node;
 mod peer_manager;
 mod plain_data;
+mod routing_table;
 mod signed_message_filter;
 mod state_machine;
 mod states;

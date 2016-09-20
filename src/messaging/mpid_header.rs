@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -19,14 +19,14 @@
 /// bytes).
 pub const MAX_HEADER_METADATA_SIZE: usize = 128;  // bytes
 
-use std::fmt::{self, Debug, Formatter};
-use std::sync::{ONCE_INIT, Once};
 
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
 use rust_sodium;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use std::fmt::{self, Debug, Formatter};
+use std::sync::{ONCE_INIT, Once};
 use super::{Error, GUID_SIZE};
 use utils;
 use xor_name::XorName;
@@ -145,11 +145,11 @@ impl Debug for MpidHeader {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
+mod tests {
     use messaging;
     use rand;
     use rust_sodium::crypto::sign;
+    use super::*;
     use xor_name::XorName;
 
     #[test]
