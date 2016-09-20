@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -15,25 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+
+use action::Action;
+use cache::Cache;
 use crust::{PeerId, Service};
 use crust::Event as CrustEvent;
+use error::RoutingError;
+use event::Event;
+use id::{FullId, PublicId};
 use maidsafe_utilities::serialisation;
+use messages::{DirectMessage, Message};
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign;
+use state_machine::Transition;
+use stats::Stats;
 use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
-
-use action::Action;
-use cache::Cache;
-use error::RoutingError;
-use event::Event;
-use id::{FullId, PublicId};
-use messages::{DirectMessage, Message};
-use state_machine::Transition;
-use stats::Stats;
 use super::{Client, Node};
 use super::common::Base;
 use timer::Timer;

@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -158,14 +158,27 @@ impl Xorable for XorName {
 }
 
 impl fmt::Debug for XorName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_debug_id())
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{}", self.get_debug_id())
     }
 }
 
 impl fmt::Display for XorName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.get_debug_id())
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{}", self.get_debug_id())
+    }
+}
+
+impl fmt::Binary for XorName {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter,
+               "{:08b} {:08b} {:08b}..{:08b} {:08b} {:08b}",
+               self.0[0],
+               self.0[1],
+               self.0[2],
+               self.0[XOR_NAME_LEN - 3],
+               self.0[XOR_NAME_LEN - 2],
+               self.0[XOR_NAME_LEN - 1])
     }
 }
 
@@ -242,7 +255,7 @@ impl Decodable for XorName {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
     use std::cmp::Ordering;

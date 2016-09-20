@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -618,7 +618,9 @@ impl Node {
             (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              src @ Authority::Client { .. },
              Authority::ManagedNode(dst_name)) => {
                 self.handle_connection_info_from_client(encrypted_connection_info,
@@ -627,10 +629,14 @@ impl Node {
                                                         dst_name,
                                                         public_id)
             }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              Authority::ManagedNode(src_name),
              Authority::Client { .. }) |
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(encrypted_connection_info,

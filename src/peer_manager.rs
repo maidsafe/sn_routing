@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -15,18 +15,18 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use authority::Authority;
-use rust_sodium::crypto::sign;
+use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
+use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, RoutingTable};
 use rand;
+use rust_sodium::crypto::sign;
+use std::{error, fmt, mem};
 use std::collections::HashMap;
 use std::collections::hash_map::Values;
-use std::{error, fmt, mem};
 use std::time::{Duration, Instant};
 use xor_name::XorName;
-use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, RoutingTable};
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
 pub const GROUP_SIZE: usize = 8;
@@ -174,8 +174,7 @@ impl Peer {
             PeerState::SearchingForTunnel => {
                 self.timestamp.elapsed() >= Duration::from_secs(CONNECTION_TIMEOUT_SECS)
             }
-            PeerState::JoiningNode |
-            PeerState::Proxy => {
+            PeerState::JoiningNode | PeerState::Proxy => {
                 self.timestamp.elapsed() >= Duration::from_secs(JOINING_NODE_TIMEOUT_SECS)
             }
             PeerState::Client |
@@ -437,8 +436,7 @@ impl PeerManager {
         let expired_ids = self.peer_map
             .peers()
             .filter(|peer| match peer.state {
-                PeerState::JoiningNode |
-                PeerState::Proxy => peer.is_expired(),
+                PeerState::JoiningNode | PeerState::Proxy => peer.is_expired(),
                 _ => false,
             })
             .filter_map(|peer| peer.peer_id)
@@ -493,9 +491,7 @@ impl PeerManager {
     pub fn get_proxy_or_client_or_joining_node_peer_id(&self, pub_id: &PublicId) -> Option<PeerId> {
         if let Some(peer) = self.peer_map.get_by_name(pub_id.name()) {
             match peer.state {
-                PeerState::Client |
-                PeerState::JoiningNode |
-                PeerState::Proxy => peer.peer_id,
+                PeerState::Client | PeerState::JoiningNode | PeerState::Proxy => peer.peer_id,
                 _ => None,
             }
         } else {
@@ -529,8 +525,7 @@ impl PeerManager {
 
     /// Marks the given peer as "connected and waiting for `NodeIdentify`".
     pub fn connected_to(&mut self, peer_id: &PeerId) {
-        if !self.set_state(peer_id,
-                           PeerState::AwaitingNodeIdentify(false)) {
+        if !self.set_state(peer_id, PeerState::AwaitingNodeIdentify(false)) {
             let _ = self.unknown_peers.insert(*peer_id, Instant::now());
         }
     }
@@ -538,8 +533,7 @@ impl PeerManager {
     /// Marks the given peer as "connected via tunnel and waiting for `NodeIdentify`".
     pub fn tunnelling_to(&mut self, peer_id: &PeerId) -> bool {
         // TODO: handle unknown peer (similar to what is done in connected_to)
-        self.set_state(peer_id,
-                       PeerState::AwaitingNodeIdentify(true))
+        self.set_state(peer_id, PeerState::AwaitingNodeIdentify(true))
     }
 
     /// Returns the public ID of the given peer, if it is in `CrustConnecting` state.
@@ -864,11 +858,11 @@ impl PeerManager {
 
 #[cfg(all(test, feature = "use-mock-crust"))]
 mod tests {
-    use super::*;
     use authority::Authority;
     use id::FullId;
-    use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
     use mock_crust::Endpoint;
+    use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
+    use super::*;
     use xor_name::{XOR_NAME_LEN, XorName};
 
     fn node_auth(byte: u8) -> Authority {

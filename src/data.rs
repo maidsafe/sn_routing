@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-pub use structured_data::StructuredData;
 pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
+use std::fmt::{self, Debug, Formatter};
+pub use structured_data::StructuredData;
 use xor_name::XorName;
 
 /// This is the data types routing handles in the public interface
@@ -94,12 +94,12 @@ impl DataIdentifier {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     extern crate rand;
 
-    use super::*;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
+    use super::*;
     use xor_name::XorName;
 
     #[test]
