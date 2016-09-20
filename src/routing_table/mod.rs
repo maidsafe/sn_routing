@@ -224,7 +224,7 @@ pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable
 //
 // See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
-pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable> {
+pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> {
     our_name: T,
     min_group_size: usize,
     our_group_prefix: Prefix<T>,
@@ -232,7 +232,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     needed: HashSet<T>,
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T> {
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -387,7 +387,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
         if let Some(prefix) = self.find_group_prefix(name) {
             if let Some(group) = self.groups.get_mut(&prefix) {
                 should_merge = group.remove(name) && prefix == self.our_group_prefix &&
-                               group.len() < self.min_group_size;
+                               group.len() < self.min_group_size && prefix.bit_count() != 0;
             }
         }
         if should_merge {
@@ -584,9 +584,14 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
         keys.sort_by(|&lhs, &rhs| lhs.cmp_distance(rhs, name));
         *keys[0]
     }
+
+    #[test]
+    fn num_of_groups(&self) -> usize {
+        self.groups.len()
+    }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Binary for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
                       "RoutingTable {{\n\tour_name: {:08b},\n\tmin_group_size: \
@@ -620,7 +625,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Binary for RoutingTabl
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Debug for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
     }
