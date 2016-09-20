@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -19,13 +19,13 @@ pub use self::implementation::Timer;
 
 #[cfg(not(feature = "use-mock-crust"))]
 mod implementation {
-    use std::collections::BTreeMap;
-    use std::sync::{Arc, Condvar, Mutex};
-    use std::time::{Duration, Instant};
 
     use action::Action;
     use itertools::Itertools;
     use maidsafe_utilities::thread::RaiiThreadJoiner;
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::{Duration, Instant};
     use types::RoutingActionSender;
 
     struct Detail {
@@ -49,8 +49,9 @@ mod implementation {
             };
             let detail_and_cond_var = Arc::new((Mutex::new(detail), Condvar::new()));
             let detail_and_cond_var_clone = detail_and_cond_var.clone();
-            let worker = RaiiThreadJoiner::new(thread!("Timer",
-                                                       move || Self::run(sender, detail_and_cond_var)));
+            let worker = RaiiThreadJoiner::new(thread!("Timer", move || {
+                Self::run(sender, detail_and_cond_var)
+            }));
             Timer {
                 next_token: 0,
                 detail_and_cond_var: detail_and_cond_var_clone,
@@ -95,7 +96,8 @@ mod implementation {
                     detail = cond_var.wait(detail).expect("Failed to lock.");
                 } else {
                     // Safe to call `expect()` as `deadlines` has at least one entry.
-                    let nearest = detail.deadlines.keys().next().cloned().expect("Bug in `BTreeMap`.");
+                    let nearest =
+                        detail.deadlines.keys().next().cloned().expect("Bug in `BTreeMap`.");
                     let duration = nearest - now;
                     detail = cond_var.wait_timeout(detail, duration).expect("Failed to lock.").0;
                 }
@@ -113,15 +115,15 @@ mod implementation {
     }
 
     #[cfg(test)]
-    mod test {
-        use super::*;
+    mod tests {
+
+        use action::Action;
+        use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 
         use std::sync::mpsc;
         use std::thread;
         use std::time::{Duration, Instant};
-
-        use action::Action;
-        use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+        use super::*;
         use types::RoutingActionSender;
 
         #[test]
@@ -208,9 +210,7 @@ mod implementation {
 
     impl Timer {
         pub fn new(_: RoutingActionSender) -> Self {
-            Timer {
-                next_token: 0,
-            }
+            Timer { next_token: 0 }
         }
 
         pub fn schedule(&mut self, _: Duration) -> u64 {

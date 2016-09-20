@@ -5,7 +5,7 @@
 // licence you accepted on initial access to the Software (the "Licences").
 //
 // By contributing code to the SAFE Network Software, or to this project generally, you agree to be
-// bound by the terms of the MaidSafe Contributor Agreement, version 1.0.  This, along with the
+// bound by the terms of the MaidSafe Contributor Agreement, version 1.1.  This, along with the
 // Licenses can be found in the root directory of this project at LICENSE, COPYING and CONTRIBUTOR.
 //
 // Unless required by applicable law or agreed to in writing, the SAFE Network Software distributed
@@ -15,16 +15,16 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use lru_time_cache::LruCache;
-use rust_sodium::crypto::sign;
-use rust_sodium::crypto::hash::sha256;
-use std::time::Duration;
 
 use accumulator::Accumulator;
 use error::RoutingError;
 use id::PublicId;
+use lru_time_cache::LruCache;
 use message_filter::MessageFilter;
 use messages::{MessageContent, RoutingMessage};
+use rust_sodium::crypto::hash::sha256;
+use rust_sodium::crypto::sign;
+use std::time::Duration;
 
 const EXPIRY_DURATION_SECS: u64 = 60 * 20;
 
