@@ -235,7 +235,7 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 //
 // See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
-pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable> {
+pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> {
     our_name: T,
     min_group_size: usize,
     our_group_prefix: Prefix<T>,
@@ -243,7 +243,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     needed: HashSet<T>,
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T> {
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -417,7 +417,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
                     return Err(Error::NoSuchPeer);
                 }
                 should_merge = removal_details.was_in_our_group &&
-                               group.len() < self.min_group_size;
+                               group.len() < self.min_group_size && prefix.bit_count() != 0;
             }
         } else {
             return Err(Error::NoSuchPeer);
@@ -630,14 +630,19 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> RoutingTable<T> {
         keys.sort_by(|&lhs, &rhs| lhs.cmp_distance(rhs, name));
         keys[0]
     }
+
+    #[cfg(test)]
+    fn num_of_groups(&self) -> usize {
+        self.groups.len()
+    }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Binary for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
-                      "RoutingTable {{\n\tour_name: {:08b},\n\tmin_group_size: \
+                      "RoutingTable {{\n\tour_name: {},\n\tmin_group_size: \
                        {},\n\tour_group_prefix: {:?},",
-                      self.our_name,
+                      self.our_name.debug_binary(),
                       self.min_group_size,
                       self.our_group_prefix));
         let mut groups = self.groups.iter().collect_vec();
@@ -653,7 +658,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Binary for RoutingTabl
                 } else {
                     ","
                 };
-                try!(writeln!(formatter, "\t\t{:08b}{}", name, comma));
+                try!(writeln!(formatter, "\t\t{}{}", name.debug_binary(), comma));
             }
             let comma = if group_index == groups.len() - 1 {
                 ""
@@ -666,7 +671,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Binary for RoutingTabl
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable> Debug for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
     }
