@@ -205,6 +205,7 @@ pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 pub use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 pub use plain_data::PlainData;
+pub use routing_table::Error as RoutingTableError;
 pub use routing_table::Xorable;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;

@@ -23,7 +23,7 @@ use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::fmt::{self, Binary, Debug, Formatter};
-use super::{Destination, RoutingTable};
+use super::{Destination, Error, RoutingTable};
 use super::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
@@ -71,7 +71,7 @@ impl Network {
                 Ok(Some(prefix)) => {
                     let _ = new_table.split(prefix);
                 }
-                Ok(None) => {},
+                Ok(None) => {}
                 Err(e) => trace!("failed to add node into new with error {:?}", e),
             }
         }
@@ -81,7 +81,7 @@ impl Network {
                 for node in self.nodes.values_mut() {
                     let _ = node.split(prefix);
                 }
-            } 
+            }
         }
     }
 
@@ -93,11 +93,23 @@ impl Network {
         let _ = self.nodes.remove(&name);
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
-            match node.remove(&name) {
-                // TODO: shall a panic be raised in case of failure?
-                None => {}
-                Some(result) => {
-                    let _ = node.merge_own_group(&result.1);
+            if node.iter().any(|&name_in_table| name_in_table == name) {
+                let removed_node_is_in_our_group = node.is_in_our_group(&name);
+                let removal_details = unwrap!(node.remove(&name));
+                assert_eq!(name, removal_details.name);
+                assert_eq!(removed_node_is_in_our_group,
+                           removal_details.was_in_our_group);
+                match removal_details.targets_and_merge_details {
+                    // TODO: shall a panic be raised in case of failure?
+                    None => {}
+                    Some((targets, own_merge_details)) => {
+                        let _ = node.merge_own_group(&own_merge_details);
+                    }
+                }
+            } else {
+                match node.remove(&name).unwrap_err() {
+                    Error::NoSuchPeer => {}
+                    _ => panic!("Wrong error type returned."),
                 }
             }
         }
@@ -122,7 +134,7 @@ impl Network {
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.
             if Destination::Node(node) != dst {
-                for target in unwrap!(self.nodes[&node].targets(&dst, route)) {
+                for target in unwrap!(self.nodes[&node].targets(&dst, route, &[])) {
                     if !handled.contains(&target) && !received.contains(&target) {
                         received.push(target);
                     }
@@ -234,24 +246,28 @@ fn merging_groups() {
             verify_invariant(&mut network);
         }
     }
-    assert!(network.nodes.iter().find(|&(_, table)|
-        if table.num_of_groups() < 3 {
+    assert!(network.nodes
+        .iter()
+        .find(|&(_, table)| if table.num_of_groups() < 3 {
             trace!("{:?}", table);
             true
         } else {
             false
-        }).is_none());
+        })
+        .is_none());
     for _ in 0..95 {
         network.drop_node();
         // if i % 5 == 0 {
         //     verify_invariant(&mut network);
         // }
     }
-    assert!(network.nodes.iter().find(|&(_, table)|
-        if table.num_of_groups() > 1 {
+    assert!(network.nodes
+        .iter()
+        .find(|&(_, table)| if table.num_of_groups() > 1 {
             trace!("{:?}", table);
             true
         } else {
             false
-        }).is_none());
+        })
+        .is_none());
 }

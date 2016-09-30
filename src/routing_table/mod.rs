@@ -198,6 +198,7 @@ impl<N> Destination<N> {
 
 
 // Used when removal of a contact triggers the need to merge two or more groups
+#[derive(Debug)]
 pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     prefix: Prefix<T>,
     groups: Groups<T>,
@@ -215,6 +216,7 @@ pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable
 
 
 // Details returned by a successful `RoutingTable::remove()`.
+#[derive(Debug)]
 pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     // Peer name
     pub name: T,
@@ -235,7 +237,7 @@ pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
 //
 // See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
-pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> {
+pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
     our_name: T,
     min_group_size: usize,
     our_group_prefix: Prefix<T>,
@@ -243,7 +245,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + De
     needed: HashSet<T>,
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -417,7 +419,8 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
                     return Err(Error::NoSuchPeer);
                 }
                 should_merge = removal_details.was_in_our_group &&
-                               group.len() < self.min_group_size && prefix.bit_count() != 0;
+                               group.len() < self.min_group_size &&
+                               prefix.bit_count() != 0;
             }
         } else {
             return Err(Error::NoSuchPeer);
@@ -637,7 +640,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
                       "RoutingTable {{\n\tour_name: {},\n\tmin_group_size: \
@@ -671,7 +674,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for Rou
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Debug for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
     }

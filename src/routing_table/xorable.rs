@@ -17,8 +17,7 @@
 
 use std::cmp::Ordering;
 use std::mem;
-use std::ops::Index;
-use std::ops::Range;
+use std::ops::{Index, Range};
 
 /// A sequence of bits, as a point in XOR space.
 ///
@@ -54,17 +53,12 @@ pub trait Xorable: Ord {
     fn debug_binary(&self) -> String;
 }
 
-/// Converts a tring into debug format of `????????...????????` when the string is longer than 20
+/// Converts a string into debug format of `????????...????????` when the string is longer than 20.
 pub fn debug_format(input: String) -> String {
-    if input.len() > 20 {
-        let mut s = String::with_capacity(20);
-        s.push_str(input.index(Range{ start: 0, end: 8 }));
-        s.push_str("...");
-        s.push_str(input.index(Range{ start: input.len() - 8, end: input.len() }));
-        s
-    } else {
-        input
+    if input.len() < 21 {
+        return input;
     }
+    input.chars().take(8).chain("...".chars()).chain(input.chars().skip(input.len() - 8)).collect()
 }
 
 macro_rules! impl_xorable_for_array {

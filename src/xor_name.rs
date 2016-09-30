@@ -122,6 +122,14 @@ impl Xorable for XorName {
     fn with_flipped_bit(&self, i: usize) -> XorName {
         XorName(self.0.with_flipped_bit(i))
     }
+
+    fn binary(&self) -> String {
+        self.0.binary()
+    }
+
+    fn debug_binary(&self) -> String {
+        self.0.debug_binary()
+    }
 }
 
 impl fmt::Debug for XorName {
@@ -138,14 +146,7 @@ impl fmt::Display for XorName {
 
 impl fmt::Binary for XorName {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter,
-               "{:08b} {:08b} {:08b}..{:08b} {:08b} {:08b}",
-               self.0[0],
-               self.0[1],
-               self.0[2],
-               self.0[XOR_NAME_LEN - 3],
-               self.0[XOR_NAME_LEN - 2],
-               self.0[XOR_NAME_LEN - 1])
+        write!(formatter, "{}", self.debug_binary())
     }
 }
 

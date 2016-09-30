@@ -19,7 +19,7 @@
 extern crate rand;
 
 use std::hash::{Hash, Hasher};
-// Once we're at Stable v1.13.0, avoid disabling the lint check and replace `SipHasher` with
+// TODO - Once we're at Stable v1.13.0, avoid disabling the lint check and replace `SipHasher` with
 // `std::collections::hash_map::DefaultHasher`.
 #[cfg_attr(feature="clippy", allow(useless_attribute))]
 #[allow(deprecated)]
