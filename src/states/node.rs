@@ -453,6 +453,17 @@ impl Node {
                 }
                 Ok(())
             }
+            DirectMessage::RoutingTable(public_ids) => {
+                for public_id in &public_ids {
+                    if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
+                        let our_name = *self.name();
+                        let _ = self.send_connection_info(*public_id,
+                                                  Authority::ManagedNode(our_name),
+                                                  Authority::ManagedNode(*public_id.name()));
+                    }
+                }
+                Ok(())
+            }
             DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
@@ -855,25 +866,30 @@ impl Node {
                     self.send_event(Event::Connected);
                 }
 
+                if let Some(prefix) = split_prefix {
+                    // None of these will have been in our group, so no need to notify Routing user.
+                    let peers_to_drop = self.peer_mgr.split_group(prefix);
+                    for peer_id in peers_to_drop {
+                        let _ = self.crust_service.disconnect(peer_id);
+                    }
+                }
+
                 let all_rt_contacts = self.peer_mgr
                     .routing_table()
                     .iter()
                     .filter(|name| *name != public_id.name())
                     .cloned()
-                    .collect_vec();
+                    .collect();
                 let peer_ids_to_notify = self.peer_mgr.get_peer_ids(&all_rt_contacts);
-                for peer_id in &peer_ids_to_notify {
+                for to_notify in &peer_ids_to_notify {
                     let message = DirectMessage::NewNode(public_id);
-                    let _ = self.send_direct_message(peer_id, message);
-                }
-
-                if let Some(_prefix) = split_prefix {
-                    for _peer_id in peer_ids_to_notify {
-                        // notify about split
-                    }
+                    let _ = self.send_direct_message(to_notify, message);
                 }
 
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
+                    let message = DirectMessage::RoutingTable(self.peer_mgr
+                        .get_pub_ids(&all_rt_contacts));
+                    let _ = self.send_direct_message(&peer_id, message);
                     let event = Event::NodeAdded(*public_id.name(),
                                                  self.peer_mgr.routing_table().clone());
                     if let Err(err) = self.event_sender.send(event) {
@@ -1215,7 +1231,7 @@ impl Node {
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
-            close_group_ids: public_ids,
+            close_group_ids: public_ids.into_iter().collect(),
             message_id: message_id,
         };
 
@@ -1254,7 +1270,7 @@ impl Node {
                public_ids.iter().map(PublicId::name).collect_vec(),
                src);
         let response_content = MessageContent::GetCloseGroupResponse {
-            close_group_ids: public_ids,
+            close_group_ids: public_ids.into_iter().collect(),
             message_id: message_id,
         };
 
@@ -1507,10 +1523,8 @@ impl Node {
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
         if self.is_proper() {
             let targets = try!(self.peer_mgr
-                    .routing_table()
-                    .targets(&routing_msg.dst.to_destination(), route as usize, sent_to))
-                .into_iter()
-                .collect_vec();
+                .routing_table()
+                .targets(&routing_msg.dst.to_destination(), route as usize, sent_to));
             let new_sent_to = sent_to.iter()
                 .chain(targets.iter())
                 .cloned()

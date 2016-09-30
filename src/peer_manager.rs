@@ -185,8 +185,7 @@ impl Peer {
     }
 }
 
-/// Holds peers and provides efficient insertion and lookup and removal by peer id
-/// and name.
+/// Holds peers and provides efficient insertion and lookup and removal by peer id and name.
 struct PeerMap {
     peers: HashMap<XorName, Peer>,
     names: HashMap<PeerId, XorName>,
@@ -324,12 +323,20 @@ impl PeerManager {
         result
     }
 
-    ///
-    pub fn split_group(&mut self, mut prefix: Prefix<XorName>) -> Vec<XorName> {
-        // close connections
-        // remove from peer map
-        // notify via channel
-        vec![]
+    /// Splits the indicated group and returns the `PeerId`s of any peers to which we should not
+    /// remain connected.
+    pub fn split_group(&mut self, mut prefix: Prefix<XorName>) -> Vec<PeerId> {
+        let names_to_drop = self.routing_table.split(prefix);
+        let mut ids_to_drop = vec![];
+        for name in &names_to_drop {
+            if let Some(peer) = self.peer_map.remove_by_name(name) {
+                self.cleanup_proxy_peer_id();
+                if let Some(peer_id) = peer.peer_id {
+                    ids_to_drop.push(peer_id);
+                }
+            }
+        }
+        ids_to_drop
     }
 
     /// Returns `true` if we are directly connected to both peers.
@@ -557,7 +564,7 @@ impl PeerManager {
     }
 
     /// Return the PeerIds of nodes bearing the names.
-    pub fn get_peer_ids(&self, names: &[XorName]) -> Vec<PeerId> {
+    pub fn get_peer_ids(&self, names: &HashSet<XorName>) -> Vec<PeerId> {
         names.iter()
             .filter_map(|name| self.peer_map.get_by_name(name).and_then(Peer::peer_id))
             .cloned()
@@ -565,7 +572,7 @@ impl PeerManager {
     }
 
     /// Return the PublicIds of nodes bearing the names.
-    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> Vec<PublicId> {
+    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> HashSet<PublicId> {
         let mut result_map = names.iter()
             .filter_map(|name| {
                 if let Some(peer) = self.peer_map.get_by_name(name) {
