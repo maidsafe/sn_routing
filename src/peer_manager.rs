@@ -15,21 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+// TODO - remove this
+#![allow(unused)]
+
 use authority::Authority;
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
-use kademlia_routing_table::{AddedNodeDetails, DroppedNodeDetails, RoutingTable};
 use rand;
+use routing_table::{Prefix, RemovalDetails, RoutingTable};
+use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use xor_name::XorName;
 
 /// The group size for the routing table. This is the maximum that can be used for consensus.
-pub const GROUP_SIZE: usize = 8;
+pub const MIN_GROUP_SIZE: usize = 8;
 /// The quorum for group consensus.
 pub const QUORUM_SIZE: usize = 5;
 /// Time (in seconds) after which a joining node will get dropped from the map
@@ -39,9 +43,6 @@ const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
 /// Time (in seconds) the node waits for a `NodeIdentify` message.
 const NODE_IDENTIFY_TIMEOUT_SECS: u64 = 60;
-/// The number of entries beyond `GROUP_SIZE` that are not considered unnecessary in the routing
-/// table.
-const EXTRA_BUCKET_ENTRIES: usize = 2;
 
 #[derive(Debug)]
 /// Errors that occur in peer status management.
@@ -274,9 +275,7 @@ impl PeerManager {
             peer_map: PeerMap::new(),
             unknown_peers: HashMap::new(),
             proxy_peer_id: None,
-            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(),
-                                                        GROUP_SIZE,
-                                                        EXTRA_BUCKET_ENTRIES),
+            routing_table: RoutingTable::<XorName>::new(*our_public_id.name(), MIN_GROUP_SIZE),
             our_public_id: our_public_id,
         }
     }
@@ -284,7 +283,7 @@ impl PeerManager {
     /// Clears the routing table and resets this node's public ID.
     pub fn reset_routing_table(&mut self, our_public_id: PublicId) {
         self.our_public_id = our_public_id;
-        let new_rt = RoutingTable::new(*our_public_id.name(), GROUP_SIZE, EXTRA_BUCKET_ENTRIES);
+        let new_rt = RoutingTable::new(*our_public_id.name(), MIN_GROUP_SIZE);
         let old_rt = mem::replace(&mut self.routing_table, new_rt);
         for name in old_rt.iter() {
             let _ = self.peer_map.remove_by_name(name);
@@ -302,9 +301,9 @@ impl PeerManager {
     pub fn add_to_routing_table(&mut self,
                                 pub_id: PublicId,
                                 peer_id: PeerId)
-                                -> Option<AddedNodeDetails<XorName>> {
+                                -> Result<Option<Prefix<XorName>>, RoutingTableError> {
         let result = self.routing_table.add(*pub_id.name());
-        if result.is_some() {
+        if result.is_ok() {
             let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
                 Some(PeerState::SearchingForTunnel) |
                 Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -325,16 +324,12 @@ impl PeerManager {
         result
     }
 
-    /// If unneeded, removes the given peer from the routing table and returns `true`.
-    pub fn remove_if_unneeded(&mut self, name: &XorName, peer_id: &PeerId) -> bool {
-        if self.get_proxy_public_id(peer_id).is_some() || self.get_client(peer_id).is_some() ||
-           self.get_joining_node(peer_id).is_some() ||
-           Some(name) != self.peer_map.get(peer_id).map(Peer::name) ||
-           !self.routing_table.remove_if_unneeded(name) {
-            return false;
-        }
-        let _ = self.peer_map.remove(peer_id);
-        true
+    ///
+    pub fn split_group(&mut self, mut prefix: Prefix<XorName>) -> Vec<XorName> {
+        // close connections
+        // remove from peer map
+        // notify via channel
+        vec![]
     }
 
     /// Returns `true` if we are directly connected to both peers.
@@ -570,7 +565,7 @@ impl PeerManager {
     }
 
     /// Return the PublicIds of nodes bearing the names.
-    pub fn get_pub_ids(&self, names: &[XorName]) -> Vec<PublicId> {
+    pub fn get_pub_ids(&self, names: &HashSet<XorName>) -> Vec<PublicId> {
         let mut result_map = names.iter()
             .filter_map(|name| {
                 if let Some(peer) = self.peer_map.get_by_name(name) {
@@ -608,7 +603,7 @@ impl PeerManager {
 
         let _ = self.insert_peer(pub_id, Some(peer_id), PeerState::SearchingForTunnel);
 
-        let close_group = self.routing_table.closest_nodes_to(pub_id.name(), GROUP_SIZE, false);
+        let close_group = self.routing_table.other_close_names(pub_id.name()).unwrap_or_default();
         self.peer_map
             .peers()
             .filter_map(|peer| peer.peer_id.map(|peer_id| (*peer.name(), peer_id)))
@@ -749,18 +744,21 @@ impl PeerManager {
             .collect()
     }
 
-    /// Returns `true` if the given peer is not yet in the routing table but is allowed to connect.
-    pub fn allow_connect(&self, name: &XorName) -> bool {
-        !self.routing_table.contains(name) && self.routing_table.allow_connection(name)
+    /// Returns `Ok(())` if the given peer is not yet in the routing table but is allowed to
+    /// connect.
+    pub fn allow_connect(&self, name: &XorName) -> Result<(), RoutingTableError> {
+        self.routing_table.need_to_add(name)
     }
 
     /// Removes the given entry, returns the removed peer and if it was a routing node,
     /// the removal details
-    pub fn remove_peer(&mut self, peer_id: &PeerId) -> Option<(Peer, Option<DroppedNodeDetails>)> {
+    pub fn remove_peer(&mut self,
+                       peer_id: &PeerId)
+                       -> Option<(Peer, Result<RemovalDetails<XorName>, RoutingTableError>)> {
         if let Some(peer) = self.peer_map.remove(peer_id) {
             self.cleanup_proxy_peer_id();
-            let name = *peer.name();
-            Some((peer, self.routing_table.remove(&name)))
+            let removal_details = self.routing_table.remove(peer.name());
+            Some((peer, removal_details))
         } else {
             None
         }

@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage, UserMessage};
-use peer_manager::GROUP_SIZE;
+use peer_manager::MIN_GROUP_SIZE;
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;
@@ -32,13 +32,12 @@ pub struct Stats {
     pub tunnel_connections: usize,
 
     /// Messages sent by us on different routes.
-    routes: [usize; GROUP_SIZE],
+    routes: [usize; MIN_GROUP_SIZE],
     /// Messages we sent unsuccessfully: unacknowledged on all routes.
     unacked_msgs: usize,
 
     msg_direct_node_identify: usize,
     msg_direct_new_node: usize,
-    msg_direct_connection_unneeded: usize,
 
     msg_get: usize,
     msg_put: usize,
@@ -139,7 +138,6 @@ impl Stats {
         match *msg {
             DirectMessage::NodeIdentify { .. } => self.msg_direct_node_identify += 1,
             DirectMessage::NewNode(_) => self.msg_direct_new_node += 1,
-            DirectMessage::ConnectionUnneeded(..) => self.msg_direct_connection_unneeded += 1,
             _ => self.msg_other += 1,
         }
         self.increment_msg_total();
@@ -160,10 +158,9 @@ impl Stats {
                   self.msg_other,
                   self.routes,
                   self.unacked_msgs);
-            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}, ConnectionUnneeded: {}",
+            info!("Stats - Direct - NodeIdentify: {}, NewNode: {}",
                   self.msg_direct_node_identify,
-                  self.msg_direct_new_node,
-                  self.msg_direct_connection_unneeded);
+                  self.msg_direct_new_node);
             info!("Stats - Hops (Request/Response) - GetNodeName: {}/{}, ExpectCloseNode: {}, \
                    GetCloseGroup: {}/{}, ConnectionInfo: {}, Ack: {}, GroupMessageHash: {}",
                   self.msg_get_node_name,

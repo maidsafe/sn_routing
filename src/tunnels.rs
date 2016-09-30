@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use itertools::Itertools;
@@ -96,11 +97,7 @@ impl Tunnels {
         pairs.into_iter()
             .map(|pair| {
                 self.clients.remove(&pair);
-                if pair.0 == *peer_id {
-                    pair.1
-                } else {
-                    pair.0
-                }
+                if pair.0 == *peer_id { pair.1 } else { pair.0 }
             })
             .collect()
     }
@@ -188,9 +185,9 @@ impl Default for Tunnels {
 #[cfg(feature = "use-mock-crust")]
 #[cfg(test)]
 mod tests {
-    use super::*;
     use itertools::Itertools;
     use mock_crust::crust::PeerId;
+    use super::*;
 
     fn id(i: usize) -> PeerId {
         PeerId(i)

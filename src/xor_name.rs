@@ -15,13 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::Xorable;
 use rand;
+use routing_table::Xorable;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use rustc_serialize::hex::{FromHex, FromHexError, ToHex};
 use std::{fmt, ops};
 use std::cmp::Ordering;
-
 
 /// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
 pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
@@ -55,26 +54,13 @@ pub enum XorNameFromHexError {
 /// i. e. the points with IDs `x` and `y` are considered to have distance `x xor y`.
 ///
 /// [1]: https://en.wikipedia.org/wiki/Kademlia#System_details
-#[derive(Eq, Copy, Clone, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Eq, Copy, Clone, Default, Hash, Ord, PartialEq, PartialOrd)]
 pub struct XorName(pub [u8; XOR_NAME_LEN]);
 
 impl XorName {
     /// Hex-encode the `XorName` as a `String`.
     pub fn to_hex(&self) -> String {
         self.0.to_hex()
-    }
-
-    /// Returns a copy of `self`, with the `index`-th bit flipped.
-    ///
-    /// If the parameter does not address one of the name's bits, i. e. if it does not satisfy
-    /// `index < XOR_NAME_BITS`, the result will be equal to the argument.
-    pub fn with_flipped_bit(&self, index: usize) -> XorName {
-        if index >= XOR_NAME_BITS {
-            return *self;
-        }
-        let &XorName(mut bytes) = self;
-        bytes[index / 8] ^= 1 << (7 - index % 8);
-        XorName(bytes)
     }
 
     /// Returns the number of bits in which `self` differs from `other`.
@@ -97,33 +83,6 @@ impl XorName {
         Ok(XorName(slice_as_u8_32_array(&data[..])))
     }
 
-    /// Returns the number of leading bits in which `self` and `name` agree.
-    ///
-    /// Here, "leading bits" means the most significant bits. E. g. for `10101...` and `10011...`,
-    /// that value will be 2, as their common prefix `10` has length 2 and the third bit is the
-    /// first one in which they disagree.
-    ///
-    /// Equivalently, this is `XOR_NAME_BITS - bucket_distance`, where `bucket_distance` is the
-    /// length of the remainders after the common prefix is removed from the IDs of `self` and
-    /// `name`.
-    ///
-    /// The bucket distance is the magnitude of the XOR distance. More precisely, if `d > 0` is the
-    /// XOR distance between `self` and `name`, the bucket distance equals `floor(log2(d))`, i. e.
-    /// a bucket distance of `n` means that 2<sup>`n - 1`</sup> `<= d <` 2<sup>`n`</sup>.
-    pub fn bucket_index(&self, other: &XorName) -> usize {
-        self.0.bucket_index(&other.0)
-    }
-
-    /// Compares `lhs` and `rhs` with respect to their distance from `self`.
-    pub fn cmp_distance(&self, lhs: &XorName, rhs: &XorName) -> Ordering {
-        self.0.cmp_distance(&lhs.0, &rhs.0)
-    }
-
-    /// Returns `true` if the `i`-th bit of `name` is different from the `i`-th bit of `self`.
-    pub fn differs_in_bit(&self, name: &XorName, i: usize) -> bool {
-        self.0.differs_in_bit(&name.0, i)
-    }
-
     /// Returns true if `lhs` is closer to `self` than `rhs`.
     ///
     /// Equivalently, this returns `true` if in the most significant bit where `lhs` and `rhs`
@@ -144,16 +103,24 @@ impl XorName {
 }
 
 impl Xorable for XorName {
-    fn bucket_index(&self, other: &XorName) -> usize {
-        self.bucket_index(other)
+    fn common_prefix(&self, other: &XorName) -> usize {
+        self.0.common_prefix(&other.0)
     }
 
     fn cmp_distance(&self, lhs: &XorName, rhs: &XorName) -> Ordering {
-        self.cmp_distance(lhs, rhs)
+        self.0.cmp_distance(&lhs.0, &rhs.0)
+    }
+
+    fn bit(&self, i: usize) -> bool {
+        self.0.bit(i)
     }
 
     fn differs_in_bit(&self, name: &XorName, i: usize) -> bool {
-        self.differs_in_bit(name, i)
+        self.0.differs_in_bit(&name.0, i)
+    }
+
+    fn with_flipped_bit(&self, i: usize) -> XorName {
+        XorName(self.0.with_flipped_bit(i))
     }
 }
 
@@ -258,6 +225,7 @@ impl Decodable for XorName {
 mod tests {
     use maidsafe_utilities::serialisation::{deserialise, serialise};
     use rand;
+    use routing_table::Xorable;
     use std::cmp::Ordering;
     use super::*;
 
@@ -338,10 +306,10 @@ mod tests {
     fn with_flipped_bit() {
         let name: XorName = rand::random();
         for i in 0..18 {
-            assert_eq!(i, name.bucket_index(&name.with_flipped_bit(i)));
+            assert_eq!(i, name.common_prefix(&name.with_flipped_bit(i)));
         }
         for i in 0..10 {
-            assert_eq!(19 * i, name.bucket_index(&name.with_flipped_bit(19 * i)));
+            assert_eq!(19 * i, name.common_prefix(&name.with_flipped_bit(19 * i)));
         }
         assert_eq!(name, name.with_flipped_bit(XOR_NAME_BITS));
         assert_eq!(name, name.with_flipped_bit(XOR_NAME_BITS + 1000));

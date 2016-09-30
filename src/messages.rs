@@ -15,25 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use ack_manager::Ack;
+use authority::Authority;
+#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
-#[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::PeerId;
+use data::{Data, DataIdentifier};
+use error::RoutingError;
+use event::Event;
+use id::{FullId, PublicId};
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+#[cfg(feature = "use-mock-crust")]
+use mock_crust::crust::PeerId;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
-
-use ack_manager::Ack;
-use authority::Authority;
-use data::{Data, DataIdentifier};
-use error::RoutingError;
-use event::Event;
-use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
 use xor_name::XorName;
@@ -124,9 +124,6 @@ pub enum DirectMessage {
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
-    /// Sent to a node that, on the addition of a node at a given bucket index, we no longer need to
-    /// be connected to.
-    ConnectionUnneeded(XorName),
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
@@ -417,9 +414,6 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
-            DirectMessage::ConnectionUnneeded(ref name) => {
-                write!(formatter, "ConnectionUnneeded({:?})", name)
-            }
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
             }
@@ -828,10 +822,9 @@ impl UserMessageCache {
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     extern crate rand;
 
-    use super::*;
     use authority::Authority;
     use data::Data;
     use id::FullId;
@@ -839,6 +832,7 @@ mod tests{
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
+    use super::*;
     use types::MessageId;
     use xor_name::XorName;
 

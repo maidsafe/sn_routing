@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use crust::{PeerId, Service};
-
 use error::RoutingError;
 use event::Event;
 use id::FullId;

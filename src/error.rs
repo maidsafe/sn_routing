@@ -21,6 +21,7 @@ use event::Event;
 use maidsafe_utilities::event_sender::{EventSenderError, MaidSafeEventCategory};
 use maidsafe_utilities::serialisation;
 use std::sync::mpsc::{RecvError, SendError};
+use super::routing_table::Error as RoutingTableError;
 
 #[derive(Debug)]
 /// The type of errors that can occur if routing is unable to handle a send request.
@@ -70,18 +71,12 @@ pub enum RoutingError {
     FilterCheckFailed,
     /// Failure to bootstrap off the provided endpoints
     FailedToBootstrap,
-    /// Unexpected empty routing table
-    RoutingTableEmpty,
     /// Public id rejected because of disallowed relocated status
     RejectedPublicId,
-    /// Routing table did not add the node information, either because it was already added, or
-    /// because it did not improve the routing table
-    RefusedFromRoutingTable,
-    /// Rejected providing the close group, because the destination address does not match any of
-    /// the sender's buckets
-    RejectedGetCloseGroup,
     /// A client with `client_restriction == true` tried to send a message restricted to nodes.
     RejectedClientMessage,
+    /// Routing Table error
+    RoutingTable(RoutingTableError),
     /// String errors
     Utf8(::std::str::Utf8Error),
     /// Interface error
@@ -100,10 +95,6 @@ pub enum RoutingError {
     AsymmetricDecryptionFailure,
     /// Unknown Connection
     UnknownConnection(PeerId),
-    /// The message is not getting closer to the target
-    DirectionCheckFailed,
-    /// Density mismatch
-    RoutingTableBucketIndexFailed,
     /// Invalid Destination
     InvalidDestination,
     /// Connection to proxy node does not exist in proxy map
@@ -116,6 +107,12 @@ pub enum RoutingError {
     CannotTunnelThroughTunnel,
     /// Decoded a user message with an unexpected hash.
     HashMismatch,
+}
+
+impl From<RoutingTableError> for RoutingError {
+    fn from(error: RoutingTableError) -> RoutingError {
+        RoutingError::RoutingTable(error)
+    }
 }
 
 impl From<::std::str::Utf8Error> for RoutingError {
