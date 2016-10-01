@@ -669,7 +669,7 @@ impl DataManager {
                     return Ok(()); // Immutable data is already there.
                 }
             }
-            _ => unreachable!(),
+            DataIdentifier::Plain(..) => unreachable!("Unexpected data type."),
         }
 
         self.clean_chunk_store();
@@ -715,7 +715,7 @@ impl DataManager {
                             // We don't have the data, so we need to retrieve it.
                             Err(_) => true,
                             Ok(Data::Structured(sd)) => sd.get_version() < *version,
-                            _ => unreachable!(),
+                            Ok(_) => unreachable!(),
                         }
                     }
                     DataIdentifier::PubAppendable(..) => {
@@ -723,7 +723,7 @@ impl DataManager {
                             // We don't have the data, so we need to retrieve it.
                             Err(_) => true,
                             Ok(Data::PubAppendable(ad)) => ad.get_version() <= *version,
-                            _ => unreachable!(),
+                            Ok(_) => unreachable!(),
                         }
                     }
                     DataIdentifier::PrivAppendable(..) => {
@@ -731,7 +731,7 @@ impl DataManager {
                             // We don't have the data, so we need to retrieve it.
                             Err(_) => true,
                             Ok(Data::PrivAppendable(ad)) => ad.get_version() <= *version,
-                            _ => unreachable!(),
+                            Ok(_) => unreachable!(),
                         }
                     }
                     _ => {
@@ -976,6 +976,7 @@ impl DataManager {
         match data_id {
             DataIdentifier::Immutable(_) => Some((data_id, 0)),
             DataIdentifier::Structured(..) |
+            DataIdentifier::PrivAppendable(..) |
             DataIdentifier::PubAppendable(..) => {
                 match self.chunk_store.get(&data_id) {
                     Ok(Data::Structured(data)) => Some((data_id, data.get_version())),
@@ -987,7 +988,7 @@ impl DataManager {
                     }
                 }
             }
-            _ => unreachable!(),
+            DataIdentifier::Plain(..) => unreachable!(),
         }
     }
 
@@ -997,7 +998,7 @@ impl DataManager {
             DataIdentifier::Structured(..) => self.structured_data_count += 1,
             DataIdentifier::PubAppendable(..) |
             DataIdentifier::PrivAppendable(..) => self.appendable_data_count += 1,
-            _ => unreachable!(),
+            DataIdentifier::Plain(..) => unreachable!(),
         }
     }
 
@@ -1007,7 +1008,7 @@ impl DataManager {
             DataIdentifier::Structured(_, _) => self.structured_data_count -= 1,
             DataIdentifier::PubAppendable(..) |
             DataIdentifier::PrivAppendable(..) => self.appendable_data_count -= 1,
-            _ => unreachable!(),
+            DataIdentifier::Plain(..) => unreachable!(),
         }
     }
 
