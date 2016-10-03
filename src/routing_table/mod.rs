@@ -336,7 +336,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
             .count();
         // If either of the two new groups will not contain enough entries, return `None`.
         let min_size = self.min_group_size + SPLIT_BUFFER;
-        Ok(if our_group.len() - new_group_size < min_size || new_group_size < min_size {
+        Ok(if our_group.len() - new_group_size < min_size || new_group_size + 1 < min_size {
             None
         } else {
             Some(self.our_group_prefix)
@@ -582,7 +582,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
         keys[0]
     }
 
-    #[test]
+    #[cfg(test)]
     fn num_of_groups(&self) -> usize {
         self.groups.len()
     }
@@ -591,9 +591,9 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
 impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
-                      "RoutingTable {{\n\tour_name: {:08b},\n\tmin_group_size: \
+                      "RoutingTable {{\n\tour_name: {},\n\tmin_group_size: \
                        {},\n\tour_group_prefix: {:?},",
-                      self.our_name,
+                      self.our_name.debug_binary(),
                       self.min_group_size,
                       self.our_group_prefix));
         let mut groups = self.groups.iter().collect_vec();
@@ -609,7 +609,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for Rou
                 } else {
                     ","
                 };
-                try!(writeln!(formatter, "\t\t{:08b}{}", name, comma));
+                try!(writeln!(formatter, "\t\t{}{}", name.debug_binary(), comma));
             }
             let comma = if group_index == groups.len() - 1 {
                 ""

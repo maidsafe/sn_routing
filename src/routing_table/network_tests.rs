@@ -20,13 +20,13 @@
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::collections::hash_map::Entry;
 use std::fmt::{self, Binary, Debug, Formatter};
 use super::{Destination, RoutingTable};
 use super::xorable::Xorable;
 
-const GROUP_SIZE: usize = 8;
+const MIN_GROUP_SIZE: usize = 8;
 
 #[derive(Clone, Eq, PartialEq)]
 struct Contact(u64);
@@ -43,10 +43,7 @@ impl Network {
     /// Creates a new empty network with a seeded random number generator.
     fn new(optional_seed: Option<[u32; 4]>) -> Network {
         Network {
-            rng: match optional_seed {
-                Some(seed) => SeededRng::from_seed(seed),
-                None => SeededRng::new(),
-            },
+            rng: optional_seed.map_or_else(SeededRng::new, SeededRng::from_seed),
             nodes: HashMap::new(),
         }
     }
@@ -56,32 +53,36 @@ impl Network {
         let name = self.random_free_name(); // The new node's name.
         if self.nodes.is_empty() {
             // If this is the first node, just add it and return.
-            assert!(self.nodes.insert(name, RoutingTable::new(name, GROUP_SIZE)).is_none());
+            assert!(self.nodes.insert(name, RoutingTable::new(name, MIN_GROUP_SIZE)).is_none());
             return;
         }
-        // Find any node that is close to the new one.
-        let close_peer = self.close_node(name);
-        // The new node needs to have exactly the same contacts:
-        let connecting_peers: Vec<u64> =
-            self.nodes[&close_peer].iter().cloned().chain(Some(close_peer)).collect();
-        let mut new_table = RoutingTable::new(name, GROUP_SIZE);
-        for peer in connecting_peers {
-            match unwrap!(self.nodes.get_mut(&peer)).add(name) {
-                Ok(Some(prefix)) => {
-                    let _ = unwrap!(self.nodes.get_mut(&peer)).split(prefix);
+
+        let mut new_table = RoutingTable::new(name, MIN_GROUP_SIZE);
+        let mut split_prefix = BTreeSet::new();
+        // TODO: needs to verify how to broadcasting such info
+        for node in self.nodes.values_mut() {
+            match node.add(name) {
+                Ok(result) => {
+                    split_prefix.insert(result);
                 }
-                Ok(None) => {}
-                Err(_) => panic!("failed to add node"),
+                Err(e) => trace!("failed to add node with error {:?}", e),
             }
-            match new_table.add(peer) {
+            match new_table.add(*node.our_name()) {
                 Ok(Some(prefix)) => {
                     let _ = new_table.split(prefix);
                 }
                 Ok(None) => {},
-                Err(_) => panic!("failed to add node"),
+                Err(e) => trace!("failed to add node into new with error {:?}", e),
             }
         }
         assert!(self.nodes.insert(name, new_table).is_none());
+        for split in &split_prefix {
+            if let Some(prefix) = *split {
+                for node in self.nodes.values_mut() {
+                    let _ = node.split(prefix);
+                }
+            } 
+        }
     }
 
     /// Drops a node and, if necessary, merges groups to restore the group requirement.
@@ -90,17 +91,13 @@ impl Network {
         let name = *unwrap!(self.rng.choose(&keys));
         let contacts = self.known_nodes(name);
         let _ = self.nodes.remove(&name);
-        for contact in contacts {
-            if contact != name {
-                match unwrap!(self.nodes.get_mut(&contact)).remove(&name) {
-                    // TODO: shall a panic be raised in case of failure?
-                    None => {}
-                    Some(result) => {
-                        for target in result.0 {
-                            let _ = unwrap!(self.nodes.get_mut(&target))
-                                .merge_own_group(&result.1);
-                            }
-                    }
+        // TODO: needs to verify how to broadcasting such info
+        for node in self.nodes.values_mut() {
+            match node.remove(&name) {
+                // TODO: shall a panic be raised in case of failure?
+                None => {}
+                Some(result) => {
+                    let _ = node.merge_own_group(&result.1);
                 }
             }
         }
@@ -153,9 +150,9 @@ impl Network {
             .map(|(&peer, _)| peer))
     }
 
-    /// Returns the set of all entries in the given node's routing table, including itself.
+    /// Returns the set of all entries in the given node's routing table.
     fn known_nodes(&self, name: u64) -> HashSet<u64> {
-        self.nodes[&name].iter().cloned().chain(Some(name)).collect()
+        self.nodes[&name].iter().cloned().collect()
     }
 
     /// Returns all node names.
@@ -174,7 +171,7 @@ fn node_to_node_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = *unwrap!(network.rng.choose(&keys));
-        for route in 0..GROUP_SIZE {
+        for route in 0..MIN_GROUP_SIZE {
             network.send_message(src, Destination::Node(dst), route);
         }
     }
@@ -190,7 +187,7 @@ fn node_to_group_message() {
     for _ in 0..20 {
         let src = *unwrap!(network.rng.choose(&keys));
         let dst = network.rng.gen();
-        for route in 0..GROUP_SIZE {
+        for route in 0..MIN_GROUP_SIZE {
             network.send_message(src, Destination::Group(dst), route);
         }
     }
@@ -231,21 +228,30 @@ fn groups_have_identical_routing_tables() {
 #[test]
 fn merging_groups() {
     let mut network = Network::new(None);
-    for _ in 0..100 {
+    for i in 0..100 {
         network.add_node();
+        if i % 5 == 0 {
+            verify_invariant(&mut network);
+        }
     }
     assert!(network.nodes.iter().find(|&(_, table)|
-        if table.num_of_groups() < 4 {
+        if table.num_of_groups() < 3 {
             trace!("{:?}", table);
             true
         } else {
             false
         }).is_none());
-    for i in 0..95 {
+    for _ in 0..95 {
         network.drop_node();
-        if i % 5 == 0 {
-            verify_invariant(&mut network);
-        }
+        // if i % 5 == 0 {
+        //     verify_invariant(&mut network);
+        // }
     }
-    assert!(network.nodes.iter().find(|&(_, table)| table.num_of_groups() > 1).is_none());
+    assert!(network.nodes.iter().find(|&(_, table)|
+        if table.num_of_groups() > 1 {
+            trace!("{:?}", table);
+            true
+        } else {
+            false
+        }).is_none());
 }

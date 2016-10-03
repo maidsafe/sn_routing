@@ -17,6 +17,8 @@
 
 use std::cmp::Ordering;
 use std::mem;
+use std::ops::Index;
+use std::ops::Range;
 
 /// A sequence of bits, as a point in XOR space.
 ///
@@ -44,6 +46,25 @@ pub trait Xorable: Ord {
     ///
     /// If `index` exceeds the number of bits in `self`, an unmodified copy of `self` is returned.
     fn with_flipped_bit(&self, i: usize) -> Self;
+
+    /// Returns a binary format string, with leading zero bits included.
+    fn binary(&self) -> String;
+
+    /// Returns a binary debug format string of `????????...????????`
+    fn debug_binary(&self) -> String;
+}
+
+/// Converts a tring into debug format of `????????...????????` when the string is longer than 20
+pub fn debug_format(input: String) -> String {
+    if input.len() > 20 {
+        let mut s = String::with_capacity(20);
+        s.push_str(input.index(Range{ start: 0, end: 8 }));
+        s.push_str("...");
+        s.push_str(input.index(Range{ start: input.len() - 8, end: input.len() }));
+        s
+    } else {
+        input
+    }
 }
 
 macro_rules! impl_xorable_for_array {
@@ -91,6 +112,19 @@ macro_rules! impl_xorable_for_array {
                 copy[i / bits] ^= 1 << (bits - 1 - i % bits);
                 copy
             }
+
+            fn binary(&self) -> String {
+                let bits = mem::size_of::<$t>() * 8 * $l;
+                let mut s = String::with_capacity(bits);
+                for value in self.iter() {
+                    s.push_str(&value.binary());
+                }
+                s
+            }
+
+            fn debug_binary(&self) -> String {
+                debug_format(self.binary())
+            }
         }
     }
 }
@@ -127,6 +161,14 @@ macro_rules! impl_xorable {
                 }
                 let pow_i = 1 << (mem::size_of::<Self>() * 8 - 1 - i); // 1 on bit i.
                 self ^ pow_i
+            }
+
+            fn binary(&self) -> String {
+                format!("{1:00$b}", mem::size_of::<Self>() * 8, self)
+            }
+
+            fn debug_binary(&self) -> String {
+                debug_format(self.binary())
             }
         }
     }
