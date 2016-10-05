@@ -22,6 +22,13 @@ pub use plain_data::PlainData;
 pub use priv_appendable_data::PrivAppendableData;
 pub use pub_appendable_data::PubAppendableData;
 use xor_name::XorName;
+use maidsafe_utilities::serialisation;
+
+// Maximum allowed size for a serialised Mutable Data (SD or AD) to grow to
+const MAX_MUTABLE_DATA_SIZE_IN_BYTES: usize = 102400;
+
+// Maximum allowed size for a serialised Immutable Data (ID) to grow to
+const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: usize = 1048576;
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
@@ -59,6 +66,25 @@ impl Data {
             Data::PubAppendable(ref data) => data.identifier(),
             Data::PrivAppendable(ref data) => data.identifier(),
         }
+    }
+
+    /// Validate data size.
+    pub fn validate_size(&self) -> bool {
+        // TODO: shall avoid duplicated serialisation
+        let serialised_data = match serialisation::serialise(&self) {
+            Ok(serialised_data) => serialised_data,
+            Err(_) => return false,
+        };
+        let size_limit = match *self {
+            Data::PubAppendable(..) |
+            Data::PrivAppendable(..) |
+            Data::Structured(..) => {
+                MAX_MUTABLE_DATA_SIZE_IN_BYTES
+            }
+            Data::Immutable(..) => MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
+            _ => unimplemented!(),
+        };
+        serialised_data.len() <= size_limit
     }
 }
 
