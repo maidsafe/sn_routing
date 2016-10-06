@@ -12,26 +12,26 @@ version = "0.25.1"
 
 [dependencies]
 accumulator = "~0.5.0"
-clippy = {version = "~0.0.90", optional = true}
-crust = "~0.18.0"
-itertools = "~0.4.19"
+clippy = {version = "~0.0.94", optional = true}
+crust = "~0.19.0"
+itertools = "~0.5.2"
 kademlia_routing_table = "~0.6.0"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
-maidsafe_utilities = "~0.9.0"
+maidsafe_utilities = "~0.10.0"
 quick-error = "~1.1.0"
 rand = "~0.3.14"
+rust_sodium = "~0.1.2"
 rustc-serialize = "~0.3.19"
-rust_sodium = "~0.1.1"
 term = "~0.4.4"
 unwrap = "~1.1.0"
 
 [dev-dependencies]
-docopt = "~0.6.83"
+docopt = "~0.6.86"
 libc = "~0.2.16"
 
 [build-dependencies]
-hyper = {version = "~0.9.10", optional = true}
+hyper = {version = "~0.9.9", optional = true}
 
 [features]
 generate-diagrams = ["hyper"]
