@@ -232,7 +232,7 @@ impl KeyValueStore {
     /// Put data onto the network.
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
-        let data = unwrap_result!(serialise(&(put_where, put_what)));
+        let data = unwrap!(serialise(&(put_where, put_what)));
         if self.example_client.put(Data::Plain(PlainData::new(name, data))).is_err() {
             error!("Failed to put data.");
         }
@@ -251,7 +251,7 @@ impl Default for KeyValueStore {
 
 /// /////////////////////////////////////////////////////////////////////////////
 fn main() {
-    unwrap_result!(maidsafe_utilities::log::init(false));
+    unwrap!(maidsafe_utilities::log::init(false));
 
     let args: Args = Docopt::new(USAGE)
         .and_then(|docopt| docopt.decode())

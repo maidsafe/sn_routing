@@ -251,8 +251,8 @@ mod test {
     #[test]
     fn serialisation_xor_name() {
         let obj_before: XorName = rand::random();
-        let data = unwrap_result!(serialise(&obj_before));
-        let obj_after: XorName = unwrap_result!(deserialise(&data));
+        let data = unwrap!(serialise(&obj_before));
+        let obj_after: XorName = unwrap!(deserialise(&data));
         assert_eq!(obj_before, obj_after);
     }
 

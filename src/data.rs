@@ -78,9 +78,7 @@ impl Data {
         let size_limit = match *self {
             Data::PubAppendable(..) |
             Data::PrivAppendable(..) |
-            Data::Structured(..) => {
-                MAX_MUTABLE_DATA_SIZE_IN_BYTES
-            }
+            Data::Structured(..) => MAX_MUTABLE_DATA_SIZE_IN_BYTES,
             Data::Immutable(..) => MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
             _ => unimplemented!(),
         };

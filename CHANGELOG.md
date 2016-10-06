@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.27.0]
+- Updating maidsafe_utilites to v0.10.0 which removes deprecated api's.
+
 ## [0.26.0]
 - Add the public and private appendable data types.
 - Allow whitelisting nodes via the crust config file.

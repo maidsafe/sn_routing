@@ -1024,7 +1024,9 @@ impl Core {
             (MessageContent::GetCloseGroup(message_id), src, Authority::NaeManager(dst_name)) => {
                 self.handle_get_close_group_request(src, dst_name, message_id)
             }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              src @ Authority::Client { .. },
              Authority::ManagedNode(dst_name)) => {
                 self.handle_connection_info_from_client(encrypted_connection_info,
@@ -1033,10 +1035,14 @@ impl Core {
                                                         dst_name,
                                                         public_id)
             }
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              Authority::ManagedNode(src_name),
              Authority::Client { .. }) |
-            (MessageContent::ConnectionInfo { encrypted_connection_info, nonce_bytes, public_id },
+            (MessageContent::ConnectionInfo { encrypted_connection_info,
+                                              nonce_bytes,
+                                              public_id },
              Authority::ManagedNode(src_name),
              Authority::ManagedNode(_)) => {
                 self.handle_connection_info_from_node(encrypted_connection_info,

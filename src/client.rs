@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread::{self, Joiner};
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
@@ -52,7 +52,7 @@ pub struct Client {
     core: RefCell<Core>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
+    _raii_joiner: Joiner,
 }
 
 impl Client {
@@ -75,9 +75,7 @@ impl Client {
             Core::new(event_sender, Role::Client, keys, Box::new(NullCache), false);
         let (tx, rx) = channel();
 
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
-            core.run();
-        }));
+        let raii_joiner = thread::named("Client thread", move || core.run());
 
         Ok(Client {
             interface_result_tx: tx,

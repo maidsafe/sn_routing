@@ -145,7 +145,7 @@ impl TestNode {
         let (event_tx, event_rx) = mpsc::channel();
         let handle = network.new_service_handle(config, endpoint);
         let node = mock_crust::make_current(&handle, || {
-            unwrap_result!(Node::builder().cache(cache).first(first_node).create(event_tx))
+            unwrap!(Node::builder().cache(cache).first(first_node).create(event_tx))
         });
 
         TestNode {
@@ -167,11 +167,11 @@ impl TestNode {
     }
 
     fn name(&self) -> XorName {
-        unwrap_result!(self.inner.name())
+        unwrap!(self.inner.name())
     }
 
     fn close_group(&self) -> Vec<XorName> {
-        unwrap_result!(self.inner.close_group(self.name())).unwrap_or_else(Vec::new)
+        unwrap!(self.inner.close_group(self.name())).unwrap_or_else(Vec::new)
     }
 
     fn routing_table(&self) -> RoutingTable<XorName> {
@@ -233,9 +233,8 @@ impl TestClient {
         let (event_tx, event_rx) = mpsc::channel();
         let full_id = FullId::new();
         let handle = network.new_service_handle(config, endpoint);
-        let client = mock_crust::make_current(&handle, || {
-            unwrap_result!(Client::new(event_tx, Some(full_id)))
-        });
+        let client = mock_crust::make_current(&handle,
+                                              || unwrap!(Client::new(event_tx, Some(full_id))));
 
         TestClient {
             handle: handle,
@@ -256,7 +255,7 @@ impl TestClient {
     }
 
     fn name(&self) -> XorName {
-        unwrap_result!(self.inner.name())
+        unwrap!(self.inner.name())
     }
 }
 
@@ -1072,7 +1071,7 @@ fn request_during_churn_node_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index].inner
+        unwrap!(nodes[index].inner
                                    .send_get_request(src.clone(),
                                                      dst.clone(),
                                                      data_id,
@@ -1102,7 +1101,7 @@ fn request_during_churn_node_to_node() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index0].inner
+        unwrap!(nodes[index0].inner
                                     .send_get_request(src.clone(),
                                                       dst.clone(),
                                                       data_id,
@@ -1130,7 +1129,7 @@ fn request_during_churn_node_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap_result!(nodes[index].inner
+        unwrap!(nodes[index].inner
                                    .send_get_request(src.clone(),
                                                      dst.clone(),
                                                      data_id,
@@ -1169,7 +1168,7 @@ fn request_during_churn_group_to_self() {
         sort_nodes_by_distance_to(&mut nodes, &name);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
+            unwrap!(node.inner
                                .send_get_request(src.clone(),
                                                  dst.clone(),
                                                  data_id,
@@ -1209,7 +1208,7 @@ fn request_during_churn_group_to_node() {
         let message_id = MessageId::new();
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
+            unwrap!(node.inner
                                .send_get_success(src.clone(),
                                                  dst.clone(),
                                                  data.clone(),
@@ -1239,7 +1238,7 @@ fn request_during_churn_group_to_group() {
         let _ = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap_result!(node.inner
+            unwrap!(node.inner
                                .send_get_request(src.clone(),
                                                  dst.clone(),
                                                  data_id,
@@ -1298,7 +1297,7 @@ fn response_caching() {
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager group of the data.
-    unwrap_result!(clients[0].inner
+    unwrap!(clients[0].inner
                              .send_get_request(dst.clone(), data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
@@ -1310,7 +1309,7 @@ fn response_caching() {
                                     src: req_src,
                                     dst: req_dst }) => {
                     if req_data_id == data_id && req_message_id == message_id {
-                        unwrap_result!(node.inner
+                        unwrap!(node.inner
                                            .send_get_success(req_dst,
                                                              req_src,
                                                              data.clone(),
@@ -1344,7 +1343,7 @@ fn response_caching() {
 
     // The proxy node should have cached the data, so this reqeust should only
     // hit the proxy node and not be relayed to the other nodes.
-    unwrap_result!(clients[0].inner
+    unwrap!(clients[0].inner
                              .send_get_request(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
