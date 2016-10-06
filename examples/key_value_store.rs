@@ -53,6 +53,8 @@ extern crate rust_sodium;
 
 extern crate routing;
 extern crate lru_time_cache;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
@@ -65,6 +67,7 @@ use docopt::Docopt;
 use rust_sodium::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::thread;
 use routing::{Data, DataIdentifier, PlainData, XorName};
 use utils::{ExampleNode, ExampleClient};
 
@@ -143,7 +146,7 @@ impl KeyValueStore {
     fn new() -> KeyValueStore {
         let example_client = ExampleClient::new();
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
-        let _ = thread!("Command reader", move || {
+        let _ = thread::named("Command reader", move || {
             KeyValueStore::read_user_commands(command_sender);
         });
 

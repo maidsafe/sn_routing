@@ -324,7 +324,7 @@ impl ExampleNode {
 
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for Put success to confirm the same.
-                unwrap_option!(self.dm_accounts.get_mut(&data_name), "").push(node);
+                unwrap!(self.dm_accounts.get_mut(&data_name), "").push(node);
                 let account = &self.dm_accounts[&data_name];
                 trace!("{:?} Replicating chunk {:?} to {:?}",
                        self.get_debug_name(),
