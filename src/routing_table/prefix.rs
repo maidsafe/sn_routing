@@ -128,7 +128,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Hash for Prefix<T> {
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
-        let mut binary = format!("{:08b}", self.name);
+        let mut binary = self.name.binary();
         binary.truncate(self.bit_count);
         write!(formatter, "Prefix({})", binary)
     }
