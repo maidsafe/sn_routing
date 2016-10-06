@@ -59,13 +59,14 @@ struct PendingWrite {
     src: Authority,
     dst: Authority,
     message_id: MessageId,
-    write_type: PendingWriteType,
+    mutate_type: PendingMutationType,
 }
 
-enum PendingWriteType {
+enum PendingMutationType {
     Append,
     Put,
     Post,
+    Delete,
 }
 
 struct Cache {
@@ -308,7 +309,7 @@ impl Cache {
     /// data identifier, it returns a refresh message to send to ourselves as a group.
     fn insert_pending_write(&mut self,
                             data: Data,
-                            write_type: PendingWriteType,
+                            mutate_type: PendingMutationType,
                             src: Authority,
                             dst: Authority,
                             msg_id: MessageId)
@@ -322,7 +323,7 @@ impl Cache {
             src: src,
             dst: dst,
             message_id: msg_id,
-            write_type: write_type,
+            mutate_type: mutate_type,
         };
         let mut result = None;
         self.pending_writes
@@ -438,13 +439,27 @@ impl DataManager {
                 DataIdentifier::PubAppendable(..) |
                 DataIdentifier::PrivAppendable(..) |
                 DataIdentifier::Structured(..) => {
-                    let error = MutationError::DataExists;
-                    let external_error_indicator = try!(serialisation::serialise(&error));
-                    trace!("DM sending PutFailure for data {:?}, it already exists.",
-                           data_id);
-                    let _ = self.routing_node
-                        .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
-                    return Err(From::from(error));
+                    let mut overwrite_deleted = false;
+                    if let Ok(Data::Structured(old_data)) = self.chunk_store.get(&data_id) {
+                        if old_data.is_deleted() {
+                            let new_version = match data {
+                                Data::Structured(ref new_data) => new_data.get_version(),
+                                _ => unimplemented!(),
+                            };
+                            if old_data.get_version() + 1 == new_version {
+                                overwrite_deleted = true;
+                            }
+                        }
+                    }
+                    if !overwrite_deleted {
+                        let error = MutationError::DataExists;
+                        let external_error_indicator = try!(serialisation::serialise(&error));
+                        trace!("DM sending PutFailure for data {:?}, it already exists.",
+                               data_id);
+                        let _ = self.routing_node
+                            .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
+                        return Err(From::from(error));
+                    }
                 }
                 DataIdentifier::Immutable(..) => {
                     trace!("DM sending PutSuccess for data {:?}, it already exists.",
@@ -465,7 +480,7 @@ impl DataManager {
                 .send_put_failure(dst, src, data_id, external_error_indicator, message_id);
             return Err(From::from(error));
         }
-        self.update_pending_writes(data, PendingWriteType::Put, src, dst, message_id)
+        self.update_pending_writes(data, PendingMutationType::Put, src, dst, message_id)
     }
 
     /// Handles a Post request for structured or appendable data.
@@ -519,7 +534,7 @@ impl DataManager {
                     .send_post_failure(dst.clone(), src, data_id, post_error, message_id)));
             }
         };
-        self.update_pending_writes(data, PendingWriteType::Post, src, dst, message_id)
+        self.update_pending_writes(data, PendingMutationType::Post, src, dst, message_id)
     }
 
     /// The structured_data in the delete request must be a valid updating version of the target
@@ -530,25 +545,13 @@ impl DataManager {
                          message_id: MessageId)
                          -> Result<(), InternalError> {
         let data_id = new_data.identifier();
-        // TODO: Re-enable delete once the flow has been agreed on.
-        // if let Ok(Data::Structured(data)) = self.chunk_store.get(&data_id) {
-        //    if data.validate_self_against_successor(&new_data).is_ok() {
-        //        if let Ok(()) = self.chunk_store.delete(&data_id) {
-        //            self.count_removed_data(&data_id);
-        //            trace!("DM deleted {:?}", data.identifier());
-        //            if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
-        //                self.logging_time = Instant::now();
-        //                info!("{:?}", self);
-        //            }
-        //            let _ = self.routing_node.send_delete_success(dst, src, data_id, message_id);
-        //            // TODO: Send a refresh message.
-        //            return Ok(());
-        //        }
-        //    }
-        // }
-        // trace!("DM sending delete_failure for {:?}", new_data.identifier());
-        trace!("DM currently doesn't support Delete. Sending delete_failure for {:?}",
-               new_data.identifier());
+
+        if let Ok(Data::Structured(mut data)) = self.chunk_store.get(&data_id) {
+            if data.delete_self_against_successor(&new_data).is_ok() {
+                return self.update_pending_writes(Data::Structured(data), PendingMutationType::Delete, src, dst, message_id);
+            }
+        }
+        trace!("DM sending delete_failure for {:?}", new_data.identifier());
         try!(self.routing_node.send_delete_failure(dst,
                                                    src,
                                                    data_id,
@@ -598,7 +601,7 @@ impl DataManager {
         };
 
         if let Some(data) = append_result {
-            self.update_pending_writes(data, PendingWriteType::Append, src, dst, message_id)
+            self.update_pending_writes(data, PendingMutationType::Append, src, dst, message_id)
         } else {
             trace!("DM sending append_failure for: {:?} with {:?}",
                    data_id,
@@ -752,35 +755,43 @@ impl DataManager {
     pub fn handle_group_refresh(&mut self, serialised_refresh: &[u8]) -> Result<(), InternalError> {
         let RefreshData((data_id, version), refresh_hash) =
             try!(serialisation::deserialise(serialised_refresh));
-        for PendingWrite { data, write_type, src, dst, message_id, hash, .. } in self.cache
+        for PendingWrite { data, mutate_type, src, dst, message_id, hash, .. } in self.cache
             .take_pending_writes(&data_id) {
             if hash == refresh_hash {
+                let already_existed = self.chunk_store.has(&data_id);
                 if let Err(error) = self.chunk_store.put(&data_id, &data) {
                     trace!("DM failed to store {:?} in chunkstore: {:?}",
                            data_id,
                            error);
                     let error = MutationError::NetworkOther(format!("Failed to store chunk: {:?}",
                                                                     error));
-                    try!(self.send_failure(write_type, src, dst, data_id, message_id, error));
+                    try!(self.send_failure(mutate_type, src, dst, data_id, message_id, error));
                 } else {
                     trace!("DM updated for: {:?}", data_id);
-                    let _ = match write_type {
-                        PendingWriteType::Append => {
+                    let _ = match mutate_type {
+                        PendingMutationType::Append => {
                             trace!("DM sending AppendSuccess for data {:?}", data_id);
                             self.routing_node.send_append_success(dst, src, data_id, message_id)
                         }
-                        PendingWriteType::Post => {
+                        PendingMutationType::Post => {
                             trace!("DM sending PostSuccess for data {:?}", data_id);
                             self.routing_node.send_post_success(dst, src, data_id, message_id)
                         }
-                        PendingWriteType::Put => {
-                            self.count_added_data(&data_id);
+                        PendingMutationType::Put => {
+                            // Put to a deleted data shall not be counted
+                            if !already_existed {
+                                self.count_added_data(&data_id);
+                            }
                             if self.logging_time.elapsed().as_secs() > STATUS_LOG_INTERVAL {
                                 self.logging_time = Instant::now();
                                 info!("{:?}", self);
                             }
                             trace!("DM sending PutSuccess for data {:?}", data_id);
                             self.routing_node.send_put_success(dst, src, data_id, message_id)
+                        }
+                        PendingMutationType::Delete => {
+                            trace!("DM sending DeleteSuccess for data {:?}", data_id);
+                            self.routing_node.send_delete_success(dst, src, data_id, message_id)
                         }
                     };
                     let data_list = vec![(data_id, version)];
@@ -789,14 +800,14 @@ impl DataManager {
             } else {
                 trace!("{:?} did not accumulate. Sending failure", data_id);
                 let error = MutationError::NetworkOther("Concurrent modification.".to_owned());
-                try!(self.send_failure(write_type, src, dst, data.identifier(), message_id, error));
+                try!(self.send_failure(mutate_type, src, dst, data.identifier(), message_id, error));
             }
         }
         Ok(())
     }
 
     fn send_failure(&self,
-                    write_type: PendingWriteType,
+                    mutate_type: PendingMutationType,
                     src: Authority,
                     dst: Authority,
                     data_id: DataIdentifier,
@@ -804,36 +815,39 @@ impl DataManager {
                     error: MutationError)
                     -> Result<(), InternalError> {
         let write_error = try!(serialisation::serialise(&error));
-        Ok(try!(match write_type {
-            PendingWriteType::Append => {
+        Ok(try!(match mutate_type {
+            PendingMutationType::Append => {
                 self.routing_node.send_append_failure(dst, src, data_id, write_error, message_id)
             }
-            PendingWriteType::Post => {
+            PendingMutationType::Post => {
                 self.routing_node.send_post_failure(dst, src, data_id, write_error, message_id)
             }
-            PendingWriteType::Put => {
+            PendingMutationType::Put => {
                 self.routing_node.send_put_failure(dst, src, data_id, write_error, message_id)
+            }
+            PendingMutationType::Delete => {
+                self.routing_node.send_delete_failure(dst, src, data_id, write_error, message_id)
             }
         }))
     }
 
     fn update_pending_writes(&mut self,
                              data: Data,
-                             write_type: PendingWriteType,
+                             mutate_type: PendingMutationType,
                              src: Authority,
                              dst: Authority,
                              message_id: MessageId)
                              -> Result<(), InternalError> {
-        for PendingWrite { write_type, src, dst, data, message_id, .. } in self.cache
+        for PendingWrite { mutate_type, src, dst, data, message_id, .. } in self.cache
             .remove_expired_writes() {
             let data_id = data.identifier();
             let error = MutationError::NetworkOther("Request expired.".to_owned());
             trace!("{:?} did not accumulate. Sending failure", data_id);
-            try!(self.send_failure(write_type, src, dst, data_id, message_id, error));
+            try!(self.send_failure(mutate_type, src, dst, data_id, message_id, error));
         }
         let data_name = *data.name();
         if let Some(refresh_data) = self.cache
-            .insert_pending_write(data, write_type, src, dst, message_id) {
+            .insert_pending_write(data, mutate_type, src, dst, message_id) {
             let _ = self.send_group_refresh(data_name, refresh_data, message_id);
         }
         Ok(())
