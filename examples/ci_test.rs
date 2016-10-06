@@ -51,6 +51,8 @@ extern crate routing;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate term;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
@@ -58,7 +60,8 @@ mod utils;
 use docopt::Docopt;
 
 use maidsafe_utilities::serialisation::serialise;
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread::Joiner;
+use maidsafe_utilities::thread::named as thread_named;
 
 use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
@@ -133,8 +136,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
                   stop_flg: Arc<(Mutex<bool>, Condvar)>)
-                  -> RaiiThreadJoiner {
-    let joiner = thread!("ChurnSimulationThread", move || {
+                  -> Joiner {
+    let joiner = thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
@@ -170,7 +173,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
         }
     });
 
-    RaiiThreadJoiner::new(joiner)
+    joiner
 }
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,

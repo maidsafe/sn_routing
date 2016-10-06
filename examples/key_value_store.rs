@@ -60,6 +60,7 @@ mod utils;
 use docopt::Docopt;
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
+use maidsafe_utilities::thread;
 use routing::{Data, DataIdentifier, PlainData, XorName};
 use rust_sodium::crypto;
 use std::io;
@@ -143,7 +144,7 @@ impl KeyValueStore {
     fn new() -> KeyValueStore {
         let example_client = ExampleClient::new();
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
-        let _ = thread!("Command reader", move || {
+        let _ = thread::named("Command reader", move || {
             KeyValueStore::read_user_commands(command_sender);
         });
 
