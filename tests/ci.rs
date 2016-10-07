@@ -48,19 +48,21 @@ extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
 extern crate rust_sodium;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
 
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use maidsafe_utilities::thread::Joiner;
+use maidsafe_utilities::thread::{self, Joiner};
 use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Node, PlainData,
               QUORUM_SIZE, Request, Response, XorName};
 use routing::DataIdentifier;
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
-use std::{iter, thread};
+use std::iter;
 use std::collections::HashSet;
 #[cfg(target_os = "macos")]
 use std::io;
@@ -170,9 +172,9 @@ fn spawn_select_thread(index: usize,
                        -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread_named(thread_name, move || {
+    let thread_handle = thread::named(thread_name, move || {
         for event in receiver.iter() {
-            let _ = unwrap!(main_sender.send(TestEvent(index, event)));
+            unwrap!(main_sender.send(TestEvent(index, event)));
         }
     });
 
@@ -214,7 +216,7 @@ fn create_connected_nodes(count: usize,
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
-    thread::sleep(Duration::from_secs(5));
+    std::thread::sleep(Duration::from_secs(5));
 
     // For each node, wait until it fully connects to the previous nodes before
     // continuing.
