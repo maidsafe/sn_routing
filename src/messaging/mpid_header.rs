@@ -159,11 +159,11 @@ mod test {
 
         // Check with metadata which is empty, then at size limit, then just above limit.
         {
-            let header = unwrap_result!(MpidHeader::new(sender.clone(), vec![], &secret_key));
+            let header = unwrap!(MpidHeader::new(sender.clone(), vec![], &secret_key));
             assert!(header.metadata().is_empty());
         }
         let mut metadata = messaging::generate_random_bytes(MAX_HEADER_METADATA_SIZE);
-        let header = unwrap_result!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
+        let header = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
         assert!(*header.metadata() == metadata);
         metadata.push(0);
         assert!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key).is_err());
@@ -180,10 +180,8 @@ mod test {
 
         // Check that identically-constructed headers retain identical sender and metadata, but have
         // different GUIDs and signatures.
-        let header1 =
-            unwrap_result!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
-        let header2 =
-            unwrap_result!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
+        let header1 = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
+        let header2 = unwrap!(MpidHeader::new(sender.clone(), metadata.clone(), &secret_key));
         assert!(header1 != header2);
         assert_eq!(*header1.sender(), sender);
         assert_eq!(header1.sender(), header2.sender());
@@ -191,8 +189,8 @@ mod test {
         assert_eq!(header1.metadata(), header2.metadata());
         assert!(header1.guid() != header2.guid());
         assert!(header1.signature() != header2.signature());
-        let name1 = unwrap_result!(header1.name());
-        let name2 = unwrap_result!(header2.name());
+        let name1 = unwrap!(header1.name());
+        let name2 = unwrap!(header2.name());
         assert!(name1 != name2);
     }
 }

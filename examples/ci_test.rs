@@ -51,6 +51,8 @@ extern crate routing;
 extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate term;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
@@ -66,7 +68,8 @@ use utils::{ExampleNode, ExampleClient};
 use routing::{Data, DataIdentifier, PlainData, XorName, GROUP_SIZE};
 
 use maidsafe_utilities::serialisation::serialise;
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread::Joiner;
+use maidsafe_utilities::thread::named as thread_named;
 
 use rand::{thread_rng, random, ThreadRng};
 use rand::distributions::{IndependentSample, Range};
@@ -99,7 +102,7 @@ impl Drop for NodeProcess {
 fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
     println!("--------- Starting {} nodes -----------", count);
 
-    let current_exe_path = unwrap_result!(env::current_exe());
+    let current_exe_path = unwrap!(env::current_exe());
     let mut log_path = current_exe_path.clone();
 
     let nodes = try!((0..count)
@@ -133,8 +136,8 @@ fn start_nodes(count: usize) -> Result<Vec<NodeProcess>, io::Error> {
 fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
                   stop_flg: Arc<(Mutex<bool>, Condvar)>)
-                  -> RaiiThreadJoiner {
-    let joiner = thread!("ChurnSimulationThread", move || {
+                  -> Joiner {
+    let joiner = thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
@@ -144,12 +147,12 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
             {
                 let &(ref lock, ref cvar) = &*stop_flg;
 
-                let mut stop_condition = unwrap_result!(lock.lock());
+                let mut stop_condition = unwrap!(lock.lock());
                 let mut wait_timed_out = false;
                 let wait_for = wait_range.ind_sample(&mut rng);
 
                 while !*stop_condition && !wait_timed_out {
-                    let wake_up_result = unwrap_result!(cvar.wait_timeout(stop_condition,
+                    let wake_up_result = unwrap!(cvar.wait_timeout(stop_condition,
                                                          Duration::from_secs(wait_for)));
                     stop_condition = wake_up_result.0;
                     wait_timed_out = wake_up_result.1.timed_out();
@@ -170,7 +173,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
         }
     });
 
-    RaiiThreadJoiner::new(joiner)
+    joiner
 }
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
@@ -187,7 +190,7 @@ fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
         _ => random(),
     };
 
-    let current_exe_path = unwrap_result!(env::current_exe());
+    let current_exe_path = unwrap!(env::current_exe());
     let mut log_path = current_exe_path.clone();
 
     if kill_node {
@@ -233,7 +236,7 @@ fn store_and_verify(requests: usize, batches: usize) {
         let key: String = (0..10).map(|_| random::<u8>() as char).collect();
         let value: String = (0..10).map(|_| random::<u8>() as char).collect();
         let name = XorName(hash::sha256::hash(key.as_bytes()).0);
-        let data = unwrap_result!(serialise(&(key, value)));
+        let data = unwrap!(serialise(&(key, value)));
         let data = Data::Plain(PlainData::new(name, data));
 
         print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
@@ -331,7 +334,7 @@ fn main() {
             None => DEFAULT_NODE_COUNT,
         };
 
-        let nodes = unwrap_result!(start_nodes(node_count));
+        let nodes = unwrap!(start_nodes(node_count));
 
         let stop_flg = Arc::new((Mutex::new(false), Condvar::new()));
         let _raii_joiner = simulate_churn(nodes, node_count, stop_flg.clone());
@@ -341,11 +344,11 @@ fn main() {
         // Graceful exit
         {
             let &(ref lock, ref cvar) = &*stop_flg;
-            *unwrap_result!(lock.lock()) = true;
+            *unwrap!(lock.lock()) = true;
             cvar.notify_one();
         }
     } else if let Some(log_file) = args.flag_output {
-        unwrap_result!(maidsafe_utilities::log::init_to_file(false, log_file, true));
+        unwrap!(maidsafe_utilities::log::init_to_file(false, log_file, true));
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file

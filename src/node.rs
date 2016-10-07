@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
@@ -84,9 +84,7 @@ impl NodeBuilder {
                                                   self.deny_other_local_nodes);
         let (tx, rx) = channel();
 
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
-            core.run();
-        }));
+        let raii_joiner = thread::named("Node thread", move || core.run());
 
         Ok(Node {
             interface_result_tx: tx,
@@ -133,7 +131,7 @@ pub struct Node {
     core: RefCell<Core>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
+    _raii_joiner: ::maidsafe_utilities::thread::Joiner,
 }
 
 impl Node {
@@ -505,7 +503,7 @@ impl Drop for Node {
 //         let key = ::std::string::String::from("key");
 //         let value = ::std::string::String::from("value");
 //         let name = calculate_key_name(&key.clone());
-//         let data = unwrap_result!(::utils::encode(&(key, value)));
+//         let data = unwrap!(::utils::encode(&(key, value)));
 //         let data = ::data::Data::PlainData(::plain_data::PlainData::new(name.clone(), data));
 
 //         debug!("Putting data {:?}", data);

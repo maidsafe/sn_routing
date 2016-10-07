@@ -53,6 +53,8 @@ extern crate rust_sodium;
 
 extern crate routing;
 extern crate lru_time_cache;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
@@ -65,6 +67,7 @@ use docopt::Docopt;
 use rust_sodium::crypto;
 
 use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::thread;
 use routing::{Data, DataIdentifier, PlainData, XorName};
 use utils::{ExampleNode, ExampleClient};
 
@@ -143,7 +146,7 @@ impl KeyValueStore {
     fn new() -> KeyValueStore {
         let example_client = ExampleClient::new();
         let (command_sender, command_receiver) = mpsc::channel::<UserCommand>();
-        let _ = thread!("Command reader", move || {
+        let _ = thread::named("Command reader", move || {
             KeyValueStore::read_user_commands(command_sender);
         });
 
@@ -232,7 +235,7 @@ impl KeyValueStore {
     /// Put data onto the network.
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
-        let data = unwrap_result!(serialise(&(put_where, put_what)));
+        let data = unwrap!(serialise(&(put_where, put_what)));
         if self.example_client.put(Data::Plain(PlainData::new(name, data))).is_err() {
             error!("Failed to put data.");
         }
@@ -251,7 +254,7 @@ impl Default for KeyValueStore {
 
 /// /////////////////////////////////////////////////////////////////////////////
 fn main() {
-    unwrap_result!(maidsafe_utilities::log::init(false));
+    unwrap!(maidsafe_utilities::log::init(false));
 
     let args: Args = Docopt::new(USAGE)
         .and_then(|docopt| docopt.decode())

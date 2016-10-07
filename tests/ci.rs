@@ -48,6 +48,8 @@ extern crate maidsafe_utilities;
 extern crate rand;
 extern crate routing;
 extern crate rust_sodium;
+#[macro_use]
+extern crate unwrap;
 
 mod utils;
 
@@ -60,7 +62,8 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread::Joiner;
+use maidsafe_utilities::thread::named as thread_named;
 use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
               Response, XorName, GROUP_SIZE, QUORUM_SIZE};
 use rust_sodium::crypto;
@@ -73,7 +76,7 @@ struct TestEvent(usize, Event);
 
 struct TestNode {
     node: Node,
-    _thread_joiner: RaiiThreadJoiner,
+    _thread_joiner: Joiner,
 }
 
 impl TestNode {
@@ -83,13 +86,13 @@ impl TestNode {
         let (sender, joiner) = spawn_select_thread(index, main_sender, thread_name);
 
         TestNode {
-            node: unwrap_result!(Node::builder().first(index == 0).create(sender)),
+            node: unwrap!(Node::builder().first(index == 0).create(sender)),
             _thread_joiner: joiner,
         }
     }
 
     fn name(&self) -> XorName {
-        unwrap_result!(self.node.name())
+        unwrap!(self.node.name())
     }
 }
 
@@ -97,7 +100,7 @@ struct TestClient {
     index: usize,
     full_id: FullId,
     client: Client,
-    _thread_joiner: RaiiThreadJoiner,
+    _thread_joiner: Joiner,
 }
 
 impl TestClient {
@@ -112,7 +115,7 @@ impl TestClient {
         TestClient {
             index: index,
             full_id: full_id.clone(),
-            client: unwrap_result!(Client::new(sender, Some(full_id))),
+            client: unwrap!(Client::new(sender, Some(full_id))),
             _thread_joiner: joiner,
         }
     }
@@ -150,33 +153,33 @@ fn set_open_file_limits(limits: libc::rlimit) -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 fn init() {
-    unwrap_result!(maidsafe_utilities::log::init(true));
-    let mut limits = unwrap_result!(get_open_file_limits());
+    unwrap!(maidsafe_utilities::log::init(true));
+    let mut limits = unwrap!(get_open_file_limits());
     if limits.rlim_cur < 1024 {
         limits.rlim_cur = 1024;
-        unwrap_result!(set_open_file_limits(limits));
+        unwrap!(set_open_file_limits(limits));
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn init() {
-    unwrap_result!(maidsafe_utilities::log::init(true));
+    unwrap!(maidsafe_utilities::log::init(true));
 }
 
 // Spawns a thread that received events from a node a routes them to the main channel.
 fn spawn_select_thread(index: usize,
                        main_sender: Sender<TestEvent>,
                        thread_name: String)
-                       -> (Sender<Event>, RaiiThreadJoiner) {
+                       -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread!(thread_name, move || {
+    let thread_handle = thread_named(thread_name, move || {
         for event in receiver.iter() {
-            let _ = unwrap_result!(main_sender.send(TestEvent(index, event)));
+            let _ = unwrap!(main_sender.send(TestEvent(index, event)));
         }
     });
 
-    (sender, RaiiThreadJoiner::new(thread_handle))
+    (sender, thread_handle)
 }
 
 fn wait_for_nodes_to_connect(nodes: &[TestNode],
@@ -231,7 +234,7 @@ fn gen_plain_data() -> Data {
     let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let name = XorName(sha256::hash(key.as_bytes()).0);
-    let data = unwrap_result!(serialisation::serialise(&(key, value)));
+    let data = unwrap!(serialisation::serialise(&(key, value)));
 
     Data::Plain(PlainData::new(name, data))
 }
@@ -272,10 +275,10 @@ fn core() {
                         if let Request::Put(_, ref id) = request {
                             let node = &nodes[index].node;
 
-                            unwrap_result!(node.send_put_success(dst,
-                                                  src,
-                                                  DataIdentifier::Plain(*data.name()),
-                                                  id.clone()));
+                            unwrap!(node.send_put_success(dst,
+                                                          src,
+                                                          DataIdentifier::Plain(*data.name()),
+                                                          id.clone()));
                         }
                     }
 
@@ -352,13 +355,13 @@ fn core() {
                                                dst: Authority::ClientManager(name) }) => {
                         let src = Authority::ClientManager(name);
                         let dst = Authority::NaeManager(*data.name());
-                        unwrap_result!(nodes[index]
+                        unwrap!(nodes[index]
                             .node
                             .send_put_request(src, dst, data.clone(), id.clone()));
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         if let Request::Put(data, id) = request {
-                            unwrap_result!(nodes[index]
+                            unwrap!(nodes[index]
                                 .node
                                 .send_put_failure(dst, src, data.identifier(), vec![], id));
                         }
@@ -385,7 +388,7 @@ fn core() {
         // leaving nodes cause churn
         let mut churns = iter::repeat(false).take(nodes.len() - 1).collect::<Vec<_>>();
         // a node leaves...
-        let node = unwrap_option!(nodes.pop(), "No more nodes left.");
+        let node = unwrap!(nodes.pop(), "No more nodes left.");
         let name = node.name();
         drop(node);
 
@@ -453,14 +456,14 @@ fn core() {
                                            dst: Authority::ClientManager(name) }) => {
                     let src = Authority::ClientManager(name);
                     let dst = Authority::NaeManager(*data.name());
-                    unwrap_result!(nodes[index]
+                    unwrap!(nodes[index]
                         .node
                         .send_put_request(src, dst, data.clone(), id.clone()));
                 }
                 TestEvent(index, Event::Request { request, src, dst }) => {
                     if let Request::Put(data, id) = request {
                         if index < QUORUM_SIZE - 1 {
-                            unwrap_result!(nodes[index]
+                            unwrap!(nodes[index]
                                 .node
                                 .send_put_failure(dst, src, data.identifier(), vec![], id));
                         }
@@ -497,7 +500,7 @@ fn core() {
                         // A node received request from the client. Reply with a success.
                         let data_id = DataIdentifier::Plain(*data.name());
                         if let Request::Put(_, id) = request {
-                            unwrap_result!(nodes[index]
+                            unwrap!(nodes[index]
                                 .node
                                 .send_put_success(dst, src, data_id, id));
                         }
