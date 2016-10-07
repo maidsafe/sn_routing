@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use itertools::Itertools;

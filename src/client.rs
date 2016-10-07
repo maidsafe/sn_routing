@@ -22,7 +22,6 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
-#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};

@@ -12,9 +12,9 @@ version = "0.25.1"
 
 [dependencies]
 accumulator = "~0.5.0"
-clippy = {version = "~0.0.94", optional = true}
+clippy = {version = "~0.0.95", optional = true}
 crust = "~0.18.0"
-itertools = "~0.5.1"
+itertools = "~0.5.2"
 log = "~0.3.6"
 lru_time_cache = "~0.5.0"
 maidsafe_utilities = "~0.9.0"

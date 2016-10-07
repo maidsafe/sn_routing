@@ -26,7 +26,6 @@ use id::FullId;
 use maidsafe_utilities::thread::RaiiThreadJoiner;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
-#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]

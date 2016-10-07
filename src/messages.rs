@@ -17,7 +17,6 @@
 
 use ack_manager::Ack;
 use authority::Authority;
-#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use data::{Data, DataIdentifier};

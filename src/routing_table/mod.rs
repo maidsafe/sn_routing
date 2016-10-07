@@ -455,11 +455,13 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
         // For each provided group which is not currently in our routing table and which is not one
         // of the merging groups, add an empty group and cache the corresponding contacts
+        let mut needed = HashSet::<T>::new();
         for (prefix, contacts) in merge_details.groups
             .iter()
             .filter(|&(prefix, _)| !merge_details.prefix.is_compatible(prefix)) {
             if self.groups.entry(*prefix).or_insert_with(HashSet::new).is_empty() {
-                self.needed.extend(contacts.into_iter());
+                self.needed.extend(contacts.iter());
+                needed.extend(contacts.into_iter());
             }
         }
 
@@ -472,10 +474,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             .collect_vec();
 
         // Return the targets and the new group
-        let other_details = OtherMergeDetails {
+        let mut other_details = OtherMergeDetails {
             prefix: merge_details.prefix,
             group: unwrap!(self.groups.get(&merge_details.prefix)).clone(),
         };
+        other_details.group.extend(needed.into_iter());
+        other_details.group.insert(self.our_name);
         (targets, other_details)
     }
 

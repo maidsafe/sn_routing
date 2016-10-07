@@ -107,9 +107,10 @@ impl Network {
                     }
                 }
             } else {
-                match node.remove(&name).unwrap_err() {
-                    Error::NoSuchPeer => {}
-                    _ => panic!("Wrong error type returned."),
+                match node.remove(&name) {
+                    Err(Error::NoSuchPeer) => {}
+                    Err(error) => panic!("Expected NoSuchPeer, but got {:?}", error),
+                    Ok(details) => panic!("Expected NoSuchPeer, but got {:?}", details),
                 }
             }
         }
@@ -248,13 +249,12 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .find(|&(_, table)| if table.num_of_groups() < 3 {
+        .all(|(_, table)| if table.num_of_groups() < 3 {
             trace!("{:?}", table);
-            true
-        } else {
             false
-        })
-        .is_none());
+        } else {
+            true
+        }));
     for _ in 0..95 {
         network.drop_node();
         // if i % 5 == 0 {
@@ -263,11 +263,10 @@ fn merging_groups() {
     }
     assert!(network.nodes
         .iter()
-        .find(|&(_, table)| if table.num_of_groups() > 1 {
+        .all(|(_, table)| if table.num_of_groups() > 1 {
             trace!("{:?}", table);
-            true
-        } else {
             false
-        })
-        .is_none());
+        } else {
+            true
+        }));
 }

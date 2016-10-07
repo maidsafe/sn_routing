@@ -32,12 +32,11 @@ use std::collections::hash_map::Values;
 use std::time::{Duration, Instant};
 use xor_name::XorName;
 
-/// The group size for the routing table. This is the maximum that can be used for consensus.
+/// The minimum group size for the routing table.
 pub const MIN_GROUP_SIZE: usize = 8;
 /// The quorum for group consensus.
 pub const QUORUM_SIZE: usize = 5;
-/// Time (in seconds) after which a joining node will get dropped from the map
-/// of joining nodes.
+/// Time (in seconds) after which a joining node will get dropped from the map of joining nodes.
 const JOINING_NODE_TIMEOUT_SECS: u64 = 300;
 /// Time (in seconds) after which the connection to a peer is considered failed.
 const CONNECTION_TIMEOUT_SECS: u64 = 90;
@@ -301,26 +300,21 @@ impl PeerManager {
                                 pub_id: PublicId,
                                 peer_id: PeerId)
                                 -> Result<Option<Prefix<XorName>>, RoutingTableError> {
-        let result = self.routing_table.add(*pub_id.name());
-        if result.is_ok() {
-            let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
-                Some(PeerState::SearchingForTunnel) |
-                Some(PeerState::AwaitingNodeIdentify(true)) => true,
-                Some(PeerState::Routing(tunnel)) => {
-                    error!("Peer {:?} added to routing table, but already in state Routing.",
-                           peer_id);
-                    tunnel
-                }
-                _ => false,
-            };
-
-            let state = PeerState::Routing(tunnel);
-            let _ = self.peer_map.insert(Peer::new(pub_id, Some(peer_id), state));
-        }
-
         let _ = self.unknown_peers.remove(&peer_id);
-
-        result
+        let split_prefix = try!(self.routing_table.add(*pub_id.name()));
+        let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
+            Some(PeerState::SearchingForTunnel) |
+            Some(PeerState::AwaitingNodeIdentify(true)) => true,
+            Some(PeerState::Routing(tunnel)) => {
+                error!("Peer {:?} added to routing table, but already in state Routing.",
+                       peer_id);
+                tunnel
+            }
+            _ => false,
+        };
+        let state = PeerState::Routing(tunnel);
+        let _ = self.peer_map.insert(Peer::new(pub_id, Some(peer_id), state));
+        Ok(split_prefix)
     }
 
     /// Splits the indicated group and returns the `PeerId`s of any peers to which we should not

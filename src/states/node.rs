@@ -36,7 +36,6 @@ use routing_table::Error as RoutingTableError;
 use routing_table::RemovalDetails;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
-use routing_table::Xorable;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use signed_message_filter::SignedMessageFilter;
@@ -51,7 +50,7 @@ use timer::Timer;
 use tunnels::Tunnels;
 use types::MessageId;
 use utils;
-use xor_name::{XOR_NAME_BITS, XorName};
+use xor_name::XorName;
 
 /// Time (in seconds) after which a `Tick` event is sent.
 const TICK_TIMEOUT_SECS: u64 = 60;
@@ -870,7 +869,7 @@ impl Node {
                     // None of these will have been in our group, so no need to notify Routing user.
                     let peers_to_drop = self.peer_mgr.split_group(prefix);
                     for peer_id in peers_to_drop {
-                        let _ = self.crust_service.disconnect(peer_id);
+                        self.disconnect_peer(&peer_id);
                     }
                 }
 
@@ -903,27 +902,6 @@ impl Node {
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(&peer_id, tunnel_request);
         }
-    }
-
-    /// Sends a `GetCloseGroup` request to the close group with our `bucket_index`-th bucket
-    /// address.
-    fn _request_bucket_ids(&mut self, bucket_index: usize) -> Result<(), RoutingError> {
-        if bucket_index >= XOR_NAME_BITS {
-            return Ok(());
-        }
-        trace!("{:?} Send GetCloseGroup to bucket {}.", self, bucket_index);
-        let bucket_address = self.name().with_flipped_bit(bucket_index);
-        self._request_close_group(bucket_address)
-    }
-
-    fn _request_close_group(&mut self, name: XorName) -> Result<(), RoutingError> {
-        let request_msg = RoutingMessage {
-            src: Authority::ManagedNode(*self.name()),
-            dst: Authority::NaeManager(name),
-            content: MessageContent::GetCloseGroup(MessageId::new()),
-        };
-
-        self.send_routing_message(request_msg)
     }
 
     fn handle_connection_info_prepared(&mut self,
@@ -1659,7 +1637,7 @@ impl Node {
 
         if let RemovalDetails { targets_and_merge_details: Some((_targets, _merge_details)), .. } =
                details {
-            // notify peers
+            // TODO - notify peers
         }
 
         if self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {

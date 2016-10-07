@@ -199,7 +199,6 @@ pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use immutable_data::ImmutableData;
 pub use messages::{Request, Response};
-#[cfg_attr(rustfmt, rustfmt_skip)]
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
