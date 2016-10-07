@@ -96,6 +96,28 @@ impl StructuredData {
         DataIdentifier::Structured(self.name, self.type_tag)
     }
 
+    /// Delete self
+    pub fn delete_if_valid_successor(&mut self,
+                                     other: &StructuredData)
+                                     -> Result<(), RoutingError> {
+        if !(other.data.is_empty() && other.current_owner_keys.is_empty()) {
+            return Err(RoutingError::UnknownMessageType);
+        }
+        try!(self.validate_self_against_successor(other));
+        self.data.clear();
+        self.previous_owner_keys.clear();
+        self.version += 1;
+        self.current_owner_keys.clear();
+        self.previous_owner_signatures.clear();
+        Ok(())
+    }
+
+    /// Check whether the data has been deleted
+    pub fn is_deleted(&self) -> bool {
+        self.data.is_empty() && self.previous_owner_keys.is_empty()
+            && self.current_owner_keys.is_empty() && self.previous_owner_signatures.is_empty()
+    }
+
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
     ///
     /// An update is valid if it doesn't change type tag or identifier (these are immutable),
