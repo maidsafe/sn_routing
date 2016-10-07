@@ -239,7 +239,7 @@ impl ServiceImpl {
         // If we have no contacts in the config, we can fire BootstrapFailed
         // immediately.
         if pending_bootstraps == 0 {
-            unwrap_result!(self.event_sender
+            unwrap!(self.event_sender
                 .as_ref()
                 .unwrap()
                 .send(Event::BootstrapFailed));
@@ -366,8 +366,8 @@ impl ServiceImpl {
     }
 
     fn send_event(&self, event: Event) {
-        let sender = unwrap_option!(self.event_sender.as_ref(), "Could not get event sender.");
-        unwrap_result!(sender.send(event));
+        let sender = unwrap!(self.event_sender.as_ref(), "Could not get event sender.");
+        unwrap!(sender.send(event));
     }
 
     fn is_listening(&self) -> bool {
@@ -552,5 +552,5 @@ pub fn make_current<F, R>(handle: &ServiceHandle, f: F) -> R
 }
 
 pub fn get_current() -> ServiceHandle {
-    CURRENT.with(|current| unwrap_option!(current.borrow_mut().take(), "Couldn't borrow service."))
+    CURRENT.with(|current| unwrap!(current.borrow_mut().take(), "Couldn't borrow service."))
 }

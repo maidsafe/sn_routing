@@ -28,7 +28,7 @@ pub fn format_binary_array<V: AsRef<[u8]>>(input: V) -> String {
     if input_ref.len() <= 6 {
         let mut ret = String::new();
         for byte in input_ref.iter() {
-            unwrap_result!(write!(ret, "{:02x}", byte));
+            unwrap!(write!(ret, "{:02x}", byte));
         }
         return ret;
     }
@@ -94,8 +94,7 @@ mod tests {
         let mut close_nodes_one_entry: Vec<XorName> = Vec::new();
         close_nodes_one_entry.push(rand::random());
         let actual_relocated_name_one_entry =
-            unwrap_result!(super::calculate_relocated_name(close_nodes_one_entry.clone(),
-                                                           &original_name));
+            unwrap!(super::calculate_relocated_name(close_nodes_one_entry.clone(), &original_name));
         assert!(original_name != actual_relocated_name_one_entry);
 
         let mut combined_one_node_vec: Vec<XorName> = Vec::new();
@@ -119,21 +118,21 @@ mod tests {
         for _ in 0..GROUP_SIZE {
             close_nodes.push(rand::random());
         }
-        let actual_relocated_name =
-            unwrap_result!(super::calculate_relocated_name(close_nodes.clone(), &original_name));
+        let actual_relocated_name = unwrap!(super::calculate_relocated_name(close_nodes.clone(),
+                                                                            &original_name));
         assert!(original_name != actual_relocated_name);
         close_nodes.sort_by(|a, b| original_name.cmp_distance(a, b));
         let first_closest = close_nodes[0];
         let second_closest = close_nodes[1];
         let mut combined: Vec<u8> = Vec::new();
 
-        for i in original_name.0.into_iter() {
+        for i in &original_name.0 {
             combined.push(*i);
         }
-        for i in first_closest.0.into_iter() {
+        for i in &first_closest.0 {
             combined.push(*i);
         }
-        for i in second_closest.0.into_iter() {
+        for i in &second_closest.0 {
             combined.push(*i);
         }
 
@@ -141,13 +140,13 @@ mod tests {
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
-        for i in first_closest.0.into_iter() {
+        for i in &first_closest.0 {
             invalid_combined.push(*i);
         }
-        for i in second_closest.0.into_iter() {
+        for i in &second_closest.0 {
             invalid_combined.push(*i);
         }
-        for i in original_name.0.into_iter() {
+        for i in &original_name.0 {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);

@@ -855,7 +855,7 @@ mod tests{
 
         assert!(signed_message_result.is_ok());
 
-        let mut signed_message = unwrap_result!(signed_message_result);
+        let mut signed_message = unwrap!(signed_message_result);
 
         assert_eq!(routing_message, *signed_message.routing_message());
         assert_eq!(full_id.public_id(), signed_message.public_id());
@@ -865,7 +865,7 @@ mod tests{
         assert!(check_integrity_result.is_ok());
 
         let full_id = FullId::new();
-        let bytes_to_sign = unwrap_result!(serialise(&(&routing_message, full_id.public_id())));
+        let bytes_to_sign = unwrap!(serialise(&(&routing_message, full_id.public_id())));
         let signature = sign::sign_detached(&bytes_to_sign, full_id.signing_private_key());
 
         signed_message.signature = signature;
@@ -880,7 +880,7 @@ mod tests{
         let data_bytes: Vec<u8> = (0..10).map(|i| i as u8).collect();
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
-        let parts = unwrap_result!(user_msg.to_parts(1));
+        let parts = unwrap!(user_msg.to_parts(1));
         assert_eq!(1, parts.len());
         let part = parts[0].clone();
         let name: XorName = rand::random();
@@ -889,12 +889,12 @@ mod tests{
             dst: Authority::ClientManager(name),
             content: part,
         };
-        let hash_msg = unwrap_result!(routing_message.to_grp_msg_hash());
+        let hash_msg = unwrap!(routing_message.to_grp_msg_hash());
         match hash_msg.content {
             MessageContent::GroupMessageHash(..) => (),
             _ => panic!("Wrong content for hashed message: {:?}", hash_msg),
         }
-        assert_eq!(hash_msg, unwrap_result!(hash_msg.to_grp_msg_hash()));
+        assert_eq!(hash_msg, unwrap!(hash_msg.to_grp_msg_hash()));
 
         let non_hash_routing_msg = RoutingMessage {
             src: Authority::ClientManager(name),
@@ -902,7 +902,7 @@ mod tests{
             content: MessageContent::GetCloseGroup(MessageId::zero()),
         };
         assert_eq!(non_hash_routing_msg,
-                   unwrap_result!(non_hash_routing_msg.to_grp_msg_hash()));
+                   unwrap!(non_hash_routing_msg.to_grp_msg_hash()));
     }
 
     #[test]
@@ -918,14 +918,14 @@ mod tests{
 
         assert!(signed_message_result.is_ok());
 
-        let signed_message = unwrap_result!(signed_message_result);
+        let signed_message = unwrap!(signed_message_result);
         let (public_signing_key, secret_signing_key) = sign::gen_keypair();
         let hop_message_result =
             HopMessage::new(signed_message.clone(), 0, vec![], &secret_signing_key);
 
         assert!(hop_message_result.is_ok());
 
-        let hop_message = unwrap_result!(hop_message_result);
+        let hop_message = unwrap!(hop_message_result);
 
         assert_eq!(signed_message, *hop_message.content());
 
@@ -945,7 +945,7 @@ mod tests{
         let data = Data::Immutable(ImmutableData::new(data_bytes));
         let user_msg = UserMessage::Request(Request::Put(data, MessageId::new()));
         let msg_hash = maidsafe_utilities::big_endian_sip_hash(&user_msg);
-        let parts = unwrap_result!(user_msg.to_parts(42));
+        let parts = unwrap!(user_msg.to_parts(42));
         assert_eq!(parts.len(), 3);
         let payloads: Vec<Vec<u8>> = parts.into_iter()
             .enumerate()
@@ -966,8 +966,7 @@ mod tests{
                 msg => panic!("Unexpected message {:?}", msg),
             })
             .collect();
-        let deserialised_user_msg = unwrap_result!(UserMessage::from_parts(msg_hash,
-                                                                           payloads.iter()));
+        let deserialised_user_msg = unwrap!(UserMessage::from_parts(msg_hash, payloads.iter()));
         assert_eq!(user_msg, deserialised_user_msg);
     }
 }

@@ -37,14 +37,14 @@ fn get_event_sender() -> (CrustEventSender, Receiver<MaidSafeEventCategory>, Rec
 // given pattern.
 macro_rules! expect_event {
     ($rx:expr, $pattern:pat) => {
-        match unwrap_result!($rx.try_recv()) {
+        match unwrap!($rx.try_recv()) {
             $pattern => (),
             e => panic!("unexpected event {:?}", e),
         }
     };
 
     ($rx:expr, $pattern:pat => $arm:expr) => {
-        match unwrap_result!($rx.try_recv()) {
+        match unwrap!($rx.try_recv()) {
             $pattern => $arm,
             e => panic!("unexpected event {:?}", e),
         }
@@ -66,14 +66,14 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     let mut service_0 = unwrap!(Service::with_handle(&handle0, event_sender_0));
 
-    unwrap_result!(service_0.start_listening_tcp());
+    unwrap!(service_0.start_listening_tcp());
     expect_event!(event_rx_0, Event::ListenerStarted(..));
 
     service_0.start_service_discovery();
 
     let mut service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
 
-    unwrap_result!(service_1.start_bootstrap(HashSet::new()));
+    unwrap!(service_1.start_bootstrap(HashSet::new()));
     let id_0 = expect_event!(event_rx_1, Event::BootstrapConnect(id, _) => id);
     let id_1 = expect_event!(event_rx_0, Event::BootstrapAccept(id) => id);
 
@@ -81,7 +81,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
-    unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
+    unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
     let (data_recvd, peer_id) = expect_event!(event_rx_1,
@@ -92,7 +92,7 @@ fn start_two_services_bootstrap_communicate_exit() {
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
-    unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
+    unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
     let (data_recvd, peer_id) = expect_event!(event_rx_0,
@@ -116,33 +116,33 @@ fn start_two_services_rendezvous_connect() {
     let (event_sender_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_sender_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let service_0 = unwrap_result!(Service::with_handle(&handle0, event_sender_0));
-    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_sender_1));
+    let service_0 = unwrap!(Service::with_handle(&handle0, event_sender_0));
+    let service_1 = unwrap!(Service::with_handle(&handle1, event_sender_1));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-        unwrap_result!(cir.result)
+        unwrap!(cir.result)
     });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_1 = expect_event!(event_rx_1, Event::ConnectionInfoPrepared(cir) => {
         assert_eq!(cir.result_token, PREPARE_CI_TOKEN);
-        unwrap_result!(cir.result)
+        unwrap!(cir.result)
     });
 
     let their_ci_0 = our_ci_0.to_pub_connection_info();
     let their_ci_1 = our_ci_1.to_pub_connection_info();
 
-    unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
-    unwrap_result!(service_1.connect(our_ci_1, their_ci_0));
+    unwrap!(service_0.connect(our_ci_0, their_ci_1));
+    unwrap!(service_1.connect(our_ci_1, their_ci_0));
 
     let id_1 = expect_event!(event_rx_0, Event::ConnectSuccess(id) => id);
     let id_0 = expect_event!(event_rx_1, Event::ConnectSuccess(id) => id);
 
     // send data from 0 to 1
     let data_sent = vec![0, 1, 255, 254, 222, 1];
-    unwrap_result!(service_0.send(id_1, data_sent.clone(), 0));
+    unwrap!(service_0.send(id_1, data_sent.clone(), 0));
 
     // 1 should rx data
     let (data_recvd, peer_id) = expect_event!(event_rx_1,
@@ -153,7 +153,7 @@ fn start_two_services_rendezvous_connect() {
 
     // send data from 1 to 0
     let data_sent = vec![10, 11, 155, 214, 202];
-    unwrap_result!(service_1.send(id_0, data_sent.clone(), 0));
+    unwrap!(service_1.send(id_0, data_sent.clone(), 0));
 
     // 0 should rx data
     let (data_recvd, peer_id) = expect_event!(event_rx_0,
@@ -174,22 +174,22 @@ fn unidirectional_rendezvous_connect() {
     let (event_tx_0, _category_rx_0, event_rx_0) = get_event_sender();
     let (event_tx_1, _category_rx_1, event_rx_1) = get_event_sender();
 
-    let service_0 = unwrap_result!(Service::with_handle(&handle0, event_tx_0));
-    let service_1 = unwrap_result!(Service::with_handle(&handle1, event_tx_1));
+    let service_0 = unwrap!(Service::with_handle(&handle0, event_tx_0));
+    let service_1 = unwrap!(Service::with_handle(&handle1, event_tx_1));
 
     service_0.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_0 = expect_event!(event_rx_0, Event::ConnectionInfoPrepared(cir) => {
-        unwrap_result!(cir.result)
+        unwrap!(cir.result)
     });
 
     service_1.prepare_connection_info(PREPARE_CI_TOKEN);
     let our_ci_1 = expect_event!(event_rx_1, Event::ConnectionInfoPrepared(cir) => {
-        unwrap_result!(cir.result)
+        unwrap!(cir.result)
     });
 
     let their_ci_1 = our_ci_1.to_pub_connection_info();
 
-    unwrap_result!(service_0.connect(our_ci_0, their_ci_1));
+    unwrap!(service_0.connect(our_ci_0, their_ci_1));
 
     expect_event!(event_rx_0, Event::ConnectSuccess(_));
     expect_event!(event_rx_1, Event::ConnectSuccess(_));

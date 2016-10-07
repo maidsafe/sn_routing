@@ -22,7 +22,7 @@ mod implementation {
 
     use action::Action;
     use itertools::Itertools;
-    use maidsafe_utilities::thread::RaiiThreadJoiner;
+    use maidsafe_utilities::thread::{self, Joiner};
     use std::collections::BTreeMap;
     use std::sync::{Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
@@ -37,7 +37,7 @@ mod implementation {
     pub struct Timer {
         next_token: u64,
         detail_and_cond_var: Arc<(Mutex<Detail>, Condvar)>,
-        _worker: RaiiThreadJoiner,
+        _worker: Joiner,
     }
 
     impl Timer {
@@ -49,9 +49,9 @@ mod implementation {
             };
             let detail_and_cond_var = Arc::new((Mutex::new(detail), Condvar::new()));
             let detail_and_cond_var_clone = detail_and_cond_var.clone();
-            let worker = RaiiThreadJoiner::new(thread!("Timer", move || {
+            let worker = thread::named("Timer", move || {
                 Self::run(sender, detail_and_cond_var)
-            }));
+            });
             Timer {
                 next_token: 0,
                 detail_and_cond_var: detail_and_cond_var_clone,

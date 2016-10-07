@@ -18,7 +18,7 @@
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread;
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
@@ -79,9 +79,7 @@ impl NodeBuilder {
 
         let (tx, rx) = channel();
 
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
-            machine.run();
-        }));
+        let raii_joiner = thread::named("Node thread", move || machine.run());
 
         Ok(Node {
             interface_result_tx: tx,
@@ -158,7 +156,7 @@ pub struct Node {
     machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: RaiiThreadJoiner,
+    _raii_joiner: ::maidsafe_utilities::thread::Joiner,
 }
 
 impl Node {
