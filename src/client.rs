@@ -23,7 +23,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
@@ -52,7 +52,7 @@ pub struct Client {
     machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: ::maidsafe_utilities::thread::RaiiThreadJoiner,
+    _raii_joiner: Joiner,
 }
 
 impl Client {
@@ -74,9 +74,7 @@ impl Client {
         let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys);
         let (tx, rx) = channel();
 
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Client thread", move || {
-            machine.run();
-        }));
+        let raii_joiner = thread::named("Client thread", move || machine.run());
 
         Ok(Client {
             interface_result_tx: tx,

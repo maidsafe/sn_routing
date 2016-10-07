@@ -54,7 +54,7 @@ impl ExampleClient {
         // Try to connect the client to the network. If it fails, it probably means
         // the network isn't fully formed yet, so we restart and try again.
         'outer: loop {
-            routing_client = unwrap_result!(Client::new(sender.clone(), Some(full_id.clone())));
+            routing_client = unwrap!(Client::new(sender.clone(), Some(full_id.clone())));
 
             for event in receiver.iter() {
                 match event {
@@ -84,7 +84,7 @@ impl ExampleClient {
     /// This is a blocking call and will wait indefinitely for the response.
     pub fn get(&mut self, request: DataIdentifier) -> Option<Data> {
         let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
+        unwrap!(self.routing_client
             .send_get_request(Authority::NaeManager(*request.name()),
                               request.clone(),
                               message_id));
@@ -107,7 +107,7 @@ impl ExampleClient {
                 .. }) => {
                     error!("Failed to Get {:?}: {:?}",
                            request.name(),
-                           unwrap_result!(String::from_utf8(external_error_indicator)));
+                           unwrap!(String::from_utf8(external_error_indicator)));
                     return None;
                 }
                 Some(Event::Terminate) |
@@ -125,7 +125,7 @@ impl ExampleClient {
     pub fn put(&self, data: Data) -> Result<(), ()> {
         let data_id = data.identifier();
         let message_id = MessageId::new();
-        unwrap_result!(self.routing_client
+        unwrap!(self.routing_client
             .send_put_request(Authority::ClientManager(*self.name()), data, message_id));
 
         // Wait for Put success event from Routing

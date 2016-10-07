@@ -23,7 +23,7 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::RaiiThreadJoiner;
+use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
 #[cfg(feature = "use-mock-crust")]
@@ -79,9 +79,7 @@ impl NodeBuilder {
 
         let (tx, rx) = channel();
 
-        let raii_joiner = RaiiThreadJoiner::new(thread!("Node thread", move || {
-            machine.run();
-        }));
+        let raii_joiner = thread::named("Node thread", move || machine.run());
 
         Ok(Node {
             interface_result_tx: tx,
@@ -158,7 +156,7 @@ pub struct Node {
     machine: RefCell<StateMachine>,
 
     #[cfg(not(feature = "use-mock-crust"))]
-    _raii_joiner: RaiiThreadJoiner,
+    _raii_joiner: ::maidsafe_utilities::thread::Joiner,
 }
 
 impl Node {

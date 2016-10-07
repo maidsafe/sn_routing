@@ -42,7 +42,7 @@ impl ExampleNode {
     /// Creates a new node and attempts to establish a connection to the network.
     pub fn new(first: bool) -> ExampleNode {
         let (sender, receiver) = mpsc::channel::<Event>();
-        let node = unwrap_result!(Node::builder().first(first).create(sender.clone()));
+        let node = unwrap!(Node::builder().first(first).create(sender.clone()));
 
         ExampleNode {
             node: node,
@@ -81,7 +81,7 @@ impl ExampleNode {
                 }
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
-                    self.node = unwrap_result!(Node::builder().create(self.sender.clone()));
+                    self.node = unwrap!(Node::builder().create(self.sender.clone()));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -120,7 +120,7 @@ impl ExampleNode {
         match (response, dst.clone()) {
             (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
-                    unwrap_result!(self.node.send_put_success(src, dst, data_id, id));
+                    unwrap!(self.node.send_put_success(src, dst, data_id, id));
                 }
             }
             _ => unreachable!(),
@@ -135,13 +135,13 @@ impl ExampleNode {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
                 if let Some(data) = self.db.get(data_id.name()) {
-                    unwrap_result!(self.node.send_get_success(dst, src, data.clone(), id))
+                    unwrap!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {
                     trace!("{:?} GetDataRequest failed for {:?}.",
                            self.get_debug_name(),
                            data_id.name());
                     let text = "Data not found".to_owned().into_bytes();
-                    unwrap_result!(self.node.send_get_failure(dst, src, data_id, text, id));
+                    unwrap!(self.node.send_get_failure(dst, src, data_id, text, id));
                     return;
                 }
             }
@@ -168,7 +168,7 @@ impl ExampleNode {
                 {
                     let src = dst.clone();
                     let dst = Authority::NaeManager(*data.name());
-                    unwrap_result!(self.node.send_put_request(src, dst, data, id));
+                    unwrap!(self.node.send_put_request(src, dst, data, id));
                 }
                 if self.put_request_cache.insert(id, (dst, src)).is_some() {
                     warn!("Overwrote message {:?} in put_request_cache.", id);
@@ -188,7 +188,6 @@ impl ExampleNode {
     fn handle_node_lost(&mut self, name: XorName, _routing_table: RoutingTable<XorName>) {
         // TODO: Use the given routing table instead of repeatedly querying the routing node.
         self.send_refresh(MessageId::from_lost_node(name));
-
     }
 
     fn send_refresh(&mut self, id: MessageId) {
@@ -198,8 +197,10 @@ impl ExampleNode {
                 client_name: *client_name,
                 data: *stored,
             };
-            let content = unwrap_result!(serialise(&refresh_content));
-            unwrap_result!(self.node
+
+            let content = unwrap!(serialise(&refresh_content));
+
+            unwrap!(self.node
                 .send_refresh_request(Authority::ClientManager(*client_name),
                                       Authority::ClientManager(*client_name),
                                       content,
@@ -211,8 +212,8 @@ impl ExampleNode {
                 data_name: *data_name,
                 data: data.clone(),
             };
-            let content = unwrap_result!(serialise(&refresh_content));
-            unwrap_result!(self.node
+            let content = unwrap!(serialise(&refresh_content));
+            unwrap!(self.node
                 .send_refresh_request(Authority::NaeManager(*data_name),
                                       Authority::NaeManager(*data_name),
                                       content,
@@ -223,7 +224,7 @@ impl ExampleNode {
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in
     /// the group agree, so we need to update our data accordingly.
     fn handle_refresh(&mut self, content: Vec<u8>, _id: MessageId) {
-        match unwrap_result!(deserialise(&content)) {
+        match unwrap!(deserialise(&content)) {
             RefreshContent::Client { client_name, data } => {
                 trace!("{:?} handle_refresh for ClientManager. client - {:?}",
                        self.get_debug_name(),
