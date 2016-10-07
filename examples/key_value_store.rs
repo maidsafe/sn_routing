@@ -46,6 +46,8 @@
 extern crate log;
 #[macro_use]
 extern crate maidsafe_utilities;
+#[macro_use]
+extern crate unwrap;
 extern crate docopt;
 extern crate kademlia_routing_table;
 extern crate rustc_serialize;

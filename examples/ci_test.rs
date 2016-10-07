@@ -347,8 +347,12 @@ fn main() {
             *unwrap!(lock.lock()) = true;
             cvar.notify_one();
         }
-    } else if let Some(log_file) = args.flag_output {
-        unwrap!(maidsafe_utilities::log::init_to_file(false, log_file, true));
+    } else {
+        if let Some(log_file) = args.flag_output {
+            unwrap!(maidsafe_utilities::log::init_to_file(false, log_file, true));
+        } else {
+            unwrap!(maidsafe_utilities::log::init(false));
+        }
 
         if let Some(true) = args.flag_delete_bootstrap_cache {
             // TODO Remove bootstrap cache file

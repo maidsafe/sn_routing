@@ -49,12 +49,12 @@ impl ExampleClient {
         let sign_keys = crypto::sign::gen_keypair();
         let encrypt_keys = crypto::box_::gen_keypair();
         let full_id = FullId::with_keys(encrypt_keys.clone(), sign_keys.clone());
-        let routing_client = unwrap!(Client::new(sender, Some(full_id)));
+        let mut routing_client;
 
         // Try to connect the client to the network. If it fails, it probably means
         // the network isn't fully formed yet, so we restart and try again.
         'outer: loop {
-            routing_client = unwrap_result!(Client::new(sender.clone(), Some(full_id.clone())));
+            routing_client = unwrap!(Client::new(sender.clone(), Some(full_id.clone())));
 
             for event in receiver.iter() {
                 match event {

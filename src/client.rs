@@ -75,7 +75,7 @@ impl Client {
         let (action_sender, mut machine) = Self::make_state_machine(event_sender, keys);
         let (tx, rx) = channel();
 
-        let raii_joiner = thread::named("Client thread", move || core.run());
+        let raii_joiner = thread::named("Client thread", move || machine.run());
 
         Ok(Client {
             interface_result_tx: tx,

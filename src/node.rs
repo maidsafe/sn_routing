@@ -79,7 +79,7 @@ impl NodeBuilder {
 
         let (tx, rx) = channel();
 
-        let raii_joiner = thread::named("Node thread", move || core.run());
+        let raii_joiner = thread::named("Node thread", move || machine.run());
 
         Ok(Node {
             interface_result_tx: tx,
