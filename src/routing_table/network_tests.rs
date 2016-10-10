@@ -254,6 +254,18 @@ fn verify_invariant(network: &mut Network) {
     }
 }
 
+fn verify_groups_consistency(network: &Network) {
+    let mut prefix_set = HashSet::new();
+    for node in network.nodes.values() {
+        let prefixes = node.prefixes();
+        prefix_set.extend(prefixes);
+    }
+    // check if the groups aren't overlapping
+    for prefix in &prefix_set {
+        assert!(!prefix_set.iter().any(|x| x != prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
+    }
+}
+
 #[test]
 fn groups_have_identical_routing_tables() {
     let mut network = Network::new(None);
@@ -268,9 +280,8 @@ fn merging_groups() {
     let mut network = Network::new(None);
     for i in 0..100 {
         network.add_node();
-        if i % 5 == 0 {
-            verify_invariant(&mut network);
-        }
+        verify_invariant(&mut network);
+        verify_groups_consistency(&network);
     }
     assert!(network.nodes
         .iter()
@@ -282,9 +293,8 @@ fn merging_groups() {
         }));
     for i in 0..95 {
         network.drop_node();
-        if i % 5 == 0 {
-            verify_invariant(&mut network);
-        }
+        verify_invariant(&mut network);
+        verify_groups_consistency(&network);
     }
     assert!(network.nodes
         .iter()
