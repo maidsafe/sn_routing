@@ -278,6 +278,21 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         Iter { inner: self.groups.iter().flat_map(Iter::<T>::iterate) }
     }
 
+    pub fn prefixes(&self) -> HashSet<Prefix<T>> {
+        self.groups.keys().cloned().collect()
+    }
+
+    pub fn set_prefixes<U: IntoIterator<Item=Prefix<T>>>(&mut self, prefixes: U) {
+        self.groups.clear();
+        self.our_group_prefix = Prefix::new(0, self.our_name);
+        for prefix in prefixes {
+            if prefix.matches(&self.our_name) && prefix.bit_count() > self.our_group_prefix.bit_count() {
+                self.our_group_prefix = prefix;
+            }
+            let _ = self.groups.insert(prefix, HashSet::new());
+        }
+    }
+
     // If our group is the closest one to `name`, returns all names in our group *including ours*,
     // otherwise returns `None`.
     pub fn close_names(&self, name: &T) -> Option<HashSet<T>> {

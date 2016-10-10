@@ -54,6 +54,12 @@ impl Network {
         }
 
         let mut new_table = RoutingTable::new(name, MIN_GROUP_SIZE);
+        {
+            let close_node = self.close_node(*new_table.our_name());
+            let close_peer = &self.nodes[&close_node];
+            new_table.set_prefixes(close_peer.prefixes());
+        }
+        
         let mut split_prefixes = BTreeSet::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
@@ -86,6 +92,7 @@ impl Network {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
+        let mut merge_own_info = Vec::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -97,8 +104,8 @@ impl Network {
                 match removal_details.targets_and_merge_details {
                     // TODO: shall a panic be raised in case of failure?
                     None => {}
-                    Some((_targets, own_merge_details)) => {
-                        let _ = node.merge_own_group(&own_merge_details);
+                    Some(info) => {
+                        merge_own_info.push(info);
                     }
                 }
             } else {
@@ -106,6 +113,34 @@ impl Network {
                     Err(Error::NoSuchPeer) => {}
                     Err(error) => panic!("Expected NoSuchPeer, but got {:?}", error),
                     Ok(details) => panic!("Expected NoSuchPeer, but got {:?}", details),
+                }
+            }
+        }
+
+        let mut merge_other_info = Vec::new();
+
+        // handle broadcast of merge_own_group
+        for (targets, merge_own_details) in merge_own_info {
+            for target in targets {
+                let target_node = unwrap!(self.nodes.get_mut(&target));
+                let other_info = target_node.merge_own_group(&merge_own_details);
+                merge_other_info.push(other_info);
+                // add needed contacts
+                let needed = target_node.needed().clone();
+                for needed_contact in needed {
+                    target_node.add(needed_contact);
+                }
+            }
+        }
+
+        // handle broadcast of merge_other_group
+        for (targets, merge_other_details) in merge_other_info {
+            for target in targets {
+                let target_node = unwrap!(self.nodes.get_mut(&target));
+                let contacts = target_node.merge_other_group(&merge_other_details);
+                // add missing contacts
+                for contact in contacts {
+                    target_node.add(contact);
                 }
             }
         }
@@ -245,11 +280,11 @@ fn merging_groups() {
         } else {
             true
         }));
-    for _ in 0..95 {
+    for i in 0..95 {
         network.drop_node();
-        // if i % 5 == 0 {
-        //     verify_invariant(&mut network);
-        // }
+        if i % 5 == 0 {
+            verify_invariant(&mut network);
+        }
     }
     assert!(network.nodes
         .iter()
