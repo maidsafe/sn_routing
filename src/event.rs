@@ -17,7 +17,7 @@
 
 use authority::Authority;
 use messages::{Request, Response};
-use routing_table::RoutingTable;
+use routing_table::{Prefix, RoutingTable};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
@@ -52,6 +52,11 @@ pub enum Event {
     NodeAdded(XorName, RoutingTable<XorName>),
     /// A node left the network and may have been a member of group authorities we also belong to.
     NodeLost(XorName, RoutingTable<XorName>),
+    /// Our own group has been split, resulting in the included `Prefix` for our new group.
+    GroupSplit(Prefix<XorName>),
+    /// Our own group requires merged with others, resulting in the included `Prefix` for our new
+    /// group.
+    GroupMerge(Prefix<XorName>),
     /// The client has successfully connected to a proxy node on the network.
     Connected,
     /// Disconnected or failed to connect - restart required.
@@ -88,6 +93,8 @@ impl Debug for Event {
             Event::NodeLost(ref node_name, _) => {
                 write!(formatter, "Event::NodeLost({:?}, routing_table)", node_name)
             }
+            Event::GroupSplit(ref prefix) => write!(formatter, "Event::GroupSplit({:?})", prefix),
+            Event::GroupMerge(ref prefix) => write!(formatter, "Event::GroupMerge({:?})", prefix),
             Event::Connected => write!(formatter, "Event::Connected"),
             Event::RestartRequired => write!(formatter, "Event::RestartRequired"),
             Event::Terminate => write!(formatter, "Event::Terminate"),

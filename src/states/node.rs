@@ -32,8 +32,8 @@ use messages::{DEFAULT_PRIORITY, DirectMessage, HopMessage, Message, MessageCont
                RoutingMessage, SignedMessage, UserMessage, UserMessageCache};
 use peer_manager::{ConnectionInfoPreparedResult, ConnectionInfoReceivedResult, MIN_GROUP_SIZE,
                    PeerManager, PeerState, QUORUM_SIZE};
+use routing_table::{OtherMergeDetails, OwnMergeDetails, Prefix, RemovalDetails};
 use routing_table::Error as RoutingTableError;
-use routing_table::RemovalDetails;
 #[cfg(feature = "use-mock-crust")]
 use routing_table::RoutingTable;
 use rust_sodium::crypto::{box_, sign};
@@ -42,6 +42,7 @@ use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
 use std::{cmp, fmt, iter};
+use std::collections::HashSet;
 use std::fmt::{Debug, Formatter};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
@@ -643,6 +644,12 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
+            (MessageContent::OwnGroupMerge { prefix, connected_groups, needed_groups }, src, _) => {
+                self.handle_own_group_merge(src, prefix, connected_groups, needed_groups)
+            }
+            (MessageContent::OtherGroupMerge { prefix, group }, Authority::NodeManager(_), _) => {
+                self.handle_other_group_merge(prefix, group)
+            }
             (MessageContent::Ack(ack, _), _, _) => self.handle_ack_response(ack),
             (MessageContent::UserMessagePart { hash, part_count, part_index, payload, .. },
              src,
@@ -867,8 +874,14 @@ impl Node {
                 }
 
                 if let Some(prefix) = split_prefix {
-                    // None of these will have been in our group, so no need to notify Routing user.
+                    // None of the `peers_to_drop` will have been in our group, so no need to notify
+                    // Routing user about them.
                     let peers_to_drop = self.peer_mgr.split_group(prefix);
+                    let our_new_prefix = *self.peer_mgr.routing_table().our_group_prefix();
+                    if let Err(err) = self.event_sender.send(Event::GroupSplit(our_new_prefix)) {
+                        error!("{:?} Error sending event to routing user - {:?}", self, err);
+                    }
+
                     for peer_id in peers_to_drop {
                         self.disconnect_peer(&peer_id);
                     }
@@ -1278,6 +1291,71 @@ impl Node {
         Ok(())
     }
 
+    fn handle_own_group_merge(&mut self,
+                              src: Authority,
+                              prefix: Prefix<XorName>,
+                              connected_groups: Vec<(Prefix<XorName>, Vec<XorName>)>,
+                              needed_groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                              -> Result<(), RoutingError> {
+        let own_name = *self.name();
+        for needed in needed_groups.iter().flat_map(|&(_, ref members)| members.iter()) {
+            debug!("{:?} Sending connection info to {:?} due to merging own group.",
+                   self,
+                   needed);
+            if let Err(error) = self.send_connection_info(*needed,
+                                                          Authority::ManagedNode(own_name),
+                                                          Authority::ManagedNode(*needed.name())) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       needed,
+                       error);
+            }
+        }
+
+        let groups = connected_groups.into_iter()
+            .map(|(prefix, members)| (prefix, members.into_iter().collect::<HashSet<_>>()))
+            .chain(needed_groups.into_iter().map(|(prefix, members)| {
+                (prefix,
+                 members.into_iter().map(|public_id| *public_id.name()).collect::<HashSet<_>>())
+            }))
+            .collect();
+
+        let own_merge_details = OwnMergeDetails {
+            prefix: prefix,
+            groups: groups,
+        };
+        let (targets, other_merge_details) = self.peer_mgr.merge_own_group(&own_merge_details);
+        self.send_other_group_merge(targets, other_merge_details, src);
+        Ok(())
+    }
+
+    fn handle_other_group_merge(&mut self,
+                                prefix: Prefix<XorName>,
+                                group: Vec<PublicId>)
+                                -> Result<(), RoutingError> {
+        let other_merge_details = OtherMergeDetails {
+            prefix: prefix,
+            group: group.iter().map(|public_id| *public_id.name()).collect(),
+        };
+        let targets = self.peer_mgr.merge_other_group(&other_merge_details);
+
+        let own_name = *self.name();
+        for needed in group.iter().filter(|public_id| targets.contains(public_id.name())) {
+            debug!("{:?} Sending connection info to {:?} due to merging other group.",
+                   self,
+                   needed);
+            if let Err(error) = self.send_connection_info(*needed,
+                                                          Authority::ManagedNode(own_name),
+                                                          Authority::ManagedNode(*needed.name())) {
+                debug!("{:?} - Failed to send connection info to {:?}: {:?}",
+                       self,
+                       needed,
+                       error);
+            }
+        }
+        Ok(())
+    }
+
     fn handle_ack_response(&mut self, ack: Ack) -> Result<(), RoutingError> {
         self.ack_mgr.receive(ack);
         Ok(())
@@ -1503,7 +1581,7 @@ impl Node {
         if self.is_proper() {
             let targets = try!(self.peer_mgr
                 .routing_table()
-                .targets(&routing_msg.dst.to_destination(), route as usize, sent_to));
+                .targets(&routing_msg.dst.to_destination(), route as usize));
             let new_sent_to = sent_to.iter()
                 .chain(targets.iter())
                 .cloned()
@@ -1636,9 +1714,13 @@ impl Node {
             }
         }
 
-        if let RemovalDetails { targets_and_merge_details: Some((_targets, _merge_details)), .. } =
+        if let RemovalDetails { targets_and_merge_details: Some((targets, merge_details)), .. } =
                details {
-            // TODO - notify peers
+            let our_new_prefix = merge_details.prefix;
+            self.send_own_group_merge(targets, merge_details, Authority::NodeManager(details.name));
+            if let Err(err) = self.event_sender.send(Event::GroupMerge(our_new_prefix)) {
+                error!("{:?} Error sending event to routing user - {:?}", self, err);
+            }
         }
 
         if self.peer_mgr.routing_table().len() < MIN_GROUP_SIZE - 1 {
@@ -1652,6 +1734,64 @@ impl Node {
         }
 
         true
+    }
+
+    fn send_own_group_merge(&mut self,
+                            targets: Vec<XorName>,
+                            merge_details: OwnMergeDetails<XorName>,
+                            src: Authority) {
+        for target in &targets {
+            let (connected, needed): (Vec<_>, Vec<_>) = merge_details.groups
+                .clone()
+                .into_iter()
+                .partition(|&(prefix, _)| merge_details.prefix.is_compatible(&prefix));
+            let connected_groups = connected.into_iter()
+                .map(|(prefix, members)| (prefix, members.into_iter().collect_vec()))
+                .collect();
+            // TODO - this calls `get_pub_ids()` several times for the same value - should optimise
+            let needed_groups: Vec<_> = needed.into_iter()
+                .map(|(prefix, members)| {
+                    (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
+                })
+                .collect();
+            let request_content = MessageContent::OwnGroupMerge {
+                prefix: merge_details.prefix,
+                connected_groups: connected_groups,
+                needed_groups: needed_groups,
+            };
+
+            let request_msg = RoutingMessage {
+                src: src.clone(),
+                dst: Authority::ManagedNode(*target),
+                content: request_content,
+            };
+
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send OwnGroupMerge: {:?}.", self, err);
+            }
+        }
+    }
+
+    fn send_other_group_merge(&mut self,
+                              targets: Vec<XorName>,
+                              merge_details: OtherMergeDetails<XorName>,
+                              src: Authority) {
+        let group = self.peer_mgr.get_pub_ids(&merge_details.group).into_iter().collect_vec();
+        for target in &targets {
+            let request_content = MessageContent::OtherGroupMerge {
+                prefix: merge_details.prefix,
+                group: group.clone(),
+            };
+            let request_msg = RoutingMessage {
+                src: src.clone(),
+                dst: Authority::ManagedNode(*target),
+                content: request_content,
+            };
+
+            if let Err(err) = self.send_routing_message(request_msg) {
+                debug!("{:?} Failed to send OtherGroupMerge: {:?}.", self, err);
+            }
+        }
     }
 
     fn dropped_tunnel_client(&mut self, peer_id: &PeerId) {

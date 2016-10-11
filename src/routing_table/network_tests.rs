@@ -19,12 +19,8 @@
 
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::collections::hash_map::Entry;
-use std::fmt::{self, Binary, Debug, Formatter};
 use super::{Destination, Error, RoutingTable};
-use super::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
 
@@ -89,7 +85,6 @@ impl Network {
     fn drop_node(&mut self) {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
-        let contacts = self.known_nodes(name);
         let _ = self.nodes.remove(&name);
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
@@ -102,7 +97,7 @@ impl Network {
                 match removal_details.targets_and_merge_details {
                     // TODO: shall a panic be raised in case of failure?
                     None => {}
-                    Some((targets, own_merge_details)) => {
+                    Some((_targets, own_merge_details)) => {
                         let _ = node.merge_own_group(&own_merge_details);
                     }
                 }
@@ -135,7 +130,7 @@ impl Network {
         while let Some(node) = received.pop() {
             handled.insert(node); // `node` is now handling the message and relaying it.
             if Destination::Node(node) != dst {
-                for target in unwrap!(self.nodes[&node].targets(&dst, route, &[])) {
+                for target in unwrap!(self.nodes[&node].targets(&dst, route)) {
                     if !handled.contains(&target) && !received.contains(&target) {
                         received.push(target);
                     }
@@ -161,11 +156,6 @@ impl Network {
             .iter()
             .find(|&(_, table)| table.is_recipient(&target))
             .map(|(&peer, _)| peer))
-    }
-
-    /// Returns the set of all entries in the given node's routing table.
-    fn known_nodes(&self, name: u64) -> HashSet<u64> {
-        self.nodes[&name].iter().cloned().collect()
     }
 
     /// Returns all node names.

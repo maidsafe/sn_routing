@@ -48,9 +48,7 @@ mod implementation {
             };
             let detail_and_cond_var = Arc::new((Mutex::new(detail), Condvar::new()));
             let detail_and_cond_var_clone = detail_and_cond_var.clone();
-            let worker = thread::named("Timer", move || {
-                Self::run(sender, detail_and_cond_var)
-            });
+            let worker = thread::named("Timer", move || Self::run(sender, detail_and_cond_var));
             Timer {
                 next_token: 0,
                 detail_and_cond_var: detail_and_cond_var_clone,
