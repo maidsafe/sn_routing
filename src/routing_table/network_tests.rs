@@ -266,6 +266,15 @@ fn verify_groups_consistency(network: &Network) {
     }
 }
 
+fn verify_proper_neighbours(network: &Network) {
+    for node in network.nodes.values() {
+        let our_group = node.our_group();
+        for prefix in node.prefixes() {
+            assert!(prefix == our_group || prefix.is_neighbour(&our_group));
+        }
+    }
+}
+
 #[test]
 fn groups_have_identical_routing_tables() {
     let mut network = Network::new(None);
@@ -273,6 +282,8 @@ fn groups_have_identical_routing_tables() {
         network.add_node();
     }
     verify_invariant(&mut network);
+    verify_groups_consistency(&network);
+    verify_proper_neighbours(&network);
 }
 
 #[test]
@@ -282,6 +293,7 @@ fn merging_groups() {
         network.add_node();
         verify_invariant(&mut network);
         verify_groups_consistency(&network);
+        verify_proper_neighbours(&network);
     }
     assert!(network.nodes
         .iter()
@@ -295,6 +307,7 @@ fn merging_groups() {
         network.drop_node();
         verify_invariant(&mut network);
         verify_groups_consistency(&network);
+        verify_proper_neighbours(&network);
     }
     assert!(network.nodes
         .iter()

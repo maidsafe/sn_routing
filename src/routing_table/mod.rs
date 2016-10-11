@@ -604,6 +604,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         };
         let _ = self.groups.insert(prefix0, group0);
         let _ = self.groups.insert(prefix1, group1);
+        // drop groups that ceased to be our neighbours
+	let our_prefix = self.our_group_prefix;
+        for prefix in self.prefixes().into_iter().filter(|x| *x != our_prefix && !x.is_neighbour(&our_prefix)) {
+            let _ = self.groups.remove(&prefix);
+        }
     }
 
     fn merge(&mut self, new_prefix: &Prefix<T>) {
