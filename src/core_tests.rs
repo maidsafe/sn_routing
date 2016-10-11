@@ -575,21 +575,25 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
+#[ignore]
 fn less_than_group_size_nodes() {
     test_nodes(3)
 }
 
 #[test]
+#[ignore]
 fn group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE);
 }
 
 #[test]
+#[ignore]
 fn more_than_group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE * 2);
 }
 
 #[test]
+#[ignore]
 fn failing_connections_group_of_three() {
     let network = Network::new(None);
 
@@ -611,6 +615,7 @@ fn failing_connections_group_of_three() {
 }
 
 #[test]
+#[ignore]
 fn failing_connections_ring() {
     let network = Network::new(None);
     let len = MIN_GROUP_SIZE * 2;
@@ -626,6 +631,7 @@ fn failing_connections_ring() {
 }
 
 #[test]
+#[ignore]
 fn failing_connections_unidirectional() {
     let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
@@ -637,6 +643,7 @@ fn failing_connections_unidirectional() {
 }
 
 #[test]
+#[ignore]
 fn client_connects_to_nodes() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
@@ -644,6 +651,7 @@ fn client_connects_to_nodes() {
 }
 
 #[test]
+#[ignore]
 fn messages_accumulate_with_quorum() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -739,6 +747,7 @@ fn messages_accumulate_with_quorum() {
 }
 
 #[test]
+#[ignore]
 fn node_drops() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 2);
@@ -748,6 +757,7 @@ fn node_drops() {
 }
 
 #[test]
+#[ignore]
 fn churn() {
     let network = Network::new(None);
 
@@ -767,6 +777,7 @@ fn churn() {
 }
 
 #[test]
+#[ignore]
 fn node_joins_in_front() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
@@ -779,6 +790,7 @@ fn node_joins_in_front() {
 }
 
 #[test]
+#[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * MIN_GROUP_SIZE;
     let network = Network::new(None);
@@ -799,6 +811,7 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
+#[ignore]
 #[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
     let network = Network::new(None);
@@ -826,6 +839,7 @@ fn node_restart() {
 }
 
 #[test]
+#[ignore]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(None), MIN_GROUP_SIZE);
     let close_groups_complete = nodes.iter()
@@ -834,6 +848,7 @@ fn check_close_groups_for_group_size_nodes() {
 }
 
 #[test]
+#[ignore]
 fn whitelist() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE);
@@ -856,6 +871,7 @@ fn whitelist() {
 }
 
 #[test]
+#[ignore]
 fn successful_put_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -893,6 +909,7 @@ fn successful_put_request() {
 }
 
 #[test]
+#[ignore]
 fn successful_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -959,6 +976,7 @@ fn successful_get_request() {
 }
 
 #[test]
+#[ignore]
 fn failed_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1024,6 +1042,7 @@ fn failed_get_request() {
 }
 
 #[test]
+#[ignore]
 fn disconnect_on_get_request() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1082,6 +1101,7 @@ fn disconnect_on_get_request() {
 const REQUEST_DURING_CHURN_ITERATIONS: usize = 10;
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1107,6 +1127,7 @@ fn request_during_churn_node_to_self() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1136,6 +1157,7 @@ fn request_during_churn_node_to_node() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_node_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1171,6 +1193,7 @@ fn request_during_churn_node_to_group() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_group_to_self() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1206,6 +1229,7 @@ fn request_during_churn_group_to_self() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_group_to_node() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1235,6 +1259,7 @@ fn request_during_churn_group_to_node() {
 }
 
 #[test]
+#[ignore]
 fn request_during_churn_group_to_group() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -1287,6 +1312,7 @@ fn gen_immutable_data_not_close_to_first_node<T: Rng>(rng: &mut T, nodes: &mut [
 }
 
 #[test]
+#[ignore]
 fn response_caching() {
     let network = Network::new(None);
 

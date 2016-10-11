@@ -83,6 +83,7 @@ mod tests {
     use xor_name::XorName;
 
     #[test]
+    #[ignore]
     fn calculate_relocated_name() {
         let original_name: XorName = rand::random();
 

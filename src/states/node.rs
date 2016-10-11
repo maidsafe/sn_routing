@@ -503,6 +503,7 @@ impl Node {
                                    hop_msg.sent_to())
     }
 
+    // TODO - Remove all uses of `sent_to` throughout Routing codebase.
     fn handle_signed_message(&mut self,
                              signed_msg: &SignedMessage,
                              route: u8,
