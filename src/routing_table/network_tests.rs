@@ -260,6 +260,8 @@ fn verify_groups_consistency(network: &Network) {
         prefix_set.extend(prefixes);
     }
     // check if the groups aren't overlapping
+    // TODO: check if the groups nto only don't overlap, but that they actually partion the name
+    // space properly
     for prefix in &prefix_set {
         assert!(!prefix_set.iter().any(|x| x != prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
     }
