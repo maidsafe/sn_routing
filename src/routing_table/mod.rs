@@ -257,6 +257,24 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    pub fn new_with_prefixes<U: IntoIterator<Item=Prefix<T>>>(our_name: T, min_group_size: usize, prefixes: U) -> Self {
+        let mut groups = HashMap::new();
+        let mut our_group_prefix = Prefix::new(0, our_name);
+        for prefix in prefixes {
+            if prefix.matches(&our_name) && prefix.bit_count() > our_group_prefix.bit_count() {
+                our_group_prefix = prefix;
+            }
+            let _ = groups.insert(prefix, HashSet::new());
+        }
+        RoutingTable {
+            our_name: our_name,
+            min_group_size: min_group_size,
+            our_group_prefix: our_group_prefix,
+            groups: groups,
+            needed: HashSet::new(),
+        }
+    }
+
     pub fn our_name(&self) -> &T {
         &self.our_name
     }
@@ -280,17 +298,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     pub fn prefixes(&self) -> HashSet<Prefix<T>> {
         self.groups.keys().cloned().collect()
-    }
-
-    pub fn set_prefixes<U: IntoIterator<Item=Prefix<T>>>(&mut self, prefixes: U) {
-        self.groups.clear();
-        self.our_group_prefix = Prefix::new(0, self.our_name);
-        for prefix in prefixes {
-            if prefix.matches(&self.our_name) && prefix.bit_count() > self.our_group_prefix.bit_count() {
-                self.our_group_prefix = prefix;
-            }
-            let _ = self.groups.insert(prefix, HashSet::new());
-        }
     }
 
     // If our group is the closest one to `name`, returns all names in our group *including ours*,

@@ -53,12 +53,11 @@ impl Network {
             return;
         }
 
-        let mut new_table = RoutingTable::new(name, MIN_GROUP_SIZE);
-        {
-            let close_node = self.close_node(*new_table.our_name());
+        let mut new_table = {
+            let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            new_table.set_prefixes(close_peer.prefixes());
-        }
+            RoutingTable::new_with_prefixes(name, MIN_GROUP_SIZE, close_peer.prefixes())
+        };
         
         let mut split_prefixes = BTreeSet::new();
         // TODO: needs to verify how to broadcasting such info
