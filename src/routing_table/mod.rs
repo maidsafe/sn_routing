@@ -393,13 +393,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // Splits a group.
     //
     // If the group exists in the routing table, it is split, otherwise this function is a no-op.
-    // If one of the two new groups doesn't satisfy the invariant (i.e. differs by more than one
-    // bit from our own prefix), it is removed and those contacts are returned.
+    // If any of the groups don't satisfy the invariant any more (i.e. only differ in one bit from
+    // our own prefix), they are removed and those contacts are returned.
     pub fn split(&mut self, prefix: Prefix<T>) -> Vec<T> {
         let mut result = vec![];
         if prefix == self.our_group_prefix {
-            self.split_our_group();
-            return result;
+            return self.split_our_group();
         }
 
         if let Some(to_split) = self.groups.remove(&prefix) {
@@ -598,7 +597,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    fn split_our_group(&mut self) {
+    fn split_our_group(&mut self) -> Vec<T> {
         let our_group = unwrap!(self.groups.remove(&self.our_group_prefix));
         let prefix0 = self.our_group_prefix.pushed(false);
         let prefix1 = self.our_group_prefix.pushed(true);
@@ -612,10 +611,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let _ = self.groups.insert(prefix0, group0);
         let _ = self.groups.insert(prefix1, group1);
         // drop groups that ceased to be our neighbours
+        let mut result = vec![];
 	let our_prefix = self.our_group_prefix;
         for prefix in self.prefixes().into_iter().filter(|x| *x != our_prefix && !x.is_neighbour(&our_prefix)) {
-            let _ = self.groups.remove(&prefix);
+            let group = self.groups.remove(&prefix);
+            if let Some(contacts) = group {
+                result.extend(contacts.into_iter());
+            }
         }
+        result
     }
 
     fn merge(&mut self, new_prefix: &Prefix<T>) {
