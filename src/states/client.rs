@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use ack_manager::{Ack, AckManager};
 use action::Action;
 use authority::Authority;
@@ -28,7 +27,7 @@ use maidsafe_utilities::serialisation;
 use message_accumulator::MessageAccumulator;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage, UserMessage,
                UserMessageCache};
-use peer_manager::GROUP_SIZE;
+use peer_manager::MIN_GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use state_machine::Transition;
 use stats::Stats;
@@ -183,7 +182,7 @@ impl Client {
         try!(signed_msg.check_integrity());
 
         // Prevents someone sending messages repeatedly to us
-        if self.signed_msg_filter.filter_incoming(signed_msg) > GROUP_SIZE {
+        if self.signed_msg_filter.filter_incoming(signed_msg) > MIN_GROUP_SIZE {
             return Err(RoutingError::FilterCheckFailed);
         }
 
@@ -338,7 +337,7 @@ impl Bootstrapped for Client {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == GROUP_SIZE {
+            if unacked_msg.route as usize == MIN_GROUP_SIZE {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);

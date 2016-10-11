@@ -15,14 +15,13 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use action::Action;
 use crust::{CrustEventSender, PeerId, Service};
 use crust::Event as CrustEvent;
 use id::PublicId;
-#[cfg(feature = "use-mock-crust")]
-use kademlia_routing_table::RoutingTable;
 use maidsafe_utilities::event_sender::MaidSafeEventCategory;
+#[cfg(feature = "use-mock-crust")]
+use routing_table::RoutingTable;
 use states::{Bootstrapping, Client, Node};
 use std::mem;
 use std::sync::mpsc::{self, Receiver};

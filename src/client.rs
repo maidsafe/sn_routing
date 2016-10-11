@@ -15,26 +15,25 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread::{self, Joiner};
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-#[cfg(feature = "use-mock-crust")]
-use std::cell::RefCell;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
-use id::FullId;
 use action::Action;
-use event::Event;
+use authority::Authority;
 use cache::NullCache;
 use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
-use authority::Authority;
+use event::Event;
+use id::FullId;
+#[cfg(not(feature = "use-mock-crust"))]
+use maidsafe_utilities::thread::{self, Joiner};
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
-use types::RoutingActionSender;
+#[cfg(not(feature = "use-mock-crust"))]
+use rust_sodium;
 use state_machine::{State, StateMachine};
 use states;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use types::MessageId;
+use types::RoutingActionSender;
 use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;

@@ -118,7 +118,6 @@ mod network_tests;
 mod prefix;
 mod xorable;
 
-
 use itertools::Itertools;
 pub use self::error::Error;
 pub use self::prefix::Prefix;
@@ -128,8 +127,6 @@ use std::collections::{HashMap, HashSet, hash_map, hash_set};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
-
-
 
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
 
@@ -201,6 +198,7 @@ impl<N> Destination<N> {
 
 
 // Used when removal of a contact triggers the need to merge two or more groups
+#[derive(Debug)]
 pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
     prefix: Prefix<T>,
     groups: Groups<T>,
@@ -217,6 +215,21 @@ pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable
 
 
 
+// Details returned by a successful `RoutingTable::remove()`.
+#[derive(Debug)]
+pub struct RemovalDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
+    // Peer name
+    pub name: T,
+    // True if the removed peer was in our group.
+    pub was_in_our_group: bool,
+    // If, after removal, our group needs to merge, this is set to `Some`. It contains the
+    // appropriate targets (all members of the merging groups) and the merge details they each need
+    // to receive (the new prefix and all groups in the table).
+    pub targets_and_merge_details: Option<(Vec<T>, OwnMergeDetails<T>)>,
+}
+
+
+
 // A routing table to manage contacts for a node.
 //
 // It maintains a list of `T`s representing connected peer nodes, and provides algorithms for
@@ -224,7 +237,7 @@ pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable
 //
 // See the [crate documentation](index.html) for details.
 #[derive(Clone, Eq, PartialEq)]
-pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> {
+pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> {
     our_name: T,
     min_group_size: usize,
     our_group_prefix: Prefix<T>,
@@ -232,7 +245,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Default + Hash + Xorable + De
     needed: HashSet<T>,
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -285,24 +298,35 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
         }
     }
 
+    pub fn is_in_our_group(&self, name: &T) -> bool {
+        if self.our_group_prefix.matches(name) {
+            return unwrap!(self.groups.get(&self.our_group_prefix)).contains(name);
+        }
+        false
+    }
+
     // Returns the list of contacts as a result of a merge to which we aren't currently connected,
     // but should be.
     pub fn needed(&self) -> &HashSet<T> {
         &self.needed
     }
 
-    // Returns whether the given contact should be added to the routing table.
+    // Returns `Ok(())` if the given contact should be added to the routing table.
     //
-    // Returns `false` if `name` already exists in the routing table, or it doesn't fall within any
+    // Returns `Err` if `name` already exists in the routing table, or it doesn't fall within any
     // of our groups, or it's our own name.  Otherwise it returns `true`.
-    pub fn need_to_add(&self, name: &T) -> bool {
+    pub fn need_to_add(&self, name: &T) -> Result<(), Error> {
         if *name == self.our_name {
-            return false;
+            return Err(Error::OwnNameDisallowed);
         }
         if let Some(group) = self.get_group(name) {
-            !group.contains(name)
+            if group.contains(name) {
+                Err(Error::AlreadyExists)
+            } else {
+                Ok(())
+            }
         } else {
-            false
+            Err(Error::PeerNameUnsuitable)
         }
     }
 
@@ -330,11 +354,12 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
         let _ = self.needed.remove(&name);
 
         let our_group = unwrap!(self.groups.get(&self.our_group_prefix));
-        // Count the number of names which will end up in our group if it is split
+        // Count the number of names which will end up in our group if it is split.
         let new_group_size = our_group.iter()
             .filter(|name| self.our_name.common_prefix(name) > self.our_group_prefix.bit_count())
             .count();
-        // If either of the two new groups will not contain enough entries, return `None`.
+        // If either of the two new groups will not contain enough entries, return `None` (add 1
+        // when considering our own group to also count ourself as a member of this group).
         let min_size = self.min_group_size + SPLIT_BUFFER;
         Ok(if our_group.len() - new_group_size < min_size || new_group_size + 1 < min_size {
             None
@@ -377,17 +402,28 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
 
     // Removes a contact from the routing table.
     //
-    // If no entry with that name is found, `None` is returned.  Otherwise, the entry is removed
-    // from the routing table.  If, after removal, our group needs to merge, the appropriate targets
-    // (all members of the merging groups) and the merge details they each need to receive (the new
-    // prefix and all groups in the table) is returned, else `None` is returned.
-    pub fn remove(&mut self, name: &T) -> Option<(Vec<T>, OwnMergeDetails<T>)> {
+    // If no entry with that name is found, `Err(Error::NoSuchPeer)` is returned.  Otherwise, the
+    // entry is removed from the routing table and `RemovalDetails` is returned.  See that struct's
+    // docs for further info.
+    pub fn remove(&mut self, name: &T) -> Result<RemovalDetails<T>, Error> {
         let mut should_merge = false;
+        let mut removal_details = RemovalDetails {
+            name: *name,
+            was_in_our_group: false,
+            targets_and_merge_details: None,
+        };
         if let Some(prefix) = self.find_group_prefix(name) {
+            removal_details.was_in_our_group = prefix == self.our_group_prefix;
             if let Some(group) = self.groups.get_mut(&prefix) {
-                should_merge = group.remove(name) && prefix == self.our_group_prefix &&
-                               group.len() < self.min_group_size && prefix.bit_count() != 0;
+                if !group.remove(name) {
+                    return Err(Error::NoSuchPeer);
+                }
+                should_merge = removal_details.was_in_our_group &&
+                               group.len() < self.min_group_size &&
+                               prefix.bit_count() != 0;
             }
+        } else {
+            return Err(Error::NoSuchPeer);
         }
         if should_merge {
             let mut merged_prefix = self.our_group_prefix;
@@ -398,14 +434,13 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
                 .flat_map(|(_, names)| names.iter())
                 .cloned()
                 .collect_vec();
-            Some((targets,
-                  OwnMergeDetails {
+            removal_details.targets_and_merge_details = Some((targets,
+                                                              OwnMergeDetails {
                 prefix: merged_prefix,
                 groups: self.groups.clone(),
-            }))
-        } else {
-            None
+            }));
         }
+        Ok(removal_details)
     }
 
     // Merges our own group and all existing compatible groups into the new one defined by
@@ -444,6 +479,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
             group: unwrap!(self.groups.get(&merge_details.prefix)).clone(),
         };
         other_details.group.extend(needed.into_iter());
+        other_details.group.insert(self.our_name);
         (targets, other_details)
     }
 
@@ -464,12 +500,13 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
     }
 
     // Returns a collection of nodes to which a message with the given `Destination` should be sent
-    // onwards.
+    // onwards.  In all non-error cases below, the returned collection will have the members of
+    // `exclude` removed, possibly resulting in an empty set being returned.
     //
     // * If the destination is a group:
     //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
     //       destination), returns all other members of our group; otherwise
-    //     - if the closest group has fewer than `route` members, returns the `route`-th member of
+    //     - if the closest group has more than `route` members, returns the `route`-th member of
     //       this group; otherwise
     //     - returns `Err(Error::CannotRoute)`
     //
@@ -478,10 +515,15 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
     //     - if the destination name is an entry in the routing table, returns it; otherwise
     //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
     //       destination), this returns `Err(Error::NoSuchPeer)`; otherwise
-    //     - if the closest group has fewer than `route` members, returns the `route`-th member of
+    //     - if the closest group has more than `route` members, returns the `route`-th member of
     //       this group; otherwise
     //     - returns `Err(Error::CannotRoute)`
-    pub fn targets(&self, dst: &Destination<T>, route: usize) -> Result<HashSet<T>, Error> {
+    pub fn targets(&self,
+                   dst: &Destination<T>,
+                   route: usize,
+                   exclude: &[T])
+                   -> Result<HashSet<T>, Error> {
+        let excluded_set = exclude.iter().collect::<HashSet<&T>>();
         let (closest_group, target_name) = match *dst {
             Destination::Group(ref target_name) => {
                 let closest_group_prefix = self.closest_group_prefix(target_name);
@@ -522,6 +564,20 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
         match *dst {
             Destination::Node(ref target_name) => *target_name == self.our_name,
             Destination::Group(ref target_name) => self.our_group_prefix.matches(target_name),
+        }
+    }
+
+    // Returns true if our name is the `route`-th closest to `src_name` in our group.
+    //
+    // Used when sending a message from a group to decide which one of the group should send the
+    // full message (the remainder sending just a hash of the message).
+    pub fn should_route_full_message(&self, src_name: &T, route: usize) -> bool {
+        let mut our_group = unwrap!(self.groups.get(&self.our_group_prefix)).iter().collect_vec();
+        our_group.push(&self.our_name);
+        our_group.sort_by(|&lhs, &rhs| src_name.cmp_distance(lhs, rhs));
+        match our_group.get(route) {
+            Some(&name) => *name == self.our_name,
+            None => false,
         }
     }
 
@@ -588,7 +644,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> RoutingTable<T
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         try!(writeln!(formatter,
                       "RoutingTable {{\n\tour_name: {},\n\tmin_group_size: \
@@ -622,7 +678,7 @@ impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Binary for Rou
     }
 }
 
-impl<T: Binary + Clone + Copy + Default + Hash + Xorable + Debug> Debug for RoutingTable<T> {
+impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
     }

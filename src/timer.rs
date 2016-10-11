@@ -19,7 +19,6 @@ pub use self::implementation::Timer;
 
 #[cfg(not(feature = "use-mock-crust"))]
 mod implementation {
-
     use action::Action;
     use itertools::Itertools;
     use maidsafe_utilities::thread::{self, Joiner};
@@ -83,15 +82,16 @@ mod implementation {
                     .cloned()
                     .collect_vec();
                 for expired in expired_list {
-                    // Safe to call `expect()` as we just got the key we're removing from `deadlines`.
+                    // Safe to call `expect()` as we just got the key we're removing from
+                    // `deadlines`.
                     let tokens = detail.deadlines.remove(&expired).expect("Bug in `BTreeMap`.");
                     for token in tokens {
                         let _ = sender.send(Action::Timeout(token));
                     }
                 }
 
-                // If we have no deadlines pending, wait indefinitely.  Otherwise wait until the nearest
-                // deadline.
+                // If we have no deadlines pending, wait indefinitely.  Otherwise wait until the
+                // nearest deadline.
                 if detail.deadlines.is_empty() {
                     detail = cond_var.wait(detail).expect("Failed to lock.");
                 } else {
@@ -116,7 +116,6 @@ mod implementation {
 
     #[cfg(test)]
     mod tests {
-
         use action::Action;
         use maidsafe_utilities::event_sender::MaidSafeEventCategory;
 
@@ -182,8 +181,8 @@ mod implementation {
                     }
                 }
 
-                // Add deadline and check that dropping `timer` doesn't fire a timeout notification, and
-                // that dropping doesn't block until the deadline has expired.
+                // Add deadline and check that dropping `timer` doesn't fire a timeout notification,
+                // and that dropping doesn't block until the deadline has expired.
                 instant_when_added = Instant::now();
                 let _ = timer.schedule(interval);
             }

@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use ack_manager::{ACK_TIMEOUT_SECS, Ack, AckManager, UnacknowledgedMessage};
 use authority::Authority;
 use crust::PeerId;
@@ -23,7 +22,7 @@ use error::RoutingError;
 use id::PublicId;
 use maidsafe_utilities::serialisation;
 use messages::{HopMessage, Message, MessageContent, RoutingMessage, SignedMessage};
-use peer_manager::GROUP_SIZE;
+use peer_manager::MIN_GROUP_SIZE;
 use signed_message_filter::SignedMessageFilter;
 use std::time::Duration;
 use super::Base;
@@ -114,7 +113,7 @@ pub trait Bootstrapped: Base {
                    ack,
                    unacked_msg);
 
-            if unacked_msg.route as usize == GROUP_SIZE {
+            if unacked_msg.route as usize == MIN_GROUP_SIZE {
                 debug!("{:?} - Message unable to be acknowledged - giving up. {:?}",
                        self,
                        unacked_msg);

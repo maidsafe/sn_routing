@@ -15,10 +15,9 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-
 use authority::Authority;
-use kademlia_routing_table::RoutingTable;
 use messages::{Request, Response};
+use routing_table::RoutingTable;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 

@@ -22,7 +22,6 @@ use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
-
 /// An immutable chunk of data.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ImmutableData {

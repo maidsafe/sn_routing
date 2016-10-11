@@ -57,9 +57,8 @@ mod utils;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::{self, Joiner};
-use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Node, PlainData,
-              QUORUM_SIZE, Request, Response, XorName};
-use routing::DataIdentifier;
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MIN_GROUP_SIZE, MessageId,
+              Node, PlainData, QUORUM_SIZE, Request, Response, XorName, Xorable};
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
 use std::iter;
@@ -193,7 +192,7 @@ fn wait_for_nodes_to_connect(nodes: &[TestNode],
                 let k = nodes.len();
                 let all_events_received = (0..k)
                     .map(|i| connection_counts[i])
-                    .all(|n| n >= k - 1 || n >= GROUP_SIZE);
+                    .all(|n| n >= k - 1 || n >= MIN_GROUP_SIZE);
                 if all_events_received {
                     break;
                 }
@@ -242,7 +241,7 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
     node_names.iter()
         .sorted_by(|a, b| target.cmp_distance(a, b))
         .into_iter()
-        .take(GROUP_SIZE)
+        .take(MIN_GROUP_SIZE)
         .cloned()
         .collect()
 }
@@ -251,7 +250,8 @@ fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
 #[cfg_attr(feature="clippy", allow(cyclomatic_complexity))]
 fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
-    let mut nodes = create_connected_nodes(GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
+    let mut nodes =
+        create_connected_nodes(MIN_GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
 
     {
         // request and response

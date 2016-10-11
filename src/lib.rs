@@ -138,7 +138,6 @@ extern crate accumulator;
 extern crate crust;
 extern crate itertools;
 extern crate lru_time_cache;
-extern crate kademlia_routing_table;
 extern crate rand;
 extern crate rust_sodium;
 extern crate rustc_serialize;
@@ -189,23 +188,24 @@ pub const TYPE_TAG_SESSION_PACKET: u64 = 0;
 /// Structured Data Tag for DNS Packet Type
 pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 
-#[cfg(feature = "use-mock-crust")]
-pub use mock_crust::crust;
-#[cfg(feature = "use-mock-crust")]
-pub use core_tests::verify_kademlia_invariant;
-
 pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
+#[cfg(feature = "use-mock-crust")]
+pub use core_tests::verify_invariant;
 pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
 pub use immutable_data::ImmutableData;
 pub use messages::{Request, Response};
+#[cfg(feature = "use-mock-crust")]
+pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
-pub use peer_manager::{GROUP_SIZE, QUORUM_SIZE};
+pub use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 pub use plain_data::PlainData;
+pub use routing_table::Error as RoutingTableError;
+pub use routing_table::Xorable;
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

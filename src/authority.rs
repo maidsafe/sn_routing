@@ -16,9 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use crust::PeerId;
-
-use kademlia_routing_table::Destination;
-use peer_manager::GROUP_SIZE;
+use routing_table::Destination;
 use rust_sodium::crypto::{hash, sign};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
@@ -77,7 +75,7 @@ impl Authority {
     /// Returns the `Destination` for the `RoutingTable`.
     pub fn to_destination(&self) -> Destination<XorName> {
         if self.is_group() {
-            Destination::Group(*self.name(), GROUP_SIZE)
+            Destination::Group(*self.name())
         } else {
             Destination::Node(*self.name())
         }

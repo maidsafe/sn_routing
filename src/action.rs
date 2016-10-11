@@ -18,6 +18,7 @@
 use authority::Authority;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
+use std::collections::HashSet;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::mpsc::Sender;
 use xor_name::XorName;
@@ -45,7 +46,7 @@ pub enum Action {
     },
     CloseGroup {
         name: XorName,
-        result_tx: Sender<Option<Vec<XorName>>>,
+        result_tx: Sender<Option<HashSet<XorName>>>,
     },
     Name { result_tx: Sender<XorName> },
     QuorumSize { result_tx: Sender<usize> },

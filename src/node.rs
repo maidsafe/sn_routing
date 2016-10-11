@@ -15,16 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(feature = "use-mock-crust")]
-use kademlia_routing_table::RoutingTable;
-#[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread;
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-#[cfg(feature = "use-mock-crust")]
-use std::cell::RefCell;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
 use action::Action;
 use authority::Authority;
 use cache::{Cache, NullCache};
@@ -32,10 +22,20 @@ use data::{Data, DataIdentifier};
 use error::{InterfaceError, RoutingError};
 use event::Event;
 use id::FullId;
+#[cfg(not(feature = "use-mock-crust"))]
+use maidsafe_utilities::thread;
 use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
                UserMessage};
+#[cfg(feature = "use-mock-crust")]
+use routing_table::RoutingTable;
+#[cfg(not(feature = "use-mock-crust"))]
+use rust_sodium;
 use state_machine::{State, StateMachine};
 use states;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use types::{MessageId, RoutingActionSender};
 use xor_name::XorName;
 
@@ -373,7 +373,7 @@ impl Node {
     }
 
     /// Returns the names of the nodes in the routing table which are closest to the given one.
-    pub fn close_group(&self, name: XorName) -> Result<Option<Vec<XorName>>, InterfaceError> {
+    pub fn close_group(&self, name: XorName) -> Result<Option<HashSet<XorName>>, InterfaceError> {
         let (result_tx, result_rx) = channel();
         try!(self.action_sender.send(Action::CloseGroup {
             name: name,
@@ -440,7 +440,7 @@ impl Node {
 
     /// Routing table of this node.
     pub fn routing_table(&self) -> RoutingTable<XorName> {
-        self.machine.borrow().current().routing_table().to_names()
+        self.machine.borrow().current().routing_table().clone()
     }
 
     /// Resend all unacknowledged messages.
