@@ -257,7 +257,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
-    pub fn new_with_prefixes<U: IntoIterator<Item=Prefix<T>>>(our_name: T, min_group_size: usize, prefixes: U) -> Self {
+    pub fn new_with_prefixes<U: IntoIterator<Item = Prefix<T>>>(our_name: T,
+                                                                min_group_size: usize,
+                                                                prefixes: U)
+                                                                -> Result<Self, Error> {
         let mut groups = HashMap::new();
         let mut our_group_prefix = Prefix::new(0, our_name);
         for prefix in prefixes {
@@ -266,13 +269,24 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
             let _ = groups.insert(prefix, HashSet::new());
         }
-        RoutingTable {
+        let result = RoutingTable {
             our_name: our_name,
             min_group_size: min_group_size,
             our_group_prefix: our_group_prefix,
             groups: groups,
             needed: HashSet::new(),
+        };
+        if result.satisfies_invariant() {
+            Ok(result)
+        } else {
+            Err(Error::InvariantViolation)
         }
+    }
+
+    fn satisfies_invariant(&self) -> bool {
+        self.groups
+            .keys()
+            .all(|&x| x == self.our_group_prefix || self.our_group_prefix.is_neighbour(&x))
     }
 
     pub fn our_name(&self) -> &T {
@@ -613,7 +627,9 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // drop groups that ceased to be our neighbours
         let mut result = vec![];
 	let our_prefix = self.our_group_prefix;
-        for prefix in self.prefixes().into_iter().filter(|x| *x != our_prefix && !x.is_neighbour(&our_prefix)) {
+        for prefix in self.prefixes()
+            .into_iter()
+            .filter(|x| *x != our_prefix && !x.is_neighbour(&our_prefix)) {
             let group = self.groups.remove(&prefix);
             if let Some(contacts) = group {
                 result.extend(contacts.into_iter());
@@ -676,6 +692,11 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     #[cfg(test)]
     fn num_of_groups(&self) -> usize {
         self.groups.len()
+    }
+
+    #[cfg(test)]
+    pub fn verify_invariant(&self) {
+        assert!(self.satisfies_invariant());
     }
 }
 

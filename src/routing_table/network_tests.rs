@@ -19,8 +19,14 @@
 
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
+use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use super::{Destination, Error, RoutingTable};
+use std::collections::hash_map::Entry;
+use std::fmt::{self, Binary, Debug, Formatter};
+use std::iter::{FromIterator, IntoIterator};
+use super::{Destination, Error, OtherMergeDetails, RoutingTable};
+use super::prefix::Prefix;
+use super::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
 
@@ -56,7 +62,7 @@ impl Network {
         let mut new_table = {
             let close_node = self.close_node(name);
             let close_peer = &self.nodes[&close_node];
-            RoutingTable::new_with_prefixes(name, MIN_GROUP_SIZE, close_peer.prefixes())
+            unwrap!(RoutingTable::new_with_prefixes(name, MIN_GROUP_SIZE, close_peer.prefixes()))
         };
         
         let mut split_prefixes = BTreeSet::new();
@@ -230,48 +236,45 @@ fn node_to_group_message() {
     }
 }
 
-fn verify_invariant(network: &mut Network) {
-    let keys = network.keys();
-    for _ in 0..20 {
-        let address = network.rng.gen();
-        let close_peer = network.close_node(address);
-        let group = unwrap!(network.nodes[&close_peer].close_names(&address));
-        for &node in &keys {
-            match network.nodes[&node].close_names(&address) {
-                None => assert!(!group.contains(&address)),
-                Some(nodes) => {
-                    if network.nodes[&node].is_recipient(&Destination::Group(address)) {
-                        assert_eq!(group, nodes);
-                    } else {
-                        for candidate in &group {
-                            assert!(nodes.contains(&candidate));
-                        }
-                    }
-                }
+fn verify_invariant(network: &Network) {
+    let mut groups: HashMap<Prefix<u64>, HashSet<u64>> = HashMap::new();
+    // first, collect all groups in the network
+    for node in network.nodes.values() {
+        for prefix in node.groups.keys() {
+            let mut group_content = node.groups[prefix].clone();
+            if *prefix == node.our_group_prefix {
+                group_content.insert(*node.our_name());
             }
+            if let Some(group) = groups.get_mut(prefix) {
+                group.extend(group_content);
+                continue;
+            }
+            let _ = groups.insert(*prefix, group_content);
         }
+        // use this opportunity to check if each node satisfies the invariant
+        node.verify_invariant();
+    }
+    // check that prefixes are disjoint
+    verify_disjoint_prefixes(groups.keys().into_iter().cloned().collect());
+
+    // check that each group contains names agreeing with its prefix
+    verify_groups_match_names(&groups);
+
+    // check that groups cover the whole namespace
+    assert_eq!(network.nodes.len(), groups.values().map(|x| x.len()).sum());
+}
+
+fn verify_disjoint_prefixes(prefixes: HashSet<Prefix<u64>>) {
+    for prefix in &prefixes {
+        assert!(!prefixes.iter()
+            .any(|x| *x != *prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
     }
 }
 
-fn verify_groups_consistency(network: &Network) {
-    let mut prefix_set = HashSet::new();
-    for node in network.nodes.values() {
-        let prefixes = node.prefixes();
-        prefix_set.extend(prefixes);
-    }
-    // check if the groups aren't overlapping
-    // TODO: check if the groups nto only don't overlap, but that they actually partion the name
-    // space properly
-    for prefix in &prefix_set {
-        assert!(!prefix_set.iter().any(|x| x != prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
-    }
-}
-
-fn verify_proper_neighbours(network: &Network) {
-    for node in network.nodes.values() {
-        let our_group = node.our_group();
-        for prefix in node.prefixes() {
-            assert!(prefix == our_group || prefix.is_neighbour(&our_group));
+fn verify_groups_match_names(groups: &HashMap<Prefix<u64>, HashSet<u64>>) {
+    for &prefix in groups.keys() {
+        for name in &groups[&prefix] {
+            assert!(prefix.matches(name));
         }
     }
 }
@@ -282,9 +285,7 @@ fn groups_have_identical_routing_tables() {
     for _ in 0..100 {
         network.add_node();
     }
-    verify_invariant(&mut network);
-    verify_groups_consistency(&network);
-    verify_proper_neighbours(&network);
+    verify_invariant(&network);
 }
 
 #[test]
@@ -292,9 +293,7 @@ fn merging_groups() {
     let mut network = Network::new(None);
     for i in 0..100 {
         network.add_node();
-        verify_invariant(&mut network);
-        verify_groups_consistency(&network);
-        verify_proper_neighbours(&network);
+        verify_invariant(&network);
     }
     assert!(network.nodes
         .iter()
@@ -306,9 +305,7 @@ fn merging_groups() {
         }));
     for i in 0..95 {
         network.drop_node();
-        verify_invariant(&mut network);
-        verify_groups_consistency(&network);
-        verify_proper_neighbours(&network);
+        verify_invariant(&network);
     }
     assert!(network.nodes
         .iter()
