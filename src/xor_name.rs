@@ -122,7 +122,7 @@ impl Xorable for XorName {
     fn with_flipped_bit(self, i: usize) -> XorName {
         XorName(self.0.with_flipped_bit(i))
     }
-    
+
     fn with_bit(self, i: usize, bit: bool) -> Self {
         XorName(self.0.with_bit(i, bit))
     }
@@ -134,7 +134,7 @@ impl Xorable for XorName {
     fn debug_binary(&self) -> String {
         self.0.debug_binary()
     }
-    
+
     fn set_remaining(self, n: usize, val: bool) -> Self {
         XorName(self.0.set_remaining(n, val))
     }

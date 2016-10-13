@@ -29,7 +29,6 @@ pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: usize,
     name: T,
 }
-//TODO: insignificant bits should all be zero!
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Creates a new `Prefix` with the first `bit_count` bits of `name`.
@@ -98,19 +97,21 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// `Greater` if `other` is closer, and compares the prefix directly if of equal distance
     /// (this is to make sorting deterministic).
     pub fn cmp_distance(&self, other: &Self, target: &T) -> Ordering {
-        if self.is_compatible(&other) {
-            Ord::cmp(&self.name, &other.name)
+        if self.is_compatible(other) {
+            // Note that if bit_counts are equal, prefixes are also equal since
+            // one is a prefix of the other (is_compatible).
+            Ord::cmp(&self.bit_count, &other.bit_count)
         } else {
             Ord::cmp(&other.name.common_prefix(target),
                      &self.name.common_prefix(target))
         }
     }
-    
+
     /// Returns the smallest name matching the prefix
     pub fn lower_bound(&self) -> T {
         self.name.set_remaining(self.bit_count, false)
     }
-    
+
     /// Returns the largest name matching the prefix
     pub fn upper_bound(&self) -> T {
         self.name.set_remaining(self.bit_count, true)
@@ -211,7 +212,7 @@ mod tests {
         assert!(!str_to_prefix(b"101").is_neighbour(&str_to_prefix(b"10111")));
         assert!(str_to_prefix(b"101").matches(&0b10101100));
         assert!(!str_to_prefix(b"1011").matches(&0b10101100));
-        
+
         assert_eq!(str_to_prefix(b"0101").lower_bound(), 0b01010000);
         assert_eq!(str_to_prefix(b"0101").upper_bound(), 0b01011111);
     }

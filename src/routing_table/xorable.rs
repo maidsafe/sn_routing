@@ -45,7 +45,7 @@ pub trait Xorable: Ord {
     /// If `index` exceeds the number of bits in `self`, an unmodified copy of `self` is returned.
     fn with_flipped_bit(self, i: usize) -> Self;
 
-    /// Returns a copy of `self`, with the `index`-th bit flipped.
+    /// Returns a copy of `self`, with the `index`-th bit set to `bit`.
     ///
     /// If `index` exceeds the number of bits in `self`, an unmodified copy of `self` is returned.
     fn with_bit(self, i: usize, bit: bool) -> Self;
@@ -55,7 +55,7 @@ pub trait Xorable: Ord {
 
     /// Returns a binary debug format string of `????????...????????`
     fn debug_binary(&self) -> String;
-    
+
     /// Returns a copy of self with first `n` bits preserved, and remaining bits
     /// set to 0 (val == false) or 1 (val == true).
     fn set_remaining(self, n: usize, val: bool) -> Self;
@@ -144,10 +144,10 @@ macro_rules! impl_xorable_for_array {
             fn set_remaining(mut self, n: usize, val: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
                 for i in 0..$l {
-                    if n <= i*bits {
+                    if n <= i * bits {
                         self[i] = if val { !0 } else { 0 };
-                    } else if n < (i+1) * bits {
-                        let mask = !0 >> (n - i*bits);
+                    } else if n < (i + 1) * bits {
+                        let mask = !0 >> (n - i * bits);
                         if val {
                             self[i] = self[i] | mask
                         } else {
@@ -319,19 +319,21 @@ mod tests {
         assert!([0u8, 7, 0, 0].differs_in_bit(&[0, 0, 0, 0], 14));
         assert!(![0u8, 7, 0, 0].differs_in_bit(&[0, 0, 0, 0], 26));
     }
-    
+
     #[test]
     fn set_remaining() {
         assert_eq!(0b10011011u8.set_remaining(5, false), 0b10011000);
         assert_eq!(0b11111111u8.set_remaining(2, false), 0b11000000);
         assert_eq!(0b00000000u8.set_remaining(4, true), 0b00001111);
     }
-    
+
     #[test]
     fn set_remaining_array() {
-        assert_eq!([13u8, 112, 9 , 1].set_remaining(0, false), [0u8, 0, 0, 0]);
-        assert_eq!([13u8, 112, 9 , 1].set_remaining(100, false), [13u8, 112, 9 , 1]);
-        assert_eq!([13u8, 112, 9 , 1].set_remaining(10, false), [13u8, 64, 0, 0]);
-        assert_eq!([13u8, 112, 9 , 1].set_remaining(10, true), [13u8, 127, 255, 255]);
+        assert_eq!([13u8, 112, 9, 1].set_remaining(0, false), [0u8, 0, 0, 0]);
+        assert_eq!([13u8, 112, 9, 1].set_remaining(100, false),
+                   [13u8, 112, 9, 1]);
+        assert_eq!([13u8, 112, 9, 1].set_remaining(10, false), [13u8, 64, 0, 0]);
+        assert_eq!([13u8, 112, 9, 1].set_remaining(10, true),
+                   [13u8, 127, 255, 255]);
     }
 }
