@@ -116,8 +116,8 @@ impl StructuredData {
 
     /// Check whether the data has been deleted
     pub fn is_deleted(&self) -> bool {
-        self.data.is_empty() && self.previous_owner_keys.is_empty()
-            && self.current_owner_keys.is_empty() && self.previous_owner_signatures.is_empty()
+        self.data.is_empty() && self.previous_owner_keys.is_empty() &&
+        self.current_owner_keys.is_empty() && self.previous_owner_signatures.is_empty()
     }
 
     /// Verifies that `other` is a valid update for `self`; returns an error otherwise.
