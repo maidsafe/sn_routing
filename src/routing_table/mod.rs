@@ -378,20 +378,21 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
 
         if let Some(to_split) = self.groups.remove(&prefix) {
-            let new_prefix = prefix.split();
-            let (group1, group2) = to_split.into_iter()
-                .partition::<HashSet<_>, _>(|name| prefix.matches(name));
+            let prefix0 = prefix.pushed(false);
+            let prefix1 = prefix.pushed(true);
+            let (group0, group1) = to_split.into_iter()
+                .partition::<HashSet<_>, _>(|name| prefix0.matches(name));
 
-            if self.our_group_prefix.is_neighbour(&prefix) {
-                let _ = self.groups.insert(prefix, group1);
+            if self.our_group_prefix.is_neighbour(&prefix0) {
+                let _ = self.groups.insert(prefix0, group0);
             } else {
-                result = group1.into_iter().collect_vec();
+                result.extend(group0);
             }
 
-            if self.our_group_prefix.is_neighbour(&new_prefix) {
-                let _ = self.groups.insert(new_prefix, group2);
+            if self.our_group_prefix.is_neighbour(&prefix1) {
+                let _ = self.groups.insert(prefix1, group1);
             } else {
-                result = group2.into_iter().collect_vec();
+                result.extend(group1);
             }
         }
         result
@@ -423,8 +424,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::NoSuchPeer);
         }
         if should_merge {
-            let mut merged_prefix = self.our_group_prefix;
-            merged_prefix.merge();
+            let merged_prefix = self.our_group_prefix.popped();
             let targets = self.groups
                 .iter()
                 .filter(|&(prefix, _)| merged_prefix.is_compatible(prefix))
@@ -575,12 +575,17 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     fn split_our_group(&mut self) {
         let our_group = unwrap!(self.groups.remove(&self.our_group_prefix));
-        let (our_new_group, other_new_group) = our_group.into_iter()
-            .partition::<HashSet<_>, _>(|name| {
-                self.our_name.common_prefix(name) > self.our_group_prefix.bit_count()
-            });
-        let _ = self.groups.insert(self.our_group_prefix.split(), other_new_group);
-        let _ = self.groups.insert(self.our_group_prefix, our_new_group);
+        let prefix0 = self.our_group_prefix.pushed(false);
+        let prefix1 = self.our_group_prefix.pushed(true);
+        let (group0, group1) = our_group.into_iter()
+            .partition::<HashSet<_>, _>(|name| prefix0.matches(name));
+        self.our_group_prefix = if prefix0.matches(&self.our_name) {
+            prefix0
+        } else {
+            prefix1
+        };
+        let _ = self.groups.insert(prefix0, group0);
+        let _ = self.groups.insert(prefix1, group1);
     }
 
     fn merge(&mut self, new_prefix: &Prefix<T>) {
@@ -598,7 +603,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         mem::swap(&mut groups, &mut self.groups);
         let merging_our_group = new_prefix.matches(&self.our_name);
         if merging_our_group {
-            self.our_group_prefix = Prefix::new(new_prefix.bit_count(), self.our_name);
+            self.our_group_prefix = *new_prefix;
         }
     }
 

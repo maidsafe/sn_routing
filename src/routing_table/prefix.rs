@@ -29,6 +29,7 @@ pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: usize,
     name: T,
 }
+//TODO: insignificant bits should all be zero!
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Creates a new `Prefix` with the first `bit_count` bits of `name`.
@@ -37,28 +38,6 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
             bit_count: bit_count,
             name: name,
         }
-    }
-
-    //TODO: remove
-    /// Return a copy of `self` with the `bit_count` increased by one and update `self` by also
-    /// increasing the `bit_count` by one and flipping bit at the old `bit_count`.
-    ///
-    /// E.g. for prefix `10` where name is `1010`, `self` will become `101` and this will return
-    /// `100`.
-    ///
-    /// Note that this means for the case where `a` and `b` are `Prefix`es and `a == b`, then it
-    /// doesn't necessarily follow that `a.split() == b.split()`.
-    pub fn split(&mut self) -> Prefix<T> {
-        self.bit_count += 1;
-        Prefix::new(self.bit_count,
-                    self.name.with_flipped_bit(self.bit_count - 1))
-    }
-
-    //TODO: remove
-    /// Used when merging two groups whose prefixes differ at `bit_count`.  Effectively decrements
-    /// the `bit_count` by `1`.
-    pub fn merge(&mut self) {
-        self.bit_count -= 1;
     }
 
     /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`.
@@ -214,9 +193,6 @@ mod tests {
 
     #[test]
     fn prefix() {
-        let mut prefix = str_to_prefix(b"101");
-        assert_eq!(prefix.split(), str_to_prefix(b"1011"));
-        assert_eq!(prefix, str_to_prefix(b"1010"));
         assert_eq!(str_to_prefix(b"101").pushed(true), str_to_prefix(b"1011"));
         assert_eq!(str_to_prefix(b"101").pushed(false), str_to_prefix(b"1010"));
         assert_eq!(str_to_prefix(b"1011").popped(), str_to_prefix(b"101"));
