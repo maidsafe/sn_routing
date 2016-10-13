@@ -31,7 +31,7 @@ pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
-    /// Constructor.
+    /// Creates a new `Prefix` with the first `bit_count` bits of `name`.
     pub fn new(bit_count: usize, name: T) -> Prefix<T> {
         Prefix {
             bit_count: bit_count,
@@ -39,6 +39,7 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
     }
 
+    //TODO: remove
     /// Return a copy of `self` with the `bit_count` increased by one and update `self` by also
     /// increasing the `bit_count` by one and flipping bit at the old `bit_count`.
     ///
@@ -53,13 +54,28 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
                     self.name.with_flipped_bit(self.bit_count - 1))
     }
 
+    //TODO: remove
     /// Used when merging two groups whose prefixes differ at `bit_count`.  Effectively decrements
     /// the `bit_count` by `1`.
     pub fn merge(&mut self) {
         self.bit_count -= 1;
     }
 
-    /// Getter.
+    /// Returns `self` with an appended bit: `0` if `bit` is `false`, and `1` if `bit` is `true`.
+    pub fn pushed(mut self, bit: bool) -> Prefix<T> {
+        self.name = self.name.with_bit(self.bit_count, bit);
+        self.bit_count += 1;
+        self
+    }
+
+    /// Returns a prefix copying the first `bitcount() - 1` bits from `self`,
+    /// or `self` if it is already empty.
+    pub fn popped(mut self) -> Prefix<T> {
+        self.bit_count = self.bit_count.saturating_sub(1);
+        self
+    }
+
+    /// Returns the number of bits in the prefix.
     pub fn bit_count(&self) -> usize {
         self.bit_count
     }
@@ -95,9 +111,24 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     }
 
     /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
-    /// `Greater` if `other` is closer, and `Equal` if `self.name == other.name`.
+    /// `Greater` if `other` is closer, and `Equal` if they are equally close or compatible.
     pub fn cmp_distance(&self, other: &Self, target: &T) -> Ordering {
-        target.cmp_distance(&self.name, &other.name)
+        if self.is_compatible(&other) {
+            Ordering::Equal
+        } else {
+            Ord::cmp(&other.name.common_prefix(target),
+                     &self.name.common_prefix(target))
+        }
+    }
+    
+    /// Returns the smallest name matching the prefix
+    pub fn lower_bound(&self) -> T {
+        self.name.set_remaining(self.bit_count, false)
+    }
+    
+    /// Returns the largest name matching the prefix
+    pub fn upper_bound(&self) -> T {
+        self.name.set_remaining(self.bit_count, true)
     }
 }
 
@@ -186,6 +217,9 @@ mod tests {
         let mut prefix = str_to_prefix(b"101");
         assert_eq!(prefix.split(), str_to_prefix(b"1011"));
         assert_eq!(prefix, str_to_prefix(b"1010"));
+        assert_eq!(str_to_prefix(b"101").pushed(true), str_to_prefix(b"1011"));
+        assert_eq!(str_to_prefix(b"101").pushed(false), str_to_prefix(b"1010"));
+        assert_eq!(str_to_prefix(b"1011").popped(), str_to_prefix(b"101"));
         assert!(str_to_prefix(b"101").is_compatible(&str_to_prefix(b"1010")));
         assert!(str_to_prefix(b"1010").is_compatible(&str_to_prefix(b"101")));
         assert!(!str_to_prefix(b"1010").is_compatible(&str_to_prefix(b"1011")));
@@ -195,5 +229,8 @@ mod tests {
         assert!(!str_to_prefix(b"101").is_neighbour(&str_to_prefix(b"10111")));
         assert!(str_to_prefix(b"101").matches(&0b10101100));
         assert!(!str_to_prefix(b"1011").matches(&0b10101100));
+        
+        assert_eq!(str_to_prefix(b"0101").lower_bound(), 0b01010000);
+        assert_eq!(str_to_prefix(b"0101").upper_bound(), 0b01011111);
     }
 }

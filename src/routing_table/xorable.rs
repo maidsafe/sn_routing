@@ -43,18 +43,27 @@ pub trait Xorable: Ord {
     /// Returns a copy of `self`, with the `index`-th bit flipped.
     ///
     /// If `index` exceeds the number of bits in `self`, an unmodified copy of `self` is returned.
-    fn with_flipped_bit(&self, i: usize) -> Self;
+    fn with_flipped_bit(self, i: usize) -> Self;
+
+    /// Returns a copy of `self`, with the `index`-th bit flipped.
+    ///
+    /// If `index` exceeds the number of bits in `self`, an unmodified copy of `self` is returned.
+    fn with_bit(self, i: usize, bit: bool) -> Self;
 
     /// Returns a binary format string, with leading zero bits included.
     fn binary(&self) -> String;
 
     /// Returns a binary debug format string of `????????...????????`
     fn debug_binary(&self) -> String;
+    
+    /// Returns a copy of self with first `n` bits preserved, and remaining bits
+    /// set to 0 (val == false) or 1 (val == true).
+    fn set_remaining(self, n: usize, val: bool) -> Self;
 }
 
 /// Converts a string into debug format of `????????...????????` when the string is longer than 20.
 pub fn debug_format(input: String) -> String {
-    if input.len() < 21 {
+    if input.len() <= 20 {
         return input;
     }
     input.chars().take(8).chain("...".chars()).chain(input.chars().skip(input.len() - 8)).collect()
@@ -96,14 +105,27 @@ macro_rules! impl_xorable_for_array {
                 (self[index] ^ name[index]) & pow_i != 0
             }
 
-            fn with_flipped_bit(&self, i: usize) -> Self {
+            fn with_flipped_bit(mut self, i: usize) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
-                let mut copy = *self;
                 if i >= bits * self.len() {
-                    return copy;
+                    return self;
                 }
-                copy[i / bits] ^= 1 << (bits - 1 - i % bits);
-                copy
+                self[i / bits] ^= 1 << (bits - 1 - i % bits);
+                self
+            }
+
+            fn with_bit(mut self, i: usize, bit: bool) -> Self {
+                let bits = mem::size_of::<$t>() * 8;
+                if i >= bits * self.len() {
+                    return self;
+                }
+                let pow_i = 1 << (bits - 1 - i % bits); // 1 on bit i % bits.
+                if bit {
+                    self[i / bits] |= pow_i;
+                } else {
+                    self[i / bits] &= !pow_i;
+                }
+                self
             }
 
             fn binary(&self) -> String {
@@ -117,6 +139,24 @@ macro_rules! impl_xorable_for_array {
 
             fn debug_binary(&self) -> String {
                 debug_format(self.binary())
+            }
+            
+            fn set_remaining(mut self, n: usize, val: bool) -> Self {
+                let bits = mem::size_of::<$t>() * 8;
+                for i in 0..$l {
+                    if n <= i*bits {
+                        self[i] = if val { !0 } else { 0 };
+                    } else if n < (i+1) * bits {
+                        let mask = !0 >> (n - i*bits);
+                        if val {
+                            self[i] = self[i] | mask
+                        } else {
+                            self[i] = self[i] & !mask
+                        }
+                    }
+                    // else n >= (i+1) * bits: nothing to do
+                }
+                self
             }
         }
     }
@@ -148,12 +188,26 @@ macro_rules! impl_xorable {
                 (self ^ name) & pow_i != 0
             }
 
-            fn with_flipped_bit(&self, i: usize) -> Self {
+            fn with_flipped_bit(mut self, i: usize) -> Self {
                 if i >= mem::size_of::<Self>() * 8 {
-                    return *self;
+                    return self;
                 }
                 let pow_i = 1 << (mem::size_of::<Self>() * 8 - 1 - i); // 1 on bit i.
-                self ^ pow_i
+                self ^= pow_i;
+                self
+            }
+
+            fn with_bit(mut self, i: usize, bit: bool) -> Self {
+                if i >= mem::size_of::<Self>() * 8 {
+                    return self;
+                }
+                let pow_i = 1 << (mem::size_of::<Self>() * 8 - 1 - i); // 1 on bit i.
+                if bit {
+                    self |= pow_i;
+                } else {
+                    self &= !pow_i;
+                }
+                self
             }
 
             fn binary(&self) -> String {
@@ -162,6 +216,20 @@ macro_rules! impl_xorable {
 
             fn debug_binary(&self) -> String {
                 debug_format(self.binary())
+            }
+            
+            fn set_remaining(mut self, n: usize, val: bool) -> Self {
+                let bits = mem::size_of::<$t>() * 8;
+                if n >= bits {
+                    self
+                } else {
+                    let mask = !0 >> n;
+                    if val {
+                        self | mask
+                    } else {
+                        self & !mask
+                    }
+                }
             }
         }
     }
@@ -250,5 +318,20 @@ mod tests {
         assert!([0u8, 0, 0, 0].differs_in_bit(&[0, 1, 0, 10], 15));
         assert!([0u8, 7, 0, 0].differs_in_bit(&[0, 0, 0, 0], 14));
         assert!(![0u8, 7, 0, 0].differs_in_bit(&[0, 0, 0, 0], 26));
+    }
+    
+    #[test]
+    fn set_remaining() {
+        assert_eq!(0b10011011u8.set_remaining(5, false), 0b10011000);
+        assert_eq!(0b11111111u8.set_remaining(2, false), 0b11000000);
+        assert_eq!(0b00000000u8.set_remaining(4, true), 0b00001111);
+    }
+    
+    #[test]
+    fn set_remaining_array() {
+        assert_eq!([13u8, 112, 9 , 1].set_remaining(0, false), [0u8, 0, 0, 0]);
+        assert_eq!([13u8, 112, 9 , 1].set_remaining(100, false), [13u8, 112, 9 , 1]);
+        assert_eq!([13u8, 112, 9 , 1].set_remaining(10, false), [13u8, 64, 0, 0]);
+        assert_eq!([13u8, 112, 9 , 1].set_remaining(10, true), [13u8, 127, 255, 255]);
     }
 }
