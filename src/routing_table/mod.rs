@@ -246,6 +246,7 @@ pub struct RoutingTable<T: Binary + Clone + Copy + Debug + Default + Hash + Xora
 }
 
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T> {
+    /// Create a new RoutingTable.
     pub fn new(our_name: T, min_group_size: usize) -> Self {
         let mut groups = HashMap::new();
         let our_group_prefix = Prefix::new(0, our_name);
@@ -300,9 +301,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     pub fn is_in_our_group(&self, name: &T) -> bool {
         if self.our_group_prefix.matches(name) {
-            return unwrap!(self.groups.get(&self.our_group_prefix)).contains(name);
+            unwrap!(self.groups.get(&self.our_group_prefix)).contains(name)
+        } else {
+            false
         }
-        false
     }
 
     // Returns the list of contacts as a result of a merge to which we aren't currently connected,
@@ -341,14 +343,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::OwnNameDisallowed);
         }
 
-        {
-            if let Some(group) = self.get_mut_group(&name) {
-                if !group.insert(name) {
-                    return Err(Error::AlreadyExists);
-                }
-            } else {
-                return Err(Error::PeerNameUnsuitable);
+        if let Some(group) = self.get_mut_group(&name) {
+            if !group.insert(name) {
+                return Err(Error::AlreadyExists);
             }
+        } else {
+            return Err(Error::PeerNameUnsuitable);
         }
 
         let _ = self.needed.remove(&name);
@@ -681,5 +681,19 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Binary for Rou
 impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for RoutingTable<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_routing_table_small() {
+        let name = 123u32;
+        let table = RoutingTable::new(name, 6);
+        assert_eq!(*table.our_name(), name);
+        assert_eq!(table.len(), 0);
+        assert!(table.is_empty());
+        assert_eq!(table.iter().count(), 0);
     }
 }
