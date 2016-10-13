@@ -95,10 +95,11 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     }
 
     /// Compares the distance of `self` and `other` to `target`. Returns `Less` if `self` is closer,
-    /// `Greater` if `other` is closer, and `Equal` if they are equally close or compatible.
+    /// `Greater` if `other` is closer, and compares the prefix directly if of equal distance
+    /// (this is to make sorting deterministic).
     pub fn cmp_distance(&self, other: &Self, target: &T) -> Ordering {
         if self.is_compatible(&other) {
-            Ordering::Equal
+            Ord::cmp(&self.name, &other.name)
         } else {
             Ord::cmp(&other.name.common_prefix(target),
                      &self.name.common_prefix(target))
