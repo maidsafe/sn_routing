@@ -33,10 +33,11 @@ pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
 
 impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Creates a new `Prefix` with the first `bit_count` bits of `name`.
+    /// Insignificant bits are all set to 0.
     pub fn new(bit_count: usize, name: T) -> Prefix<T> {
         Prefix {
             bit_count: bit_count,
-            name: name,
+            name: name.set_remaining(bit_count, false),
         }
     }
 
@@ -50,7 +51,11 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     /// Returns a prefix copying the first `bitcount() - 1` bits from `self`,
     /// or `self` if it is already empty.
     pub fn popped(mut self) -> Prefix<T> {
-        self.bit_count = self.bit_count.saturating_sub(1);
+        if self.bit_count > 0 {
+            self.bit_count -= 1;
+            // unused bits should be zero:
+            self.name = self.name.with_bit(self.bit_count, false);
+        }
         self
     }
 
