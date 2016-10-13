@@ -296,9 +296,9 @@ impl PeerManager {
     pub fn add_to_routing_table(&mut self,
                                 pub_id: PublicId,
                                 peer_id: PeerId)
-                                -> Result<Option<Prefix<XorName>>, RoutingTableError> {
+                                -> Result<bool, RoutingTableError> {
         let _ = self.unknown_peers.remove(&peer_id);
-        let split_prefix = try!(self.routing_table.add(*pub_id.name()));
+        let should_split = try!(self.routing_table.add(*pub_id.name()));
         let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -311,7 +311,7 @@ impl PeerManager {
         };
         let state = PeerState::Routing(tunnel);
         let _ = self.peer_map.insert(Peer::new(pub_id, Some(peer_id), state));
-        Ok(split_prefix)
+        Ok(should_split)
     }
 
     /// Splits the indicated group and returns the `PeerId`s of any peers to which we should not

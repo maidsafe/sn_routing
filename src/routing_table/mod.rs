@@ -334,22 +334,20 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // Adds a contact to the routing table.
     //
     // Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
-    // of our groups, or it's our own name.  Otherwise it returns `Ok(Some(prefix))` if the addition
-    // succeeded and should cause our group to split (where `prefix` is the one which should split)
-    // or `Ok(None)` if the addition succeeded and shouldn't cause a split.
-    pub fn add(&mut self, name: T) -> Result<Option<Prefix<T>>, Error> {
+    // of our groups, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
+    // succeeded and should cause our group to split or `Ok(false)` if the addition succeeded and
+    // shouldn't cause a split.
+    pub fn add(&mut self, name: T) -> Result<bool, Error> {
         if name == self.our_name {
             return Err(Error::OwnNameDisallowed);
         }
 
-        {
-            if let Some(group) = self.get_mut_group(&name) {
-                if !group.insert(name) {
-                    return Err(Error::AlreadyExists);
-                }
-            } else {
-                return Err(Error::PeerNameUnsuitable);
+        if let Some(group) = self.get_mut_group(&name) {
+            if !group.insert(name) {
+                return Err(Error::AlreadyExists);
             }
+        } else {
+            return Err(Error::PeerNameUnsuitable);
         }
 
         let _ = self.needed.remove(&name);
@@ -362,11 +360,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // If either of the two new groups will not contain enough entries, return `None` (add 1
         // when considering our own group to also count ourself as a member of this group).
         let min_size = self.min_group_size + SPLIT_BUFFER;
-        Ok(if our_group.len() - new_group_size < min_size || new_group_size + 1 < min_size {
-            None
-        } else {
-            Some(self.our_group_prefix)
-        })
+        Ok(our_group.len() - new_group_size >= min_size && new_group_size + 1 >= min_size)
     }
 
     // Splits a group.

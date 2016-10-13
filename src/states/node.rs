@@ -867,16 +867,17 @@ impl Node {
                        error);
                 self.disconnect_peer(&peer_id);
             }
-            Ok(split_prefix) => {
+            Ok(should_split) => {
                 info!("{:?} Added {:?} to routing table.", self, public_id.name());
                 if self.peer_mgr.routing_table().len() == 1 {
                     self.send_event(Event::Connected);
                 }
 
-                if let Some(prefix) = split_prefix {
+                if should_split {
                     // None of the `peers_to_drop` will have been in our group, so no need to notify
                     // Routing user about them.
-                    let peers_to_drop = self.peer_mgr.split_group(prefix);
+                    let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
+                    let peers_to_drop = self.peer_mgr.split_group(our_group_prefix);
                     let our_new_prefix = *self.peer_mgr.routing_table().our_group_prefix();
                     if let Err(err) = self.event_sender.send(Event::GroupSplit(our_new_prefix)) {
                         error!("{:?} Error sending event to routing user - {:?}", self, err);

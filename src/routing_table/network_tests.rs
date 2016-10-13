@@ -54,29 +54,29 @@ impl Network {
         }
 
         let mut new_table = RoutingTable::new(name, MIN_GROUP_SIZE);
-        let mut split_prefix = BTreeSet::new();
+        let mut split_prefixes = BTreeSet::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             match node.add(name) {
-                Ok(result) => {
-                    split_prefix.insert(result);
+                Ok(true) => {
+                    split_prefixes.insert(*node.our_group_prefix());
                 }
+                Ok(false) => {}
                 Err(e) => trace!("failed to add node with error {:?}", e),
             }
             match new_table.add(*node.our_name()) {
-                Ok(Some(prefix)) => {
+                Ok(true) => {
+                    let prefix = *new_table.our_group_prefix();
                     let _ = new_table.split(prefix);
                 }
-                Ok(None) => {}
+                Ok(false) => {}
                 Err(e) => trace!("failed to add node into new with error {:?}", e),
             }
         }
         assert!(self.nodes.insert(name, new_table).is_none());
-        for split in &split_prefix {
-            if let Some(prefix) = *split {
-                for node in self.nodes.values_mut() {
-                    let _ = node.split(prefix);
-                }
+        for split_prefix in &split_prefixes {
+            for node in self.nodes.values_mut() {
+                let _ = node.split(*split_prefix);
             }
         }
     }
