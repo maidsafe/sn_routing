@@ -301,9 +301,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     pub fn is_in_our_group(&self, name: &T) -> bool {
         if self.our_group_prefix.matches(name) {
-            return unwrap!(self.groups.get(&self.our_group_prefix)).contains(name);
+            unwrap!(self.groups.get(&self.our_group_prefix)).contains(name)
+        } else {
+            false
         }
-        false
     }
 
     // Returns the list of contacts as a result of a merge to which we aren't currently connected,
@@ -342,14 +343,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             return Err(Error::OwnNameDisallowed);
         }
 
-        {
-            if let Some(group) = self.get_mut_group(&name) {
-                if !group.insert(name) {
-                    return Err(Error::AlreadyExists);
-                }
-            } else {
-                return Err(Error::PeerNameUnsuitable);
+        if let Some(group) = self.get_mut_group(&name) {
+            if !group.insert(name) {
+                return Err(Error::AlreadyExists);
             }
+        } else {
+            return Err(Error::PeerNameUnsuitable);
         }
 
         let _ = self.needed.remove(&name);
