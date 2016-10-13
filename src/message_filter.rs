@@ -18,11 +18,15 @@
 #[cfg(test)]
 extern crate rand;
 
+// TODO - Once we're at Stable v1.13.0, avoid disabling the lint check and replace `SipHasher` with
+// `std::collections::hash_map::DefaultHasher`.
+#[cfg_attr(feature="clippy", allow(useless_attribute))]
+#[allow(deprecated)]
 use std::hash::{Hash, Hasher, SipHasher};
 use std::marker::PhantomData;
 use std::time::{Duration, SystemTime};
 
-
+#[allow(deprecated)]
 fn hash<T: Hash>(t: &T) -> u64 {
     let mut s = SipHasher::new();
     t.hash(&mut s);
