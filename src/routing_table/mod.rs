@@ -676,11 +676,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_routing_table_small() {
+    fn small() {
         let name = 123u32;
         let table = RoutingTable::new(name, 6);
         assert_eq!(*table.our_name(), name);
