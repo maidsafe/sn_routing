@@ -257,7 +257,7 @@ fn verify_invariant(network: &Network) {
     verify_groups_match_names(&groups);
 
     // check that groups cover the whole namespace
-    assert_eq!(network.nodes.len(), groups.values().map(|x| x.len()).sum());
+    assert!(Prefix::<u64>::new(0, 0).is_covered_by(groups.keys()));
 }
 
 fn verify_disjoint_prefixes(prefixes: HashSet<Prefix<u64>>) {

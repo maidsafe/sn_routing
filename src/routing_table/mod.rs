@@ -284,9 +284,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     }
 
     fn satisfies_invariant(&self) -> bool {
-        self.groups
+        let all_are_neighbours = self.groups
             .keys()
-            .all(|&x| x == self.our_group_prefix || self.our_group_prefix.is_neighbour(&x))
+            .all(|&x| x == self.our_group_prefix || self.our_group_prefix.is_neighbour(&x));
+        let all_neighbours_covered = {
+            let prefixes = self.prefixes();
+            (0..self.our_group_prefix.bit_count())
+                .all(|i| self.our_group_prefix.with_flipped_bit(i).is_covered_by(&prefixes))
+        };
+        all_are_neighbours && all_neighbours_covered
     }
 
     pub fn our_name(&self) -> &T {
