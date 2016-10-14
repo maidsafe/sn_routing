@@ -12,7 +12,7 @@ version = "0.26.0"
 
 [dependencies]
 accumulator = "~0.4.0"
-clippy = {version = "~0.0.94", optional = true}
+clippy = {version = "~0.0.95", optional = true}
 crust = "~0.19.0"
 itertools = "~0.5.2"
 kademlia_routing_table = "~0.6.0"
@@ -30,7 +30,7 @@ docopt = "~0.6.86"
 libc = "~0.2.16"
 
 [build-dependencies]
-hyper = {version = "~0.9.9", optional = true}
+hyper = {version = "~0.9.10", optional = true}
 
 [[example]]
 bench = false

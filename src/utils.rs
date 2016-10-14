@@ -126,13 +126,13 @@ mod test {
         let second_closest = close_nodes[1];
         let mut combined: Vec<u8> = Vec::new();
 
-        for i in original_name.0.into_iter() {
+        for i in &original_name.0 {
             combined.push(*i);
         }
-        for i in first_closest.0.into_iter() {
+        for i in &first_closest.0 {
             combined.push(*i);
         }
-        for i in second_closest.0.into_iter() {
+        for i in &second_closest.0 {
             combined.push(*i);
         }
 
@@ -140,13 +140,13 @@ mod test {
         assert_eq!(expected_relocated_name, actual_relocated_name);
 
         let mut invalid_combined: Vec<u8> = Vec::new();
-        for i in first_closest.0.into_iter() {
+        for i in &first_closest.0 {
             invalid_combined.push(*i);
         }
-        for i in second_closest.0.into_iter() {
+        for i in &second_closest.0 {
             invalid_combined.push(*i);
         }
-        for i in original_name.0.into_iter() {
+        for i in &original_name.0 {
             invalid_combined.push(*i);
         }
         let invalid_relocated_name = XorName(sha256::hash(&invalid_combined).0);
