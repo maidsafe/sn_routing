@@ -17,7 +17,6 @@
 
 use std::cmp::Ordering;
 use std::mem;
-use std::ops::{Index, Range};
 
 /// A sequence of bits, as a point in XOR space.
 ///

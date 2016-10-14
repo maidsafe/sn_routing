@@ -15,6 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use rustc_serialize::{Decodable, Decoder, DecoderHelpers, Encodable, Encoder, EncoderHelpers};
 use std::cmp::{self, Ordering};
 use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
@@ -137,6 +138,30 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Binary for Prefix<T> {
 impl<T: Clone + Copy + Default + Binary + Xorable> Debug for Prefix<T> {
     fn fmt(&self, formatter: &mut Formatter) -> FmtResult {
         Binary::fmt(self, formatter)
+    }
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> Encodable for Prefix<T> {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
+        let bit_vec = (0..self.bit_count).map(|i| self.name.bit(i)).collect::<Vec<_>>();
+        encoder.emit_from_vec(&bit_vec, |encoder, element| encoder.emit_bool(*element))
+    }
+}
+
+impl<T: Clone + Copy + Default + Binary + Xorable> Decodable for Prefix<T> {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Prefix<T>, D::Error> {
+        // TODO - This is a rough and ready implementation to be replaced by Andreas' upcoming one.
+        // This implementation will cause the `split()` function to be incorrect as that depends on
+        // `self.name` being the name of the holder.  I don't know what idiot thought `split()` was
+        // a good idea!
+        let bit_vec = try!(decoder.read_to_vec(|decoder| decoder.read_bool()));
+        let mut name = T::default();
+        for (index, element) in bit_vec.iter().enumerate() {
+            if name.bit(index) != *element {
+                name = name.with_flipped_bit(index);
+            }
+        }
+        Ok(Prefix::new(bit_vec.len(), name))
     }
 }
 

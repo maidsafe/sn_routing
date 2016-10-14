@@ -28,6 +28,7 @@ use maidsafe_utilities;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
+use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::{BTreeMap, HashSet};
@@ -142,7 +143,7 @@ impl DirectMessage {
     }
 }
 
-/// And individual hop message that represents a part of the route of a message in transit.
+/// An individual hop message that represents a part of the route of a message in transit.
 ///
 /// To relay a `SignedMessage` via another node, the `SignedMessage` is wrapped in a `HopMessage`.
 /// The `signature` is from the node that sends this directly to a node in its routing table. To
@@ -361,6 +362,22 @@ pub enum MessageContent {
         /// The message ID.
         message_id: MessageId,
     },
+    /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
+    /// tables before notifying other connected peers of the merge.
+    OwnGroupMerge {
+        prefix: Prefix<XorName>,
+        // The recipient will already be connected to these peers, so doesn't need their complete
+        // `PublicId`s.
+        connected_groups: Vec<(Prefix<XorName>, Vec<XorName>)>,
+        // The recipient will not be connected to these peers, so needs their complete `PublicId`s.
+        needed_groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+    },
+    /// Sent by members of a newly-merged group to peers outwith the merged group to notify them of
+    /// the merge.
+    OtherGroupMerge {
+        prefix: Prefix<XorName>,
+        group: Vec<PublicId>,
+    },
     /// Acknowledge receipt of any message except an `Ack`. It contains the hash of the
     /// received message and the priority.
     Ack(Ack, u8),
@@ -484,6 +501,18 @@ impl Debug for MessageContent {
                        "GetCloseGroupResponse {{ {:?}, {:?} }}",
                        close_group_ids,
                        message_id)
+            }
+            MessageContent::OwnGroupMerge { ref prefix,
+                                            ref connected_groups,
+                                            ref needed_groups } => {
+                write!(formatter,
+                       "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",
+                       prefix,
+                       connected_groups,
+                       needed_groups)
+            }
+            MessageContent::OtherGroupMerge { ref prefix, ref group } => {
+                write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group)
             }
             MessageContent::Ack(ack, priority) => write!(formatter, "Ack({}, {})", ack, priority),
             MessageContent::GroupMessageHash(ref hash, priority) => {

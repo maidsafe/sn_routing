@@ -110,9 +110,6 @@
 // is considered to be legitimate, if a majority of group members have sent a message with the same
 // content.
 
-// TODO - remove this
-#![allow(unused)]
-
 mod error;
 mod network_tests;
 mod prefix;
@@ -200,8 +197,8 @@ impl<N> Destination<N> {
 // Used when removal of a contact triggers the need to merge two or more groups
 #[derive(Debug)]
 pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    prefix: Prefix<T>,
-    groups: Groups<T>,
+    pub prefix: Prefix<T>,
+    pub groups: Groups<T>,
 }
 
 
@@ -209,8 +206,8 @@ pub struct OwnMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> 
 // Used when merging our own group to send to peers outwith the new group
 #[derive(Debug)]
 pub struct OtherMergeDetails<T: Binary + Clone + Copy + Default + Hash + Xorable> {
-    prefix: Prefix<T>,
-    group: HashSet<T>,
+    pub prefix: Prefix<T>,
+    pub group: HashSet<T>,
 }
 
 
@@ -262,6 +259,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     pub fn our_name(&self) -> &T {
         &self.our_name
+    }
+
+    pub fn our_group_prefix(&self) -> &Prefix<T> {
+        &self.our_group_prefix
     }
 
     // Total number of entries in the routing table.
@@ -335,10 +336,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // Adds a contact to the routing table.
     //
     // Returns `Err` if `name` already existed in the routing table, or it doesn't fall within any
-    // of our groups, or it's our own name.  Otherwise it returns `Ok(Some(prefix))` if the addition
-    // succeeded and should cause our group to split (where `prefix` is the one which should split)
-    // or `Ok(None)` if the addition succeeded and shouldn't cause a split.
-    pub fn add(&mut self, name: T) -> Result<Option<Prefix<T>>, Error> {
+    // of our groups, or it's our own name.  Otherwise it returns `Ok(true)` if the addition
+    // succeeded and should cause our group to split or `Ok(false)` if the addition succeeded and
+    // shouldn't cause a split.
+    pub fn add(&mut self, name: T) -> Result<bool, Error> {
         if name == self.our_name {
             return Err(Error::OwnNameDisallowed);
         }
@@ -361,11 +362,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         // If either of the two new groups will not contain enough entries, return `None` (add 1
         // when considering our own group to also count ourself as a member of this group).
         let min_size = self.min_group_size + SPLIT_BUFFER;
-        Ok(if our_group.len() - new_group_size < min_size || new_group_size + 1 < min_size {
-            None
-        } else {
-            Some(self.our_group_prefix)
-        })
+        Ok(our_group.len() - new_group_size >= min_size && new_group_size + 1 >= min_size)
     }
 
     // Splits a group.
@@ -518,12 +515,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - if the closest group has more than `route` members, returns the `route`-th member of
     //       this group; otherwise
     //     - returns `Err(Error::CannotRoute)`
-    pub fn targets(&self,
-                   dst: &Destination<T>,
-                   route: usize,
-                   exclude: &[T])
-                   -> Result<HashSet<T>, Error> {
-        let excluded_set = exclude.iter().collect::<HashSet<&T>>();
+    pub fn targets(&self, dst: &Destination<T>, route: usize) -> Result<HashSet<T>, Error> {
         let (closest_group, target_name) = match *dst {
             Destination::Group(ref target_name) => {
                 let closest_group_prefix = self.closest_group_prefix(target_name);
@@ -684,11 +676,12 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_routing_table_small() {
+    fn small() {
         let name = 123u32;
         let table = RoutingTable::new(name, 6);
         assert_eq!(*table.our_name(), name);

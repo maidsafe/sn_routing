@@ -15,15 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-// TODO - remove this
-#![allow(unused)]
-
 use authority::Authority;
 use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
 use rand;
-use routing_table::{Prefix, RemovalDetails, RoutingTable};
+use routing_table::{OtherMergeDetails, OwnMergeDetails, Prefix, RemovalDetails, RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
@@ -299,9 +296,9 @@ impl PeerManager {
     pub fn add_to_routing_table(&mut self,
                                 pub_id: PublicId,
                                 peer_id: PeerId)
-                                -> Result<Option<Prefix<XorName>>, RoutingTableError> {
+                                -> Result<bool, RoutingTableError> {
         let _ = self.unknown_peers.remove(&peer_id);
-        let split_prefix = try!(self.routing_table.add(*pub_id.name()));
+        let should_split = try!(self.routing_table.add(*pub_id.name()));
         let tunnel = match self.peer_map.remove(&peer_id).map(|peer| peer.state) {
             Some(PeerState::SearchingForTunnel) |
             Some(PeerState::AwaitingNodeIdentify(true)) => true,
@@ -314,12 +311,12 @@ impl PeerManager {
         };
         let state = PeerState::Routing(tunnel);
         let _ = self.peer_map.insert(Peer::new(pub_id, Some(peer_id), state));
-        Ok(split_prefix)
+        Ok(should_split)
     }
 
     /// Splits the indicated group and returns the `PeerId`s of any peers to which we should not
     /// remain connected.
-    pub fn split_group(&mut self, mut prefix: Prefix<XorName>) -> Vec<PeerId> {
+    pub fn split_group(&mut self, prefix: Prefix<XorName>) -> Vec<PeerId> {
         let names_to_drop = self.routing_table.split(prefix);
         let mut ids_to_drop = vec![];
         for name in &names_to_drop {
@@ -331,6 +328,18 @@ impl PeerManager {
             }
         }
         ids_to_drop
+    }
+
+    pub fn merge_own_group(&mut self,
+                           merge_details: &OwnMergeDetails<XorName>)
+                           -> (Vec<XorName>, OtherMergeDetails<XorName>) {
+        self.routing_table.merge_own_group(merge_details)
+    }
+
+    pub fn merge_other_group(&mut self,
+                             merge_details: &OtherMergeDetails<XorName>)
+                             -> HashSet<XorName> {
+        self.routing_table.merge_other_group(merge_details)
     }
 
     /// Returns `true` if we are directly connected to both peers.
