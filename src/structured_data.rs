@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 use maidsafe_utilities::serialisation::serialise;
-use rust_sodium::crypto::sign::{self, PublicKey, SIGNATUREBYTES, SecretKey, Signature};
+use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use xor_name::{XOR_NAME_LEN, XorName};
+use xor_name::XorName;
 use data::DataIdentifier;
 use error::RoutingError;
 use std::{u8, u64};
@@ -255,49 +255,6 @@ impl StructuredData {
             }
         }
     }
-
-    /// Find out in advance if StructuredData can be constructed at all
-    pub fn creation_possiblity(data: &[u8],
-                               owners: &[PublicKey],
-                               previous_owners: &[PublicKey])
-                               -> bool {
-        const PADDING_BYTES: usize = 128;
-        let max_possible_sigs = if previous_owners.len() == 0 {
-            owners.len()
-        } else {
-            previous_owners.len()
-        };
-
-        let test_sd_res = Self::new(u64::MAX,
-                                    XorName([u8::MAX; XOR_NAME_LEN]),
-                                    u64::MAX,
-                                    vec![],
-                                    owners.to_owned(),
-                                    previous_owners.to_owned(),
-                                    None);
-        let mut test_sd = match test_sd_res {
-            Ok(sd) => sd,
-            Err(e) => {
-                warn!("Could not construct StructuredData: {:?}", e);
-                return false;
-            }
-        };
-        test_sd.previous_owner_signatures = vec![Signature([u8::MAX; SIGNATUREBYTES]);
-                                                 max_possible_sigs];
-        let size_without_data = match serialise(&test_sd) {
-            Ok(raw) => raw.len() + PADDING_BYTES,
-            Err(e) => {
-                warn!("Could not serialise StructuredData: {:?}", e);
-                return false;
-            }
-        };
-
-        if size_without_data > MAX_STRUCTURED_DATA_SIZE_IN_BYTES {
-            false
-        } else {
-            data.len() <= MAX_STRUCTURED_DATA_SIZE_IN_BYTES - size_without_data
-        }
-    }
 }
 
 impl Debug for StructuredData {
@@ -342,8 +299,8 @@ mod tests {
     extern crate rand;
 
     use super::*;
-    use rust_sodium::crypto::sign::{self, SecretKey, PublicKey, PUBLICKEYBYTES, SIGNATUREBYTES};
-    use xor_name::{XOR_NAME_LEN, XorName};
+    use rust_sodium::crypto::sign;
+    use xor_name::XorName;
 
     #[test]
     fn single_owner() {
@@ -547,51 +504,6 @@ mod tests {
                 }
             }
             Err(error) => panic!("Error: {:?}", error),
-        }
-    }
-
-    fn gen_keys(n: usize) -> (Vec<PublicKey>, SecretKey) {
-        let (our_pk, our_sk) = sign::gen_keypair();
-        let mut owners = Vec::with_capacity(n);
-        owners.push(our_pk);
-        for _ in 1..n {
-            let (pk, _) = sign::gen_keypair();
-            owners.push(pk);
-        }
-
-        (owners, our_sk)
-    }
-
-    #[test]
-    fn pre_creation_validation() {
-        let tag = 0;
-        let ver = 0;
-        let name = XorName([0; XOR_NAME_LEN]);
-        let data = vec![0; 90 * 1024];
-
-        let max_owners = 10 * 1024 / (PUBLICKEYBYTES + SIGNATUREBYTES);
-
-        {
-            let (owners, our_sk) = gen_keys(max_owners);
-            assert!(!StructuredData::creation_possiblity(&data, &owners, &vec![]));
-            let sd = unwrap!(StructuredData::new(tag,
-                                                 name,
-                                                 ver,
-                                                 data.clone(),
-                                                 owners,
-                                                 vec![],
-                                                 Some(&our_sk)));
-            // It will pass because not everybody has signed yet - but might fail in future as SD
-            // is passed for multisig which is why the above function is important.
-            assert!(sd.validate_size());
-        }
-
-        {
-            let (owners, our_sk) = gen_keys(max_owners / 2);
-            assert!(StructuredData::creation_possiblity(&data, &owners, &vec![]));
-            let sd =
-                unwrap!(StructuredData::new(tag, name, ver, data, owners, vec![], Some(&our_sk)));
-            assert!(sd.validate_size());
         }
     }
 }
