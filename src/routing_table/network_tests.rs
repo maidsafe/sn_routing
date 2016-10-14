@@ -19,14 +19,10 @@
 
 use maidsafe_utilities::SeededRng;
 use rand::Rng;
-use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::collections::hash_map::Entry;
-use std::fmt::{self, Binary, Debug, Formatter};
-use std::iter::{FromIterator, IntoIterator};
-use super::{Destination, Error, OtherMergeDetails, RoutingTable};
+use std::iter::IntoIterator;
+use super::{Destination, Error, RoutingTable};
 use super::prefix::Prefix;
-use super::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
 
@@ -64,7 +60,7 @@ impl Network {
             let close_peer = &self.nodes[&close_node];
             unwrap!(RoutingTable::new_with_prefixes(name, MIN_GROUP_SIZE, close_peer.prefixes()))
         };
-        
+
         let mut split_prefixes = BTreeSet::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
@@ -133,7 +129,7 @@ impl Network {
                 // add needed contacts
                 let needed = target_node.needed().clone();
                 for needed_contact in needed {
-                    target_node.add(needed_contact);
+                    let _ = target_node.add(needed_contact);
                 }
             }
         }
@@ -145,7 +141,7 @@ impl Network {
                 let contacts = target_node.merge_other_group(&merge_other_details);
                 // add missing contacts
                 for contact in contacts {
-                    target_node.add(contact);
+                    let _ = target_node.add(contact);
                 }
             }
         }
@@ -291,7 +287,7 @@ fn groups_have_identical_routing_tables() {
 #[test]
 fn merging_groups() {
     let mut network = Network::new(None);
-    for i in 0..100 {
+    for _ in 0..100 {
         network.add_node();
         verify_invariant(&network);
     }
@@ -303,7 +299,7 @@ fn merging_groups() {
         } else {
             true
         }));
-    for i in 0..95 {
+    for _ in 0..95 {
         network.drop_node();
         verify_invariant(&network);
     }

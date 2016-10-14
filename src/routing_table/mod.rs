@@ -626,7 +626,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let _ = self.groups.insert(prefix1, group1);
         // drop groups that ceased to be our neighbours
         let mut result = vec![];
-	let our_prefix = self.our_group_prefix;
+        let our_prefix = self.our_group_prefix;
         for prefix in self.prefixes()
             .into_iter()
             .filter(|x| *x != our_prefix && !x.is_neighbour(&our_prefix)) {
