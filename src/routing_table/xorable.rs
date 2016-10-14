@@ -143,15 +143,15 @@ macro_rules! impl_xorable_for_array {
             
             fn set_remaining(mut self, n: usize, val: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
-                for i in 0..$l {
+                for (i, x) in self.iter_mut().enumerate() {
                     if n <= i * bits {
-                        self[i] = if val { !0 } else { 0 };
+                        *x = if val { !0 } else { 0 };
                     } else if n < (i + 1) * bits {
                         let mask = !0 >> (n - i * bits);
                         if val {
-                            self[i] = self[i] | mask
+                            *x |= mask
                         } else {
-                            self[i] = self[i] & !mask
+                            *x &= !mask
                         }
                     }
                     // else n >= (i+1) * bits: nothing to do
@@ -218,7 +218,7 @@ macro_rules! impl_xorable {
                 debug_format(self.binary())
             }
             
-            fn set_remaining(mut self, n: usize, val: bool) -> Self {
+            fn set_remaining(self, n: usize, val: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
                 if n >= bits {
                     self

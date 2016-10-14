@@ -370,7 +370,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     // If the group exists in the routing table, it is split, otherwise this function is a no-op.
     // If one of the two new groups doesn't satisfy the invariant (i.e. only differs in one bit from
     // our own prefix), it is removed and those contacts are returned.
-    pub fn split(&mut self, mut prefix: Prefix<T>) -> Vec<T> {
+    pub fn split(&mut self, prefix: Prefix<T>) -> Vec<T> {
         let mut result = vec![];
         if prefix == self.our_group_prefix {
             self.split_our_group();
