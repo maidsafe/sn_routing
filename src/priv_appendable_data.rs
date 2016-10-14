@@ -309,6 +309,17 @@ impl PrivAppendableData {
     pub fn get_previous_owner_signatures(&self) -> &Vec<Signature> {
         &self.previous_owner_signatures
     }
+
+    /// Return true if the size is valid
+    pub fn validate_size(&self) -> bool {
+        match serialise(self) {
+            Ok(raw) => raw.len() <= MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES,
+            Err(e) => {
+                warn!("Failed to serialise PrivAppendableData: {:?}", e);
+                false
+            }
+        }
+    }
 }
 
 impl Debug for PrivAppendableData {
