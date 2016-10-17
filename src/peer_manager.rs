@@ -20,7 +20,8 @@ use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use id::PublicId;
 use itertools::Itertools;
 use rand;
-use routing_table::{OtherMergeDetails, OwnMergeDetails, Prefix, RemovalDetails, RoutingTable};
+use routing_table::{OtherMergeDetails, OwnMergeDetails, OwnMergeState, Prefix, RemovalDetails,
+                    RoutingTable};
 use routing_table::Error as RoutingTableError;
 use rust_sodium::crypto::sign;
 use std::{error, fmt, mem};
@@ -330,16 +331,50 @@ impl PeerManager {
         ids_to_drop
     }
 
+    // Returns the `OwnMergeState` from `RoutingTable` which defines what further action needs to be
+    // taken by the node, and the list of peers to which we should now connect (only those within
+    // the merging groups for now).
     pub fn merge_own_group(&mut self,
-                           merge_details: &OwnMergeDetails<XorName>)
-                           -> (Vec<XorName>, OtherMergeDetails<XorName>) {
-        self.routing_table.merge_own_group(merge_details)
+                           sender_prefix: Prefix<XorName>,
+                           merge_prefix: Prefix<XorName>,
+                           groups: Vec<(Prefix<XorName>, Vec<PublicId>)>)
+                           -> (OwnMergeState<XorName>, Vec<PublicId>) {
+        let mut needed = vec![];
+        for pub_id in groups.iter()
+            .filter(|&&(prefix, _)| merge_prefix.is_compatible(&prefix))
+            .flat_map(|&(_, ref pub_ids)| pub_ids.iter()) {
+            if self.peer_map.get_by_name(pub_id.name()).is_none() {
+                needed.push(*pub_id);
+            }
+        }
+        self.remove_expired();
+
+        let groups_as_names = groups.into_iter()
+            .map(|(prefix, members)| {
+                (prefix, members.into_iter().map(|pub_id| *pub_id.name()).collect::<HashSet<_>>())
+            })
+            .collect();
+
+        let own_merge_details = OwnMergeDetails {
+            sender_prefix: sender_prefix,
+            merge_prefix: merge_prefix,
+            groups: groups_as_names,
+        };
+        (self.routing_table.merge_own_group(own_merge_details), needed)
     }
 
     pub fn merge_other_group(&mut self,
-                             merge_details: &OtherMergeDetails<XorName>)
-                             -> HashSet<XorName> {
-        self.routing_table.merge_other_group(merge_details)
+                             prefix: Prefix<XorName>,
+                             group: Vec<PublicId>)
+                             -> HashSet<PublicId> {
+        self.remove_expired();
+
+        let merge_details = OtherMergeDetails {
+            prefix: prefix,
+            group: group.iter().map(|public_id| *public_id.name()).collect(),
+        };
+        let needed_names = self.routing_table.merge_other_group(merge_details);
+        group.into_iter().filter(|pub_id| needed_names.contains(pub_id.name())).collect()
     }
 
     /// Returns `true` if we are directly connected to both peers.
