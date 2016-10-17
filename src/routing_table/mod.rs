@@ -713,16 +713,31 @@ mod tests {
 
         for _ in 0..1000 {
             let new_name = rng.next_u32();
+            // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
-                Err(_) => {
+                Err(Error::AlreadyExists) => {
+                    assert!(table.iter().any(|u| *u == new_name));
+                    // skip
+                }
+                Err(Error::PeerNameUnsuitable) => {
+                    assert!(table.groups.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
                 }
+                Err(_) => {
+                    assert!(false); // no other errors should be possible
+                }
                 Ok(true) => {
+                    assert!(table.our_group_prefix.matches(&new_name));
+                    assert!(unwrap!(table.groups.get(&table.our_group_prefix)).len() >=
+                            table.min_split_size() * 2);
                     let our_prefix = *table.our_group_prefix();
                     let _ = table.split(our_prefix);
+                    assert!(unwrap!(table.groups.get(&table.our_group_prefix)).len() >=
+                            table.min_split_size());
                 }
                 Ok(false) => {
+                    assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_group(&new_name) {
                         continue;   // add() already checked for necessary split
                     }
