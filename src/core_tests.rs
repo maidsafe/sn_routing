@@ -43,6 +43,16 @@ use xor_name::XorName;
 // Poll one event per node. Otherwise, all events in a single node are polled before moving on.
 const BALANCED_POLLING: bool = true;
 
+// Toggle iterations for full or quick test according to env_var
+fn iterations() -> usize {
+    use std::env;
+    match env::var("FULL_TEST") {
+        Ok(_) => 100,
+        Err(_) => 4,
+    }
+}
+
+
 /// Expect that the next event raised by the node matches the given pattern.
 /// Panics if no event, or an event that does not match the pattern is raised.
 /// (ignores ticks).
@@ -753,7 +763,7 @@ fn churn() {
     let mut rng = network.new_rng();
     let mut nodes = create_connected_nodes(&network, 20);
 
-    for i in 0..100 {
+    for _ in 0..iterations() {
         let _ = random_churn(&mut rng, &network, &mut nodes);
         poll_and_resend(&mut nodes, &mut []);
 
