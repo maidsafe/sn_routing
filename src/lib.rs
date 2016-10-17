@@ -197,7 +197,7 @@ pub use data::{Data, DataIdentifier};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::ImmutableData;
+pub use immutable_data::{MAX_IMMUTABLE_DATA_SIZE_IN_BYTES, ImmutableData};
 pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
 pub use plain_data::PlainData;
