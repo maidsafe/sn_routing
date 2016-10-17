@@ -66,6 +66,8 @@ pub enum RoutingError {
     NotEnoughSignatures,
     /// Duplicate signatures
     DuplicateSignatures,
+    /// The list of owner keys is invalid
+    InvalidOwners,
     /// Duplicate request received
     FilterCheckFailed,
     /// Failure to bootstrap off the provided endpoints

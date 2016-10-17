@@ -175,7 +175,7 @@ fn spawn_select_thread(index: usize,
 
     let thread_handle = thread_named(thread_name, move || {
         for event in receiver.iter() {
-            let _ = unwrap!(main_sender.send(TestEvent(index, event)));
+            unwrap!(main_sender.send(TestEvent(index, event)));
         }
     });
 
