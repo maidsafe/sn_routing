@@ -32,7 +32,7 @@ use mock_crust::crust::PeerId;
 use routing_table::Prefix;
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
 use types::MessageId;
@@ -125,8 +125,6 @@ pub enum DirectMessage {
     /// Sent from a node that found a new node in the network to all its contacts who might need to
     /// add the new node to their routing table.
     NewNode(PublicId),
-    /// Sent to a joining node to allow it to establish connections to the included contacts.
-    RoutingTable(HashSet<PublicId>),
     /// Sent from a node that needs a tunnel to be able to connect to the given peer.
     TunnelRequest(PeerId),
     /// Sent as a response to `TunnelRequest` if the node can act as a tunnel.
@@ -363,6 +361,10 @@ pub enum MessageContent {
         /// The message ID.
         message_id: MessageId,
     },
+    /// Sent to a joining node to allow it to establish connections to the included contacts.
+    RoutingTable(Vec<PublicId>),
+    /// Sent to all connected peers when our own group splits
+    GroupSplit(Prefix<XorName>),
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     OwnGroupMerge {
@@ -430,9 +432,6 @@ impl Debug for DirectMessage {
             }
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
-            DirectMessage::RoutingTable(ref routing_table) => {
-                write!(formatter, "{:?}", routing_table)
-            }
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)
             }
@@ -500,6 +499,10 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
+            MessageContent::RoutingTable(ref public_ids) => {
+                write!(formatter, "RoutingTable({:?})", public_ids)
+            }
+            MessageContent::GroupSplit(ref prefix) => write!(formatter, "GroupSplit({:?})", prefix),
             MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",

@@ -452,17 +452,6 @@ impl Node {
                 }
                 Ok(())
             }
-            DirectMessage::RoutingTable(public_ids) => {
-                for public_id in &public_ids {
-                    if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
-                        let our_name = *self.name();
-                        let _ = self.send_connection_info(*public_id,
-                                                  Authority::ManagedNode(our_name),
-                                                  Authority::ManagedNode(*public_id.name()));
-                    }
-                }
-                Ok(())
-            }
             DirectMessage::TunnelRequest(dst_id) => self.handle_tunnel_request(peer_id, dst_id),
             DirectMessage::TunnelSuccess(dst_id) => self.handle_tunnel_success(peer_id, dst_id),
             DirectMessage::TunnelClosed(dst_id) => self.handle_tunnel_closed(peer_id, dst_id),
@@ -643,6 +632,10 @@ impl Node {
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
              Authority::ManagedNode(_),
              dst) => self.handle_get_close_group_response(close_group_ids, dst),
+            (MessageContent::RoutingTable(public_ids), _, _) => {
+                self.handle_routing_table(public_ids)
+            }
+            (MessageContent::GroupSplit(prefix), _, _) => self.handle_group_split(prefix),
             (MessageContent::OwnGroupMerge { sender_prefix, merge_prefix, groups }, src, _) => {
                 self.handle_own_group_merge(src, sender_prefix, merge_prefix, groups)
             }
@@ -873,17 +866,16 @@ impl Node {
                 }
 
                 if should_split {
-                    // None of the `peers_to_drop` will have been in our group, so no need to notify
-                    // Routing user about them.
                     let our_group_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    let peers_to_drop = self.peer_mgr.split_group(our_group_prefix);
-                    let our_new_prefix = *self.peer_mgr.routing_table().our_group_prefix();
-                    if let Err(err) = self.event_sender.send(Event::GroupSplit(our_new_prefix)) {
-                        error!("{:?} Error sending event to routing user - {:?}", self, err);
-                    }
-
-                    for peer_id in peers_to_drop {
-                        self.disconnect_peer(&peer_id);
+                    for prefix in self.peer_mgr.routing_table().prefixes() {
+                        let request_msg = RoutingMessage {
+                            src: Authority::NaeManager(our_group_prefix.lower_bound()),
+                            dst: Authority::NaeManager(prefix.lower_bound()),
+                            content: MessageContent::GroupSplit(our_group_prefix),
+                        };
+                        if let Err(err) = self.send_routing_message(request_msg) {
+                            debug!("{:?} Failed to send GroupSplit: {:?}.", self, err);
+                        }
                     }
                 }
 
@@ -894,9 +886,21 @@ impl Node {
                     .cloned()
                     .collect();
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
-                    let message = DirectMessage::RoutingTable(self.peer_mgr
-                        .get_pub_ids(&all_rt_contacts));
-                    let _ = self.send_direct_message(&peer_id, message);
+                    let mut public_ids =
+                        self.peer_mgr.get_pub_ids(&all_rt_contacts).into_iter().collect_vec();
+                    public_ids.sort();
+                    let request_content = MessageContent::RoutingTable(public_ids);
+                    let request_msg = RoutingMessage {
+                        src: Authority::NaeManager(self.peer_mgr
+                            .routing_table()
+                            .our_group_prefix()
+                            .lower_bound()),
+                        dst: Authority::ManagedNode(*public_id.name()),
+                        content: request_content,
+                    };
+                    if let Err(err) = self.send_routing_message(request_msg) {
+                        debug!("{:?} Failed to send RoutingTable: {:?}.", self, err);
+                    }
                     let event = Event::NodeAdded(*public_id.name(),
                                                  self.peer_mgr.routing_table().clone());
                     if let Err(err) = self.event_sender.send(event) {
@@ -1280,6 +1284,34 @@ impl Node {
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
                 try!(self.send_connection_info(close_node_id, dst.clone(), ci_dst));
             }
+        }
+        Ok(())
+    }
+
+    fn handle_routing_table(&mut self, public_ids: Vec<PublicId>) -> Result<(), RoutingError> {
+        for public_id in &public_ids {
+            if self.peer_mgr.routing_table().need_to_add(public_id.name()).is_ok() {
+                let our_name = *self.name();
+                let _ = self.send_connection_info(*public_id,
+                                                  Authority::ManagedNode(our_name),
+                                                  Authority::ManagedNode(*public_id.name()));
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_group_split(&mut self, prefix: Prefix<XorName>) -> Result<(), RoutingError> {
+        // None of the `peers_to_drop` will have been in our group, so no need to notify Routing
+        // user about them.
+        let (peers_to_drop, our_new_prefix) = self.peer_mgr.split_group(prefix);
+        if let Some(new_prefix) = our_new_prefix {
+            if let Err(err) = self.event_sender.send(Event::GroupSplit(new_prefix)) {
+                error!("{:?} Error sending event to routing user - {:?}", self, err);
+            }
+        }
+
+        for peer_id in peers_to_drop {
+            self.disconnect_peer(&peer_id);
         }
         Ok(())
     }
@@ -1731,12 +1763,15 @@ impl Node {
                             targets: Vec<Prefix<XorName>>,
                             merge_details: OwnMergeDetails<XorName>,
                             src: Authority) {
-        let groups = merge_details.groups
+        let mut groups = merge_details.groups
             .into_iter()
             .map(|(prefix, members)| {
-                (prefix, self.peer_mgr.get_pub_ids(&members).into_iter().collect())
+                let mut group = self.peer_mgr.get_pub_ids(&members).into_iter().collect_vec();
+                group.sort();
+                (prefix, group)
             })
-            .collect();
+            .collect_vec();
+        groups.sort();
         let request_content = MessageContent::OwnGroupMerge {
             sender_prefix: merge_details.sender_prefix,
             merge_prefix: merge_details.merge_prefix,
