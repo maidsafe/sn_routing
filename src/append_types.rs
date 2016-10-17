@@ -19,7 +19,7 @@ use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
 use xor_name::XorName;
-use data::DataIdentifier;
+use data::{DataIdentifier, verify_detached};
 use error::RoutingError;
 use priv_appendable_data::PrivAppendedData;
 
@@ -76,7 +76,7 @@ impl AppendedData {
             Err(_) => return false,
             Ok(data) => data,
         };
-        sign::verify_detached(&self.signature, &data_to_sign, &self.sign_key)
+        verify_detached(&self.signature, &data_to_sign, &self.sign_key)
     }
 }
 
@@ -155,7 +155,7 @@ impl AppendWrapper {
                     Err(_) => return false,
                     Ok(data) => data,
                 };
-                sign::verify_detached(signature, &data_to_sign, sign_key)
+                verify_detached(signature, &data_to_sign, sign_key)
             }
         }
     }

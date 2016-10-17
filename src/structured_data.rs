@@ -19,7 +19,7 @@ use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::DataIdentifier;
+use data::{DataIdentifier, verify_detached};
 use error::RoutingError;
 use std::{u8, u64};
 
@@ -166,10 +166,8 @@ impl StructuredData {
         let data = try!(self.data_to_sign());
         // Count valid previous_owner_signatures and refuse if quantity is not enough
 
-        let check_all_keys = |&sig| {
-            owner_keys.iter()
-                .any(|pub_key| sign::verify_detached(&sig, &data, pub_key))
-        };
+        let check_all_keys =
+            |&sig| owner_keys.iter().any(|pub_key| verify_detached(&sig, &data, pub_key));
 
         if self.previous_owner_signatures
             .iter()

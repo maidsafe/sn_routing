@@ -193,7 +193,7 @@ pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
 pub use core::{GROUP_SIZE, QUORUM_SIZE};
-pub use data::{Data, DataIdentifier};
+pub use data::{Data, DataIdentifier, NO_OWNER_PUB_KEY};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};

@@ -22,6 +22,17 @@ pub use plain_data::PlainData;
 pub use priv_appendable_data::PrivAppendableData;
 pub use pub_appendable_data::PubAppendableData;
 use xor_name::XorName;
+use rust_sodium::crypto::sign;
+
+/// A signing key with no matching private key. Passing ownership to it will make a chunk
+/// effectively immutable.
+pub const NO_OWNER_PUB_KEY: sign::PublicKey = sign::PublicKey([0; sign::PUBLICKEYBYTES]);
+
+// Returns whether the signature is valid. It explicitly considers any signature for
+// `NO_OWNER_PUB_KEY` invalid.
+pub fn verify_detached(sig: &sign::Signature, data: &[u8], pub_key: &sign::PublicKey) -> bool {
+    *pub_key != NO_OWNER_PUB_KEY && sign::verify_detached(sig, data, pub_key)
+}
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
