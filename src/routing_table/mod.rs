@@ -758,8 +758,8 @@ mod tests {
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
                 }
-                Err(_) => {
-                    assert!(false); // no other errors should be possible
+                Err(e) => {
+                    panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
                     unwrap!(invariant(&table));
