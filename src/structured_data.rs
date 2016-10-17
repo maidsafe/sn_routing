@@ -19,7 +19,7 @@ use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::{DataIdentifier, verify_detached};
+use data::{DataIdentifier, verify_detached, NO_OWNER_PUB_KEY};
 use error::RoutingError;
 use std::{u8, u64};
 
@@ -97,13 +97,11 @@ impl StructuredData {
         DataIdentifier::Structured(self.name, self.type_tag)
     }
 
-    /// Delete self
+    /// Deletes the data by clearing all its fields, if the `other` data would be a valid
+    /// successor.
     pub fn delete_if_valid_successor(&mut self,
                                      other: &StructuredData)
                                      -> Result<(), RoutingError> {
-        if !(other.data.is_empty() && other.current_owner_keys.is_empty()) {
-            return Err(RoutingError::UnknownMessageType);
-        }
         try!(self.validate_self_against_successor(other));
         self.data.clear();
         self.previous_owner_keys.clear();
@@ -129,6 +127,10 @@ impl StructuredData {
     pub fn validate_self_against_successor(&self,
                                            other: &StructuredData)
                                            -> Result<(), RoutingError> {
+        if other.current_owner_keys.len() > 1 &&
+           other.current_owner_keys.contains(&NO_OWNER_PUB_KEY) {
+            return Err(RoutingError::InvalidOwners);
+        }
         let owner_keys_to_match = if other.previous_owner_keys.is_empty() {
             &other.current_owner_keys
         } else {
