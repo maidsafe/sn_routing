@@ -23,10 +23,8 @@ use std::mem;
 /// These are considered points in a space with the XOR metric, and need to implement the
 /// functionality required by `RoutingTable` to use them as node names.
 pub trait Xorable: Ord {
-    /// Returns the bucket that `other` belongs to, in the routing table of the node with name
-    /// `self`. This must be the number of leading bits in which `self` and `other` agree. E. g.
-    /// the bucket index of `other = 11110000` for `self = 11111111` is 4, because the fifth bit is
-    /// the first one in which they differ.
+    /// Returns the length of the common prefix with the `other` name; e. g.
+    /// the when `other = 11110000` and `self = 11111111` this is 4.
     fn common_prefix(&self, other: &Self) -> usize;
 
     /// Compares the distance of the arguments to `self`. Returns `Less` if `lhs` is closer,
