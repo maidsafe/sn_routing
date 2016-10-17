@@ -125,6 +125,9 @@ use std::fmt::{Binary, Debug, Formatter};
 use std::fmt::Result as FmtResult;
 use std::hash::Hash;
 
+#[cfg(test)]
+pub use self::network_tests::verify_network_invariant;
+
 pub type Groups<T> = HashMap<Prefix<T>, HashSet<T>>;
 
 type MemberIter<'a, T> = hash_set::Iter<'a, T>;

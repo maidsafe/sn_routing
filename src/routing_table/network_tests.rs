@@ -21,8 +21,11 @@ use maidsafe_utilities::SeededRng;
 use rand::Rng;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::iter::IntoIterator;
+use std::fmt::{Binary, Debug};
+use std::hash::Hash;
 use super::{Destination, Error, RoutingTable};
 use super::prefix::Prefix;
+use routing_table::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
 
@@ -233,9 +236,16 @@ fn node_to_group_message() {
 }
 
 fn verify_invariant(network: &Network) {
-    let mut groups: HashMap<Prefix<u64>, HashSet<u64>> = HashMap::new();
+    verify_network_invariant(network.nodes.values());
+}
+
+pub fn verify_network_invariant<'a, T, U>(nodes: U)
+    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable + 'a,
+          U: IntoIterator<Item = &'a RoutingTable<T>>
+{
+    let mut groups: HashMap<Prefix<T>, HashSet<T>> = HashMap::new();
     // first, collect all groups in the network
-    for node in network.nodes.values() {
+    for node in nodes {
         for prefix in node.groups.keys() {
             let mut group_content = node.groups[prefix].clone();
             if *prefix == node.our_group_prefix {
@@ -247,7 +257,6 @@ fn verify_invariant(network: &Network) {
             }
             let _ = groups.insert(*prefix, group_content);
         }
-        // use this opportunity to check if each node satisfies the invariant
         node.verify_invariant();
     }
     // check that prefixes are disjoint
@@ -257,17 +266,21 @@ fn verify_invariant(network: &Network) {
     verify_groups_match_names(&groups);
 
     // check that groups cover the whole namespace
-    assert!(Prefix::<u64>::new(0, 0).is_covered_by(groups.keys()));
+    assert!(Prefix::<T>::new(0, Default::default()).is_covered_by(groups.keys()));
 }
 
-fn verify_disjoint_prefixes(prefixes: HashSet<Prefix<u64>>) {
+fn verify_disjoint_prefixes<T>(prefixes: HashSet<Prefix<T>>)
+    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
+{
     for prefix in &prefixes {
         assert!(!prefixes.iter()
             .any(|x| *x != *prefix && (x.is_compatible(prefix) || prefix.is_compatible(x))));
     }
 }
 
-fn verify_groups_match_names(groups: &HashMap<Prefix<u64>, HashSet<u64>>) {
+fn verify_groups_match_names<T>(groups: &HashMap<Prefix<T>, HashSet<T>>)
+    where T: Binary + Clone + Copy + Debug + Default + Hash + Xorable
+{
     for &prefix in groups.keys() {
         for name in &groups[&prefix] {
             assert!(prefix.matches(name));
