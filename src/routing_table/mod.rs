@@ -300,8 +300,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         }
     }
 
+    /// Returns true if `name` is in our group (including if it is our own name).
     pub fn is_in_our_group(&self, name: &T) -> bool {
         if self.our_group_prefix.matches(name) {
+            *name == self.our_name ||
             unwrap!(self.groups.get(&self.our_group_prefix)).contains(name)
         } else {
             false
@@ -355,13 +357,14 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         let _ = self.needed.remove(&name);
 
         let our_group = unwrap!(self.groups.get(&self.our_group_prefix));
-        // Count the number of names which will end up in our group if it is split.
+        // Count the number of names which will end up in our group if it is split (this
+        // implies common prefix is 1 longer than existing prefix).
         let new_group_size = our_group.iter()
             .filter(|name| self.our_name.common_prefix(name) > self.our_group_prefix.bit_count())
             .count();
         // If either of the two new groups will not contain enough entries, return `None` (add 1
         // when considering our own group to also count ourself as a member of this group).
-        let min_size = self.min_group_size + SPLIT_BUFFER;
+        let min_size = self.min_split_size();
         Ok(our_group.len() - new_group_size >= min_size && new_group_size + 1 >= min_size)
     }
 
@@ -635,6 +638,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
         keys[0]
     }
 
+    fn min_split_size(&self) -> usize {
+        self.min_group_size + SPLIT_BUFFER
+    }
+
     #[cfg(test)]
     fn num_of_groups(&self) -> usize {
         self.groups.len()
@@ -693,5 +700,118 @@ mod tests {
         assert_eq!(table.len(), 0);
         assert!(table.is_empty());
         assert_eq!(table.iter().count(), 0);
+    }
+
+    #[test]
+    fn test_routing_groups() {
+        // Use replicable random numbers to initialse a table:
+        use rand::{Rng, SeedableRng, XorShiftRng};
+        let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
+        let our_name = rng.next_u32();
+        let mut table = RoutingTable::new(our_name, 8);
+        let mut unknown_distant_name = None;
+
+        for _ in 0..1000 {
+            let new_name = rng.next_u32();
+            match table.add(new_name) {
+                Err(_) => {
+                    // We should get a few of these. Save one for tests, but otherwise ignore.
+                    unknown_distant_name = Some(new_name);
+                }
+                Ok(true) => {
+                    let our_prefix = *table.our_group_prefix();
+                    let _ = table.split(our_prefix);
+                }
+                Ok(false) => {
+                    if table.is_in_our_group(&new_name) {
+                        continue;   // add() already checked for necessary split
+                    }
+
+                    // Not a split event for our group, but might be for a different group.
+                    let group_prefix = table.find_group_prefix(&new_name)
+                        .expect("get group added to");
+                    let (group_len, new_group_size) = {
+                        let group = table.groups.get(&group_prefix).expect("get group from prefix");
+                        // Count size of group after an arbitrary split (note that there is only
+                        // one split possible; the arbitrariness is just which half we choose here).
+                        (group.len(),
+                         group.iter()
+                            .filter(|name| new_name.common_prefix(name) > group_prefix.bit_count())
+                            .count())
+                    };
+                    let min_size = table.min_split_size();
+                    if new_group_size >= min_size && group_len - new_group_size >= min_size {
+                        let _ = table.split(group_prefix);  // do the split
+                    }
+                }
+            }
+        }
+
+        let unknown_close_name;
+        loop {
+            let new_name = rng.next_u32();
+            if table.our_group_prefix.matches(&new_name) {
+                continue;
+            }
+            if let Some(prefix) = table.groups.keys().find(|p| p.matches(&new_name)) {
+                if !unwrap!(table.groups.get(&prefix)).contains(&new_name) {
+                    unknown_close_name = new_name;
+                    break;
+                }
+            }
+        }
+
+        let unknown_distant_name = unwrap!(unknown_distant_name);
+        // These numbers depend on distribution of names
+        let num_known_nodes = 114;
+        let num_groups = 9;
+        let len_our_group = 13;
+        assert_eq!(table.len(), num_known_nodes);
+        assert_eq!(table.groups.len(), num_groups);
+        assert_eq!(table.groups.get(&table.our_group_prefix).unwrap().len() + 1,
+                   len_our_group);
+        assert_eq!(our_name, table.our_name);
+        println!("Our group's prefix: {:?}", table.our_group_prefix);
+
+        // Get some names
+        let close_name: u32 =
+            *unwrap!(unwrap!(table.groups.get(&table.our_group_prefix)).iter().nth(4));
+        let distant_name: u32 = *unwrap!(table.iter().nth(69));
+        assert!(!table.our_group_prefix.matches(&distant_name));
+
+        assert!(table.iter().any(|u| *u == close_name));
+        assert!(table.iter().any(|u| *u == distant_name));
+        assert!(table.iter().all(|u| *u != unknown_close_name));
+        assert!(table.iter().all(|u| *u != unknown_distant_name));
+        assert!(table.is_in_our_group(&close_name));
+        assert!(!table.is_in_our_group(&distant_name));
+
+        // Tests on close_names
+        assert_eq!(table.close_names(&close_name).unwrap().len(), len_our_group);
+        assert!(table.close_names(&distant_name).is_none());
+        assert!(table.close_names(&unknown_close_name).is_none());
+        assert!(table.close_names(&unknown_distant_name).is_none());
+
+        // Tests on other_close_names
+        assert_eq!(table.other_close_names(&close_name).unwrap().len(),
+                   len_our_group - 1);
+        assert!(table.other_close_names(&distant_name).is_none());
+        assert!(table.other_close_names(&unknown_close_name).is_none());
+        assert!(table.other_close_names(&unknown_distant_name).is_none());
+
+        // Tests on is_in_our_group
+        assert!(table.is_in_our_group(&our_name));
+        assert!(table.is_in_our_group(&close_name));
+        assert!(!table.is_in_our_group(&distant_name));
+        assert!(!table.is_in_our_group(&unknown_close_name));
+        assert!(!table.is_in_our_group(&unknown_distant_name));
+
+        // Tests on need_to_add
+        assert_eq!(table.need_to_add(&our_name), Err(Error::OwnNameDisallowed));
+        assert_eq!(table.need_to_add(&close_name), Err(Error::AlreadyExists));
+        assert_eq!(table.need_to_add(&distant_name), Err(Error::AlreadyExists));
+        assert_eq!(table.need_to_add(&unknown_close_name), Ok(()));
+        assert_eq!(table.need_to_add(&unknown_distant_name),
+                   Err(Error::PeerNameUnsuitable));
     }
 }
