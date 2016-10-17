@@ -15,7 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::RoutingTable;
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Request, Response, XorName};
@@ -60,17 +59,17 @@ impl ExampleNode {
             match event {
                 Event::Request { request, src, dst } => self.handle_request(request, src, dst),
                 Event::Response { response, src, dst } => self.handle_response(response, src, dst),
-                Event::NodeAdded(name, routing_table) => {
+                Event::NodeAdded(name, _routing_table) => {
                     trace!("{} Received NodeAdded event {:?}",
                            self.get_debug_name(),
                            name);
-                    self.handle_node_added(name, routing_table);
+                    self.handle_node_added(name);
                 }
-                Event::NodeLost(name, routing_table) => {
+                Event::NodeLost(name, _routing_table) => {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
-                    self.handle_node_lost(name, routing_table);
+                    self.handle_node_lost(name);
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
@@ -180,12 +179,12 @@ impl ExampleNode {
 
     // While handling churn messages, we first "action" it ourselves and then
     // send the corresponding refresh messages out to our close group.
-    fn handle_node_added(&mut self, name: XorName, _routing_table: RoutingTable<XorName>) {
+    fn handle_node_added(&mut self, name: XorName) {
         // TODO: Use the given routing table instead of repeatedly querying the routing node.
         self.send_refresh(MessageId::from_added_node(name));
     }
 
-    fn handle_node_lost(&mut self, name: XorName, _routing_table: RoutingTable<XorName>) {
+    fn handle_node_lost(&mut self, name: XorName) {
         // TODO: Use the given routing table instead of repeatedly querying the routing node.
         self.send_refresh(MessageId::from_lost_node(name));
     }

@@ -48,7 +48,6 @@ extern crate rustc_serialize;
 extern crate docopt;
 extern crate rust_sodium;
 extern crate routing;
-extern crate kademlia_routing_table;
 extern crate lru_time_cache;
 extern crate term;
 #[macro_use]
@@ -65,7 +64,7 @@ use maidsafe_utilities::thread::named as thread_named;
 
 use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
+use routing::{Data, DataIdentifier, PlainData, XorName};
 use rust_sodium::crypto::hash;
 use std::{env, io, thread};
 use std::io::Write;
@@ -83,6 +82,7 @@ const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
+const GROUP_SIZE: usize = 8;
 
 struct NodeProcess(Child, usize);
 
