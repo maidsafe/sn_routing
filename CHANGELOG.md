@@ -1,5 +1,8 @@
 # Routing - Change Log
 
+## [0.27.1]
+- Increase the ID size limit by 10 kB.
+
 ## [0.27.0]
 - add `NO_OWNER_PUB_KEY` to make data effectively immutable
 - disallow that key together with other owners (new error `InvalidOwners`)
