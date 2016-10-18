@@ -140,7 +140,7 @@ impl StructuredData {
         // TODO(dirvine) Increase error types to be more descriptive  :07/07/2015
         if other.type_tag != self.type_tag || other.name != self.name ||
            other.version != self.version + 1 ||
-           *owner_keys_to_match != self.current_owner_keys {
+           (!self.is_deleted() && *owner_keys_to_match != self.current_owner_keys) {
             return Err(RoutingError::UnknownMessageType);
         }
         other.verify_previous_owner_signatures(owner_keys_to_match)
