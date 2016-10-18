@@ -527,13 +527,11 @@ fn disconnect_on_rebootstrap() {
 }
 
 #[test]
-#[ignore]
 fn less_than_group_size_nodes() {
     test_nodes(3)
 }
 
 #[test]
-#[ignore]
 fn group_size_nodes() {
     test_nodes(MIN_GROUP_SIZE);
 }
@@ -595,7 +593,6 @@ fn failing_connections_unidirectional() {
 }
 
 #[test]
-#[ignore]
 fn client_connects_to_nodes() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 1);
@@ -699,7 +696,6 @@ fn messages_accumulate_with_quorum() {
 }
 
 #[test]
-#[ignore]
 fn node_drops() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE + 2);
@@ -791,7 +787,6 @@ fn node_restart() {
 }
 
 #[test]
-#[ignore]
 fn check_close_groups_for_group_size_nodes() {
     let nodes = create_connected_nodes(&Network::new(None), MIN_GROUP_SIZE);
     let close_groups_complete = nodes.iter()
