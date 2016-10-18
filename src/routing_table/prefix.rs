@@ -22,8 +22,8 @@ use std::fmt::Result as FmtResult;
 use std::hash::{Hash, Hasher};
 use super::xorable::Xorable;
 
-// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
-// consisting of all names that start with this sequence.
+/// A group prefix, i.e. a sequence of bits specifying the part of the network's name space
+/// consisting of all names that start with this sequence.
 #[derive(Clone, Copy, Default, Eq, Ord)]
 pub struct Prefix<T: Clone + Copy + Default + Binary + Xorable> {
     bit_count: usize,
@@ -80,10 +80,12 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
         }
     }
 
+    /// Returns the number of common leading bits with the input name, capped with prefix length.
     pub fn common_prefix(&self, name: &T) -> usize {
         cmp::min(self.bit_count, self.name.common_prefix(name))
     }
 
+    /// Returns the number of common leading bits with the input name.
     pub fn max_identical_index(&self, name: &T) -> usize {
         self.name.common_prefix(name)
     }
