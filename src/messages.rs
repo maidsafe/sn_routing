@@ -17,6 +17,7 @@
 
 use ack_manager::Ack;
 use authority::Authority;
+use append_types::AppendWrapper;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
 use data::{Data, DataIdentifier};
@@ -625,6 +626,8 @@ pub enum Request {
     Post(Data, MessageId),
     /// Delete data from network. Provide actual data as parameter
     Delete(Data, MessageId),
+    /// Append an item to an appendable data chunk.
+    Append(AppendWrapper, MessageId),
     /// Get account information for Client with given ID
     GetAccountInfo(MessageId),
 }
@@ -643,6 +646,8 @@ pub enum Response {
     PostSuccess(DataIdentifier, MessageId),
     /// Success token for delete (may be ignored)
     DeleteSuccess(DataIdentifier, MessageId),
+    /// Success token for append (may be ignored)
+    AppendSuccess(DataIdentifier, MessageId),
     /// Response containing account information for requested Client account
     GetAccountInfoSuccess {
         /// Unique message identifier
@@ -688,6 +693,15 @@ pub enum Response {
         /// Error type sent back, may be injected from upper layers
         external_error_indicator: Vec<u8>,
     },
+    /// Error for append, includes signed request to prevent injection attacks
+    AppendFailure {
+        /// Unique message identifier
+        id: MessageId,
+        /// ID of the affected data chunk
+        data_id: DataIdentifier,
+        /// Error type sent back, may be injected from upper layers
+        external_error_indicator: Vec<u8>,
+    },
     /// Error for `GetAccountInfo`
     GetAccountInfoFailure {
         /// Unique message identifier
@@ -704,6 +718,7 @@ impl Request {
             Request::Refresh(..) => 2,
             Request::Get(..) |
             Request::GetAccountInfo(..) => 3,
+            Request::Append(..) => 4,
             Request::Put(ref data, _) |
             Request::Post(ref data, _) |
             Request::Delete(ref data, _) => {
@@ -738,11 +753,13 @@ impl Response {
             Response::PutSuccess(..) |
             Response::PostSuccess(..) |
             Response::DeleteSuccess(..) |
+            Response::AppendSuccess(..) |
             Response::GetAccountInfoSuccess { .. } |
             Response::GetFailure { .. } |
             Response::PutFailure { .. } |
             Response::PostFailure { .. } |
             Response::DeleteFailure { .. } |
+            Response::AppendFailure { .. } |
             Response::GetAccountInfoFailure { .. } => 3,
         }
     }
@@ -778,6 +795,9 @@ impl Debug for Request {
             Request::Delete(ref data, ref message_id) => {
                 write!(formatter, "Delete({:?}, {:?})", data, message_id)
             }
+            Request::Append(ref wrapper, ref message_id) => {
+                write!(formatter, "Append({:?}, {:?})", wrapper, message_id)
+            }
             Request::GetAccountInfo(ref message_id) => {
                 write!(formatter, "GetAccountInfo({:?})", message_id)
             }
@@ -800,6 +820,9 @@ impl Debug for Response {
             Response::DeleteSuccess(ref name, ref message_id) => {
                 write!(formatter, "DeleteSuccess({:?}, {:?})", name, message_id)
             }
+            Response::AppendSuccess(ref name, ref message_id) => {
+                write!(formatter, "AppendSuccess({:?}, {:?})", name, message_id)
+            }
             Response::GetAccountInfoSuccess { ref id, .. } => {
                 write!(formatter, "GetAccountInfoSuccess {{ {:?}, .. }}", id)
             }
@@ -814,6 +837,9 @@ impl Debug for Response {
             }
             Response::DeleteFailure { ref id, ref data_id, .. } => {
                 write!(formatter, "DeleteFailure {{ {:?}, {:?}, .. }}", id, data_id)
+            }
+            Response::AppendFailure { ref id, ref data_id, .. } => {
+                write!(formatter, "AppendFailure {{ {:?}, {:?}, .. }}", id, data_id)
             }
             Response::GetAccountInfoFailure { ref id, .. } => {
                 write!(formatter, "GetAccountInfoFailure {{ {:?}, .. }}", id)

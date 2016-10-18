@@ -6,6 +6,7 @@ env:
 branches:
   only:
     - master
+    - stable
 os:
   - linux
   - osx

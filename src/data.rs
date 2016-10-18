@@ -16,9 +16,22 @@
 // relating to use of the SAFE Network Software.
 
 pub use immutable_data::ImmutableData;
+pub use priv_appendable_data::PrivAppendableData;
+pub use pub_appendable_data::PubAppendableData;
 use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
 use xor_name::XorName;
+use rust_sodium::crypto::sign;
+
+/// A signing key with no matching private key. Passing ownership to it will make a chunk
+/// effectively immutable.
+pub const NO_OWNER_PUB_KEY: sign::PublicKey = sign::PublicKey([0; sign::PUBLICKEYBYTES]);
+
+// Returns whether the signature is valid. It explicitly considers any signature for
+// `NO_OWNER_PUB_KEY` invalid.
+pub fn verify_detached(sig: &sign::Signature, data: &[u8], pub_key: &sign::PublicKey) -> bool {
+    *pub_key != NO_OWNER_PUB_KEY && sign::verify_detached(sig, data, pub_key)
+}
 
 /// This is the data types routing handles in the public interface
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, RustcEncodable, RustcDecodable)]
@@ -27,6 +40,10 @@ pub enum Data {
     Structured(StructuredData),
     /// `ImmutableData` data type.
     Immutable(ImmutableData),
+    /// `PubAppendableData` data type.
+    PubAppendable(PubAppendableData),
+    /// `PrivAppendableData` data type.
+    PrivAppendable(PrivAppendableData),
 }
 
 impl Data {
@@ -35,6 +52,8 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
+            Data::PubAppendable(ref data) => data.name(),
+            Data::PrivAppendable(ref data) => data.name(),
         }
     }
 
@@ -43,14 +62,18 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
+            Data::PubAppendable(ref data) => data.identifier(),
+            Data::PrivAppendable(ref data) => data.identifier(),
         }
     }
 
-    /// Return data size.
-    pub fn payload_size(&self) -> usize {
+    /// Validate data size.
+    pub fn validate_size(&self) -> bool {
         match *self {
-            Data::Structured(ref data) => data.payload_size(),
-            Data::Immutable(ref data) => data.payload_size(),
+            Data::Immutable(ref data) => data.validate_size(),
+            Data::PrivAppendable(ref data) => data.validate_size(),
+            Data::PubAppendable(ref data) => data.validate_size(),
+            Data::Structured(ref data) => data.validate_size(),
         }
     }
 }
@@ -62,6 +85,10 @@ pub enum DataIdentifier {
     Structured(XorName, u64),
     /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
+    /// Request for public appendable data.
+    PubAppendable(XorName),
+    /// Request for private appendable data.
+    PrivAppendable(XorName),
 }
 
 impl Debug for Data {
@@ -69,6 +96,8 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
+            Data::PubAppendable(ref data) => data.fmt(formatter),
+            Data::PrivAppendable(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -78,7 +107,9 @@ impl DataIdentifier {
     pub fn name(&self) -> &XorName {
         match *self {
             DataIdentifier::Structured(ref name, _) |
-            DataIdentifier::Immutable(ref name) => name,
+            DataIdentifier::Immutable(ref name) |
+            DataIdentifier::PubAppendable(ref name) |
+            DataIdentifier::PrivAppendable(ref name) => name,
         }
     }
 }
@@ -122,32 +153,6 @@ mod tests {
                    Data::Immutable(immutable_data.clone()).name());
         assert_eq!(immutable_data.identifier(),
                    DataIdentifier::Immutable(*immutable_data.name()));
-    }
-
-    #[test]
-    fn data_payload_size() {
-        // payload_size() resolves correctly for StructuredData
-        let keys = ::rust_sodium::crypto::sign::gen_keypair();
-        let owner_keys = vec![keys.0];
-        match StructuredData::new(0,
-                                  rand::random(),
-                                  0,
-                                  vec![],
-                                  owner_keys.clone(),
-                                  vec![],
-                                  Some(&keys.1)) {
-            Ok(structured_data) => {
-                assert_eq!(structured_data.payload_size(),
-                           Data::Structured(structured_data).payload_size());
-            }
-            Err(error) => panic!("Error: {:?}", error),
-        }
-
-        // payload_size() resolves correctly for ImmutableData
-        let value = "immutable data value".to_owned().into_bytes();
-        let immutable_data = ImmutableData::new(value);
-        assert_eq!(immutable_data.payload_size(),
-                   Data::Immutable(immutable_data).payload_size());
     }
 
     #[test]

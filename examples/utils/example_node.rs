@@ -112,6 +112,7 @@ impl ExampleNode {
             Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }
+            Request::Append(_, _) => unimplemented!(),
         }
     }
 
