@@ -14,6 +14,7 @@
 //
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
+#![cfg(test)]
 
 use authority::Authority;
 use cache::{Cache, NullCache};
@@ -29,7 +30,7 @@ use node::Node;
 use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
-use routing_table::{RoutingTable, Xorable};
+use routing_table::{RoutingTable, Xorable, verify_network_invariant};
 use std::cell::RefCell;
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -396,31 +397,6 @@ fn random_churn<R: Rng>(rng: &mut R,
     }
 }
 
-// Get names of all nodes in the `bucket_index`-th bucket in the routing table.
-// fn actual_names_in_bucket(table: &RoutingTable<XorName>,
-//                           bucket_index: usize)
-//                           -> BTreeSet<XorName> {
-//     let our_name = table.our_name();
-//     let far_name = our_name.with_flipped_bit(bucket_index);
-
-//     table.closest_nodes_to(&far_name, MIN_GROUP_SIZE, false)
-//         .into_iter()
-//         .map(|info| *info.name())
-//         .filter(|name| our_name.bucket_index(name) == bucket_index)
-//         .collect()
-// }
-
-// Get names of all nodes that belong to the `bucket_index`-th bucket in the `target`s
-// routing table.
-// fn expected_names_in_bucket(routing_tables: &[RoutingTable<XorName>],
-//                             target: &XorName,
-//                             bucket_index: usize)
-//                             -> BTreeSet<XorName> {
-//     routing_tables.iter()
-//         .filter(|routing_table| target.bucket_index(routing_table.our_name()) == bucket_index)
-//         .map(|routing_table| *routing_table.our_name())
-//         .collect()
-// }
 
 /// Sorts the given nodes by their distance to `name`. Note that this will call the `name()`
 /// function on them which causes polling, so it calls `poll_all` to make sure that all other
@@ -431,37 +407,13 @@ fn sort_nodes_by_distance_to(nodes: &mut [TestNode], name: &XorName) {
 }
 
 /// Verify that the invariant is upheld for the node at `index`.
-fn verify_invariant_for_node(nodes: &[TestNode], index: usize) {
-    let routing_tables = nodes.iter().map(|node| node.routing_table()).collect_vec();
-    verify_invariant(&routing_tables, index);
+fn verify_invariant_for_node(node: &TestNode) {
+    node.routing_table().verify_invariant();
 }
 
-/// Verify that the invariant is upheld for the routing table at `index`.
-pub fn verify_invariant(_routing_tables: &[RoutingTable<XorName>], _index: usize) {
-    // let target = routing_tables[index].our_name();
-    // let mut count = routing_tables.len() - 1;
-    // let mut bucket_index = 0;
-
-    // while count > 0 {
-    //     let actual_bucket = actual_names_in_bucket(&routing_tables[index], bucket_index);
-    //     let expected_bucket = expected_names_in_bucket(routing_tables, target, bucket_index);
-    //     if actual_bucket.len() < MIN_GROUP_SIZE {
-    //         assert!(expected_bucket == actual_bucket,
-    //                 "Node: {:?}, expected: {:?}. found: {:?}",
-    //                 target,
-    //                 expected_bucket,
-    //                 actual_bucket);
-    //     }
-    //     count -= expected_bucket.len();
-    //     bucket_index += 1;
-    // }
-}
-
-/// Verify that the invariant is upheld for all nodes.
 fn verify_invariant_for_all_nodes(nodes: &[TestNode]) {
-    for node_index in 0..nodes.len() {
-        verify_invariant_for_node(nodes, node_index);
-    }
+    let routing_tables: Vec<RoutingTable<_>> = nodes.iter().map(|x| x.routing_table()).collect();
+    verify_network_invariant(routing_tables.iter());
 }
 
 // Generate a vector of random bytes of the given length.
