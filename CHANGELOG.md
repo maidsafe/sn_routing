@@ -1,5 +1,11 @@
 # Routing - Change Log
 
+## [0.27.0]
+- add `NO_OWNER_PUB_KEY` to make data effectively immutable
+- disallow that key together with other owners (new error `InvalidOwners`)
+- provide API for data chunk size validation (new error `DataTooLarge`)
+- support new deletion paradigm for structured data
+
 ## [0.26.0]
 - Add the public and private appendable data types.
 - Allow whitelisting nodes via the crust config file.
