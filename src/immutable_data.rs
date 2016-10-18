@@ -24,7 +24,7 @@ use xor_name::XorName;
 use maidsafe_utilities::serialisation::serialise;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
-pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: usize = 1048576;
+pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: usize = 1024 * 1024 + 10 * 1024;
 
 /// An immutable chunk of data.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
