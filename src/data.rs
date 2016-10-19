@@ -125,12 +125,12 @@ impl DataIdentifier {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     extern crate rand;
 
-    use super::*;
-    use rust_sodium::crypto::sign;
     use rust_sodium::crypto::hash::sha256;
+    use rust_sodium::crypto::sign;
+    use super::*;
     use xor_name::XorName;
 
     #[test]

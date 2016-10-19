@@ -57,8 +57,8 @@ mod utils;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::{self, Joiner};
-use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, GROUP_SIZE, MessageId,
-              Node, PlainData, QUORUM_SIZE, Request, Response, XorName};
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, GROUP_SIZE, MessageId, Node,
+              PlainData, QUORUM_SIZE, Request, Response, XorName};
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
 use std::iter;
@@ -215,7 +215,7 @@ fn create_connected_nodes(count: usize,
 
     // HACK: wait until the above node switches to accepting mode. Would be
     // nice to know exactly when it happens instead of having to thread::sleep...
-    thread::sleep(Duration::from_secs(10));
+    ::std::thread::sleep(Duration::from_secs(10));
 
     // For each node, wait until it fully connects to the previous nodes before
     // continuing.

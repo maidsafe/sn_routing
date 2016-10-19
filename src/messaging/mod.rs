@@ -28,9 +28,9 @@ mod mpid_message;
 mod mpid_message_wrapper;
 
 pub use self::error::Error;
-pub use self::mpid_message_wrapper::MpidMessageWrapper;
-pub use self::mpid_message::{MAX_BODY_SIZE, MpidMessage};
 pub use self::mpid_header::{MAX_HEADER_METADATA_SIZE, MpidHeader};
+pub use self::mpid_message::{MAX_BODY_SIZE, MpidMessage};
+pub use self::mpid_message_wrapper::MpidMessageWrapper;
 
 #[cfg(test)]
 fn generate_random_bytes(size: usize) -> Vec<u8> {
