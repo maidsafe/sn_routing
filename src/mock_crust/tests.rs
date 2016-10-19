@@ -17,7 +17,7 @@
 
 // These tests are almost straight up copied from crust::service::tests
 
-use maidsafe_utilities::event_sender::{MaidSafeObserver, MaidSafeEventCategory};
+use maidsafe_utilities::event_sender::{MaidSafeEventCategory, MaidSafeObserver};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 

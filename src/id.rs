@@ -15,15 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use rust_sodium::crypto::{box_, hash, sign};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use rust_sodium::crypto::{box_, sign};
-use rust_sodium::crypto::hash::sha256;
 
 /// Network identity component containing name, and public and private keys.
 #[derive(Clone)]
 pub struct FullId {
-    public_id: ::PublicId,
+    public_id: PublicId,
     private_encrypt_key: box_::SecretKey,
     private_sign_key: sign::SecretKey,
 }
@@ -34,7 +33,7 @@ impl FullId {
         let encrypt_keys = box_::gen_keypair();
         let sign_keys = sign::gen_keypair();
         FullId {
-            public_id: ::PublicId::new(encrypt_keys.0, sign_keys.0),
+            public_id: PublicId::new(encrypt_keys.0, sign_keys.0),
             private_encrypt_key: encrypt_keys.1,
             private_sign_key: sign_keys.1,
         }
@@ -46,19 +45,19 @@ impl FullId {
                      -> FullId {
         // TODO Verify that pub/priv key pairs match
         FullId {
-            public_id: ::PublicId::new(encrypt_keys.0, sign_keys.0),
+            public_id: PublicId::new(encrypt_keys.0, sign_keys.0),
             private_encrypt_key: encrypt_keys.1,
             private_sign_key: sign_keys.1,
         }
     }
 
     /// Returns public ID reference.
-    pub fn public_id(&self) -> &::PublicId {
+    pub fn public_id(&self) -> &PublicId {
         &self.public_id
     }
 
     /// Returns mutable reference to public ID.
-    pub fn public_id_mut(&mut self) -> &mut ::PublicId {
+    pub fn public_id_mut(&mut self) -> &mut PublicId {
         &mut self.public_id
     }
 
@@ -119,7 +118,7 @@ impl PublicId {
         PublicId {
             public_encrypt_key: public_encrypt_key,
             public_sign_key: public_sign_key,
-            name: XorName(sha256::hash(&public_sign_key[..]).0),
+            name: XorName(hash::sha256::hash(&public_sign_key[..]).0),
         }
     }
 }

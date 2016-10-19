@@ -15,11 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-use std::sync::mpsc::Sender;
 use authority::Authority;
 use error::InterfaceError;
 use messages::{Request, UserMessage};
+use std::fmt::{self, Debug, Formatter};
+use std::sync::mpsc::Sender;
 use xor_name::XorName;
 
 /// An Action initiates a message flow < A | B > where we are (a part of) A.

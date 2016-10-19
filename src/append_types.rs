@@ -199,7 +199,7 @@ mod test {
     use super::*;
 
     use data::DataIdentifier;
-    use rust_sodium::crypto::{sign, box_};
+    use rust_sodium::crypto::{box_, sign};
     use priv_appendable_data::PrivAppendedData;
 
     #[test]

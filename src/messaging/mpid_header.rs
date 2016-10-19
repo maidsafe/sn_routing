@@ -19,14 +19,14 @@
 /// bytes).
 pub const MAX_HEADER_METADATA_SIZE: usize = 128;  // bytes
 
-use std::fmt::{self, Debug, Formatter};
-use std::sync::{ONCE_INIT, Once};
 
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
 use rust_sodium;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
+use std::fmt::{self, Debug, Formatter};
+use std::sync::{ONCE_INIT, Once};
 use super::{Error, GUID_SIZE};
 use utils;
 use xor_name::XorName;

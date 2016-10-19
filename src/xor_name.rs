@@ -15,13 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use kademlia_routing_table::Xorable;
 use rand;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rustc_serialize::hex::{ToHex, FromHex, FromHexError};
-use std::cmp::Ordering;
+use rustc_serialize::hex::{FromHex, FromHexError, ToHex};
 use std::{fmt, ops};
-use kademlia_routing_table::Xorable;
-
+use std::cmp::Ordering;
 
 /// Create a 32-byte array of `u8` from a 32-byte reference to a `u8` slice.
 pub fn slice_as_u8_32_array(slice: &[u8]) -> [u8; 32] {
@@ -55,7 +54,7 @@ pub enum XorNameFromHexError {
 /// i. e. the points with IDs `x` and `y` are considered to have distance `x xor y`.
 ///
 /// [1]: https://en.wikipedia.org/wiki/Kademlia#System_details
-#[derive(Eq, Copy, Clone, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Eq, Copy, Clone, Default, Hash, Ord, PartialEq, PartialOrd)]
 pub struct XorName(pub [u8; XOR_NAME_LEN]);
 
 impl XorName {
@@ -242,11 +241,11 @@ impl Decodable for XorName {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use maidsafe_utilities::serialisation::{deserialise, serialise};
+    use rand;
     use std::cmp::Ordering;
     use super::*;
-    use rand;
 
     #[test]
     fn serialisation_xor_name() {

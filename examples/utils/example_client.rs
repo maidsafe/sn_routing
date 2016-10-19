@@ -20,9 +20,9 @@ extern crate routing;
 extern crate rust_sodium;
 extern crate maidsafe_utilities;
 
-use std::sync::mpsc;
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MessageId, Response, XorName};
 use rust_sodium::crypto;
-use routing::{FullId, Event, Data, DataIdentifier, Authority, Response, Client, MessageId, XorName};
+use std::sync::mpsc;
 
 /// A simple example client implementation for a network based on the Routing library.
 pub struct ExampleClient {

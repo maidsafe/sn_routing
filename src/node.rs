@@ -15,14 +15,6 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-#[cfg(not(feature = "use-mock-crust"))]
-use maidsafe_utilities::thread;
-#[cfg(not(feature = "use-mock-crust"))]
-use rust_sodium;
-#[cfg(feature = "use-mock-crust")]
-use std::cell::RefCell;
-use std::sync::mpsc::{Receiver, Sender, channel};
-
 use action::Action;
 use authority::Authority;
 use cache::{Cache, NullCache};
@@ -32,10 +24,17 @@ use error::{InterfaceError, RoutingError};
 use event::Event;
 #[cfg(feature = "use-mock-crust")]
 use kademlia_routing_table::RoutingTable;
-use messages::{UserMessage, Request, Response, RELOCATE_PRIORITY, DEFAULT_PRIORITY,
-               CLIENT_GET_PRIORITY};
-use xor_name::XorName;
+#[cfg(not(feature = "use-mock-crust"))]
+use maidsafe_utilities::thread;
+use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, RELOCATE_PRIORITY, Request, Response,
+               UserMessage};
+#[cfg(not(feature = "use-mock-crust"))]
+use rust_sodium;
+#[cfg(feature = "use-mock-crust")]
+use std::cell::RefCell;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use types::MessageId;
+use xor_name::XorName;
 
 type RoutingResult = Result<(), RoutingError>;
 

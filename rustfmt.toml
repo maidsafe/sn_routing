@@ -1,0 +1,4 @@
+# This line causes rustfmt 0.6.2 to panic:
+# reorder_imports = true
+
+reorder_imported_names = true

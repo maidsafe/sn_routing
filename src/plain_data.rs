@@ -15,10 +15,10 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-use xor_name::XorName;
 use data::DataIdentifier;
+use std::fmt::{self, Debug, Formatter};
 use utils;
+use xor_name::XorName;
 
 /// Plain data with a name and a value.
 ///
@@ -66,11 +66,11 @@ impl Debug for PlainData {
 }
 
 #[cfg(test)]
-mod test {
-    use super::PlainData;
+mod tests {
     use itertools::Itertools;
     use rand::{self, Rng};
     use rustc_serialize::hex::ToHex;
+    use super::PlainData;
 
     #[test]
     fn basic_check() {

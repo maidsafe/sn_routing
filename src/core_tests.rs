@@ -15,6 +15,19 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use authority::Authority;
+use cache::{Cache, NullCache};
+use client::Client;
+use core::{GROUP_SIZE, QUORUM_SIZE};
+use data::{Data, DataIdentifier, ImmutableData};
+use event::Event;
+use id::FullId;
+use itertools::Itertools;
+use kademlia_routing_table::{ContactInfo, RoutingTable};
+use messages::{Request, Response};
+use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
+use mock_crust::crust::PeerId;
+use node::Node;
 use rand::{self, Rng, SeedableRng, XorShiftRng};
 use rand::distributions::{IndependentSample, Range};
 use std::cell::RefCell;
@@ -23,20 +36,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops;
 use std::sync::mpsc;
 use std::thread;
-
-use authority::Authority;
-use client::Client;
-use cache::{Cache, NullCache};
-use core::{GROUP_SIZE, QUORUM_SIZE};
-use data::{Data, DataIdentifier, ImmutableData};
-use event::Event;
-use id::FullId;
-use itertools::Itertools;
-use kademlia_routing_table::{RoutingTable, ContactInfo};
-use messages::{Request, Response};
-use mock_crust::{self, Config, Endpoint, Network, ServiceHandle};
-use mock_crust::crust::PeerId;
-use node::Node;
 use types::MessageId;
 use xor_name::XorName;
 

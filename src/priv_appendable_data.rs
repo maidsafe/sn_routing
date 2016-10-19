@@ -18,13 +18,13 @@
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rust_sodium::crypto::{box_, sealedbox};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
-use rustc_serialize::{Decoder, Decodable};
+use rustc_serialize::{Decodable, Decoder};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::{DataIdentifier, verify_detached, NO_OWNER_PUB_KEY};
+use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
 use error::RoutingError;
-use append_types::{AppendedData, AppendWrapper, Filter};
+use append_types::{AppendWrapper, AppendedData, Filter};
 
 /// Maximum allowed size for a private appendable data to grow to
 pub const MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -370,7 +370,7 @@ mod test {
     use data::DataIdentifier;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::{box_, sign};
-    use append_types::{AppendedData, AppendWrapper, Filter};
+    use append_types::{AppendWrapper, AppendedData, Filter};
     use xor_name::XorName;
 
     #[test]
