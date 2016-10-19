@@ -16,7 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use core::GROUP_SIZE;
-use messages::{DirectMessage, MessageContent, RoutingMessage, Request, Response};
+use messages::{DirectMessage, MessageContent, Request, Response, RoutingMessage};
 
 /// The number of messages after which the message statistics should be printed.
 const MSG_LOG_COUNT: usize = 1000;
@@ -176,7 +176,8 @@ impl Stats {
                   self.msg_ack,
                   self.msg_hash);
             info!("Stats - User (Request/Success/Failure) - Get: {}/{}/{}, Put: {}/{}/{}, \
-                   Post: {}/{}/{}, Delete: {}/{}/{}, GetAccountInfo: {}/{}/{}, Refresh: {}",
+                   Post: {}/{}/{}, Delete: {}/{}/{}, Append: {}/{}/{}, GetAccountInfo: {}/{}/{}, \
+                   Refresh: {}",
                   self.msg_get,
                   self.msg_get_success,
                   self.msg_get_failure,
@@ -189,6 +190,9 @@ impl Stats {
                   self.msg_delete,
                   self.msg_delete_success,
                   self.msg_delete_failure,
+                  self.msg_append,
+                  self.msg_append_success,
+                  self.msg_append_failure,
                   self.msg_get_account_info,
                   self.msg_get_account_info_success,
                   self.msg_get_account_info_failure,

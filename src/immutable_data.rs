@@ -15,13 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-
-use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
-use rust_sodium::crypto::hash::sha256;
 use data::DataIdentifier;
-use xor_name::XorName;
 use maidsafe_utilities::serialisation::serialise;
+use rust_sodium::crypto::hash::sha256;
+use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
+use std::fmt::{self, Debug, Formatter};
+use xor_name::XorName;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
 pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: usize = 1024 * 1024 + 10 * 1024;
@@ -99,11 +98,11 @@ impl Debug for ImmutableData {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     extern crate rand;
 
-    use super::*;
     use rustc_serialize::hex::ToHex;
+    use super::*;
 
     #[test]
     fn deterministic_test() {

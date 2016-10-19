@@ -15,24 +15,23 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use action::Action;
+use append_types::AppendWrapper;
+use authority::Authority;
+use cache::NullCache;
+use core::{Core, Role};
+use data::{Data, DataIdentifier};
+use error::{InterfaceError, RoutingError};
+use event::Event;
+use id::FullId;
 #[cfg(not(feature = "use-mock-crust"))]
 use maidsafe_utilities::thread::{self, Joiner};
+use messages::{CLIENT_GET_PRIORITY, DEFAULT_PRIORITY, Request};
 #[cfg(not(feature = "use-mock-crust"))]
 use rust_sodium;
 #[cfg(feature = "use-mock-crust")]
 use std::cell::RefCell;
 use std::sync::mpsc::{Receiver, Sender, channel};
-
-use id::FullId;
-use action::Action;
-use event::Event;
-use cache::NullCache;
-use core::{Core, Role};
-use data::{Data, DataIdentifier};
-use error::{InterfaceError, RoutingError};
-use authority::Authority;
-use messages::{Request, DEFAULT_PRIORITY, CLIENT_GET_PRIORITY};
-use append_types::AppendWrapper;
 use types::MessageId;
 use xor_name::XorName;
 

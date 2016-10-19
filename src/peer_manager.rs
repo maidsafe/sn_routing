@@ -16,9 +16,9 @@
 // relating to use of the SAFE Network Software.
 
 #[cfg(not(feature = "use-mock-crust"))]
-use crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+use crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 #[cfg(feature = "use-mock-crust")]
-use mock_crust::crust::{PrivConnectionInfo, PeerId, PubConnectionInfo};
+use mock_crust::crust::{PeerId, PrivConnectionInfo, PubConnectionInfo};
 use authority::Authority;
 use rust_sodium::crypto::sign;
 use id::PublicId;

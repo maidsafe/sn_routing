@@ -15,24 +15,23 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use authority::Authority;
+use append_types::AppendWrapper;
 #[cfg(not(feature = "use-mock-crust"))]
 use crust::PeerId;
+use data::{Data, DataIdentifier};
+use error::RoutingError;
+use id::{FullId, PublicId};
 #[cfg(feature = "use-mock-crust")]
 use mock_crust::crust::PeerId;
 use lru_time_cache::LruCache;
 use maidsafe_utilities;
-use maidsafe_utilities::serialisation::{serialise, deserialise};
-use append_types::AppendWrapper;
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use rust_sodium::crypto::{box_, sign};
 use rust_sodium::crypto::hash::sha256;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::time::Duration;
-
-use authority::Authority;
-use data::{Data, DataIdentifier};
-use error::RoutingError;
-use id::{FullId, PublicId};
 use types::MessageId;
 use utils;
 use xor_name::XorName;

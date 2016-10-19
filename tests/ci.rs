@@ -53,23 +53,21 @@ extern crate unwrap;
 
 mod utils;
 
-use std::collections::HashSet;
-#[cfg(target_os = "macos")]
-use std::io;
-use std::{iter, thread};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::Duration;
 
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
-use maidsafe_utilities::thread::Joiner;
-use maidsafe_utilities::thread::named as thread_named;
-use routing::{Authority, Client, Data, Event, FullId, MessageId, Node, PlainData, Request,
-              Response, XorName, GROUP_SIZE, QUORUM_SIZE};
+use maidsafe_utilities::thread::{self, Joiner};
+use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, GROUP_SIZE, MessageId,
+              Node, PlainData, QUORUM_SIZE, Request, Response, XorName};
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
+use std::iter;
+use std::collections::HashSet;
+#[cfg(target_os = "macos")]
+use std::io;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 use utils::recv_with_timeout;
-use routing::DataIdentifier;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
@@ -173,7 +171,7 @@ fn spawn_select_thread(index: usize,
                        -> (Sender<Event>, Joiner) {
     let (sender, receiver) = mpsc::channel();
 
-    let thread_handle = thread_named(thread_name, move || {
+    let thread_handle = thread::named(thread_name, move || {
         for event in receiver.iter() {
             unwrap!(main_sender.send(TestEvent(index, event)));
         }

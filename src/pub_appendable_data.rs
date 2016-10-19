@@ -20,9 +20,9 @@ use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::collections::BTreeSet;
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::{DataIdentifier, verify_detached, NO_OWNER_PUB_KEY};
+use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
 use error::RoutingError;
-use append_types::{AppendedData, AppendWrapper, Filter};
+use append_types::{AppendWrapper, AppendedData, Filter};
 
 /// Maximum allowed size for a public appendable data to grow to
 pub const MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES: usize = 102400;
@@ -319,7 +319,7 @@ mod test {
 
     use rust_sodium::crypto::sign;
     use xor_name::XorName;
-    use append_types::{AppendedData, AppendWrapper, Filter};
+    use append_types::{AppendWrapper, AppendedData, Filter};
     use data::DataIdentifier;
     use std::collections::BTreeSet;
 

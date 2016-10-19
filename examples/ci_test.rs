@@ -56,25 +56,25 @@ extern crate unwrap;
 
 mod utils;
 
-use std::io::Write;
-use std::time::Duration;
-use std::{io, env, thread};
-use std::sync::{Arc, Mutex, Condvar};
-use std::process::{Child, Command, Stdio};
 
 use docopt::Docopt;
-use rust_sodium::crypto::hash;
-use utils::{ExampleNode, ExampleClient};
-use routing::{Data, DataIdentifier, PlainData, XorName, GROUP_SIZE};
 
 use maidsafe_utilities::serialisation::serialise;
 use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
 
-use rand::{thread_rng, random, ThreadRng};
+use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
+use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
+use rust_sodium::crypto::hash;
+use std::{env, io, thread};
+use std::io::Write;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use term::color;
+use utils::{ExampleClient, ExampleNode};
 
 const CHURN_MIN_WAIT_SEC: u64 = 20;
 const CHURN_MAX_WAIT_SEC: u64 = 30;

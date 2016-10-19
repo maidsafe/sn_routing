@@ -15,12 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use std::fmt::{self, Debug, Formatter};
-pub use structured_data::StructuredData;
 pub use immutable_data::ImmutableData;
 pub use plain_data::PlainData;
 pub use priv_appendable_data::PrivAppendableData;
 pub use pub_appendable_data::PubAppendableData;
+use std::fmt::{self, Debug, Formatter};
+pub use structured_data::StructuredData;
 use xor_name::XorName;
 use rust_sodium::crypto::sign;
 

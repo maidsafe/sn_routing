@@ -32,6 +32,10 @@ libc = "~0.2.16"
 [build-dependencies]
 hyper = {version = "~0.9.10", optional = true}
 
+[features]
+generate-diagrams = ["hyper"]
+use-mock-crust = []
+
 [[example]]
 bench = false
 name = "key_value_store"
@@ -41,7 +45,3 @@ test = false
 bench = false
 name = "ci_test"
 test = false
-
-[features]
-generate-diagrams = ["hyper"]
-use-mock-crust = []

@@ -15,13 +15,12 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
+use error::RoutingError;
 use maidsafe_utilities::serialisation::serialise;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
-use data::{DataIdentifier, verify_detached, NO_OWNER_PUB_KEY};
-use error::RoutingError;
-use std::{u8, u64};
 
 /// Maximum allowed size for a Structured Data to grow to
 pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;

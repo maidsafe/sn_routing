@@ -15,12 +15,11 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use kademlia_routing_table::RoutingTable;
-use xor_name::XorName;
-
 use authority::Authority;
+use kademlia_routing_table::RoutingTable;
 use messages::{Request, Response};
 use std::fmt::{self, Debug, Formatter};
+use xor_name::XorName;
 
 /// An Event raised by a `Node` or `Client` via its event sender.
 ///

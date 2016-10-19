@@ -33,7 +33,6 @@ fn hash<T: Hash>(t: &T) -> u64 {
     s.finish()
 }
 
-
 /// A time based message filter that takes any generic type as a key and will drop keys after a
 /// time period (LRU Cache pattern).
 pub struct MessageFilter<Message> {
@@ -139,12 +138,12 @@ impl TimestampedMessage {
 
 
 #[cfg(test)]
-mod test {
-    use super::*;
+mod tests {
     use rand;
     use rand::Rng;
     use std::thread;
     use std::time::Duration;
+    use super::*;
 
     #[test]
     fn timeout() {

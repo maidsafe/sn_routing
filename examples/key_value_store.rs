@@ -58,18 +58,18 @@ extern crate unwrap;
 
 mod utils;
 
-use std::io;
-use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
-use std::io::Write;
 
 use docopt::Docopt;
-use rust_sodium::crypto;
 
-use maidsafe_utilities::serialisation::{serialise, deserialise};
+use maidsafe_utilities::serialisation::{deserialise, serialise};
 use maidsafe_utilities::thread;
 use routing::{Data, DataIdentifier, PlainData, XorName};
-use utils::{ExampleNode, ExampleClient};
+use rust_sodium::crypto;
+use std::io;
+use std::io::Write;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
+use utils::{ExampleClient, ExampleNode};
 
 // ==========================   Program Options   =================================
 #[cfg_attr(rustfmt, rustfmt_skip)]
