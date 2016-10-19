@@ -32,7 +32,7 @@ use utils;
 use xor_name::XorName;
 
 static INITIALISE_SODIUMOXIDE: Once = ONCE_INIT;
-static mut rust_sodium_init_result: bool = false;
+static mut RUST_SODIUM_INIT_RESULT: bool = false;
 
 #[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
 struct Detail {
@@ -126,9 +126,9 @@ impl MpidHeader {
     fn initialise_rust_sodium() -> bool {
         unsafe {
             INITIALISE_SODIUMOXIDE.call_once(|| {
-                rust_sodium_init_result = rust_sodium::init();
+                RUST_SODIUM_INIT_RESULT = rust_sodium::init();
             });
-            rust_sodium_init_result
+            RUST_SODIUM_INIT_RESULT
         }
     }
 }
