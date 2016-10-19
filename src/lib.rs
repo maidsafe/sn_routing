@@ -156,6 +156,9 @@ mod message_accumulator;
 mod message_filter;
 mod messages;
 mod node;
+mod append_types;
+mod priv_appendable_data;
+mod pub_appendable_data;
 mod peer_manager;
 mod routing_table;
 mod signed_message_filter;
@@ -192,11 +195,11 @@ pub use cache::Cache;
 pub use client::Client;
 #[cfg(feature = "use-mock-crust")]
 pub use core_tests::verify_invariant;
-pub use data::{Data, DataIdentifier};
+pub use data::{Data, DataIdentifier, NO_OWNER_PUB_KEY};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
 pub use id::{FullId, PublicId};
-pub use immutable_data::ImmutableData;
+pub use immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use messages::{Request, Response};
 #[cfg(feature = "use-mock-crust")]
 pub use mock_crust::crust;
@@ -204,6 +207,10 @@ pub use node::{Node, NodeBuilder};
 pub use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 pub use routing_table::Error as RoutingTableError;
 pub use routing_table::Xorable;
+pub use append_types::{AppendWrapper, AppendedData, Filter};
+pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
+pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
+                               PrivAppendedData};
 pub use structured_data::{MAX_STRUCTURED_DATA_SIZE_IN_BYTES, StructuredData};
 pub use types::MessageId;
 pub use xor_name::{XOR_NAME_BITS, XOR_NAME_LEN, XorName, XorNameFromHexError};

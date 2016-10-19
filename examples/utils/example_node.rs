@@ -112,6 +112,10 @@ impl ExampleNode {
             Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }
+            Request::Append(_, _) => {
+                warn!("{:?} ExampleNode: Append unimplemented.",
+                      self.get_debug_name());
+            }
         }
     }
 

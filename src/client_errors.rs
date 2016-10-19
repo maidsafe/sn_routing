@@ -71,6 +71,8 @@ pub enum MutationError {
     NoSuchData,
     /// Attempt to create a mutable data when data with such a name already exists
     DataExists,
+    /// Attempt to create/post a data exceeds size limit
+    DataTooLarge,
     /// Insufficient balance for performing a given mutating operation
     LowBalance,
     /// Invalid successor for performing a given mutating operation, e.g. signature mismatch or
@@ -99,6 +101,7 @@ impl Display for MutationError {
             MutationError::AccountExists => write!(formatter, "Account already exists for client"),
             MutationError::NoSuchData => write!(formatter, "Requested data not found"),
             MutationError::DataExists => write!(formatter, "Data given already exists"),
+            MutationError::DataTooLarge => write!(formatter, "Data given is too large"),
             MutationError::LowBalance => {
                 write!(formatter, "Insufficient account balance for this operation")
             }
@@ -126,6 +129,7 @@ impl Error for MutationError {
             MutationError::AccountExists => "Account exists",
             MutationError::NoSuchData => "No such data",
             MutationError::DataExists => "Data exists",
+            MutationError::DataTooLarge => "Data is too large",
             MutationError::LowBalance => "Low account balance",
             MutationError::InvalidSuccessor => "Invalid data successor",
             MutationError::InvalidOperation => "Invalid operation",
