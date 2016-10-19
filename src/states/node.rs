@@ -894,12 +894,6 @@ impl Node {
                     .filter(|name| *name != public_id.name())
                     .cloned()
                     .collect();
-                let peer_ids_to_notify = self.peer_mgr.get_peer_ids(&all_rt_contacts);
-                for to_notify in &peer_ids_to_notify {
-                    let message = DirectMessage::NewNode(public_id);
-                    let _ = self.send_direct_message(to_notify, message);
-                }
-
                 if self.peer_mgr.routing_table().is_in_our_group(public_id.name()) {
                     let message = DirectMessage::RoutingTable(self.peer_mgr
                         .get_pub_ids(&all_rt_contacts));
@@ -1170,14 +1164,12 @@ impl Node {
 
     fn handle_get_node_name_response(&mut self,
                                      relocated_id: PublicId,
-                                     mut close_group_ids: Vec<PublicId>,
+                                     close_group_ids: Vec<PublicId>,
                                      dst: Authority) {
         self.get_node_name_timer_token = None;
 
         self.full_id.public_id_mut().set_name(*relocated_id.name());
         self.peer_mgr.reset_routing_table(*self.full_id.public_id());
-
-        close_group_ids.truncate(MIN_GROUP_SIZE / 2);
 
         for close_node_id in close_group_ids {
             debug!("{:?} Sending connection info to {:?} on GetNodeName response.",
@@ -1213,18 +1205,19 @@ impl Node {
             self.sent_network_name_to = None;
         }
 
-        let public_ids = match self.peer_mgr
+        let mut public_ids = match self.peer_mgr
             .routing_table()
             .close_names(expect_id.name()) {
-            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group),
+            Some(close_group) => self.peer_mgr.get_pub_ids(&close_group).into_iter().collect_vec(),
             None => return Err(RoutingError::InvalidDestination),
         };
+        public_ids.sort();
 
         self.sent_network_name_to = Some((*expect_id.name(), now));
         // From Y -> A (via B)
         let response_content = MessageContent::GetNodeNameResponse {
             relocated_id: expect_id,
-            close_group_ids: public_ids.into_iter().collect(),
+            close_group_ids: public_ids,
             message_id: message_id,
         };
 
@@ -1579,7 +1572,13 @@ impl Node {
                    route: u8,
                    sent_to: &[XorName])
                    -> Result<(Vec<XorName>, Vec<PeerId>), RoutingError> {
-        if self.is_proper() {
+        let force_via_proxy = match routing_msg.content {
+            MessageContent::ConnectionInfo { ref public_id, .. } => {
+                public_id == self.full_id.public_id()
+            }
+            _ => false,
+        };
+        if self.is_proper() && !force_via_proxy {
             let targets = try!(self.peer_mgr
                 .routing_table()
                 .targets(&routing_msg.dst.to_destination(), route as usize));
