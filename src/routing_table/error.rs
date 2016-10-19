@@ -51,8 +51,8 @@ quick_error! {
             display("Peer doesn't exist on the network.")
         }
         /// The routing table state violates the network invariant
-        InvariantViolation(descr: &'static str) {
-            description(descr)
+        InvariantViolation {
+            description("Network invariant violation")
             display("The routing table state violates the network invariant.")
         }
     }

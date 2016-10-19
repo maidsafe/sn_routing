@@ -105,12 +105,8 @@ impl Network {
                 assert_eq!(name, removal_details.name);
                 assert_eq!(removed_node_is_in_our_group,
                            removal_details.was_in_our_group);
-                match removal_details.targets_and_merge_details {
-                    // TODO: shall a panic be raised in case of failure?
-                    None => {}
-                    Some(info) => {
-                        merge_own_info.push(info);
-                    }
+                if let Some(info) = removal_details.targets_and_merge_details {
+                    merge_own_info.push(info);
                 }
             } else {
                 match node.remove(&name) {
@@ -252,7 +248,7 @@ pub fn verify_network_invariant<'a, T, U>(nodes: U)
                 group_content.insert(*node.our_name());
             }
             if let Some(group) = groups.get_mut(prefix) {
-                group.extend(group_content);
+                assert_eq!(*group, group_content);
                 continue;
             }
             let _ = groups.insert(*prefix, group_content);
