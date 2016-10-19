@@ -279,14 +279,33 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             groups: groups,
             needed: HashSet::new(),
         };
-        if result.satisfies_invariant() {
-            Ok(result)
+        if let Err(error) = result.satisfies_invariant() {
+            Err(Error::InvariantViolation(error))
         } else {
-            Err(Error::InvariantViolation)
+            Ok(result)
         }
     }
 
-    fn satisfies_invariant(&self) -> bool {
+    fn satisfies_invariant(&self) -> Result<(), &'static str> {
+        if !self.our_group_prefix.matches(&self.our_name) {
+            return Err("our prefix does not match our name");
+        }
+        if !self.groups.contains_key(&self.our_group_prefix) {
+            return Err("our group not found");
+        }
+        let has_enough_nodes = self.len() >= self.min_group_size;
+        for (prefix, group) in &self.groups {
+            // Only enforce group size when there are actually enough nodes!
+            if has_enough_nodes && group.len() < self.min_group_size {
+                return Err("min group size not met");
+            }
+            for name in group {
+                if !prefix.matches(name) {
+                    return Err("name doesn't match group prefix");
+                }
+            }
+        }
+
         let all_are_neighbours = self.groups
             .keys()
             .all(|&x| x == self.our_group_prefix || self.our_group_prefix.is_neighbour(&x));
@@ -295,7 +314,15 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             (0..self.our_group_prefix.bit_count())
                 .all(|i| self.our_group_prefix.with_flipped_bit(i).is_covered_by(&prefixes))
         };
-        all_are_neighbours && all_neighbours_covered
+        if !all_are_neighbours {
+            return Err("some groups in RT aren't our neighbours");
+        }
+        if !all_neighbours_covered {
+            return Err("not all neighbours are covered by the RT");
+        }
+
+        // TODO: any other invariants to check? What about `self.needed`?
+        Ok(())
     }
 
     pub fn our_name(&self) -> &T {
@@ -705,7 +732,10 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
 
     #[cfg(test)]
     pub fn verify_invariant(&self) {
-        assert!(self.satisfies_invariant());
+        if let Err(error) = self.satisfies_invariant() {
+            let message = format!("Invariant not satisfied for RT: {}\n{:?}", error, self);
+            panic!(message);
+        }
     }
 }
 
@@ -752,34 +782,6 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> Debug for Rout
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fmt::{Binary, Debug};
-    use std::hash::Hash;
-
-    // Must always be true (except while a function is running on the table).
-    fn invariant<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable>
-        (rt: &RoutingTable<T>)
-         -> Result<(), &'static str> {
-        if !rt.our_group_prefix.matches(&rt.our_name) {
-            return Err("our prefix does not match our name");
-        }
-        if !rt.groups.contains_key(&rt.our_group_prefix) {
-            return Err("our group not found");
-        }
-        let has_enough_nodes = rt.len() >= rt.min_group_size;
-        for (prefix, group) in &rt.groups {
-            // Only enforce group size when there are actually enough nodes!
-            if has_enough_nodes && group.len() < rt.min_group_size {
-                return Err("min group size not met");
-            }
-            for name in group {
-                if !prefix.matches(name) {
-                    return Err("name doesn't match group prefix");
-                }
-            }
-        }
-        // TODO: any other invariants to check? What about `rt.needed`?
-        Ok(())
-    }
 
     #[test]
     fn small() {
@@ -801,7 +803,7 @@ mod tests {
         let mut rng: XorShiftRng = SeedableRng::from_seed([1315, 30, 61894, 315]);
         let our_name = rng.next_u32();
         let mut table = RoutingTable::new(our_name, 8);
-        unwrap!(invariant(&table));
+        unwrap!(table.satisfies_invariant());
         let mut unknown_distant_name = None;
 
         for _ in 0..1000 {
@@ -809,12 +811,12 @@ mod tests {
             // Try to add new_name. We double-check the output to test this too.
             match table.add(new_name) {
                 Err(Error::AlreadyExists) => {
-                    unwrap!(invariant(&table));
+                    unwrap!(table.satisfies_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     // skip
                 }
                 Err(Error::PeerNameUnsuitable) => {
-                    unwrap!(invariant(&table));
+                    unwrap!(table.satisfies_invariant());
                     assert!(table.groups.keys().all(|p| !p.matches(&new_name)));
                     // We should get a few of these. Save one for tests, but otherwise ignore.
                     unknown_distant_name = Some(new_name);
@@ -823,17 +825,14 @@ mod tests {
                     panic!("unexpected error: {}", e);
                 }
                 Ok(true) => {
-                    unwrap!(invariant(&table));
+                    unwrap!(table.satisfies_invariant());
                     let our_prefix = *table.our_group_prefix();
                     assert!(our_prefix.matches(&new_name));
-                    let v = table.split(our_prefix);
-                    unwrap!(invariant(&table));
-                    // We just split our group: one half is new "our group", other is a neighbour
-                    // so neither gets lost (hence 0 here).
-                    assert!(v.len() == 0);
+                    let _ = table.split(our_prefix);
+                    unwrap!(table.satisfies_invariant());
                 }
                 Ok(false) => {
-                    unwrap!(invariant(&table));
+                    unwrap!(table.satisfies_invariant());
                     assert!(table.iter().any(|u| *u == new_name));
                     if table.is_in_our_group(&new_name) {
                         continue;   // add() already checked for necessary split
@@ -854,7 +853,7 @@ mod tests {
                     let min_size = table.min_split_size();
                     if new_group_size >= min_size && group_len - new_group_size >= min_size {
                         let _ = table.split(group_prefix);  // do the split
-                        unwrap!(invariant(&table));
+                        unwrap!(table.satisfies_invariant());
                     }
                 }
             }
@@ -876,8 +875,9 @@ mod tests {
 
         let unknown_distant_name = unwrap!(unknown_distant_name);
         // These numbers depend on distribution of names
-        let num_known_nodes = 114;
-        let num_groups = 9;
+        println!("{:?}", table);
+        let num_known_nodes = 104;
+        let num_groups = 8;
         let len_our_group = 13;
         assert_eq!(table.len(), num_known_nodes);
         assert_eq!(table.groups.len(), num_groups);
