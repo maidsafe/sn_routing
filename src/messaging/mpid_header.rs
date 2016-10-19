@@ -145,11 +145,11 @@ impl Debug for MpidHeader {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
+mod tests {
     use messaging;
     use rand;
     use rust_sodium::crypto::sign;
+    use super::*;
     use xor_name::XorName;
 
     #[test]

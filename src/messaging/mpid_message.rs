@@ -127,12 +127,12 @@ impl Debug for MpidMessage {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-    use rand;
-    use xor_name::XorName;
-    use rust_sodium::crypto::sign;
+mod tests {
     use messaging;
+    use rand;
+    use rust_sodium::crypto::sign;
+    use super::*;
+    use xor_name::XorName;
 
     #[test]
     fn full() {

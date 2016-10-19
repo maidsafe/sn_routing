@@ -816,10 +816,9 @@ impl UserMessageCache {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     extern crate rand;
 
-    use super::*;
     use authority::Authority;
     use data::Data;
     use id::FullId;
@@ -827,6 +826,7 @@ mod test {
     use maidsafe_utilities;
     use maidsafe_utilities::serialisation::serialise;
     use rust_sodium::crypto::sign;
+    use super::*;
     use types::MessageId;
     use xor_name::XorName;
 
