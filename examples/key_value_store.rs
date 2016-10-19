@@ -62,13 +62,29 @@ use docopt::Docopt;
 
 use maidsafe_utilities::serialisation::{deserialise, serialise};
 use maidsafe_utilities::thread;
-use routing::{Data, DataIdentifier, PlainData, XorName};
+use routing::{Data, DataIdentifier, FullId, StructuredData, XorName};
 use rust_sodium::crypto;
 use std::io;
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use utils::{ExampleClient, ExampleNode};
+
+/// Creates specific structured data
+fn create_structured_data(type_tag: u64,
+                          name: XorName,
+                          data: Vec<u8>,
+                          full_id: &FullId)
+                          -> StructuredData {
+    StructuredData::new(type_tag,
+                        name,
+                        0,
+                        data,
+                        vec![full_id.public_id().signing_public_key().clone()],
+                        vec![],
+                        Some(full_id.signing_private_key()))
+        .expect("Cannot create structured data for test")
+}
 
 // ==========================   Program Options   =================================
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -211,16 +227,16 @@ impl KeyValueStore {
     /// Get data from the network.
     pub fn get(&mut self, what: String) {
         let name = KeyValueStore::calculate_key_name(&what);
-        let data = self.example_client.get(DataIdentifier::Plain(name));
+        let data = self.example_client.get(DataIdentifier::Structured(name, 10000));
         match data {
             Some(data) => {
-                let plain_data = if let Data::Plain(plain_data) = data {
-                    plain_data
+                let sd = if let Data::Structured(sd) = data {
+                    sd
                 } else {
-                    error!("KeyValueStore: Only storing plain data in this example");
+                    error!("KeyValueStore: Only storing structured data in this example");
                     return;
                 };
-                if let Ok((key, value)) = deserialise::<(String, String)>(plain_data.value()) {
+                if let Ok((key, value)) = deserialise::<(String, String)>(sd.get_data()) {
                     println!("Got value {:?} on key {:?}", value, key);
                 } else {
                     error!("Failed to decode get response.");
@@ -235,7 +251,8 @@ impl KeyValueStore {
     pub fn put(&self, put_where: String, put_what: String) {
         let name = KeyValueStore::calculate_key_name(&put_where);
         let data = unwrap!(serialise(&(put_where, put_what)));
-        if self.example_client.put(Data::Plain(PlainData::new(name, data))).is_err() {
+        let sd = create_structured_data(10000, name, data, self.example_client.full_id());
+        if self.example_client.put(Data::Structured(sd)).is_err() {
             error!("Failed to put data.");
         }
     }

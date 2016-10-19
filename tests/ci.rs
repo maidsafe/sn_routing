@@ -55,12 +55,12 @@ mod utils;
 
 
 use itertools::Itertools;
-use maidsafe_utilities::serialisation;
+use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::{self, Joiner};
-use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, MIN_GROUP_SIZE, MessageId,
-              Node, PlainData, QUORUM_SIZE, Request, Response, XorName, Xorable};
+use rand::Rng;
+use routing::{Authority, Client, Data, Event, FullId, MIN_GROUP_SIZE, MessageId, Node, QUORUM_SIZE,
+              Request, Response, StructuredData, XorName, Xorable};
 use rust_sodium::crypto;
-use rust_sodium::crypto::hash::sha256;
 use std::iter;
 use std::collections::HashSet;
 #[cfg(target_os = "macos")]
@@ -120,6 +120,10 @@ impl TestClient {
 
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
+    }
+
+    pub fn full_id(&self) -> &FullId {
+        &self.full_id
     }
 }
 
@@ -228,13 +232,17 @@ fn create_connected_nodes(count: usize,
     nodes
 }
 
-fn gen_plain_data() -> Data {
-    let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
-    let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
-    let name = XorName(sha256::hash(key.as_bytes()).0);
-    let data = unwrap!(serialisation::serialise(&(key, value)));
-
-    Data::Plain(PlainData::new(name, data))
+fn gen_structured_data<R: Rng>(full_id: &FullId,
+                               rng: &mut R)
+                               -> Data {
+    Data::Structured(StructuredData::new(10000,
+                                         rng.gen(),
+                                         0,
+                                         rng.gen_iter().take(10).collect(),
+                                         vec![full_id.public_id().signing_public_key().clone()],
+                                         vec![],
+                                         Some(full_id.signing_private_key()))
+        .expect("Cannot create structured data for test"))
 }
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
@@ -252,11 +260,12 @@ fn core() {
     let (event_sender, event_receiver) = mpsc::channel();
     let mut nodes =
         create_connected_nodes(MIN_GROUP_SIZE + 1, event_sender.clone(), &event_receiver);
+    let mut rng = SeededRng::new();
 
     {
         // request and response
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data(client.full_id(), &mut rng);
         let message_id = MessageId::new();
 
         loop {
@@ -276,7 +285,7 @@ fn core() {
 
                             unwrap!(node.send_put_success(dst,
                                                           src,
-                                                          DataIdentifier::Plain(*data.name()),
+                                                          data.identifier(),
                                                           id.clone()));
                         }
                     }
@@ -301,7 +310,7 @@ fn core() {
         // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data(client.full_id(), &mut rng);
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -335,7 +344,7 @@ fn core() {
         // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data(client.full_id(), &mut rng);
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -438,7 +447,7 @@ fn core() {
     {
         // message from quorum - 1 group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data(client.full_id(), &mut rng);
 
         while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
             match test_event {
@@ -480,7 +489,7 @@ fn core() {
     {
         // message from more than quorum group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data(client.full_id(), &mut rng);
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();
 
@@ -497,7 +506,7 @@ fn core() {
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
-                        let data_id = DataIdentifier::Plain(*data.name());
+                        let data_id = data.identifier();
                         if let Request::Put(_, id) = request {
                             unwrap!(nodes[index]
                                 .node
@@ -508,7 +517,7 @@ fn core() {
                               Event::Response { response: Response::PutSuccess(name, id), .. })
                         if index == client.index => {
                         assert!(received_ids.insert(id));
-                        assert_eq!(name, DataIdentifier::Plain(*data.name()));
+                        assert_eq!(name, data.identifier());
                     }
                     _ => (),
                 }

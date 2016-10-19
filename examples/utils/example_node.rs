@@ -156,7 +156,7 @@ impl ExampleNode {
                        data.name(),
                        data);
                 let _ = self.node
-                    .send_put_success(dst, src, DataIdentifier::Plain(*data.name()), id);
+                    .send_put_success(dst, src, data.identifier(), id);
                 let _ = self.db.insert(*data.name(), data);
             }
             Authority::ClientManager(_) => {
