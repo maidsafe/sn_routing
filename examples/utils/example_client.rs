@@ -180,6 +180,11 @@ impl ExampleClient {
     pub fn name(&self) -> &XorName {
         self.full_id.public_id().name()
     }
+
+    /// Return a full id for this client
+    pub fn full_id(&self) -> &FullId {
+        &self.full_id
+    }
 }
 
 impl Default for ExampleClient {

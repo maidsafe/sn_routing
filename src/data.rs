@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 pub use immutable_data::ImmutableData;
-pub use plain_data::PlainData;
 use std::fmt::{self, Debug, Formatter};
 pub use structured_data::StructuredData;
 use xor_name::XorName;
@@ -28,8 +27,6 @@ pub enum Data {
     Structured(StructuredData),
     /// `ImmutableData` data type.
     Immutable(ImmutableData),
-    /// `PlainData` data type.
-    Plain(PlainData),
 }
 
 impl Data {
@@ -38,7 +35,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
-            Data::Plain(ref data) => data.name(),
         }
     }
 
@@ -47,7 +43,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
-            Data::Plain(ref data) => data.identifier(),
         }
     }
 
@@ -56,7 +51,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.payload_size(),
             Data::Immutable(ref data) => data.payload_size(),
-            Data::Plain(ref data) => data.payload_size(),
         }
     }
 }
@@ -68,8 +62,6 @@ pub enum DataIdentifier {
     Structured(XorName, u64),
     /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
-    /// Request for PlainData.
-    Plain(XorName),
 }
 
 impl Debug for Data {
@@ -77,7 +69,6 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
-            Data::Plain(ref data) => data.fmt(formatter),
         }
     }
 }
@@ -87,8 +78,7 @@ impl DataIdentifier {
     pub fn name(&self) -> &XorName {
         match *self {
             DataIdentifier::Structured(ref name, _) |
-            DataIdentifier::Immutable(ref name) |
-            DataIdentifier::Plain(ref name) => name,
+            DataIdentifier::Immutable(ref name) => name,
         }
     }
 }
@@ -132,13 +122,6 @@ mod tests {
                    Data::Immutable(immutable_data.clone()).name());
         assert_eq!(immutable_data.identifier(),
                    DataIdentifier::Immutable(*immutable_data.name()));
-
-        // name() resolves correctly for PlainData
-        let name = XorName(sha256::hash(&[]).0);
-        let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
-        assert_eq!(plain_data.identifier(),
-                   DataIdentifier::Plain(*plain_data.name()));
     }
 
     #[test]
@@ -165,12 +148,6 @@ mod tests {
         let immutable_data = ImmutableData::new(value);
         assert_eq!(immutable_data.payload_size(),
                    Data::Immutable(immutable_data).payload_size());
-
-        // payload_size() resolves correctly for PlainData
-        let name = XorName(sha256::hash(&[]).0);
-        let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.payload_size(),
-                   Data::Plain(plain_data).payload_size());
     }
 
     #[test]
@@ -183,8 +160,5 @@ mod tests {
 
         // name() resolves correctly for ImmutableData
         assert_eq!(&name, DataIdentifier::Immutable(name).name());
-
-        // name() resolves correctly for PlainData
-        assert_eq!(&name, DataIdentifier::Plain(name).name());
     }
 }
