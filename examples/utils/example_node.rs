@@ -127,6 +127,10 @@ impl ExampleNode {
             Request::Refresh(content, id) => {
                 self.handle_refresh(content, id);
             }
+            Request::Append(_, _) => {
+                warn!("{:?} ExampleNode: Append unimplemented.",
+                      self.get_debug_name());
+            }
         }
     }
 
@@ -171,7 +175,7 @@ impl ExampleNode {
                        data.name(),
                        data);
                 let _ = self.node
-                    .send_put_success(dst, src, DataIdentifier::Plain(*data.name()), id);
+                    .send_put_success(dst, src, data.identifier(), id);
                 let _ = self.db.insert(*data.name(), data);
             }
             Authority::ClientManager(_) => {

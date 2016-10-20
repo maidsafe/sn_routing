@@ -16,6 +16,7 @@
 // relating to use of the SAFE Network Software.
 
 use action::Action;
+use append_types::AppendWrapper;
 use authority::Authority;
 use cache::NullCache;
 use data::{Data, DataIdentifier};
@@ -135,6 +136,16 @@ impl Client {
                                -> Result<(), InterfaceError> {
         self.send_action(Request::Delete(data, message_id), dst, DEFAULT_PRIORITY)
     }
+
+    /// Append an item to appendable data.
+    pub fn send_append_request(&self,
+                               dst: Authority,
+                               wrapper: AppendWrapper,
+                               message_id: MessageId)
+                               -> Result<(), InterfaceError> {
+        self.send_action(Request::Append(wrapper, message_id), dst, DEFAULT_PRIORITY)
+    }
+
 
     /// Request account information for the Client calling this function
     pub fn send_get_account_info_request(&self,

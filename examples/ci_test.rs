@@ -58,14 +58,13 @@ mod utils;
 
 use docopt::Docopt;
 
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
 
-use rand::{ThreadRng, random, thread_rng};
+use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, DataIdentifier, PlainData, XorName};
-use rust_sodium::crypto::hash;
+use routing::{Data, FullId, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
@@ -85,6 +84,21 @@ const DEFAULT_BATCHES: usize = 1;
 const GROUP_SIZE: usize = 8;
 
 struct NodeProcess(Child, usize);
+
+/// Creates random structured data
+fn random_structured_data<R: Rng>(type_tag: u64,
+                                  full_id: &FullId,
+                                  rng: &mut R)
+                                  -> StructuredData {
+    StructuredData::new(type_tag,
+                        rng.gen(),
+                        0,
+                        rng.gen_iter().take(10).collect(),
+                        vec![full_id.public_id().signing_public_key().clone()],
+                        vec![],
+                        Some(full_id.signing_private_key()))
+        .expect("Cannot create structured data for test")
+}
 
 impl Drop for NodeProcess {
     fn drop(&mut self) {
@@ -232,21 +246,18 @@ fn store_and_verify(requests: usize, batches: usize) {
 
     println!("--------- Putting Data -----------");
     let mut stored_data = Vec::with_capacity(requests);
+    let full_id = example_client.full_id().clone();
+    let mut rng = SeededRng::new();
     for i in 0..requests {
-        let key: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let name = XorName(hash::sha256::hash(key.as_bytes()).0);
-        let data = unwrap!(serialise(&(key, value)));
-        let data = Data::Plain(PlainData::new(name, data));
-
-        print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
+        let data = Data::Structured(random_structured_data(100000, &full_id, &mut rng));
+        print!("Putting Data: count #{} - Data {:?} - ", i + 1, data.name());
         io::stdout().flush().expect("Could not flush stdout");
         if example_client.put(data.clone()).is_ok() {
             print_color("OK", color::GREEN);
             print!(" - getting - ");
             io::stdout().flush().expect("Could not flush stdout");
             stored_data.push(data.clone());
-            if let Some(got_data) = example_client.get(DataIdentifier::Plain(*data.name())) {
+            if let Some(got_data) = example_client.get(data.identifier()) {
                 assert_eq!(got_data, data);
                 print_color("OK\n", color::GREEN);
             } else {
@@ -269,7 +280,7 @@ fn store_and_verify(requests: usize, batches: usize) {
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
             io::stdout().flush().expect("Could not flush stdout");
-            if let Some(data) = example_client.get(DataIdentifier::Plain(*data_item.name())) {
+            if let Some(data) = example_client.get(data_item.identifier()) {
                 assert_eq!(data, stored_data[i]);
                 print_color("OK\n", color::GREEN);
             } else {

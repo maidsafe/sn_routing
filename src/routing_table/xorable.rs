@@ -138,7 +138,7 @@ macro_rules! impl_xorable_for_array {
             fn debug_binary(&self) -> String {
                 debug_format(self.binary())
             }
-            
+
             fn set_remaining(mut self, n: usize, val: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
                 for (i, x) in self.iter_mut().enumerate() {
@@ -215,7 +215,7 @@ macro_rules! impl_xorable {
             fn debug_binary(&self) -> String {
                 debug_format(self.binary())
             }
-            
+
             fn set_remaining(self, n: usize, val: bool) -> Self {
                 let bits = mem::size_of::<$t>() * 8;
                 if n >= bits {

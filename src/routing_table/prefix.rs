@@ -118,6 +118,38 @@ impl<T: Clone + Copy + Default + Binary + Xorable> Prefix<T> {
     pub fn upper_bound(&self) -> T {
         self.name.set_remaining(self.bit_count, true)
     }
+
+    /// Returns whether the namespace defined by `self` is covered by prefixes in the `prefixes`
+    /// set
+    pub fn is_covered_by<'a, U>(&self, prefixes: U) -> bool
+        where T: 'a,
+              U: IntoIterator<Item = &'a Prefix<T>> + Clone
+    {
+        let max_prefix_len = prefixes.clone().into_iter().map(|x| x.bit_count()).max().unwrap_or(0);
+        self.is_covered_by_impl(prefixes, max_prefix_len)
+    }
+
+    fn is_covered_by_impl<'a, U>(&self, prefixes: U, max_prefix_len: usize) -> bool
+        where T: 'a,
+              U: IntoIterator<Item = &'a Prefix<T>> + Clone
+    {
+        prefixes.clone()
+            .into_iter()
+            .any(|x| x.is_compatible(self) && x.bit_count() <= self.bit_count()) ||
+        (self.bit_count() <= max_prefix_len &&
+         self.pushed(false).is_covered_by_impl(prefixes.clone(), max_prefix_len) &&
+         self.pushed(true).is_covered_by_impl(prefixes, max_prefix_len))
+    }
+
+    /// Returns the neighbouring prefix differing in the `i`-th bit
+    /// If `i` is larger than our bit count, `self` is returned
+    pub fn with_flipped_bit(&self, i: usize) -> Prefix<T> {
+        if i >= self.bit_count() {
+            *self
+        } else {
+            Prefix::new(self.bit_count, self.name.with_flipped_bit(i))
+        }
+    }
 }
 
 impl<T: Clone + Copy + Default + Binary + Xorable> PartialEq<Prefix<T>> for Prefix<T> {
