@@ -434,7 +434,7 @@ impl Debug for DirectMessage {
             DirectMessage::NodeIdentify { .. } => write!(formatter, "NodeIdentify {{ .. }}"),
             DirectMessage::NewNode(ref public_id) => write!(formatter, "NewNode({:?})", public_id),
             DirectMessage::RoutingTable(ref routing_table) => {
-                write!(formatter, "{:?}", routing_table)
+                write!(formatter, "RoutingTable {:?}", routing_table)
             }
             DirectMessage::TunnelRequest(peer_id) => {
                 write!(formatter, "TunnelRequest({:?})", peer_id)

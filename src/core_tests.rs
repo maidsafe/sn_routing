@@ -542,7 +542,6 @@ fn more_than_group_size_nodes() {
 }
 
 #[test]
-#[ignore]
 fn failing_connections_group_of_three() {
     let network = Network::new(None);
 

@@ -375,7 +375,10 @@ impl Node {
 
     fn find_tunnel_for_peer(&mut self, peer_id: PeerId, pub_id: &PublicId) {
         for (name, dst_peer_id) in self.peer_mgr.set_searching_for_tunnel(peer_id, *pub_id) {
-            trace!("{:?} Asking {:?} to serve as a tunnel.", self, name);
+            trace!("{:?} Asking {:?} to serve as a tunnel for {:?}.",
+                   self,
+                   name,
+                   peer_id);
             let tunnel_request = DirectMessage::TunnelRequest(peer_id);
             let _ = self.send_direct_message(&dst_peer_id, tunnel_request);
         }
@@ -908,6 +911,10 @@ impl Node {
         }
 
         for dst_id in self.peer_mgr.peers_needing_tunnel() {
+            trace!("{:?} Asking {:?} to serve as a tunnel for {:?}",
+                   self,
+                   peer_id,
+                   dst_id);
             let tunnel_request = DirectMessage::TunnelRequest(dst_id);
             let _ = self.send_direct_message(&peer_id, tunnel_request);
         }
@@ -1044,7 +1051,8 @@ impl Node {
                              peer_id: PeerId,
                              dst_id: PeerId)
                              -> Result<(), RoutingError> {
-        if self.peer_mgr.tunnelling_to(&dst_id) && self.tunnels.add(dst_id, peer_id) {
+        self.peer_mgr.tunnelling_to(&dst_id);
+        if self.tunnels.add(dst_id, peer_id) {
             debug!("{:?} Adding {:?} as a tunnel node for {:?}.",
                    self,
                    peer_id,
@@ -1832,6 +1840,11 @@ impl Node {
         self.stats().count_direct_message(&direct_message);
 
         if let Some(&tunnel_id) = self.tunnels.tunnel_for(dst_id) {
+            trace!("{:?}: Sending direct message {:?} to {:?} via tunnel {:?}",
+                   self,
+                   direct_message,
+                   dst_id,
+                   tunnel_id);
             let message = Message::TunnelDirect {
                 content: direct_message,
                 src: self.crust_service.id(),
@@ -1839,6 +1852,10 @@ impl Node {
             };
             self.send_message(&tunnel_id, message)
         } else {
+            trace!("{:?}: Sending direct message {:?} to {:?}",
+                   self,
+                   direct_message,
+                   dst_id);
             self.send_message(dst_id, Message::Direct(direct_message))
         }
     }
