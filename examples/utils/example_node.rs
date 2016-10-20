@@ -17,7 +17,8 @@
 
 use lru_time_cache::LruCache;
 use maidsafe_utilities::serialisation::{deserialise, serialise};
-use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Request, Response, XorName};
+use routing::{Authority, Data, DataIdentifier, Event, MessageId, Node, Prefix, Request, Response,
+              XorName};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -69,7 +70,9 @@ impl ExampleNode {
                     trace!("{} Received NodeLost event {:?}",
                            self.get_debug_name(),
                            name);
-                    self.handle_node_lost(name);
+                    // With DisjointGroup, node_lost shall no longer trigger, as data migration
+                    // shall only happens when a group merge happens
+                    // self.handle_node_lost(name);
                 }
                 Event::Connected => {
                     trace!("{} Received connected event", self.get_debug_name());
@@ -81,6 +84,18 @@ impl ExampleNode {
                 Event::RestartRequired => {
                     info!("{} Received RestartRequired event", self.get_debug_name());
                     self.node = unwrap!(Node::builder().create(self.sender.clone()));
+                }
+                Event::GroupSplit(prefix) => {
+                    trace!("{} Received GroupSplit event {:?}",
+                           self.get_debug_name(),
+                           prefix);
+                    self.handle_split(prefix);
+                }
+                Event::GroupMerge(prefix) => {
+                    trace!("{} Received GroupMerge event {:?}",
+                           self.get_debug_name(),
+                           prefix);
+                    self.send_refresh(MessageId::from_lost_node(prefix.lower_bound()));
                 }
                 event => {
                     trace!("{} Received {:?} event", self.get_debug_name(), event);
@@ -181,20 +196,31 @@ impl ExampleNode {
         }
     }
 
-    // While handling churn messages, we first "action" it ourselves and then
-    // send the corresponding refresh messages out to our close group.
     fn handle_node_added(&mut self, name: XorName) {
-        // TODO: Use the given routing table instead of repeatedly querying the routing node.
         self.send_refresh(MessageId::from_added_node(name));
     }
 
-    fn handle_node_lost(&mut self, name: XorName) {
-        // TODO: Use the given routing table instead of repeatedly querying the routing node.
-        self.send_refresh(MessageId::from_lost_node(name));
+    fn handle_split(&mut self, prefix: Prefix<XorName>) {
+        let deleted_clients: Vec<_> = self.client_accounts
+             .iter()
+             .filter(|&(client_name, _)| !prefix.matches(client_name))
+             .map(|(client_name, _)| *client_name)
+             .collect();
+        for client in &deleted_clients {
+            let _ = self.client_accounts.remove(client);
+        }
+
+        let deleted_data: Vec<_> = self.db
+             .iter()
+             .filter(|&(data_name, _)| !prefix.matches(data_name))
+             .map(|(data_name, _)| *data_name)
+             .collect();
+        for data in &deleted_data {
+            let _ = self.db.remove(data);
+        }
     }
 
     fn send_refresh(&mut self, id: MessageId) {
-        // TODO: Check whether name was actually close to client_name.
         for (client_name, stored) in &self.client_accounts {
             let refresh_content = RefreshContent::Client {
                 client_name: *client_name,
@@ -209,7 +235,7 @@ impl ExampleNode {
                                       content,
                                       id));
         }
-        // TODO: Check whether name was actually close to data_name.
+
         for (data_name, data) in &self.db {
             let refresh_content = RefreshContent::NaeManager {
                 data_name: *data_name,

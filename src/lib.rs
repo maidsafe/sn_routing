@@ -206,7 +206,7 @@ pub use mock_crust::crust;
 pub use node::{Node, NodeBuilder};
 pub use peer_manager::{MIN_GROUP_SIZE, QUORUM_SIZE};
 pub use routing_table::Error as RoutingTableError;
-pub use routing_table::Xorable;
+pub use routing_table::{Prefix, Xorable};
 pub use append_types::{AppendWrapper, AppendedData, Filter};
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
 pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,
