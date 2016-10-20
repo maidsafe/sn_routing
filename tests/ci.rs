@@ -57,8 +57,8 @@ mod utils;
 use itertools::Itertools;
 use maidsafe_utilities::serialisation;
 use maidsafe_utilities::thread::{self, Joiner};
-use routing::{Authority, Client, Data, DataIdentifier, Event, FullId, GROUP_SIZE, MessageId, Node,
-              PlainData, QUORUM_SIZE, Request, Response, XorName};
+use routing::{Authority, Client, Data, Event, FullId, GROUP_SIZE, MessageId, Node, QUORUM_SIZE,
+              Request, Response, StructuredData, XorName};
 use rust_sodium::crypto;
 use rust_sodium::crypto::hash::sha256;
 use std::iter;
@@ -68,6 +68,8 @@ use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 use utils::recv_with_timeout;
+
+const TYPE_TAG: u64 = 1000;
 
 #[derive(Debug)]
 struct TestEvent(usize, Event);
@@ -228,13 +230,13 @@ fn create_connected_nodes(count: usize,
     nodes
 }
 
-fn gen_plain_data() -> Data {
+fn gen_structured_data() -> Data {
     let key: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let value: String = (0..10).map(|_| rand::random::<u8>() as char).collect();
     let name = XorName(sha256::hash(key.as_bytes()).0);
     let data = unwrap!(serialisation::serialise(&(key, value)));
 
-    Data::Plain(PlainData::new(name, data))
+    Data::Structured(unwrap!(StructuredData::new(TYPE_TAG, name, 0, data, vec![], vec![], None)))
 }
 
 fn closest_nodes(node_names: &[XorName], target: &XorName) -> Vec<XorName> {
@@ -255,7 +257,7 @@ fn core() {
     {
         // request and response
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data();
         let message_id = MessageId::new();
 
         loop {
@@ -272,11 +274,7 @@ fn core() {
                         // A node received request from the client. Reply with a success.
                         if let Request::Put(_, ref id) = request {
                             let node = &nodes[index].node;
-
-                            unwrap!(node.send_put_success(dst,
-                                                          src,
-                                                          DataIdentifier::Plain(*data.name()),
-                                                          id.clone()));
+                            unwrap!(node.send_put_success(dst, src, data.identifier(), id.clone()));
                         }
                     }
 
@@ -300,7 +298,7 @@ fn core() {
         // request to group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data();
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -334,7 +332,7 @@ fn core() {
         // response from group authority
         let node_names = nodes.iter().map(|node| node.name()).collect_vec();
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data();
         let mut close_group = closest_nodes(&node_names, client.name());
 
         loop {
@@ -437,7 +435,7 @@ fn core() {
     {
         // message from quorum - 1 group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data();
 
         while let Ok(test_event) = recv_with_timeout(&event_receiver, Duration::from_secs(5)) {
             match test_event {
@@ -479,7 +477,7 @@ fn core() {
     {
         // message from more than quorum group members
         let client = TestClient::new(nodes.len(), event_sender.clone());
-        let data = gen_plain_data();
+        let data = gen_structured_data();
         let mut sent_ids = HashSet::new();
         let mut received_ids = HashSet::new();
 
@@ -496,18 +494,17 @@ fn core() {
                     }
                     TestEvent(index, Event::Request { request, src, dst }) => {
                         // A node received request from the client. Reply with a success.
-                        let data_id = DataIdentifier::Plain(*data.name());
                         if let Request::Put(_, id) = request {
                             unwrap!(nodes[index]
                                 .node
-                                .send_put_success(dst, src, data_id, id));
+                                .send_put_success(dst, src, data.identifier(), id));
                         }
                     }
                     TestEvent(index,
-                              Event::Response { response: Response::PutSuccess(name, id), .. })
+                              Event::Response { response: Response::PutSuccess(data_id, id), .. })
                         if index == client.index => {
                         assert!(received_ids.insert(id));
-                        assert_eq!(name, DataIdentifier::Plain(*data.name()));
+                        assert_eq!(data_id, data.identifier());
                     }
                     _ => (),
                 }
