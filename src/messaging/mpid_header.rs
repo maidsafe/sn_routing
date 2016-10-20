@@ -22,17 +22,12 @@ pub const MAX_HEADER_METADATA_SIZE: usize = 128;  // bytes
 
 use maidsafe_utilities::serialisation::serialise;
 use rand::{self, Rng};
-use rust_sodium;
 use rust_sodium::crypto::hash::sha256;
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::{ONCE_INIT, Once};
 use super::{Error, GUID_SIZE};
 use utils;
 use xor_name::XorName;
-
-static INITIALISE_SODIUMOXIDE: Once = ONCE_INIT;
-static mut RUST_SODIUM_INIT_RESULT: bool = false;
 
 #[derive(PartialEq, Eq, Hash, Clone, RustcDecodable, RustcEncodable)]
 struct Detail {
@@ -68,7 +63,6 @@ impl MpidHeader {
                metadata: Vec<u8>,
                secret_key: &SecretKey)
                -> Result<MpidHeader, Error> {
-        assert!(Self::initialise_rust_sodium());
         if metadata.len() > MAX_HEADER_METADATA_SIZE {
             return Err(Error::MetadataTooLarge);
         }
@@ -119,16 +113,6 @@ impl MpidHeader {
         match serialise(&self.detail) {
             Ok(encoded) => sign::verify_detached(&self.signature, &encoded, public_key),
             Err(_) => false,
-        }
-    }
-
-    #[allow(unsafe_code)]
-    fn initialise_rust_sodium() -> bool {
-        unsafe {
-            INITIALISE_SODIUMOXIDE.call_once(|| {
-                RUST_SODIUM_INIT_RESULT = rust_sodium::init();
-            });
-            RUST_SODIUM_INIT_RESULT
         }
     }
 }
