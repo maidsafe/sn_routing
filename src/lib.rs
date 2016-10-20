@@ -193,8 +193,6 @@ pub const TYPE_TAG_DNS_PACKET: u64 = 5;
 pub use authority::Authority;
 pub use cache::Cache;
 pub use client::Client;
-#[cfg(feature = "use-mock-crust")]
-pub use core_tests::verify_invariant;
 pub use data::{Data, DataIdentifier, NO_OWNER_PUB_KEY};
 pub use error::{InterfaceError, RoutingError};
 pub use event::Event;
