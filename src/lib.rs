@@ -154,7 +154,6 @@ mod message_filter;
 mod messages;
 mod node;
 mod peer_manager;
-mod plain_data;
 mod append_types;
 mod priv_appendable_data;
 mod pub_appendable_data;
@@ -200,7 +199,6 @@ pub use id::{FullId, PublicId};
 pub use immutable_data::{ImmutableData, MAX_IMMUTABLE_DATA_SIZE_IN_BYTES};
 pub use messages::{Request, Response};
 pub use node::{Node, NodeBuilder};
-pub use plain_data::PlainData;
 pub use append_types::{AppendWrapper, AppendedData, Filter};
 pub use pub_appendable_data::{MAX_PUB_APPENDABLE_DATA_SIZE_IN_BYTES, PubAppendableData};
 pub use priv_appendable_data::{MAX_PRIV_APPENDABLE_DATA_SIZE_IN_BYTES, PrivAppendableData,

@@ -16,7 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 pub use immutable_data::ImmutableData;
-pub use plain_data::PlainData;
 pub use priv_appendable_data::PrivAppendableData;
 pub use pub_appendable_data::PubAppendableData;
 use std::fmt::{self, Debug, Formatter};
@@ -41,8 +40,6 @@ pub enum Data {
     Structured(StructuredData),
     /// `ImmutableData` data type.
     Immutable(ImmutableData),
-    /// `PlainData` data type.
-    Plain(PlainData),
     /// `PubAppendableData` data type.
     PubAppendable(PubAppendableData),
     /// `PrivAppendableData` data type.
@@ -55,7 +52,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.name(),
             Data::Immutable(ref data) => data.name(),
-            Data::Plain(ref data) => data.name(),
             Data::PubAppendable(ref data) => data.name(),
             Data::PrivAppendable(ref data) => data.name(),
         }
@@ -66,7 +62,6 @@ impl Data {
         match *self {
             Data::Structured(ref data) => data.identifier(),
             Data::Immutable(ref data) => data.identifier(),
-            Data::Plain(ref data) => data.identifier(),
             Data::PubAppendable(ref data) => data.identifier(),
             Data::PrivAppendable(ref data) => data.identifier(),
         }
@@ -79,7 +74,6 @@ impl Data {
             Data::PrivAppendable(ref data) => data.validate_size(),
             Data::PubAppendable(ref data) => data.validate_size(),
             Data::Structured(ref data) => data.validate_size(),
-            _ => unimplemented!(),
         }
     }
 }
@@ -91,8 +85,6 @@ pub enum DataIdentifier {
     Structured(XorName, u64),
     /// Data request, (Identifier), for `ImmutableData`.
     Immutable(XorName),
-    /// Request for PlainData.
-    Plain(XorName),
     /// Request for public appendable data.
     PubAppendable(XorName),
     /// Request for private appendable data.
@@ -104,7 +96,6 @@ impl Debug for Data {
         match *self {
             Data::Structured(ref data) => data.fmt(formatter),
             Data::Immutable(ref data) => data.fmt(formatter),
-            Data::Plain(ref data) => data.fmt(formatter),
             Data::PubAppendable(ref data) => data.fmt(formatter),
             Data::PrivAppendable(ref data) => data.fmt(formatter),
         }
@@ -117,7 +108,6 @@ impl DataIdentifier {
         match *self {
             DataIdentifier::Structured(ref name, _) |
             DataIdentifier::Immutable(ref name) |
-            DataIdentifier::Plain(ref name) |
             DataIdentifier::PubAppendable(ref name) |
             DataIdentifier::PrivAppendable(ref name) => name,
         }
@@ -163,13 +153,6 @@ mod tests {
                    Data::Immutable(immutable_data.clone()).name());
         assert_eq!(immutable_data.identifier(),
                    DataIdentifier::Immutable(*immutable_data.name()));
-
-        // name() resolves correctly for PlainData
-        let name = XorName(sha256::hash(&[]).0);
-        let plain_data = PlainData::new(name, vec![]);
-        assert_eq!(plain_data.name(), Data::Plain(plain_data.clone()).name());
-        assert_eq!(plain_data.identifier(),
-                   DataIdentifier::Plain(*plain_data.name()));
     }
 
     #[test]
@@ -182,8 +165,5 @@ mod tests {
 
         // name() resolves correctly for ImmutableData
         assert_eq!(&name, DataIdentifier::Immutable(name).name());
-
-        // name() resolves correctly for PlainData
-        assert_eq!(&name, DataIdentifier::Plain(name).name());
     }
 }

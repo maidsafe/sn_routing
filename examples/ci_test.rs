@@ -65,7 +65,7 @@ use maidsafe_utilities::thread::named as thread_named;
 
 use rand::{ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, DataIdentifier, GROUP_SIZE, PlainData, XorName};
+use routing::{Data, GROUP_SIZE, StructuredData, XorName};
 use rust_sodium::crypto::hash;
 use std::{env, io, thread};
 use std::io::Write;
@@ -83,6 +83,7 @@ const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
+const TYPE_TAG: u64 = 1000;
 
 struct NodeProcess(Child, usize);
 
@@ -137,7 +138,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
                   stop_flg: Arc<(Mutex<bool>, Condvar)>)
                   -> Joiner {
-    let joiner = thread_named("ChurnSimulationThread", move || {
+    thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
@@ -171,9 +172,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 break;
             }
         }
-    });
-
-    joiner
+    })
 }
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
@@ -236,8 +235,9 @@ fn store_and_verify(requests: usize, batches: usize) {
         let key: String = (0..10).map(|_| random::<u8>() as char).collect();
         let value: String = (0..10).map(|_| random::<u8>() as char).collect();
         let name = XorName(hash::sha256::hash(key.as_bytes()).0);
-        let data = unwrap!(serialise(&(key, value)));
-        let data = Data::Plain(PlainData::new(name, data));
+        let raw_data = unwrap!(serialise(&(key, value)));
+        let sd = StructuredData::new(TYPE_TAG, name, 0, raw_data, vec![], vec![], None);
+        let data = Data::Structured(unwrap!(sd));
 
         print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
         io::stdout().flush().expect("Could not flush stdout");
@@ -246,7 +246,7 @@ fn store_and_verify(requests: usize, batches: usize) {
             print!(" - getting - ");
             io::stdout().flush().expect("Could not flush stdout");
             stored_data.push(data.clone());
-            if let Some(got_data) = example_client.get(DataIdentifier::Plain(*data.name())) {
+            if let Some(got_data) = example_client.get(data.identifier()) {
                 assert_eq!(got_data, data);
                 print_color("OK\n", color::GREEN);
             } else {
@@ -269,7 +269,7 @@ fn store_and_verify(requests: usize, batches: usize) {
         for (i, data_item) in stored_data.iter().enumerate().take(requests) {
             print!("Get attempt #{} - Data {:?} - ", i + 1, data_item.name());
             io::stdout().flush().expect("Could not flush stdout");
-            if let Some(data) = example_client.get(DataIdentifier::Plain(*data_item.name())) {
+            if let Some(data) = example_client.get(data_item.identifier()) {
                 assert_eq!(data, stored_data[i]);
                 print_color("OK\n", color::GREEN);
             } else {
