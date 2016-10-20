@@ -721,7 +721,6 @@ fn churn() {
 }
 
 #[test]
-#[ignore]
 fn node_joins_in_front() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, 2 * MIN_GROUP_SIZE);
@@ -734,7 +733,6 @@ fn node_joins_in_front() {
 }
 
 #[test]
-#[ignore]
 fn multiple_joining_nodes() {
     let network_size = 2 * MIN_GROUP_SIZE;
     let network = Network::new(None);
@@ -755,7 +753,6 @@ fn multiple_joining_nodes() {
 }
 
 #[test]
-#[ignore]
 #[cfg_attr(feature = "clippy", allow(needless_range_loop))]
 fn node_restart() {
     let network = Network::new(None);
@@ -791,7 +788,6 @@ fn check_close_groups_for_group_size_nodes() {
 }
 
 #[test]
-#[ignore]
 fn whitelist() {
     let network = Network::new(None);
     let mut nodes = create_connected_nodes(&network, MIN_GROUP_SIZE);
