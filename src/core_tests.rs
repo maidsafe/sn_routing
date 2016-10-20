@@ -563,7 +563,6 @@ fn failing_connections_group_of_three() {
 }
 
 #[test]
-#[ignore]
 fn failing_connections_ring() {
     let network = Network::new(None);
     let len = MIN_GROUP_SIZE * 2;
@@ -579,7 +578,6 @@ fn failing_connections_ring() {
 }
 
 #[test]
-#[ignore]
 fn failing_connections_unidirectional() {
     let network = Network::new(None);
     network.block_connection(Endpoint(1), Endpoint(2));
