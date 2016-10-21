@@ -597,7 +597,6 @@ fn client_connects_to_nodes() {
 }
 
 #[test]
-#[ignore]
 fn messages_accumulate_with_quorum() {
     let network = Network::new(None);
     let mut rng = network.new_rng();
@@ -660,7 +659,7 @@ fn messages_accumulate_with_quorum() {
     }
     send(&mut nodes[QUORUM_SIZE - 1], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes[..MIN_GROUP_SIZE] {
+    for node in &mut nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE], &dst_grp, message_id);
@@ -682,7 +681,7 @@ fn messages_accumulate_with_quorum() {
     }
     send(&mut nodes[0], &dst_grp, message_id);
     let _ = poll_all(&mut nodes, &mut []);
-    for node in &mut nodes[..MIN_GROUP_SIZE] {
+    for node in &mut nodes {
         expect_next_event!(node, Event::Response { response: Response::GetSuccess(..), .. });
     }
     send(&mut nodes[QUORUM_SIZE + 1], &dst_grp, message_id);

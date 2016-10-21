@@ -591,7 +591,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
     //     - returns `Err(Error::CannotRoute)`
     //
     // * If the destination is an individual node:
-    //     - if our name *is* the destination, returns `Err(Error::OwnName)`; otherwise
+    //     - if our name *is* the destination, returns an empty set; otherwise
     //     - if the destination name is an entry in the routing table, returns it; otherwise
     //     - if our group is the closest on the network (i.e. our group's prefix is a prefix of the
     //       destination), this returns `Err(Error::NoSuchPeer)`; otherwise
@@ -610,7 +610,7 @@ impl<T: Binary + Clone + Copy + Debug + Default + Hash + Xorable> RoutingTable<T
             }
             Destination::Node(ref target_name) => {
                 if *target_name == self.our_name {
-                    return Err(Error::OwnName);
+                    return Ok(HashSet::new());
                 }
                 let closest_group_prefix = self.closest_group_prefix(target_name);
                 // Safe to unwrap as we just chose `closest_group_prefix` from the list of groups
