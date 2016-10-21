@@ -25,12 +25,10 @@ use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use super::{Destination, Error, RoutingTable};
 use super::prefix::Prefix;
+use routing_table::{Iter, OwnMergeState};
 use routing_table::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
-
-#[derive(Clone, Eq, PartialEq)]
-struct Contact(u64);
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.
@@ -117,33 +115,53 @@ impl Network {
             }
         }
 
-        let mut merge_other_info = Vec::new();
+        while !merge_own_info.is_empty() {
+            let mut merge_other_info = Vec::new();
+            // handle broadcast of merge_own_group
+            let own_info = merge_own_info;
+            merge_own_info = Vec::new();
+            for (target_prefixes, merge_own_details) in own_info {
+                let targets = self.nodes_covered_by_prefixes(&target_prefixes);
+                for target in targets {
+                    let target_node = unwrap!(self.nodes.get_mut(&target));
+                    match target_node.merge_own_group(merge_own_details.clone()) {
+                        OwnMergeState::Initialised { targets, merge_details } => {
+                            merge_own_info.push((targets, merge_details));
+                        }
+                        OwnMergeState::Ongoing => (),
+                        OwnMergeState::Completed { targets, merge_details } => {
+                            merge_other_info.push((targets, merge_details));
+                        }
+                    }
+                    // add needed contacts
+                    let needed = target_node.needed().clone();
+                    for needed_contact in needed.iter().flat_map(Iter::iterate) {
+                        let _ = target_node.add(*needed_contact);
+                    }
+                }
+            }
 
-        // handle broadcast of merge_own_group
-        for (targets, merge_own_details) in merge_own_info {
-            for target in targets {
-                let target_node = unwrap!(self.nodes.get_mut(&target));
-                let other_info = target_node.merge_own_group(&merge_own_details);
-                merge_other_info.push(other_info);
-                // add needed contacts
-                let needed = target_node.needed().clone();
-                for needed_contact in needed {
-                    let _ = target_node.add(needed_contact);
+            // handle broadcast of merge_other_group
+            for (target_prefixes, merge_other_details) in merge_other_info {
+                let targets = self.nodes_covered_by_prefixes(&target_prefixes);
+                for target in targets {
+                    let target_node = unwrap!(self.nodes.get_mut(&target));
+                    let contacts = target_node.merge_other_group(merge_other_details.clone());
+                    // add missing contacts
+                    for contact in contacts {
+                        let _ = target_node.add(contact);
+                    }
                 }
             }
         }
+    }
 
-        // handle broadcast of merge_other_group
-        for (targets, merge_other_details) in merge_other_info {
-            for target in targets {
-                let target_node = unwrap!(self.nodes.get_mut(&target));
-                let contacts = target_node.merge_other_group(&merge_other_details);
-                // add missing contacts
-                for contact in contacts {
-                    let _ = target_node.add(contact);
-                }
-            }
-        }
+    fn nodes_covered_by_prefixes(&self, prefixes: &[Prefix<u64>]) -> Vec<u64> {
+        self.nodes
+            .keys()
+            .filter(|&name| prefixes.iter().any(|prefix| prefix.matches(name)))
+            .cloned()
+            .collect()
     }
 
     /// Returns a random name that is not taken by any node yet.

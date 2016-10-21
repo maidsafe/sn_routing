@@ -366,12 +366,9 @@ pub enum MessageContent {
     /// Sent amongst members of a newly-merged group to allow synchronisation of their routing
     /// tables before notifying other connected peers of the merge.
     OwnGroupMerge {
-        prefix: Prefix<XorName>,
-        // The recipient will already be connected to these peers, so doesn't need their complete
-        // `PublicId`s.
-        connected_groups: Vec<(Prefix<XorName>, Vec<XorName>)>,
-        // The recipient will not be connected to these peers, so needs their complete `PublicId`s.
-        needed_groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
+        sender_prefix: Prefix<XorName>,
+        merge_prefix: Prefix<XorName>,
+        groups: Vec<(Prefix<XorName>, Vec<PublicId>)>,
     },
     /// Sent by members of a newly-merged group to peers outwith the merged group to notify them of
     /// the merge.
@@ -503,14 +500,12 @@ impl Debug for MessageContent {
                        close_group_ids,
                        message_id)
             }
-            MessageContent::OwnGroupMerge { ref prefix,
-                                            ref connected_groups,
-                                            ref needed_groups } => {
+            MessageContent::OwnGroupMerge { ref sender_prefix, ref merge_prefix, ref groups } => {
                 write!(formatter,
                        "OwnGroupMerge {{ {:?}, {:?}, {:?} }}",
-                       prefix,
-                       connected_groups,
-                       needed_groups)
+                       sender_prefix,
+                       merge_prefix,
+                       groups)
             }
             MessageContent::OtherGroupMerge { ref prefix, ref group } => {
                 write!(formatter, "OtherGroupMerge {{ {:?}, {:?} }}", prefix, group)
