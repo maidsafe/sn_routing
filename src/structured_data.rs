@@ -17,13 +17,13 @@
 
 use data::{DataIdentifier, NO_OWNER_PUB_KEY, verify_detached};
 use error::RoutingError;
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::serialisation::{serialise, serialised_size};
 use rust_sodium::crypto::sign::{self, PublicKey, SecretKey, Signature};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
 /// Maximum allowed size for a Structured Data to grow to
-pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: usize = 102400;
+pub const MAX_STRUCTURED_DATA_SIZE_IN_BYTES: u64 = 102400;
 
 /// Mutable structured data.
 ///
@@ -246,13 +246,7 @@ impl StructuredData {
 
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
-        match serialise(self) {
-            Ok(raw) => raw.len() <= MAX_STRUCTURED_DATA_SIZE_IN_BYTES,
-            Err(e) => {
-                warn!("Failed to serialise StructuredData: {:?}", e);
-                false
-            }
-        }
+        serialised_size(self) <= MAX_STRUCTURED_DATA_SIZE_IN_BYTES
     }
 }
 
