@@ -189,7 +189,7 @@ impl ExampleNode {
                                data_id,
                                it);
                         unwrap!(self.node
-                            .send_get_request(dst.clone(),
+                            .send_get_request(dst,
                                               Authority::ManagedNode(it.clone()),
                                               data_id,
                                               id));
@@ -226,7 +226,7 @@ impl ExampleNode {
         let data_id = data.identifier();
         match dst {
             Authority::NaeManager(_) => {
-                let _ = self.node.send_put_success(dst.clone(), src, data_id, id);
+                let _ = self.node.send_put_success(dst, src, data_id, id);
                 if self.dm_accounts.contains_key(&data_id) {
                     return; // Don't allow duplicate put.
                 }
@@ -241,10 +241,7 @@ impl ExampleNode {
 
                 for name in close_grp.iter().cloned() {
                     unwrap!(self.node
-                        .send_put_request(dst.clone(),
-                                          Authority::ManagedNode(name),
-                                          data.clone(),
-                                          id));
+                        .send_put_request(dst, Authority::ManagedNode(name), data.clone(), id));
                 }
                 // We assume these messages are handled by the managed nodes.
                 let _ = self.dm_accounts.insert(data_id, close_grp.clone());
@@ -286,10 +283,9 @@ impl ExampleNode {
             trace!("{:?} Sending GetSuccess to Client for data {:?}",
                    self.get_debug_name(),
                    data_id);
-            let src = dst.clone();
+            let src = dst;
             for (client_auth, message_id) in requests {
-                let _ = self.node
-                    .send_get_success(src.clone(), client_auth, data.clone(), message_id);
+                let _ = self.node.send_get_success(src, client_auth, data.clone(), message_id);
             }
         }
 
@@ -317,7 +313,7 @@ impl ExampleNode {
             }) {
                 let src = dst;
                 let dst = Authority::ManagedNode(node);
-                unwrap!(self.node.send_put_request(src.clone(), dst, data, id));
+                unwrap!(self.node.send_put_request(src, dst, data, id));
 
                 // TODO: Currently we assume these messages are saved by managed nodes. We should
                 // wait for Put success to confirm the same.
@@ -431,7 +427,7 @@ impl ExampleNode {
                 // Find the remaining places where the data is stored and send a `Get` there.
                 for dm in dms {
                     let dst = Authority::ManagedNode(*dm);
-                    if let Err(err) = self.node.send_get_request(src.clone(), dst, *data_id, id) {
+                    if let Err(err) = self.node.send_get_request(src, dst, *data_id, id) {
                         error!("Failed to send get request to retrieve chunk - {:?}", err);
                     }
                 }
@@ -461,7 +457,7 @@ impl ExampleNode {
 
         let content = unwrap!(serialise(&refresh_content));
         let src = Authority::NaeManager(*data_id.name());
-        unwrap!(self.node.send_refresh_request(src.clone(), src, content, id));
+        unwrap!(self.node.send_refresh_request(src, src, content, id));
     }
 
     /// Receiving a refresh message means that a quorum has been reached: Enough other members in

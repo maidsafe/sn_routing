@@ -683,7 +683,7 @@ impl Core {
         let (their_public_id, src, dst) = if let Some(entry) = self.peer_mgr
             .connection_token_map
             .remove(&result_token) {
-            entry.clone()
+            entry
         } else {
             error!("{:?} Prepared connection info, but no entry found in token map.",
                    self);
@@ -902,9 +902,9 @@ impl Core {
 
                         let priority = response.priority();
                         let src = Authority::ManagedNode(*self.name());
-                        let dst = routing_msg.src.clone();
+                        let dst = routing_msg.src;
 
-                        self.send_ack_from(routing_msg, route, src.clone());
+                        self.send_ack_from(routing_msg, route, src);
 
                         try!(self.send_user_message(src,
                                                     dst,
@@ -955,7 +955,7 @@ impl Core {
         // For clients we already have set it on reception of BootstrapIdentify message
         if self.state == State::Node {
             let dynamic_quorum_size = self.dynamic_quorum_size();
-            self.message_accumulator.set_quorum_size(dynamic_quorum_size);
+            self.message_accumulator.set_quorum(dynamic_quorum_size);
         }
         let key = *public_id.signing_public_key();
         let hash_msg = if let Ok(hash_msg) = message.to_grp_msg_hash() {
@@ -993,8 +993,8 @@ impl Core {
                                 routing_msg: &RoutingMessage)
                                 -> Result<(), RoutingError> {
         let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
+        let msg_src = routing_msg.src;
+        let msg_dst = routing_msg.dst;
         match msg_content {
             MessageContent::Ack(..) => (),
             _ => {
@@ -1048,7 +1048,7 @@ impl Core {
                 self.handle_connection_info_from_node(encrypted_connection_info,
                                                       nonce_bytes,
                                                       src_name,
-                                                      routing_msg.dst.clone(),
+                                                      routing_msg.dst,
                                                       public_id)
             }
             (MessageContent::GetNodeNameResponse { relocated_id, close_group_ids, .. },
@@ -1349,7 +1349,7 @@ impl Core {
         debug!("{:?} - State changed to client, quorum size: {}.",
                self,
                current_quorum_size);
-        self.message_accumulator.set_quorum_size(current_quorum_size);
+        self.message_accumulator.set_quorum(current_quorum_size);
 
         match self.role {
             Role::Client => {
@@ -1744,7 +1744,7 @@ impl Core {
                    self,
                    close_node_id);
             try!(self.send_connection_info(close_node_id,
-                                           dst.clone(),
+                                           dst,
                                            Authority::ManagedNode(*close_node_id.name())));
         }
         Ok(())
@@ -1795,7 +1795,7 @@ impl Core {
                        self,
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                try!(self.send_connection_info(close_node_id, dst.clone(), ci_dst));
+                try!(self.send_connection_info(close_node_id, dst, ci_dst));
             }
         }
         Ok(())
@@ -2014,8 +2014,8 @@ impl Core {
         }
         for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_message(RoutingMessage {
-                src: src.clone(),
-                dst: dst.clone(),
+                src: src,
+                dst: dst,
                 content: part,
             }));
         }
@@ -2243,7 +2243,7 @@ impl Core {
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
-        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
+        self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
     fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {
@@ -2260,7 +2260,7 @@ impl Core {
         let hash = maidsafe_utilities::big_endian_sip_hash(&hash_msg);
         let response = RoutingMessage {
             src: src,
-            dst: routing_msg.src.clone(),
+            dst: routing_msg.src,
             content: MessageContent::Ack(hash, routing_msg.priority()),
         };
 

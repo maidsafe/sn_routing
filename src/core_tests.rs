@@ -889,8 +889,7 @@ fn successful_get_request() {
                 Ok(Event::Request { request: Request::Get(ref request, id), ref src, ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == id {
-                        if let Err(_) = node.inner
-                            .send_get_success(dst.clone(), src.clone(), data.clone(), id) {
+                        if let Err(_) = node.inner.send_get_success(*dst, *src, data.clone(), id) {
                             trace!("Failed to send GetSuccess response");
                         }
                         break;
@@ -958,7 +957,7 @@ fn failed_get_request() {
                     request_received_count += 1;
                     if data_request == *data_id && message_id == *id {
                         if let Err(_) = node.inner
-                            .send_get_failure(dst.clone(), src.clone(), *data_id, vec![], *id) {
+                            .send_get_failure(*dst, *src, *data_id, vec![], *id) {
                             trace!("Failed to send GetFailure response.");
                         }
                         break;
@@ -1023,8 +1022,7 @@ fn disconnect_on_get_request() {
                                     ref dst }) => {
                     request_received_count += 1;
                     if data_request == *request && message_id == *id {
-                        if let Err(_) = node.inner
-                            .send_get_success(dst.clone(), src.clone(), data.clone(), *id) {
+                        if let Err(_) = node.inner.send_get_success(*dst, *src, data.clone(), *id) {
                             trace!("Failed to send GetSuccess response");
                         }
                         break;
@@ -1129,9 +1127,7 @@ fn request_during_churn_node_to_group() {
 
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src, dst, data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
@@ -1164,9 +1160,7 @@ fn request_during_churn_group_to_self() {
 
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src, dst, data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
@@ -1226,9 +1220,7 @@ fn request_during_churn_group_to_group() {
 
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
-            .filter(|node| {
-                did_receive_get_request(node, src, dst, data_id, message_id)
-            })
+            .filter(|node| did_receive_get_request(node, src, dst, data_id, message_id))
             .count();
 
         assert!(num_received >= QUORUM_SIZE);
