@@ -574,21 +574,12 @@ impl Node {
     fn dispatch_routing_message(&mut self,
                                 routing_msg: RoutingMessage)
                                 -> Result<(), RoutingError> {
-        let msg_content = routing_msg.content.clone();
-        let msg_src = routing_msg.src.clone();
-        let msg_dst = routing_msg.dst.clone();
-        match msg_content {
+        match routing_msg.content {
             MessageContent::Ack(..) => (),
-            _ => {
-                trace!("{:?} Got routing message {:?} from {:?} to {:?}.",
-                       self,
-                       msg_content,
-                       msg_src,
-                       msg_dst)
-            }
+            _ => trace!("{:?} Got routing message {:?}.", self, routing_msg),
         }
 
-        match (msg_content, msg_src, msg_dst) {
+        match (routing_msg.content, routing_msg.src, routing_msg.dst) {
             (MessageContent::GetNodeName { current_id, message_id },
              Authority::Client { client_key, proxy_node_name, peer_id },
              Authority::NaeManager(dst_name)) => {
@@ -637,7 +628,7 @@ impl Node {
                 self.handle_connection_info_from_node(encrypted_connection_info,
                                                       nonce_bytes,
                                                       src_name,
-                                                      routing_msg.dst.clone(),
+                                                      routing_msg.dst,
                                                       public_id)
             }
             (MessageContent::GetCloseGroupResponse { close_group_ids, .. },
@@ -659,8 +650,12 @@ impl Node {
                 }
                 Ok(())
             }
-            _ => {
-                debug!("{:?} Unhandled routing message {:?}", self, routing_msg);
+            (content, src, dst) => {
+                debug!("{:?} Unhandled routing message {:?} from {:?} to {:?}",
+                       self,
+                       content,
+                       src,
+                       dst);
                 Err(RoutingError::BadAuthority)
             }
         }
@@ -703,9 +698,9 @@ impl Node {
 
                         let priority = response.priority();
                         let src = Authority::ManagedNode(*self.name());
-                        let dst = routing_msg.src.clone();
+                        let dst = routing_msg.src;
 
-                        self.send_ack_from(routing_msg, route, src.clone());
+                        self.send_ack_from(routing_msg, route, src);
 
                         try!(self.send_user_message(src,
                                                     dst,
@@ -1175,9 +1170,8 @@ impl Node {
                    self,
                    close_node_id);
 
-            if let Err(error) = self.send_connection_info(close_node_id,
-                                      dst.clone(),
-                                      Authority::ManagedNode(*close_node_id.name())) {
+            let node_auth = Authority::ManagedNode(*close_node_id.name());
+            if let Err(error) = self.send_connection_info(close_node_id, dst, node_auth) {
                 debug!("{:?} - Failed to send connection info to {:?}: {:?}",
                        self,
                        close_node_id,
@@ -1278,7 +1272,7 @@ impl Node {
                        self,
                        close_node_id);
                 let ci_dst = Authority::ManagedNode(*close_node_id.name());
-                try!(self.send_connection_info(close_node_id, dst.clone(), ci_dst));
+                try!(self.send_connection_info(close_node_id, dst, ci_dst));
             }
         }
         Ok(())
@@ -1429,8 +1423,8 @@ impl Node {
 
         for part in try!(user_msg.to_parts(priority)) {
             try!(self.send_routing_message(RoutingMessage {
-                src: src.clone(),
-                dst: dst.clone(),
+                src: src,
+                dst: dst,
                 content: part,
             }));
         }
@@ -1744,7 +1738,7 @@ impl Node {
         };
         for target in &targets {
             let request_msg = RoutingMessage {
-                src: src.clone(),
+                src: src,
                 dst: Authority::NaeManager(target.lower_bound()),
                 content: request_content.clone(),
             };
@@ -1765,7 +1759,7 @@ impl Node {
                 group: group.clone(),
             };
             let request_msg = RoutingMessage {
-                src: src.clone(),
+                src: src,
                 dst: Authority::NaeManager(target.lower_bound()),
                 content: request_content,
             };

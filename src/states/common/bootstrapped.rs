@@ -130,7 +130,7 @@ pub trait Bootstrapped: Base {
     }
 
     fn send_ack(&mut self, routing_msg: &RoutingMessage, route: u8) {
-        self.send_ack_from(routing_msg, route, routing_msg.dst.clone());
+        self.send_ack_from(routing_msg, route, routing_msg.dst);
     }
 
     fn send_ack_from(&mut self, routing_msg: &RoutingMessage, route: u8, src: Authority) {

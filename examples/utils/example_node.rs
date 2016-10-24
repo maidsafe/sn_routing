@@ -32,7 +32,7 @@ pub struct ExampleNode {
     /// A clone of the event sender passed to the Routing library.
     sender: mpsc::Sender<Event>,
     /// A map of the data chunks this node is storing.
-    db: HashMap<XorName, Data>,
+    db: HashMap<DataIdentifier, Data>,
     client_accounts: HashMap<XorName, u64>,
     /// A cache that contains the data necessary to respond with a `PutSuccess` to a `Client`.
     put_request_cache: LruCache<MessageId, (Authority, Authority)>,
@@ -135,7 +135,7 @@ impl ExampleNode {
     }
 
     fn handle_response(&mut self, response: Response, _src: Authority, dst: Authority) {
-        match (response, dst.clone()) {
+        match (response, dst) {
             (Response::PutSuccess(data_id, id), Authority::ClientManager(_name)) => {
                 if let Some((src, dst)) = self.put_request_cache.remove(&id) {
                     unwrap!(self.node.send_put_success(src, dst, data_id, id));
@@ -152,7 +152,7 @@ impl ExampleNode {
                           dst: Authority) {
         match (src, dst) {
             (src @ Authority::Client { .. }, dst @ Authority::NaeManager(_)) => {
-                if let Some(data) = self.db.get(data_id.name()) {
+                if let Some(data) = self.db.get(&data_id) {
                     unwrap!(self.node.send_get_success(dst, src, data.clone(), id))
                 } else {
                     trace!("{:?} GetDataRequest failed for {:?}.",
@@ -176,7 +176,7 @@ impl ExampleNode {
                        data);
                 let _ = self.node
                     .send_put_success(dst, src, data.identifier(), id);
-                let _ = self.db.insert(*data.name(), data);
+                let _ = self.db.insert(data.identifier(), data);
             }
             Authority::ClientManager(_) => {
                 trace!("{:?} Put Request: Updating ClientManager: key {:?}, value {:?}",
@@ -184,7 +184,7 @@ impl ExampleNode {
                        data.name(),
                        data);
                 {
-                    let src = dst.clone();
+                    let src = dst;
                     let dst = Authority::NaeManager(*data.name());
                     unwrap!(self.node.send_put_request(src, dst, data, id));
                 }
@@ -202,21 +202,21 @@ impl ExampleNode {
 
     fn handle_split(&mut self, prefix: Prefix<XorName>) {
         let deleted_clients: Vec<_> = self.client_accounts
-             .iter()
-             .filter(|&(client_name, _)| !prefix.matches(client_name))
-             .map(|(client_name, _)| *client_name)
-             .collect();
+            .iter()
+            .filter(|&(client_name, _)| !prefix.matches(client_name))
+            .map(|(client_name, _)| *client_name)
+            .collect();
         for client in &deleted_clients {
             let _ = self.client_accounts.remove(client);
         }
 
         let deleted_data: Vec<_> = self.db
-             .iter()
-             .filter(|&(data_name, _)| !prefix.matches(data_name))
-             .map(|(data_name, _)| *data_name)
-             .collect();
-        for data in &deleted_data {
-            let _ = self.db.remove(data);
+            .iter()
+            .filter(|&(data_id, _)| !prefix.matches(data_id.name()))
+            .map(|(data_id, _)| *data_id)
+            .collect();
+        for data_id in &deleted_data {
+            let _ = self.db.remove(data_id);
         }
     }
 
@@ -229,24 +229,18 @@ impl ExampleNode {
 
             let content = unwrap!(serialise(&refresh_content));
 
-            unwrap!(self.node
-                .send_refresh_request(Authority::ClientManager(*client_name),
-                                      Authority::ClientManager(*client_name),
-                                      content,
-                                      id));
+            let auth = Authority::ClientManager(*client_name);
+            unwrap!(self.node.send_refresh_request(auth, auth, content, id));
         }
 
-        for (data_name, data) in &self.db {
+        for (data_id, data) in &self.db {
             let refresh_content = RefreshContent::NaeManager {
-                data_name: *data_name,
+                data_id: *data_id,
                 data: data.clone(),
             };
             let content = unwrap!(serialise(&refresh_content));
-            unwrap!(self.node
-                .send_refresh_request(Authority::NaeManager(*data_name),
-                                      Authority::NaeManager(*data_name),
-                                      content,
-                                      id));
+            let auth = Authority::NaeManager(*data.name());
+            unwrap!(self.node.send_refresh_request(auth, auth, content, id));
         }
     }
 
@@ -260,11 +254,11 @@ impl ExampleNode {
                        client_name);
                 let _ = self.client_accounts.insert(client_name, data);
             }
-            RefreshContent::NaeManager { data_name, data } => {
+            RefreshContent::NaeManager { data_id, data } => {
                 trace!("{:?} handle_refresh for NaeManager. data - {:?}",
                        self.get_debug_name(),
-                       data_name);
-                let _ = self.db.insert(data_name, data);
+                       data_id);
+                let _ = self.db.insert(data_id, data);
             }
         }
     }
@@ -286,5 +280,5 @@ enum RefreshContent {
     /// A message to a `ClientManager` to insert a new client.
     Client { client_name: XorName, data: u64 },
     /// A message to an `NaeManager` to add a new data chunk.
-    NaeManager { data_name: XorName, data: Data },
+    NaeManager { data_id: DataIdentifier, data: Data },
 }
