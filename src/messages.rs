@@ -276,7 +276,7 @@ impl RoutingMessage {
     pub fn ack_from(msg: &RoutingMessage, src: Authority) -> Result<Self, RoutingError> {
         Ok(RoutingMessage {
             src: src,
-            dst: msg.src.clone(),
+            dst: msg.src,
             content: MessageContent::Ack(try!(Ack::compute(msg)), msg.priority()),
         })
     }
@@ -298,8 +298,8 @@ impl RoutingMessage {
             _ => self.content.clone(),
         };
         Ok(RoutingMessage {
-            src: self.src.clone(),
-            dst: self.dst.clone(),
+            src: self.src,
+            dst: self.dst,
             content: content,
         })
     }

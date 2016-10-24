@@ -64,7 +64,7 @@ use maidsafe_utilities::thread::named as thread_named;
 
 use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, FullId, StructuredData};
+use routing::{Data, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
@@ -84,21 +84,6 @@ const DEFAULT_BATCHES: usize = 1;
 const GROUP_SIZE: usize = 8;
 
 struct NodeProcess(Child, usize);
-
-/// Creates random structured data
-fn random_structured_data<R: Rng>(type_tag: u64,
-                                  full_id: &FullId,
-                                  rng: &mut R)
-                                  -> StructuredData {
-    StructuredData::new(type_tag,
-                        rng.gen(),
-                        0,
-                        rng.gen_iter().take(10).collect(),
-                        vec![full_id.public_id().signing_public_key().clone()],
-                        vec![],
-                        Some(full_id.signing_private_key()))
-        .expect("Cannot create structured data for test")
-}
 
 impl Drop for NodeProcess {
     fn drop(&mut self) {
@@ -151,7 +136,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                   network_size: usize,
                   stop_flg: Arc<(Mutex<bool>, Condvar)>)
                   -> Joiner {
-    let joiner = thread_named("ChurnSimulationThread", move || {
+    thread_named("ChurnSimulationThread", move || {
         let mut rng = thread_rng();
         let wait_range = Range::new(CHURN_MIN_WAIT_SEC, CHURN_MAX_WAIT_SEC);
 
@@ -185,9 +170,7 @@ fn simulate_churn(mut nodes: Vec<NodeProcess>,
                 break;
             }
         }
-    });
-
-    joiner
+    })
 }
 
 fn simulate_churn_impl(nodes: &mut Vec<NodeProcess>,
@@ -246,10 +229,11 @@ fn store_and_verify(requests: usize, batches: usize) {
 
     println!("--------- Putting Data -----------");
     let mut stored_data = Vec::with_capacity(requests);
-    let full_id = example_client.full_id().clone();
     let mut rng = SeededRng::new();
     for i in 0..requests {
-        let data = Data::Structured(random_structured_data(100000, &full_id, &mut rng));
+        let raw_data = rng.gen_iter().take(10).collect();
+        let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, vec![], vec![], None);
+        let data = Data::Structured(unwrap!(sd));
         print!("Putting Data: count #{} - Data {:?} - ", i + 1, data.name());
         io::stdout().flush().expect("Could not flush stdout");
         if example_client.put(data.clone()).is_ok() {
