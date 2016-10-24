@@ -31,7 +31,7 @@ use xor_name::XorName;
 ///
 /// An `Authority` can be an individual `Client` or `ManagedNode`, or a group of nodes, like a
 /// `NodeManager`, `ClientManager` or `NaeManager`.
-#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Hash)]
+#[derive(RustcEncodable, RustcDecodable, PartialEq, PartialOrd, Eq, Ord, Clone, Copy, Hash)]
 pub enum Authority {
     /// Manager of a Client.  XorName is the hash of the Client's `client_key`.
     ClientManager(XorName),

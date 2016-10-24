@@ -59,14 +59,13 @@ mod utils;
 
 use docopt::Docopt;
 
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::SeededRng;
 use maidsafe_utilities::thread::Joiner;
 use maidsafe_utilities::thread::named as thread_named;
 
-use rand::{ThreadRng, random, thread_rng};
+use rand::{Rng, ThreadRng, random, thread_rng};
 use rand::distributions::{IndependentSample, Range};
-use routing::{Data, GROUP_SIZE, StructuredData, XorName};
-use rust_sodium::crypto::hash;
+use routing::{Data, GROUP_SIZE, StructuredData};
 use std::{env, io, thread};
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
@@ -83,7 +82,6 @@ const DEFAULT_REQUESTS: usize = 30;
 const DEFAULT_NODE_COUNT: usize = 20;
 /// The number of churn-get cycles.
 const DEFAULT_BATCHES: usize = 1;
-const TYPE_TAG: u64 = 1000;
 
 struct NodeProcess(Child, usize);
 
@@ -231,15 +229,12 @@ fn store_and_verify(requests: usize, batches: usize) {
 
     println!("--------- Putting Data -----------");
     let mut stored_data = Vec::with_capacity(requests);
+    let mut rng = SeededRng::new();
     for i in 0..requests {
-        let key: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let value: String = (0..10).map(|_| random::<u8>() as char).collect();
-        let name = XorName(hash::sha256::hash(key.as_bytes()).0);
-        let raw_data = unwrap!(serialise(&(key, value)));
-        let sd = StructuredData::new(TYPE_TAG, name, 0, raw_data, vec![], vec![], None);
+        let raw_data = rng.gen_iter().take(10).collect();
+        let sd = StructuredData::new(10000, rng.gen(), 0, raw_data, vec![], vec![], None);
         let data = Data::Structured(unwrap!(sd));
-
-        print!("Putting Data: count #{} - Data {:?} - ", i + 1, name);
+        print!("Putting Data: count #{} - Data {:?} - ", i + 1, data.name());
         io::stdout().flush().expect("Could not flush stdout");
         if example_client.put(data.clone()).is_ok() {
             print_color("OK", color::GREEN);
