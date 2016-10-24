@@ -25,10 +25,13 @@ use std::fmt::{Binary, Debug};
 use std::hash::Hash;
 use super::{Destination, Error, RoutingTable};
 use super::prefix::Prefix;
-use routing_table::{Iter, OwnMergeState};
+use routing_table::{Iter, OtherMergeDetails, OwnMergeDetails, OwnMergeState};
 use routing_table::xorable::Xorable;
 
 const MIN_GROUP_SIZE: usize = 8;
+
+type OwnMergeInfo = (Vec<Prefix<u64>>, OwnMergeDetails<u64>);
+type OtherMergeInfo = (Vec<Prefix<u64>>, OtherMergeDetails<u64>);
 
 /// A simulated network, consisting of a set of "nodes" (routing tables) and a random number
 /// generator.
@@ -89,12 +92,24 @@ impl Network {
         }
     }
 
+    fn store_merge_info<T: PartialEq + Debug>(merge_info: &mut HashMap<Prefix<u64>, T>,
+                                              prefix: Prefix<u64>,
+                                              new_info: T) {
+        if let Some(content) = merge_info.get(&prefix) {
+            assert_eq!(new_info, *content);
+            return;
+        }
+        let _ = merge_info.insert(prefix, new_info);
+    }
+
+    // TODO: remove this when https://github.com/Manishearth/rust-clippy/issues/1279 is resolved
+    #[allow(for_kv_map)]
     /// Drops a node and, if necessary, merges groups to restore the group requirement.
     fn drop_node(&mut self) {
         let keys = self.keys();
         let name = *unwrap!(self.rng.choose(&keys));
         let _ = self.nodes.remove(&name);
-        let mut merge_own_info = Vec::new();
+        let mut merge_own_info: HashMap<Prefix<u64>, OwnMergeInfo> = HashMap::new();
         // TODO: needs to verify how to broadcasting such info
         for node in self.nodes.values_mut() {
             if node.iter().any(|&name_in_table| name_in_table == name) {
@@ -104,7 +119,7 @@ impl Network {
                 assert_eq!(removed_node_is_in_our_group,
                            removal_details.was_in_our_group);
                 if let Some(info) = removal_details.targets_and_merge_details {
-                    merge_own_info.push(info);
+                    Network::store_merge_info(&mut merge_own_info, *node.our_group_prefix(), info);
                 }
             } else {
                 match node.remove(&name) {
@@ -115,34 +130,44 @@ impl Network {
             }
         }
 
+        let mut iteration = 1;
         while !merge_own_info.is_empty() {
-            let mut merge_other_info = Vec::new();
+            println!("+++ Merge own info: iteration #{}", iteration);
+            iteration += 1;
+            let mut merge_other_info: HashMap<Prefix<u64>, OtherMergeInfo> = HashMap::new();
             // handle broadcast of merge_own_group
             let own_info = merge_own_info;
-            merge_own_info = Vec::new();
-            for (target_prefixes, merge_own_details) in own_info {
+            merge_own_info = HashMap::new();
+            for (_, (target_prefixes, merge_own_details)) in own_info {
                 let targets = self.nodes_covered_by_prefixes(&target_prefixes);
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
                     match target_node.merge_own_group(merge_own_details.clone()) {
                         OwnMergeState::Initialised { targets, merge_details } => {
-                            merge_own_info.push((targets, merge_details));
+                            Network::store_merge_info(&mut merge_own_info,
+                                                      *target_node.our_group_prefix(),
+                                                      (targets, merge_details));
                         }
                         OwnMergeState::Ongoing => (),
                         OwnMergeState::Completed { targets, merge_details } => {
-                            merge_other_info.push((targets, merge_details));
+                            Network::store_merge_info(&mut merge_other_info,
+                                                      *target_node.our_group_prefix(),
+                                                      (targets, merge_details));
+                            // add needed contacts
+                            let needed = target_node.needed().clone();
+                            for needed_contact in needed.iter().flat_map(Iter::iterate) {
+                                let _ = target_node.add(*needed_contact);
+                            }
+                            println!("Finished merging own group for {:?}:\n{:?}",
+                                     target_node.our_name().debug_binary(),
+                                     target_node);
                         }
-                    }
-                    // add needed contacts
-                    let needed = target_node.needed().clone();
-                    for needed_contact in needed.iter().flat_map(Iter::iterate) {
-                        let _ = target_node.add(*needed_contact);
                     }
                 }
             }
 
             // handle broadcast of merge_other_group
-            for (target_prefixes, merge_other_details) in merge_other_info {
+            for (_, (target_prefixes, merge_other_details)) in merge_other_info {
                 let targets = self.nodes_covered_by_prefixes(&target_prefixes);
                 for target in targets {
                     let target_node = unwrap!(self.nodes.get_mut(&target));
@@ -312,8 +337,6 @@ fn groups_have_identical_routing_tables() {
 }
 
 #[test]
-// TODO: fix merging logic
-#[ignore]
 fn merging_groups() {
     let mut network = Network::new(None);
     for _ in 0..100 {
