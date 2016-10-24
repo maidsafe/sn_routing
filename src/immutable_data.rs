@@ -16,14 +16,14 @@
 // relating to use of the SAFE Network Software.
 
 use data::DataIdentifier;
-use maidsafe_utilities::serialisation::serialise;
+use maidsafe_utilities::serialisation::serialised_size;
 use rust_sodium::crypto::hash::sha256;
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::fmt::{self, Debug, Formatter};
 use xor_name::XorName;
 
 /// Maximum allowed size for a serialised Immutable Data (ID) to grow to
-pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: usize = 1024 * 1024 + 10 * 1024;
+pub const MAX_IMMUTABLE_DATA_SIZE_IN_BYTES: u64 = 1024 * 1024 + 10 * 1024;
 
 /// An immutable chunk of data.
 #[derive(Hash, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -64,13 +64,7 @@ impl ImmutableData {
 
     /// Return true if the size is valid
     pub fn validate_size(&self) -> bool {
-        match serialise(self) {
-            Ok(raw) => raw.len() <= MAX_IMMUTABLE_DATA_SIZE_IN_BYTES,
-            Err(e) => {
-                warn!("Failed to serialise ImmutableData: {:?}", e);
-                false
-            }
-        }
+        serialised_size(self) <= MAX_IMMUTABLE_DATA_SIZE_IN_BYTES
     }
 }
 
