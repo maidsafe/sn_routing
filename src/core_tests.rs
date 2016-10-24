@@ -654,7 +654,7 @@ fn messages_accumulate_with_quorum() {
 
     let send = |node: &mut TestNode, dst: &Authority, message_id: MessageId| {
         assert!(node.inner
-            .send_get_success(src.clone(), dst.clone(), data.clone(), message_id)
+            .send_get_success(src, *dst, data.clone(), message_id)
             .is_ok());
     };
 
@@ -1070,7 +1070,7 @@ fn request_during_churn_node_to_self() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index].inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index], src, dst, data_id, message_id));
@@ -1096,10 +1096,7 @@ fn request_during_churn_node_to_node() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index0].inner.send_get_request(src.clone(),
-                                                     dst.clone(),
-                                                     data_id,
-                                                     message_id));
+        unwrap!(nodes[index0].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
         assert!(did_receive_get_request(&nodes[index1], src, dst, data_id, message_id));
@@ -1123,7 +1120,7 @@ fn request_during_churn_node_to_group() {
         let data_id = data.identifier();
         let message_id = MessageId::new();
 
-        unwrap!(nodes[index].inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+        unwrap!(nodes[index].inner.send_get_request(src, dst, data_id, message_id));
 
         poll_and_resend(&mut nodes, &mut []);
 
@@ -1133,7 +1130,7 @@ fn request_during_churn_node_to_group() {
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
             .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+                did_receive_get_request(node, src, dst, data_id, message_id)
             })
             .count();
 
@@ -1158,7 +1155,7 @@ fn request_during_churn_group_to_self() {
         sort_nodes_by_distance_to(&mut nodes, &name);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap!(node.inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+            unwrap!(node.inner.send_get_request(src, dst, data_id, message_id));
         }
 
         let _ = random_churn(&mut rng, &network, &mut nodes);
@@ -1168,7 +1165,7 @@ fn request_during_churn_group_to_self() {
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
             .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+                did_receive_get_request(node, src, dst, data_id, message_id)
             })
             .count();
 
@@ -1194,10 +1191,7 @@ fn request_during_churn_group_to_node() {
         let message_id = MessageId::new();
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap!(node.inner.send_get_success(src.clone(),
-                                                dst.clone(),
-                                                data.clone(),
-                                                message_id));
+            unwrap!(node.inner.send_get_success(src, dst, data.clone(), message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -1223,7 +1217,7 @@ fn request_during_churn_group_to_group() {
         let _ = random_churn(&mut rng, &network, &mut nodes);
 
         for node in &nodes[0..GROUP_SIZE] {
-            unwrap!(node.inner.send_get_request(src.clone(), dst.clone(), data_id, message_id));
+            unwrap!(node.inner.send_get_request(src, dst, data_id, message_id));
         }
 
         poll_and_resend(&mut nodes, &mut []);
@@ -1233,7 +1227,7 @@ fn request_during_churn_group_to_group() {
         let num_received = nodes.iter()
             .take(GROUP_SIZE)
             .filter(|node| {
-                did_receive_get_request(node, src.clone(), dst.clone(), data_id, message_id)
+                did_receive_get_request(node, src, dst, data_id, message_id)
             })
             .count();
 
@@ -1278,8 +1272,7 @@ fn response_caching() {
 
     // No node has the data cached yet, so this request should reach the nodes
     // in the NAE manager group of the data.
-    unwrap!(clients[0].inner
-                             .send_get_request(dst.clone(), data_id, message_id));
+    unwrap!(clients[0].inner.send_get_request(dst, data_id, message_id));
 
     poll_all(&mut nodes, &mut clients);
 

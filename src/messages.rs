@@ -279,8 +279,8 @@ impl RoutingMessage {
             _ => self.content.clone(),
         };
         Ok(RoutingMessage {
-            src: self.src.clone(),
-            dst: self.dst.clone(),
+            src: self.src,
+            dst: self.dst,
             content: content,
         })
     }

@@ -133,7 +133,7 @@ impl ExampleNode {
     }
 
     fn handle_response(&mut self, response: Response, src: Authority, dst: Authority) {
-        match (response, dst.clone()) {
+        match (response, dst) {
             (Response::GetSuccess(data, id), Authority::NaeManager(_)) => {
                 self.handle_get_success(data, id, src, dst);
             }
@@ -259,7 +259,7 @@ impl ExampleNode {
                        data_id,
                        data);
                 {
-                    let src = dst.clone();
+                    let src = dst;
                     let dst = Authority::NaeManager(*data.name());
                     unwrap!(self.node.send_put_request(src, dst, data, id));
                 }
@@ -368,11 +368,8 @@ impl ExampleNode {
 
             let content = unwrap!(serialise(&refresh_content));
 
-            unwrap!(self.node
-                .send_refresh_request(Authority::ClientManager(*client_name),
-                                      Authority::ClientManager(*client_name),
-                                      content,
-                                      id));
+            let auth = Authority::ClientManager(*client_name);
+            unwrap!(self.node.send_refresh_request(auth, auth, content, id));
         }
 
         self.process_lost_close_node(id);
